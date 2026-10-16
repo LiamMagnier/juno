@@ -247,6 +247,14 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-nav-tick:hover, .cv2-nav-tick[aria-current="true"] { width: 14px; background: hsl(var(--foreground) / 0.7); }
 .cv2-nav-tip { position: absolute; right: 22px; top: 50%; transform: translateY(-50%); background: hsl(var(--popover)); box-shadow: var(--cv2-shadow-pop), 0 0 0 1px var(--cv2-pop-edge); border-radius: 8px; padding: 4px 8px; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 16px; color: hsl(var(--foreground)); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast, 120ms) var(--cv2-ease); }
 .cv2-nav-tick:hover .cv2-nav-tip, .cv2-nav-tick:focus-visible .cv2-nav-tip { opacity: 1; }
+/* A 2px tick is drawn, a band is pressed (G54): the pad fills the rail's pitch
+   (2px tick + 6px gap) and reaches left toward the column, so neighbouring
+   ticks share no target. Touch tablets get a wider pitch to aim at. */
+.cv2-nav-tick::before { content: ""; position: absolute; top: -3px; bottom: -3px; right: -6px; left: -18px; }
+@media (pointer: coarse) {
+  .cv2-nav-rail { gap: 12px; }
+  .cv2-nav-tick::before { top: -6px; bottom: -6px; left: -26px; }
+}
 
 .cv2-skel { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
 .cv2-skel i { display: block; height: 12px; border-radius: 6px; background: hsl(var(--muted)); }

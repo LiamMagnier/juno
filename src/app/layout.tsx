@@ -117,6 +117,11 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Edge to edge (G54): without `cover`, every env(safe-area-inset-*) in the
+  // product reads 0, so the installed app's composer and sheets sat under the
+  // home indicator. The shell, the phone bar, sheets and the composer pad
+  // themselves by those insets (pl/pr/pt/pb-safe).
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -162,7 +167,10 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: UI_PREFS_BOOT_SCRIPT }}
         />
       </head>
-      <body className="min-h-dvh antialiased">
+      {/* pl/pr-safe: with viewport-fit=cover a phone on its side would put
+          the notch over every page's edge; fixed layers (sheets, the phone
+          drawer) pad themselves. */}
+      <body className="min-h-dvh pl-safe pr-safe antialiased">
         <Providers
           defaultTheme={theme}
           session={session}
