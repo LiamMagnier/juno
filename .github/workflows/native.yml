@@ -325,6 +325,37 @@ jobs:
           --timeout-seconds 480
           --attempts 2
 
+      # TEMPORARY, removed before merge: where xctest aborts with "freed
+      # pointer was not the last allocation" on the Xcode 26 runtime.
+      - name: Backtrace the xctest abort (temporary)
+        if: always() && matrix.package == 'JunoCode'
+        run: |
+          set -u
+          for report in $(ls -t "$HOME"/Library/Logs/DiagnosticReports/xctest*.ips 2>/dev/null | head -2); do
+            echo "=== $report"
+            python3 - "$report" <<'PY'
+          import json, sys
+          text = open(sys.argv[1]).read()
+          body = json.loads(text[text.index("\n") + 1:])
+          images = body.get("usedImages", [])
+          for thread in body.get("threads", []):
+              if not thread.get("triggered"):
+                  continue
+              for i, frame in enumerate(thread.get("frames", [])):
+                  image = images[frame["imageIndex"]].get("name", "?") if frame.get("imageIndex", -1) < len(images) else "?"
+                  where = f'{frame.get("sourceFile", "")}:{frame.get("sourceLine", "")}' if frame.get("sourceFile") else ""
+                  print(f'{i:3} {image:32} {frame.get("symbol", hex(frame.get("imageOffset", 0)))} {where}')
+          PY
+          done
+          bundle="$RUNNER_TEMP/JunoCode-tests-attempt-1/arm64-apple-macosx/debug/JunoCodePackageTests.xctest"
+          xctest="$(xcrun --find xctest)"
+          for i in 1 2 3; do
+            echo "=== lldb run $i"
+            lldb --batch -o run -k "thread backtrace" -k quit -- "$xctest" \
+              -XCTest JunoCodeRuntimeTests.ModelRetryTests/testStopDuringABackoffEndsTheRunPromptly "$bundle" 2>&1 \
+              | grep -vE "^Test (Case|Suite)" | tail -80 || true
+          done
+
   # ---------------------------------------------------------------------------
   # The macOS app. Unsigned: this job verifies that the app compiles, not that it
   # runs. Anything exercising auth, the Keychain or an authenticated screen needs
