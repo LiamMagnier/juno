@@ -80,6 +80,28 @@ if (!DB_URL) {
     assert.equal(narrowed.effective, "conservative");
     assert.equal(narrowed.narrowedBy, "project");
 
+    // A project set to "Just do it" cannot loosen anything: the dispatcher
+    // folds it from the default (inheritFromProjectDefaults), so its tasks run
+    // as "Ask before risky steps", and the chip must say so rather than
+    // promise "Just do it".
+    const loose = await prisma.project.create({
+      data: { userId: owner.id, name: "Loose", workDefaults: { permissionPolicy: "permissive" } },
+    });
+    const inLoose = await prisma.conversation.create({
+      data: { userId: owner.id, title: "Loose chat", projectId: loose.id, taskApprovalMode: "permissive" },
+    });
+    const looseView = await (await GET(new Request("http://x"), params(inLoose.id))).json();
+    assert.equal(looseView.effective, "balanced");
+    assert.equal(looseView.narrowedBy, "project");
+    // A project with no approval setting of its own leaves the choice alone.
+    const open = await prisma.project.create({ data: { userId: owner.id, name: "Open", workDefaults: {} } });
+    const inOpen = await prisma.conversation.create({
+      data: { userId: owner.id, title: "Open chat", projectId: open.id, taskApprovalMode: "permissive" },
+    });
+    const openView = await (await GET(new Request("http://x"), params(inOpen.id))).json();
+    assert.equal(openView.effective, "permissive");
+    assert.equal(openView.narrowedBy, null);
+
     // An agent's thread keeps the agent's mode as the ceiling.
     const agent = await prisma.agent.create({ data: { userId: owner.id, name: "Mira", approvalMode: "balanced" } });
     const thread = await prisma.conversation.create({

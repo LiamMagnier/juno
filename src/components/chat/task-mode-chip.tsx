@@ -52,7 +52,11 @@ export function TaskModeChip({
   disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
-  const selected = chosen ?? DEFAULT_WORK_PERMISSION_POLICY;
+  // The tick marks the choice. With none, it marks what runs, unless a project
+  // or agent narrowed that: an agent's thread with nobody choosing runs as the
+  // agent's own mode, and ticking the default beside a chip that says "Just do
+  // it" would contradict it.
+  const selected = chosen ?? (narrowedBy === null ? effective : DEFAULT_WORK_PERMISSION_POLICY);
   const offDefault = effective !== DEFAULT_WORK_PERMISSION_POLICY;
   const label = WORK_APPROVAL_MODE_LABEL[effective];
 
@@ -108,7 +112,7 @@ export function TaskModeChip({
           value={selected}
           onValueChange={(value) => {
             const next = CHAT_TASK_MODES.find((mode) => mode === value);
-            if (next && next !== chosen) onChange(next);
+            if (next && next !== selected) onChange(next);
           }}
         >
           {CHAT_TASK_MODES.map((mode) => {
@@ -147,7 +151,7 @@ export function TaskModeChip({
           {/* Why the mode in the chip is not the one ticked above. Each reason
               is one whole sentence, so it is translated as one. */}
           {narrowedBy === "project" && (
-            <p className="text-foreground/80">This project asks more often, so tasks here follow its setting.</p>
+            <p className="text-foreground/80">This project’s settings hold its tasks to a stricter mode than the one you picked.</p>
           )}
           {narrowedBy === "agent" && (
             <p className="text-foreground/80">This agent is set to ask more often, so its tasks follow its setting.</p>

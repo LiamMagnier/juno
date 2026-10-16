@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { agentApprovalMode } from "@/lib/agents/domain";
-import { parseWorkDefaults } from "@/lib/work/projects";
+import { inheritFromProjectDefaults, parseWorkDefaults } from "@/lib/work/projects";
 import { WORK_PERMISSION_POLICIES } from "@/lib/work/domain";
 import { describeChatTaskMode, parseChatTaskMode } from "@/lib/chat/task-approval-mode";
 
@@ -44,7 +44,18 @@ async function view(userId: string, id: string) {
   return describeChatTaskMode({
     chosen: parseChatTaskMode(conversation.taskApprovalMode),
     agentMode: agent ? agentApprovalMode(agent.approvalMode) : null,
-    projectMode: project ? parseWorkDefaults(project.workDefaults).permissionPolicy ?? null : null,
+    // The mode the dispatcher meets a session with, through the same fold it
+    // uses (`inheritFromProject` in work/dispatch.ts), not the project's raw
+    // setting: a project can only narrow from the default, so one set to
+    // "Just do it" still holds its tasks at "Ask before risky steps", and the
+    // chip must not promise a mode the task will not run as.
+    projectMode: project
+      ? inheritFromProjectDefaults({
+          requestedTarget: "automatic",
+          linkedConnectorIds: [],
+          defaults: parseWorkDefaults(project.workDefaults),
+        }).permissionPolicy
+      : null,
   });
 }
 
