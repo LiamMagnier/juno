@@ -10,6 +10,7 @@ import {
   planSelect,
   shownPath,
   siblingPositions,
+  threadOrder,
   type BranchChange,
   type BranchNode,
   type BranchRefusal,
@@ -199,6 +200,39 @@ export interface SelectedBranch {
   changed: boolean;
 }
 
+/**
+ * Where a reply that replaces nothing is written (a new turn's answer, a
+ * room's next member, an edited question's first answer), decided inside the
+ * caller's transaction under the conversation lock, so a branch switch
+ * cannot land between this read and the insert.
+ *
+ *  - Its question is no longer shown (switched away from on another device
+ *    while the reply was written): it stays with that question, hidden, and
+ *    comes back when that branch is shown.
+ *  - Its question is the shown leaf: it records it as its parent.
+ *  - Otherwise (something else was appended after the question meanwhile)
+ *    it records nothing and follows the shown leaf, like every writer that
+ *    knows nothing about branches. Naming a parent in the middle of the shown
+ *    path would give that row two shown children, and the next branch switch
+ *    could walk down only one of them, leaving the other hidden with no pager
+ *    to bring it back.
+ */
+export async function replyPlacement(
+  tx: Tx,
+  conversationId: string,
+  answersMessageId: string | null,
+): Promise<{ parentId?: string; onActivePath?: boolean }> {
+  await lockConversation(tx, conversationId);
+  if (!answersMessageId) return {};
+  const parent = await tx.message.findFirst({
+    where: { id: answersMessageId, conversationId },
+    select: { id: true, onActivePath: true },
+  });
+  if (!parent) return {};
+  if (!parent.onActivePath) return { parentId: parent.id, onActivePath: false };
+  return (await shownLeafId(tx, conversationId)) === parent.id ? { parentId: parent.id } : {};
+}
+
 /** Show the branch a message starts. Scoped to the owner; another account's message is "missing". */
 export async function selectBranch(userId: string, messageId: string): Promise<SelectedBranch | BranchRefusal> {
   const message = await prisma.message.findFirst({
@@ -297,29 +331,76 @@ export async function writeRestoredBranches(tx: Tx, conversationId: string, rows
   `;
 }
 
+/** An earlier version's metadata, as `ClientMessage.versions` carries it. */
+export interface BranchVersionMeta {
+  id: string;
+  model: string | null;
+  createdAt: Date;
+}
+
+/**
+ * The alternatives at each given row's point of the thread: pager positions
+ * (rows with no alternatives are absent) and every member's metadata.
+ */
+async function branchMembers(
+  db: Db,
+  conversationId: string,
+  rows: ReadonlyArray<{ id: string; branchGroupId: string | null }>,
+): Promise<{ positions: Map<string, ClientMessageBranch>; byId: Map<string, BranchVersionMeta> }> {
+  const groups = [...new Set(rows.map((row) => row.branchGroupId).filter((id): id is string => !!id))];
+  if (groups.length === 0) return { positions: new Map(), byId: new Map() };
+  const members = await db.message.findMany({
+    where: { conversationId, branchGroupId: { in: groups } },
+    select: { id: true, branchGroupId: true, createdAt: true, model: true },
+  });
+  return { positions: siblingPositions(members), byId: new Map(members.map((m) => [m.id, { id: m.id, model: m.model, createdAt: m.createdAt }])) };
+}
+
 /** Pager positions for the given rows of one conversation; rows with no alternatives are absent. */
 export async function branchPositions(
   db: Db,
   conversationId: string,
   rows: ReadonlyArray<{ id: string; branchGroupId: string | null }>,
 ): Promise<Map<string, ClientMessageBranch>> {
-  const groups = [...new Set(rows.map((row) => row.branchGroupId).filter((id): id is string => !!id))];
-  if (groups.length === 0) return new Map();
-  const members = await db.message.findMany({
-    where: { conversationId, branchGroupId: { in: groups } },
-    select: { id: true, branchGroupId: true, createdAt: true },
-  });
-  return siblingPositions(members);
+  return (await branchMembers(db, conversationId, rows)).positions;
 }
 
-/** The rows with their pager position attached, for serializeMessage. */
-export async function withBranchPositions<T extends { id: string; branchGroupId: string | null }>(
+/**
+ * The rows with their pager position attached, for serializeMessage.
+ *
+ * Also `versions` for the apps, which page through a message's earlier
+ * versions (`versions`, then GET /api/messages/{id}/versions) and do not read
+ * `branch` yet: the alternatives before this one stand in for them, as the
+ * older answers and wordings they showed before branches. The web reads
+ * `branch` whenever it is there. A row that still has MessageVersion rows of
+ * its own (it has never branched) keeps them.
+ */
+export async function withBranchPositions<T extends { id: string; branchGroupId: string | null; versions?: BranchVersionMeta[] }>(
   db: Db,
   conversationId: string,
   rows: readonly T[],
 ): Promise<Array<T & { branch: ClientMessageBranch | null }>> {
-  const positions = await branchPositions(db, conversationId, rows);
-  return rows.map((row) => ({ ...row, branch: positions.get(row.id) ?? null }));
+  const { positions, byId } = await branchMembers(db, conversationId, rows);
+  return rows.map((row) => {
+    const branch = positions.get(row.id) ?? null;
+    if (!branch || row.versions?.length) return { ...row, branch };
+    const versions = branch.siblingIds.slice(0, branch.index).flatMap((id) => byId.get(id) ?? []);
+    return { ...row, branch, versions };
+  });
+}
+
+/**
+ * The alternatives before a message, oldest first, for GET
+ * /api/messages/{id}/versions: what `withBranchPositions` lists as its
+ * `versions`. Empty for a message with no alternatives.
+ */
+export async function earlierAlternatives(db: Db, message: { id: string; conversationId: string; branchGroupId: string | null }) {
+  if (!message.branchGroupId) return [];
+  const group = (
+    await db.message.findMany({ where: { conversationId: message.conversationId, branchGroupId: message.branchGroupId } })
+  ).sort(threadOrder);
+  const at = group.findIndex((row) => row.id === message.id);
+  return at <= 0 ? [] : group.slice(0, at);
 }
 
 /** The ids of the path that ends at a message, root first; null when it is not in the conversation. */

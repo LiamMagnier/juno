@@ -2413,7 +2413,7 @@
         "branch": {
           "$ref": "#/$defs/ClientMessageBranch",
           "x-native": "planned",
-          "x-native-note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server."
+          "x-native-note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server; a branched message's versions list the alternatives before it, which their version pager reads."
         },
         "attachments": {
           "type": "array",

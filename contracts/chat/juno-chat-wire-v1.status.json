@@ -223,7 +223,7 @@
     },
     "ClientMessage.branch": {
       "status": "planned",
-      "note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server."
+      "note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server; a branched message's versions list the alternatives before it, which their version pager reads."
     },
     "ClientMessage.attachments": "native",
     "ClientMessage.sources": "native",

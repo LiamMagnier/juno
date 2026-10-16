@@ -208,7 +208,21 @@ if (!DB_URL) {
     const shown = (await thread()).body!.messages;
     assert.deepEqual(shown.map((m) => m.content), ["u1 says something about Lisbon", "a1 says something about Lisbon", "u2 says something about Lisbon", "a newer a2"]);
     assert.deepEqual(shown.at(-1)!.branch?.index, 2);
-    assert.equal(shown.at(-1)!.versions, undefined);
+    // The apps page through `versions` and do not read `branch` yet: the
+    // alternatives before this one stand in, and /versions reads them back.
+    assert.deepEqual(
+      (shown.at(-1)!.versions as Array<{ id: string }>).map((v) => v.id),
+      shown.at(-1)!.branch!.siblingIds.slice(0, 2)
+    );
+    const versionsRoute = await import("@/app/api/messages/[id]/versions/route");
+    const listed = (await (await versionsRoute.GET(new Request(`http://juno.test/api/messages/${shown.at(-1)!.id}/versions`), params(shown.at(-1)!.id))).json()) as {
+      versions: Array<{ id: string; content: string; model: string | null }>;
+    };
+    assert.deepEqual(listed.versions.map((v) => v.content), ["an older a2", "a2 says something about Lisbon"]);
+    assert.equal(listed.versions[0].model, "anthropic:old");
+    signedIn = mallory;
+    assert.equal((await versionsRoute.GET(new Request("http://juno.test/x"), params(shown.at(-1)!.id))).status, 404, "another account reads no versions");
+    signedIn = alice;
     // Back to the original answer: its continuation comes back with it.
     await select(ids.a2);
     assert.deepEqual((await shownIds()).map(name), ["u1", "a1", "u2", "a2", "u3", "a3"]);
@@ -228,17 +242,12 @@ if (!DB_URL) {
     await prisma.conversation.delete({ where: { id: conversation.id } });
   });
 
-  test("an export reads the shown branch, and the whole tree only when it asks", async () => {
+  test("an export carries every branch with its place in the tree; the CSV and ?branches=shown read the shown one", async () => {
     signedIn = alice;
     const route = await import("@/app/api/account/export/route");
-    const shown = (await (await route.GET(new Request("http://juno.test/api/account/export"))).json()) as {
-      conversations: Array<{ id: string; messages: Array<{ id: string; parentId?: string }> }>;
-      messageBranches: string;
-    };
-    const mine = shown.conversations.find((c) => c.id === conversationId)!;
-    assert.equal(shown.messageBranches, "shown");
-    assert.deepEqual(mine.messages.map((m) => name(m.id)), ["u1", "a1", "u2'"]);
-    const everything = (await (await route.GET(new Request("http://juno.test/api/account/export?branches=all"))).json()) as {
+    // The JSON is the whole account: the earlier wordings and answers an edit
+    // or regenerate kept are the person's data as much as the shown thread.
+    const everything = (await (await route.GET(new Request("http://juno.test/api/account/export"))).json()) as {
       conversations: Array<{ id: string; messages: Array<{ id: string; onActivePath: boolean; branchGroupId: string | null }> }>;
       messageBranches: string;
     };
@@ -246,14 +255,27 @@ if (!DB_URL) {
     assert.equal(everything.messageBranches, "all");
     assert.equal(tree.messages.length, await prisma.message.count({ where: { conversationId } }));
     assert.equal(tree.messages.filter((m) => m.onActivePath).length, 3);
+    const shown = (await (await route.GET(new Request("http://juno.test/api/account/export?branches=shown"))).json()) as {
+      conversations: Array<{ id: string; messages: Array<{ id: string; parentId?: string }> }>;
+      messageBranches: string;
+    };
+    const mine = shown.conversations.find((c) => c.id === conversationId)!;
+    assert.equal(shown.messageBranches, "shown");
+    assert.deepEqual(mine.messages.map((m) => name(m.id)), ["u1", "a1", "u2'"]);
+    assert.equal(mine.messages[0].parentId, undefined, "a shown-only export carries no tree");
+    // The spreadsheet reads as the chat does.
+    const csv = await (await route.GET(new Request("http://juno.test/api/account/export?format=csv"))).text();
+    assert.equal(csv.split(/\r?\n/)[0], "conversation,role,model,content,createdAt");
+    assert.equal(csv.includes("a2 says something"), false, "a hidden answer is not in the CSV");
   });
 
   test("an export of every branch imports as the same tree: one branch shown, the others a pager step away", async () => {
     signedIn = alice;
     const exporter = await import("@/app/api/account/export/route");
-    // The JSON export (the ZIP adds the stored files, which this test does not
-    // write to disk): every branch, re-uploaded as the import reads it.
-    const payload = (await (await exporter.GET(new Request("http://juno.test/api/account/export?branches=all"))).json()) as {
+    // The JSON export as Settings offers it (the ZIP adds the stored files,
+    // which this test does not write to disk): every branch, re-uploaded as
+    // the import reads it.
+    const payload = (await (await exporter.GET(new Request("http://juno.test/api/account/export"))).json()) as {
       attachments?: { items?: unknown[] };
     };
     // Files travel in the ZIP restore; this metadata-only file carries the tree.
@@ -303,6 +325,32 @@ if (!DB_URL) {
     assert.equal((await edit(ids.a1, "rewrite the answer")).status, 400, "only questions are edited");
     signedIn = null;
     assert.equal((await select(ids.u2)).status, 401);
+  });
+
+  test("a reply lands with its question: its parent at the leaf, hidden with a hidden question, never a second shown child", async () => {
+    const { replyPlacement, pathIdsTo } = await import("@/lib/chat/branches");
+    // The app's client, as the reply writer uses it (persist.ts).
+    const { prisma: app } = await import("@/lib/prisma");
+    const convo = await prisma.conversation.create({ data: { userId: alice.id, title: "Placement" } });
+    const start = Date.UTC(2026, 8, 2);
+    const write = async (role: "USER" | "ASSISTANT", i: number, placement: { parentId?: string; onActivePath?: boolean } = {}) =>
+      (await prisma.message.create({ data: { conversationId: convo.id, role, content: "x", createdAt: new Date(start + i * 1000), ...placement } })).id;
+    const place = (answers: string | null) => app.$transaction((tx) => replyPlacement(tx, convo.id, answers));
+
+    const q1 = await write("USER", 0);
+    assert.deepEqual(await place(q1), { parentId: q1 }, "the question is the shown leaf: it is the reply's parent");
+    // Another device appended a question while the reply to q1 was written.
+    const q2 = await write("USER", 1);
+    const late = await place(q1);
+    assert.deepEqual(late, {}, "the reply follows the shown leaf rather than giving q1 two shown children");
+    const reply = await write("ASSISTANT", 2, late);
+    assert.deepEqual(await pathIdsTo(app, convo.id, reply), [q1, q2, reply], "the shown path stays one line");
+    // A question switched away from: its reply stays with it, hidden.
+    await prisma.message.update({ where: { id: q2 }, data: { onActivePath: false, parentId: q1 } });
+    assert.deepEqual(await place(q2), { parentId: q2, onActivePath: false });
+    assert.deepEqual(await place(null), {});
+    assert.deepEqual(await place("not-a-message"), {});
+    await prisma.conversation.delete({ where: { id: convo.id } });
   });
 
   test("clean up", async () => {

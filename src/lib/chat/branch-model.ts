@@ -333,6 +333,9 @@ export interface RestoredBranchRow {
  */
 export function restoreImportedBranches(rows: readonly ImportedBranchRow[]): RestoredBranchRow[] | null {
   if (!rows.some((row) => typeof row.onActivePath === "boolean")) return null;
+  // A chat that never branched exports every row shown with no pointers: as
+  // linear as it imports already, so there is nothing to write.
+  if (rows.every((row) => row.onActivePath !== false && row.parentSourceId == null && row.branchGroupSourceId == null)) return null;
   const ordered = [...rows].sort(threadOrder);
   const position = new Map(ordered.map((row, i) => [row.id, i]));
   const bySource = new Map<string, string>();

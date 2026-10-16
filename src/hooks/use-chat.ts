@@ -214,6 +214,7 @@ const FIRST_PAGE_LIMIT = 60;
 /** Toast copy, named so the i18n catalog picks it up (scripts/generate-i18n-catalog.mjs). */
 const branchSwitchFailedMessage = "Couldn’t switch to that version.";
 const regenerateFailedMessage = "Couldn’t regenerate that answer.";
+const unsentAfterMessage = "Resend or copy your unsent message first.";
 
 /** How far back to read: the next page, through one message, or all the rest. */
 export type LoadOlderRequest = { throughMessageId?: string; all?: boolean };
@@ -1830,6 +1831,12 @@ export function useChat(opts: UseChatOptions) {
     const held = messagesRef.current;
     const at = messageId ? held.findIndex((m) => m.id === messageId) : -1;
     if (messageId && at !== -1 && at < held.length - 1 && convoIdRef.current && !opts.privateMode && !messageId.startsWith("temp-")) {
+      // A turn the server never received lives only here: the new branch
+      // would take it off the screen for good.
+      if (held.slice(at + 1).some((m) => m.unsent)) {
+        toast.error(unsentAfterMessage);
+        return;
+      }
       const convoId = convoIdRef.current;
       const assistantTempId = tempId();
       for (const removed of held.slice(at)) locallyRemovedRef.current.set(removed.id, removed.createdAt);
@@ -2022,6 +2029,12 @@ export function useChat(opts: UseChatOptions) {
     if (status !== "idle" && status !== "error") return false;
     const convoId = convoIdRef.current;
     if (!convoId || opts.privateMode) return false;
+    // A turn the server never received lives only here, below whatever it
+    // followed: switching the continuation above it would drop it for good.
+    if (messagesRef.current.some((m) => m.unsent)) {
+      toast.error(unsentAfterMessage);
+      return false;
+    }
     const res = await fetch(`/api/messages/${messageId}/branch`, { method: "POST" }).catch(() => null);
     const data = (res ? await res.json().catch(() => ({})) : {}) as { replacedId?: string; messages?: ClientMessage[] | null; error?: string };
     if (!res?.ok) {

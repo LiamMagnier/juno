@@ -6,7 +6,7 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { encryptJsonField } from "@/lib/field-crypto";
 import { markRoomTurn } from "@/lib/agents/room-store";
 import { assistantTurnFields, assistantWriteMode, reasoningPartsColumn } from "@/lib/chat/assistant-turn";
-import { forkMessage, withBranchPositions } from "@/lib/chat/branches";
+import { forkMessage, replyPlacement, withBranchPositions } from "@/lib/chat/branches";
 import { isRefusal } from "@/lib/chat/branch-model";
 import type { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import type { ClientActivityEvent } from "@/types/chat";
@@ -112,17 +112,12 @@ export function createAssistantTurnWriter({
 
     // A reply that follows a question no longer shown — switched away from on
     // another device while it was written — stays with that question rather
-    // than landing on the branch now shown.
-    const parent = answersMessageId
-      ? await prisma.message.findFirst({ where: { id: answersMessageId, conversationId }, select: { id: true, onActivePath: true } })
-      : null;
-    return prisma.message.create({
-      data: {
-        conversationId,
-        ...columns,
-        ...(parent ? { parentId: parent.id, onActivePath: parent.onActivePath } : {}),
-      },
-      include,
+    // than landing on the branch now shown. Read and written under the
+    // conversation lock (replyPlacement), so a switch cannot land in between
+    // and leave a shown reply under a hidden question.
+    return prisma.$transaction(async (tx) => {
+      const placement = await replyPlacement(tx, conversationId, answersMessageId ?? null);
+      return tx.message.create({ data: { conversationId, ...columns, ...placement }, include });
     });
   };
   /** The persisted reply, and in a room the turn it answers marked answered with it. */

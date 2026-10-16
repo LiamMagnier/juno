@@ -45,12 +45,14 @@ function csvField(value: string | null | undefined): string {
  * stamps the JSON as the open, versioned Juno interchange format so it can be
  * uploaded back through /api/import.
  *
- * Conversations export as they read: the shown branch of each
- * (src/lib/chat/branches.ts), so a chat with an edited question is one
- * linear thread, as the import expects. `?branches=all` adds every hidden
- * branch too — the earlier wordings and answers an edit or regenerate kept —
- * with `parentId`, `branchGroupId`, `onActivePath` and `branchSelected` on
- * each message, which is enough for /api/import to rebuild the tree.
+ * Branches (src/lib/chat/branches.ts): the JSON and the package are the
+ * whole account, so they carry every branch — the earlier wordings and
+ * answers an edit or regenerate kept, which are the person's data as much as
+ * the shown thread — with `parentId`, `branchGroupId`, `onActivePath` and
+ * `branchSelected` on each message, which is enough for /api/import to
+ * rebuild the tree. The CSV, a spreadsheet of what each chat reads, has the
+ * shown branch only. `?branches=all` or `?branches=shown` picks either way
+ * for any format.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -64,7 +66,8 @@ export async function GET(req: Request) {
   const requestedFormat = new URL(req.url).searchParams.get("format");
   const format = requestedFormat === "csv" ? "csv" : requestedFormat === "juno" ? "juno" : "json";
   const isJuno = format === "juno";
-  const allBranches = new URL(req.url).searchParams.get("branches") === "all";
+  const requestedBranches = new URL(req.url).searchParams.get("branches");
+  const allBranches = requestedBranches === "all" || (requestedBranches !== "shown" && format !== "csv");
   const date = new Date().toISOString().slice(0, 10);
 
   const [account, plan, settings, conversations, rawMessages, memories, memorySummary, projects, attachments, spendTotals, spendByKind, projectMemorySummaries] =
@@ -618,8 +621,8 @@ export async function GET(req: Request) {
       })),
     },
     messagesTruncated: truncated,
-    // Which messages are here: each conversation's shown branch, or (with
-    // ?branches=all) every branch, each message carrying its place in the tree.
+    // Which messages are here: every branch, each message carrying its place
+    // in the tree, or (with ?branches=shown) each conversation's shown branch.
     messageBranches: allBranches ? "all" : "shown",
     ...(truncated
       ? { truncationNote: `Message export is capped at ${MAX_MESSAGE_ROWS.toLocaleString("en-US")} rows; older messages are included first.` }

@@ -89,7 +89,8 @@ export interface ClientMessage {
    * an edit of a question or a regenerate of an answer adds a sibling and
    * keeps the old one with everything that followed it. Absent when the
    * message has never had an alternative. Supersedes `versions` for any
-   * message that has it.
+   * message that has it; `versions` then lists the alternatives before this
+   * one, for the apps' version pager, which does not read `branch` yet.
    */
   branch?: ClientMessageBranch;
   attachments: ClientAttachment[];

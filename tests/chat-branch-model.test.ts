@@ -242,3 +242,53 @@ test("an import rebuilds the exported tree in the new rows' ids, and stays linea
   const broken = rows.map((row) => (row.id === "new-3" ? { ...row, onActivePath: true } : row));
   assert.equal(restoreImportedBranches(broken), null, "two shown branches are not one line");
 });
+
+test("edits, an earlier regenerate and rows written without pointers switch back and forth and keep one line shown", () => {
+  /** The shown path in thread order is one chain of parents (an unwritten one means the row before). */
+  const oneLine = (nodes: BranchNode[]) => {
+    const path = shownPath(nodes);
+    if (path.length) assert.equal(path[0].parentId, null, "the path starts at a root");
+    for (let i = 1; i < path.length; i++) {
+      assert.ok(path[i].parentId === null || path[i].parentId === path[i - 1].id, `${path[i].id} follows ${path[i].parentId}, not ${path[i - 1].id}`);
+    }
+  };
+  // A new question is written with no parent (accept.ts); its answer names it (persist.ts).
+  const add = (nodes: BranchNode[], id: string, at: number, parentId: string | null = null) => [...nodes, node(id, at, { parentId })];
+  let nodes = linear(["u1", "a1", "u2", "a2"]);
+  nodes = fork(nodes, "u2", "u2b", 10);
+  nodes = add(nodes, "a2b", 11, "u2b");
+  nodes = add(nodes, "u3b", 12);
+  nodes = add(nodes, "a3b", 13, "u3b");
+  nodes = fork(nodes, "a2b", "a2c", 14);
+  oneLine(nodes);
+  assert.deepEqual(shown(nodes), ["u1", "a1", "u2b", "a2c"]);
+  nodes = select(nodes, "u2");
+  oneLine(nodes);
+  assert.deepEqual(shown(nodes), ["u1", "a1", "u2", "a2"]);
+  nodes = select(nodes, "u2b");
+  assert.deepEqual(shown(nodes), ["u1", "a1", "u2b", "a2c"], "the regenerated answer was the one chosen there");
+  nodes = select(nodes, "a2b");
+  oneLine(nodes);
+  assert.deepEqual(shown(nodes), ["u1", "a1", "u2b", "a2b", "u3b", "a3b"]);
+  nodes = add(nodes, "u4b", 20);
+  nodes = add(nodes, "a4b", 21, "u4b");
+  nodes = select(nodes, "u2");
+  nodes = select(nodes, "u2b");
+  oneLine(nodes);
+  assert.deepEqual(shown(nodes), ["u1", "a1", "u2b", "a2b", "u3b", "a3b", "u4b", "a4b"]);
+  assert.deepEqual(pathTo(nodes, "a4b"), shown(nodes));
+  // An edit of the first question after all that is a third root.
+  nodes = fork(nodes, "u1", "u1b", 30);
+  oneLine(nodes);
+  assert.deepEqual(siblingPositions(nodes).get("u1b"), { index: 1, siblingIds: ["u1", "u1b"] });
+  nodes = select(nodes, "u1");
+  assert.deepEqual(shown(nodes), ["u1", "a1", "u2b", "a2b", "u3b", "a3b", "u4b", "a4b"]);
+});
+
+test("an export of a chat that never branched restores nothing: it imports linear as it is", () => {
+  const rows = ["x-u1", "x-a1"].map((sourceId, i) => ({ id: `new-${i}`, createdAt: new Date(t0 + i * 1000), sourceId, parentSourceId: null, branchGroupSourceId: null, onActivePath: true, branchSelected: true }));
+  assert.equal(restoreImportedBranches(rows), null);
+  // An answer that recorded its question still restores (nothing to change, but nothing wrong either).
+  const pointed = rows.map((row, i) => (i === 1 ? { ...row, parentSourceId: "x-u1" } : row));
+  assert.deepEqual(restoreImportedBranches(pointed)?.map((row) => row.parentId), [null, "new-0"]);
+});
