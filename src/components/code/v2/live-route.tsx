@@ -219,6 +219,11 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     modesRef.current = pair;
     modeChosen.current = true;
     if (projectKey) writeJson(projectKey, pair);
+    // A Mac session takes a choice made here at once, as the Mac app and the
+    // phone send it: the running turn, and the queue after it, so `/plan` sent
+    // while a turn runs is queued under Plan. Another device's choice applied
+    // here is not sent back (that device already did).
+    if (useEnv && env.client && env.view) void env.client.request("session.setMode", { sessionId: env.view.id, ...pair }).catch(() => undefined);
   };
 
   async function sendLegacy(text: string, attachments: ClientAttachment[] = []) {

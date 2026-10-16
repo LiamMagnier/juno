@@ -195,4 +195,7 @@ test("a cloud thread's follow-up carries the composer's mode, so /plan runs unde
   const legacy = route.slice(route.indexOf("async function sendLegacy"), route.indexOf("async function filesForMac"));
   assert.match(legacy, /cloudPermissionMode\(composerModeOf\(modesRef\.current\.runtimeMode, modesRef\.current\.interactionMode\)\)/);
   assert.match(read("src/hooks/use-code-session.ts"), /permissionMode: choice\.permissionMode \|\| undefined/, "the task create carries it");
+  // A Mac session takes the choice at once, as the Mac app and the phone send it, so a queued `/plan` runs under Plan.
+  const remember = route.slice(route.indexOf("const rememberMode = (pair"), route.indexOf("async function sendLegacy"));
+  assert.match(remember, /env\.client\.request\("session\.setMode", \{ sessionId: env\.view\.id, \.\.\.pair \}\)/);
 });
