@@ -277,10 +277,6 @@ const SCRUBBER_CLASS = cn(
   "focus-visible:[&::-webkit-slider-thumb]:shadow-[0_0_0_3px_hsl(var(--ring)/0.35)] focus-visible:[&::-moz-range-thumb]:shadow-[0_0_0_3px_hsl(var(--ring)/0.35)]",
 );
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-}
-
 /**
  * Promotes the incoming frame even if `transitionend` never arrives (reduced
  * motion turns the transition off; a hidden tab may not run it). A little past

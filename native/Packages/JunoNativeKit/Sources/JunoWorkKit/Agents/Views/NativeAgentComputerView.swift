@@ -477,11 +477,7 @@ private struct NativeAgentComputerHandoffSheet: View {
                 Task { await reopen() }
             }
         }
-        .confirmationDialog(
-            "Hand back to \(agentName)?",
-            isPresented: $confirmingClose,
-            titleVisibility: .visible
-        ) {
+        .confirmationDialog("Hand back to \(agentName)?", isPresented: $confirmingClose, titleVisibility: .visible) {
             Button("Hand back") {
                 Task { await handBack() }
             }

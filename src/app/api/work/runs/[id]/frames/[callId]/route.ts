@@ -40,9 +40,10 @@ export async function GET(
 
   const run = await prisma.workRun.findFirst({
     where: { id, userId: user.id, session: { userId: user.id, deletedAt: null } },
-    select: { id: true, userId: true },
+    select: { id: true },
   });
-  if (!run || run.userId !== user.id) return notFound();
+  // The query is scoped to the session user, so a run that is not theirs is simply absent.
+  if (!run) return notFound();
 
   const bytes = await readRunFrame(user.id, run.id, callId);
   if (!bytes) return notFound();
