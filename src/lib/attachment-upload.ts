@@ -1,7 +1,10 @@
 import { stripUnstorableCharacters } from "@/lib/knowledge/extract/types";
 import {
+  HEIC_UNSUPPORTED_MESSAGE,
   attachmentKind,
   isAcceptedUpload,
+  isHeicImage,
+  isHeicUpload,
   isTextExtractable,
   sanitizeFileName,
   sniffDocumentMime,
@@ -27,7 +30,9 @@ import {
  *   That is what prevents stored XSS and phishing through attachment URLs.
  * - HEIC/HEIF is deliberately absent from the accepted set. Apple clients
  *   transcode to JPEG before uploading; accepting HEIC would mean shipping a
- *   decoder or storing something the web cannot display.
+ *   decoder or storing something the web cannot display. It is refused by
+ *   name, type AND bytes, with a sentence that says what to do: a HEIC that
+ *   declared itself octet-stream used to be stored as an unreadable file.
  */
 export type AttachmentUploadRejection =
   | { code: "unsupported_media_type"; status: 415; message: string }
@@ -54,6 +59,15 @@ export function planAttachmentUpload(input: {
   maxUploadMb: number;
 }): { ok: true; plan: AttachmentUploadPlan } | { ok: false; error: AttachmentUploadRejection } {
   const declaredMime = input.declaredMime || "application/octet-stream";
+
+  // Before the type gate: a HEIC declared as octet-stream used to pass it and
+  // be stored as a file nothing could read (see isHeicUpload).
+  if (isHeicUpload(input.fileName || "file", declaredMime) || isHeicImage(input.bytes)) {
+    return {
+      ok: false,
+      error: { code: "unsupported_media_type", status: 415, message: HEIC_UNSUPPORTED_MESSAGE },
+    };
+  }
 
   if (!isAcceptedUpload(input.fileName || "file", declaredMime)) {
     return {
