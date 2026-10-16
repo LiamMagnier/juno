@@ -128,7 +128,8 @@ interface Item {
  * row itself pretending to be a card leaving the page.
  */
 const rowClass =
-  "group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+  // `ed-row`: a row of an `.ed-list` (editorial.css keys its hover hairline on it).
+  "ed-row group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
 
 /**
  * The two view modes, and where the choice is kept.

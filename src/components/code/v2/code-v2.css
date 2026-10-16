@@ -458,7 +458,7 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-ln.d mark { background: hsl(var(--diff-del-strong)); color: inherit; border-radius: 2px; }
 .cv2-split { display: grid; grid-template-columns: 1fr 1fr; }
 .cv2-split > div { min-width: 0; }
-.cv2-split > div + div { border-left: 1px solid hsl(var(--border) / 0.7); }
+.cv2-split > div:not(:first-child) { border-left: 1px solid hsl(var(--border) / 0.7); }
 .cv2-gap { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 28px; font-family: var(--font-sans), system-ui, sans-serif; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.6); }
 .cv2-gap::before, .cv2-gap::after { content: ""; flex: 1; height: 1px; background: hsl(var(--border) / 0.7); max-width: 120px; }
 .cv2-gap:hover { color: hsl(var(--foreground)); }

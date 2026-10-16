@@ -120,7 +120,7 @@ export function SkillSourceGroup({
     <div
       role="listitem"
       id={skillSourceAnchor(source.id)}
-      className={cn("relative isolate scroll-mt-24", className)}
+      className={cn("ed-row relative isolate scroll-mt-24", className)}
       style={style}
     >
       {highlight ? (

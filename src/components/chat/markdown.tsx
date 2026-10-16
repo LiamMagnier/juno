@@ -685,6 +685,28 @@ function rehypeSourceOffsets(base: number) {
 }
 
 /**
+ * Every heading this renderer writes carries `data-md-heading` (h1–h6 here,
+ * h3–h6 once DEMOTED_HEADINGS has renamed them). The prose rhythm's "close
+ * under a heading" rules key on it (globals.css, research.css): a `+` rule
+ * whose left side is only a tag makes Chrome restyle every sibling after an
+ * inserted element, subtrees and all, on every insertion anywhere in the page,
+ * every transcript row included (scripts/postcss/sibling-invalidation.cjs).
+ */
+export const MD_HEADING_ATTR = "data-md-heading";
+const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+export function rehypeMarkHeadings() {
+  const walk = (node: HastNode) => {
+    if (node.type === "element" && node.tagName && HEADING_TAGS.has(node.tagName)) {
+      node.properties = { ...node.properties, [MD_HEADING_ATTR]: "" };
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  return function transformer(tree: HastNode) {
+    walk(tree);
+  };
+}
+
+/**
  * The smallest stamped elements inside `root` whose source range covers
  * `offset`, innermost only.
  *
@@ -869,7 +891,7 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
   // touches nodes carrying a parse position, and everything those two plugins
   // invent has none. It stays LAST for that reason.
   const rehypePlugins = React.useMemo<Options["rehypePlugins"]>(
-    () => [...contentPlugins, rehypeSourceOffsets(offset)],
+    () => [...contentPlugins, rehypeMarkHeadings, rehypeSourceOffsets(offset)],
     [contentPlugins, offset],
   );
   const components = React.useMemo<Components>(

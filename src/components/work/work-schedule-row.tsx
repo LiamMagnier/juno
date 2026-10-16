@@ -172,7 +172,8 @@ export function WorkScheduleRow({
         // the whole row; focus is the anchor's own global outline.
         workRowClass,
         workRowEnterClass,
-        "gap-0 p-0 [&:has(>a:active)]:bg-secondary",
+        // A row of an `.ed-list` (editorial.css keys its hover hairline on it).
+        "ed-row gap-0 p-0 [&:has(>a:active)]:bg-secondary",
         // On a phone the controls go under the text instead of beside it, so
         // the name and schedule get the whole width rather than a third of it.
         "max-sm:flex-col max-sm:items-stretch",

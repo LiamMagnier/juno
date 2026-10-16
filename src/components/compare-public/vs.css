@@ -45,7 +45,7 @@
 
 .vs-short { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-top: 56px; border-top: 1px solid var(--alv-line); }
 .vs-short > div { padding: 28px 40px 0 0; }
-.vs-short > div + div { padding-left: 40px; border-left: 1px solid var(--alv-hair); }
+.vs-short > div:not(:first-child) { padding-left: 40px; border-left: 1px solid var(--alv-hair); }
 .vs-short ul { margin: 12px 0 0; padding: 0; list-style: none; }
 .vs-short li { padding: 6px 0; }
 
@@ -67,14 +67,14 @@
 .vs-group h2 { margin: 0 0 20px; }
 
 .vs-notes { max-width: 760px; }
-.vs-notes p + p { margin-top: 14px; }
+.vs-notes p:not(:first-child) { margin-top: 14px; }
 .vs-notes a { color: var(--alv-ink); }
 .vs-foot-space { height: 120px; }
 
 @media (max-width: 900px) {
   .vs-faces, .vs-short { grid-template-columns: minmax(0, 1fr); }
-  .vs-face, .vs-face + .vs-face, .vs-short > div, .vs-short > div + div { padding: 28px 0; border-left: 0; }
-  .vs-face + .vs-face, .vs-short > div + div { border-top: 1px solid var(--alv-hair); }
+  .vs-face, .vs-face + .vs-face, .vs-short > div, .vs-short > div:not(:first-child) { padding: 28px 0; border-left: 0; }
+  .vs-face + .vs-face, .vs-short > div:not(:first-child) { border-top: 1px solid var(--alv-hair); }
   .vs-finding { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .vs-section { padding-top: 88px; }
   .vs-cta { margin-top: 104px; padding: 72px 0 88px; }

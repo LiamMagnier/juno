@@ -50,7 +50,7 @@
 .alevr-pricing-heavy-head p { margin-top:6px; max-width:32ch; }
 .alevr-pricing-heavy ul { display:grid; }
 .alevr-pricing-heavy li { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr) 7rem; align-items:baseline; gap:16px; padding:12px 0; }
-.alevr-pricing-heavy li + li { border-top:1px solid hsl(var(--border)); }
+.alevr-pricing-heavy li:not(:first-child) { border-top:1px solid hsl(var(--border)); }
 .alevr-pricing-heavy-price { text-align:right; white-space:nowrap; }
 .alevr-pricing-heavy-link { justify-self:end; white-space:nowrap; text-decoration:underline; text-underline-offset:4px; text-decoration-color:hsl(var(--border)); transition:text-decoration-color 160ms ease; }
 .alevr-pricing-heavy-link:hover { text-decoration-color:currentColor; }
