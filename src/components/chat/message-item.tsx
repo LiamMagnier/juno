@@ -33,6 +33,7 @@ import { useModifierKeyLabel } from "@/components/ui/platform";
 import { StreamingMarkdown } from "@/components/chat/stream-text";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
+import { AnswerMemory } from "@/components/chat/answer-memory";
 import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
@@ -1408,6 +1409,10 @@ export const MessageItem = React.memo(function MessageItem({
         {sources && sources.length > 0 && (
           <SourcesPill sources={sources} audit={citationAudit.phase === "ready" ? citationAudit.audit : undefined} />
         )}
+        {/* Which saved memories this answer was given, and what the turn
+            saved or forgot, each with Edit, Forget or Undo, Not relevant,
+            View, and the chat it was learned in. */}
+        {!message.streaming && <AnswerMemory activity={view.activity} conversationId={message.conversationId} />}
         {/* Above the model/cost line but below the bibliography: what the answer
             rests on, then how well it rests on it. */}
         {citationAudit.phase !== "idle" && citationAudit.phase !== "none" && (

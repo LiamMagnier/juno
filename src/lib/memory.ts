@@ -723,6 +723,8 @@ const LIFECYCLE_SELECT = {
   // of floats a duplicate check has no use for. Rows lacking one are the
   // organic backfill queue: refreshing such a row re-embeds it below.
   embeddingModel: true,
+  // "Not relevant" under an answer: ranking reads it (NOT_RELEVANT_DAYS).
+  notRelevantAt: true,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -832,6 +834,11 @@ export interface SaveCandidatesResult {
   sensitiveSkipped: number;
   /** The distinct topics behind `sensitiveSkipped`, for that explanation. */
   sensitiveTopics: SensitiveTopic[];
+  /**
+   * The rows this batch made believed — new, or believed again — by id. What
+   * the chat's "Memory updated" receipt offers Undo and Edit on.
+   */
+  believed: Array<{ id: string; content: string; category: string | null }>;
 }
 
 /**
@@ -909,6 +916,7 @@ export async function saveCandidates(
     reinstated: 0,
     sensitiveSkipped: 0,
     sensitiveTopics: [],
+    believed: [],
   };
   if (facts.length === 0) return result;
 
@@ -980,7 +988,10 @@ export async function saveCandidates(
       if (known && !known.embeddingModel) toEmbed.push({ id: known.id, content: known.content });
       if (plan.reinstate) {
         result.reinstated++;
-        if (known) createdContents.push(known.content);
+        if (known) {
+          createdContents.push(known.content);
+          result.believed.push({ id: known.id, content: known.content, category: known.category ?? null });
+        }
       }
       if (plan.supersedes) await supersede(plan.supersedes.entryId, plan.entryId, plan.supersedes.reason);
       for (const resolved of plan.resolves ?? []) await supersede(resolved.entryId, plan.entryId, resolved.reason);
@@ -1013,6 +1024,7 @@ export async function saveCandidates(
     if (plan.status === "active") {
       result.created++;
       createdContents.push(plan.content);
+      result.believed.push({ id: created.id, content: plan.content, category: plan.category ?? null });
     } else if (plan.status === "superseded" || plan.status === "expired") {
       result.history++;
     } else {
@@ -1037,7 +1049,8 @@ export async function saveCandidates(
     // Madrid" changes what Juno believes, and the receipt should say so.
     const activity = memoryUpdateActivity(
       { created: result.created + result.reinstated, superseded: result.superseded },
-      createdContents
+      createdContents,
+      result.believed
     );
     if (activity) opts.onActivity(activity);
   }

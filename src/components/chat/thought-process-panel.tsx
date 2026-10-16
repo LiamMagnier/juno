@@ -11,6 +11,7 @@
  */
 
 import * as React from "react";
+import { forgetMemoryFact } from "@/components/chat/memory-fact-row";
 import { ArrowDown, ChevronLeft, ChevronRight, Search } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
@@ -426,20 +427,12 @@ export function ThoughtProcessPanel({
       delete next[memoryId];
       return next;
     });
-    try {
-      const response = await fetch(`/api/memory/${encodeURIComponent(memoryId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forget: true }),
-      });
-      if (!response.ok) throw new Error("Couldn’t forget that memory.");
-      setForgotten((previous) => new Set([...previous, memoryId]));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Couldn’t forget that memory.";
-      setMemoryError((prev) => ({ ...prev, [memoryId]: message }));
-    } finally {
-      setForgetting(null);
-    }
+    // The same act as the answer's memory receipt (memory-fact-row.tsx), so a
+    // fact forgotten here is struck through there too, and the other way round.
+    const failure = await forgetMemoryFact(memoryId);
+    if (failure) setMemoryError((prev) => ({ ...prev, [memoryId]: failure }));
+    else setForgotten((previous) => new Set([...previous, memoryId]));
+    setForgetting(null);
   }, []);
 
   // Focus moves in on open — the user pressed a control to get here, so the

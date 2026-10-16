@@ -1175,6 +1175,11 @@ model MemoryEntry {
   expiresAt       DateTime?
   lastUsedAt      DateTime?
   lastVerifiedAt  DateTime?
+  // When the person last said this fact was not relevant to an answer it was
+  // used in ("Not relevant" under the answer). For a while after, it has to be
+  // about the message to be used at all and ranks below facts that are equally
+  // about it (selectMemoriesForContext); Forget is the permanent version.
+  notRelevantAt   DateTime?
   // When the person SAID it — the source message's time — as opposed to
   // createdAt, when Juno wrote it down. Minutes apart for a fact learned in
   // the chat it came from; months apart for one learned by re-reading history.

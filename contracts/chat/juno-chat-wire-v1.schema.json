@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 199,
-    "planned": 228,
+    "planned": 231,
     "web-only": 45,
     "unclassified": 0
   },
@@ -1298,6 +1298,11 @@
           },
           "x-native": "native"
         },
+        "memoryWrite": {
+          "$ref": "#/$defs/ClientMemoryWrite",
+          "x-native": "planned",
+          "x-native-note": "What a turn saved or forgot, by memory id, on the \"Memory updated\" / \"Forgotten\" row (src/lib/chat/memory-receipts.ts). The web turns it into View, Edit and Undo; the apps still draw the row's title and detail only."
+        },
         "artifactVerification": {
           "type": "object",
           "properties": {
@@ -2338,6 +2343,28 @@
       "required": [
         "id",
         "content"
+      ]
+    },
+    "ClientMemoryWrite": {
+      "type": "object",
+      "properties": {
+        "saved": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientMemoryReceipt"
+          },
+          "x-native": "planned"
+        },
+        "forgotten": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "saved"
       ]
     },
     "ClientMessage": {
