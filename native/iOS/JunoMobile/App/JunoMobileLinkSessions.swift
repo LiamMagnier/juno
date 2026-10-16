@@ -237,6 +237,7 @@ struct JunoMobileLinkEmpty: View {
           Text("New session").font(.body.weight(.medium)).padding(.horizontal, JunoSpace.cozy)
         }
         .buttonStyle(.glass)
+        .contentShape(.capsule)
         .controlSize(.large)
         .frame(minHeight: 44)
         .padding(.top, JunoSpace.snug)
@@ -277,13 +278,16 @@ struct JunoMobileLinkNotPaired: View {
           .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.glass)
+        .contentShape(.capsule)
         .controlSize(.large)
         .padding(.top, JunoSpace.snug)
         .accessibilityIdentifier("juno.mobile.link-pair-again")
       }
     }
     .padding(JunoSpace.regular)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    // Something to read and act on, so it is opaque: the card fill and its
+    // hairline, never glass.
+    .junoCard(cornerRadius: 24)
     .frame(maxWidth: JunoMobileMeasure.reading)
     .frame(maxWidth: .infinity)
     .accessibilityElement(children: .contain)
@@ -311,6 +315,7 @@ struct JunoMobileLinkPairPrompt: View {
         Text("Pair a Mac").font(.body.weight(.medium)).padding(.horizontal, JunoSpace.cozy)
       }
       .buttonStyle(.glass)
+      .contentShape(.capsule)
       .controlSize(.large)
       .frame(minHeight: 44)
       .padding(.top, JunoSpace.snug)

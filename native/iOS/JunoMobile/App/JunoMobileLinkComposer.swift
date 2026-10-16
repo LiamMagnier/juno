@@ -160,18 +160,22 @@ struct JunoMobileLinkFooter: View {
 
   // MARK: Panels
 
-  @ViewBuilder
+  /// The panel's glass sits in a container of its own, as the composer card's
+  /// does, so it samples the backdrop with the controls inside it rather than
+  /// as a lone pane.
   private func panelView(_ which: JunoMobileLinkPanel) -> some View {
-    Group {
-      switch which {
-      case .computer: JunoMobileLinkComputerPanel(model: model) { panel = nil }
-      case .project: JunoMobileLinkProjectPanel(model: model) { panel = nil }
-      case .mode: JunoMobileLinkModePanel(model: model) { panel = nil }
-      case .thinking: JunoMobileLinkThinkingPanel(model: model, chatModels: chatModels, openModels: openModels)
+    JunoGlass {
+      Group {
+        switch which {
+        case .computer: JunoMobileLinkComputerPanel(model: model) { panel = nil }
+        case .project: JunoMobileLinkProjectPanel(model: model) { panel = nil }
+        case .mode: JunoMobileLinkModePanel(model: model) { panel = nil }
+        case .thinking: JunoMobileLinkThinkingPanel(model: model, chatModels: chatModels, openModels: openModels)
+        }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .junoGlass(in: RoundedRectangle(cornerRadius: JunoMobileComposerPanelMetrics.radius, style: .continuous))
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .junoGlass(in: RoundedRectangle(cornerRadius: JunoMobileComposerPanelMetrics.radius, style: .continuous))
   }
 
   /// Chat's one control for the model and its thinking: the gauge on the

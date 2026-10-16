@@ -173,19 +173,21 @@ struct JunoMobilePairingScannerScreen: View {
 
         Spacer(minLength: 0)
 
-        VStack(spacing: JunoSpace.cozy) {
-          if let hint {
-            Text(hint)
-              .junoFont(size: 14, relativeTo: .footnote)
-              .foregroundStyle(.white)
-              .multilineTextAlignment(.center)
-              .padding(.horizontal, JunoSpace.regular)
-              .padding(.vertical, JunoSpace.snug)
-              .glassEffect(.regular, in: .rect(cornerRadius: JunoSpace.regular))
-              .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
-              .accessibilityAddTraits(.updatesFrequently)
+        JunoGlass(spacing: JunoSpace.cozy) {
+          VStack(spacing: JunoSpace.cozy) {
+            if let hint {
+              Text(hint)
+                .junoFont(size: 14, relativeTo: .footnote)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.snug)
+                .glassEffect(.regular, in: .rect(cornerRadius: JunoSpace.regular))
+                .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
+                .accessibilityAddTraits(.updatesFrequently)
+            }
+            JunoMobilePairingPasteButton(scanned: scanned, overCamera: true)
           }
-          JunoMobilePairingPasteButton(scanned: scanned, overCamera: true)
         }
         .padding(.horizontal, JunoSpace.regular)
         .padding(.bottom, JunoSpace.section)
@@ -222,6 +224,7 @@ struct JunoMobilePairingScannerScreen: View {
           .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
       }
       .junoMobileCapsulePrimary()
+      .contentShape(.capsule)
       JunoMobilePairingPasteButton(scanned: scanned)
     }
   }
@@ -360,7 +363,7 @@ private struct JunoMobilePairingChoice: View {
       .frame(height: 40)
       .contentShape(Capsule())
       .junoGlass(in: Capsule(), tint: prominent ? Color.junoAccent : nil, interactive: true)
-      .padding(.vertical, 2)
+      .padding(.vertical, JunoSpace.micro)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -397,12 +400,15 @@ struct JunoMobilePairingApproveScreen: View {
     } actions: {
       VStack(spacing: JunoSpace.cozy) {
         // Compact, side by side and centred, like the thread's approval card:
-        // Deny is the quiet glass, Approve the accent.
-        HStack(spacing: JunoSpace.cozy) {
-          JunoMobilePairingChoice(title: "Deny", prominent: false, busy: busy == .denying, action: deny)
-            .accessibilityIdentifier("juno.mobile.pairing-deny")
-          JunoMobilePairingChoice(title: "Approve", prominent: true, busy: busy == .approving, action: approve)
-            .accessibilityIdentifier("juno.mobile.pairing-approve")
+        // Deny is the quiet glass, Approve the accent — one glass container,
+        // so the pair samples one backdrop.
+        JunoGlass(spacing: JunoSpace.cozy) {
+          HStack(spacing: JunoSpace.cozy) {
+            JunoMobilePairingChoice(title: "Deny", prominent: false, busy: busy == .denying, action: deny)
+              .accessibilityIdentifier("juno.mobile.pairing-deny")
+            JunoMobilePairingChoice(title: "Approve", prominent: true, busy: busy == .approving, action: approve)
+              .accessibilityIdentifier("juno.mobile.pairing-approve")
+          }
         }
         .disabled(busy != nil)
         .frame(maxWidth: .infinity)
@@ -496,6 +502,7 @@ struct JunoMobilePairingResultScreen: View {
             .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
         }
         .junoMobileCapsulePrimary()
+        .contentShape(.capsule)
         if let secondary {
           Button(action: secondary.1) {
             Text(secondary.0)
@@ -504,6 +511,7 @@ struct JunoMobilePairingResultScreen: View {
               .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
           }
           .junoMobileCapsuleAction()
+          .contentShape(.capsule)
         }
       }
     }
@@ -600,11 +608,13 @@ private struct JunoMobilePairingBadge: View {
   let icon: JunoIcon
 
   var body: some View {
-    JunoIconView(icon, size: 26)
-      .foregroundStyle(Color.junoForeground)
-      .frame(width: 76, height: 76)
-      .glassEffect(.regular, in: Circle())
-      .accessibilityHidden(true)
+    JunoGlass {
+      JunoIconView(icon, size: 26)
+        .foregroundStyle(Color.junoForeground)
+        .frame(width: 76, height: 76)
+        .glassEffect(.regular, in: Circle())
+    }
+    .accessibilityHidden(true)
   }
 }
 
@@ -615,25 +625,27 @@ struct JunoMobilePairingBridge: View {
   let state: Stage
 
   var body: some View {
-    HStack(spacing: 0) {
-      end(.smartphone)
-      link
-      JunoMark(size: 34)
-        .foregroundStyle(Color.junoForeground)
-        .frame(width: 76, height: 76)
-        .glassEffect(.regular, in: Circle())
-        .overlay(alignment: .bottomTrailing) {
-          if state == .paired {
-            JunoIconView(.check, size: 13, weight: .bold)
-              .foregroundStyle(Color.junoCanvas)
-              .frame(width: 24, height: 24)
-              .background(Color.junoForeground, in: Circle())
-              .overlay(Circle().stroke(Color.junoCanvas, lineWidth: 2))
-              .transition(.scale.combined(with: .opacity))
+    JunoGlass(spacing: 0) {
+      HStack(spacing: 0) {
+        end(.smartphone)
+        link
+        JunoMark(size: 34)
+          .foregroundStyle(Color.junoForeground)
+          .frame(width: 76, height: 76)
+          .glassEffect(.regular, in: Circle())
+          .overlay(alignment: .bottomTrailing) {
+            if state == .paired {
+              JunoIconView(.check, size: 13, weight: .bold)
+                .foregroundStyle(Color.junoCanvas)
+                .frame(width: 24, height: 24)
+                .background(Color.junoForeground, in: Circle())
+                .overlay(Circle().stroke(Color.junoCanvas, lineWidth: 2))
+                .transition(.scale.combined(with: .opacity))
+            }
           }
-        }
-      link
-      end(.device)
+        link
+        end(.device)
+      }
     }
     .accessibilityHidden(true)
   }

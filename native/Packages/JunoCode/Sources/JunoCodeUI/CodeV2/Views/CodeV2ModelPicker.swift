@@ -84,6 +84,7 @@ struct CodeV2ModelControl: View {
             .accessibilityLabel("Model")
             .accessibilityValue("Connect")
             .accessibilityIdentifier("juno.code.v2.model")
+            .contentShape(.rect)
         }
     }
 

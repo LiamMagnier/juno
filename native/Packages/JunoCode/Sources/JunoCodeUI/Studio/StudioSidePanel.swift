@@ -62,6 +62,7 @@ public struct StudioSidePanel: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Panel")
+                .contentShape(.rect)
                 Spacer()
                 Button(action: close) {
                     JunoIconView(.panelRight, size: 14)
@@ -69,6 +70,7 @@ public struct StudioSidePanel: View {
                 .buttonStyle(StudioIconButtonStyle())
                 .help("Close the panel (⌥⌘R)")
                 .accessibilityLabel("Close panel")
+                .contentShape(.rect)
             }
             .padding(.horizontal, JunoSpace.cozy)
             .frame(height: 48)
@@ -216,6 +218,7 @@ struct StudioChangesView: View {
             .buttonStyle(.plain)
             .fixedSize()
             .help("Which changes to review: this session's, everything uncommitted, what is staged, the branch, or the last turn")
+            .contentShape(.rect)
             if queue.isLoadingScope {
                 StudioSpinner().frame(width: 10, height: 10)
             }
@@ -267,12 +270,14 @@ struct StudioChangesView: View {
                 .buttonStyle(StudioIconButtonStyle())
                 .fixedSize()
                 .accessibilityLabel("More")
+                .contentShape(.rect)
 
                 if controller.isGitRepository {
                     Button("Commit…") { committing = true }
                         .buttonStyle(StudioPrimaryButtonStyle())
                         .keyboardShortcut("k", modifiers: [.command, .option])
                         .help("Commit these changes (⌥⌘K)")
+                        .contentShape(.rect)
                 }
             }
             if let branch = controller.gitStatus?.branch {
@@ -557,6 +562,7 @@ struct StudioFileRow: View {
                     Button(action: open) { JunoIconView(.fileCode, size: 13) }
                         .buttonStyle(StudioIconButtonStyle())
                         .help("Open the file")
+                        .contentShape(.rect)
                     if let keep {
                         Button("Keep", action: keep)
                             .buttonStyle(StudioQuietButtonStyle())
@@ -568,6 +574,7 @@ struct StudioFileRow: View {
                         Button(action: revert) { JunoIconView(.undo, size: 13) }
                             .buttonStyle(StudioIconButtonStyle())
                             .help("Revert this file")
+                            .contentShape(.rect)
                     }
                 }
                 StudioDiffStat(added: added, removed: removed)
@@ -1019,18 +1026,22 @@ struct StudioCommitSheet: View {
                         createPullRequest()
                     }
                     .buttonStyle(StudioQuietButtonStyle())
+                    .contentShape(.rect)
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(StudioSecondaryButtonStyle())
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 Button("Commit and Push") { Task { await commit(push: true) } }
                     .buttonStyle(StudioSecondaryButtonStyle())
                     .disabled(!canCommit || pushPlan == nil)
+                    .contentShape(.rect)
                 Button("Commit") { Task { await commit(push: false) } }
                     .buttonStyle(StudioPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCommit)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.section)
@@ -1117,6 +1128,7 @@ struct StudioTerminalPane: View {
                     if isRunning {
                         Button("Stop") { Task { await controller.stopInteractiveTerminal() } }
                             .buttonStyle(StudioQuietButtonStyle())
+                            .contentShape(.rect)
                     }
                 }
                 .padding(.horizontal, JunoSpace.cozy)

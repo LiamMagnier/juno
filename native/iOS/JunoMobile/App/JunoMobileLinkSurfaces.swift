@@ -196,7 +196,7 @@ struct JunoMobileLinkHunk: View {
                 .padding(.trailing, JunoSpace.cozy)
             }
             .font(.caption.monospaced())
-            .padding(.vertical, 2)
+            .padding(.vertical, JunoSpace.micro)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { Rectangle().fill(background(line.kind)) }
           }
@@ -284,6 +284,7 @@ struct JunoMobileLinkTerminalView: View {
           Text("Open terminal").font(.body.weight(.medium)).padding(.horizontal, JunoSpace.cozy)
         }
         .buttonStyle(.glass)
+        .contentShape(.capsule)
         .controlSize(.large)
         .frame(minHeight: 44)
         Spacer(minLength: 0)
@@ -295,28 +296,33 @@ struct JunoMobileLinkTerminalView: View {
     .accessibilityIdentifier("juno.mobile.link-terminal")
   }
 
+  /// The shell's input bar floats over the output like a composer, so it is
+  /// chrome: glass, in a container of its own so it samples as one surface.
   private var inputRow: some View {
-    HStack(spacing: JunoSpace.snug) {
-      Text("$").font(.body.monospaced()).foregroundStyle(Color.junoTertiaryInk)
-      TextField("Type a command", text: $input)
-        .font(.body.monospaced())
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
-        .focused($focused)
-        .submitLabel(.send)
-        .onSubmit(run)
-        .accessibilityIdentifier("juno.mobile.link-terminal-input")
-      Button {
-        Task { await model.writeTerminal("\u{3}") }
-      } label: {
-        Text("Ctrl C").font(.footnote).foregroundStyle(Color.junoSecondaryInk).frame(minWidth: 44, minHeight: 44)
+    JunoGlass {
+      HStack(spacing: JunoSpace.snug) {
+        Text("$").font(.body.monospaced()).foregroundStyle(Color.junoTertiaryInk)
+        TextField("Type a command", text: $input)
+          .font(.body.monospaced())
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+          .focused($focused)
+          .submitLabel(.send)
+          .onSubmit(run)
+          .accessibilityIdentifier("juno.mobile.link-terminal-input")
+        Button {
+          Task { await model.writeTerminal("\u{3}") }
+        } label: {
+          Text("Ctrl C").font(.footnote).foregroundStyle(Color.junoSecondaryInk).frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Interrupt")
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Interrupt")
+      .padding(.horizontal, JunoSpace.regular)
+      .frame(minHeight: 52)
+      .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
-    .padding(.horizontal, JunoSpace.regular)
-    .frame(minHeight: 52)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.snug)
   }
@@ -516,6 +522,7 @@ struct JunoMobileLinkShipView: View {
             JunoIconView(.externalLink, size: 13)
           }
           .frame(minHeight: 44)
+          .contentShape(.rect)
         }
         .buttonStyle(.plain)
       } else {
@@ -539,6 +546,7 @@ struct JunoMobileLinkShipView: View {
       .frame(maxWidth: .infinity, minHeight: 44)
     }
     .buttonStyle(.glass)
+    .contentShape(.capsule)
     .disabled(disabled || model.gitBusy != nil)
   }
 }

@@ -52,6 +52,7 @@ struct ChatFolderControl: View {
             }
         }
         .buttonStyle(NativeComposerTrayPillStyle())
+        .contentShape(.rect)
         .fixedSize()
         .help("Work in a folder on this Mac")
         .accessibilityLabel("Work in a folder")
@@ -101,6 +102,8 @@ struct ChatFolderControl: View {
                     .frame(width: 10)
             }
             .buttonStyle(NativeComposerTrayPillStyle())
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(.rect)
             .padding(.leading, -JunoSpace.hairline)
             .help("Stop working in \(folder.name)")
             .accessibilityLabel("Stop working in \(folder.name)")

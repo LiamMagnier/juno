@@ -585,40 +585,50 @@ struct DesktopRemoteSettingsContent: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 36) {
+            VStack(alignment: .leading, spacing: JunoSpace.region + JunoSpace.hairline) {
                 DesktopSettingsPageLead(title: "Remote", lede: "")
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     HStack {
                         Text("Devices that can control this Mac").junoType(.ui)
                         Spacer()
-                        Button(action: refresh) { JunoIconView(.refresh, size: 16) }
-                            .buttonStyle(.borderless).accessibilityLabel("Refresh devices")
+                        Button(action: refresh) {
+                            JunoIconView(.refresh, size: 16)
+                                .frame(minWidth: 28, minHeight: 28)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.borderless)
+                        // A 28pt pointer target in the glyph's 16pt of the row:
+                        // the button keeps its 28pt frame, the negative inset
+                        // hands the extra space back so nothing moves.
+                        .padding(-JunoSpace.tight)
+                        .accessibilityLabel("Refresh devices")
                         Button("Add", action: add)
                             .buttonStyle(.junoProminent)
+                            .contentShape(.capsule)
                             .disabled(!enabled || !canPair || pairing == nil)
                             .accessibilityIdentifier("juno.desktop.settings.remote.add")
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         remoteToggle("Allow connections", isOn: $enabled, identifier: "juno.desktop.settings.remote-control")
-                            .padding(.vertical, 16)
+                            .padding(.vertical, JunoSpace.regular)
                         Divider()
                         if canPair, let pairing {
-                            DesktopRemotePairedDeviceList(model: pairing).padding(.vertical, 8)
+                            DesktopRemotePairedDeviceList(model: pairing).padding(.vertical, JunoSpace.snug)
                         }
                         if !canPair {
                             Text(host == nil ? "Sign in to Alevr on this Mac to create a pairing code." : "Pairing becomes available when this Mac is registered. If it was unpaired, pair this Mac again below.")
-                                .junoType(.label).foregroundStyle(Color.junoSecondaryInk).padding(.vertical, 12)
+                                .junoType(.label).foregroundStyle(Color.junoSecondaryInk).padding(.vertical, JunoSpace.cozy)
                         } else if !enabled {
                             Text("Allow connections, then choose Add to scan a QR code from your iPhone.")
-                                .junoType(.label).foregroundStyle(Color.junoSecondaryInk).padding(.vertical, 12)
+                                .junoType(.label).foregroundStyle(Color.junoSecondaryInk).padding(.vertical, JunoSpace.cozy)
                         }
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, JunoSpace.ample)
                     .background(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.junoBorder, lineWidth: 1))
                     Text("Paired devices can start and steer Code sessions in shared folders. Turning this off stops remote access immediately.")
                         .junoType(.label).foregroundStyle(Color.junoSecondaryInk)
                 }
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Text("Other settings").junoType(.ui)
                     VStack(spacing: 0) {
                         remoteToggle(
@@ -626,35 +636,35 @@ struct DesktopRemoteSettingsContent: View {
                             detail: "Prevent sleep while this Mac is plugged in and remote access is enabled.",
                             isOn: $keepAwake,
                             identifier: "juno.desktop.settings.remote.keep-awake"
-                        ).padding(.vertical, 12)
+                        ).padding(.vertical, JunoSpace.cozy)
                         Divider()
                         remoteToggle(
                             "Share the terminal",
                             detail: "Allow paired devices to open a shell inside shared folders.",
                             isOn: $terminal,
                             identifier: "juno.desktop.settings.remote-host-terminal"
-                        ).padding(.vertical, 12)
+                        ).padding(.vertical, JunoSpace.cozy)
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, JunoSpace.ample)
                     .background(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.junoBorder, lineWidth: 1))
                 }
                 if let host {
-                    VStack(alignment: .leading, spacing: 12) { DesktopCodeHostRevokeSection(host: host) }
+                    VStack(alignment: .leading, spacing: JunoSpace.cozy) { DesktopCodeHostRevokeSection(host: host) }
                 }
                 if let problem {
                     Text(problem).junoType(.label).foregroundStyle(Color.junoDestructiveInk)
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)
-            .padding(32)
+            .padding(JunoSpace.region)
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("juno.desktop.settings.remote")
     }
 
     private func remoteToggle(_ title: String, detail: String? = nil, isOn: Binding<Bool>, identifier: String) -> some View {
-        HStack(spacing: 24) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: JunoSpace.section) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(title).junoType(.ui)
                 if let detail {
                     Text(detail).junoType(.label).foregroundStyle(Color.junoSecondaryInk)

@@ -39,6 +39,7 @@ struct DesktopCrossMessageRow: View {
                         Text("·")
                         Button("Open") { open(chatID) }
                             .buttonStyle(.plain)
+                            .contentShape(.rect)
                             .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                             .foregroundStyle(Color.junoForeground)
                             .accessibilityHint("Opens \(message.peerTitle)")

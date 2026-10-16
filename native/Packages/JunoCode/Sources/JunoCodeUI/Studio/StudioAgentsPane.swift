@@ -20,6 +20,7 @@ struct StudioAgentsPane: View {
                 HStack {
                     Button("All agents") { controller.inspectedSubagentID = nil }
                         .buttonStyle(StudioQuietButtonStyle())
+                        .contentShape(.rect)
                     Spacer()
                     Text(StudioSubagentFormat.label(agent.status))
                         .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
@@ -50,6 +51,7 @@ struct StudioAgentsPane: View {
                             Button("Send") { send(to: childID) }
                                 .buttonStyle(StudioQuietButtonStyle())
                                 .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .contentShape(.rect)
                         }
                         if let deliveryError {
                             Text(deliveryError).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)

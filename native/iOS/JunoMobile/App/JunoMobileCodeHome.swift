@@ -71,31 +71,35 @@ struct JunoMobileCodeScopeBar<Overflow: View>: View {
   @ViewBuilder var overflow: () -> Overflow
 
   @State private var haptic = JunoMobileHapticTrigger()
+  @Namespace private var glassSpace
 
   var body: some View {
     HStack(spacing: 0) {
       ScrollView(.horizontal) {
-        HStack(spacing: JunoSpace.hairline) {
-            chip(.all, title: "All", icon: nil, working: false, muted: false)
-            chip(.cloud, title: "Cloud", icon: .cloud, working: cloudWorking, muted: false)
-            ForEach(devices) { device in
-              chip(.device(device.id), title: device.name, icon: device.icon, working: device.working, muted: !device.reachable)
-            }
-            if devices.allSatisfy({ !$0.paired }) {
-              Button(action: onPair) {
-                HStack(spacing: JunoSpace.hairline + 2) {
-                  JunoIconView(.scan, size: 14)
-                  Text("Pair a Mac")
-                }
-                .font(.subheadline)
-                .foregroundStyle(Color.junoTertiaryInk)
-                .padding(.horizontal, JunoSpace.cozy)
-                .frame(height: 36)
-                .contentShape(Rectangle())
+        JunoGlass(spacing: JunoSpace.hairline) {
+          HStack(spacing: JunoSpace.hairline) {
+              chip(.all, title: "All", icon: nil, working: false, muted: false)
+              chip(.cloud, title: "Cloud", icon: .cloud, working: cloudWorking, muted: false)
+              ForEach(devices) { device in
+                chip(.device(device.id), title: device.name, icon: device.icon, working: device.working, muted: !device.reachable)
               }
-              .buttonStyle(.plain)
-              .accessibilityIdentifier("juno.mobile.code-scope-pair")
-            }
+              if devices.allSatisfy({ !$0.paired }) {
+                Button(action: onPair) {
+                  HStack(spacing: JunoSpace.hairline + 2) {
+                    JunoIconView(.scan, size: 14)
+                    Text("Pair a Mac")
+                  }
+                  .font(.subheadline)
+                  .foregroundStyle(Color.junoTertiaryInk)
+                  .padding(.horizontal, JunoSpace.cozy)
+                  .frame(height: 36)
+                  .frame(minHeight: 44)
+                  .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.mobile.code-scope-pair")
+              }
+          }
         }
         .padding(.horizontal, JunoSpace.regular)
       }
@@ -132,7 +136,7 @@ struct JunoMobileCodeScopeBar<Overflow: View>: View {
       .padding(.horizontal, JunoSpace.cozy)
       .frame(height: 36)
       .contentShape(Capsule())
-      .modifier(JunoMobileScopeGlass(on: selected))
+      .modifier(JunoMobileScopeGlass(on: selected, namespace: glassSpace))
       .frame(minHeight: 44)
     }
     .buttonStyle(.plain)
@@ -142,11 +146,16 @@ struct JunoMobileCodeScopeBar<Overflow: View>: View {
 }
 
 /// The chosen scope's soft glass capsule; the others draw nothing behind.
+/// One id for whichever chip holds it, so the bar's container moves the
+/// capsule from chip to chip.
 private struct JunoMobileScopeGlass: ViewModifier {
   let on: Bool
+  let namespace: Namespace.ID
   func body(content: Content) -> some View {
     if on {
-      content.glassEffect(.regular.interactive(), in: Capsule())
+      content
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .junoGlassID("selected-scope", in: namespace)
     } else {
       content
     }
@@ -393,7 +402,11 @@ struct JunoMobileCodeRecentsList<Leading: View>: View {
           JunoIconView(.close, size: 12)
             .foregroundStyle(Color.junoSecondaryInk)
             .frame(width: 32, height: 32)
+            // A 44pt touch in the glyph's 32pt of the row: the frame takes
+            // the touch, the negative inset hands the extra width back.
+            .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
+            .padding(.horizontal, -JunoSpace.tight)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Clear")
@@ -402,6 +415,7 @@ struct JunoMobileCodeRecentsList<Leading: View>: View {
     .padding(.horizontal, JunoSpace.cozy)
     .frame(height: 44)
     .junoGlass(in: Capsule())
+    .junoGlassSearchContainer()
   }
 }
 
@@ -422,6 +436,7 @@ struct JunoMobileCodePairLine: View {
         .foregroundStyle(Color.primary)
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         .accessibilityIdentifier("juno.mobile.code-pair-line")
     }
     .accessibilityElement(children: .contain)
@@ -497,71 +512,73 @@ struct JunoMobileCodeDock: View {
   }
 
   var body: some View {
-    HStack(spacing: 0) {
-      if let attachments {
-        JunoMobileLinkAttachMenu(coordinator: attachments, enabled: canAttach, note: attachNote)
-          .accessibilityIdentifier("juno.mobile.code-dock-attach")
-      }
-      if showsTarget {
-        Menu {
-          Picker("Start on", selection: Binding(get: { target }, set: { choose($0) })) {
-            Label("Cloud", image: JunoIcon.cloud.assetName(.regular))
-              .tag(JunoMobileCodeTarget.cloud)
-            ForEach(devices) { device in
-              Label(device.name, image: device.icon.assetName(.regular))
-                .tag(JunoMobileCodeTarget.device(device.id))
-            }
-          }
-          .pickerStyle(.inline)
-        } label: {
-          HStack(spacing: JunoSpace.hairline) {
-            JunoIconView(targetIcon, size: 14)
-            Text(Self.shortName(targetName))
-              .lineLimit(1)
-              .fixedSize()
-            JunoIconView(.chevronDown, size: 9)
-              .foregroundStyle(Color.junoTertiaryInk)
-          }
-          .font(.subheadline)
-          .foregroundStyle(Color.junoSecondaryInk)
-          .padding(.horizontal, JunoSpace.snug)
-          .frame(minHeight: 44)
-          .contentShape(Rectangle())
+    JunoGlass {
+      HStack(spacing: 0) {
+        if let attachments {
+          JunoMobileLinkAttachMenu(coordinator: attachments, enabled: canAttach, note: attachNote)
+            .accessibilityIdentifier("juno.mobile.code-dock-attach")
         }
-        .tint(Color.primary)
-        .accessibilityLabel("Start on \(targetName)")
-        .accessibilityIdentifier("juno.mobile.code-dock-target")
-      }
-      Button {
-        open(false)
-      } label: {
-        Text("Ask Alevr")
-          .font(.body)
-          .foregroundStyle(Color.junoTertiaryInk)
-          .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-          .padding(.leading, showsTarget || attachments != nil ? JunoSpace.hairline : JunoSpace.regular)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(showsTarget ? "Ask Alevr on \(targetName)" : "Ask Alevr")
-      .accessibilityIdentifier("juno.mobile.code-dock")
-      if JunoSpeechService.isSupported {
-        Button {
-          open(true)
-        } label: {
-          JunoIconView(.mic, size: 19)
+        if showsTarget {
+          Menu {
+            Picker("Start on", selection: Binding(get: { target }, set: { choose($0) })) {
+              Label("Cloud", image: JunoIcon.cloud.assetName(.regular))
+                .tag(JunoMobileCodeTarget.cloud)
+              ForEach(devices) { device in
+                Label(device.name, image: device.icon.assetName(.regular))
+                  .tag(JunoMobileCodeTarget.device(device.id))
+              }
+            }
+            .pickerStyle(.inline)
+          } label: {
+            HStack(spacing: JunoSpace.hairline) {
+              JunoIconView(targetIcon, size: 14)
+              Text(Self.shortName(targetName))
+                .lineLimit(1)
+                .fixedSize()
+              JunoIconView(.chevronDown, size: 9)
+                .foregroundStyle(Color.junoTertiaryInk)
+            }
+            .font(.subheadline)
             .foregroundStyle(Color.junoSecondaryInk)
-            .frame(width: 44, height: 44)
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+          }
+          .tint(Color.primary)
+          .accessibilityLabel("Start on \(targetName)")
+          .accessibilityIdentifier("juno.mobile.code-dock-target")
+        }
+        Button {
+          open(false)
+        } label: {
+          Text("Ask Alevr")
+            .font(.body)
+            .foregroundStyle(Color.junoTertiaryInk)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.leading, showsTarget || attachments != nil ? JunoSpace.hairline : JunoSpace.regular)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Dictate")
-        .accessibilityIdentifier("juno.mobile.code-dock-dictate")
+        .accessibilityLabel(showsTarget ? "Ask Alevr on \(targetName)" : "Ask Alevr")
+        .accessibilityIdentifier("juno.mobile.code-dock")
+        if JunoSpeechService.isSupported {
+          Button {
+            open(true)
+          } label: {
+            JunoIconView(.mic, size: 19)
+              .foregroundStyle(Color.junoSecondaryInk)
+              .frame(width: 44, height: 44)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Dictate")
+          .accessibilityIdentifier("juno.mobile.code-dock-dictate")
+        }
       }
+      .padding(.horizontal, JunoSpace.hairline)
+      .frame(minHeight: 52)
+      .junoGlass(in: Capsule())
     }
-    .padding(.horizontal, JunoSpace.hairline)
-    .frame(minHeight: 52)
-    .junoGlass(in: Capsule())
     .padding(.horizontal, JunoSpace.regular)
     .padding(.bottom, JunoSpace.snug)
     // No slab: the list runs under the glass, with a soft fade at the foot

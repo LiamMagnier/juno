@@ -541,6 +541,7 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
                 if let open {
                     Button(action: open) { markLabel }
                         .buttonStyle(.plain)
+                        .contentShape(.rect)
                 } else {
                     Menu {
                         menu()
@@ -550,6 +551,7 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
                     .menuStyle(.button)
                     .buttonStyle(.plain)
                     .menuIndicator(.hidden)
+                    .contentShape(.rect)
                 }
             }
             .fixedSize()
