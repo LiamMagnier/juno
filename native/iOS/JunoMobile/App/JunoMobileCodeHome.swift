@@ -92,7 +92,6 @@ struct JunoMobileCodeScopeBar<Overflow: View>: View {
                   .font(.subheadline)
                   .foregroundStyle(Color.junoTertiaryInk)
                   .padding(.horizontal, JunoSpace.cozy)
-                  .frame(height: 36)
                   .frame(minHeight: 44)
                   .contentShape(Rectangle())
                 }

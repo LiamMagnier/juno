@@ -631,6 +631,8 @@ struct JunoMobileLinkSubagentRow: View {
           .lineLimit(2)
       }
     }
+    // The whole row, not just its glyphs, opens the trace.
+    .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityHint("Open the agent’s full trace")
@@ -778,7 +780,9 @@ struct JunoMobileLinkSmallButton: View {
         .font(.subheadline.weight(.medium))
         .foregroundStyle(prominent ? Color.junoCanvas : Color.primary)
         .padding(.horizontal, JunoSpace.regular)
-        .frame(height: 32)
+        // At least 32, so the capsule grows with Dynamic Type instead of
+        // clipping its title.
+        .frame(minHeight: 32)
         .background {
           if prominent {
             Capsule().fill(Color.junoAccent)
