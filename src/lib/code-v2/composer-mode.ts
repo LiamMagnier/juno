@@ -13,7 +13,7 @@
  * Read only is not offered (Plan covers it), but a thread that is already on
  * it still says so.
  */
-import type { InteractionMode, RuntimeMode } from "./contracts";
+import type { InteractionMode, ModelSelection, RuntimeMode } from "./contracts";
 
 export type ComposerMode = "ask" | "accept-edits" | "auto" | "plan" | "full" | "read-only";
 
@@ -170,8 +170,21 @@ export function threadPrefsKey(conversationId: string): string {
   return `alevr.code.prefs.${conversationId}`;
 }
 
-/** The v2 route's prefs for a new thread, with the landing's mode in them. */
-export function seededThreadPrefs(existing: Record<string, unknown> | null, mode: ComposerMode): Record<string, unknown> {
+/**
+ * The v2 route's prefs for a new thread: the landing's mode AND its model
+ * (instance, model, effort, context tier). The route used to receive the mode
+ * only, so the first turn ran on whatever instance it found first.
+ */
+export function seededThreadPrefs(
+  existing: Record<string, unknown> | null,
+  mode: ComposerMode,
+  seed: { selection?: ModelSelection | null } = {},
+): Record<string, unknown> {
   const pair = applyComposerMode(mode, "auto-edit");
-  return { ...(existing ?? {}), runtimeMode: pair.runtimeMode, interactionMode: pair.interactionMode };
+  return {
+    ...(existing ?? {}),
+    runtimeMode: pair.runtimeMode,
+    interactionMode: pair.interactionMode,
+    ...(seed.selection?.model ? { selection: seed.selection } : {}),
+  };
 }

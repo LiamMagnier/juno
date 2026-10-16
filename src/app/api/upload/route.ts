@@ -6,7 +6,7 @@ import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { isStorageAvailable } from "@/lib/env";
 import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
-import { isAcceptedUpload } from "@/lib/uploads";
+import { HEIC_UNSUPPORTED_MESSAGE, isAcceptedUpload, isHeicUpload } from "@/lib/uploads";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { scheduleIngest } from "@/lib/knowledge";
 import { serializeAttachment } from "@/lib/serializers";
@@ -37,6 +37,11 @@ export async function POST(req: Request) {
   if (!(file instanceof File)) return NextResponse.json({ error: "No file provided." }, { status: 400 });
 
   const mime = file.type || "application/octet-stream";
+  // Said before the generic type refusal, so an iPhone photo gets the sentence
+  // that tells its sender what to do (planAttachmentUpload also sniffs bytes).
+  if (isHeicUpload(file.name || "file", mime)) {
+    return NextResponse.json({ error: HEIC_UNSUPPORTED_MESSAGE }, { status: 415 });
+  }
   if (!isAcceptedUpload(file.name || "file", mime)) {
     return NextResponse.json({ error: `Unsupported file type: ${mime || "unknown"}.` }, { status: 415 });
   }

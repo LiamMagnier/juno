@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createFirstPromptHandoff, firstPromptNeedsSkills, firstPromptRoute, splitFirstPrompt, type FirstPromptGate } from "@/lib/code-v2/first-prompt";
+import { createFirstPromptHandoff, firstPromptNeedsSkills, firstPromptRoute, hasFirstPrompt, splitFirstPrompt, type FirstPromptGate } from "@/lib/code-v2/first-prompt";
 import { choiceFromLocal, type CodeSkillChoice } from "@/lib/code-v2/skills";
 
 const repoRules = choiceFromLocal({ name: "repo-rules", description: "The repo's rules", source: "project", origin: "alevr", path: "/p/.alevr/skills/repo-rules/SKILL.md" });
@@ -110,4 +110,62 @@ test("a cloud thread or no hand-off sends nothing", () => {
   const none = harness(null);
   assert.equal(none.handoff.tick(envOpen, [], []), null);
   assert.equal(none.handoff.pending(), null);
+});
+
+// ── G02: the landing's attachments, attachment-only prompts and the chosen model ──
+
+test("the landing's attachments ride with the words, and a prompt of only attachments is sent", async () => {
+  const sent: { route: string; text: string; files: string[] }[] = [];
+  let cleared = 0;
+  const handoff = createFirstPromptHandoff<{ id: string }>({
+    peek: () => ({ text: "", attachments: [{ id: "a1" }, { id: "a2" }] }),
+    clear: () => {
+      cleared++;
+    },
+    arm: () => undefined,
+    send: async (route, text, files) => {
+      sent.push({ route, text, files: files.map((f) => f.id) });
+      return true;
+    },
+  });
+  assert.deepEqual(handoff.pending(), { text: "", attachments: [{ id: "a1" }, { id: "a2" }] }, "files alone are pending");
+  await handoff.tick(envOpen, [], []);
+  assert.deepEqual(sent, [{ route: "env", text: "", files: ["a1", "a2"] }]);
+  assert.equal(cleared, 1);
+});
+
+test("an empty hand-off (no words, no files) is nothing to send", () => {
+  const handoff = createFirstPromptHandoff({ peek: () => ({ text: "   ", attachments: [] }), clear: () => undefined, arm: () => undefined, send: async () => true });
+  assert.equal(handoff.pending(), null);
+  assert.equal(handoff.tick(envOpen, [], []), null);
+  assert.equal(hasFirstPrompt({ text: "", attachments: [1] }), true);
+  assert.equal(hasFirstPrompt({ text: " " }), false);
+});
+
+test("the first turn waits until the landing's model is one the thread lists", async () => {
+  assert.equal(firstPromptRoute({ ...envOpen, selectionReady: false }, false), "wait");
+  assert.equal(firstPromptRoute({ ...envOpen, selectionReady: true }, false), "env");
+  // Older callers that do not say are ready.
+  assert.equal(firstPromptRoute(envOpen, false), "env");
+  const h = harness("fix the build");
+  assert.equal(h.handoff.tick({ ...envOpen, selectionReady: false }, [], []), null);
+  await h.handoff.tick({ ...envOpen, selectionReady: true }, [], []);
+  assert.deepEqual(h.sent, [{ route: "env", text: "fix the build" }]);
+});
+
+test("the first prompt is shown while it waits and while it sends, then the transcript takes over", async () => {
+  let release: (v: boolean) => void = () => undefined;
+  const handoff = createFirstPromptHandoff({
+    peek: () => "fix the build",
+    clear: () => undefined,
+    arm: () => undefined,
+    send: () => new Promise<boolean>((resolve) => (release = resolve)),
+  });
+  assert.equal(handoff.showing()?.text, "fix the build", "waiting for the Mac");
+  const sending = handoff.tick(envOpen, [], []);
+  assert.equal(handoff.pending(), null);
+  assert.equal(handoff.showing()?.text, "fix the build", "on its way");
+  release(true);
+  await sending;
+  assert.equal(handoff.showing(), null, "the run has it");
 });

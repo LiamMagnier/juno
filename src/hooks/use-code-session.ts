@@ -1,6 +1,7 @@
 "use client";
 
 import type { CloudSkillRef } from "@/lib/code-v2/cloud-skills";
+import type { CodePermissionMode } from "@/lib/code-environments";
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
@@ -769,7 +770,13 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
        * catalog. Optional, so a caller that has no preference still gets that
        * fallback rather than a failure.
        */
-      choice: { model?: string | null; reasoningEffort?: string | null; skills?: CloudSkillRef[] } = {},
+      choice: {
+        model?: string | null;
+        reasoningEffort?: string | null;
+        skills?: CloudSkillRef[];
+        /** A cloud run's mode (the composer's, e.g. `/plan`); absent inherits the last task's. */
+        permissionMode?: CodePermissionMode | null;
+      } = {},
     ): Promise<{ accepted: boolean }> => {
       if (statusRef.current !== "idle") return { accepted: false };
       const trimmed = text.trim();
@@ -807,6 +814,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 reasoningEffort: choice.reasoningEffort || undefined,
                 // Skills lane: absent keeps the conversation's last choice.
                 skills: choice.skills,
+                permissionMode: choice.permissionMode || undefined,
               }
             : {
                 deviceId: target.deviceId,

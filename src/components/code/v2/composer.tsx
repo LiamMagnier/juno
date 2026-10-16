@@ -22,9 +22,18 @@
  */
 import * as React from "react";
 import type { ApprovalDecision, ApprovalRequestItem, PlanItem, ProviderInstance, TurnItem, UserInputRequestItem } from "@/lib/code-v2/contracts";
-import { SLASH_COMMANDS, applyTrigger, composerKeyIntent, detectTrigger, escPress, filterByQuery, rankFiles, sendButtonMode, type Trigger } from "@/lib/code-v2/composer";
+import { SLASH_AGENTS_LABEL, SLASH_SKILLS_LABEL, applyTrigger, compactMessage, composerKeyIntent, detectTrigger, escPress, filterByQuery, parseClientCommand, rankFiles, sendButtonMode, slashCommandsFor, type Trigger } from "@/lib/code-v2/composer";
+import { ATTACHMENTS_UPLOADING_LABEL, MAC_ATTACHMENT_TOO_LARGE_MESSAGE } from "@/lib/code-v2/composer-attachments";
+import { toast } from "sonner";
+import { clearComposerDraft, readComposerDraft, writeComposerDraft } from "@/lib/chat/context-draft";
 import { insertLineBreak } from "@/lib/composer-keys";
 import { touchReturnBreaksLine, useEnterKeyHint } from "@/lib/touch-keyboard";
+import { ComposerAttachmentRow } from "@/components/ui/composer-shell";
+import { ComposerDropOverlay, ComposerFileInputs } from "@/components/code/code-composer-parts";
+import { LibraryPicker } from "@/components/chat/library-picker";
+import type { ClientAttachment } from "@/types/chat";
+import { useComposerAttachments } from "./use-composer-attachments";
+import { useComposerArrival } from "./composer-travel";
 import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
 import { displayName } from "@/lib/code-v2/providers-view";
 import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
@@ -66,6 +75,15 @@ const ACTION_PHRASE: Record<ApprovalRequestItem["action"], string> = {
 export function placeholder(running: boolean): string {
   return running ? "Queue a follow-up. ⌘↵ to steer now" : "Ask for a change. @ for files, / for commands";
 }
+
+/** The landing's field, before a session exists. */
+export const LANDING_PLACEHOLDER = "Describe a task or ask a question…";
+const PASTE_FILE_NOTE = "Your long paste is attached as a text file.";
+const KEEP_INLINE_LABEL = "Keep it inline";
+const UPLOADS_OFF_NOTE = "File uploads aren’t set up on this server.";
+const FILES_SECTION_LABEL = "Files";
+const NOTHING_TO_COMPACT_MESSAGE = "There’s nothing to compact until the session starts.";
+const MODEL_PENDING_LABEL = "Waiting for your Mac to list its models";
 
 // ── Needs you: the body is the request ──────────────────────────────────────
 
@@ -261,11 +279,29 @@ export const Composer = React.forwardRef<
     onFocusChange?: (focused: boolean) => void;
     /** Empty state: three lines tall. */
     tall?: boolean;
+    /**
+     * `landing`: the /code composer before a session exists. The same object
+     * as a session's (one composer from landing to session), without what
+     * needs a session: the context strip, the queue and the commands that act
+     * on a thread. The landing draws its target tray around it.
+     */
+    variant?: "session" | "landing";
+    /** Why Send cannot go yet (the landing: "Pick a project to start"); null when it can. */
+    gate?: string | null;
+    /** Drawn under the composer in place of the context strip (the landing's one line). */
+    under?: React.ReactNode;
+    /** The draft to start from (a prefilled link on the landing). */
+    initialDraft?: string;
+    /** Whether the team chip is offered (a cloud run has no team). */
+    team?: boolean;
+    /** The outer box, for the landing-to-session travel. */
+    stackRef?: React.Ref<HTMLDivElement>;
   }
->(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall }, ref) {
+>(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, team = true, stackRef }, ref) {
   const mac = useIsMac();
+  const landing = variant === "landing";
   const { actions, instances, selection } = model;
-  const [draft, setDraft] = React.useState("");
+  const [draft, setDraftState] = React.useState(initialDraft ?? "");
   const [caret, setCaret] = React.useState(0);
   const [menuIndex, setMenuIndex] = React.useState(0);
   const [escArmed, setEscArmed] = React.useState<number | null>(null);
@@ -278,6 +314,8 @@ export const Composer = React.forwardRef<
   const shellRef = React.useRef<HTMLDivElement>(null);
   const stripRef = React.useRef<HTMLDivElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
+  const imageInput = React.useRef<HTMLInputElement>(null);
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
 
   const running = model.state === "running" || model.state === "waiting";
   const instance = findInstance(instances, selection.instanceId);
@@ -287,9 +325,78 @@ export const Composer = React.forwardRef<
   const pending = pendingRequests(model.items);
   const plan = [...model.items].reverse().find((i): i is PlanItem => i.kind === "plan" && !!i.awaitingApproval);
   const needs = pending.length > 0 || (!!plan && !revising);
-  const connected = instances.some((i) => i.status === "ready" || i.status === "limited") && !!instance;
-  const ready = !model.starting && connected && !model.offline;
-  const hasDraft = draft.trim().length > 0;
+  // A Mac subscription chosen before the Mac listed its runtimes: writable, shown, and held at Send.
+  const modelPending = !instance && !!model.selectionPending;
+  const connected = instances.some((i) => i.status === "ready" || i.status === "limited") && (!!instance || modelPending);
+  const waitingOn = gate ?? (modelPending ? MODEL_PENDING_LABEL : null);
+  const ready = !model.starting && connected && !model.offline && !waitingOn;
+
+  // ── The draft: kept in this tab and synced to the reader's other devices ──
+  const channel = model.draft;
+  const draftKey = channel?.key ?? null;
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
+  const focused = React.useRef(false);
+  /** The text the channel already knows about (a remote apply, a send), so it is not echoed back. */
+  const known = React.useRef(draft);
+  const setDraft = setDraftState;
+  // A draft left in this tab comes back: a reload, or a trip to another thread.
+  React.useEffect(() => {
+    if (!draftKey) return;
+    const stored = readComposerDraft(draftKey)?.text;
+    if (stored && !draftRef.current) {
+      known.current = stored;
+      setDraftState(stored);
+    }
+  }, [draftKey]);
+  React.useEffect(() => {
+    if (!draftKey) return;
+    const t = window.setTimeout(() => (draft.trim() ? writeComposerDraft(draftKey, { text: draft, tokens: [] }) : clearComposerDraft(draftKey)), 300);
+    return () => window.clearTimeout(t);
+  }, [draft, draftKey]);
+  React.useEffect(() => {
+    if (draft === known.current) return;
+    known.current = draft;
+    channel?.changed(draft);
+  }, [draft, channel]);
+  /** A send: the field is empty here and on every device. */
+  const forgetDraft = () => {
+    known.current = "";
+    if (draftKey) clearComposerDraft(draftKey);
+    channel?.cleared();
+    setDraftState("");
+  };
+
+  // ── Attachments: paste, drop, "+", the library, a capture ──
+  const attachments = useComposerAttachments({ conversationId: model.uploadConversationId ?? null, enabled: !!model.canAttach && connected && !model.child });
+  const restoreFiles = attachments.addAttachments;
+  // The landing's box travels to the dock on the session's first paint (composer-travel.ts).
+  useComposerArrival(shellRef, !landing);
+  React.useEffect(
+    () =>
+      channel?.attach({
+        read: () => ({ text: draftRef.current, editing: focused.current }),
+        apply: (text) => {
+          known.current = text;
+          setDraftState(text);
+        },
+        // A send that could not go gives its words and files back.
+        restore: (text, files) => {
+          if (!draftRef.current.trim()) setDraftState(text);
+          if (files.length) restoreFiles(files);
+        },
+      }),
+    [channel, restoreFiles],
+  );
+  const files = attachments.ready;
+  const hasDraft = draft.trim().length > 0 || files.length > 0;
+  /** A file this thread cannot carry (a Mac over the web: 4 MB) is said before the send, and the draft stays. */
+  const filesTooLarge = (list: readonly ClientAttachment[]): boolean => {
+    const max = model.attachmentMaxBytes;
+    if (!max || !list.some((f) => f.size > max)) return false;
+    toast.error(MAC_ATTACHMENT_TOO_LARGE_MESSAGE);
+    return true;
+  };
   const trigger: Trigger | null = menuDismissed ? null : detectTrigger(draft, caret);
   const skills = model.skills;
   const skillChoices = skills?.choices;
@@ -301,32 +408,39 @@ export const Composer = React.forwardRef<
   const menuItems = React.useMemo((): { key: string; name: string; sub: string; section: string; insert: string; skill?: CodeSkillChoice; trail?: string }[] => {
     if (!trigger) return [];
     if (trigger.kind === "slash") {
-      const commands = filterByQuery(SLASH_COMMANDS, trigger.query, (c) => c.name).map((c) => ({ key: c.name, name: `/${c.name}`, sub: c.description, section: c.section, insert: c.insert ?? `/${c.name} ` }));
+      // Grouped by who answers: "Actions" run here and never spend a turn, the rest are sent to the agent.
+      const commands = filterByQuery(slashCommandsFor(variant), trigger.query, (c) => c.name).map((c) => ({ key: c.name, name: `/${c.name}`, sub: c.description, section: c.section, insert: c.insert ?? `/${c.name} ` }));
       // Skills lane: the thread's skills after the commands, a /name runs one for the next message.
       const skillRows = matchSkills(skillChoices ?? [], trigger.query)
         .slice(0, 24)
-        .map((c) => ({ key: `skill:${c.id}`, name: `/${c.name}`, sub: c.description, section: "Skills", insert: "", skill: c, trail: c.originLabel }));
-      const agents = commands.filter((c) => c.section === "Agents");
-      return [...commands.filter((c) => c.section !== "Agents"), ...skillRows, ...agents];
+        .map((c) => ({ key: `skill:${c.id}`, name: `/${c.name}`, sub: c.description, section: SLASH_SKILLS_LABEL, insert: "", skill: c, trail: c.originLabel }));
+      const agents = commands.filter((c) => c.section === SLASH_AGENTS_LABEL);
+      return [...commands.filter((c) => c.section !== SLASH_AGENTS_LABEL), ...skillRows, ...agents];
     }
-    const files = rankFiles(model.files ?? [], trigger.query, 8).map((p) => ({ key: p, name: p.split("/").pop() ?? p, sub: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "", section: "Files", insert: `@${p} ` }));
-    const agents = filterByQuery(["explorer", "reviewer"], trigger.query, (a) => a).map((a) => ({ key: a, name: `@${a}`, sub: a === "explorer" ? "Maps something, read-only" : "A second read of the changes", section: "Agents", insert: `@${a} ` }));
+    const files = rankFiles(model.files ?? [], trigger.query, 8).map((p) => ({ key: p, name: p.split("/").pop() ?? p, sub: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "", section: FILES_SECTION_LABEL, insert: `@${p} ` }));
+    const agents = filterByQuery(["explorer", "reviewer"], trigger.query, (a) => a).map((a) => ({ key: a, name: `@${a}`, sub: a === "explorer" ? "Maps something, read-only" : "A second read of the changes", section: SLASH_AGENTS_LABEL, insert: `@${a} ` }));
     return [...files, ...agents];
-  }, [trigger, model.files, skillChoices]);
+  }, [trigger, model.files, skillChoices, variant]);
   const menuOpen = !!trigger && menuItems.length > 0;
 
   const [dictating, setDictating] = React.useState(false);
   const voice = useCodeVoice({ disabled: dictating || !connected });
 
-  /** A finished line, as the send button would send it: send, or queue / steer while a turn runs. */
-  const dispatch = (text: string): boolean => {
+  /**
+   * A finished line, as the send button would send it: send, or queue / steer
+   * while a turn runs. The row's finished uploads go with it; a send waits
+   * while one is still uploading rather than leaving it behind.
+   */
+  const dispatch = (text: string, withFiles: ClientAttachment[] = files): boolean => {
     const t = text.trim();
-    if (!t) return false;
+    if (!t && !withFiles.length) return false;
+    if (attachments.uploading || filesTooLarge(withFiles)) return false;
     if (!running) {
       if (!ready) return false;
-      void actions.send(t);
-    } else if (canQueue) actions.queue(t);
-    else void actions.steer(t);
+      void actions.send(t, withFiles);
+    } else if (canQueue) actions.queue(t, withFiles);
+    else void actions.steer(t, withFiles);
+    if (withFiles.length) attachments.clear();
     return true;
   };
 
@@ -335,7 +449,7 @@ export const Composer = React.forwardRef<
     setDictating(false);
     const merged = [draft.trim(), transcript.trim()].filter(Boolean).join(" ");
     if (sendNow && dispatch(merged)) {
-      setDraft("");
+      forgetDraft();
       return;
     }
     setDraft(merged);
@@ -350,14 +464,22 @@ export const Composer = React.forwardRef<
     turns: voice.open
       ? model.items.flatMap((i): { role: "user" | "assistant"; text: string }[] => (i.kind === "user_message" ? [{ role: "user", text: i.text }] : i.kind === "assistant_message" ? [{ role: "assistant", text: i.text }] : []))
       : [],
-    blocked: !connected ? "Connect a subscription or add a key to start" : model.offline ? "The Mac this runs on is offline" : null,
+    blocked: !connected ? "Connect a subscription or add a key to start" : model.offline ? "The Mac this runs on is offline" : waitingOn,
   };
   /** A spoken line becomes this thread's next turn: sent, or a steer while it runs (a queued follow-up where steering is not offered). */
   const voiceSend: CodeVoiceSend = {
     intent: model.items.length ? "send" : "start",
     blockedReason: voiceBriefing.blocked,
     sending: !!model.starting,
+    // The landing's send opens the new session, so the call ends first.
+    ...(landing ? { endsCall: true } : {}),
     onSend: async (text) => {
+      // The landing's first line starts the task with whatever was typed beside it.
+      if (landing) {
+        const sent = dispatch([draft.trim(), text.trim()].filter(Boolean).join(" "));
+        if (sent) forgetDraft();
+        return sent;
+      }
       if (!running) return dispatch(text);
       if (canSteer) void actions.steer(text);
       else actions.queue(text);
@@ -400,23 +522,81 @@ export const Composer = React.forwardRef<
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
   }, [draft, needs]);
 
+  /**
+   * The app's own commands (G38): /model, /clear, /plan and /compact never go
+   * to the agent as a prompt. Returns true when the draft was one.
+   */
+  const runClientCommand = (text: string, intent: "send" | "queue" | "steer"): boolean => {
+    const command = parseClientCommand(text);
+    if (!command) return false;
+    switch (command.kind) {
+      case "model":
+        forgetDraft();
+        setPopover("catalog");
+        return true;
+      case "clear":
+        forgetDraft();
+        if (landing) {
+          // Nothing exists yet to start afresh from: the landing's fresh start is an empty composer.
+          attachments.clear();
+          if (command.rest) setDraftState(command.rest);
+          return true;
+        }
+        if (actions.clearThread) actions.clearThread(command.rest);
+        else if (actions.newThread) actions.newThread();
+        else return false;
+        return true;
+      case "plan": {
+        setComposerMode(actions, "plan", model.runtimeMode);
+        forgetDraft();
+        // The rest is the task, sent under Plan (the thread's setter applies before the send reads it).
+        if (command.rest || files.length) send(command.rest, intent);
+        return true;
+      }
+      case "compact":
+        if (landing) {
+          // Nothing to summarise before a session exists: said, and the words stay as typed.
+          toast.message(NOTHING_TO_COMPACT_MESSAGE);
+          return true;
+        }
+        // While a turn runs it queues as text, which the engine reads as the command when its turn comes.
+        if (running) return false;
+        forgetDraft();
+        if (actions.compact) actions.compact(command.rest);
+        else void actions.send(compactMessage(command.rest));
+        return true;
+    }
+  };
+
+  const send = (text: string, intent: "send" | "queue" | "steer") => {
+    if (intent === "send") void actions.send(text, files);
+    else if (intent === "queue") actions.queue(text, files);
+    else void actions.steer(text, files);
+    if (files.length) attachments.clear();
+  };
+
   const submit = (intent: "send" | "queue" | "steer") => {
     let text = draft.trim();
-    if (!text) return;
+    if (!text && !files.length) return;
+    // A send never leaves a file behind that is still uploading (/model and /clear send nothing).
+    const command = parseClientCommand(text);
+    if (command?.kind !== "model" && command?.kind !== "clear" && (attachments.uploading || filesTooLarge(files))) return;
+    if (runClientCommand(text, intent)) {
+      setMenuDismissed(false);
+      return;
+    }
     // `/design-taste-frontend make the hero calmer`: that skill for this message, the rest as the message.
-    const invoked = skills ? readCodeSkillInvocation(text, skills.choices ?? []) : null;
+    const invoked = skills && text ? readCodeSkillInvocation(text, skills.choices ?? []) : null;
     if (invoked && skills) {
       skills.arm(invoked.skill);
       text = invoked.remainder;
-      if (!text) {
-        setDraft("");
+      if (!text && !files.length) {
+        forgetDraft();
         return;
       }
     }
-    if (intent === "send") void actions.send(text);
-    else if (intent === "queue") actions.queue(text);
-    else void actions.steer(text);
-    setDraft("");
+    send(text, intent);
+    forgetDraft();
     setMenuDismissed(false);
     setRevising(false);
   };
@@ -424,6 +604,24 @@ export const Composer = React.forwardRef<
   const pick = (i: number) => {
     const item = menuItems[i];
     if (!item || !trigger) return;
+    // /model takes no words: choosing it opens the picker, and only the `/mo`
+    // typed to find it leaves the draft (the menu opens on any line, so the
+    // rest of the draft is the reader's words, never thrown away).
+    if (trigger.kind === "slash" && item.key === "model") {
+      const next = applyTrigger(draft, caret, trigger, "");
+      setDraft(next.text);
+      setCaret(next.caret);
+      setMenuDismissed(false);
+      setPopover("catalog");
+      return;
+    }
+    // /clear runs at once only when it is all there is: with other words or
+    // files in the composer it goes in as text, so a stray Enter cannot carry
+    // the reader away from a draft.
+    if (trigger.kind === "slash" && item.key === "clear" && !applyTrigger(draft, caret, trigger, "").text.trim() && !attachments.uploads.length && runClientCommand("/clear", "send")) {
+      setMenuDismissed(false);
+      return;
+    }
     if (item.skill && skills) {
       // A skill from the menu: armed for the next message, its `/name` taken out of the draft.
       skills.arm(item.skill);
@@ -493,11 +691,14 @@ export const Composer = React.forwardRef<
       }
       return;
     }
-    if (intent === "send" && !ready) return;
+    // /model, /clear and a bare /plan work whether or not a turn could start (an offline Mac, a project not picked yet).
+    const appOnly = parseClientCommand(draft);
+    const runsHere = !!appOnly && (appOnly.kind === "model" || appOnly.kind === "clear" || (appOnly.kind === "plan" && !appOnly.rest && !files.length));
+    if (intent === "send" && !ready && !runsHere) return;
     submit(intent);
   };
 
-  const mode = sendButtonMode({ running, hasDraft, canQueue, canSteer }, ready);
+  const mode = attachments.uploading && hasDraft && !running ? "disabled" : sendButtonMode({ running, hasDraft, canQueue, canSteer }, ready);
   const words = triggerWords(instances, selection);
   const routing = model.routing;
   const tightest = tightestWindow(instance?.limits);
@@ -539,8 +740,12 @@ export const Composer = React.forwardRef<
         ]
       : []),
     ...(tier ? [{ id: "context", label: "Context window", icon: <Glyph name="layers" size={16} />, trail: formatTokens(tier.tokens), onSelect: () => setTimeout(() => setPopover("context"), 0) }] : []),
-    { kind: "sep", id: "s1" },
-    { id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) },
+    ...(team
+      ? ([
+          { kind: "sep", id: "s1" },
+          { id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) },
+        ] satisfies MenuEntry[])
+      : []),
   ];
   const composerMode = composerModeOf(model.runtimeMode, model.interactionMode);
   const modeInfo = composerModeInfo(composerMode);
@@ -552,8 +757,17 @@ export const Composer = React.forwardRef<
     checked: m.mode === composerMode,
     onSelect: () => setComposerMode(actions, m.mode, model.runtimeMode),
   }));
+  // Real attachments (G06): uploaded through Chat's pipeline, never an `@name` typed into the draft.
   const attach: MenuEntry[] = [
-    { id: "file", label: "Attach files", icon: <Glyph name="attach" size={16} />, onSelect: () => fileInput.current?.click() },
+    ...(attachments.enabled
+      ? ([
+          { id: "file", label: "Attach files", icon: <Glyph name="attach" size={16} />, onSelect: () => fileInput.current?.click() },
+          { id: "photos", label: "Photos", icon: <Glyph name="image" size={16} />, onSelect: () => imageInput.current?.click() },
+          ...(attachments.canScreenshot ? [{ id: "capture", label: "Take a screenshot", icon: <Glyph name="screenshot" size={16} />, onSelect: () => void attachments.captureScreenshot() }] : []),
+          { id: "library", label: "From your library", icon: <Glyph name="library" size={16} />, onSelect: () => setLibraryOpen(true) },
+          { kind: "sep", id: "s-attach" },
+        ] satisfies MenuEntry[])
+      : ([{ id: "file", label: "Attach files", l2: UPLOADS_OFF_NOTE, icon: <Glyph name="attach" size={16} />, disabled: true }, { kind: "sep", id: "s-attach" }] satisfies MenuEntry[])),
     { id: "mention", label: "Mention a file", icon: <Glyph name="at" size={16} />, trail: "@", onSelect: () => (setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}@`), textarea.current?.focus()) },
     { id: "cmd", label: "Commands", icon: <Glyph name="slash" size={16} />, trail: "/", onSelect: () => (setDraft("/"), textarea.current?.focus()) },
   ];
@@ -616,7 +830,7 @@ export const Composer = React.forwardRef<
         enterKeyHint={enterKeyHint}
         value={draft}
         disabled={!connected}
-        placeholder={!connected ? "Connect a subscription or add a key to start" : call ? "Type while you talk\u2026" : revising ? "What should change in the plan?" : placeholder(running)}
+        placeholder={!connected ? "Connect a subscription or add a key to start" : call ? "Type while you talk\u2026" : revising ? "What should change in the plan?" : landing ? LANDING_PLACEHOLDER : placeholder(running)}
         aria-label="Message"
         onChange={(e) => {
           setDraft(e.target.value);
@@ -625,20 +839,46 @@ export const Composer = React.forwardRef<
           setMenuDismissed(false);
         }}
         onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-        onKeyDown={onKeyDown}
-        onFocus={() => onFocusChange?.(true)}
-        onBlur={() => onFocusChange?.(false)}
+        onKeyDown={(e) => {
+          attachments.onKeyDown(e);
+          onKeyDown(e);
+        }}
+        onPaste={attachments.onPaste}
+        onFocus={() => {
+          focused.current = true;
+          onFocusChange?.(true);
+        }}
+        onBlur={() => {
+          focused.current = false;
+          onFocusChange?.(false);
+        }}
       />
     );
   }
   const showFoot = !pending.length && !(plan && !revising) && model.state !== "limited";
+  const showRow = showFoot && attachments.uploads.length > 0;
   const deviceName = model.device ? "This Mac" : "Set up your Mac";
+  const keepInline = () => {
+    const text = attachments.keepInline();
+    if (text === null) return;
+    const el = textarea.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? start;
+    const next = draft.slice(0, start) + text + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
 
   return (
-    <div className="cv2-cstack">
+    <div className="cv2-cstack" ref={stackRef} data-variant={variant}>
       <DictationSwap active={dictating} draft={draft} onCancel={() => setDictating(false)} onClose={closeDictation}>
       <VoiceComposerGlow call={call}>
-      <div ref={shellRef} className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")}>
+      <div ref={shellRef} className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")} {...(showFoot ? attachments.dropHandlers : {})}>
+        {attachments.dragging && <ComposerDropOverlay className="rounded-composer" />}
+        {showRow && <ComposerAttachmentRow uploads={attachments.uploads} onRemove={attachments.remove} className="cv2-attach-row" />}
         {menuOpen && trigger && (
           <div className="cv2-menu-anchor">
             <div className="cv2-pop" role="listbox" aria-label={trigger.kind === "slash" ? "Commands" : "Mentions"}>
@@ -673,7 +913,7 @@ export const Composer = React.forwardRef<
         {body}
         {showFoot && (
           <div className="cv2-cfoot" ref={footRef}>
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files?.length && setDraft((d) => `${d}${d ? " " : ""}${[...e.target.files!].map((f) => `@${f.name}`).join(" ")} `)} />
+            <ComposerFileInputs imageInputRef={imageInput} fileInputRef={fileInput} onFiles={attachments.addFiles} />
             {connected ? (
               <>
                 <button type="button" className="cv2-ctl icon" aria-label="Add" title="Attach, mention or run a command" aria-haspopup="menu" aria-expanded={popover === "attach"} onClick={() => toggle("attach")}>
@@ -685,22 +925,24 @@ export const Composer = React.forwardRef<
                   {words.effort && <span className="eff">{words.effort}</span>}
                   <Glyph name="chevron-down" size={12} className="chev" />
                 </button>
-                {/* Team lane: always on the composer, Solo or not (team.tsx). */}
-                <ComposerTeam
-                  routing={routing}
-                  lead={selection}
-                  instances={instances}
-                  scope={{ session: model.thread.id, project: model.thread.repo }}
-                  fresh={model.items.length === 0}
-                  setRouting={actions.setRouting}
-                  popover={popover}
-                  setPopover={setPopover}
-                  onPickRole={(t) => {
-                    setRoleTab(t);
-                    setPopover("catalog");
-                  }}
-                  anchorRef={footRef}
-                />
+                {/* Team lane: always on the composer, Solo or not (team.tsx). A cloud run has none. */}
+                {team && (
+                  <ComposerTeam
+                    routing={routing}
+                    lead={selection}
+                    instances={instances}
+                    scope={{ session: model.thread.id, project: model.thread.repo }}
+                    fresh={model.items.length === 0}
+                    setRouting={actions.setRouting}
+                    popover={popover}
+                    setPopover={setPopover}
+                    onPickRole={(t) => {
+                      setRoleTab(t);
+                      setPopover("catalog");
+                    }}
+                    anchorRef={footRef}
+                  />
+                )}
                 <button
                   type="button"
                   className="cv2-ctl"
@@ -768,8 +1010,8 @@ export const Composer = React.forwardRef<
                     className="cv2-send"
                     data-mode={mode}
                     disabled={mode === "disabled"}
-                    aria-label={mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : "Send"}
-                    title={mode === "stop" ? "Stop (Esc Esc)" : undefined}
+                    aria-label={mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : attachments.uploading && hasDraft ? ATTACHMENTS_UPLOADING_LABEL : waitingOn ?? "Send"}
+                    title={mode === "stop" ? "Stop (Esc Esc)" : attachments.uploading && hasDraft ? ATTACHMENTS_UPLOADING_LABEL : (waitingOn ?? undefined)}
                     onClick={() => (mode === "stop" ? actions.stop() : submit(running ? (canQueue ? "queue" : "steer") : "send"))}
                   >
                     <span className="glyph">
@@ -820,6 +1062,18 @@ export const Composer = React.forwardRef<
       </div>
       </VoiceComposerGlow>
       </DictationSwap>
+      {attachments.enabled && <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={attachments.addAttachments} existingCount={attachments.uploads.length} />}
+      {attachments.lastPaste && (
+        <div className="cv2-under" role="status">
+          <span>{PASTE_FILE_NOTE}</span>
+          <button type="button" className="cv2-link" onClick={keepInline} title={mac ? "⇧⌘V pastes inline" : "Ctrl+Shift+V pastes inline"}>
+            {KEEP_INLINE_LABEL}
+          </button>
+        </div>
+      )}
+      {landing ? (
+        under
+      ) : (
       <div className="cv2-strip" ref={stripRef}>
         <span className="s" title={model.thread.cwd ?? model.thread.repo}>
           <Glyph name="folder" size={12} />
@@ -856,7 +1110,8 @@ export const Composer = React.forwardRef<
           />
         </ComposerPopover>
       </div>
-      {model.offline && (
+      )}
+      {!landing && model.offline && (
         <div className="cv2-under">
           <span>Reconnect to run on {model.device?.name ?? "your Mac"}. Messages send when it is back.</span>
         </div>

@@ -80,11 +80,32 @@ export function buildInstances(input: {
   return out;
 }
 
-/** A selection that still names an existing model, else the first usable default. */
-export function reconcileSelection(instances: readonly ProviderInstance[], sel: ModelSelection | null | undefined): ModelSelection {
+/**
+ * Whether a selection names an instance the web lists itself (Alevr, a stored
+ * key) rather than one only the Mac's env server reports.
+ */
+export function isWebInstanceId(instanceId: string): boolean {
+  return instanceId === "alevr" || instanceId.startsWith("byok:");
+}
+
+/**
+ * A selection that still names an existing model, else the first usable default.
+ *
+ * `awaitingDevice`: the Mac's provider list has not arrived yet. A selection
+ * naming one of its instances (a Claude or ChatGPT subscription chosen on the
+ * landing) is kept as it is until it does, instead of being replaced by the
+ * first ready instance: that replacement is how the landing's model used to
+ * be ignored on the first turn.
+ */
+export function reconcileSelection(
+  instances: readonly ProviderInstance[],
+  sel: ModelSelection | null | undefined,
+  options: { awaitingDevice?: boolean } = {},
+): ModelSelection {
   if (sel) {
     const inst = instances.find((i) => i.id === sel.instanceId);
     if (inst?.models?.some((m) => m.id === sel.model)) return sel;
+    if (!inst && options.awaitingDevice && sel.model && !isWebInstanceId(sel.instanceId)) return sel;
   }
   const usable = instances.find((i) => (i.status === "ready" || i.status === "limited") && i.models?.length) ?? instances[0];
   const m = usable?.models?.find((x) => x.isDefault) ?? usable?.models?.[0];

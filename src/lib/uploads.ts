@@ -230,6 +230,45 @@ export function isHeifImage(b: Uint8Array): boolean {
   return Boolean(brand && HEIF_BRANDS.has(brand));
 }
 
+/** The HEVC-coded brands: what makes a HEIF a HEIC that only Safari can draw. */
+const HEVC_BRANDS = new Set(["heic", "heix", "heim", "heis", "hevc", "hevx"]);
+
+/**
+ * A HEVC-coded HEIF (an iPhone photo), by the `ftyp` box's major OR compatible
+ * brands. Narrower than `isHeifImage` on purpose: `mif1` is also the major
+ * brand of some AVIF files, which are readable, so only an HEVC brand counts.
+ */
+export function isHeicImage(b: Uint8Array): boolean {
+  if (b.length < 16 || isoBoxType(b) !== "ftyp") return false;
+  const size = ((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]) >>> 0;
+  const end = Math.min(b.length, size >= 16 ? size : 16, 256);
+  const brandAt = (i: number) => String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]);
+  if (HEVC_BRANDS.has(brandAt(8))) return true;
+  for (let i = 16; i + 4 <= end; i += 4) if (HEVC_BRANDS.has(brandAt(i))) return true;
+  return false;
+}
+
+const HEIF_MIME = new Set(["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"]);
+const HEIF_EXTENSIONS = new Set(["heic", "heif", "hif"]);
+
+/**
+ * An iPhone photo saved as HEIC/HEIF, judged by its declared type or its name.
+ *
+ * Nothing on the server can decode one (sharp's prebuilt libvips reads AVIF
+ * only, not HEVC), and Chromium cannot draw one either. Without this check a
+ * HEIC labelled `application/octet-stream` passed the type gate and was stored
+ * as an opaque file the model could not read: an attachment that looked sent
+ * and was silently broken. So it is refused with a sentence that says what to
+ * do, and the composers convert it first where the browser can (Safari).
+ */
+export function isHeicUpload(fileName: string, mime: string): boolean {
+  const normalized = (mime || "").toLowerCase().split(";")[0].trim();
+  return HEIF_MIME.has(normalized) || HEIF_EXTENSIONS.has(extensionOf(fileName || ""));
+}
+
+/** What a refused HEIC says, wherever it is refused. */
+export const HEIC_UNSUPPORTED_MESSAGE = "HEIC photos can’t be read here yet. Save the photo as JPEG or PNG, then attach it again.";
+
 /**
  * QuickTime files written before `ftyp` existed (and some editors' exports
  * still) open with a movie atom instead: `moov`, `mdat`, `wide`, `free`,

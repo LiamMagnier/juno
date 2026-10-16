@@ -594,10 +594,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                 <h1>
                   {model.thread.repo ? (
                     <>
-                      What should we build in <span className="proj">{model.thread.repo}</span>?
+                      What will you build in <span className="proj">{model.thread.repo}</span>?
                     </>
                   ) : (
-                    "What should we build?"
+                    "What will you build?"
                   )}
                 </h1>
                 {model.pairingRequired && (

@@ -15,6 +15,7 @@
  * local (sessionStorage) draft as before, this only adds the other devices.
  */
 import * as React from "react";
+import type { ThreadPrefs } from "./thread-sync";
 
 export const DRAFT_SYNC_DEBOUNCE_MS = 700;
 
@@ -23,6 +24,9 @@ export interface RemoteThreadState {
   draft: string;
   draftUpdatedAt: string | null;
   draftBy: string | null;
+  /** The composer's model, effort, mode, team and skills (Code threads; Chat ignores them). */
+  prefs?: ThreadPrefs;
+  prefsUpdatedAt?: string | null;
   updatedAt: string;
 }
 
@@ -67,6 +71,33 @@ export async function writeThreadDraft(key: string, draft: string, at: Date, dev
   }
 }
 
+/** Writes the composer's choices (model, effort, mode, team), stamped with when they changed. */
+export async function writeThreadPrefs(key: string, prefs: ThreadPrefs, at: Date, device: string, fetcher: typeof fetch = fetch): Promise<void> {
+  try {
+    await fetcher(threadUrl(key), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      keepalive: true,
+      body: JSON.stringify({ prefs, prefsUpdatedAt: at.toISOString(), device }),
+    });
+  } catch {
+    /* Offline: the choice still applies here; the next change tries again. */
+  }
+}
+
+/**
+ * Whether another device's choices should be applied: newer than anything
+ * this tab wrote or applied. The row does not record who wrote its prefs, so
+ * this tab's own echo is told apart by time (it carries the stamp this tab
+ * already holds), and a change made here after it always wins.
+ */
+export function shouldApplyRemotePrefs(remote: Pick<RemoteThreadState, "prefs" | "prefsUpdatedAt">, lastKnownAt: number): boolean {
+  if (!remote.prefs || !Object.keys(remote.prefs).length) return false;
+  const at = remote.prefsUpdatedAt ? Date.parse(remote.prefsUpdatedAt) : 0;
+  return at > lastKnownAt;
+}
+
 /**
  * Whether a remote state should replace what the field shows: something to
  * show, not this tab's echo, newer than what this tab last wrote or read, and
@@ -88,20 +119,28 @@ export function shouldApplyRemoteDraft(
  * turns it off: a new chat, incognito, steering). `read()` returns the field's
  * text and whether it has focus; `apply(text)` replaces the field's text.
  * Returns `changed(text)` for every edit and `cleared()` for a send.
+ *
+ * A Code thread also carries its composer choices on the same row and the
+ * same long-poll: `options.applyPrefs` receives another device's, and
+ * `prefsChanged(prefs)` writes this tab's.
  */
 export function useThreadDraftSync(
   key: string | null,
   read: () => { text: string; editing: boolean },
   apply: (text: string) => void,
-): { changed: (text: string) => void; cleared: () => void } {
+  options: { applyPrefs?: (prefs: ThreadPrefs) => void } = {},
+): { changed: (text: string) => void; cleared: () => void; prefsChanged: (prefs: ThreadPrefs) => void } {
   const device = React.useRef<string>("web");
   const lastKnownAt = React.useRef(0);
+  const lastPrefsAt = React.useRef(0);
   const timer = React.useRef<number | null>(null);
   const pending = React.useRef<{ text: string; at: Date } | null>(null);
   const readRef = React.useRef(read);
   const applyRef = React.useRef(apply);
+  const applyPrefsRef = React.useRef(options.applyPrefs);
   readRef.current = read;
   applyRef.current = apply;
+  applyPrefsRef.current = options.applyPrefs;
 
   React.useEffect(() => {
     device.current = webDeviceId();
@@ -123,8 +162,13 @@ export function useThreadDraftSync(
     if (!key) return;
     let cancelled = false;
     lastKnownAt.current = 0;
+    lastPrefsAt.current = 0;
     const consider = (state: RemoteThreadState | null) => {
       if (!state || cancelled) return;
+      if (applyPrefsRef.current && shouldApplyRemotePrefs(state, lastPrefsAt.current)) {
+        lastPrefsAt.current = Date.parse(state.prefsUpdatedAt ?? "") || lastPrefsAt.current;
+        applyPrefsRef.current(state.prefs!);
+      }
       const local = readRef.current();
       if (shouldApplyRemoteDraft(state, { ...local, device: device.current, lastKnownAt: lastKnownAt.current })) {
         // An empty field takes it; a field with text only when that text is
@@ -180,5 +224,17 @@ export function useThreadDraftSync(
     void writeThreadDraft(key, "", at, device.current);
   }, [key]);
 
-  return React.useMemo(() => ({ changed, cleared }), [changed, cleared]);
+  const prefsChanged = React.useCallback(
+    (prefs: ThreadPrefs) => {
+      if (!key) return;
+      // Stamped now, so an echo of an older write that arrives later is not
+      // applied over this choice.
+      const at = new Date();
+      lastPrefsAt.current = Math.max(lastPrefsAt.current, at.getTime());
+      void writeThreadPrefs(key, prefs, at, device.current);
+    },
+    [key],
+  );
+
+  return React.useMemo(() => ({ changed, cleared, prefsChanged }), [changed, cleared, prefsChanged]);
 }

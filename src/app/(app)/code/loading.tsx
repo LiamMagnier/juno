@@ -30,13 +30,20 @@ export default function CodeLandingLoading() {
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
     >
       <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">
-        <Skeleton className="mb-6 h-9 w-80 max-w-full rounded-full sm:mb-8" />
-        {/* The composer at its resting height — 138px: a 42px chip row, the
-            52px field at one line, and a 44px controls row. One placeholder,
-            because they are one box, and the height is spelled out here so that
-            a composer that grows a tier does not leave this skeleton quietly
-            short. */}
-        <Skeleton className="h-[8.625rem] w-full rounded-composer" />
+        {/* The lockup line and the 56px greeting (40px under 760px), at the
+            heights code-landing.tsx draws them. */}
+        <Skeleton className="mb-3 h-4 w-28 rounded-full" />
+        <Skeleton className="mb-6 h-10 w-80 max-w-full rounded-full sm:mb-8 min-[761px]:h-14" />
+        {/* The shared composer at rest (v2/composer.tsx, landing variant):
+            the target tray's visible 32px above it, the 126px box (a
+            three-line field, the controls row and its padding) and the one
+            line under it. Spelled out so a composer that grows a tier does
+            not leave this skeleton quietly short. */}
+        <div className="w-full">
+          <Skeleton className="mx-3.5 h-8 rounded-b-none rounded-t-2xl opacity-60" />
+          <Skeleton className="h-[7.875rem] w-full rounded-composer" />
+          <Skeleton className="mx-auto mt-2.5 h-4 w-64 max-w-full rounded-full" />
+        </div>
       </div>
     </div>
   );

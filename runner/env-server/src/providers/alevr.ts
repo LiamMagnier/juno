@@ -23,8 +23,10 @@ import type {
   InteractionMode,
   SubagentItem,
   TurnItem,
+  UserInput,
 } from "../contracts/code-v2.js";
 import { instanceKindOf, resolveModelAlias } from "../contracts/code-v2.js";
+import { textWithAttachments } from "./attachments.js";
 import { phaseOfRole } from "../mcp/team-brief.js";
 import type {
   EnvSecrets,
@@ -396,7 +398,7 @@ class EngineBackedSession implements ProviderSession {
     };
     request.signal.addEventListener("abort", onAbort, { once: true });
     try {
-      await session.prompt(request.input.text);
+      await session.prompt(textWithAttachments(request.input));
       this.#closeText(turn);
       const usage = turn.usage;
       if (turn.error) {
@@ -426,9 +428,9 @@ class EngineBackedSession implements ProviderSession {
     this.#session?.setMode(engineMode(runtimeMode, interactionMode));
   }
 
-  async steer(input: { text: string }): Promise<boolean> {
+  async steer(input: { text: string; attachments?: UserInput["attachments"] }): Promise<boolean> {
     if (!this.#turn || !this.#session) return false;
-    void this.#session.queueUserMessage(input.text);
+    void this.#session.queueUserMessage(textWithAttachments(input));
     return true;
   }
 
