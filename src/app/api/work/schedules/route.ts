@@ -18,6 +18,7 @@ import {
   codeRoutineRefusal,
 } from "@/lib/work/code-routine";
 import { createWorkSession } from "@/lib/work/store";
+import { writeSessionConnectors } from "@/lib/work/dispatch";
 import { loadScheduleHealth } from "@/lib/work/schedule-health-store";
 import { admissionRefusal } from "@/app/api/work/protocol";
 
@@ -33,13 +34,14 @@ export async function GET(req: Request) {
   if (!parsed.ok) {
     return NextResponse.json({ error: "Invalid input", parameter: parsed.parameter }, { status: 400 });
   }
-  const { enabled, sessionId, limit } = parsed.query;
+  const { enabled, sessionId, proposalKey, limit } = parsed.query;
 
   const schedules = await prisma.workSchedule.findMany({
     where: {
       userId: user.id,
       ...(enabled !== undefined ? { enabled } : {}),
       ...(sessionId ? { sessionId } : {}),
+      ...(proposalKey ? { proposalKey } : {}),
     },
     // Soonest fire first, and the schedules that will never fire again last:
     // Postgres sorts NULLs last on an ascending order, which is the order a
@@ -71,6 +73,13 @@ export async function POST(req: Request) {
   const parsed = createScheduleSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const body = parsed.data;
+
+  // A chat proposal pressed twice, or pressed again after a reload, is the
+  // routine the first press made: answered as it stands, with nothing created.
+  if (body.proposalKey) {
+    const existing = await findProposedSchedule(user.id, body.proposalKey);
+    if (existing) return NextResponse.json({ schedule: existing, replay: true }, { status: 200 });
+  }
 
   if (!isValidTimeZone(body.timezone)) {
     return NextResponse.json(
@@ -149,6 +158,12 @@ export async function POST(req: Request) {
   }
 
   const sessionId = body.sessionId ?? (await createScheduleSession(user.id, body)).id;
+  // The apps a proposal named, written as the task's own choice so the runs
+  // reach exactly those. Only for a session minted here: a schedule pointed at
+  // an existing task keeps whatever that task already allows.
+  if (!body.sessionId && body.connectorIds) {
+    await writeSessionConnectors(user, sessionId, [...new Set(body.connectorIds)]);
+  }
 
   // Computed even when the schedule is created paused. The column is inert
   // while `enabled` is false — the dispatcher's due query filters on it — and
@@ -156,10 +171,12 @@ export async function POST(req: Request) {
   // which is the one thing a person wants to know before resuming.
   const nextRunAt = nextFireForTriggers(drafts.drafts, body.timezone, new Date());
 
-  const schedule = await prisma.workSchedule.create({
+  const created = await prisma.workSchedule
+    .create({
     data: {
       userId: user.id,
       sessionId,
+      proposalKey: body.proposalKey ?? null,
       name: body.name,
       enabled: body.enabled,
       instructions: body.instructions,
@@ -198,12 +215,38 @@ export async function POST(req: Request) {
       },
     },
     include: { triggers: true },
-  });
+  })
+    .then((schedule) => ({ schedule, raced: false as const }))
+    .catch(async (error: unknown) => {
+      // Two presses of one proposal racing: the unique key let one through,
+      // and the other answers with it. What the loser minted above is an empty
+      // task, the same cosmetic leftover `createScheduleSession` accepts.
+      if (body.proposalKey && isUniqueViolation(error)) {
+        const existing = await findProposedSchedule(user.id, body.proposalKey);
+        if (existing) return { schedule: null, raced: true as const, existing };
+      }
+      throw error;
+    });
 
+  if (created.raced) return NextResponse.json({ schedule: created.existing, replay: true }, { status: 200 });
+  const schedule = created.schedule;
   return NextResponse.json(
     { schedule: serializeSchedule(schedule, schedule.triggers) },
     { status: 201 }
   );
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002";
+}
+
+/** The routine a chat proposal already made, as a client reads it, or null. */
+async function findProposedSchedule(userId: string, proposalKey: string) {
+  const existing = await prisma.workSchedule.findFirst({
+    where: { userId, proposalKey },
+    include: { triggers: true },
+  });
+  return existing ? serializeSchedule(existing, existing.triggers) : null;
 }
 
 /**

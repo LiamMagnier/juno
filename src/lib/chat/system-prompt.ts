@@ -7,6 +7,7 @@
 import { personalitySystemPrompt } from "@/lib/personalities";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ROUTINE_SECTION, ROUTINE_UNAVAILABLE_LINE } from "@/lib/tools/specs/propose-routine.prompt";
 
 export interface SystemPromptOptions {
   userName?: string | null;
@@ -48,6 +49,13 @@ export interface SystemPromptOptions {
    * tool: a rule about a tool the model does not have invites it to pretend.
    */
   taskHandoff?: boolean;
+  /**
+   * `propose_routine` is attached to this turn (src/lib/chat/routine-tool.ts):
+   * adds ROUTINE_SECTION. When it is not but `start_task` is, the turn gets
+   * ROUTINE_UNAVAILABLE_LINE instead, so a recurring request is never handed
+   * to a task that runs once.
+   */
+  routineProposals?: boolean;
   /**
    * The client renders Live UI views (```live-ui fences, docs/design/LIVE_UI.md):
    * the web, and native builds that declare the `live_ui` client feature.
@@ -163,7 +171,9 @@ Start a task only when the user wants a finished result that would take many ste
 - a report, spreadsheet, deck or document built from many sources;
 - work carried out in their connected apps, such as triaging an inbox and drafting replies, filing tickets or updating a tracker;
 - going through many pages, files or records;
-- work that continues over time ("every morning", "until the build passes", "keep an eye on").
+- work that keeps going until something happens ("until the build passes").
+
+A task runs once. It cannot repeat or schedule itself, so a request to do something on a schedule ("every morning", "each Monday", "every weekday at 8") is never a task; see Routines.
 
 Answer in chat instead for questions, explanations, advice, brainstorming, a single lookup, short drafts, code snippets, edits to something already in this conversation, and anything you can do well in this reply, including a single document or artifact. If you are unsure, answer in chat or ask one short question. Never start a task just to be safe. If a detail the task cannot do without is missing (which account, what scope, what format), ask for it first.
 
@@ -318,6 +328,11 @@ You write the content; the USER picks the download format. Never say you attache
   // are the model deciding where a reply belongs. Never on a voice turn, which
   // has no panel to show a task in (the route withholds the tool there too).
   if (opts.taskHandoff && !opts.voiceMode) parts.push(TASK_HANDOFF_SECTION);
+  // Recurring requests (G07): a routine the person confirms, or, on a client
+  // that cannot draw the card, a plain sentence pointing at Routines. Never a
+  // task, which runs once.
+  if (opts.routineProposals && !opts.voiceMode) parts.push(ROUTINE_SECTION);
+  else if (opts.taskHandoff && !opts.voiceMode) parts.push(ROUTINE_UNAVAILABLE_LINE);
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.

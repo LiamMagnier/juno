@@ -306,6 +306,10 @@
       "status": "web-only",
       "note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
     },
+    "ClientActivityEvent.routineProposal": {
+      "status": "web-only",
+      "note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
+    },
     "ClientToolDetail.server": "native",
     "ClientToolDetail.name": "native",
     "ClientToolDetail.args": "native",

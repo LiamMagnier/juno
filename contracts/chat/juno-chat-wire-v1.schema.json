@@ -12,7 +12,7 @@
   "x-native-summary": {
     "native": 199,
     "planned": 227,
-    "web-only": 45,
+    "web-only": 67,
     "unclassified": 0
   },
   "x-native-only": {
@@ -1415,6 +1415,11 @@
           "x-native": "web-only",
           "x-native-note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
         },
+        "routineProposal": {
+          "$ref": "#/$defs/ClientRoutineProposal",
+          "x-native": "web-only",
+          "x-native-note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
+        },
         "contextReceipt": {
           "type": "object",
           "properties": {
@@ -2625,6 +2630,129 @@
         "remaining"
       ]
     },
+    "ClientRoutineProposal": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1,
+          "x-native": "web-only"
+        },
+        "key": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "name": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "instructions": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "schedule": {
+          "type": "object",
+          "properties": {
+            "phrase": {
+              "type": "string",
+              "x-native": "web-only"
+            },
+            "kind": {
+              "$ref": "#/$defs/PhraseTriggerKind",
+              "x-native": "web-only"
+            },
+            "config": {
+              "$ref": "#/$defs/JsonObject",
+              "x-native": "web-only"
+            },
+            "summary": {
+              "type": "string",
+              "x-native": "web-only"
+            },
+            "assumedTime": {
+              "type": "boolean",
+              "x-native": "web-only"
+            }
+          },
+          "required": [
+            "phrase",
+            "kind",
+            "config",
+            "summary",
+            "assumedTime"
+          ],
+          "x-native": "web-only"
+        },
+        "timezone": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "nextRuns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoutineProposalApp"
+          },
+          "x-native": "web-only"
+        },
+        "missingApps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "maxCostMicroUsd": {
+          "type": "number",
+          "x-native": "web-only"
+        },
+        "estimatedCostMicroUsd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "web-only"
+        },
+        "notifyPolicy": {
+          "type": "string",
+          "enum": [
+            "on_attention",
+            "on_finish"
+          ],
+          "x-native": "web-only"
+        },
+        "fromOutsideContent": {
+          "type": "boolean",
+          "x-native": "web-only"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "version",
+        "key",
+        "name",
+        "instructions",
+        "schedule",
+        "timezone",
+        "nextRuns",
+        "apps",
+        "missingApps",
+        "maxCostMicroUsd",
+        "estimatedCostMicroUsd",
+        "notifyPolicy",
+        "fromOutsideContent",
+        "createdAt"
+      ]
+    },
     "ClientSetupChangeRef": {
       "type": "object",
       "properties": {
@@ -3175,12 +3303,60 @@
         "uploading"
       ]
     },
+    "JsonObject": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      }
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "MessageRole": {
       "type": "string",
       "enum": [
         "ASSISTANT",
         "SYSTEM",
         "USER"
+      ]
+    },
+    "PhraseTriggerKind": {
+      "type": "string",
+      "enum": [
+        "cron",
+        "daily",
+        "hourly",
+        "monthly",
+        "weekdays",
+        "weekly",
+        "yearly"
       ]
     },
     "ReasoningEffort": {
@@ -3220,6 +3396,23 @@
       "required": [
         "round",
         "offset"
+      ]
+    },
+    "RoutineProposalApp": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "label": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "id",
+        "label"
       ]
     },
     "RoutingReceipt": {

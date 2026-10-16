@@ -2105,10 +2105,24 @@ export const createScheduleSchema = z.object({
   // Required rather than defaulted, for the reason `createSessionSchema` gives:
   // `automatic` is what lets scheduled work silently move off the user's Mac.
   target: z.enum(WORK_TARGETS),
-  hostId: idSchema.optional(),
+  // Nullable as well as optional: the editor sends `hostId: null` for a
+  // routine pinned to no Mac (the same body serves PATCH, where null means
+  // "unpin"), and refusing that null made every create from the web editor
+  // answer "Invalid input".
+  hostId: idSchema.nullable().optional(),
   enabled: z.boolean().default(true),
   triggers: z.array(triggerInputSchema).min(1).max(MAX_TRIGGERS),
   budget: budgetSchema.optional(),
+  /**
+   * The chat proposal this routine is scheduled from (`propose_routine`). A
+   * repeat create with the same key answers with the routine the first made.
+   */
+  proposalKey: z.string().trim().min(8).max(MAX_ID_CHARS).optional(),
+  /**
+   * The connected apps the routine's task may use. Absent: every app the
+   * account has connected, as before. Present (even empty): exactly these.
+   */
+  connectorIds: z.array(idSchema).max(32).optional(),
   // The three unattended policies are all ways of NOT acting; there is no
   // fourth. See `WORK_UNATTENDED_POLICIES`.
   unattendedPolicy: z.enum(WORK_UNATTENDED_POLICIES).default("pause_for_approval"),
@@ -2175,6 +2189,8 @@ export const SCHEDULE_RUN_LIST_MAX_LIMIT = 100;
 export interface ScheduleListQuery {
   enabled?: boolean;
   sessionId?: string;
+  /** The routine a chat proposal card scheduled, if it did. */
+  proposalKey?: string;
   limit: number;
 }
 
@@ -2208,11 +2224,17 @@ export function parseScheduleListQuery(params: URLSearchParams): ScheduleListQue
     return { ok: false, parameter: "sessionId" };
   }
 
+  const proposalKey = params.get("proposalKey");
+  if (proposalKey !== null && (proposalKey.length < 8 || proposalKey.length > MAX_ID_CHARS)) {
+    return { ok: false, parameter: "proposalKey" };
+  }
+
   return {
     ok: true,
     query: {
       ...(enabled !== undefined ? { enabled } : {}),
       ...(sessionId !== null ? { sessionId } : {}),
+      ...(proposalKey !== null ? { proposalKey } : {}),
       limit: limitParam(params.get("limit"), SCHEDULE_LIST_DEFAULT_LIMIT, SCHEDULE_LIST_MAX_LIMIT),
     },
   };

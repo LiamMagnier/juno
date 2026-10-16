@@ -3,6 +3,7 @@ import type { RoutingReceipt } from "@/lib/router/receipt";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
+import type { ClientRoutineProposal } from "@/lib/work/routine-proposal";
 import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientFeature } from "@/lib/chat/client-features";
 import type {
@@ -396,6 +397,12 @@ export interface ClientActivityEvent {
   };
   /** Structured receipt for conversational agent setup or self-configuration edits. */
   agentChange?: ClientAgentChange;
+  /**
+   * A recurring routine the model drafted for the person to confirm
+   * (`propose_routine`, src/lib/chat/routine-tool.ts). Nothing exists until the
+   * card's Schedule press creates it; the card reads whether it did by key.
+   */
+  routineProposal?: ClientRoutineProposal;
   /**
    * What became of each context token the message named (the files, apps,
    * projects, crew members, skills, chats and artifacts), on the turn's

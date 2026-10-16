@@ -12,6 +12,7 @@ import type { ToolTurn } from "@/lib/tools/types";
 import { codeExecutionNote } from "@/lib/chat/prompt-sections";
 import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
+import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
 import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
@@ -160,7 +161,7 @@ export async function buildNativeTools({
   conversationId,
   conversation,
   userMessageId,
-  approvals: { taskToolOn, agentConfigToolsOn, agentContext },
+  approvals: { taskToolOn, routineToolOn = false, agentConfigToolsOn, agentContext },
   appliedSkill,
   conversationModelId,
   requestedEffort,
@@ -184,7 +185,8 @@ export async function buildNativeTools({
   conversationId: string;
   conversation: { projectId: string | null };
   userMessageId: string | null;
-  approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext">;
+  approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext"> &
+    Partial<Pick<TurnApprovals, "routineToolOn">>;
   appliedSkill: TurnSkill["appliedSkill"];
   conversationModelId: string;
   requestedEffort: ReasoningEffort | undefined;
@@ -368,8 +370,26 @@ export async function buildNativeTools({
   const folderTools = localFolder
     ? createLocalFolderTools({ folder: localFolder, userId: user.id, generationId, send })
     : [];
+  // A recurring routine drafted for the person to confirm
+  // (src/lib/chat/routine-tool.ts). It creates nothing: the card it puts
+  // under the reply has the only Schedule button.
+  const routineTool =
+    routineToolOn && userMessageId
+      ? createProposeRoutineTool({
+          user,
+          userMessageId,
+          timeZone: input.timeZone,
+          activeConnectors: activeConnectors.map((connector) => ({ id: connector.id, label: connector.label })),
+          model: conversationModelId,
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          onProposal: (proposal) => {
+            sendActivity(routineProposalActivity(proposal));
+          },
+        })
+      : null;
   const nativeTools = [
     taskTool,
+    routineTool,
     handoffTool,
     ...agentConfigTools,
     setupChangeTool,

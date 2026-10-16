@@ -3849,6 +3849,13 @@ model WorkSchedule {
   /// The ScheduledTask this was migrated from, when it was.
   legacyScheduledTaskId String? @unique
 
+  /// The chat proposal this routine was scheduled from (`propose_routine`,
+  /// src/lib/work/routine-proposal.ts). Unique per account, so a second press of
+  /// the card's Schedule, or one after a reload, lands on the routine the first
+  /// press made instead of creating another. Null for routines made in the
+  /// editor, and Postgres lets any number of rows share a null.
+  proposalKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3866,6 +3873,7 @@ model WorkSchedule {
   @@index([enabled, nextRunAt])
   @@index([userId, createdAt])
   @@index([hostId, enabled])
+  @@unique([userId, proposalKey])
 }
 
 /// One firing condition attached to a schedule.

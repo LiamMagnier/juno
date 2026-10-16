@@ -4,7 +4,7 @@ import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { buildSemanticEditPrompt } from "@/lib/artifact-ops";
 import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { safeOutline } from "./semantic";
-import { backgroundWorkHint, detectBackgroundWork } from "@/lib/chat/work-intent";
+import { backgroundWorkHint, detectBackgroundWork, recurringWorkHint } from "@/lib/chat/work-intent";
 import { buildSystemPromptSections } from "@/lib/anthropic";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { buildArtifactEditPrompt, type ArtifactSourceForEdit } from "@/lib/artifact-edit";
@@ -47,6 +47,7 @@ export function composeTurnSystem({
   promptContext,
   untrustedContentInTurn,
   taskToolOn,
+  routineToolOn = false,
   useWebSearch,
   useAlevrSearch,
   attachmentToolToggles,
@@ -67,6 +68,8 @@ export function composeTurnSystem({
   promptContext: string;
   untrustedContentInTurn: boolean;
   taskToolOn: boolean;
+  /** `propose_routine` is attached (src/lib/chat/routine-tool.ts). */
+  routineToolOn?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
@@ -99,6 +102,7 @@ export function composeTurnSystem({
     projectContext: promptContext,
     untrustedContent: untrustedContentInTurn,
     taskHandoff: taskToolOn,
+    routineProposals: routineToolOn,
     // Interactive views: the web always renders them; a native build only
     // when it says so (shipped builds would show raw JSON).
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
@@ -122,8 +126,12 @@ export function composeTurnSystem({
   // Work as an internal runtime (src/lib/chat/work-intent.ts): a message that
   // reads as a long multi-deliverable job gets one line telling the model so,
   // only when it can actually start a task this turn.
-  const backgroundHint =
-    taskToolOn && !input.regenerate ? backgroundWorkHint(detectBackgroundWork(input.message)) : null;
+  // A schedule ("every weekday at 8") is a routine, never a task: its own
+  // verdict, and a hint only when the turn can propose one.
+  const workVerdict = !input.regenerate && (taskToolOn || routineToolOn) ? detectBackgroundWork(input.message) : null;
+  const backgroundHint = workVerdict
+    ? (taskToolOn ? backgroundWorkHint(workVerdict) : null) ?? recurringWorkHint(workVerdict, routineToolOn)
+    : null;
   const systemBase = withRegenerateInstruction(
     appendAgentBlock(
       appendSkillBlock(
