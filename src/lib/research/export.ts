@@ -19,6 +19,12 @@ import { stripModelSources, withoutMarkers } from "@/lib/research/report-structu
 export interface ExportSource {
   title: string;
   url: string;
+  /**
+   * The `[n]` the report cites it by, when the cited list is not simply
+   * 1, 2, 3… (a report that cites [1] and [4] of its corpus keeps those
+   * numbers in the appendix). Absent: its position.
+   */
+  number?: number;
 }
 
 export interface ReportExportInput {
@@ -34,6 +40,12 @@ export interface ReportExportInput {
   accessedAt?: Date;
   /** The lead model's display name. */
   leadModel?: string | null;
+  /**
+   * The YAML front matter (title, date, lead model). On for the downloaded
+   * file; off for what is copied or converted to Word, where `---` blocks are
+   * noise and the title is the document's own heading.
+   */
+  frontMatter?: boolean;
 }
 
 /** Headings of the appendix. English: the export is a file, like the report's own markers. */
@@ -90,12 +102,14 @@ export function reportMarkdownExport(input: ReportExportInput): string {
     "---",
   ].join("\n");
   const cited = input.cited.map(
-    (source, i) => `[${i + 1}] ${oneLine(source.title) || source.url} — ${source.url} (${REPORT_EXPORT_HEADINGS.accessed} ${accessed})`
+    (source, i) => `[${source.number ?? i + 1}] ${oneLine(source.title) || source.url} — ${source.url} (${REPORT_EXPORT_HEADINGS.accessed} ${accessed})`
   );
   const alsoRead = (input.alsoRead ?? []).map((source) => `- ${oneLine(source.title) || source.url} — ${source.url}`);
   const appendix = [
     ...(cited.length ? [`## ${REPORT_EXPORT_HEADINGS.sources}`, "", cited.join("\n\n")] : []),
     ...(alsoRead.length ? ["", `### ${REPORT_EXPORT_HEADINGS.alsoRead}`, "", alsoRead.join("\n")] : []),
   ].join("\n");
-  return `${front}\n\n${body}\n${appendix ? `\n${appendix.trim()}\n` : ""}`;
+  const tail = appendix ? `\n${appendix.trim()}\n` : "";
+  if (input.frontMatter === false) return `${body}\n${tail}`;
+  return `${front}\n\n${body}\n${tail}`;
 }

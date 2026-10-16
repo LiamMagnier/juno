@@ -7,6 +7,9 @@ import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
+import { ShareCopyButton } from "@/components/share/share-copy-button";
+import { sharedTypeCopyable } from "@/lib/share-copy";
+import { getCurrentUser } from "@/lib/session";
 import { ShareGone } from "@/components/share/share-gone";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { publicShareProfile } from "@/lib/sandbox-policy";
@@ -117,12 +120,23 @@ async function resolveSubject(token: string): Promise<PageSubject | "gone" | nul
   };
 }
 
-export default async function SharePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function SharePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams?: Promise<{ copy?: string }>;
+}) {
   const { token } = await params;
   const subject = await resolveSubject(token);
   if (subject === "gone") return <ShareGone />;
   if (!subject) notFound();
   const { chat, artifact, title } = subject;
+  // A visitor can make their own copy of a shared artifact (not a design,
+  // whose document the page never shows): src/lib/share-copy.ts.
+  const copyable = !!artifact && sharedTypeCopyable(artifact.type);
+  const signedIn = copyable ? !!(await getCurrentUser().catch(() => null)) : false;
+  const askCopy = copyable && (await searchParams)?.copy === "1";
 
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
@@ -142,9 +156,12 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           <div className="min-w-0 flex-1 basis-32">
             {artifact && <><h1 className="truncate font-serif text-title font-medium">{title}</h1><p className="truncate text-caption text-muted-foreground">{subject.dateLine}</p></>}
           </div>
-          <Button size="sm" asChild>
-            <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {copyable && <ShareCopyButton token={token} signedIn={signedIn} askOnArrival={askCopy} />}
+            <Button size="sm" asChild>
+              <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
+            </Button>
+          </div>
         </AppPage>
       </header>
 

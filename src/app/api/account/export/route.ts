@@ -284,6 +284,8 @@ export async function GET(req: Request) {
       // in pages under the same budget as the history: each can be a whole
       // document, and there is one per artifact or more.
       draft: { select: { baseVersion: true, updatedAt: true } },
+      // The canvas's unsaved source edit (G12), body paged in below.
+      canvasDrafts: { where: { userId: user.id }, select: { baseVersion: true, updatedAt: true } },
       publications: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -370,6 +372,28 @@ export async function GET(req: Request) {
       }
       if (page.length < ARTIFACT_VERSION_PAGE) break;
       draftCursor = page[page.length - 1].artifactId;
+    }
+  }
+  const canvasDraftBodies = new Map<string, string>();
+  if (!artifactVersionsTruncated) {
+    let canvasCursor: string | null = null;
+    canvasDrafts: for (;;) {
+      const page: Array<{ artifactId: string; content: string }> = await prisma.artifactCanvasDraft.findMany({
+        where: { userId: user.id, ...(canvasCursor ? { artifactId: { gt: canvasCursor } } : {}) },
+        orderBy: { artifactId: "asc" },
+        take: ARTIFACT_VERSION_PAGE,
+        select: { artifactId: true, content: true },
+      });
+      for (const row of page) {
+        if (exportedVersionChars + row.content.length > MAX_ARTIFACT_VERSION_CHARS) {
+          artifactVersionsTruncated = true;
+          break canvasDrafts;
+        }
+        exportedVersionChars += row.content.length;
+        canvasDraftBodies.set(row.artifactId, row.content);
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      canvasCursor = page[page.length - 1].artifactId;
     }
   }
   if (!artifactVersionsTruncated) {
@@ -640,7 +664,7 @@ export async function GET(req: Request) {
             truncationNote: `Artifact history, drafts and suggestions are capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions and ${MAX_ARTIFACT_VERSION_CHARS.toLocaleString("en-US")} characters; the rest stays in your account.`,
           }
         : {}),
-      items: artifactRows.map(({ draft, publications, shares, proposals, ...artifact }) => ({
+      items: artifactRows.map(({ draft, canvasDrafts, publications, shares, proposals, ...artifact }) => ({
         ...artifact,
         conversationId: artifact.conversationId ? stableConversationId.get(artifact.conversationId) ?? artifact.conversationId : null,
         messageId: artifact.messageId ? stableMessageId.get(artifact.messageId) ?? artifact.messageId : null,
@@ -648,6 +672,7 @@ export async function GET(req: Request) {
         versions: versionsByArtifact.get(artifact.id) ?? [],
         // A body left out by the budget is null; the truncation note says so.
         draft: draft ? { ...draft, content: draftBodies.get(artifact.id) ?? null } : null,
+        unsavedEdit: canvasDrafts[0] ? { ...canvasDrafts[0], content: canvasDraftBodies.get(artifact.id) ?? null } : null,
         publications,
         shareLinks: shares,
         suggestions: proposals.map((proposal) => ({ ...proposal, payload: suggestionBodies.get(proposal.id) ?? null })),

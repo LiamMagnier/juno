@@ -87,6 +87,57 @@ export function diffLines(a: string, b: string): DiffLine[] {
   return out;
 }
 
+/** How many lines a diff adds and removes. */
+export function diffStats(diff: readonly DiffLine[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff) {
+    if (line.type === "added") added++;
+    else if (line.type === "removed") removed++;
+  }
+  return { added, removed };
+}
+
+/**
+ * A diff as a reader scans it: the changes with `context` unchanged lines on
+ * either side, and every longer unchanged stretch folded into a `gap` the
+ * reader can open. A stretch shorter than `minGap` is shown rather than
+ * folded — a fold that hides two lines costs more than the two lines.
+ * No changes at all is no segments (the caller says "identical").
+ */
+export type DiffSegment = { kind: "lines"; lines: DiffLine[] } | { kind: "gap"; lines: DiffLine[] };
+
+export function diffSegments(diff: readonly DiffLine[], context = 3, minGap = 4): DiffSegment[] {
+  const n = diff.length;
+  if (!diff.some((line) => line.type !== "same")) return [];
+  const near = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (diff[i].type === "same") continue;
+    for (let k = Math.max(0, i - context); k <= Math.min(n - 1, i + context); k++) near[k] = 1;
+  }
+  const segments: DiffSegment[] = [];
+  const push = (kind: DiffSegment["kind"], line: DiffLine) => {
+    const last = segments[segments.length - 1];
+    if (last && last.kind === kind) last.lines.push(line);
+    else segments.push({ kind, lines: [line] });
+  };
+  let i = 0;
+  while (i < n) {
+    if (near[i]) {
+      push("lines", diff[i]);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && !near[j]) j++;
+    const run = diff.slice(i, j);
+    if (run.length >= minGap) segments.push({ kind: "gap", lines: run });
+    else for (const line of run) push("lines", line);
+    i = j;
+  }
+  return segments;
+}
+
 function fmtRange(start: number, count: number): string {
   return count === 1 ? `${start}` : `${start},${count}`;
 }
@@ -153,4 +204,22 @@ export function unifiedDiff(a: string, b: string, aLabel: string, bLabel: string
     }
   }
   return lines.join("\n");
+}
+
+/** The types whose stored body is one line of JSON (src/lib/work/deliverables/semantic). */
+const JSON_BODY_TYPES = new Set(["SPREADSHEET", "DOCUMENT", "PRESENTATION"]);
+
+/**
+ * The source as a line diff should read it. A workbook, document or deck is
+ * stored as one line of JSON, so diffing it as stored shows the whole body
+ * removed and added again as two enormous lines; indented, a changed cell or
+ * paragraph is the lines that changed. Anything that is not JSON is as stored.
+ */
+export function diffableSource(type: string | undefined, content: string): string {
+  if (!type || !JSON_BODY_TYPES.has(type)) return content;
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
 }

@@ -25,6 +25,7 @@ import type { LibraryItem } from "./library-types";
 import { useLibrary } from "./use-library";
 import { useLibraryUploads } from "./use-library-uploads";
 import type { LibraryMadeItem } from "@/lib/library-made";
+import { ARTIFACT_CHANGED_EVENT } from "@/lib/artifact-events";
 import { PLANS } from "@/lib/plans";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { cn, formatBytes } from "@/lib/utils";
@@ -140,6 +141,13 @@ function useMade(q: string, enabled: boolean) {
     }
   }, [cursor, loadingMore, url]);
   const reload = React.useCallback(() => setReloadKey((key) => key + 1), []);
+  // A rename, copy or delete from an item's own menu (ArtifactLifecycleActions)
+  // shows in this list without a reload of the page.
+  React.useEffect(() => {
+    if (!enabled) return;
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, reload);
+    return () => window.removeEventListener(ARTIFACT_CHANGED_EVENT, reload);
+  }, [enabled, reload]);
   return { items, hasMore: cursor !== null, error, loadingMore, loadMore, reload };
 }
 

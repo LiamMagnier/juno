@@ -154,6 +154,9 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // token through prismaUnguarded, like shares.
   ["Artifact", "userId"],
   ["ArtifactDraft", "userId"],
+  // The canvas's unsaved source edits (G12): one person's work in progress,
+  // read and written only by that person (src/lib/artifact-canvas-draft.ts).
+  ["ArtifactCanvasDraft", "userId"],
   ["ArtifactPublication", "userId"],
   ["ScheduledTask", "userId"],
   ["ModerationFlag", "userId"],

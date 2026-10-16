@@ -104,6 +104,7 @@ import { TaskModeChip } from "@/components/chat/task-mode-chip";
 import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
 import { useConversationTaskMode } from "@/hooks/use-conversation-task-mode";
 import type { ChatTaskMode } from "@/lib/chat/task-approval-mode";
+import { OPEN_ARTIFACT_EVENT, type OpenArtifactDetail } from "@/lib/artifact-events";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -1233,6 +1234,22 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       setClosingDocument(null);
     }
   }, []);
+
+  // "Open in canvas" from a surface inside this chat that does not hold the
+  // canvas itself (the research reader): src/lib/artifact-events.ts.
+  React.useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<OpenArtifactDetail>).detail;
+      // currentConversationId, not the route's: a chat begun at /chat has a
+      // null route id but is this chat all the same.
+      if (!detail || (detail.conversationId && detail.conversationId !== currentConversationId)) return;
+      if (!openableArtifactsRef.current.some((x) => x.identifier === detail.identifier)) return;
+      openArtifactByIdentifier(detail.identifier);
+      detail.opened = true;
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, open);
+    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, open);
+  }, [currentConversationId, openArtifactByIdentifier]);
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {

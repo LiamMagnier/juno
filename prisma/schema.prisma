@@ -112,6 +112,7 @@ model User {
   shares                      Share[]
   artifacts                   Artifact[]
   artifactDrafts              ArtifactDraft[]
+  artifactCanvasDrafts        ArtifactCanvasDraft[]
   artifactPublications        ArtifactPublication[]
   scheduledTasks              ScheduledTask[]
   voiceTranscriptSessions     VoiceTranscriptSession[]
@@ -1482,6 +1483,7 @@ model Artifact {
   versions     ArtifactVersion[]
   shares       Share[]
   draft        ArtifactDraft?
+  canvasDrafts ArtifactCanvasDraft[]
   proposals    ArtifactProposal[]
   publications ArtifactPublication[]
 
@@ -1538,6 +1540,33 @@ model ArtifactDraft {
 
   @@index([userId])
   @@index([updatedAt])
+}
+
+/// An unsaved edit to an artifact's source in the canvas (G12).
+///
+/// Not a version and never sealed into one by anybody but the person: the
+/// canvas autosaves the Code tab here as they type, offers it back when the
+/// artifact reopens (on this device or another), and drops it when they save
+/// it as a version or discard it. Separate from ArtifactDraft on purpose: that
+/// row is the design editor's working copy, which every other write and the
+/// idle sweeper seal into a version, and an unsaved code edit must not become
+/// a version behind the person's back. Never change-captured, synced, shared
+/// or published; drafts untouched for CANVAS_DRAFT_RETENTION_DAYS are dropped
+/// (src/lib/artifact-canvas-draft.ts).
+model ArtifactCanvasDraft {
+  artifactId  String
+  userId      String
+  /// The version the edit started from: a save checks it against the head.
+  baseVersion Int
+  content     String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([artifactId, userId])
+  @@index([userId, updatedAt])
 }
 
 /// Juno's work that is not (yet) a version: a model re-emit held back because

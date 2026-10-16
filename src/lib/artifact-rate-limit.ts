@@ -17,6 +17,8 @@ export const ARTIFACT_WRITE_BUDGETS = {
   save: { limit: 120, windowSec: 60 },
   /** Design editor transactions (gesture rate). */
   transaction: { limit: 600, windowSec: 60 },
+  /** The canvas autosaving an unsaved edit as the person types (debounced, about one a second at most). */
+  draft: { limit: 240, windowSec: 60 },
   /** Trash, restore, Delete now. */
   delete: { limit: 60, windowSec: 60 },
   /** Publish, update, roll back, unpublish, reset link; creating a share link. */

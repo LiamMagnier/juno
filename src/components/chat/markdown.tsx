@@ -548,9 +548,31 @@ function remarkCitations(sourceCount: number) {
   };
 }
 
+/**
+ * An HTML comment is a note in the source, never words on the page. Nothing
+ * here renders raw HTML, so a comment used to print verbatim: a saved
+ * research report's `<!-- …section=… -->` markers showed as text in the
+ * canvas preview and on its public page. Only a node that is nothing but
+ * whole comments goes; one still open (mid-stream) stays text until it closes.
+ */
+function isOnlyComments(value: string | undefined): boolean {
+  return !!value && value.includes("<!--") && value.replace(/<!--[\s\S]*?-->/g, "").trim() === "";
+}
+
+function remarkDropComments() {
+  const walk = (node: MdNode) => {
+    if (!node.children) return;
+    node.children = node.children.filter((child) => !(child.type === "html" && isOnlyComments(child.value)));
+    for (const child of node.children) walk(child);
+  };
+  return function transformer(tree: MdNode) {
+    walk(tree);
+  };
+}
+
 // `remarkRestoreCurrency` gives back the dollars `protectCurrency` hid from
 // remark-math (see markdown-currency.ts): prices are prose, not formulas.
-const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkRestoreCurrency, remarkFenceFilename] satisfies Options["remarkPlugins"];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkRestoreCurrency, remarkFenceFilename, remarkDropComments] satisfies Options["remarkPlugins"];
 /*
  * `rehypeHighlight` and `rehypeKatex` are NOT here.
  *

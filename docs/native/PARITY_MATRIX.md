@@ -22,14 +22,14 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-353 routes: 226 native, 56 planned, 56 web only, 15 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+355 routes: 226 native, 57 planned, 57 web only, 15 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 3 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
@@ -42,7 +42,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
-| [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
+| [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 15 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
@@ -159,6 +159,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/messages/[id]/versions` | GET | Native | JunoChatKit |  |
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/share/[id]` | DELETE | Native | JunoChatKit |  |
+| `/api/share/copy` | POST | Web only |  | Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws. |
 | `/api/share/report` | POST | Web only |  | Reporting a shared link happens on the shared page, which only the web draws. |
 
 <a id="search"></a>
@@ -236,7 +237,7 @@ Design is a type of artifact (register #73).
 | `/api/artifacts` | GET | Native | JunoChatKit | The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list. |
 | `/api/artifacts/[id]` | GET, POST, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/download` | GET | Native | JunoChatKit | Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter). |
-| `/api/artifacts/[id]/draft` | POST | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
+| `/api/artifacts/[id]/draft` | GET, POST, PUT, DELETE | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft), and reads, autosaves and drops the web canvas's unsaved source edit (ArtifactCanvasDraft, G12). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
 | `/api/artifacts/[id]/duplicate` | POST | Native | JunoChatKit | Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history. |
 | `/api/artifacts/[id]/export` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/poster` | GET | Native | JunoChatKit |  |
@@ -481,6 +482,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/research/[id]` | GET | Native | JunoChatKit |  |
 | `/api/research/[id]/clarify` | POST | Native | JunoChatKit |  |
 | `/api/research/[id]/control` | POST | Native | JunoChatKit |  |
+| `/api/research/[id]/export` | POST | Planned |  | A finished report as a Word document, from the Markdown the web's full-screen reader builds (G37). The apps' report reader has no Word export yet. |
 | `/api/research/[id]/plan` | POST | Native | JunoChatKit |  |
 | `/api/research/[id]/steer` | POST | Native | JunoChatKit |  |
 | `/api/research/citations` | GET | Native | JunoChatKit |  |

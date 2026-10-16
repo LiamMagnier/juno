@@ -197,6 +197,10 @@
         "/api/messages/[id]/versions": "native",
         "/api/share": "native",
         "/api/share/[id]": "native",
+        "/api/share/copy": {
+          "status": "web-only",
+          "note": "Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws."
+        },
         "/api/share/report": {
           "status": "web-only",
           "note": "Reporting a shared link happens on the shared page, which only the web draws."
@@ -339,7 +343,7 @@
         },
         "/api/artifacts/[id]/draft": {
           "status": "web-only",
-          "note": "Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
+          "note": "Seals or discards the web design editor's working copy (ArtifactDraft), and reads, autosaves and drops the web canvas's unsaved source edit (ArtifactCanvasDraft, G12). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
         },
         "/api/artifacts/[id]/duplicate": {
           "status": "native",
@@ -832,6 +836,10 @@
         "/api/research/[id]": "native",
         "/api/research/[id]/clarify": "native",
         "/api/research/[id]/control": "native",
+        "/api/research/[id]/export": {
+          "status": "planned",
+          "note": "A finished report as a Word document, from the Markdown the web's full-screen reader builds (G37). The apps' report reader has no Word export yet."
+        },
         "/api/research/[id]/plan": "native",
         "/api/research/[id]/steer": "native",
         "/api/research/citations": "native"
