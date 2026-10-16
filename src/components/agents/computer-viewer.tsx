@@ -124,6 +124,49 @@ export function typeIntoRemote(rfb: { sendKey(keysym: number, code: string | nul
   return sent;
 }
 
+/** noVNC's `GH_INITSTATE` (core/input/gesturehandler.js): every gesture still possible. */
+const NOVNC_GESTURE_INIT_STATE = 127;
+
+/**
+ * Makes noVNC forget a touch that a pinch took over (`rfb._gestures`, the
+ * GestureHandler of the pinned noVNC 1.7.0; private, so read defensively).
+ *
+ * The pinch zooms the picture here, so noVNC sees the first finger land and
+ * nothing after it. Left alone it waits out its long press, holds the right
+ * mouse button down on the computer, and ignores every touch after that, so
+ * control by touch is gone until the stream reopens. Forgetting the finger
+ * before any gesture was recognised sends nothing to the computer.
+ *
+ * Returns false, and leaves noVNC as it was, when a drag or a long press has
+ * already reached the computer (the pinch must not cut it off with a button
+ * still down) or when the handler is not the shape this was written for.
+ */
+export function forgetPendingGesture(gestures: unknown): boolean {
+  if (!gestures || typeof gestures !== "object") return false;
+  const g = gestures as Record<string, unknown>;
+  const detected = g._hasDetectedGesture;
+  const stopLongpress = g._stopLongpressTimeout;
+  const stopTwoTouch = g._stopTwoTouchTimeout;
+  if (
+    !Array.isArray(g._tracked) ||
+    !Array.isArray(g._ignored) ||
+    typeof g._state !== "number" ||
+    typeof detected !== "function" ||
+    typeof stopLongpress !== "function" ||
+    typeof stopTwoTouch !== "function"
+  ) {
+    return false;
+  }
+  if (detected.call(gestures) === true) return false;
+  stopLongpress.call(gestures);
+  stopTwoTouch.call(gestures);
+  g._tracked = [];
+  g._ignored = [];
+  g._state = NOVNC_GESTURE_INIT_STATE;
+  g._waitingRelease = false;
+  return true;
+}
+
 /** Tells the app around this page (iOS and macOS WKWebView) what the stream did. */
 function postToApp(message: { type: "connected" | "disconnected"; mode: ViewerMode }): void {
   try {
@@ -734,6 +777,12 @@ export function ComputerViewer({
     });
     const onStart = (event: TouchEvent) => {
       if (event.touches.length >= 2) {
+        // noVNC saw the first finger land; the rest of the pinch is ours.
+        const rfb = rfbRef.current as unknown as { _gestures?: unknown } | null;
+        const released = forgetPendingGesture(rfb?._gestures);
+        // In control, a drag or long press that already reached the computer
+        // is finished there instead (watching, nothing reaches it anyway).
+        if (!released && rfb && modeRef.current === "control") return;
         const a = local(event.touches[0]);
         const b = local(event.touches[1]);
         const { z, x, y } = zoomRef.current;

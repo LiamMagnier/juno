@@ -591,6 +591,12 @@ private struct NativeAgentComputerHandoffSheet: View {
         try? await Task.sleep(for: .seconds(Double(reopenAttempts)))
         if let raw = await model.computerHandoffURL(agentID: agentID, mode: mode), let next = URL(string: raw) {
             url = next
+        } else {
+            // No link: a phone back from an authenticator often has no
+            // network for a moment. Try again, and after the last try say so,
+            // instead of "Taking control…" while no stream sends heartbeats
+            // and control quietly lapses.
+            await reopen()
         }
     }
 

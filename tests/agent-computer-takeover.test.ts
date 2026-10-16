@@ -449,9 +449,56 @@ describe("(d) control belongs to one client, and every client can see who has it
       assert.equal((await post(heartbeatRoute(), "agent_a", { mode: "control" })).status, 200, `control beat ${i} on agent A`);
     }
     assert.equal(await store.computerBlockedReason("user_1", "agent_a"), takeover.TAKEOVER_REFUSAL, "control held throughout");
-    // Hand back is never limited.
-    for (let i = 0; i < 3; i += 1) await post(heartbeatRoute(), "agent_a", { mode: "control" });
+    // Hand back shares its ceiling with no other beat: a minute of beats never blocks it.
+    for (let i = 0; i < 50; i += 1) await post(heartbeatRoute(), "agent_a", { mode: "control" });
+    for (let i = 0; i < 10; i += 1) await post(heartbeatRoute(), "agent_a", { mode: "watch" });
     assert.equal((await post(heartbeatRoute(), "agent_a", { mode: "control", ended: true })).status, 200);
+  });
+
+  it("a client that loses the race for control gets the sentence, never the control password", async () => {
+    await store.ensureAwake("user_1", "agent_race", { autoEnable: true });
+    // The phone takes control while this request is still waking the computer
+    // and starting the stream: after its first read, before it holds control.
+    const original = memDb.findByAgent.bind(memDb);
+    let reads = 0;
+    memDb.findByAgent = async (userId: string, agentId: string) => {
+      const row = await original(userId, agentId);
+      reads += 1;
+      if (reads === 1 && row) {
+        await memDb.updateByAgent(userId, agentId, takeover.takeoverOpened({ state: row, by: "native:phone-B", now: new Date() }));
+      }
+      return row;
+    };
+    try {
+      await assert.rejects(
+        () => store.openComputerViewSession("user_1", "agent_race", "control"),
+        store.TakeoverHeldElsewhereError
+      );
+    } finally {
+      memDb.findByAgent = original;
+    }
+    const row = await memDb.findByAgent("user_1", "agent_race");
+    assert.equal(row?.takeoverBy, "native:phone-B", "the device that took control keeps it");
+  });
+
+  it("a loop of hand backs is capped, so it cannot restart the computer's VNC without end", async () => {
+    await store.ensureAwake("user_1", "agent_l", { autoEnable: true });
+    await store.openComputerViewSession("user_1", "agent_l", "control");
+    device = null;
+    fakeComputerProvider.calls = [];
+    const statuses: number[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      statuses.push((await post(heartbeatRoute(), "agent_l", { mode: "control", ended: true })).status);
+    }
+    assert.equal(statuses[0], 200, "the real Hand back lands");
+    assert.ok(statuses.slice(0, 20).every((s) => s === 200), "a burst a person could make is never refused");
+    assert.ok(statuses.includes(429), "a loop is refused before it restarts the stream forty times");
+    const restarts = fakeComputerProvider.calls.filter((c) => c.method === "startVnc").length;
+    assert.ok(restarts <= 20, `VNC restarted ${restarts} times`);
+    // And the cap is the hand back's own: control and watch beats still land.
+    assert.equal((await post(heartbeatRoute(), "agent_l", { mode: "watch" })).status, 200);
+    await store.openComputerViewSession("user_1", "agent_l", "control");
+    assert.equal((await post(heartbeatRoute(), "agent_l", { mode: "control" })).status, 200);
   });
 
   it("reset refuses while a task holds the lease, bills the open interval and clears the takeover", async () => {

@@ -294,7 +294,10 @@ export function computerHeartbeat(
  */
 export function sendHandBackBeacon(id: string): boolean {
   if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return false;
-  const body = new Blob([JSON.stringify({ mode: "control", ended: true })], { type: "application/json" });
+  // text/plain, not application/json: Chrome refuses a beacon whose Blob type
+  // is not CORS-safelisted (it throws, and nothing is sent). The route reads
+  // the body as JSON whatever its type.
+  const body = new Blob([JSON.stringify({ mode: "control", ended: true })], { type: "text/plain;charset=UTF-8" });
   try {
     return navigator.sendBeacon(`${base(id)}/computer/heartbeat`, body);
   } catch {
