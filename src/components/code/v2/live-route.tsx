@@ -40,6 +40,10 @@ import { initialModePair, projectModeKey, type ProjectModeDefault } from "@/lib/
 import { createFirstPromptHandoff, firstPromptNeedsSkills } from "@/lib/code-v2/first-prompt";
 import { skillsStorageKey } from "@/lib/code-v2/skills";
 import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
+import { transcriptFromTurns } from "@/lib/share-transcript";
+import { registerSessionTranscript, useCodeSessionActions } from "./session-actions";
+import { useAnswerFeedback } from "./use-answer-feedback";
+import { useCodePrefs } from "./use-code-prefs";
 
 /** A thread with no skills chosen, as one stable value. */
 const NO_SKILLS: SkillActivation[] = [];
@@ -191,7 +195,16 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   }, [state]);
 
   const cwd = conversation.codeWorkspacePath ?? "";
-  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode);
+  // A thread that never chose a mode starts from its project's last, then the account's default.
+  const { prefs: account, loaded: accountLoaded } = useCodePrefs();
+  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode, account.runtimeMode ? { runtimeMode: account.runtimeMode, interactionMode: account.interactionMode } : null);
+  // Once a thread has run, its mode is its own: a later change to the defaults never reaches it.
+  const hasRun = items.length > 0;
+  React.useEffect(() => {
+    if (!hasRun || !accountLoaded || prefs.runtimeMode) return;
+    setPrefs((p) => (p.runtimeMode ? p : { ...p, runtimeMode, interactionMode }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pins the pair it shows at that moment
+  }, [hasRun, accountLoaded, prefs.runtimeMode]);
   const rememberMode = (pair: ProjectModeDefault) => {
     if (projectKey) writeJson(projectKey, pair);
   };
@@ -237,6 +250,26 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     return { skills: liveView.skills ?? NO_SKILLS, select: (next: SkillActivation[]) => envClient.request("skills.select", { sessionId, skills: next }) };
   }, [liveView, envClient]);
   const skills = useCodeSkills({ threadKey: conversation.id, snapshotSkills: env.view?.skills, listLocal, remote: remoteSkills, listRevision: env.skillsRevision, localKind: envClient ? "mac" : cloudRepoKey ? "repo" : undefined });
+
+  // Session menu verbs, shared with the sidebar row's menu; its dialogs render below.
+  const sessionActions = useCodeSessionActions();
+  const pinned = conversations.find((c) => c.id === conversation.id)?.pinned ?? false;
+  // A Mac thread's transcript is not on the server: a share link carries it (messages and answers only).
+  const itemsRef = React.useRef(items);
+  itemsRef.current = items;
+  const onMac = useEnv && !!env.view;
+  React.useEffect(() => {
+    if (!onMac) return;
+    return registerSessionTranscript(conversation.id, () => transcriptFromTurns(itemsRef.current));
+  }, [onMac, conversation.id]);
+  const feedback = useAnswerFeedback({
+    conversationId: conversation.id,
+    onMac,
+    items,
+    legacyMessages: session.messages as unknown as { id: string; feedback?: "UP" | "DOWN" | null }[],
+    setLegacyFeedback: session.setFeedback,
+    model: selection.model,
+  });
 
   /**
    * A queue change on a Mac thread: drawn at once, sent to the env server, and
@@ -347,10 +380,35 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       void actions.steer(row.text);
     },
     rollback: useEnv
-      ? (checkpointId) => {
-          if (env.client && env.view) void env.client.request("checkpoint.rollback", { sessionId: env.view.id, checkpointId });
+      ? async (checkpointId) => {
+          if (!env.client || !env.view) return false;
+          try {
+            await env.client.request("checkpoint.rollback", { sessionId: env.view.id, checkpointId });
+            return true;
+          } catch (e) {
+            // Said, not swallowed: Edit and Retry stop here rather than send over the old files.
+            toast.error(e instanceof Error && e.message ? e.message : "Could not restore that checkpoint on your Mac.");
+            return false;
+          }
         }
       : undefined,
+    // Retry and the error row's Retry: the turn's own message again (with its attachments on a Mac thread).
+    async resend(message) {
+      if (useEnv && env.client) {
+        const sessionId = await ensureEnvSession();
+        return env.client.request("turn.start", {
+          sessionId,
+          input: { text: message.text, ...(message.attachments?.length ? { attachments: message.attachments } : {}) },
+          selection,
+          routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting,
+          runtimeMode,
+          interactionMode,
+        });
+      }
+      return sendLegacy(message.text);
+    },
+    feedbackFor: (turnId) => feedback.get(turnId),
+    setFeedback: (turnId, value) => feedback.set(turnId, value),
     approvePlan(itemId, approve) {
       const planId = itemId.replace(/^plan-/, "");
       if (useEnv && env.client && env.view) void env.client.request("approval.respond", { sessionId: env.view.id, requestId: planId, decision: approve ? "accept" : "decline" });
@@ -421,10 +479,12 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     terminalResize: env.ready ? env.resizeTerminal : undefined,
     closeTerminal: env.ready ? env.closeTerminal : undefined,
     openTerminal: env.ready ? (command) => void env.openTerminal(cwd, command) : undefined,
-    renameThread: (title) => {
-      updateConversation(conversation.id, { title });
-      void fetch(`/api/conversations/${conversation.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }).catch(() => undefined);
-    },
+    // The session menu (session-actions.tsx): the same verbs as the sidebar row's menu.
+    renameThread: (title) => sessionActions.rename(conversation.id, title),
+    pinThread: (pinned) => sessionActions.setPinned(conversation.id, pinned),
+    shareThread: () => sessionActions.requestShare(conversation.id),
+    archiveThread: () => sessionActions.archive(conversation.id),
+    deleteThread: () => sessionActions.requestDelete(conversation.id),
   };
 
   /*
@@ -487,10 +547,12 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   const model: WorkspaceModel = {
     thread: {
       id: conversation.id,
-      title: conversation.title || "Code session",
+      // The app's copy first: a rename (here or from the sidebar) shows at once.
+      title: conversations.find((c) => c.id === conversation.id)?.title || conversation.title || "Code session",
       repo: meta.repoOwner && meta.repoName ? `${meta.repoOwner}/${meta.repoName}` : (conversation.codeWorkspaceName ?? "Code session"),
       branch: meta.branch ?? undefined,
       cwd,
+      pinned,
     },
     items,
     state,
@@ -518,41 +580,44 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   };
 
   return (
-    <CodeWorkspace
-      model={model}
-      sidebar={false}
-      byok={byok}
-      firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && session.messages.length === 0}
-      onProbe={env.ready ? env.probe : undefined}
-      onRefreshSubscriptions={env.refreshSubscriptions}
-      onManaged={
-        env.ready && env.client
-          ? (instanceId, op) => {
-              if (!env.client) throw new Error("Your Mac is not connected.");
-              return managedCall(env.client, instanceId, op);
-            }
-          : undefined
-      }
-      onSetup={async (instance, action) => {
-        const managed = managedSetup(instance, action);
-        if (managed && env.client) {
-          if (managed.type === "provider.install") await env.client.request("provider.install", managed.params);
-          else await env.client.request("provider.auth", managed.params);
-          return;
+    <>
+      <CodeWorkspace
+        model={model}
+        sidebar={false}
+        byok={byok}
+        firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && session.messages.length === 0}
+        onProbe={env.ready ? env.probe : undefined}
+        onRefreshSubscriptions={env.refreshSubscriptions}
+        onManaged={
+          env.ready && env.client
+            ? (instanceId, op) => {
+                if (!env.client) throw new Error("Your Mac is not connected.");
+                return managedCall(env.client, instanceId, op);
+              }
+            : undefined
         }
-        let command: string | null = null;
-        if (env.client) {
-          try {
-            const { step } = await env.client.request("provider.setup", { instanceId: instance.id, action });
-            command = step?.command ?? null;
-          } catch {
-            command = null;
+        onSetup={async (instance, action) => {
+          const managed = managedSetup(instance, action);
+          if (managed && env.client) {
+            if (managed.type === "provider.install") await env.client.request("provider.install", managed.params);
+            else await env.client.request("provider.auth", managed.params);
+            return;
           }
-        }
-        command ??= fallbackSetupCommand(instance, action);
-        if (!command) throw new Error("Alevr does not know this runtime's command yet. Run it yourself, then press Re-check.");
-        await env.openTerminal(cwd || "~", command, action === "install" ? `Install ${instance.label}` : `Sign in to ${instance.label}`);
-      }}
-    />
+          let command: string | null = null;
+          if (env.client) {
+            try {
+              const { step } = await env.client.request("provider.setup", { instanceId: instance.id, action });
+              command = step?.command ?? null;
+            } catch {
+              command = null;
+            }
+          }
+          command ??= fallbackSetupCommand(instance, action);
+          if (!command) throw new Error("Alevr does not know this runtime's command yet. Run it yourself, then press Re-check.");
+          await env.openTerminal(cwd || "~", command, action === "install" ? `Install ${instance.label}` : `Sign in to ${instance.label}`);
+        }}
+      />
+      {sessionActions.ui}
+    </>
   );
 }

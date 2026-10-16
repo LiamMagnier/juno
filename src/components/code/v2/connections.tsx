@@ -17,6 +17,7 @@
  */
 import * as React from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { BYOK_PROVIDER_VALUES, type ByokProvider, type ProviderInstance } from "@/lib/code-v2/contracts";
 import { BYOK_LABELS, ByokError, looksLikeKey, maskKey, type ByokClient, type ByokKeyRecord } from "@/lib/code-v2/byok-client";
 import {
@@ -455,7 +456,6 @@ export function ConnectionsPanel(props: ConnectionsProps) {
   const { instances, device, flags, byok } = props;
   const [keys, setKeys] = React.useState<ByokKeyRecord[]>(props.keys ?? []);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [undo, setUndo] = React.useState<ByokKeyRecord | null>(null);
   const [showDetail, setShowDetail] = React.useState(!!props.initialSelected);
   React.useEffect(() => {
     if (!byok || props.keys || props.showKeys === false) return;
@@ -468,11 +468,6 @@ export function ConnectionsPanel(props: ConnectionsProps) {
       live = false;
     };
   }, [byok, props.keys, props.showKeys]);
-  React.useEffect(() => {
-    if (!undo) return;
-    const t = setTimeout(() => setUndo(null), 6000);
-    return () => clearTimeout(t);
-  }, [undo]);
 
   const online = !!device?.online;
   const reported = instances.filter((i) => isSubscriptionKind(i.kind));
@@ -525,7 +520,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
         </div>
       </div>
     );
-  else if (selKey && showKeys) detail = <KeyDetail key={selKey} provider={selKey} record={keys.find((k) => k.provider === selKey)} client={byok} onChange={(r) => setKey(selKey, r)} onRemoved={setUndo} />;
+  else if (selKey && showKeys) detail = <KeyDetail key={selKey} provider={selKey} record={keys.find((k) => k.provider === selKey)} client={byok} onChange={(r) => setKey(selKey, r)} onRemoved={(r) => toast.success(`Removed your ${BYOK_LABELS[r.provider]} key.`)} />;
   else if (selected === "alevr" && props.alevrPlan)
     detail = (
       <div className="cv2-md-detail">
@@ -640,14 +635,6 @@ export function ConnectionsPanel(props: ConnectionsProps) {
           {detail}
         </div>
       </div>
-      {undo && (
-        <div className="cv2-toast" role="status">
-          <span>Removed your {BYOK_LABELS[undo.provider]} key.</span>
-          <button type="button" className="cv2-btn ghost" onClick={() => setUndo(null)}>
-            Dismiss
-          </button>
-        </div>
-      )}
     </div>
   );
   if (props.sheet) {
