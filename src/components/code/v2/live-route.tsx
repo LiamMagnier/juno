@@ -134,11 +134,37 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   const [projectMode] = React.useState<Partial<ProjectModeDefault> | null>(() => (projectKey && typeof window !== "undefined" ? readJson(projectKey) : null));
   const selection = reconcileSelection(instances, prefs.selection);
   const [routing, setRoutingState] = React.useState<RoleRouting>({ preset: "solo", orchestrator: selection });
+  // A team set before the thread's own routing has been read (the team chip seeds a fresh-looking
+  // thread from the project's last team or the account default the moment it mounts, and a Mac
+  // thread looks fresh until its log arrives) waits here: a stored team wins, and nothing
+  // overwrites it on the server.
+  const routingLoaded = React.useRef(false);
+  const earlyRouting = React.useRef<RoleRouting | null>(null);
+  const latestPersistRouting = React.useRef<(r: RoleRouting) => void>(() => undefined);
+  // This browser already ran this thread on a Mac: it only looked fresh while its log loaded,
+  // and a Solo thread stays Solo (a default is for new sessions).
+  const ranOnMacHere = React.useRef(!!storedSession);
   React.useEffect(() => {
+    routingLoaded.current = false;
+    earlyRouting.current = null;
+    let live = true;
     fetch(`/api/code/routing/${conversation.id}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((b: { routing?: RoleRouting | null } | null) => b?.routing && setRoutingState(b.routing))
-      .catch(() => undefined);
+      .then((b: { routing?: RoleRouting | null } | null) => {
+        if (!live) return;
+        if (b?.routing) setRoutingState(b.routing);
+        else if (earlyRouting.current && ranOnMacHere.current) setRoutingState((r) => ({ preset: "solo", orchestrator: r.orchestrator }));
+        else if (earlyRouting.current) latestPersistRouting.current(earlyRouting.current);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!live) return;
+        routingLoaded.current = true;
+        earlyRouting.current = null;
+      });
+    return () => {
+      live = false;
+    };
   }, [conversation.id]);
   const effectiveRouting: RoleRouting = { ...routing, orchestrator: selection };
 
@@ -196,15 +222,17 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
 
   const cwd = conversation.codeWorkspacePath ?? "";
   // A thread that never chose a mode starts from its project's last, then the account's default.
-  const { prefs: account, loaded: accountLoaded } = useCodePrefs();
-  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode, account.runtimeMode ? { runtimeMode: account.runtimeMode, interactionMode: account.interactionMode } : null);
-  // Once a thread has run, its mode is its own: a later change to the defaults never reaches it.
-  const hasRun = items.length > 0;
-  React.useEffect(() => {
-    if (!hasRun || !accountLoaded || prefs.runtimeMode) return;
-    setPrefs((p) => (p.runtimeMode ? p : { ...p, runtimeMode, interactionMode }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pins the pair it shows at that moment
-  }, [hasRun, accountLoaded, prefs.runtimeMode]);
+  // The account's default reaches only a thread with nothing in it yet (a new session). A thread
+  // that already ran without choosing a mode keeps what it ran with (its project's last, else
+  // Accept edits): a default changed in Settings, or read on another browser where this thread
+  // has no stored choice, never moves an existing session to a different access level.
+  const { prefs: account } = useCodePrefs();
+  const accountPair = account.runtimeMode && items.length === 0 ? { runtimeMode: account.runtimeMode, interactionMode: account.interactionMode } : null;
+  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode, accountPair);
+  // The first send pins the pair it ran with, so the thread's mode is its own from then on.
+  const pinModeOnSend = () => {
+    if (!prefs.runtimeMode) setPrefs((p) => (p.runtimeMode ? p : { ...p, runtimeMode, interactionMode }));
+  };
   const rememberMode = (pair: ProjectModeDefault) => {
     if (projectKey) writeJson(projectKey, pair);
   };
@@ -292,6 +320,13 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     setRoutingState(r);
     void fetch(`/api/code/routing/${conversation.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routing: r }) }).catch(() => undefined);
   };
+  latestPersistRouting.current = persistRouting;
+  /** The team chip's setter: drawn at once, but saved only once the thread's own routing is known. */
+  const setRouting = (r: RoleRouting) => {
+    if (routingLoaded.current) return persistRouting(r);
+    earlyRouting.current = r;
+    setRoutingState(r);
+  };
 
   const actions: WorkspaceModel["actions"] = {
     ...(useEnv && env.client && env.view && env.instances.some((i) => i.id === env.view!.selection.instanceId && (i.kind === "alevr" || i.kind === "byok")) ? {
@@ -303,6 +338,7 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       stopAgent: (agentId: string) => { void env.client!.request("agent.interrupt", { sessionId: env.view!.id, agentId }).catch((e) => toast.error(e.message)); },
     } : {}),
     async send(text) {
+      pinModeOnSend();
       if (useEnv && env.client) {
         const sessionId = await ensureEnvSession();
         const active = await skills.take();
@@ -335,7 +371,7 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       return session.respond(requestId, decision === "accept" || decision === "acceptForSession");
     },
     setSelection: (sel) => setPrefs((p) => ({ ...p, selection: sel })),
-    setRouting: persistRouting,
+    setRouting,
     setRuntimeMode: (m) => {
       rememberMode({ runtimeMode: m, interactionMode });
       setPrefs((p) => ({ ...p, runtimeMode: m, interactionMode: p.interactionMode ?? interactionMode }));
