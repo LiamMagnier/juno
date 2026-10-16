@@ -1,6 +1,23 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "^[%lld character](inflect: true)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "^[%lld character](inflect: true)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "^[%lld caractère](inflect: true)"
+          }
+        }
+      }
+    },
     "Alevr Code needs approval": {
       "extractionState": "manual",
       "localizations": {
@@ -188,6 +205,57 @@
         }
       }
     },
+    "Done": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "Expand message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand message"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agrandir le message"
+          }
+        }
+      }
+    },
+    "Message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        }
+      }
+    },
     "Muted": {
       "extractionState": "manual",
       "localizations": {
@@ -256,6 +324,23 @@
         }
       }
     },
+    "Opens the message full screen for editing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the message full screen for editing"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre le message en plein écran pour le modifier"
+          }
+        }
+      }
+    },
     "Pick up where your thinking left off.": {
       "extractionState": "manual",
       "localizations": {
@@ -269,6 +354,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reprenez là où votre réflexion s’est arrêtée."
+          }
+        }
+      }
+    },
+    "Returns to the message composer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Returns to the message composer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revient à la zone de saisie"
           }
         }
       }

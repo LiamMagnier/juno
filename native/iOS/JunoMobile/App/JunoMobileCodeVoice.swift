@@ -165,8 +165,19 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
 
     @State private var dictation: JunoMobileDictationSession?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The full-screen editor for a long prompt, as in Chat's composer
+    /// (`JunoMobilePromptEditor`), offered once the field is at its cap.
+    @State private var editorOpen = false
+    @State private var refocusAfterEditor = false
+    @State private var fieldHeight: CGFloat = 0
+    @ScaledMetric(relativeTo: .body) private var fieldLineHeight: CGFloat = 20.29
 
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    private var offersEditor: Bool {
+        voice == nil && dictation == nil
+            && JunoMobilePromptEditorOffer.offers(prompt: text, fieldHeight: fieldHeight, lineHeight: fieldLineHeight)
+    }
     private static var typeWhileYouTalk: String { "Type while you talk\u{2026}" }
 
     var body: some View {
@@ -194,6 +205,28 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
             }
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: dictation == nil)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: offersEditor)
+        .fullScreenCover(isPresented: $editorOpen, onDismiss: {
+            if refocusAfterEditor { focused.wrappedValue = true }
+        }) {
+            JunoMobilePromptEditor(
+                text: $text,
+                placeholder: Text(placeholder),
+                canSend: canSend,
+                send: {
+                    refocusAfterEditor = false
+                    editorOpen = false
+                    send()
+                },
+                done: {
+                    refocusAfterEditor = true
+                    editorOpen = false
+                }
+            ) {
+                // The next message's attachments, as they sit over the field.
+                if let header { header }
+            }
+        }
         .onAppear {
             if let previewDictation {
                 dictation = previewDictation
@@ -224,9 +257,10 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
                 Text(voice != nil ? Self.typeWhileYouTalk : placeholder)
             }
             .junoFont(size: 17, relativeTo: .body)
-            .lineLimit(1...6)
+            .lineLimit(1...JunoMobilePromptEditorOffer.composerLineCap)
             .textFieldStyle(.plain)
             .focused(focused)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fieldHeight = $0 }
             // A hardware keyboard: Return sends, Shift-Return and Option-Return
             // break the line, an input method's Return confirms its text.
             .onKeyPress(.return, phases: .down) { press in
@@ -238,10 +272,23 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
                     return .handled
                 }
             }
-            .padding(.horizontal, JunoSpace.regular)
+            .padding(.leading, JunoSpace.regular)
+            .padding(.trailing, offersEditor ? 44 + JunoSpace.tight : JunoSpace.regular)
             .padding(.top, JunoSpace.comfy)
             .padding(.bottom, JunoSpace.tight)
             .accessibilityIdentifier("juno.mobile.code-composer-field")
+            .overlay(alignment: .topTrailing) {
+                if offersEditor {
+                    JunoMobilePromptEditorButton {
+                        focused.wrappedValue = false
+                        refocusAfterEditor = false
+                        editorOpen = true
+                    }
+                    .padding(.top, max(0, JunoSpace.comfy + fieldLineHeight / 2 - 22))
+                    .padding(.trailing, JunoSpace.tight)
+                    .transition(.opacity)
+                }
+            }
         }
     }
 
