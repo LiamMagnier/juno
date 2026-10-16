@@ -32,6 +32,7 @@ import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
 import type { ImageEditInput, SendResult } from "@/hooks/use-chat";
 import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import "./image-edit.css";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /**
  * THE IMAGE EDITOR. The picture is the product.
@@ -349,7 +350,7 @@ export function ImageEditOverlay({
     flippedRef.current = true;
     const frame = frameRef.current;
     if (!frame || !originRect || originRect.width < 8) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     const to = frame.getBoundingClientRect();
     if (!to.width || !to.height) return;
     const sx = originRect.width / to.width;

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { watchCanvas } from "@/lib/canvas/canvas-lifecycle";
 import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
-import { reducedMotionAt } from "@/lib/run/loop-phase";
+import { reducedMotionAt, subscribeReducedMotion } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
 import {
   GALAXY_COUNT_SMALL,
@@ -97,7 +97,6 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
     const ctx = el.getContext("2d");
     if (!ctx) return;
 
-    const mq = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     const reduced = () => reducedMotion ?? reducedMotionAt(el);
 
     let raf = 0;
@@ -250,9 +249,9 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
     const onVisibility = () => (document.visibilityState === "visible" ? start() : stop());
     document.addEventListener("visibilitychange", onVisibility);
     const onMotion = () => wake.current();
-    mq?.addEventListener("change", onMotion);
-    // CSS cannot stop a canvas clock. Observe the same app preference that
-    // MotionConfig and the CSS rules use, including gallery ancestor overrides.
+    // CSS cannot stop a canvas clock. Follow the OS and the app's choice (one
+    // shared subscription), and any gallery ancestor that simulates it.
+    const unsubscribeMotion = subscribeReducedMotion(onMotion);
     const motionWatch = new MutationObserver(onMotion);
     for (let ancestor = el.parentElement; ancestor; ancestor = ancestor.parentElement) {
       motionWatch.observe(ancestor, { attributes: true, attributeFilter: ["data-motion"] });
@@ -278,7 +277,7 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
       motionWatch.disconnect();
       themeWatch.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
-      mq?.removeEventListener("change", onMotion);
+      unsubscribeMotion();
       wake.current = () => {};
     };
   }, [size, reducedMotion]);

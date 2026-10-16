@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import { initPacer, pacerArrive, pacerStep, revealCut, type PacerState } from "@/lib/chat/stream-pacer";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 
 /*
  * STREAMED WRITING (owner, 2026-10-08: "improve the streamed writing for AI,
@@ -105,11 +106,10 @@ export function StreamingMarkdown(props: React.ComponentProps<typeof Markdown> &
   const reduced = React.useRef(false);
 
   React.useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    reduced.current = mq.matches;
-    const on = () => (reduced.current = mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
+    // The OS and the in-app Motion choice; read once per change, never per frame.
+    const on = () => (reduced.current = prefersReducedMotion());
+    on();
+    return subscribeReducedMotion(on);
   }, []);
 
   const clearHighlights = React.useCallback(() => {

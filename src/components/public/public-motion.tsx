@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { LazyMotion, MotionConfig, domAnimation, m, useReducedMotion, useScroll, useSpring, useTransform } from "framer-motion";
+import { LazyMotion, MotionConfig, domAnimation, m, useScroll, useSpring, useTransform } from "framer-motion";
 import Link from "next/link";
 import { ArrowRight } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 const SPRING = { stiffness: 180, damping: 24, mass: 0.5 };
 

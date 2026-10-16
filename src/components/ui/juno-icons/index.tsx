@@ -47,6 +47,7 @@
  */
 import * as React from "react";
 import type { CSSProperties, SVGProps } from "react";
+import { reducedMotionAt as sharedReducedMotionAt } from "@/lib/motion-preference";
 import { KEYLINE, xform, type IconDrawing, type IconElement, type IconMove } from "./drawings";
 import { CATALOG_ALIASES, CATALOG_NAMES, resolveCatalogIcon as resolveIcon, resolveCatalogIconAt as resolveIconAt, type CatalogIconName } from "./catalog";
 
@@ -538,13 +539,13 @@ const warned = new Set<string>();
 
 /* —————————————————————————————— Live levels —————————————————————————————— */
 
-const RM_QUERY = "(prefers-reduced-motion: reduce)";
 /** INTERACTION_SPEC §1.7: under reduced motion a level meter is a static bar that updates at most four times a second. */
 const RM_LEVEL_INTERVAL = 250;
 
+/** The OS and the in-app choice (lib/motion-preference.ts), plus the icon gallery's own `data-rm` switch. */
 function reducedMotionAt(el: Element | null): boolean {
   if (typeof window === "undefined") return false;
-  return Boolean(window.matchMedia?.(RM_QUERY).matches || el?.closest("[data-rm], [data-motion='reduced']"));
+  return Boolean(el?.closest("[data-rm]")) || sharedReducedMotionAt(el);
 }
 
 /**

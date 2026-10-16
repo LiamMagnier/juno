@@ -21,6 +21,7 @@ import type { ClientAnnouncement } from "@/lib/announcements";
 import { AnnouncementCard } from "@/components/app/announcement-popup";
 import { ANNOUNCEMENT_ACCEPT, ANNOUNCEMENT_MAX_BYTES } from "@/lib/announcement-media";
 import { staggerDelay } from "@/lib/motion";
+import { useReducedMotion as useSharedReducedMotion } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
 
 /**
@@ -33,23 +34,12 @@ import { cn } from "@/lib/utils";
  * agree, then corrects on mount.
  *
  * Deliberately not framer-motion's `useReducedMotion`: that one (12.x) reads
- * the preference once during the first render (null on the server, so the
+ * the OS preference once during the first render (null on the server, so the
  * `autoPlay`/`controls` attributes could disagree at hydration), never updates
- * when the setting changes while the page is open, and logs a dev warning
- * whenever the preference is on. This one does neither of the first two.
+ * when the setting changes while the page is open, and ignores the in-app
+ * Motion choice. lib/motion-preference.ts's does none of those.
  */
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (!mq) return;
-    setReduced(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
+const useReducedMotion = useSharedReducedMotion;
 
 type Draft = {
   title: string;

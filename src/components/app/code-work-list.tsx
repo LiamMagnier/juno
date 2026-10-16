@@ -62,6 +62,7 @@ import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
 
@@ -73,7 +74,7 @@ function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
     if (!root) return;
     const rows = [...root.querySelectorAll<HTMLElement>("[data-flip]")];
     const next = new Map(rows.map((r) => [r.dataset.flip!, r.offsetTop]));
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || root.closest("[data-reduced-motion='true']");
+    const reduce = prefersReducedMotion() || root.closest("[data-reduced-motion='true']");
     if (prev.current.size && !reduce) {
       const plan = planFlip(prev.current, next);
       for (const row of rows) {

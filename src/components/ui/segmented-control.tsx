@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { RollingNumber, useTravelSquash } from "@/components/ui/micro";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * A segmented control on the product's lighting model (docs/design/FLAT_UI.md

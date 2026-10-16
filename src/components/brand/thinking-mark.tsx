@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 import { continuumDrawingSet } from "./continuum-geometry";
 import { ContinuumDrawings, outerViewBox } from "./continuum-mark";
 import {
@@ -253,11 +254,9 @@ export function ThinkingMark({ phase, eventKey, size = 16, label, reducedMotion,
       dispatch({ type: "motion", reduced: reducedMotion, now: clock() });
       return;
     }
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => dispatch({ type: "motion", reduced: mq.matches, now: clock() });
+    const apply = () => dispatch({ type: "motion", reduced: prefersReducedMotion(), now: clock() });
     apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+    return subscribeReducedMotion(apply);
   }, [reducedMotion, dispatch]);
 
   // Pause off-screen and in a hidden tab: nothing starts, nothing replays.

@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion, useSpring, useTransform, type MotionValue } from "framer-motion";
+import { motion, useSpring, useTransform, type MotionValue } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The incognito mark: a hat over round glasses (Lucide "hat-glasses", ISC),

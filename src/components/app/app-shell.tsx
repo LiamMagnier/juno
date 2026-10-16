@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { useUiPref } from "@/lib/ui-prefs";
+import { framerReducedMotion } from "@/lib/motion-preference";
 import { Menu, MessageSquarePlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -474,7 +475,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
      * Keep the app's Reduced choice here as well: a nested "user" provider
      * otherwise overrides the root provider's "always" choice.
      */
-    <MotionConfig reducedMotion={motionPreference === "reduced" ? "always" : "user"}>
+    <MotionConfig reducedMotion={framerReducedMotion(motionPreference)}>
       <div className="juno-frame relative flex h-dvh overflow-hidden">
         {/* Bypass Blocks (SC 2.4.1, Level A). */}
         <a

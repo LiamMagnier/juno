@@ -5,6 +5,7 @@ import { AgentFace } from "@/components/agents/agent-face";
 import type { AgentAvatar } from "@/lib/agents/avatar";
 import type { AgentState } from "@/lib/agents/domain";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /** States in which an agent is busy on its own: the line carries a slow light. */
 export const IN_PROGRESS_STATES: ReadonlySet<AgentState> = new Set(["working", "thinking"]);
@@ -100,7 +101,7 @@ function useGaze(ref: React.RefObject<HTMLSpanElement | null>, enabled: boolean)
   React.useEffect(() => {
     const el = ref.current;
     if (!enabled || !el) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     if (window.matchMedia?.("(pointer: coarse)").matches) return;
     let frame = 0;
     let visible = true;

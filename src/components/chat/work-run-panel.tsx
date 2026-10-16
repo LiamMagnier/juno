@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Markdown } from "@/components/chat/markdown";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ActivityLines } from "@/components/chat/team-activity";
 import { isTeamActivity, teamMemberLines, workSummaryLines } from "@/lib/agents/activity-words";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The task the model started, drawn inside the conversation that started it.

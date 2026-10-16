@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Upload } from "@/components/ui/icons";
 import { transition } from "@/lib/motion";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 function carriesFiles(event: React.DragEvent) {
   return Array.from(event.dataTransfer.types).includes("Files");

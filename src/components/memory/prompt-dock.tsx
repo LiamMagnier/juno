@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Undo2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { OperationDiff } from "@/components/memory/operation-diff";
 import type { MemoryEditRecord } from "@/components/memory/memory-model";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * The one way to change memory in words, and the place its answer lands.

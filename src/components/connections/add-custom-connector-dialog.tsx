@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, KeyRound, ShieldCheck, SlidersHorizontal } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -19,6 +19,7 @@ import {
 import { staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 type Ready = Extract<ProbeResponse, { ok: true }>;
 

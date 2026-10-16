@@ -20,6 +20,7 @@
 
 import { applyBackingStore, backingStore, watchCanvas } from "@/lib/canvas/canvas-lifecycle";
 import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 
 export type Rgb = readonly [number, number, number];
 
@@ -270,7 +271,7 @@ const instances = new Set<DotCanvas>();
 let raf = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let installed = false;
-let reduceQuery: MediaQueryList | null = null;
+let unsubscribeReduced: (() => void) | null = null;
 let schemeQuery: MediaQueryList | null = null;
 let themeObserver: MutationObserver | null = null;
 let parallaxUsers = 0;
@@ -282,9 +283,8 @@ const client = { x: -1e4, y: -1e4, at: 0 };
 type Stats = { frames: number; renders: number; ms: number; instances: number; active: number };
 const stats: Stats = { frames: 0, renders: 0, ms: 0, instances: 0, active: 0 };
 
-export function prefersReducedMotion() {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
+/** The OS and the in-app Motion choice (lib/motion-preference.ts). */
+export { prefersReducedMotion };
 
 let timerAt = 0;
 function schedule(delay: number) {
@@ -376,8 +376,7 @@ function setup() {
   if (installed) return;
   installed = true;
   document.addEventListener("visibilitychange", onVisibility);
-  reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-  reduceQuery.addEventListener("change", onTheme);
+  unsubscribeReduced = subscribeReducedMotion(onTheme);
   schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
   schemeQuery.addEventListener("change", onTheme);
   themeObserver = new MutationObserver(onTheme);
@@ -391,8 +390,8 @@ function teardown() {
   themeObserver?.disconnect();
   themeObserver = null;
   document.removeEventListener("visibilitychange", onVisibility);
-  reduceQuery?.removeEventListener("change", onTheme);
-  reduceQuery = null;
+  unsubscribeReduced?.();
+  unsubscribeReduced = null;
   schemeQuery?.removeEventListener("change", onTheme);
   schemeQuery = null;
 }

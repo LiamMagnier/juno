@@ -6,7 +6,7 @@
  * narrow), menus with submenu panes, the segmented control, keycaps.
  */
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Icon } from "@/components/ui/juno-icons";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
@@ -14,6 +14,7 @@ import { instanceMark, modelLab } from "@/lib/code-v2/providers-view";
 import type { ProviderInstance } from "@/lib/code-v2/contracts";
 import { formatKey } from "@/lib/code-v2/keymap";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 export function Glyph({ name, size = 16, className, spin, title }: { name: string; size?: number; className?: string; spin?: boolean; title?: string }) {
   return (

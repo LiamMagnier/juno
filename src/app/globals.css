@@ -4344,8 +4344,10 @@
   /* On the ladder: the exit rung and the soft decelerate, where this had a raw
      180ms and the `ease-out` keyword — the only bare keyword easing left. */
   .research-enter, .research-tab-body { animation: research-arrive var(--dur-exit) var(--ease-out-soft) both; }
-  @keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
+/* Outside the media block, so the in-app "Full" twin of the rule above
+   (postcss/motion-preference.cjs) can name it on a device that reduces. */
+@keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 /* Printing a document that lives in a dialog (the research report reader).
    The dialog unpins itself with `print:` utilities, but it is portalled to
    <body>, so its siblings are the whole app shell and no class on the dialog
@@ -4605,58 +4607,18 @@
   html[data-code-wrap="true"] .prose-juno pre,
   html[data-code-wrap="true"] .prose-juno pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-  /* Reduced motion chosen in the app, for readers whose OS setting is off. */
-  html[data-motion="reduced"] *,
-  html[data-motion="reduced"] *::before,
-  html[data-motion="reduced"] *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+  /* Motion (data-motion="reduced" | "full") has no rules here. Every
+     `@media (prefers-reduced-motion: …)` block in the product is compiled into
+     its in-app twin by postcss/motion-preference.cjs, so "Reduced" in the app
+     runs exactly the OS tiers (fades and state colour stay, travel and loops
+     go) and "Full" lifts them on a device that asks for less. The blanket
+     `* { animation-duration: 0.01ms !important }` clamp that lived here, and
+     the hand-kept `[data-motion="reduce"]` gallery copy of the run UI's rules
+     below it, are both generated now. */
 }
 
 @layer utilities {
   /* The transcript and composer column: one width, set by the reader. */
   .transcript-column { max-width: var(--transcript-max); }
 }
-
-/*
- * The same rules for the dev galleries' "Simulate reduced motion" toggle,
- * which sets data-motion="reduce" on the gallery root: the browser pane cannot
- * emulate the media query. The two copies must stay identical but for the
- * prefix, and the root overrides must match the reduced `:root` block in the
- * base layer (tests/run-css-reduced.test.ts).
- */
-[data-motion="reduce"] {
-  --motion-shift: 0;
-  --motion-scale-from: 1;
-  --ease-out-strong: var(--ease-out-soft);
-  --ease-out-expo: var(--ease-out-soft);
-  --ease-spring: var(--ease-out-soft);
-  --ease-drawer: var(--ease-out-soft);
-  --dur-slow: var(--dur-base);
-}
-[data-motion="reduce"] .run-sweep__window { display: none; }
-[data-motion="reduce"] .run-glyph > i::after { animation: none; }
-[data-motion="reduce"] .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
-[data-motion="reduce"] .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
-[data-motion="reduce"] .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
-[data-motion="reduce"] .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
-[data-motion="reduce"] .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
-/* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
-[data-motion="reduce"] .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
-              [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
-  animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
-[data-motion="reduce"] .run-glyph > i { transition-duration: var(--dur-fast); }
-/* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
-[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
-[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
-  scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
-[data-motion="reduce"] .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
-  animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
-[data-motion="reduce"] .run-step, [data-motion="reduce"] .run-fav { transition-delay: 0ms !important; }
-[data-motion="reduce"] .run-peek__list { transition: none; }
-/* Instant collapse, but the content still fades (motion audit: "instant + content fade"). */
-[data-motion="reduce"] .run-collapse { transition: none; }
 

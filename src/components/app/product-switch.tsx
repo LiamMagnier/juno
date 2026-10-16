@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Lock } from "@/components/ui/icons";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
@@ -14,6 +14,7 @@ import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
 import { BRAND, PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE ONE PRODUCT SWITCH.

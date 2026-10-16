@@ -9,11 +9,12 @@ import { Toaster } from "@/components/ui/sonner";
 import { AutoTranslate } from "@/components/i18n/auto-translate";
 import { MotionConfig } from "framer-motion";
 import { useUiPref } from "@/lib/ui-prefs";
+import { framerReducedMotion } from "@/lib/motion-preference";
 
-/** Settings › Appearance › Motion: "Reduced" holds framer-motion still too, not only CSS. */
+/** Settings › Appearance › Motion reaches framer-motion too, not only CSS: Reduced holds it still, Full lets it move on a device that reduces. */
 function MotionPreference({ children }: { children: React.ReactNode }) {
   const [motion] = useUiPref("motion");
-  return <MotionConfig reducedMotion={motion === "reduced" ? "always" : "user"}>{children}</MotionConfig>;
+  return <MotionConfig reducedMotion={framerReducedMotion(motion)}>{children}</MotionConfig>;
 }
 
 export function Providers({

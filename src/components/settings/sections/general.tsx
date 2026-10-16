@@ -423,10 +423,22 @@ const WIDTH_OPTIONS: { value: TranscriptWidth; label: string; measure: string }[
   { value: "medium", label: "Medium", measure: "w-[60%]" },
   { value: "wide", label: "Wide", measure: "w-[82%]" },
 ];
+/*
+ * Reduced is the OS tier, not a kill switch: fades and state colour stay,
+ * travel and loops go (postcss/motion-preference.cjs). Full lifts the OS
+ * setting for this device. The description under the control says which is
+ * in force, since "System" alone does not say what the system asked for.
+ */
 const MOTION_OPTIONS: { value: MotionPref; label: string }[] = [
   { value: "system", label: "System" },
   { value: "reduced", label: "Reduced" },
+  { value: "full", label: "Full" },
 ];
+const MOTION_DESCRIPTION: Record<MotionPref, string> = {
+  system: "Follows your device’s motion setting.",
+  reduced: "Keeps fades and colour changes. Removes movement and looping animation.",
+  full: "Plays all animation, even if your device asks for less.",
+};
 
 /** A specimen of a chat face: the letters, then two lines of a reply. */
 function FontThumb({ className, style }: { className?: string; style?: React.CSSProperties }) {
@@ -483,7 +495,7 @@ function ReadingGroup() {
       </SettingBlock>
       <SettingRow
         label="Motion"
-        description="Reduce animation in streaming replies and across the interface."
+        description={MOTION_DESCRIPTION[motion]}
         wide
         control={
           <SegmentedControl ariaLabel="Motion" value={motion} onChange={setMotion} options={MOTION_OPTIONS} className="w-full @[34rem]/pane:w-auto" />

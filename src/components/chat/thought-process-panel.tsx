@@ -67,6 +67,7 @@ import {
   plural,
   speakSpan,
 } from "@/components/chat/thought-process-model";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE READING COLUMN — the one renderer for model-generated prose.
@@ -571,7 +572,7 @@ export function ThoughtProcessPanel({
 
   const reduced = React.useRef(false);
   React.useEffect(() => {
-    reduced.current = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    reduced.current = prefersReducedMotion();
   }, []);
 
   const scrollToBottom = React.useCallback(() => {

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { EyeOff, Folder, FolderLock, MessageSquare, MessagesSquare, ShieldAlert } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { relativeTime, shortDate } from "@/components/memory/memory-time";
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * One remembered fact: a line of text, one muted line about it, and a menu.

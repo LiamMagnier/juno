@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { KeyRound, Link2, Plug, Search } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import type { UserMcpServerStatus } from "@/components/connections/types";
 import { ease, transition, duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * Add (or edit) a user-registered remote MCP server: name, Streamable HTTP

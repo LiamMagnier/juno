@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Archive,
@@ -77,6 +77,7 @@ import { AGENT_STATE_NAMES, BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/bra
 import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
 import { useCrossMessageInbox } from "@/components/chat/use-cross-messages";
 import { CrossMessagesMenuItem } from "@/components/chat/cross-messages-menu-item";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).

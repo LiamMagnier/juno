@@ -278,7 +278,7 @@ export function RunGallery({ initialFixture }: { initialFixture: number }) {
 
   return (
     <UiLocaleOverride.Provider value={locale}>
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-4" data-motion={reduced ? "reduce" : undefined} dir={dir}>
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-4" data-motion={reduced ? "reduced" : undefined} dir={dir}>
         <header className="flex flex-wrap items-center gap-3">
           <h1 className="font-sans text-heading text-foreground">Run UI</h1>
           <select

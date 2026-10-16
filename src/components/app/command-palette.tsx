@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
@@ -42,6 +42,7 @@ import { useAgents } from "@/components/agents/use-agents";
 import type { ClientConversation } from "@/types/chat";
 import { BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { shortcutGroups } from "@/lib/shortcut-groups";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A

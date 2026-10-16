@@ -96,6 +96,7 @@ import { cachedJson } from "@/lib/client-cache";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -1552,7 +1553,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // append for ~3.5s before the transcript exists.
       Date.now() - handoffArmedAtRef.current < 8000 &&
       typeof window !== "undefined" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      !prefersReducedMotion()
     ) {
       setHandoff("leaving");
     }

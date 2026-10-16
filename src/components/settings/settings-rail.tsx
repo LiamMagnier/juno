@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MotionConfig, motion, useReducedMotion } from "framer-motion";
+import { MotionConfig, motion } from "framer-motion";
 import { Pressable } from "@/components/ui/pressable";
 import {
   ALL_SETTINGS_SECTIONS,
@@ -15,6 +15,7 @@ import { Search } from "@/components/ui/icons";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /** The ids that tie a tab to its panel, shared with SettingsPane. */
 export const settingsTabId = (id: SettingsSectionId) => `settings-tab-${id}`;

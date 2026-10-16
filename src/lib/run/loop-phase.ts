@@ -117,16 +117,11 @@ export function useOffscreen(ref: RefObject<Element | null>, onChange?: Offscree
 
 // ── Reduced motion ───────────────────────────────────────────────────────────
 
-const REDUCED = "(prefers-reduced-motion: reduce)";
-
 /**
  * Whether motion at `element` is reduced: the OS, the app's saved choice
- * (`data-motion="reduced"`), or the galleries' simulation (`data-motion="reduce"`), which the
- * browser pane needs because it cannot emulate the media query. Read at the
+ * (`data-motion="reduced"` or `"full"`), or a gallery's simulation. Read at the
  * moment a scripted transition starts, so the gallery toggle takes effect on
- * the next one without any component re-rendering for it.
+ * the next one without any component re-rendering for it. Lives in
+ * lib/motion-preference.ts; re-exported here for the run UI's callers.
  */
-export function reducedMotionAt(element: Element | null): boolean {
-  if (typeof window !== "undefined" && window.matchMedia?.(REDUCED).matches) return true;
-  return Boolean(element?.closest('[data-motion="reduce"], [data-motion="reduced"]'));
-}
+export { reducedMotionAt } from "@/lib/motion-preference";

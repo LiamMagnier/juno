@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
+import { AnimatePresence, animate, motion, useMotionValue, useTransform } from "framer-motion";
 import {
   BURST_ANGLES,
   BURST_MS,
@@ -17,6 +17,7 @@ import {
 } from "@/lib/micro";
 import { ease } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The three micro-interactions this product actually needs, and nothing else.

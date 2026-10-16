@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ChevronRight, MoreHorizontal } from "@/components/ui/icons";
 import { Collapse } from "@/components/ui/collapse";
 import {
@@ -27,6 +27,7 @@ import {
   skillLibraryTailClass,
 } from "@/components/skills/skill-row";
 import { sourceAttention, sourceCounts, sourceHasUpdate } from "@/components/skills/skill-library-model";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /** The DOM id a group is scrolled to after an install lands in it. */
 export function skillSourceAnchor(sourceId: string): string {

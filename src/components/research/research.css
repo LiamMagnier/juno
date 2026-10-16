@@ -348,8 +348,9 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
  */
 .report-rail { max-height: calc(100dvh - 3.5rem - 4rem); scrollbar-width: thin; }
 
-/* The dev gallery's reduced-motion switch, honoured like the system setting. */
-[data-motion="reduce"] :is(.rf-rise, .rf-point, .rf-label, .rf-finding, .rf-known-row, .rf-recovery, .rf-next-arrow, .rf-view-enter, .rf-mark, .rf-tabs button::after) { animation: none; transition: none; }
+/* (The dev gallery's reduced-motion switch needs no copy here: the
+   no-preference blocks above are compiled to skip any subtree marked
+   data-motion="reduced", postcss/motion-preference.cjs.) */
 
 /* The embedded scope card's sticky footer: a dot rule over its own ground. */
 .rf-gate .rf-scope > footer { border-top-color: transparent; background: var(--rf-rule-x) left top / 4px 2px repeat-x, hsl(var(--background)); }

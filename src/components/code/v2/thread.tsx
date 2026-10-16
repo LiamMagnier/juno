@@ -40,6 +40,7 @@ import { Glyph, useNow } from "./primitives";
 import { cn } from "@/lib/utils";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 export interface DockRequest {
   tab: DockTab;
@@ -650,7 +651,7 @@ export function Thread(props: ThreadProps) {
 
   const jump = (id: string) => {
     const el = scrollRef.current?.querySelector<HTMLElement>(`[data-turn="${CSS.escape(id)}"]`);
-    el?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
 
   // Reverting to the start of turn i rolls back to the checkpoint the turn before it left.

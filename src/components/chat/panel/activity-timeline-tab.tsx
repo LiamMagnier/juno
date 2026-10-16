@@ -6,6 +6,7 @@ import { RunGlyph } from "@/components/chat/run/run-glyph";
 import { Collapse } from "@/components/ui/collapse";
 import { ChevronRight, Info, Plug, TriangleAlert } from "@/components/ui/icons";
 import type { ClientActionApproval } from "@/lib/action-approval";
+import { reducedMotionAt } from "@/lib/motion-preference";
 import { Phrase, PhraseWithArgs } from "@/lib/i18n-phrase";
 import { sourceDomain } from "@/lib/panel/sources-split";
 import type { PhraseSpec, RunItem, RunView } from "@/lib/run/types";
@@ -49,10 +50,8 @@ const FOLLOW_SLACK_PX = 24;
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
-function prefersReducedMotion(from: Element | null): boolean {
-  if (from?.closest('[data-motion="reduce"]')) return true;
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-}
+/** The OS, the in-app Motion choice, or a gallery's simulation at `from`. */
+const prefersReducedMotion = (from: Element | null): boolean => reducedMotionAt(from);
 
 /**
  * Keeps the panel's scroller at the newest row while the reader is already
