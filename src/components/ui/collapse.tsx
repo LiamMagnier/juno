@@ -1,35 +1,36 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, type Transition } from "framer-motion";
 
-import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
- * Continuous disclosure — docs/design/ICONS_AND_MOTION.md §2.2, rule 6.
+ * Continuous disclosure (spec C10, docs/design/ICONS_AND_MOTION.md §2.2 rule 6).
  *
  * A section that opens under its header should UNFOLD, not appear. The
- * conditional that decides whether it is open stays exactly where it was at
- * the call site (`<Collapse open={expanded}>` in place of `{expanded && …}`);
- * what changes is that the content now rides a `grid-template-rows` 0fr → 1fr
- * on the symmetric curve with a short fade, and folds back the same way before
- * it unmounts. Nothing is mounted while closed, so a collapsed row costs what
- * it cost before.
+ * conditional that decides whether it is open stays where it was at the call
+ * site (`<Collapse open={expanded}>` in place of `{expanded && …}`); the
+ * content rides `grid-template-rows` 0fr → 1fr:
  *
- * Grid rows rather than `height`: the row track resolves to the content's own
- * height at 1fr, so there is no measuring, no `height: auto` special case and
- * no layout thrash — the one legitimate way to animate "as tall as it needs
- * to be" (the contract's rule 8 names it).
+ *   open    rows over 220 on in-out, opacity over 120 on out-soft
+ *   close   rows and opacity over 160 on the accelerate
  *
- * Padding and borders never go on the grid item itself: a 0fr track still
- * keeps the item's padding and border as its floor, so a padded item would
- * open from, and fold back to, that many pixels and then snap to nothing when
- * it unmounts. The clipped item stays bare (`min-h-0 overflow-hidden`) and
- * `innerClassName` lands on a box inside it, which the clip hides entirely.
+ * MOUNTED AND INERT. The content mounts the first time the section opens and
+ * then stays mounted while closed, `inert` (out of the tab order and the
+ * accessibility tree) and folded to 0fr, so a close plays the same fold in
+ * reverse instead of emptying first, and a reopen keeps scroll positions and
+ * state. A section that has never opened costs nothing.
  *
- * Reduced motion: the rows snap and the fade keeps its timing (Tier B).
+ * Grid rows rather than `height`: the track resolves to the content's own
+ * height at 1fr, so there is no measuring and no layout thrash (D27 names
+ * grid-template-rows as an animatable property).
+ *
+ * Padding and borders never go on the grid item: a 0fr track keeps the item's
+ * padding and border as its floor. The clipped item stays bare (`min-h-0
+ * overflow-hidden`) and `innerClassName` lands on a box inside it.
+ *
+ * Reduced motion (sheet.css `.ui-collapse`): the rows snap and the fade keeps
+ * its timing (Tier B keeps opacity, drops travel).
  */
 export function Collapse({
   open,
@@ -48,33 +49,35 @@ export function Collapse({
   /** The content box inside the clip — padding and borders go HERE, so they fold too. */
   innerClassName?: string;
 }) {
-  const reduce = useReducedMotion() ?? false;
-  const rows: Transition = reduce ? { duration: 0 } : transition.symmetric;
+  const [mounted, setMounted] = React.useState(open);
+  // Open on its first render (a page load): it is simply there, no unfold.
+  const [appearOpen] = React.useState(open);
+  if (open && !mounted) setMounted(true);
+  if (!mounted) return null;
   return (
-    <AnimatePresence initial={false}>
-      {open && (
-        <motion.div
-          key="collapse"
-          className={cn("grid", className)}
-          initial={{ gridTemplateRows: "0fr", opacity: 0 }}
-          animate={{
-            gridTemplateRows: "1fr",
-            opacity: 1,
-            transition: { gridTemplateRows: rows, opacity: transition.base },
-          }}
-          exit={{
-            gridTemplateRows: "0fr",
-            opacity: 0,
-            // The fold and the fade leave together; the fade on the accelerate,
-            // because the reader has already decided.
-            transition: { gridTemplateRows: rows, opacity: { duration: duration.exit, ease: ease.in } },
-          }}
-        >
-          <div className="min-h-0 overflow-hidden">
-            <div className={innerClassName}>{children}</div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div
+      className={cn("ui-collapse grid", className)}
+      data-state={open ? "open" : "closed"}
+      data-appear={appearOpen ? "none" : undefined}
+      inert={!open}
+      aria-hidden={open ? undefined : true}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className={innerClassName}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The disclosure chevron: turns a quarter over 120 on out-soft (C10). Pass
+ * the glyph as the child; the turn lives on this wrapper so the glyph's own
+ * hover articulation still composes. Focus rings never animate.
+ */
+export function CollapseChevron({ open, children, className }: { open: boolean; children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn("ui-collapse-chevron inline-flex", className)} data-state={open ? "open" : "closed"} aria-hidden="true">
+      {children}
+    </span>
   );
 }

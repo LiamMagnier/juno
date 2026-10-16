@@ -4,50 +4,37 @@ import { EmptyMark } from "@/components/ui/empty-mark";
 import { cn } from "@/lib/utils";
 
 /**
- * The shape of "there is nothing here yet", and of "that did not load".
+ * The shape of "there is nothing here yet", and of "that did not load"
+ * (spec §6.13).
  *
- * TWO SIZES, TWO FRAMES. `size` is about how much room the state is allowed
- * to take, not how important it is.
+ * ANATOMY. A neutral dot-construction mark (48px on a page, 32 in a panel), a
+ * Newsreader title (the page-title rung on a page, 22px in a panel), a 15px
+ * muted body capped at 44ch, one primary action and an optional quiet one.
  *
  *   "page"   The state owns the content column, so it is drawn OPEN: no box,
- *            no edge, the brand's mark, a serif line and a sentence on the
- *            page itself.
+ *            no edge.
+ *   "panel"  The state sits inside a card, a sidebar section or a list: a
+ *            tonal recess (muted, radius 16), never dashed — a dashed well
+ *            reads as a drop zone.
  *
- *   "panel"  The state sits inside a card, a sidebar section or a list, where
- *            it needs a boundary to say where the empty part is: a quiet
- *            tonal recess with an inner hairline, the ground a project's
- *            cover plate sits on. It used to be a dashed well, which read as
- *            a drop zone (and a placeholder tile) rather than an answer.
+ * An ERROR keeps a glyph instead of the mark (`icon`, tinted destructive, with
+ * the circle-x vocabulary of status), a solid hairline instead of the recess,
+ * and role="status": a failure is not a placeholder and must not look like
+ * one.
  *
- * THE MARK, NOT A GLYPH IN A TILE. An empty state draws the construction in
- * miniature (empty-mark.tsx): three orbits on the number line and the
- * presence trajectory, in the same dot matrix as Home, Memory and the
- * Projects covers. A glyph in a tonal square was the generic shape every app
- * draws; `icon` is still accepted, and still used, but only by an ERROR,
- * where the glyph takes the destructive tint and says what kind of thing
- * failed. A failure is not a placeholder and must not look like one, so an
- * error panel keeps a solid hairline instead of the recess.
- *
- * THE TITLE IS SERIF. Newsreader is the family for the few things meant to be
- * read as a sentence (editorial.css); "No routines yet" is one. Page size
- * takes `ed-h3`, panel size the 18px rung the folder tiles use.
- *
- * THE PAGE TITLE IS AN `<h2>`. The route's `<h1>` is the page header above it,
- * and a page whose only content is "No projects yet" has to list that line in
- * a screen reader's heading navigation, or the reader lands on an outline with
- * nothing under the title. A panel's title stays a paragraph: it is a line
- * inside a section, not a section of its own.
+ * THE PAGE TITLE IS AN `<h2>`: the route's `<h1>` is the page header above
+ * it. A panel's title stays a paragraph.
  *
  * It arrives on the workhorse entrance (`rise-in`): an empty state appears
- * because the reader filtered, searched or opened something, and a 6px settle
- * says "this is the answer" where a cut says "the page broke". Reduced motion
- * keeps the fade, and the mark is drawn still.
+ * because the reader filtered, searched or opened something. Reduced motion
+ * keeps the fade; the mark is static.
  */
 export function EmptyState({
   icon: Icon,
   title,
   description,
   action,
+  secondaryAction,
   tone = "empty",
   size = "page",
   className,
@@ -56,8 +43,10 @@ export function EmptyState({
   title: React.ReactNode;
   /** One or two sentences. Say what would put something here, not just that it is empty. */
   description?: React.ReactNode;
-  /** The thing that resolves it: create the first one, or retry. */
+  /** The one primary action: create the first one, or retry. */
   action?: React.ReactNode;
+  /** An optional quiet second action. */
+  secondaryAction?: React.ReactNode;
   tone?: "empty" | "error";
   size?: "panel" | "page";
   className?: string;
@@ -69,14 +58,10 @@ export function EmptyState({
     <div
       className={cn(
         "flex flex-col items-center justify-center text-center motion-safe:animate-rise-in",
-        page
-          ? "px-6 py-16"
-          : cn(
-              "rounded-card px-4 py-7",
-              isError ? "border border-border/80 bg-background" : "empty-well"
-            ),
+        page ? "px-6 py-16" : cn("rounded-panel px-4 py-7", isError ? "border border-border bg-background" : "bg-muted"),
         className
       )}
+      data-empty-state={size}
       // A failed load is a status message; an empty list is just the page.
       role={isError ? "status" : undefined}
     >
@@ -86,10 +71,10 @@ export function EmptyState({
             aria-hidden="true"
             className={cn(
               "grid shrink-0 place-items-center bg-destructive/10 text-destructive",
-              page ? "size-12 rounded-field" : "size-9 rounded-control"
+              page ? "size-12 rounded-field" : "size-8 rounded-control"
             )}
           >
-            <Icon motion="none" className={page ? "size-6" : "size-5"} />
+            <Icon motion="none" className={page ? "size-6" : "size-4"} />
           </span>
         )
       ) : (
@@ -97,22 +82,19 @@ export function EmptyState({
       )}
       <Title
         className={cn(
-          "text-balance text-foreground",
-          page ? "ed-h3" : "font-serif text-heading",
+          "text-balance font-serif text-foreground",
+          page ? "text-page-title" : "text-title font-normal",
           (Icon || !isError) && (page ? "mt-4" : "mt-3")
         )}
       >
         {title}
       </Title>
-      {description && (
-        <p className={cn("max-w-sm text-pretty text-muted-foreground", page ? "mt-2 text-body" : "mt-1 text-ui")}>
-          {description}
-        </p>
-      )}
-      {action && (
+      {description && <p className={cn("max-w-[44ch] text-pretty text-body text-muted-foreground", page ? "mt-2" : "mt-1")}>{description}</p>}
+      {(action || secondaryAction) && (
         // An empty state's actions are where the page sends you next, so their glyphs answer the pointer (icons.css).
         <div data-jicon-articulate="within" className={cn("flex flex-wrap items-center justify-center gap-2", page ? "mt-6" : "mt-4")}>
           {action}
+          {secondaryAction}
         </div>
       )}
     </div>

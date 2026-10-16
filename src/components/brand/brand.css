@@ -19,3 +19,159 @@
     display: inline;
   }
 }
+
+/*
+ * THE GALAXY MARK (galaxy-mark.tsx; spec D9, §3.4, P2 (12)).
+ *
+ * The still frame is one element: a currentColor fill under the galaxy's SVG
+ * mask. Its step back to 60% is `--galaxy-dim`, eased over 220. The canvas
+ * sits on top only while the mark animates. needsYou cross-fades the hand in
+ * over 160 in the signal ink and pulses it once (1 → 1.08 → 1 over 560);
+ * ready, after a watched run, draws a check over 360 on --ease-spring after
+ * --hold-check; blocked is a still frame in the destructive ink. Every ink is
+ * a role token, so a sign-off that remaps a role remaps the mark.
+ */
+.alevr-galaxy-mark > * {
+  position: absolute;
+  inset: 0;
+}
+.alevr-galaxy-still {
+  background-color: currentColor;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  opacity: var(--galaxy-dim, 1);
+  transition: opacity var(--dur-base) var(--ease-out-soft);
+}
+.alevr-galaxy-mark[data-status="blocked"] .alevr-galaxy-still {
+  color: hsl(var(--status-blocked));
+}
+.alevr-galaxy-mark[data-status="needsYou"] .alevr-galaxy-still,
+.alevr-galaxy-mark[data-status="ready"][data-watched] .alevr-galaxy-still {
+  opacity: 0;
+  transition-duration: var(--dur-exit);
+}
+.alevr-galaxy-hand {
+  color: hsl(var(--status-needs-you));
+  animation:
+    alevr-galaxy-hand-in var(--dur-exit) var(--ease-out-soft) both,
+    alevr-galaxy-pulse var(--dur-emphasis) var(--ease-in-out) var(--dur-exit) 1 both;
+}
+@keyframes alevr-galaxy-hand-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes alevr-galaxy-pulse {
+  50% {
+    transform: scale(calc(1 + 0.08 * var(--motion-shift, 1)));
+  }
+}
+.alevr-galaxy-check {
+  color: hsl(var(--status-ready));
+}
+.alevr-galaxy-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: alevr-galaxy-check-draw var(--dur-slow) var(--ease-spring) var(--hold-check, 120ms) both;
+}
+@keyframes alevr-galaxy-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Tier C: the still frame and the final glyph, no loop and no draw. */
+  .alevr-galaxy-check path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .alevr-galaxy-hand {
+    animation: alevr-galaxy-hand-in var(--dur-exit) var(--ease-out-soft) both;
+  }
+}
+@media (forced-colors: active) {
+  /* Highlight is the system's "live" colour; status rests on glyph and word. */
+  .alevr-galaxy-mark,
+  .alevr-galaxy-mark[data-status] .alevr-galaxy-still,
+  .alevr-galaxy-hand,
+  .alevr-galaxy-check {
+    color: Highlight;
+    forced-color-adjust: none;
+  }
+}
+
+/*
+ * STATUS MARKS (status-mark.tsx; spec §3.4, D4): the four states at 10, 12
+ * and 14, each in its role token, plus the badge — a 10px hand on a 16px
+ * signal-wash disc. Never colour alone: every mark carries its word.
+ */
+.alevr-status-mark {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.alevr-status-mark[data-status="running"] {
+  color: hsl(var(--status-running));
+}
+.alevr-status-mark[data-status="needsYou"] {
+  color: hsl(var(--status-needs-you));
+}
+.alevr-status-mark[data-status="ready"] {
+  color: hsl(var(--status-ready));
+}
+.alevr-status-mark[data-status="blocked"] {
+  color: hsl(var(--status-blocked));
+}
+.alevr-status-mark[data-variant="badge"] {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: hsl(var(--signal-wash));
+  color: hsl(var(--status-needs-you));
+}
+.alevr-status-mark[data-arrived] svg {
+  animation:
+    alevr-galaxy-hand-in var(--dur-exit) var(--ease-out-soft) both,
+    alevr-galaxy-pulse var(--dur-emphasis) var(--ease-in-out) var(--dur-exit) 1 both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .alevr-status-mark[data-arrived] svg {
+    animation: alevr-galaxy-hand-in var(--dur-exit) var(--ease-out-soft) both;
+  }
+}
+@media (forced-colors: active) {
+  .alevr-status-mark,
+  .alevr-status-mark[data-variant="badge"] {
+    color: CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+  .alevr-status-mark[data-status="running"] {
+    color: Highlight;
+  }
+}
+
+/* PLAN STEP GLYPHS (plan-step-glyph.tsx; spec §3.10). */
+.alevr-plan-step {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+.alevr-plan-step[data-state="done"] {
+  color: hsl(var(--status-ready));
+}
+.alevr-plan-step[data-state="active"] {
+  color: hsl(var(--status-running));
+}
+.alevr-plan-step[data-state="waiting"] {
+  color: hsl(var(--status-needs-you));
+}
+.alevr-plan-step[data-state="failed"] {
+  color: hsl(var(--status-blocked));
+}

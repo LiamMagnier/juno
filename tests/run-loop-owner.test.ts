@@ -198,7 +198,9 @@ test("the run's working mark is the galaxy, still until it owns the loop", async
   resetRunStoreForTests();
   const html = renderToStaticMarkup(React.createElement(RunGalaxy, { phase: "thinking", loopId: "line:x" }));
   assert.match(html, /class="alevr-galaxy-mark/);
-  assert.match(html, /<canvas /);
+  // Wave 2 (spec D9, P2): a mark that is not animating is a still frame and holds no canvas.
+  assert.doesNotMatch(html, /<canvas /);
+  assert.match(html, /class="alevr-galaxy-still"/);
   assert.match(html, /aria-hidden="true"/, "the words beside it carry the phase");
   assert.match(html, /data-phase="waiting"/, "the server's first frame does not own the loop, so it is the still frame");
 

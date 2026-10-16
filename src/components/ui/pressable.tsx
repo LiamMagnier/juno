@@ -23,7 +23,9 @@ import { cn } from "@/lib/utils";
  *                a circular tonal fill on hover, the on tone when on.
  *
  * Shared behaviour comes from `.pressable` (globals.css): the tonal hover
- * cross-fade on --dur-fast and the 0.97 dip on --dur-press. A ROW does not
+ * cross-fade on --dur-fast and the 0.97 dip on --dur-press, which only a solo
+ * icon button keeps (spec §3.10: "press dip to 0.97 over 70, on solo icon
+ * buttons only"); tiles and chips press tonally like rows. A ROW does not
  * dip: it is a large surface, and large surfaces never scale
  * (ICONS_AND_MOTION.md §2.2, rule 2) — a full-width row shrinking by 3% moves
  * its edges further than a button's whole dip. It presses TONALLY instead,
@@ -80,8 +82,8 @@ const pressableVariants = cva(
         // and `active:bg-selected` is its press: a tonal step past the hover
         // fill, on the same fast cross-fade.
         row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
-        tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
-        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
+        tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui active:scale-100",
+        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground active:scale-100",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
         icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
       },

@@ -315,6 +315,79 @@ html[data-input-modality="keyboard"] .ui-overlay-infrequent[data-state="open"] {
   animation: ui-overlay-fade-in var(--dur-fast) var(--ease-out-soft) both;
 }
 
+/* ——— Folds (spec C10, ui/collapse.tsx) ————————————————————————————
+
+   Open: rows over 220 on in-out, opacity over 120. Close: both over 160 on
+   the accelerate. The content stays mounted and inert while closed. A fold
+   that mounts open after the page loaded unfolds from 0fr (@starting-style);
+   one that was open on the first render (data-appear="none") is simply there.
+   Reduced motion snaps the rows and keeps the fade (Tier B). */
+
+.ui-collapse {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--dur-base) var(--ease-in-out),
+    opacity var(--dur-fast) var(--ease-out-soft);
+}
+.ui-collapse[data-state="closed"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--dur-exit) var(--ease-in),
+    opacity var(--dur-exit) var(--ease-in);
+}
+@starting-style {
+  .ui-collapse[data-state="open"]:not([data-appear="none"]) {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-collapse,
+  .ui-collapse[data-state="closed"] {
+    transition-property: opacity;
+  }
+}
+.ui-collapse-chevron {
+  transition: rotate var(--dur-fast) var(--ease-out-soft);
+}
+.ui-collapse-chevron[data-state="open"] {
+  rotate: 90deg;
+}
+
+/* ——— Skeletons and the empty mark (spec C21, §6.13, §3.11) ———————————————
+
+   Skeleton → content is a 160 cross-fade with no shift. Tier C stops the
+   breathing loop and holds the placeholder at 0.8. The empty mark's field is
+   the dot-matrix ink (foreground 0.16 light, 0.20 dark), its orbits the muted
+   ink; forced colours draw both in CanvasText. */
+
+.ui-skeleton-content {
+  animation: ui-overlay-fade-in var(--dur-exit) var(--ease-out-soft) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton.skeleton {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+.empty-mark__field {
+  color: hsl(var(--foreground) / 0.16);
+}
+.dark .empty-mark__field {
+  color: hsl(var(--foreground) / 0.2);
+}
+.empty-mark__orbits {
+  color: hsl(var(--muted-foreground));
+}
+@media (forced-colors: active) {
+  .empty-mark__field,
+  .empty-mark__orbits {
+    color: CanvasText;
+  }
+}
+
 /* ——— Toasts (spec C15) ———————————————————————————————————————————
 
    Sonner's own motion is overridden: a toast rises 8px × shift over 220 on

@@ -119,9 +119,9 @@ test("the strip unfolds in place; the dock and the sheet are one press further",
   assert.match(strip, /<BottomSheet tall open=\{sheetOpen\}/);
   assert.match(strip, /presentation="sheet"/);
   // The disclosure's motion is the grid-rows recipe with a fade, snapped under reduced motion.
-  const collapse = read("src/components/ui/collapse.tsx");
-  assert.match(collapse, /gridTemplateRows: "0fr", opacity: 0/);
-  assert.match(collapse, /reduce \? \{ duration: 0 \}/);
+  // Wave 2 (spec C10): grid-rows with a fade, mounted and inert while closed; the rows snap under reduced motion (sheet.css).
+  assert.match(read("src/components/ui/collapse.tsx"), /inert=\{!open\}/);
+  assert.match(read("src/components/ui/sheet.css"), /\.ui-collapse\[data-state="closed"\] \{\s*grid-template-rows: 0fr;\s*opacity: 0;/);
 });
 
 test("in a sheet the panel dismisses rather than going back, and drags by its header", () => {

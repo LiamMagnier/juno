@@ -145,7 +145,7 @@ export function IconSwapSet<K extends string>({
             className={cn(
               "flex items-center justify-center [grid-area:1/1]",
               "transition-[opacity,transform] duration-fast ease-out-soft",
-              on ? "scale-100 opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
+              on ? "scale-100 opacity-100" : "pointer-events-none opacity-0 [transform:scale(var(--motion-scale-from,0.8))]"
             )}
           >
             <Glyph
