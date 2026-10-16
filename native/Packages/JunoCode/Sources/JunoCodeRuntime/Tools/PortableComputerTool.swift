@@ -261,6 +261,8 @@ public struct PortableComputerTool: CodeTool {
         let data = try JSONEncoder().encode(input)
         do {
             return try JSONDecoder().decode(PortableComputerCall.self, from: data)
+        } catch let error as PortableComputerError {
+            throw error
         } catch {
             throw PortableComputerError("Arguments must be an object with an action.")
         }

@@ -25,11 +25,8 @@ public indirect enum JSONValue: Hashable, Sendable {
     }
 
     public var intValue: Int? {
-        guard case let .number(value) = self,
-              value.rounded() == value,
-              value >= Double(Int.min), value <= Double(Int.max)
-        else { return nil }
-        return Int(value)
+        guard case let .number(value) = self else { return nil }
+        return Int(exactly: value)
     }
 
     public var stringValue: String? {

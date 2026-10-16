@@ -131,6 +131,7 @@ final class FakeAccessibility: AccessibilityInspecting, @unchecked Sendable {
     var snapshots: [Int32: AXSnapshot] = [:]
     var pressSucceeds = true
     var settableText = true
+    var acceptedTextLimit: Int?
     var values: [Int32: String] = [:]
     private(set) var presses: [ScreenPoint?] = []
     private(set) var menus: [[String]] = []
@@ -162,7 +163,8 @@ final class FakeAccessibility: AccessibilityInspecting, @unchecked Sendable {
         lock.withLock {
             setTexts.append((text, replace))
             guard settableText else { return false }
-            values[pid] = replace ? text : (values[pid] ?? "") + text
+            let accepted = acceptedTextLimit.map { String(text.prefix($0)) } ?? text
+            values[pid] = replace ? accepted : (values[pid] ?? "") + accepted
             return true
         }
     }

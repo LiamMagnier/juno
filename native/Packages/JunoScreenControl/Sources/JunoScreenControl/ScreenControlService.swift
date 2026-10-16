@@ -1698,7 +1698,7 @@ public actor ScreenControlService: ScreenControlling {
         if mode == .background {
             let replace = action.mode == .replace
             if try await deps.accessibility.setText(text, elementID: action.element, pid: pid, replace: replace) {
-                return readBack(text, before: before, after: await deps.accessibility.value(elementID: action.element, pid: pid), replace: replace)
+                return try readBack(text, before: before, after: await deps.accessibility.value(elementID: action.element, pid: pid), replace: replace)
             }
         }
         if action.mode == .replace {
@@ -1707,14 +1707,16 @@ public actor ScreenControlService: ScreenControlling {
         }
         try await driver.type(text, target: eventTarget)
         let after = await deps.accessibility.value(elementID: action.element, pid: pid)
-        return readBack(text, before: before, after: after, replace: action.mode == .replace)
+        return try readBack(text, before: before, after: after, replace: action.mode == .replace)
     }
 
-    private func readBack(_ text: String, before: String?, after: String?, replace: Bool) -> [String] {
-        guard let after else { return [] }
-        if after.contains(text) { return [] }
+    private func readBack(_ text: String, before: String?, after: String?, replace: Bool) throws -> [String] {
+        guard let after else { return ["The app exposes no text value to verify. Inspect the screenshot before continuing."] }
+        if replace ? after == text : after != before && after.contains(text) { return [] }
         let found = after.count - (replace ? 0 : (before?.count ?? 0))
-        return [ScreenControlError.typedTextMismatch(expected: text.count, found: max(0, found)).errorDescription ?? ""]
+        // Input may already have partially landed. Report a failure so a
+        // batch stops, and never replay the input automatically.
+        throw ScreenControlError.typedTextMismatch(expected: text.count, found: max(0, found))
     }
 
     private func zoom(_ action: ScreenAction, sessionID: String, generation: UInt64) async throws -> ScreenActionResult {
@@ -1833,12 +1835,20 @@ public actor ScreenControlService: ScreenControlling {
     ) async throws -> String {
         let generation = try await requireRunning(sessionID)
         let target = try await target(for: ScreenAction(kind: .screenshot, app: app), sessionID: sessionID)
+        try checkpoint(sessionID, generation)
         _ = try liveGrant(sessionID, bundleID: target.bundleID, appName: target.name)
         let snapshot = try await deps.accessibility.snapshot(pid: target.pid, maxDepth: max(1, min(depth, 40)))
         try checkpoint(sessionID, generation)
         sessions[sessionID]?.snapshot = snapshot
         if sessions[sessionID]?.frame == nil || sessions[sessionID]?.frame?.bundleID.lowercased() != target.bundleID.lowercased() {
-            sessions[sessionID]?.frame = try? await captureFrame(sessionID, generation: generation)
+            // Optional-chain assignment holds a write access to `sessions`
+            // while evaluating its RHS. Capture reads the same dictionary
+            // and suspends, so finish it before opening the write access.
+            let frame = try? await captureFrame(sessionID, generation: generation)
+            // Capture is best effort, but a stop or revoked session must
+            // still end this call instead of restoring stale frame state.
+            try checkpoint(sessionID, generation)
+            sessions[sessionID]?.frame = frame
         }
         return snapshot.text(in: sessions[sessionID]?.frame?.geometry, filter: filter, query: query)
     }

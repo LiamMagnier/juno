@@ -444,6 +444,13 @@ enum ScreenActionInput {
         guard let name = input["action"]?.stringValue, let kind = ScreenActionKind(rawValue: name) else {
             throw ToolError.invalidInput(message: "action must be one of: \(actionNames.joined(separator: ", ")).")
         }
+        func integer(_ key: String) throws -> Int? {
+            guard let value = input[key], !value.isNull else { return nil }
+            guard let integer = value.intValue else {
+                throw ToolError.invalidInput(message: "\(key) must be a whole number within the supported range.")
+            }
+            return integer
+        }
         return ScreenAction(
             kind: kind,
             app: input["app"]?.stringValue,
@@ -452,10 +459,10 @@ enum ScreenActionInput {
             element: input["element"]?.stringValue,
             region: numbers(input["region"]),
             text: input["text"]?.stringValue,
-            repeatCount: input["repeat"]?.intValue,
+            repeatCount: try integer("repeat"),
             duration: input["duration"]?.numberValue,
             scrollDirection: input["scroll_direction"]?.stringValue.flatMap(ScreenAction.ScrollDirection.init(rawValue:)),
-            scrollAmount: input["scroll_amount"]?.intValue,
+            scrollAmount: try integer("scroll_amount"),
             mode: input["mode"]?.stringValue.flatMap(ScreenAction.TypeMode.init(rawValue:))
         )
     }
@@ -571,6 +578,9 @@ public struct ComputerBatchTool: CodeTool {
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         guard let items = input["actions"]?.arrayValue, !items.isEmpty else {
             return ToolResult(content: "actions must list at least one action.", isError: true)
+        }
+        guard items.count <= 20 else {
+            return ToolResult(content: "A batch can contain at most 20 actions. Split it into smaller batches and inspect the screen between them.", isError: true)
         }
         // The same rule across calls as inside one: after a failed computer
         // call in this turn, nothing more runs on a screen the model has not

@@ -20,7 +20,8 @@ public struct ScreenPoint: Hashable, Codable, Sendable, CustomStringConvertible 
     public var description: String { "(\(Self.format(x)), \(Self.format(y)))" }
 
     static func format(_ value: Double) -> String {
-        value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+        if let integer = Int(exactly: value) { return String(integer) }
+        return value.isFinite && abs(value) < 1e16 ? String(format: "%.1f", value) : String(value)
     }
 }
 
@@ -179,15 +180,17 @@ public struct FrameGeometry: Hashable, Codable, Sendable {
     /// source, for a zoom that crops at native resolution. Clamped to the
     /// source; nil when nothing of it is inside.
     public func sourcePixelRect(frameRegion region: [Double]) -> (x: Int, y: Int, width: Int, height: Int)? {
-        guard region.count == 4 else { return nil }
+        guard region.count == 4, region.allSatisfy(\.isFinite) else { return nil }
         let (ax, ay) = framePixels(x: region[0], y: region[1])
         let (bx, by) = framePixels(x: region[2], y: region[3])
         let toSource = 1 / scale
         let source = sourcePixelSize
-        let minX = max(0, Int((min(ax, bx) * toSource).rounded(.down)))
-        let minY = max(0, Int((min(ay, by) * toSource).rounded(.down)))
-        let maxX = min(source.width, Int((max(ax, bx) * toSource).rounded(.up)))
-        let maxY = min(source.height, Int((max(ay, by) * toSource).rounded(.up)))
+        // Clamp while still floating point: an untrusted 1e100 coordinate
+        // must never reach a trapping Double-to-Int conversion.
+        let minX = Int(min(Double(source.width), max(0, min(ax, bx) * toSource)).rounded(.down))
+        let minY = Int(min(Double(source.height), max(0, min(ay, by) * toSource)).rounded(.down))
+        let maxX = Int(min(Double(source.width), max(0, max(ax, bx) * toSource)).rounded(.up))
+        let maxY = Int(min(Double(source.height), max(0, max(ay, by) * toSource)).rounded(.up))
         guard maxX > minX, maxY > minY else { return nil }
         return (minX, minY, maxX - minX, maxY - minY)
     }

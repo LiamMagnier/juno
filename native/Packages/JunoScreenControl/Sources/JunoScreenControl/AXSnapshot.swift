@@ -105,7 +105,13 @@ public struct AXElementInfo: Hashable, Codable, Sendable, Identifiable {
         if let geometry {
             let topLeft = geometry.framePoint(global: ScreenPoint(x: frame.minX, y: frame.minY))
             let bottomRight = geometry.framePoint(global: ScreenPoint(x: frame.maxX, y: frame.maxY))
-            text += " (\(Int(topLeft.x.rounded())),\(Int(topLeft.y.rounded())) \(Int((bottomRight.x - topLeft.x).rounded()))×\(Int((bottomRight.y - topLeft.y).rounded())))"
+            if let x = Int(exactly: topLeft.x.rounded()), let y = Int(exactly: topLeft.y.rounded()),
+               let width = Int(exactly: (bottomRight.x - topLeft.x).rounded()),
+               let height = Int(exactly: (bottomRight.y - topLeft.y).rounded()) {
+                text += " (\(x),\(y) \(width)×\(height))"
+            } else {
+                text += " (bounds unavailable)"
+            }
         }
         text += enabled ? " enabled" : " disabled"
         if focused { text += " focused" }
@@ -129,12 +135,14 @@ public struct AXSnapshot: Hashable, Sendable {
     public var appName: String
     public var windowTitle: String?
     public var elements: [AXElementInfo]
+    public var truncationReason: String?
 
-    public init(bundleID: String, appName: String, windowTitle: String?, elements: [AXElementInfo]) {
+    public init(bundleID: String, appName: String, windowTitle: String?, elements: [AXElementInfo], truncationReason: String? = nil) {
         self.bundleID = bundleID
         self.appName = appName
         self.windowTitle = windowTitle
         self.elements = elements
+        self.truncationReason = truncationReason
     }
 
     public func element(_ id: String) -> AXElementInfo? {
@@ -168,6 +176,9 @@ public struct AXSnapshot: Hashable, Sendable {
         }
         if shown.isEmpty {
             lines.append(query == nil ? "No elements." : "Nothing matches \"\(query ?? "")\".")
+        }
+        if let truncationReason {
+            lines.append("Partial accessibility tree: \(truncationReason). Use a screenshot or a shallower depth; absence here does not prove a control is missing.")
         }
         return lines.joined(separator: "\n")
     }

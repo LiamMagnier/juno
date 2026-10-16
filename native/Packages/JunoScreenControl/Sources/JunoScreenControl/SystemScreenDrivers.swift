@@ -221,30 +221,50 @@ final class InstalledAppsCache: @unchecked Sendable {
 // MARK: - Capture
 
 public struct SystemScreenCapture: ScreenCapturing {
+    private struct Content: @unchecked Sendable { let value: SCShareableContent }
+    private let windows = CaptureContentCache<Content> {
+        Content(value: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false))
+    }
     public init() {}
 
     public func capture(window: WindowInfo) async throws -> CapturedImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let scWindow = content.windows.first(where: { $0.windowID == window.windowID }) else {
+        var content = try await windows.value().value
+        let currentBounds = CGRect(x: window.frame.x, y: window.frame.y, width: window.frame.width, height: window.frame.height)
+        let candidate = content.windows.first { $0.windowID == window.windowID && $0.owningApplication?.processID == window.pid }
+        // Moving across displays can change the backing scale. Refresh the
+        // handle when live bounds change instead of reusing old geometry.
+        if candidate?.frame != currentBounds {
+            await windows.invalidate()
+            content = try await windows.value().value
+        }
+        guard let scWindow = content.windows.first(where: { $0.windowID == window.windowID && $0.owningApplication?.processID == window.pid }) else {
             throw ScreenControlError.windowGone(app: window.appName)
         }
         let filter = SCContentFilter(desktopIndependentWindow: scWindow)
         let scale = Double(filter.pointPixelScale)
         let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int((scWindow.frame.width * scale).rounded()))
-        configuration.height = max(1, Int((scWindow.frame.height * scale).rounded()))
+        // Geometry is read live by ScreenEnvironment, including moves and
+        // resizes since discovery. Only the window handle is reused.
+        configuration.width = max(1, Int((window.frame.width * scale).rounded()))
+        configuration.height = max(1, Int((window.frame.height * scale).rounded()))
         configuration.showsCursor = false
         configuration.ignoreShadowsSingleWindow = true
         configuration.capturesAudio = false
-        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        let image: CGImage
+        do {
+            image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        } catch {
+            await windows.invalidate()
+            throw error
+        }
         return CapturedImage(
             image: image,
-            origin: ScreenPoint(x: scWindow.frame.minX, y: scWindow.frame.minY),
-            pointWidth: scWindow.frame.width,
-            pointHeight: scWindow.frame.height,
+            origin: ScreenPoint(x: window.frame.minX, y: window.frame.minY),
+            pointWidth: window.frame.width,
+            pointHeight: window.frame.height,
             backingScale: scale,
             displayID: window.displayID,
-            windowTitle: scWindow.title
+            windowTitle: window.title
         )
     }
 
@@ -287,11 +307,66 @@ public struct SystemScreenCapture: ScreenCapturing {
 // MARK: - Accessibility
 
 public final class SystemAccessibility: AccessibilityInspecting, @unchecked Sendable {
+    private struct Node: Hashable {
+        let element: AXUIElement
+        static func == (lhs: Self, rhs: Self) -> Bool { CFEqual(lhs.element, rhs.element) }
+        func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+    }
     private let lock = NSLock()
     /// The elements behind the ids of each app's last snapshot.
     private var references: [Int32: [String: AXUIElement]] = [:]
 
     public init() {}
+
+    /// One cross-process request for metadata, rather than one per field.
+    /// Values are read separately, after the secure-role check.
+    private func snapshotNode(_ element: AXUIElement, id: String, depth: Int, includeChildren: Bool) throws -> (AXElementInfo, [Node]) {
+        AXUIElementSetMessagingTimeout(element, 0.15)
+        var names = [
+            kAXRoleAttribute, kAXSubroleAttribute, kAXRoleDescriptionAttribute,
+            kAXTitleAttribute, kAXDescriptionAttribute, kAXPositionAttribute,
+            kAXSizeAttribute, kAXEnabledAttribute, kAXFocusedAttribute,
+        ]
+        if includeChildren { names.append(kAXChildrenAttribute) }
+        var result: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &result) == .success,
+              let values = result as? [AnyObject], values.count == names.count
+        else { throw ScreenControlError.driverFailed("The app did not respond to an Accessibility read. Try a screenshot or a shallower control search.") }
+        let fields = Dictionary(uniqueKeysWithValues: zip(names, values))
+        let role = fields[kAXRoleAttribute] as? String ?? "AXUnknown"
+        let subrole = fields[kAXSubroleAttribute] as? String
+        let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField"
+        var value: String?
+        if !secure, let raw = attribute(element, kAXValueAttribute) {
+            value = (raw as? String) ?? (raw as? NSNumber)?.stringValue
+        }
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        if let position = fields[kAXPositionAttribute], let extent = fields[kAXSizeAttribute],
+           CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(extent) == AXValueGetTypeID() {
+            // swiftlint:disable:next force_cast
+            AXValueGetValue(position as! AXValue, .cgPoint, &point)
+            // swiftlint:disable:next force_cast
+            AXValueGetValue(extent as! AXValue, .cgSize, &size)
+        }
+        let info = AXElementInfo(
+            id: id, role: role, subrole: subrole,
+            roleDescription: fields[kAXRoleDescriptionAttribute] as? String,
+            title: fields[kAXTitleAttribute] as? String,
+            label: fields[kAXDescriptionAttribute] as? String,
+            value: value,
+            frame: ScreenRect(x: point.x, y: point.y, width: size.width, height: size.height),
+            enabled: (fields[kAXEnabledAttribute] as? NSNumber)?.boolValue ?? true,
+            focused: (fields[kAXFocusedAttribute] as? NSNumber)?.boolValue ?? false,
+            depth: depth, pressable: actions(element).contains(kAXPressAction)
+        )
+        let children = (fields[kAXChildrenAttribute] as? [AnyObject] ?? []).compactMap { child -> Node? in
+            guard CFGetTypeID(child) == AXUIElementGetTypeID() else { return nil }
+            // swiftlint:disable:next force_cast
+            return Node(element: child as! AXUIElement)
+        }
+        return (info, children)
+    }
 
     private func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
         var value: AnyObject?
@@ -432,8 +507,11 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
     }
 
     public func snapshot(pid: Int32, maxDepth: Int) async throws -> AXSnapshot {
+        try Task.checkCancellation()
+        // Never keep old ids usable after a failed or cancelled refresh.
+        lock.withLock { references[pid] = nil }
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 2)
+        AXUIElementSetMessagingTimeout(app, 0.15)
         var windowValue = attribute(app, kAXFocusedWindowAttribute) ?? attribute(app, kAXMainWindowAttribute)
         if windowValue == nil, let windows = attribute(app, kAXWindowsAttribute) as? [AnyObject] {
             windowValue = windows.first
@@ -445,27 +523,23 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         let window = windowValue as! AXUIElement
         var elements: [AXElementInfo] = []
         var refs: [String: AXUIElement] = [:]
-        var queue: [(AXUIElement, Int)] = [(window, 0)]
-        var counter = 0
-        while !queue.isEmpty, counter < 1_500 {
-            let (element, depth) = queue.removeFirst()
-            counter += 1
-            let id = "e\(counter)"
-            elements.append(info(element, id: id, depth: depth))
-            refs[id] = element
-            guard depth < maxDepth, let children = attribute(element, kAXChildrenAttribute) as? [AnyObject] else { continue }
-            for child in children where CFGetTypeID(child) == AXUIElementGetTypeID() {
-                // swiftlint:disable:next force_cast
-                queue.append((child as! AXUIElement, depth + 1))
-            }
+        let completion = try BoundedAXTraversal<Node>().walk(root: Node(element: window), maxDepth: maxDepth) { node, depth in
+            let id = "e\(elements.count + 1)"
+            let (info, children) = try snapshotNode(node.element, id: id, depth: depth, includeChildren: depth < maxDepth)
+            elements.append(info)
+            refs[id] = node.element
+            return children
         }
+        try Task.checkCancellation()
         lock.withLock { references[pid] = refs }
         let running = NSRunningApplication(processIdentifier: pid)
         return AXSnapshot(
             bundleID: running?.bundleIdentifier ?? "",
             appName: running?.localizedName ?? "",
             windowTitle: string(window, kAXTitleAttribute),
-            elements: elements
+            elements: elements,
+            truncationReason: completion == .timeLimit ? "the app exceeded the three-second read budget"
+                : completion == .nodeLimit ? "the app exceeded the 1,500-element limit" : nil
         )
     }
 
