@@ -298,6 +298,21 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-strip .s .cv2-ic { opacity: 0.85; }
 .cv2-under { display: flex; align-items: center; gap: 10px; padding: 8px 22px 0; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
 
+/* Attachments on the composer (Chat's 56px tile row), seated in the box's own
+   padding: the first tile's corner sits on the field's left edge. */
+.cv2-composer .cv2-attach-row { padding: 0 0 10px; margin-left: -4px; }
+
+/* The landing: the same composer with nothing behind it, so the target tray
+   tucked under its top edge reads as one object (chat/composer.css .composer-tray). */
+.cv2.cv2-landing { background: transparent; }
+.cv2-landing .cv2-cstack { position: relative; z-index: 1; }
+
+/* The session's first paint (session-shell.tsx): the thread starts at its
+   newest turn, as the live one does, and the composer's model chip is a
+   quiet bar until the live picker arrives. */
+.cv2-static-thread { display: flex; flex-direction: column-reverse; }
+.cv2-skel-chip { display: inline-block; width: 92px; height: 12px; border-radius: 6px; background: hsl(var(--muted)); }
+
 /* Needs you: the composer body is replaced in place (T3 Code's pending approval panel). */
 .cv2-approve { display: flex; flex-direction: column; gap: 10px; padding: 0 6px 2px 0; animation: cv2-fade 160ms var(--cv2-ease) both; }
 .cv2-approve .ah { display: flex; align-items: baseline; gap: 10px; }

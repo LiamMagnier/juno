@@ -165,9 +165,13 @@ test("the landing parses the query and hands it to the composer", () => {
 
 test("the composer fills its field from the link and paints it filled", () => {
   const composer = read(COMPOSER);
+  // The landing mounts the session's composer (G58) and hands it the link's
+  // text as its first state: an effect would paint empty first and measure the
+  // field twice.
+  assert.match(composer, /initialDraft=\{prefill\?\.prompt \?\? ""\}/, "the landing hands the link's text to the composer");
   assert.match(
-    composer,
-    /React\.useState\(prefill\?\.prompt \?\? ""\)/,
+    read("src/components/code/v2/composer.tsx"),
+    /React\.useState\(initialDraft \?\? ""\)/,
     "the prompt must start filled — an effect would paint empty first and measure the field twice",
   );
   // Every refusal the parser can return needs a sentence, or a link quietly

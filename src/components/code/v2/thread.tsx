@@ -517,7 +517,7 @@ function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => 
           <div className="files">
             {u.attachments.map((a, i) => (
               <span key={i} className="file">
-                <Glyph name="document" size={12} />
+                <Glyph name={a.mediaType?.startsWith("image/") ? "image" : "document"} size={12} />
                 {a.name}
               </span>
             ))}
@@ -672,14 +672,15 @@ export function Thread(props: ThreadProps) {
   return (
     <div className="cv2-scroll" ref={scrollRef} onScroll={onScroll}>
       <div className="cv2-col">
-        {props.starting && (
-          <div className="cv2-wl">
-            <span className="verb cv2-shine">{props.starting}</span>
-          </div>
-        )}
         {turns.map((turn, i) => (
           <TurnView key={turn.id} turn={turn} props={props} now={now} unfolded={unfolded[turn.id]} onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))} revert={reverts[i]} />
         ))}
+        {/* Under the turn it is starting (the landing's first prompt shows as that turn at once). */}
+        {props.starting && (
+          <div className="cv2-wl" role="status">
+            <span className="verb cv2-shine">{props.starting}</span>
+          </div>
+        )}
         {props.offline && live && <div className="cv2-notice" style={{ marginTop: 16 }}>Paused while offline</div>}
         {props.pairingRequired && (
           <div className="cv2-notice" role="status" style={{ marginTop: 16 }}>

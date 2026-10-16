@@ -117,10 +117,11 @@ test("every composer dictates through the one row", () => {
   for (const file of [
     "src/components/chat/composer.tsx",
     "src/components/code/v2/composer.tsx",
-    "src/components/code/code-composer.tsx",
   ]) {
     assert.match(read(file), /<DictationSwap\b/, `${file} swaps in ComposerDictation`);
   }
+  // The /code landing is the session's composer in its landing variant (G58), so it dictates through the same row.
+  assert.match(read("src/components/code/code-composer.tsx"), /<Composer\b[\s\S]*variant="landing"/);
   assert.match(read("src/components/ui/dictation-swap.tsx"), /<ComposerDictation\b/);
 });
 
