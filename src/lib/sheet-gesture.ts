@@ -135,7 +135,7 @@ export function shouldOpen({ progress, velocity }: { progress: number; velocity:
  * remaining distance at the release speed, held between a quick settle and
  * the base rung so a slow release never crawls.
  */
-export function settleMs(remaining: number, velocity: number, { min = SETTLE_MIN_MS, max = SETTLE_MAX_MS } = {}): number {
+export function settleMs(remaining: number, velocity: number, { min = SETTLE_MIN_MS, max = SETTLE_MAX_MS }: { min?: number; max?: number } = {}): number {
   const speed = Math.abs(velocity);
   if (speed < 0.05) return max;
   return Math.round(Math.min(max, Math.max(min, Math.abs(remaining) / speed)));

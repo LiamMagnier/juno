@@ -275,7 +275,7 @@ test("skeleton: 200ms before it shows, at least 400ms once shown, busy and label
   clock.advance(1);
   assert.equal(gate.phase(), "content");
   gate.dispose();
-  const region = html(React.createElement(SkeletonRegion, { loading: true, skeleton: React.createElement(Skeleton) }, "Loaded"));
+  const region = html(React.createElement(SkeletonRegion, { loading: true, skeleton: React.createElement(Skeleton), children: "Loaded" }));
   assert.match(region, /aria-busy="true"/);
   assert.match(region, /class="sr-only">Loading</);
   assert.doesNotMatch(region, /Loaded/);
@@ -286,8 +286,8 @@ test("skeleton: 200ms before it shows, at least 400ms once shown, busy and label
 });
 
 test("collapse: 220 in-out open with 120 opacity, 160 close, mounted and inert, chevron 120", () => {
-  assert.equal(html(React.createElement(Collapse, { open: false }, "Hidden")), "", "never opened: not mounted");
-  const open = html(React.createElement(Collapse, { open: true }, "Shown"));
+  assert.equal(html(React.createElement(Collapse, { open: false, children: "Hidden" })), "", "never opened: not mounted");
+  const open = html(React.createElement(Collapse, { open: true, children: "Shown" }));
   assert.match(open, /data-state="open"/);
   assert.match(open, /data-appear="none"/, "open on the first render: no unfold");
   assert.doesNotMatch(open, /inert/);
@@ -296,7 +296,7 @@ test("collapse: 220 in-out open with 120 opacity, 160 close, mounted and inert, 
   assert.match(s, /\.ui-collapse\[data-state="closed"\] \{\s*grid-template-rows: 0fr;\s*opacity: 0;\s*transition:\s*grid-template-rows var\(--dur-exit\) var\(--ease-in\),\s*opacity var\(--dur-exit\) var\(--ease-in\);/);
   assert.match(s, /\.ui-collapse-chevron \{\s*transition: rotate var\(--dur-fast\)/);
   assert.match(read("src/components/ui/collapse.tsx"), /inert=\{!open\}/);
-  assert.match(html(React.createElement(CollapseChevron, { open: true }, "›")), /data-state="open"/);
+  assert.match(html(React.createElement(CollapseChevron, { open: true, children: "›" })), /data-state="open"/);
 });
 
 test("icon swap at 120 from 0.8; the press dip only on solo icon buttons", () => {
