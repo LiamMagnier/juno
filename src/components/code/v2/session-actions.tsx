@@ -28,6 +28,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ShareDialog } from "@/components/share/share-dialog";
 import type { SharedTranscriptEntry } from "@/lib/share-transcript";
 
+// Named *_DESCRIPTION so the i18n extractor catalogues them.
+const SHARE_FROM_MAC_DESCRIPTION =
+  "A read-only link shows your messages and the answers as they are when you create it. The work log, commands and files stay private, and anything that looks like a key is hidden.";
+const SHARE_FROM_SERVER_DESCRIPTION =
+  "A read-only link shows your messages and the answers as they are when you create it. The work log, commands and files stay private.";
+
 type TranscriptGetter = () => SharedTranscriptEntry[] | null;
 const transcripts = new Map<string, TranscriptGetter>();
 
@@ -226,7 +232,10 @@ export function useCodeSessionActions(): CodeSessionActions {
           open
           onOpenChange={(open) => !open && setShareId(null)}
           title="Share this session"
-          description="A read-only link shows your messages and the answers up to now. The work log, commands and files stay private, and anything that looks like a key is hidden."
+          // Only a transcript sent from the Mac goes through the server's redaction
+          // (share-transcript.ts); a link built from the server's own messages
+          // publishes them as written, so it must not promise that keys are hidden.
+          description={sessionTranscript(shareId) ? SHARE_FROM_MAC_DESCRIPTION : SHARE_FROM_SERVER_DESCRIPTION}
           transcript={sessionTranscript(shareId)}
         />
       )}

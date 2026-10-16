@@ -139,16 +139,41 @@ function ChatLinkPanel({ conversationId, open, transcript }: { conversationId: s
     }
   }, [open, load]);
 
+  // A conversation whose transcript is not on the server (a Code session on a Mac) sends it along.
+  const post = () => {
+    const entries = transcript?.() ?? null;
+    return fetch("/api/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "CHAT", conversationId, ...(entries ? { transcript: entries } : {}) }),
+    });
+  };
+
+  // A transcript link's snapshot is what the owner's app sent: sending again refreshes the same
+  // link (the server keeps its token), so the people who have it see the session as it is now.
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await post();
+      const body = (await res.json().catch(() => null)) as { share?: ShareInfo; error?: string } | null;
+      if (!res.ok || !body?.share) {
+        toast.error(body?.error ?? "Couldn’t update the link.");
+        return;
+      }
+      setShare(body.share);
+      toast.success("Link updated. It shows the session as it is now.");
+    } catch {
+      toast.error("Couldn’t update the link.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const create = async () => {
     setStatus("creating");
     try {
-      // A conversation whose transcript is not on the server (a Code session on a Mac) sends it along.
-      const entries = transcript?.() ?? null;
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "CHAT", conversationId, ...(entries ? { transcript: entries } : {}) }),
-      });
+      const res = await post();
       if (res.status === 403 || res.status === 400) {
         const body = (await res.json().catch(() => null)) as { code?: string; error?: string } | null;
         if (body?.code === "share_taken_down" || body?.code === "transcript_invalid") {
@@ -205,20 +230,27 @@ function ChatLinkPanel({ conversationId, open, transcript }: { conversationId: s
   return (
     <div className="space-y-3 motion-safe:animate-fade-in">
       <LinkField url={share.url} label="Share link" />
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-caption tabular-nums text-muted-foreground">
           Snapshot · {formatDate(share.snapshotAt)} · {share.views} {share.views === 1 ? "view" : "views"}
         </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void revoke()}
-          disabled={revoking}
-          aria-busy={revoking}
-          className="text-destructive danger-hover"
-        >
-          {revoking ? "Revoking…" : "Revoke link"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {transcript && (
+            <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={refreshing || revoking} aria-busy={refreshing}>
+              {refreshing ? "Updating…" : "Update to now"}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void revoke()}
+            disabled={revoking || refreshing}
+            aria-busy={revoking}
+            className="text-destructive danger-hover"
+          >
+            {revoking ? "Revoking…" : "Revoke link"}
+          </Button>
+        </div>
       </div>
     </div>
   );
