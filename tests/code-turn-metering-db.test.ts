@@ -65,16 +65,20 @@ if (!DB_URL) {
     return new Response(STREAM, { status: 200, headers: { "content-type": "text/event-stream" } });
   }) as typeof fetch;
 
+  // An agent loop's turn offers its tools; a side call (a review, a title) does not.
+  const tools = [{ name: "read", description: "Read a file", input_schema: { type: "object" } }];
   const opening = (text: string, history: unknown[] = []) => ({
     model: "claude-opus-5-5",
     max_tokens: 4096,
     stream: true,
+    tools,
     messages: [...history, { role: "user", content: text }],
   });
   const continuation = {
     model: "claude-opus-5-5",
     max_tokens: 4096,
     stream: true,
+    tools,
     messages: [
       { role: "user", content: "Fix the test" },
       { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "read", input: { path: "a.ts" } }] },
@@ -168,8 +172,14 @@ if (!DB_URL) {
     assert.equal((await call(opening("Now run the linter", history))).status, 200);
     assert.equal(await settled(user.id, 4), 2);
 
+    // The engine's own side call (an auto-review of a risky step), sent with
+    // no tools: billed like any call, never a turn.
+    const review = { model: "claude-opus-5-5", max_tokens: 512, stream: true, tools: [], messages: [{ role: "user", content: "Review: rm -rf build. Allow or deny?" }] };
+    assert.equal((await call(review)).status, 200);
+    assert.equal(await settled(user.id, 5), 2);
+
     // Every call was billed: the counter never stood in for the spend.
-    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, kind: "code" } }), 4);
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, kind: "code" } }), 5);
   });
 
   test("an opening the provider refused is not counted", async (t) => {

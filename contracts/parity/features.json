@@ -883,8 +883,8 @@
       "routes": {
         "/api/agent/[...path]": "native",
         "/api/agent/usage": {
-          "status": "planned",
-          "note": "Usage accounting for Juno Code's engine against the plan; the Swift engine does not report its turns here yet."
+          "status": "internal",
+          "note": "Turn settlement for agent-core reporter hosts only. The Swift engine needs no call here: every Code call on Alevr's keys goes through /api/agent/[...path], which admits each turn like a chat turn and counts it once its opening call is billed (src/lib/metering/code-turn-store.ts)."
         },
         "/api/code/cloud-runner": {
           "status": "planned",

@@ -21,6 +21,19 @@ import { createHash } from "node:crypto";
  * body `inspectAgentRequest` already parses, and never from a header a client
  * could leave off.
  *
+ * Side calls. An engine also asks the model things that are not turns: the
+ * Mac's auto-reviewer before a risky step, the completion judge, a hook's
+ * prompt, a summary for compaction, a title. Each of those ends on words the
+ * engine wrote as a user message, so the closing message alone would count
+ * every one as a turn, and an auto-reviewed turn with ten risky steps as
+ * eleven. What tells them apart is also in the body: a turn of the agent loop
+ * offers the model its tools, and every one of those side calls is sent with
+ * none (`tools: []` in the Swift engine's requests, and agent-core's helpers
+ * alike). So an opening must offer tools. The one side call that keeps them is
+ * the Mac's cache-reading compaction, which resends the session's prefix
+ * whole; it runs once per long session and is counted, which is the honest
+ * cost of not trusting a header for this.
+ *
  * Retries. An engine retries an opening call that failed or was cut short with
  * the same body, and a retried opening is not a second turn. `fingerprint`
  * names the opening by what it asks — the wire, the model, how long the
@@ -130,6 +143,16 @@ function hashValue(hash: ReturnType<typeof createHash>, value: unknown): void {
   }
 }
 
+/**
+ * Whether the call offers the model tools: what an agent loop's turn always
+ * does and its side calls never do (see "Side calls" above). `functions` is
+ * Chat Completions' older spelling of the same thing.
+ */
+function offersTools(body: Record<string, unknown>): boolean {
+  if (Array.isArray(body.tools) && body.tools.length > 0) return true;
+  return Array.isArray(body.functions) && body.functions.length > 0;
+}
+
 function conversationLength(wire: CodeTurnWire, body: Record<string, unknown>): number {
   const list = wire === "openai-responses" ? body.input : body.messages;
   return Array.isArray(list) ? list.length : 1;
@@ -144,6 +167,7 @@ function conversationLength(wire: CodeTurnWire, body: Record<string, unknown>): 
  * call itself is still billed in full by the proxy whatever this says.
  */
 export function codeTurnOpening(wire: CodeTurnWire, body: Record<string, unknown>): CodeTurnOpening {
+  if (!offersTools(body)) return NOT_AN_OPENING;
   const closing =
     wire === "anthropic" ? anthropicOpening(body) : wire === "openai-chat" ? chatOpening(body) : responsesOpening(body);
   if (closing === null) return NOT_AN_OPENING;

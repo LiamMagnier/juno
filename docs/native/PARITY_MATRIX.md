@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-347 routes: 226 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+347 routes: 226 native, 52 planned, 55 web only, 14 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 14 | 6 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 13 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -514,7 +514,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/agent/[...path]` | POST | Native | JunoCodeBridge |  |
-| `/api/agent/usage` | POST | Planned |  | Usage accounting for Juno Code's engine against the plan; the Swift engine does not report its turns here yet. |
+| `/api/agent/usage` | POST | Internal |  | Turn settlement for agent-core reporter hosts only. The Swift engine needs no call here: every Code call on Alevr's keys goes through /api/agent/[...path], which admits each turn like a chat turn and counts it once its opening call is billed (src/lib/metering/code-turn-store.ts). |
 | `/api/code/cloud-runner` | GET | Planned |  | Whether a cloud run could start, asked when the Cloud target is chosen. |
 | `/api/code/devices` | GET, POST | Native | JunoCodeKit |  |
 | `/api/code/devices/[deviceId]/commands` | GET, POST | Native | JunoCodeKit |  |

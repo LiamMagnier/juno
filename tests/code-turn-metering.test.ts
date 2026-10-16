@@ -12,12 +12,16 @@ import { inspectAgentRequest } from "@/lib/agent-proxy";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
+/** The tools an agent loop's turn offers; every call in these tests is one unless it says otherwise. */
+const TOOLS = [{ name: "read", input_schema: { type: "object" } }];
+const withTools = (body: Record<string, unknown>) => ("tools" in body ? body : { ...body, tools: TOOLS });
+
 function opens(wire: Parameters<typeof codeTurnOpening>[0], body: Record<string, unknown>): boolean {
-  return codeTurnOpening(wire, body).opens;
+  return codeTurnOpening(wire, withTools(body)).opens;
 }
 
 function fingerprint(wire: Parameters<typeof codeTurnOpening>[0], body: Record<string, unknown>): string {
-  const turn = codeTurnOpening(wire, body);
+  const turn = codeTurnOpening(wire, withTools(body));
   assert.ok(turn.opens, "expected an opening");
   return turn.fingerprint;
 }
@@ -125,6 +129,33 @@ test("Responses: a user input opens, a function call output continues", () => {
   );
 });
 
+test("a side call that offers no tools is never a turn, on any wire", () => {
+  // The auto-reviewer, the completion judge, a hook's prompt, a title or a
+  // summary: the engine's own words in a user message, sent with no tools.
+  const words = "Review this step: rm -rf build. Reply allow or deny.";
+  for (const tools of [undefined, []]) {
+    const extra = tools ? { tools } : {};
+    assert.equal(
+      codeTurnOpening("anthropic", { model: "claude-opus-5-5", ...extra, messages: [{ role: "user", content: words }] }).opens,
+      false,
+    );
+    assert.equal(
+      codeTurnOpening("openai-chat", { model: "gpt-6-sol", ...extra, messages: [{ role: "user", content: words }] }).opens,
+      false,
+    );
+    assert.equal(codeTurnOpening("openai-responses", { model: "gpt-6-sol", ...extra, input: words }).opens, false);
+  }
+  // Chat Completions' older `functions` spelling still offers tools.
+  assert.equal(
+    codeTurnOpening("openai-chat", {
+      model: "gpt-6-sol",
+      functions: [{ name: "read" }],
+      messages: [{ role: "user", content: "Add a README" }],
+    }).opens,
+    true,
+  );
+});
+
 test("a retried opening has the same fingerprint, the next turn a different one", () => {
   const first = {
     model: "claude-opus-5-5",
@@ -162,7 +193,7 @@ test("a retried opening has the same fingerprint, the next turn a different one"
 test("a pathologically nested opening is fingerprinted without recursion", () => {
   // Valid JSON the provider would accept; a recursive walk overflows on it.
   const depth = 50_000;
-  const raw = `{"model":"gpt-6-sol","messages":[{"role":"user","content":${"[".repeat(depth)}"x"${"]".repeat(depth)}}]}`;
+  const raw = `{"model":"gpt-6-sol","tools":[{"type":"function","function":{"name":"read"}}],"messages":[{"role":"user","content":${"[".repeat(depth)}"x"${"]".repeat(depth)}}]}`;
   const checked = inspectAgentRequest("openai-chat", raw);
   assert.ok(checked.ok);
   assert.equal(checked.request.turn?.opens, true);
@@ -177,7 +208,7 @@ test("a pathologically nested opening is fingerprinted without recursion", () =>
 test("inspectAgentRequest reports whether the call opens a turn", () => {
   const opening = inspectAgentRequest(
     "anthropic",
-    JSON.stringify({ model: "claude-opus-5-5", messages: [{ role: "user", content: "hi" }] }),
+    JSON.stringify({ model: "claude-opus-5-5", tools: TOOLS, messages: [{ role: "user", content: "hi" }] }),
   );
   assert.ok(opening.ok);
   assert.equal(opening.request.turn?.opens, true);
