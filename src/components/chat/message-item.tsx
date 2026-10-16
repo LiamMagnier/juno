@@ -1312,7 +1312,9 @@ export const MessageItem = React.memo(function MessageItem({
             {/* The streamed prose is paced and inked in by StreamingMarkdown
                 (stream-text.tsx); a settled reply renders as plain Markdown. */}
             <LiveUIHostProvider value={{ messageId: message.id }}>
-            <div className="space-y-1">
+            {/* `data-answer-text`: a settled answer's prose, where a selection
+                raises Ask / Quote / Explain (answer-selection-bar.tsx). */}
+            <div className="space-y-1" data-answer-text={message.streaming ? undefined : message.id}>
             {parts.map((part, i) =>
               part.type === "text" ? (
                 <StreamingMarkdown key={i} content={part.text} streaming={message.streaming} sources={sources} writtenFiles={writtenFiles} />
@@ -1525,7 +1527,8 @@ export const MessageItem = React.memo(function MessageItem({
                             .split("\n")
                             .map((line) => `> ${line}`)
                             .join("\n");
-                          window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: `${quoted}\n\n` }));
+                          // Appended after the draft, never in place of it.
+                          window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: { text: `${quoted}\n\n`, append: true } }));
                         }}
                       >
                         <TextQuote className="size-4" /> Quote in composer

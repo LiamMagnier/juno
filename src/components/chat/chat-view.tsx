@@ -86,7 +86,8 @@ import { voicePhaseOf } from "@/lib/voice-phase";
 import { cn } from "@/lib/utils";
 import { liveArtifacts } from "@/lib/artifact-card-state";
 import { replaceArtifactById } from "@/lib/chat-client-state";
-import { serializeQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
+import { serializeQuote, type AnswerQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
+import { AnswerSelectionBar } from "@/components/chat/answer-selection-bar";
 import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
 import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ConversationHistory, ReasoningEffort, TitleSource } from "@/types/chat";
@@ -1813,6 +1814,21 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // which must stay stable while this identity changes with the chat hook.
   const sendFromComposerRef = React.useRef(sendFromComposer);
   sendFromComposerRef.current = sendFromComposer;
+  // A passage selected in an answer (answer-selection-bar.tsx): Ask makes it
+  // the composer's quote chip, Quote writes it into the draft, Explain sends.
+  const answerSelection = React.useMemo(
+    () => ({
+      onAsk: (quote: AnswerQuote) => {
+        setComposerQuote(quote);
+        window.dispatchEvent(new CustomEvent("juno:composer-focus"));
+      },
+      onQuote: (markdown: string) =>
+        window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: { text: markdown, append: true } })),
+      onExplain: (quote: AnswerQuote) =>
+        void sendFromComposerRef.current(serializeQuote(quote, "Explain this passage in plain terms."), []),
+    }),
+    [],
+  );
   // A Live UI view's prompt button sends through the same path as a follow-up
   // suggestion. Stable, so a view does not re-render on every chat change.
   const liveUIHost = React.useMemo(
@@ -2576,6 +2592,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               />
               </LiveUIHostProvider>
               </AgentThreadContext.Provider>
+              <AnswerSelectionBar
+                scopeRef={layoutRef}
+                activeQuote={composerQuote}
+                canSend={!chat.isBusy && !voiceSaving && !voiceSaveError && !voiceTurnSending}
+                {...answerSelection}
+              />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and gutter as the composer's root
                 // (composer.tsx) — otherwise these sit inside the composer's
