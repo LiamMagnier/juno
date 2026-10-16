@@ -38,6 +38,7 @@ import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
 import { displayName } from "@/lib/code-v2/providers-view";
 import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
 import { DictationSwap } from "@/components/ui/dictation-swap";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { useCodeVoice, useCodeVoiceCall, type CodeVoiceSend } from "@/components/code/code-voice";
 import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
@@ -329,6 +330,8 @@ export const Composer = React.forwardRef<
   const needs = pending.length > 0 || (!!plan && !revising);
   // A Mac subscription chosen before the Mac listed its runtimes: writable, shown, and held at Send.
   const modelPending = !instance && !!model.selectionPending;
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
   const connected = instances.some((i) => i.status === "ready" || i.status === "limited") && (!!instance || modelPending);
   const waitingOn = gate ?? (modelPending ? MODEL_PENDING_LABEL : null);
   const ready = !model.starting && connected && !model.offline && !waitingOn;
@@ -994,7 +997,7 @@ export const Composer = React.forwardRef<
               </>
             ) : (
               <>
-                {connected && (
+                {connected && speechSupported && (
                   <button type="button" className="cv2-ctl icon" aria-label="Dictate" title="Dictate" aria-pressed={dictating} onClick={() => setDictating(true)}>
                     <Glyph name="mic" size={16} />
                   </button>

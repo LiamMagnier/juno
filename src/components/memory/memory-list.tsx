@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 import { ChevronDown, Plus, Search, type IconComponent } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -201,7 +202,7 @@ export function MemoryList({
       const row = document.querySelector<HTMLElement>(`[data-memory-id="${CSS.escape(revealId)}"]`);
       row?.scrollIntoView({
         block: "center",
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
       });
     });
     return () => window.cancelAnimationFrame(frame);

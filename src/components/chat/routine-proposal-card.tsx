@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { useReducedMotion } from "@/lib/motion-preference";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { Input } from "@/components/ui/input";
@@ -132,7 +133,7 @@ export function RoutineProposalCard({
   onClose?: () => void;
   className?: string;
 }) {
-  const reduce = useReducedMotion() ?? false;
+  const reduce = useReducedMotion();
   const router = useRouter();
   const titleId = React.useId();
   const fieldId = React.useId();

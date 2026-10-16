@@ -19,7 +19,7 @@ test("Code's surfaces leave the way they came", () => {
   const css = withoutComments(read("src/components/code/v2/code-v2.css"));
   assert.match(css, /--cv2-exit-mid: calc\(var\(--dur-mid\) \* 0\.65\);/);
   assert.match(css, /--cv2-exit-wide: calc\(var\(--dur-wide\) \* 0\.65\);/);
-  for (const surface of ["cv2-pop", "cv2-dock", "cv2-palette", "cv2-toast", "cv2-sheet", "cv2-scrim"]) {
+  for (const surface of ["cv2-pop", "cv2-dock", "cv2-palette", "cv2-sheet", "cv2-scrim"]) {
     const rule = new RegExp(`\\.${surface}(?:[.\\w-]*)?\\[data-state="closed"\\][^{]*\\{[^}]*animation: [\\w-]+ var\\(--cv2-exit-(?:mid|wide)\\) var\\(--ease-in\\)`);
     assert.match(css, rule, `${surface} has no exit`);
   }

@@ -158,14 +158,16 @@ test("the route accepts reason and note, seals the note, mirrors only the catego
   assert.ok(!/feedbackNote/.test(signal.slice(0, signal.indexOf(");"))), "the note never reaches routing telemetry");
 });
 
-test("a regenerated answer drops the old answer's reason and note with its rating", () => {
-  // persist.ts rewrites the stale assistant row in place; a reason left behind
-  // would describe an answer that is no longer there.
+test("a regenerated answer starts with no rating, reason or note of its own", () => {
+  // With branching (G50) a regenerate writes a NEW sibling row and never
+  // rewrites the old answer in place: the old answer keeps the verdict that was
+  // about it, and the new one is built from columns that carry no feedback.
   const persist = read("src/lib/chat/turn/persist.ts");
-  const update = persist.slice(persist.indexOf("feedback: null, // a fresh answer"));
-  const block = update.slice(0, update.indexOf("sources:"));
-  assert.match(block, /feedbackReason: null,/);
-  assert.match(block, /feedbackNote: null,/);
+  const columns = persist.slice(persist.indexOf("const columns = {"));
+  const block = columns.slice(0, columns.indexOf("};"));
+  assert.doesNotMatch(block, /feedback/, "a regenerated answer must not inherit a verdict");
+  assert.match(persist, /forkMessage\(/, "regenerates branch instead of overwriting");
+  assert.doesNotMatch(persist, /prisma\.message\.update\(\{\s*where: \{ id: stale/, "the old answer is never rewritten in place");
 });
 
 test("code sessions send the picker's reason too, not a bare DOWN", () => {

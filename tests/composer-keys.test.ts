@@ -105,7 +105,8 @@ test("every composer asks the touch rule before Return sends", () => {
   assert.match(field, /!plainReturnSends\(event\)/);
   assert.match(field, /enterKeyHint=\{enterKeyHint\}/);
   assert.match(source("src/components/code/v2/composer.tsx"), /touchReturnBreaksLine\(e\)\) return;/);
-  assert.match(source("src/components/code/code-composer.tsx"), /!touchReturnBreaksLine\(e\)/);
+  // The Code landing hosts the v2 composer (G58), which asks the rule above.
+  assert.match(source("src/components/code/code-composer.tsx"), /<Composer[\s\S]*?variant="landing"/);
   assert.match(source("src/components/code/code-session-composer.tsx"), /!touchReturnBreaksLine\(e\)/);
   assert.match(source("src/components/work/composer/work-thread-composer.tsx"), /!touchReturnBreaksLine\(event\)/);
   // Orbit's two "describe an agent" composers and Compare's prompt box each

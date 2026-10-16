@@ -67,7 +67,8 @@ test("capability probes read the real browser objects, and say no on the server"
 test("every composer draws Dictate from the shared support check, not Web Speech alone", () => {
   for (const file of [
     "src/components/chat/composer.tsx",
-    "src/components/code/code-composer.tsx",
+    // The Code landing hosts the v2 composer (G58), so its mic is that one.
+    "src/components/code/v2/composer.tsx",
     "src/components/code/code-session-view.tsx",
     "src/components/work/composer/work-thread-composer.tsx",
   ]) {
