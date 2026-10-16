@@ -409,3 +409,56 @@ public enum StudioFormat {
         return String(format: "%.1fM", Double(count) / 1_000_000)
     }
 }
+
+// MARK: - Bounded minimum height
+
+/// Keeps a column's fixed region from asking for an unbounded height when
+/// the window measures its minimum size.
+///
+/// AppKit asks a hosting view for its minimum size by proposing a width of
+/// zero. A wrapping `Text` with `.fixedSize(horizontal: false, vertical: true)`
+/// answers that with every character on a line of its own: the screen grant
+/// card under the composer reported about 3,900 points, the split view grew to
+/// fit it, and the window drew both columns centred far outside itself —
+/// a blank Code window with only the toolbar left (1.11.0). Below `floor`,
+/// this measures its content at `floor` instead, so the height it reports is
+/// one a real column could need. At any real width it is a pass-through.
+public struct StudioBoundedMinimumHeight: Layout {
+    /// The narrowest width the content is measured at.
+    public var floor: CGFloat = StudioBoundedMinimumHeight.defaultFloor
+
+    public static let defaultFloor: CGFloat = 320
+
+    public init(floor: CGFloat = StudioBoundedMinimumHeight.defaultFloor) {
+        self.floor = floor
+    }
+
+    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        guard let width = proposal.width, width < floor else {
+            return child.sizeThatFits(proposal)
+        }
+        let narrow = child.sizeThatFits(proposal)
+        let measured = child.sizeThatFits(ProposedViewSize(width: floor, height: proposal.height))
+        return CGSize(width: narrow.width, height: min(narrow.height, measured.height))
+    }
+
+    public func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        for child in subviews {
+            child.place(
+                at: bounds.origin,
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+            )
+        }
+    }
+}
+
+public extension View {
+    /// See ``StudioBoundedMinimumHeight``: for the composer and anything that
+    /// takes its place, which sit outside the thread's scroll view, and for
+    /// the window's inspector panes.
+    func studioBoundedMinimumHeight(floor: CGFloat = StudioBoundedMinimumHeight.defaultFloor) -> some View {
+        StudioBoundedMinimumHeight(floor: floor) { self }
+    }
+}

@@ -358,6 +358,9 @@ public struct CodeV2EnvSessionView: View {
             )
             CodeComposerSpeechButtons(speech: speech)
         }
+        // A takeover (an approval, the permission notice) must never make
+        // the window taller than itself (StudioBoundedMinimumHeight).
+        .studioBoundedMinimumHeight()
     }
 
     /// The env server runs the vendor's own agent, which has its own slash
