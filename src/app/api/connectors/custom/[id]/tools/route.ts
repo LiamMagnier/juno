@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/session";
@@ -34,6 +35,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       { status: 502 }
     );
   }
-  const fresh = await prisma.customConnector.findFirstOrThrow({ where: { id: connector.id, userId: user.id } });
+  const fresh = await oauthMcpConfigs.findFirstOrThrow({ where: { id: connector.id, userId: user.id } });
   return NextResponse.json({ connector: toCustomConnectorView(fresh, { createdAt: link.createdAt }) });
 }

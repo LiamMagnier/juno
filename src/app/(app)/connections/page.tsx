@@ -9,9 +9,8 @@ import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { type ConnectorStatus, type UserMcpServerStatus } from "@/components/connections/types";
+import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
-import { AddMcpServerDialog } from "@/components/connections/add-mcp-server-dialog";
 import { ConnectorDirectory, tileAnchor, type DirectoryItem } from "@/components/connections/connector-directory";
 import { StandingGrants } from "@/components/connections/standing-grants";
 import { queueSettingsPatch } from "@/components/settings/use-settings-save";
@@ -69,7 +68,6 @@ export default function ConnectionsPage() {
   const [error, setError] = React.useState(false);
   const [disconnectTarget, setDisconnectTarget] = React.useState<DirectoryItem | null>(null);
   const [credentialsTarget, setCredentialsTarget] = React.useState<ConnectorStatus | null>(null);
-  const [addMcpOpen, setAddMcpOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
   const blockedRef = React.useRef<string[]>([]);
@@ -248,14 +246,6 @@ export default function ConnectionsPage() {
     }
   };
 
-  const userMcpSaved = (server: UserMcpServerStatus) => {
-    // Refresh the whole list: /api/connectors projects user MCP rows, and a
-    // local patch would drift from that projection the first time a field
-    // (status, tools) changes shape.
-    void load();
-    toast.success(`${server.name} is ready to use.`);
-  };
-
   const testUserMcp = async (item: DirectoryItem) => {
     const rowId = item.id.replace(/^user_mcp:/, "");
     setConnectingId(item.id);
@@ -325,7 +315,7 @@ export default function ConnectionsPage() {
       ) : (
         <ConnectorDirectory
           headerAction={
-            <Button variant="outline" onClick={() => setAddMcpOpen(true)} className="shrink-0 gap-1.5 px-3.5">
+            <Button variant="outline" onClick={() => setAddOpen(true)} className="shrink-0 gap-1.5 px-3.5">
               <Plus className="size-4" aria-hidden="true" />
               Add
             </Button>
@@ -369,13 +359,7 @@ export default function ConnectionsPage() {
         </DialogContent>
       </Dialog>
 
-      <AddMcpServerDialog
-        open={addMcpOpen}
-        onOpenChange={setAddMcpOpen}
-        onSaved={userMcpSaved}
-      />
-
-      <AddCustomConnectorDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddCustomConnectorDialog open={addOpen} onOpenChange={setAddOpen} onSaved={() => { void load(); toast.success("Server saved."); }} />
 
       <CustomConnectorDialog
         connectorId={manageId}

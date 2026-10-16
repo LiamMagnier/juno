@@ -1,8 +1,8 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { isCustomConnectorId } from "@/lib/custom-connectors";
 
@@ -25,7 +25,7 @@ export function tooMany() {
 export async function ownedConnector(userId: string, rawId: string) {
   const id = decodeURIComponent(rawId);
   if (!isCustomConnectorId(id)) return null;
-  return prisma.customConnector.findFirst({ where: { id, userId } });
+  return oauthMcpConfigs.findFirst({ where: { id, userId } });
 }
 
 export function notFound() {

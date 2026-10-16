@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -40,7 +41,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!connector) return notFound();
   const parsed = patchBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-  const updated = await prisma.customConnector.update({
+  const updated = await oauthMcpConfigs.update({
     where: { id: connector.id, userId: user.id },
     data: {
       ...(parsed.data.name ? { name: parsed.data.name } : {}),
@@ -56,9 +57,6 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const connector = await ownedConnector(user.id, (await params).id);
   if (!connector) return notFound();
-  await prisma.$transaction([
-    prisma.connection.deleteMany({ where: { userId: user.id, provider: connector.id } }),
-    prisma.customConnector.delete({ where: { id: connector.id, userId: user.id } }),
-  ]);
+  await oauthMcpConfigs.delete({ where: { id: connector.id, userId: user.id } });
   return NextResponse.json({ ok: true });
 }

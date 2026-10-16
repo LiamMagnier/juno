@@ -473,6 +473,18 @@ jobs:
           FIRST_PARTY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_connectors_test
           NODE_OPTIONS: --conditions=react-server
 
+      - name: Unified MCP config migration and credential isolation
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_codex_mcp_test'
+          npx prisma migrate deploy
+          npx tsx --test tests/mcp-config-unification-db.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_mcp_test
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_mcp_test
+          MCP_CONFIG_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_mcp_test
+          NODE_OPTIONS: --conditions=react-server
+
       - name: Auto context ownership and sizing, against a real database
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_context_test'

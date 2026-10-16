@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -25,7 +26,7 @@ const createBody = z.object({
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const connectors = await prisma.customConnector.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+  const connectors = await oauthMcpConfigs.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
   const links = await prisma.connection.findMany({
     where: { userId: user.id, provider: { in: connectors.map((c) => c.id) } },
     select: { provider: true, createdAt: true },
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_url", message: "That isn't a valid server address." }, { status: 400 });
   }
 
-  const existing = await prisma.customConnector.findFirst({ where: { userId: user.id, url } });
+  const existing = await oauthMcpConfigs.findFirst({ where: { userId: user.id, url } });
   if (existing) {
     return NextResponse.json({
       connector: toCustomConnectorView(existing),
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
       existing: true,
     });
   }
-  const count = await prisma.customConnector.count({ where: { userId: user.id } });
+  const count = await oauthMcpConfigs.count({ where: { userId: user.id } });
   if (count >= MAX_CUSTOM_CONNECTORS) {
     return NextResponse.json(
       { error: "limit", message: `You can add up to ${MAX_CUSTOM_CONNECTORS} servers. Remove one to add another.` },
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
   const probe = await probeCustomMcpServer(url);
   if (!probe.ok) return NextResponse.json({ error: probe.reason, message: probe.message }, { status: 422 });
 
-  const connector = await prisma.customConnector.create({
+  const connector = await oauthMcpConfigs.create({
     data: {
       id: newCustomConnectorId(),
       userId: user.id,

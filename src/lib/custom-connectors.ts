@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import "server-only";
 import { randomBytes } from "crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -271,7 +272,7 @@ export async function refreshCustomConnectorTools(
     });
     const info = client.getServerVersion();
     const instructions = client.getInstructions();
-    await prisma.customConnector.update({
+    await oauthMcpConfigs.update({
       where: { id: connector.id, userId: connector.userId },
       data: {
         tools: tools as unknown as object,

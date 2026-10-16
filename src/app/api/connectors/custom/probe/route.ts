@@ -1,8 +1,8 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/session";
 import { canonicalMcpUrl, probeCustomMcpServer, suggestedName } from "@/lib/custom-connectors";
-import { prisma } from "@/lib/prisma";
 import { probeAllowed, tooMany, urlBody } from "../shared";
 
 export const runtime = "nodejs";
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (!url) return NextResponse.json({ ok: false, reason: "invalid_url", message: "That isn't a valid server address." });
   if (!(await probeAllowed(user.id))) return tooMany();
 
-  const existing = await prisma.customConnector.findFirst({ where: { userId: user.id, url }, select: { id: true, name: true } });
+  const existing = await oauthMcpConfigs.findFirst({ where: { userId: user.id, url }, select: { id: true, name: true } });
   const result = await probeCustomMcpServer(url);
   if (!result.ok) return NextResponse.json({ ok: false, url, reason: result.reason, message: result.message });
   return NextResponse.json({

@@ -263,22 +263,10 @@ model ConnectorSyncEvent {
 }
 
 /**
- * A remote MCP server the user added themselves (URL + optional Authorization
- * header), as opposed to the closed native registry in src/lib/connectors.ts
- * and Composio's managed catalog.
- * SEPARATE FROM `Connection` ON PURPOSE. Connection is the OAuth/credential
- * ledger for closed ConnectorIds: unique on [userId, provider] where provider
- * is a registry id, and every column exists to refresh a token Juno owns. A
- * user MCP server has no OAuth handshake of its own (auth is one static header
- * the user pasted), can be renamed without forking a token row, and carries
- * health fields (status, lastCheckedAt, toolCount) that a linked GitHub account
- * never needed. Stuffing it into Connection would make `provider` mean "a
- * registry id OR a cuid of a row in another table" and every lookup that
- * assumes the first would silently skip these.
- * The auth header is encrypted like Connection.accessToken: a database dump
- * must not yield a working bearer token for someone else's MCP endpoint.
- * Once enabled, a row appears in getActiveConnectors as `user_mcp:<id>` so
- * chat, agents and Work can request it like any other connector id.
+ * Canonical user-added MCP configuration for header and OAuth servers.
+ * Header rows keep their existing cuid and user_mcp connector identity.
+ * OAuth rows keep the original mcp: id; encrypted OAuth tokens remain in
+ * Connection. All config reads and writes are scoped to the owning user.
  */
 model UserMcpServer {
   id            String    @id @default(cuid())
@@ -287,6 +275,13 @@ model UserMcpServer {
   url           String    @db.Text
   /// Full Authorization header value (e.g. "Bearer …"), encrypted at rest.
   authHeader    String?   @db.Text
+  /// header | oauth; OAuth credentials remain encrypted in Connection.
+  authMode      String    @default("header")
+  description   String?   @db.Text
+  serverName    String?
+  disabledTools String[] @default([])
+  toolCatalog   Json?
+  toolsCheckedAt DateTime?
   /// Master switch. Disabled rows stay listed but never resolve to a connector.
   enabled       Boolean   @default(true)
   /// untested | ok | error — last connection test only, not a live probe.
@@ -316,10 +311,9 @@ model UserMcpServer {
   @@index([userId, enabled])
 }
 
-// A remote MCP server the user added by URL. Its OAuth tokens live in the
-// ordinary Connection row under provider `id` ("mcp:<slug>"), so the runtime,
-// the approval broker, the audit log and every connector picker treat it like
-// any built-in connector. Only OAuth servers (RFC 9728 / 8414 / 7591 + PKCE).
+// Legacy migration snapshot. New reads and writes use UserMcpServer through
+// mcp-config-store.ts; removal also clears this snapshot to honor deletion.
+// Kept for an additive rollout and rollback compatibility, never dual-written.
 model CustomConnector {
   id             String    @id // "mcp:<10 chars>", also the Connection.provider
   userId         String

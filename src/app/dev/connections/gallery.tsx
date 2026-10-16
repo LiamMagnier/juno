@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AddMcpServerDialog } from "@/components/connections/add-mcp-server-dialog";
+import { AddCustomConnectorDialog } from "@/components/connections/add-custom-connector-dialog";
 import { Button } from "@/components/ui/button";
 import type { UserMcpServerStatus } from "@/components/connections/types";
 
@@ -15,12 +16,14 @@ const saved: UserMcpServerStatus = {
 /** Real dialog, dev only. API calls still require the account's normal auth. */
 export function ConnectionsGallery() {
   const [open, setOpen] = React.useState(false);
+  const [adding, setAdding] = React.useState(false);
   const [editing, setEditing] = React.useState<UserMcpServerStatus | null>(null);
   return <main className="p-8">
     <div className="flex gap-3">
-      <Button onClick={() => { setEditing(null); setOpen(true); }}>Add MCP server</Button>
+      <Button onClick={() => setAdding(true)}>Add MCP server</Button>
       <Button variant="outline" onClick={() => { setEditing(saved); setOpen(true); }}>Manage saved server</Button>
     </div>
     <AddMcpServerDialog open={open} onOpenChange={setOpen} editing={editing} onSaved={() => setOpen(false)} />
+    <AddCustomConnectorDialog open={adding} onOpenChange={setAdding} />
   </main>;
 }

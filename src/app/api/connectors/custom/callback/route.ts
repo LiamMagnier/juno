@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
     return back("bad_state", parsed.c);
   }
   if (session.connectorId !== parsed.c) return back("bad_state", parsed.c);
-  const connector = await prisma.customConnector.findFirst({ where: { id: session.connectorId, userId: user.id } });
+  const connector = await oauthMcpConfigs.findFirst({ where: { id: session.connectorId, userId: user.id } });
   if (!connector) return back("unknown");
 
   let tokens;
