@@ -40,8 +40,8 @@ DialogCloseButton.displayName = "DialogCloseButton";
 /**
  * The scrim. One token (`--scrim`) so a retheme reaches it; the overlay-in/out
  * pair leads on open and trails on close, because a scrim that finishes first
- * leaves a frame of undimmed app behind the panel. The 2px backdrop blur is
- * the depth cue that says "pushed back" where opacity alone reads as a film.
+ * leaves a frame of undimmed app behind the panel. No blur (spec D15: no
+ * backdrop-filter in product chrome); the tone of the scrim carries the depth.
  * No `motion-reduce:animate-none`: overlay-in/out are opacity-only, and Tier A
  * of the reduced-motion policy (globals.css) keeps opacity.
  */
@@ -52,7 +52,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-modal bg-scrim backdrop-blur-[2px] data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out print:hidden",
+      "fixed inset-0 z-modal bg-scrim data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out print:hidden",
       className
     )}
     {...props}
@@ -67,9 +67,9 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
  * Centring lives on the INDEPENDENT `translate` property, not on a
  * translate-x/y utility, so the pop keyframe can own `transform` outright — a
  * scale keyframe writing `transform` would otherwise fling the dialog to the
- * top-left corner mid-animation. It pops in on the spring (modal-in, 220ms)
- * and leaves on the accelerate (modal-out, 160ms); both keyframes read
- * --motion-shift / --motion-scale-from, so the reduced tier cross-fades.
+ * top-left corner mid-animation. It enters as an infrequent overlay (spec C7,
+ * sheet.css): 220 on the standard spring from 0.97, out over 160 to 0.98, and
+ * opacity only when opened from the keyboard or under reduced motion.
  *
  * ON A PHONE IT IS A SHEET (G54). Below 640px a centred card floats out of
  * the thumb's reach, so the dialog rises from the bottom edge instead, full
@@ -104,7 +104,7 @@ const DialogContent = React.forwardRef<
         data-swipe-panel=""
         data-phone-sheet={sheet ? "" : undefined}
         className={cn(
-          "ui-dialog overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
+          "ui-dialog overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none ui-overlay-infrequent sm:p-6",
           className
         )}
         onCloseAutoFocus={focusReturn.onCloseAutoFocus}

@@ -152,3 +152,192 @@ html[data-sheet-pull="settle"] [data-swipe-scrim][data-sheet-pull-target] {
     display: block;
   }
 }
+
+/* ——— Sheet kinds, detents and nesting (spec C8, §5.6) ————————————————
+
+   glance  detents medium and large, with a grabber; opens at medium
+   form    large, with a leading ×, no grabber
+   page    large, no grabber
+
+   The medium detent is the large sheet pushed down by --sheet-detent-offset
+   (written by sheet-gesture.ts from the panel's height) on the independent
+   `translate` property, so the drag's `transform` and the entrance keyframe
+   compose with it instead of fighting it. The scrim behind a medium sheet is
+   half the full scrim: 0.13 in light, 0.28 in dark. */
+
+.ui-sheet[data-side="bottom"][data-detent="medium"] {
+  translate: 0 var(--sheet-detent-offset, 0px);
+}
+.ui-sheet[data-side="bottom"][data-detent] {
+  transition:
+    bottom var(--dur-base) var(--ease-out-soft),
+    translate var(--dur-slow) var(--ease-drawer);
+}
+[data-swipe-scrim][data-detent="medium"] {
+  opacity: 0.5;
+}
+.ui-sheet[data-sheet-kind="form"] > .ui-sheet-grabber,
+.ui-sheet[data-sheet-kind="page"] > .ui-sheet-grabber {
+  display: none;
+}
+
+/* The grabber is 36 × 5 at radius 2.5, 6px from the top (C8). */
+.ui-sheet[data-sheet-kind] > .ui-sheet-grabber::before {
+  top: 6px;
+  height: 5px;
+  border-radius: 2.5px;
+}
+
+/* A sheet covered by a nested sheet steps back 16px (C8) and dims a touch.
+   Travel, so it multiplies --motion-shift: the reduced tier keeps only the dim. */
+.ui-sheet.ui-sheet[data-sheet-covered] {
+  translate: 0 calc(-16px * var(--motion-shift, 1));
+  filter: brightness(0.97);
+  transition:
+    translate var(--dur-slow) var(--ease-drawer),
+    filter var(--dur-fast) var(--ease-out-soft);
+}
+
+/* A programmatic dismiss of a bottom sheet runs 220 on the accelerate with the
+   scrim fading in step (C8); Radix keeps both mounted until the exit ends. */
+[data-swipe-scrim][data-sheet-scrim][data-state="closed"] {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-in);
+}
+
+/* ——— The navigation drawer (spec C9, §3.12) ————————————————————————
+
+   --drawer-width wide, dimmed behind at --drawer-dim (0.12 light, 0.30 dark),
+   and the content card behind it (the element the shell marks
+   [data-drawer-parallax]) travels 0.22 of the drawer's distance. Under the
+   reduced tier --drawer-parallax and --motion-shift are 0: the card stays
+   still and the drawer cross-fades over it in 220. */
+
+.ui-sheet[data-drawer] {
+  width: var(--drawer-width, min(80vw, 380px));
+  max-width: none;
+}
+.ui-sheet[data-drawer][data-state="open"] {
+  animation: ui-drawer-in var(--dur-base) var(--ease-drawer) both;
+}
+.ui-sheet[data-drawer][data-state="closed"] {
+  animation: ui-drawer-out var(--dur-exit) var(--ease-in) both;
+}
+@keyframes ui-drawer-in {
+  from {
+    opacity: var(--motion-shift, 1);
+    transform: translate3d(calc(var(--sheet-from, -100%) * var(--motion-shift, 1)), 0, 0);
+  }
+}
+@keyframes ui-drawer-out {
+  to {
+    opacity: var(--motion-shift, 1);
+    transform: translate3d(calc(var(--sheet-from, -100%) * var(--motion-shift, 1)), 0, 0);
+  }
+}
+[data-swipe-scrim][data-drawer-scrim] {
+  background: rgb(0 0 0 / var(--drawer-dim, 0.12));
+}
+html[data-drawer-open] [data-drawer-parallax] {
+  transform: translate3d(calc(var(--drawer-width, min(80vw, 380px)) * var(--drawer-parallax, 0.22)), 0, 0);
+  transition: transform var(--dur-base) var(--ease-drawer);
+}
+html[data-sheet-pull] [data-drawer-parallax] {
+  transform: translate3d(calc(var(--drawer-width, min(80vw, 380px)) * var(--drawer-parallax, 0.22) * var(--sheet-pull-progress, 0)), 0, 0);
+  transition: none;
+}
+html[data-sheet-pull="settle"] [data-drawer-parallax] {
+  transition: transform var(--sheet-pull-ms, 220ms) var(--ease-drawer);
+}
+
+/* ——— Overlays (spec C7) ———————————————————————————————————————————
+
+   Frequent (menus, tooltips, the selection bar): in over 120 on out-soft from
+   0.97 at the trigger's transform-origin, out over 70 on the accelerate.
+   Infrequent (dialogs, popovers that hold content): in over 220 on the
+   standard spring's CSS twin from 0.97, out over 160 to 0.98.
+   Opened from the keyboard (html[data-input-modality="keyboard"], kept by
+   input-modality.ts): opacity only, 120.
+   A tooltip hopping to a peer inside the skip window (Radix `instant-open`)
+   has no entrance at all: the label simply changes.
+
+   Every scale reads --motion-scale-from, which the reduced tier sets to 1,
+   so reduced motion keeps the opacity and drops the scale. */
+
+@keyframes ui-overlay-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-from, 0.97));
+  }
+}
+@keyframes ui-overlay-out {
+  to {
+    opacity: 0;
+    transform: scale(var(--motion-scale-from, 0.97));
+  }
+}
+@keyframes ui-overlay-out-far {
+  to {
+    opacity: 0;
+    transform: scale(var(--motion-scale-from, 0.98));
+  }
+}
+@keyframes ui-overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.ui-overlay-frequent {
+  transform-origin: var(--radix-popper-transform-origin, var(--radix-tooltip-content-transform-origin, center));
+}
+.ui-overlay-frequent[data-state="open"],
+.ui-overlay-frequent[data-state="delayed-open"] {
+  animation: ui-overlay-in var(--dur-fast) var(--ease-out-soft) both;
+}
+.ui-overlay-frequent[data-state="instant-open"] {
+  animation: none;
+}
+.ui-overlay-frequent[data-state="closed"] {
+  animation: ui-overlay-out var(--dur-press) var(--ease-in) both;
+}
+
+.ui-overlay-infrequent[data-state="open"] {
+  animation: ui-overlay-in var(--dur-base) var(--spring-standard, var(--ease-out-soft)) both;
+}
+.ui-overlay-infrequent[data-state="closed"] {
+  animation: ui-overlay-out-far var(--dur-exit) var(--ease-in) both;
+}
+
+html[data-input-modality="keyboard"] .ui-overlay-frequent[data-state="open"],
+html[data-input-modality="keyboard"] .ui-overlay-frequent[data-state="delayed-open"],
+html[data-input-modality="keyboard"] .ui-overlay-infrequent[data-state="open"] {
+  animation: ui-overlay-fade-in var(--dur-fast) var(--ease-out-soft) both;
+}
+
+/* ——— Toasts (spec C15) ———————————————————————————————————————————
+
+   Sonner's own motion is overridden: a toast rises 8px × shift over 220 on
+   the standard spring's twin and leaves with a 4px drop over 160 on the
+   accelerate (it used to travel its whole height). Only duration, timing and
+   the travel are set, never `transition-property`, so sonner's `transition:
+   none` while a toast is swiped still keeps it glued to the finger. The
+   doubled class outranks globals.css's older recipe. */
+
+.toaster.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  transition-duration: var(--dur-base);
+  transition-timing-function: var(--spring-standard, var(--ease-out-soft));
+}
+.toaster.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-mounted="false"] {
+  --y: translateY(calc(8px * var(--motion-shift, 1)));
+}
+.toaster.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-y-position="top"][data-mounted="false"] {
+  --y: translateY(calc(-8px * var(--motion-shift, 1)));
+}
+.toaster.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-removed="true"] {
+  transition-duration: var(--dur-exit);
+  transition-timing-function: var(--ease-in);
+}
+.toaster.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-removed="true"][data-front="true"][data-swipe-out="false"] {
+  --y: translateY(calc(4px * var(--motion-shift, 1)));
+}

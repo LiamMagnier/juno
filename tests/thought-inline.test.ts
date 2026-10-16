@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { compactTrace, traceTail } from "@/lib/chat/compact-trace";
 import { buildRun, type RunModel, type Step } from "@/components/chat/thought-process-model";
 import { THOUGHT_INLINE_LABEL, ThoughtInline } from "@/components/chat/thought-inline";
-import { shouldDismissSheet } from "@/components/ui/bottom-sheet";
+import { shouldDismiss } from "@/lib/sheet-gesture";
 
 /*
  * G14: reasoning expands inline under the live line (grid rows 0fr → 1fr plus
@@ -131,19 +131,22 @@ test("in a sheet the panel dismisses rather than going back, and drags by its he
   assert.match(panel, /sheet \? "inline-flex" : "hidden @\[50rem\]\/split:inline-flex"/);
 });
 
-test("a released sheet drag dismisses on a fling or a long pull, not on a jitter", () => {
-  assert.equal(shouldDismissSheet(0, 2, 600), false);
-  assert.equal(shouldDismissSheet(-40, 2, 600), false, "an upward drag never dismisses");
-  assert.equal(shouldDismissSheet(10, 2, 600), false, "a fast jitter is not a fling");
-  assert.equal(shouldDismissSheet(40, 0.8, 600), true, "a fling");
-  assert.equal(shouldDismissSheet(150, 0.1, 600), false, "a slow pull short of a third");
-  assert.equal(shouldDismissSheet(210, 0.1, 600), true, "a slow pull past a third");
-  assert.equal(shouldDismissSheet(90, 0.1, 150), true, "a short sheet still needs 80px");
+// Wave 2 (spec D18, O7): the bottom sheet is a SheetContent and shares the one
+// gesture module, so a release is decided by lib/sheet-gesture.ts (a jitter
+// never becomes a drag: the 8px intent slop filters it before release).
+test("a released sheet drag dismisses on a fling or a long pull", () => {
+  assert.equal(shouldDismiss({ offset: 0, size: 600, velocity: 2 }), false);
+  assert.equal(shouldDismiss({ offset: -40, size: 600, velocity: 2 }), false, "an upward drag never dismisses");
+  assert.equal(shouldDismiss({ offset: 40, size: 600, velocity: 0.8 }), true, "a fling");
+  assert.equal(shouldDismiss({ offset: 150, size: 600, velocity: 0.1 }), false, "a slow pull short of 30%");
+  assert.equal(shouldDismiss({ offset: 190, size: 600, velocity: 0.1 }), true, "a slow pull past 30%");
 });
 
-test("the bottom sheet's travel reads --motion-shift and exits on the exit rung", () => {
+test("the bottom sheet uses the shared sheet and its gesture, and its travel reads --motion-shift", () => {
   const sheet = read("src/components/ui/bottom-sheet.tsx");
-  assert.match(sheet, /translateY\(calc\(100% \* var\(--motion-shift, 1\)\)\)/);
-  assert.match(sheet, /juno-bottom-sheet-out var\(--dur-exit\) var\(--ease-in\)/);
-  assert.match(sheet, /juno-bottom-sheet-in var\(--dur-slow\) var\(--ease-drawer\) backwards/);
+  assert.match(sheet, /<SheetContent\s+side="bottom"/);
+  assert.doesNotMatch(sheet, /onPointerMove/, "no second gesture module");
+  const css = read("src/components/ui/sheet.css");
+  assert.match(css, /translate3d\(0, calc\(100% \* var\(--motion-shift, 1\)\), 0\)/);
+  assert.match(css, /ui-sheet-sink var\(--dur-base\) var\(--ease-in\)/);
 });

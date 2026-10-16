@@ -19,7 +19,7 @@ const PopoverAnchor = PopoverPrimitive.Anchor;
  * opened from), and leaves faster on the accelerate.
  *
  * Call sites pass width, padding and alignment only. A `border-*`, `bg-*`,
- * `shadow-*` or `backdrop-blur-*` utility here is a fork of the material and
+ * `shadow-*` or blur utility here is a fork of the material and
  * will silently beat it.
  */
 const PopoverContent = React.forwardRef<
@@ -33,7 +33,7 @@ const PopoverContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        "surface-float overlay-glass z-popper w-72 max-w-[calc(100vw-1rem)] origin-popper rounded-popover p-4 outline-none data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "ui-overlay-infrequent surface-float overlay-glass z-popper w-72 max-w-[calc(100vw-1rem)] origin-popper rounded-popover p-4 outline-none",
         className
       )}
       {...props}

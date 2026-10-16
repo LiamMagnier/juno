@@ -3,6 +3,12 @@
 import * as React from "react";
 import {
   dragOffset,
+  inSheetDragZone,
+  mediumDetentOffset,
+  releaseDetent,
+  rubberBand,
+  SHEET_DRAG_ZONE_PX,
+  type SheetDetent,
   gestureIntent,
   keyboardInset,
   pushSample,
@@ -102,6 +108,8 @@ function escapeFrom(panel: HTMLElement) {
   panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
 }
 
+export type SheetKind = "glance" | "form" | "page";
+
 export interface SwipeDismissOptions {
   /** The axis the panel leaves on. */
   axis: Axis;
@@ -113,16 +121,71 @@ export interface SwipeDismissOptions {
   scrimRef?: React.RefObject<HTMLElement | null>;
   /** Close the panel. Default: an Escape from the panel (see above). */
   onDismiss?: () => void;
+  /**
+   * A bottom sheet's kind (spec §5.6). A `glance` sheet has two detents and
+   * opens at medium; `form` and `page` open at large and have one.
+   */
+  kind?: SheetKind;
+}
+
+/* ——— Nested sheets (spec C8): every open bottom sheet under the top one steps back 16px ——— */
+
+const sheetStack: HTMLElement[] = [];
+
+function restack() {
+  sheetStack.forEach((panel, i) => {
+    if (i < sheetStack.length - 1) panel.setAttribute("data-sheet-covered", "");
+    else panel.removeAttribute("data-sheet-covered");
+  });
+}
+
+/** Registers an open bottom sheet; returns its removal. Exported for tests. */
+export function pushSheet(panel: HTMLElement): () => void {
+  sheetStack.push(panel);
+  restack();
+  return () => {
+    const i = sheetStack.indexOf(panel);
+    if (i >= 0) sheetStack.splice(i, 1);
+    panel.removeAttribute("data-sheet-covered");
+    restack();
+  };
+}
+
+/** The scroll container a touch landed in, inside the panel, if any. */
+function scrollBodyOf(target: EventTarget | null, panel: HTMLElement): HTMLElement | null {
+  let node = target instanceof Element ? target : null;
+  while (node && node !== panel) {
+    if (node instanceof HTMLElement) {
+      const style = window.getComputedStyle(node);
+      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
 }
 
 /**
  * Drag-to-dismiss for a sheet. Returns a ref callback for the panel; compose
  * it with any ref the panel already has.
+ *
+ * A bottom sheet drags only from its 44px header or the first 44px of a body
+ * scrolled to the top (spec C8); a side drawer drags from anywhere along its
+ * axis. On release it dismisses at 0.5px/ms or 30% of its travel, otherwise it
+ * settles back over clamp(remaining / |v|, 140, 300)ms on --ease-drawer (D18).
+ * A glance sheet moves between its medium and large detents the same way.
  */
-export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: SwipeDismissOptions): (node: HTMLElement | null) => void {
+export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss, kind }: SwipeDismissOptions): (node: HTMLElement | null) => void {
   const [panel, setPanel] = React.useState<HTMLElement | null>(null);
   const options = React.useRef({ enabled, scrimRef, onDismiss });
   options.current = { enabled, scrimRef, onDismiss };
+  const bottom = axis === "y" && sign > 0;
+  const detents = bottom && kind === "glance";
+
+  // An open bottom sheet joins the stack; the one under it steps back.
+  React.useEffect(() => {
+    if (!panel || !bottom) return;
+    return pushSheet(panel);
+  }, [panel, bottom]);
 
   React.useEffect(() => {
     if (!panel) return;
@@ -134,15 +197,30 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
     let samples: VelocitySample[] = [];
     let timer = 0;
     let pointerId: number | null = null;
+    let detent: SheetDetent | null = detents ? "medium" : null;
+    let detentPx = 0;
 
     const scrim = () => options.current.scrimRef?.current ?? null;
     const along = (x: number, y: number) => (axis === "x" ? x : y);
+    /** The height on screen: the panel less the medium detent's push-down. */
+    const visible = () => Math.max(1, size - (detent === "medium" ? detentPx : 0));
+
+    const writeDetent = () => {
+      if (!detent) return;
+      detentPx = mediumDetentOffset(panel.offsetHeight, window.innerHeight);
+      panel.style.setProperty("--sheet-detent-offset", `${detentPx}px`);
+      panel.setAttribute("data-detent", detent);
+      scrim()?.setAttribute("data-detent", detent);
+    };
+    writeDetent();
+    const onResize = () => writeDetent();
+    if (detents) window.addEventListener("resize", onResize);
 
     const apply = (px: number) => {
       offset = px;
       panel.style.transform = translate(axis, px * sign);
       const s = scrim();
-      if (s) s.style.opacity = String(Math.min(1, Math.max(0, 1 - px / size)));
+      if (s) s.style.opacity = String(Math.min(1, Math.max(0, 1 - Math.max(0, px) / visible())));
     };
 
     const clearInline = () => {
@@ -155,13 +233,14 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       }
     };
 
+    /** Settles the panel at rest (offset 0) from wherever the finger left it. */
     const springBack = (velocity: number) => {
-      const ms = settleMs(offset, velocity, { min: 160, max: 260 });
+      const ms = settleMs(offset, velocity);
       setGesture(panel, "settle");
       setGesture(scrim(), "settle");
       panel.style.transition = `transform ${ms}ms var(--ease-drawer)`;
       const s = scrim();
-      if (s) s.style.transition = `opacity ${ms}ms var(--ease-out-soft)`;
+      if (s) s.style.transition = `opacity ${ms}ms var(--ease-drawer)`;
       apply(0);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
@@ -172,15 +251,30 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       }, ms + 20);
     };
 
+    /** Moves a glance sheet to `next` without a visible jump, then settles there. */
+    const moveToDetent = (next: SheetDetent, velocity: number) => {
+      const before = detent === "medium" ? detentPx : 0;
+      detent = next;
+      panel.style.transition = "none";
+      const s = scrim();
+      if (s) s.style.transition = "none";
+      writeDetent();
+      const after = next === "medium" ? detentPx : 0;
+      // Same place on screen: the detent's translate changed by (after − before).
+      apply(offset + before - after);
+      void panel.offsetHeight;
+      springBack(velocity);
+    };
+
     const throwAway = (velocity: number) => {
-      const remaining = size - offset;
-      const ms = settleMs(remaining, velocity, { min: 120, max: 240 });
+      const remaining = visible() - offset;
+      const ms = settleMs(remaining, velocity);
       setGesture(panel, "settle");
       setGesture(scrim(), "settle");
-      panel.style.transition = `transform ${ms}ms var(--ease-out-soft)`;
+      panel.style.transition = `transform ${ms}ms var(--ease-drawer)`;
       const s = scrim();
-      if (s) s.style.transition = `opacity ${ms}ms var(--ease-out-soft)`;
-      apply(size + 24);
+      if (s) s.style.transition = `opacity ${ms}ms var(--ease-drawer)`;
+      apply(visible() + 24);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         setGesture(panel, "gone");
@@ -211,6 +305,11 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
     const move = (x: number, y: number) => {
       const travel = (along(x, y) - origin) * sign;
       samples = pushSample(samples, { at: travel, t: performance.now() });
+      // At the medium detent a pull up follows the finger to large, then resists.
+      if (detent === "medium" && travel < 0) {
+        apply(travel >= -detentPx ? travel : -detentPx + rubberBand(travel + detentPx));
+        return;
+      }
       apply(dragOffset(travel));
     };
 
@@ -219,8 +318,25 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       dragging = false;
       start = null;
       const velocity = velocityOf(samples);
+      if (detent) {
+        const next = releaseDetent({ detent, offset, velocity, detentOffset: detentPx, visible: visible() });
+        if (next === "dismiss") throwAway(velocity);
+        else if (next !== detent) moveToDetent(next, velocity);
+        else springBack(velocity);
+        return;
+      }
       if (shouldDismiss({ offset, size, velocity })) throwAway(velocity);
       else springBack(velocity);
+    };
+
+    const zoneAllows = (target: EventTarget | null, y: number) => {
+      if (axis !== "y") return true;
+      const body = scrollBodyOf(target, panel);
+      return inSheetDragZone({
+        y,
+        panelTop: panel.getBoundingClientRect().top,
+        body: body ? { top: body.getBoundingClientRect().top, scrollTop: body.scrollTop } : null,
+      });
     };
 
     const onTouchStart = (event: TouchEvent) => {
@@ -229,6 +345,7 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       if (options.current.enabled && !options.current.enabled()) return;
       if (noDrag(event.target)) return;
       const touch = event.touches[0];
+      if (!zoneAllows(event.target, touch.clientY)) return;
       start = { x: touch.clientX, y: touch.clientY, target: event.target };
     };
 
@@ -236,9 +353,11 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       if (!start || event.touches.length !== 1) return;
       const touch = event.touches[0];
       if (!dragging) {
-        const intent = gestureIntent(touch.clientX - start.x, touch.clientY - start.y, axis, sign);
+        // A glance sheet at medium can also be pulled up, toward large.
+        const upAllowed = detent === "medium" && touch.clientY < start.y;
+        const intent = upAllowed ? gestureIntent(touch.clientX - start.x, start.y - touch.clientY, axis, 1) : gestureIntent(touch.clientX - start.x, touch.clientY - start.y, axis, sign);
         if (intent === null) return;
-        if (intent === "ignore" || scrollsFirst(start.target, panel, axis, sign)) {
+        if (intent === "ignore" || (!upAllowed && scrollsFirst(start.target, panel, axis, sign))) {
           start = null;
           return;
         }
@@ -255,10 +374,13 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       start = null;
     };
 
-    // A mouse or pen drags from the grabber only.
+    // A mouse or pen drags from the grabber, or a bottom sheet's header zone.
     const onPointerDown = (event: PointerEvent) => {
       if (event.pointerType === "touch" || event.button !== 0) return;
-      if (!(event.target instanceof Element) || !event.target.closest("[data-sheet-handle]")) return;
+      if (!(event.target instanceof Element)) return;
+      const handle = event.target.closest("[data-sheet-handle], [data-sheet-drag]") !== null && !event.target.closest("button, a, [role='button']");
+      const header = bottom && !noDrag(event.target) && !event.target.closest("button, a, [role='button']") && zoneAllows(event.target, event.clientY) && event.clientY - panel.getBoundingClientRect().top <= SHEET_DRAG_ZONE_PX;
+      if (!handle && !header) return;
       if (options.current.enabled && !options.current.enabled()) return;
       pointerId = event.pointerId;
       panel.setPointerCapture?.(event.pointerId);
@@ -276,7 +398,7 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
     };
 
     // A bottom sheet keeps its fields above the keys (lib/sheet-gesture.ts keyboardInset).
-    const viewport = axis === "y" && sign > 0 ? window.visualViewport : null;
+    const viewport = bottom ? window.visualViewport : null;
     const lift = () => {
       if (!viewport) return;
       const on = !options.current.enabled || options.current.enabled();
@@ -286,6 +408,8 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       if (inset > 0) {
         panel.style.setProperty("--sheet-keyboard", `${inset}px`);
         panel.setAttribute("data-keyboard", "");
+        // A field needs the room: a glance sheet goes large while the keys are up.
+        if (detent === "medium") moveToDetent("large", 0);
       } else {
         panel.style.removeProperty("--sheet-keyboard");
         panel.removeAttribute("data-keyboard");
@@ -305,6 +429,7 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
     panel.addEventListener("pointercancel", onPointerUp);
     return () => {
       window.clearTimeout(timer);
+      if (detents) window.removeEventListener("resize", onResize);
       viewport?.removeEventListener("resize", lift);
       viewport?.removeEventListener("scroll", lift);
       panel.removeEventListener("touchstart", onTouchStart);
@@ -316,7 +441,7 @@ export function useSwipeDismiss({ axis, sign, enabled, scrimRef, onDismiss }: Sw
       panel.removeEventListener("pointerup", onPointerUp);
       panel.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [panel, axis, sign]);
+  }, [panel, axis, sign, bottom, detents]);
 
   return setPanel;
 }
@@ -390,7 +515,7 @@ export function useEdgeSwipeOpen({ enabled, canStart, edge, width, onOpen, onCan
       pulling = false;
       start = null;
       if (frame) cancelAnimationFrame(frame);
-      const ms = settleMs(open ? w - travel : travel, velocity, { min: 160, max: 280 });
+      const ms = settleMs(open ? w - travel : travel, velocity);
       root.style.setProperty("--sheet-pull-ms", `${ms}ms`);
       root.setAttribute(PULL_ATTR, "settle");
       travel = open ? w : 0;

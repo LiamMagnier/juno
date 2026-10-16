@@ -141,6 +141,63 @@ export function settleMs(remaining: number, velocity: number, { min = SETTLE_MIN
   return Math.round(Math.min(max, Math.max(min, Math.abs(remaining) / speed)));
 }
 
+/** A sheet drags from its 44px header, or from the first 44px of a body scrolled to the top (spec C8). */
+export const SHEET_DRAG_ZONE_PX = 44;
+
+/**
+ * Whether a touch at `y` may start dragging a bottom sheet: anywhere in the
+ * top `zone` px of the panel (its header), or in the top `zone` px of the
+ * scrolling body it landed in, when that body is scrolled to its top.
+ * Anywhere else the touch belongs to the content.
+ */
+export function inSheetDragZone(
+  { y, panelTop, body }: { y: number; panelTop: number; body?: { top: number; scrollTop: number } | null },
+  zone: number = SHEET_DRAG_ZONE_PX,
+): boolean {
+  if (y - panelTop <= zone) return true;
+  if (!body) return false;
+  return body.scrollTop <= 0 && y - body.top <= zone;
+}
+
+/** The medium detent shows this share of the viewport (spec §5.6, glance sheets). */
+export const MEDIUM_DETENT_FRACTION = 0.5;
+
+/** How far a large sheet is pushed down to sit at the medium detent, in px. */
+export function mediumDetentOffset(panelHeight: number, viewportHeight: number): number {
+  return Math.max(0, Math.round(panelHeight - viewportHeight * MEDIUM_DETENT_FRACTION));
+}
+
+export type SheetDetent = "medium" | "large";
+
+/**
+ * On release of a glance sheet: where does it go? `offset` is the travel
+ * toward dismissal from the current detent (negative = pulled up), `velocity`
+ * px/ms toward dismissal, `detentOffset` the medium detent's push-down,
+ * `visible` the height currently on screen.
+ */
+export function releaseDetent({
+  detent,
+  offset,
+  velocity,
+  detentOffset,
+  visible,
+}: {
+  detent: SheetDetent;
+  offset: number;
+  velocity: number;
+  detentOffset: number;
+  visible: number;
+}): SheetDetent | "dismiss" {
+  if (detent === "medium") {
+    if (offset < 0 && (velocity <= -DISMISS_VELOCITY || -offset >= detentOffset * DISMISS_FRACTION)) return "large";
+    return shouldDismiss({ offset, size: visible, velocity }) ? "dismiss" : "medium";
+  }
+  if (!shouldDismiss({ offset, size: visible, velocity })) return "large";
+  // From large, a pull that does not clear the medium detent by a margin stops there.
+  if (detentOffset > 0 && offset < detentOffset + (visible - detentOffset) * DISMISS_FRACTION && velocity < DISMISS_VELOCITY * 2) return "medium";
+  return "dismiss";
+}
+
 /** Below this many pixels, the visual viewport's shortfall is a toolbar settling, not a keyboard. */
 export const KEYBOARD_MIN_PX = 80;
 
