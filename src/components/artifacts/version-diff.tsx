@@ -29,14 +29,15 @@ import { cn } from "@/lib/utils";
 export const VERSION_DIFF_COPY = {
   identical: "No changes",
   identicalNote: "These two versions are the same.",
-  showUnchanged: "Show unchanged lines",
+  show: "Show",
+  unchangedLine: "unchanged line",
+  unchangedLines: "unchanged lines",
   showMore: "Show the rest of the changes",
   copyDiff: "Copy diff",
   copied: "Diff copied.",
   changesRegion: "Changes between the two versions",
   version: "Version",
   current: "Current",
-  lines: "lines",
 } as const;
 
 /** Rows drawn before the reader asks for the rest: a whole rewrite of a long file stays responsive. */
@@ -72,7 +73,9 @@ function GapRow({ count, onOpen }: { count: number; onOpen: () => void }) {
       className="pressable flex w-full items-center gap-2 border-y border-border/40 bg-muted/40 px-3 py-1 text-left font-sans text-caption text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <ChevronsUpDown className="size-3.5 shrink-0" aria-hidden />
-      <PhraseWithArgs spec={{ parts: [{ phrase: VERSION_DIFF_COPY.showUnchanged }, { kind: "number", value: count }] }} />
+      <PhraseWithArgs
+        spec={{ parts: [{ phrase: VERSION_DIFF_COPY.show }, { kind: "count", n: count, one: VERSION_DIFF_COPY.unchangedLine, other: VERSION_DIFF_COPY.unchangedLines }] }}
+      />
     </button>
   );
 }

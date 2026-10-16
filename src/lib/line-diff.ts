@@ -205,3 +205,21 @@ export function unifiedDiff(a: string, b: string, aLabel: string, bLabel: string
   }
   return lines.join("\n");
 }
+
+/** The types whose stored body is one line of JSON (src/lib/work/deliverables/semantic). */
+const JSON_BODY_TYPES = new Set(["SPREADSHEET", "DOCUMENT", "PRESENTATION"]);
+
+/**
+ * The source as a line diff should read it. A workbook, document or deck is
+ * stored as one line of JSON, so diffing it as stored shows the whole body
+ * removed and added again as two enormous lines; indented, a changed cell or
+ * paragraph is the lines that changed. Anything that is not JSON is as stored.
+ */
+export function diffableSource(type: string | undefined, content: string): string {
+  if (!type || !JSON_BODY_TYPES.has(type)) return content;
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+}

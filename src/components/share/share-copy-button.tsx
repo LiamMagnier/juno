@@ -23,7 +23,8 @@ import { requestJson } from "@/lib/artifact-response";
 export const SHARE_REMIX_COPY = {
   label: "Make a copy",
   making: "Making a copy…",
-  signInLabel: "Sign in to make your own copy",
+  // The signed-out button's name starts with what it shows (WCAG 2.5.3), then says what happens first.
+  signInLabel: "Make a copy, after you sign in",
   title: "Make your own copy?",
   body: "This version goes into a new chat of yours, where you can change it. The original stays as it is.",
   cancel: "Not now",

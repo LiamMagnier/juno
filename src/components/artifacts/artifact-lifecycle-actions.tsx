@@ -13,6 +13,7 @@ import { ActionIcons } from "@/lib/app-icons";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { VersionLineDiff, VersionPosterCompare } from "@/components/artifacts/version-diff";
+import { diffableSource } from "@/lib/line-diff";
 import { Phrase, PhraseWithArgs, formatPhrase, phraseText, usePhrase } from "@/lib/i18n-phrase";
 import { formatClock, formatDate, useUiLocale } from "@/lib/i18n-format";
 import { requestJson, type JsonResult } from "@/lib/artifact-response";
@@ -224,7 +225,7 @@ export function ArtifactLifecycleActions({
       const olderBody = (must(old).version as { content?: unknown } | undefined)?.content;
       const newerBody = (must(current).version as { content?: unknown } | undefined)?.content;
       if (typeof olderBody !== "string" || typeof newerBody !== "string") throw new ActionError(formatPhrase(LIFECYCLE_COPY.failed));
-      setCompare({ older: olderBody, newer: newerBody, olderVersion, newerVersion: latest });
+      setCompare({ older: diffableSource(type, olderBody), newer: diffableSource(type, newerBody), olderVersion, newerVersion: latest });
     });
 
   const when = (iso: string) => {

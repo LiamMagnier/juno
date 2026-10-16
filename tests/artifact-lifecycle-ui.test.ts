@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { diffLines, diffSegments, diffStats } from "@/lib/line-diff";
+import { diffLines, diffSegments, diffStats, diffableSource } from "@/lib/line-diff";
 import { RESPONSE_COPY, errorMessageFor, readJsonResponse, requestJson } from "@/lib/artifact-response";
 import { VERSION_ORIGIN_COPY, versionOriginLabel } from "@/lib/artifact-version-labels";
 import { ARTIFACT_CHANGED_EVENT, OPEN_ARTIFACT_EVENT, requestOpenArtifact } from "@/lib/artifact-events";
@@ -55,6 +55,24 @@ test("short unchanged stretches are shown rather than folded, and identical vers
   assert.equal(segments.length, 1, "a 2-line gap between two changes is shown");
   assert.equal(segments[0].kind, "lines");
   assert.deepEqual(diffSegments(diffLines("same\ntext", "same\ntext")), []);
+});
+
+test("a workbook, document or deck compares as indented JSON, so a change is the lines that changed", () => {
+  const before = JSON.stringify({ kind: "workbook", sheets: [{ name: "Q1", cells: { A1: 1, A2: 2, A3: 3, A4: 4, A5: 5, A6: 6, A7: 7, A8: 8, A9: 9 } }] });
+  const after = before.replace('"A5":5', '"A5":50');
+  const raw = diffStats(diffLines(before, after));
+  assert.deepEqual(raw, { added: 1, removed: 1 }, "as stored, the whole body is one line");
+  const diff = diffLines(diffableSource("SPREADSHEET", before), diffableSource("SPREADSHEET", after));
+  assert.deepEqual(diffStats(diff), { added: 1, removed: 1 });
+  assert.deepEqual(
+    diff.filter((l) => l.type !== "same").map((l) => l.text.trim()),
+    ['"A5": 5,', '"A5": 50,']
+  );
+  assert.ok(diff.length > 10, "the unchanged cells are their own lines, so they fold");
+  // Code and anything that is not JSON are compared as stored.
+  assert.equal(diffableSource("HTML", '{"a":1}'), '{"a":1}');
+  assert.equal(diffableSource("DOCUMENT", "not json"), "not json");
+  assert.equal(diffableSource(undefined, '{"a":1}'), '{"a":1}');
 });
 
 test("History says how each version came to be in words", () => {
