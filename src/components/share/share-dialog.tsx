@@ -21,6 +21,7 @@ import {
   versionChoices,
   type ClientPublicationView,
 } from "@/lib/publication-view";
+import type { SharedTranscriptEntry } from "@/lib/share-transcript";
 
 /*
  * Share dialog for chats and artifacts.
@@ -110,7 +111,7 @@ function Failure({ message, onRetry }: { message: string; onRetry?: () => void }
 type ChatStatus = "loading" | "none" | "creating" | "ready" | "revoked" | "error" | "blocked";
 
 /** A chat's snapshot link: read on open, created only on "Create link". */
-function ChatLinkPanel({ conversationId, open }: { conversationId: string; open: boolean }) {
+function ChatLinkPanel({ conversationId, open, transcript }: { conversationId: string; open: boolean; transcript?: () => SharedTranscriptEntry[] | null }) {
   const [status, setStatus] = React.useState<ChatStatus>("loading");
   const [share, setShare] = React.useState<ShareInfo | null>(null);
   const [revoking, setRevoking] = React.useState(false);
@@ -141,14 +142,16 @@ function ChatLinkPanel({ conversationId, open }: { conversationId: string; open:
   const create = async () => {
     setStatus("creating");
     try {
+      // A conversation whose transcript is not on the server (a Code session on a Mac) sends it along.
+      const entries = transcript?.() ?? null;
       const res = await fetch("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "CHAT", conversationId }),
+        body: JSON.stringify({ kind: "CHAT", conversationId, ...(entries ? { transcript: entries } : {}) }),
       });
-      if (res.status === 403) {
+      if (res.status === 403 || res.status === 400) {
         const body = (await res.json().catch(() => null)) as { code?: string; error?: string } | null;
-        if (body?.code === "share_taken_down") {
+        if (body?.code === "share_taken_down" || body?.code === "transcript_invalid") {
           setBlockedReason(body.error ?? "This can’t be shared.");
           setStatus("blocked");
           return;
@@ -359,26 +362,35 @@ export function ShareDialog({
   artifactId,
   open,
   onOpenChange,
+  title,
+  description,
+  transcript,
 }: {
   kind: "CHAT" | "ARTIFACT";
   conversationId?: string;
   artifactId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Overrides for a chat-kind link that is not a chat (a Code session). */
+  title?: string;
+  description?: string;
+  /** For a conversation whose transcript is not on the server: what the link should show. */
+  transcript?: () => SharedTranscriptEntry[] | null;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{kind === "CHAT" ? "Share this chat" : "Publish this artifact"}</DialogTitle>
+          <DialogTitle>{title ?? (kind === "CHAT" ? "Share this chat" : "Publish this artifact")}</DialogTitle>
           <DialogDescription>
-            {kind === "CHAT"
-              ? "A link shows the conversation up to the moment you create it. New messages stay private."
-              : "Publishing puts the version you choose on a public page anyone with the link can open. Later edits stay private until you update it, unless you choose to follow the latest version."}
+            {description ??
+              (kind === "CHAT"
+                ? "A link shows the conversation up to the moment you create it. New messages stay private."
+                : "Publishing puts the version you choose on a public page anyone with the link can open. Later edits stay private until you update it, unless you choose to follow the latest version.")}
           </DialogDescription>
         </DialogHeader>
         {kind === "CHAT" && conversationId ? (
-          <ChatLinkPanel conversationId={conversationId} open={open} />
+          <ChatLinkPanel conversationId={conversationId} open={open} transcript={transcript} />
         ) : kind === "ARTIFACT" && artifactId ? (
           <PublishPanel artifactId={artifactId} open={open} />
         ) : null}

@@ -48,6 +48,9 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export const dynamic = "force-dynamic";
 
 const SHARE_DESCRIPTION = `Shared from ${PRODUCT_NAME}. Conversation. Agents. Code.`;
+// A Code session that ran on its owner's Mac: the server never held its
+// transcript, so the page says where the words came from.
+const FROM_DEVICE_NOTE = "This session ran on its owner’s Mac. Their app sent this transcript when the link was made.";
 
 const GONE_METADATA: Metadata = { title: "Not shared any more", robots: { index: false, follow: false } };
 
@@ -150,7 +153,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
           <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="alevr-shared-prose">
-            <header className="alevr-shared-title"><p className="text-ui text-muted-foreground">{subject.dateLine}</p><h1 className="mt-4 font-serif">{title}</h1></header>
+            <header className="alevr-shared-title"><p className="text-ui text-muted-foreground">{subject.dateLine}</p><h1 className="mt-4 font-serif">{title}</h1>{chat.fromDevice && <p className="mt-3 text-caption text-muted-foreground">{FROM_DEVICE_NOTE}</p>}</header>
             <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
             {/* The end of a shared conversation is where a reader decides what
                 Juno is: one quiet invitation on the front door's own art. */}
