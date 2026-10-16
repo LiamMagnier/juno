@@ -19,11 +19,13 @@ All sends and posts pass the shared approval broker and tool audit. Provider wri
 
 The additive migration creates parent-scoped ConnectorSyncState and ConnectorSyncEvent tables. Every storage query proves ownership through Connection. Cursor state and event payloads are encrypted. Events and their next cursor commit atomically; row locks serialize refresh token rotation and event publication across replicas. Disconnect removes both tables' private data through cascading foreign keys. These are incremental reads, not vendor push subscriptions.
 
-## Shared trigger integration still required
+## Work connector events
 
-`readConnectorTriggerEvents` in `src/lib/first-party-connectors/sync-store.ts` is the producer seam for the existing Work poller. It yields real outbox event sequence positions, supports the poller's quiet first-read behavior, and leaves admission, leases and deduplication with the existing poller.
+The Work poller reads persisted events through `readConnectorTriggerEvents`. Supported connector IDs are `gmail`, `google-calendar`, `google-drive`, `outlook`, `microsoft-365` and `slack`. Unknown connectors remain refused. The first read records the current outbox position and starts no old runs. Subsequent reads preserve the poller's existing admission, lease, deduplication, approval and audit paths.
 
-The handoff assigns `src/lib/work/triggers.ts` to Claude. Until the request in LANES.md is accepted and its integration is tested, `connector_event` remains refused. Do not advertise connector-trigger availability based only on the new outbox. Slack channel selection also needs to be exposed by that integration. Vendor push registration/renewal is not implemented by this change.
+`events` accepts event names such as `message_received`, `message_changed`, `message_deleted`, `file_changed`, `file_deleted`, `event_changed` and `event_deleted`; an empty list means all events from that source. Unsupported event names and attribute filters are refused when the trigger is saved. `attributes.resourceId` can narrow a specific resource. Google Calendar defaults to the primary calendar; `attributes.stream` can select a calendar ID. Slack requires a channel ID in `attributes.stream`, for example `{ "kind": "connector_event", "config": { "connector": "slack", "events": ["message_received"], "attributes": { "stream": "C123456" } } }`.
+
+The generic trigger editor currently exposes connector/event names and does not expose the stream attribute. Slack channel selection therefore requires the API configuration shape above until the requested small UI integration lands. Permission policies still apply to source reads: a blocked connector or Always ask policy refuses unattended sync. These are incremental API reads, not vendor push subscriptions.
 
 ## Owner setup and acceptance
 

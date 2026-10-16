@@ -19,6 +19,7 @@
  * matching rules can be exercised against the awkward cases directly.
  */
 
+import { isFirstPartyId } from "@/lib/first-party-connectors/providers";
 import {
   LOCAL_ONLY_TRIGGER_KINDS,
   selectTarget,
@@ -316,16 +317,11 @@ export function triggerSourceConnector(kind: EventTriggerKind): string | null {
 /**
  * Why a kind cannot be served at all, in the sentence the user is shown.
  *
- * `connector_event` has no event source: the poller never read the connector,
- * and made up one "event" per UTC hour for any linked connector, so every such
- * routine started a paid run every hour whether anything happened or not.
- * `folder_change` keyed on a grant field nothing ever writes, so it could
- * never fire. Both are refused (on save, in the editor, and by the poller)
- * until a real producer exists.
+ * Connector events are supported only for the first-party persisted outbox;
+ * triggerSupport checks each configuration below. Unknown connectors never
+ * synthesize clock events. Folder changes still have no real producer.
  */
 export const TRIGGER_KIND_LIMITS: Readonly<Partial<Record<EventTriggerKind, string>>> = {
-  connector_event:
-    `${PRODUCT_NAME} cannot watch a connector for events yet, so this trigger would never see one. Use a schedule, or an email or calendar trigger.`,
   folder_change:
     `${PRODUCT_NAME} cannot watch a folder for changes yet, so this trigger would never fire. Use a schedule instead.`,
 };
@@ -391,6 +387,36 @@ export function triggerSupport(kind: string, config: unknown): TriggerSupport {
     // A clock kind, or one this build does not know. Neither is this module's
     // to judge: `parseTimeTrigger` owns the first and refuses the second.
     return { servable: true, connectorId: null };
+  }
+
+  if (kind === "connector_event") {
+    const parsed = parseTriggerConfig(kind, config);
+    if (!parsed.ok) return { servable: false, field: null, message: parsed.message };
+    if (parsed.parsed.kind !== "connector_event" || !isFirstPartyId(parsed.parsed.config.connector)) {
+      return { servable: false, field: "connector", message: `${PRODUCT_NAME} cannot watch a connector without a real event source. Choose Gmail, Google Calendar, Google Drive, Outlook, Microsoft 365 or Slack.` };
+    }
+    const { connector, attributes, events } = parsed.parsed.config;
+    const eventTypes: Record<string, readonly string[]> = {
+      gmail: ["message_received", "message_changed", "message_deleted"],
+      "google-calendar": ["event_changed", "event_deleted"],
+      "google-drive": ["file_changed", "file_deleted"],
+      outlook: ["message_changed", "message_deleted"],
+      "microsoft-365": ["file_changed", "file_deleted"],
+      slack: ["message_received"],
+    };
+    if (events.some((event) => !eventTypes[connector].includes(event))) {
+      return { servable: false, field: "events", message: `Choose an event this app produces: ${eventTypes[connector].join(", ")}. Leave the list empty to watch them all.` };
+    }
+    if (Object.keys(attributes).some((key) => key !== "resourceId" && key !== "stream")) {
+      return { servable: false, field: "attributes", message: "This event source can filter only by resourceId and stream." };
+    }
+    if (connector === "slack" && !/^[A-Z0-9]{2,64}$/.test(attributes.stream ?? "")) {
+      return { servable: false, field: "attributes", message: "Choose a Slack channel ID as the stream to watch." };
+    }
+    if (attributes.stream !== undefined && (!attributes.stream.trim() || attributes.stream.length > 256)) {
+      return { servable: false, field: "attributes", message: "Choose a valid event stream." };
+    }
+    return { servable: true, connectorId: connector };
   }
 
   const kindLimit = TRIGGER_KIND_LIMITS[kind];
