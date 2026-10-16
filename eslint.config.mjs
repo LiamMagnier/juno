@@ -3,14 +3,26 @@ import { fileURLToPath } from "node:url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 import designSystem from "./eslint-rules/design-system.mjs";
+import { loadEnforce } from "./eslint-rules/enforce.mjs";
+import { wave2Configs } from "./eslint-rules/wave2.mjs";
 import noArbitraryText from "./eslint-rules/no-arbitrary-text.js";
 import noRawReducedMotion from "./eslint-rules/no-raw-reduced-motion.mjs";
 import noCodename from "./eslint-rules/no-codename.js";
 import noRawTextSize from "./eslint-rules/no-raw-text-size.js";
 
+const root = dirname(fileURLToPath(import.meta.url));
+
 const compat = new FlatCompat({
-  baseDirectory: dirname(fileURLToPath(import.meta.url)),
+  baseDirectory: root,
 });
+
+/*
+ * The wave 2 design rules (eslint-rules/wave2.mjs, spec §9 "Lint") warn
+ * everywhere, and the globs each package lists in eslint-rules/enforce/*.json
+ * turn them into errors. Every enforce file is read here, at startup, so a
+ * package enforces its own files without editing this one.
+ */
+const enforce = loadEnforce(root);
 
 const config = [
   {
@@ -230,6 +242,7 @@ const config = [
     files: ["scripts/**/*.js"],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  ...wave2Configs({ enforce }),
 ];
 
 export default config;
