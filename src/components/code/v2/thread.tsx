@@ -29,7 +29,10 @@ import type {
   SubagentItem,
   TodoListItem,
   TurnItem,
+  UserMessageItem,
 } from "@/lib/code-v2/contracts";
+import { editPlan, retryPlan, retryTitle, type EditPlan, type RetryPlan } from "@/lib/code-v2/answer-actions";
+import { AnswerActions, type AnswerFeedback } from "./answer-actions";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { splitPath } from "@/lib/code-v2/diff";
 import { TEAM_PHASE_VALUES } from "@/lib/code-v2/contracts";
@@ -58,10 +61,17 @@ export interface ThreadProps {
   selectedAgentId?: string | null;
   onSelectAgent?: (agentId: string) => void;
   onOpenDock?: (req: DockRequest) => void;
-  onRollback?: (checkpointId: string) => void;
+  /** Resolves false when the files could not be restored. */
+  onRollback?: (checkpointId: string) => void | Promise<boolean | void>;
   onApprovePlan?: (itemId: string, approve: boolean) => void;
   onUndoTurn?: (turn: Turn) => void;
   onRetry?: () => void;
+  /** Answer actions (lib/code-v2/answer-actions.ts): send a turn's prompt again. */
+  onResend?: (message: UserMessageItem) => void | Promise<unknown>;
+  /** Put text in the composer to edit and send (Edit and resend). */
+  onEditMessage?: (text: string) => void;
+  feedbackFor?: (turnId: string) => AnswerFeedback;
+  onFeedback?: (turnId: string, value: AnswerFeedback) => void;
   /** Shown before the first event of a starting session. */
   starting?: string | null;
   offline?: boolean;
@@ -507,8 +517,8 @@ export function Receipt({ turn, onOpenDock, onUndo }: { turn: Turn; onOpenDock?:
 
 // ── Turns ───────────────────────────────────────────────────────────────────
 
-function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => void; files: number; turns: number } }) {
-  const [confirm, setConfirm] = React.useState(false);
+function UserBubble({ turn, revert, edit }: { turn: Turn; revert?: { onConfirm: () => void; files: number; turns: number }; edit?: { plan: EditPlan; onConfirm: () => void } }) {
+  const [confirm, setConfirm] = React.useState<false | "revert" | "edit">(false);
   const u = turn.user!;
   return (
     <div className="cv2-you-wrap" data-turn-start>
@@ -526,7 +536,7 @@ function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => 
         {u.text}
       </div>
       <div className="cv2-you-meta" data-on={confirm ? "true" : undefined}>
-        {confirm && revert ? (
+        {confirm === "revert" && revert ? (
           <>
             <span className="cv2-fg">
               Revert {revert.files} {revert.files === 1 ? "file" : "files"} and {revert.turns} {revert.turns === 1 ? "turn" : "turns"}?
@@ -538,11 +548,29 @@ function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => 
               Cancel
             </button>
           </>
+        ) : confirm === "edit" && edit ? (
+          <>
+            <span className="cv2-fg">
+              Revert {edit.plan.files} {edit.plan.files === 1 ? "file" : "files"} and {edit.plan.turns} {edit.plan.turns === 1 ? "turn" : "turns"}, then edit?
+            </span>
+            <button type="button" onClick={() => (setConfirm(false), edit.onConfirm())}>
+              Edit
+            </button>
+            <button type="button" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+          </>
         ) : (
           <>
             <span className="cv2-tnum">{clock(u.createdAt)}</span>
+            {edit && (
+              // Nothing to undo: straight into the composer. Otherwise the same confirm as Revert.
+              <button type="button" onClick={() => (edit.plan.rollbackTo ? setConfirm("edit") : edit.onConfirm())}>
+                Edit and resend
+              </button>
+            )}
             {revert && (
-              <button type="button" onClick={() => setConfirm(true)}>
+              <button type="button" onClick={() => setConfirm("revert")}>
                 Revert to here
               </button>
             )}
@@ -560,6 +588,9 @@ function TurnView({
   onToggle,
   now,
   revert,
+  edit,
+  retry,
+  latest,
 }: {
   turn: Turn;
   props: ThreadProps;
@@ -567,6 +598,9 @@ function TurnView({
   onToggle: (open: boolean) => void;
   now: number;
   revert?: { onConfirm: () => void; files: number; turns: number };
+  edit?: { plan: EditPlan; onConfirm: () => void };
+  retry?: { plan: RetryPlan; onConfirm: () => void };
+  latest: boolean;
 }) {
   const vis = turnVisibility(turn, props.detailLevel, unfolded);
   const steps = stepItems(turn);
@@ -575,7 +609,7 @@ function TurnView({
   const live = turn.status === "running" || turn.status === "waiting";
   return (
     <section data-turn={turn.id} aria-label={`Turn ${turn.ordinal + 1}`} className="cv2-turn">
-      {turn.user && <UserBubble turn={turn} revert={revert} />}
+      {turn.user && <UserBubble turn={turn} revert={revert} edit={edit} />}
       {vis.header && steps.length > 0 && (
         <button type="button" className="cv2-foldh" aria-expanded={open} onClick={() => onToggle(!open)}>
           <span className="cv2-tnum">{turnHeader(turn, now)}</span>
@@ -600,6 +634,16 @@ function TurnView({
         <div className="cv2-prose">
           <Markdown content={turn.answer.text} streaming={turn.answer.streaming} />
         </div>
+      )}
+      {!live && turn.answer && !turn.answer.streaming && (
+        <AnswerActions
+          text={turn.answer.text}
+          latest={latest}
+          feedback={props.feedbackFor?.(turn.id) ?? null}
+          onFeedback={props.onFeedback ? (value) => props.onFeedback?.(turn.id, value) : undefined}
+          onRetry={retry?.onConfirm}
+          retryTitle={retry ? retryTitle(retry.plan) : undefined}
+        />
       )}
       {!live && <Receipt turn={turn} onOpenDock={props.onOpenDock} onUndo={props.onUndoTurn ? () => props.onUndoTurn?.(turn) : undefined} />}
     </section>
@@ -669,6 +713,40 @@ export function Thread(props: ThreadProps) {
     [turns, props],
   );
 
+  // Edit and resend / Retry: roll back first where the plan says so, then send or prefill.
+  const busy = live || state === "limited";
+  const canRollback = !!props.onRollback;
+  const answerPlans = React.useMemo(
+    () =>
+      turns.map((_, i) => {
+        const e = props.onEditMessage ? editPlan(turns, i, { busy, canRollback }) : null;
+        const r = props.onResend ? retryPlan(turns, i, { busy, canRollback }) : null;
+        // False when the host could not restore the files (it says why): nothing is sent then.
+        const rollback = async (to?: string) => (to ? (await props.onRollback?.(to)) !== false : true);
+        return {
+          edit: e
+            ? {
+                plan: e,
+                onConfirm: () =>
+                  void rollback(e.rollbackTo)
+                    .then((ok) => ok && props.onEditMessage?.(e.text))
+                    .catch(() => undefined),
+              }
+            : undefined,
+          retry: r
+            ? {
+                plan: r,
+                onConfirm: () =>
+                  void rollback(r.rollbackTo)
+                    .then((ok) => ok && props.onResend?.(r.message))
+                    .catch(() => undefined),
+              }
+            : undefined,
+        };
+      }),
+    [turns, props, busy, canRollback],
+  );
+
   return (
     <div className="cv2-scroll" ref={scrollRef} onScroll={onScroll}>
       <div className="cv2-col">
@@ -678,7 +756,18 @@ export function Thread(props: ThreadProps) {
           </div>
         )}
         {turns.map((turn, i) => (
-          <TurnView key={turn.id} turn={turn} props={props} now={now} unfolded={unfolded[turn.id]} onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))} revert={reverts[i]} />
+          <TurnView
+            key={turn.id}
+            turn={turn}
+            props={props}
+            now={now}
+            unfolded={unfolded[turn.id]}
+            onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))}
+            revert={reverts[i]}
+            edit={answerPlans[i].edit}
+            retry={answerPlans[i].retry}
+            latest={i === turns.length - 1}
+          />
         ))}
         {props.offline && live && <div className="cv2-notice" style={{ marginTop: 16 }}>Paused while offline</div>}
         {props.pairingRequired && (
