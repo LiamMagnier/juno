@@ -562,6 +562,13 @@
         "sessionId": "session-1",
         "queuedId": "q_1"
       }
+    },
+    {
+      "id": "frame-1",
+      "type": "computer.frame",
+      "params": {
+        "ref": "alevr-shot://claude:t7/toolu_1.jpg"
+      }
     }
   ]
 }

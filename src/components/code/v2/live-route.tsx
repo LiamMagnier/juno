@@ -30,6 +30,7 @@ import { buildInstances, reconcileSelection } from "@/lib/code-v2/workspace-inst
 import { publishThreadState } from "@/lib/code-v2/shell-threads";
 import { hunkPatch, type HunkDecision } from "@/lib/code-v2/diff";
 import { managedCall, runtimeRequest, type ScheduledResume } from "@/lib/code-v2/runtime-lane";
+import { useMacScreenshots } from "@/lib/code-v2/use-mac-screenshots";
 import { toast } from "sonner";
 import type { ClientMessage, ConversationHistory } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
@@ -339,6 +340,8 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   // Skills lane: the account's skills and, when this thread runs on a Mac,
   // the Mac's and the project's (skills.list over the device link).
   const envClient = useEnv ? env.client : null;
+  // The Mac's screen-control frames (alevr-shot://…), fetched over the same link with computer.frame.
+  const resolveScreenshot = useMacScreenshots(envClient);
   const envSessionId = env.view?.id ?? env.sessionId ?? null;
   // A cloud thread lists its repository's own skills (what the runner reads from its clone).
   const cloudRepo = meta.isCloud && meta.repoOwner && meta.repoName ? { owner: meta.repoOwner, name: meta.repoName } : null;
@@ -869,6 +872,7 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
         model={model}
         sidebar={false}
         byok={byok}
+        resolveScreenshot={resolveScreenshot}
         // Never over a task the landing just sent: the Connections sheet used to open as the first prompt went.
         firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && items.length === 0 && !firstItems && !handoff.pending()}
         onProbe={env.ready ? env.probe : undefined}

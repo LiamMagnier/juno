@@ -22,7 +22,7 @@ final class AppGrantPolicyTests: XCTestCase {
         XCTAssertEqual(offer("com.apple.systempreferences").offeredTier, .full)
         XCTAssertTrue(offer("com.apple.finder").warnings.contains("Can read or write any file."))
         XCTAssertTrue(offer("com.apple.systempreferences").warnings.contains("Can change system settings. Every change asks first."))
-        XCTAssertTrue(offer("com.apple.Terminal").line.hasPrefix("com.apple.Terminal: clicks only — Juno uses its own shell"))
+        XCTAssertTrue(offer("com.apple.Terminal").line.hasPrefix("com.apple.Terminal: clicks only — Alevr uses its own shell"))
     }
 
     func testRefusedAppsAreNeverOffered() {

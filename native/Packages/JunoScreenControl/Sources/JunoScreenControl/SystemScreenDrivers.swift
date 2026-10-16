@@ -533,7 +533,7 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 2)
         guard let bar = attribute(app, kAXMenuBarAttribute), CFGetTypeID(bar) == AXUIElementGetTypeID() else {
-            throw ScreenControlError.unsupported("The app has no menu bar Juno can read.")
+            throw ScreenControlError.unsupported("The app has no menu bar \(ScreenControlBrand.productName) can read.")
         }
         // swiftlint:disable:next force_cast
         var container = bar as! AXUIElement

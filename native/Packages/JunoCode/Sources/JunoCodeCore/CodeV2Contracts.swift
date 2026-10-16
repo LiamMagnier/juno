@@ -1730,6 +1730,8 @@ public enum CodeV2 {
         case queueEdit = "queue.edit"
         case queueMove = "queue.move"
         case queuePromote = "queue.promote"
+        // computer lane: one stored frame of the screen-control timeline, from the Mac's shots folder.
+        case computerFrame = "computer.frame"
     }
 
     // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)

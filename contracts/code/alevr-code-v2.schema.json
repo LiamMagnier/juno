@@ -221,7 +221,8 @@
         "queue.remove",
         "queue.edit",
         "queue.move",
-        "queue.promote"
+        "queue.promote",
+        "computer.frame"
       ]
     },
     "ServerEventType": {
@@ -4245,6 +4246,35 @@
               "required": [
                 "sessionId",
                 "queuedId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "computer.frame"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "ref"
               ]
             }
           },

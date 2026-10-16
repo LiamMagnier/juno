@@ -191,7 +191,7 @@ public struct GrantProposal: Hashable, Codable, Sendable, Identifiable {
         let offered = offers.filter { $0.offeredTier != nil }
         guard !offered.isEmpty else { return "No app here can be granted." }
         let names = offered.map { "\($0.displayName) (\($0.offeredTier!.phrase))" }
-        return "Let Juno use " + ListFormatter.localizedString(byJoining: names) + " for this session"
+        return "Let \(ScreenControlBrand.productName) use " + ListFormatter.localizedString(byJoining: names) + " for this session"
     }
 }
 
@@ -246,7 +246,7 @@ public enum AppGrantPolicy {
     static func refusalReason(category: AppCategory, bundleID: String) -> String {
         let id = bundleID.lowercased()
         if id.hasPrefix(AppCategories.junoBundlePrefix) {
-            return "Juno never controls itself, so it can never answer its own approvals"
+            return "\(ScreenControlBrand.productName) never controls itself, so it can never answer its own approvals"
         }
         switch id {
         case "com.apple.loginwindow", "com.apple.securityagent", "com.apple.coreautha", "com.apple.coreauthd",

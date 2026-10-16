@@ -1,8 +1,22 @@
 import Foundation
 
 /// What the on-screen action overlay draws (Code v2 SPEC §3.12): where the
-/// next input lands and what it is, the moment it is sent, for every session,
-/// Work task and connected agent alike — the service posts it, not the tools.
+/// next input lands and what it is, the moment it is sent.
+///
+/// Two kinds of poster share the app's one feed (``ScreenControlService``'s,
+/// which is ``ComputerActionFeed/shared``):
+///
+/// - The service posts for every Code session and connected agent, after its
+///   own checks: `acting` before the input, `settled` once the screen has
+///   settled, `cleared` on deactivate and on every stop.
+/// - Juno Work's screen and app controls (`VisualControl`,
+///   `AccessibilityControl`) send input through Work's own drivers, so they
+///   post their own cues on the same feed, injected through
+///   `AutomationSuite`: `acting` before a click, key or typed run, `settled`
+///   after it, `cleared` when a stop lands mid-action. Their session id is
+///   `work:<run id>`, the id Work holds the lock under.
+///
+/// Observations (screenshots, accessibility reads) draw nothing.
 public struct ComputerActionCue: Hashable, Sendable {
     public enum Phase: Hashable, Sendable {
         /// About to send: the ring goes to `point`, the label reads the action.

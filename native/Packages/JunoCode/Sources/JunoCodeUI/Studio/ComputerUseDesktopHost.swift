@@ -190,9 +190,13 @@ struct ComputerActionOverlayView: View {
                 .font(.callout.weight(.medium))
                 .foregroundStyle(Color.junoForeground)
                 .lineLimit(2)
-            Text(mark.succeeded == false ? "Didn't go through · Esc to stop" : "Esc to stop")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // How to stop is said once, in the presence caption under the
+            // menu bar; this line only reports a step that failed.
+            if mark.succeeded == false {
+                Text("Didn't go through")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)

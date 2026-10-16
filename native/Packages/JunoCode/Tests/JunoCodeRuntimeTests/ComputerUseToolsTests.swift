@@ -421,7 +421,7 @@ final class ComputerUseToolsTests: XCTestCase {
         XCTAssertTrue(result.content.contains("TextEdit (com.apple.TextEdit): full control"))
         let request = try XCTUnwrap(asked.requests.first)
         XCTAssertEqual(request.toolName, "computer_apps")
-        XCTAssertEqual(request.summary, "Let Juno use com.apple.TextEdit (full control) for this session")
+        XCTAssertEqual(request.summary, "Let Alevr use com.apple.TextEdit (full control) for this session")
         guard case .grants? = screen.published[request.actionDigest] else { return XCTFail("no grant sheet") }
     }
 

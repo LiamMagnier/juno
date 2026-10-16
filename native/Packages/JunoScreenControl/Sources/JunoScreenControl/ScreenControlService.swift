@@ -973,7 +973,7 @@ public actor ScreenControlService: ScreenControlling {
                 // the model to click into its app first.
                 if ownsFront, !action.kind.takesPoint {
                     throw ScreenControlError.invalidInput(
-                        "Juno's own window has the keyboard. Click in the app you mean to type into first, then send the keys."
+                        "\(ScreenControlBrand.productName)'s own window has the keyboard. Click in the app you mean to type into first, then send the keys."
                     )
                 }
                 if !ownsFront, !action.kind.takesPoint, front.bundleID.lowercased() != target.bundleID.lowercased() {
@@ -1600,7 +1600,7 @@ public actor ScreenControlService: ScreenControlling {
                ConsequentialActionFloor.switchesApps(chord)
             {
                 throw ScreenControlError.tierTooLow(
-                    "Juno does not switch apps with a shortcut while it drives your screen. Click the app's window instead."
+                    "\(ScreenControlBrand.productName) does not switch apps with a shortcut while it drives your screen. Click the app's window instead."
                 )
             }
             if var front = await deps.environment.frontmostApp() {
@@ -1948,7 +1948,7 @@ public actor ScreenControlService: ScreenControlling {
         sessions[sessionID]?.frame = nil
         startTapIfNeeded()
         await publishPresence()
-        return "Juno now has the whole of \(display.name). Every app you act on must still be granted; Juno's own windows are never in the frame. Take a screenshot to see the display."
+        return "\(ScreenControlBrand.productName) now has the whole of \(display.name). Every app you act on must still be granted; \(ScreenControlBrand.productName)'s own windows are never in the frame. Take a screenshot to see the display."
     }
 
     public func endTakeover(sessionID: String) async -> String {

@@ -47,6 +47,7 @@ import { registerSubagentTools } from "./mcp/subagent-tools.js";
 import { registerComputerUseOnAlevrMcp, type ComputerMcpScope } from "./mcp/computer-mcp-hook.js";
 import { createUnixSocketBridge, DEFAULT_BRIDGE_SOCKET_PATH, type ComputerBridge } from "./mcp/computer-bridge.js";
 import { coordinateSpaceForModel, type ComputerToolSession } from "./mcp/computer-tools.js";
+import { DEFAULT_SHOTS_DIR, readComputerFrame } from "./mcp/computer-frame.js";
 import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
 import { ConversationHub, conversationEngineTools, type BackendLink } from "./conversations/hub.js";
@@ -97,6 +98,8 @@ export interface ComputerUseConfig {
   bridge?: ComputerBridge;
   /** Whether the Mac app's bridge is up (default: its socket exists). */
   available?: () => boolean;
+  /** Where `computer.frame` reads stored frames (default: the Mac app's shots folder). */
+  shotsDir?: string;
 }
 
 export interface EnvServer {
@@ -192,6 +195,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
   });
   const removeConversationTools = registerConversationTools(mcp, conversations);
   const computer = computerUseEnabled(options) ? registerComputerUse(mcp, sessions, options.computerUse || {}) : undefined;
+  const shotsDir = (options.computerUse && options.computerUse.shotsDir) || DEFAULT_SHOTS_DIR;
   // The Preview: open_preview for every runtime; static sites served here on 127.0.0.1.
   const sites = new StaticSiteServers();
   const previewDeps = sessionPreviewDeps(sessions, sites);
@@ -247,7 +251,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations, skills, broadcast });
+      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations, skills, broadcast, shotsDir });
       connections.add(connection);
       ws.on("close", () => {
         connection.dispose();
@@ -375,6 +379,8 @@ interface ConnectionDeps {
   antigravity?: AntigravityService;
   conversations?: ConversationHub;
   skills?: SkillCatalog;
+  /** The shots folder `computer.frame` reads (the Mac app's, by default). */
+  shotsDir?: string;
 }
 
 /** One client connection: command dispatch, session subscriptions, global stream. */
@@ -536,6 +542,11 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     case "host.capture":
     case "host.upload":
       throw new WireError("unsupported", "Alevr on your Mac answers that, not its local environment.");
+    // computer lane: a stored frame of the screen-control timeline. The ref, the folder, symlinks
+    // and the size are all checked in readComputerFrame; a paired device reaches this only for a
+    // session the Mac shares (EnvServerDeviceLink).
+    case "computer.frame":
+      return readComputerFrame(cmd.params?.ref, { root: deps.shotsDir ?? DEFAULT_SHOTS_DIR });
     case "conversation.toggle":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
       return deps.conversations.toggle(cmd.params.sessionId, cmd.params.enabled);
