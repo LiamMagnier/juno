@@ -81,6 +81,8 @@ export interface RoutingSignal {
   switchedModel?: boolean;
   edited?: boolean;
   feedback?: "UP" | "DOWN" | null;
+  /** The thumbs-down reason id (lib/feedback-reasons.ts). A category, never the note. */
+  feedbackReason?: string | null;
 }
 
 /** The reader's later verdict on a turn. No-op when the turn has no outcome row. */
@@ -92,6 +94,7 @@ export async function markRoutingSignal(messageIds: string | string[], signal: R
   if (signal.switchedModel) data.userSwitchedModel = true;
   if (signal.edited) data.userEdited = true;
   if (signal.feedback !== undefined) data.feedback = signal.feedback;
+  if (signal.feedbackReason !== undefined) data.feedbackReason = signal.feedbackReason;
   if (Object.keys(data).length === 0) return;
   try {
     await prisma.routingOutcome.updateMany({ where: { messageId: { in: ids } }, data });

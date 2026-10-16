@@ -13,6 +13,7 @@ import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { countTranscriptRender, firstArrivalAfterHeld, placeInlineRuns } from "@/lib/chat/transcript-window";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import type { ChatMessage, ImageEditInput, LoadOlderRequest, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ConversationHistory, GenerationStatus } from "@/types/chat";
 
@@ -55,7 +56,7 @@ interface MessageListProps {
   onEdit?: (id: string, content: string) => void;
   /** Re-send a turn the server never received — see MessageItemProps.onResend. */
   onResend?: (id: string, content?: string) => void;
-  onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
+  onFeedback: (id: string, value: "UP" | "DOWN" | null, detail?: FeedbackDetail) => void;
   /** Per-message feedback eligibility — see MessageItemProps.canFeedback.
    *  Omit when every rendered message is backed by a persisted row. */
   canFeedback?: (message: ChatMessage) => boolean;

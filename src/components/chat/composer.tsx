@@ -744,7 +744,7 @@ function ComposerImpl({
     : quote
       ? quote.mode === "modify"
         ? "Describe the change…"
-        : quote.source === "document"
+        : quote.source !== "artifact"
           ? quote.kind === "area"
             ? "Ask about this area…"
             : "Ask about this passage…"
@@ -1136,6 +1136,16 @@ function ComposerImpl({
         }
       }
       if (armResearch && (researchSeedAllowedRef.current || nowWrites)) setResearch(true);
+      // `{ text, append: true }` (a quoted passage) goes after what is already
+      // written instead of replacing it, through the field's draft so any
+      // tokens in it keep their data.
+      const field = textareaRef.current;
+      if (detail && typeof detail === "object" && (detail as { append?: unknown }).append === true && field) {
+        const current = field.getDraft();
+        const lead = current.text.trimEnd() ? `${current.text.trimEnd()}\n\n` : "";
+        field.setDraft({ text: `${lead}${value}`, tokens: tokensForText(lead, current.tokens) }, { focus: true });
+        return;
+      }
       setText(value);
       requestAnimationFrame(() => {
         const field = textareaRef.current;

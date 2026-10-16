@@ -137,6 +137,8 @@ export async function GET(req: Request) {
           reasoningParts: true,
           model: true,
           feedback: true,
+          feedbackReason: true,
+          feedbackNote: true,
           promptTokens: true,
           completionTokens: true,
           costMicroUsd: true,
@@ -406,6 +408,8 @@ export async function GET(req: Request) {
     // the point is to hand the person their own data, not a copy of the
     // ciphertext they have no key for.
     activity: decryptJsonField(m.activity),
+    // The note left with a thumbs-down is sealed like the body; same reason.
+    feedbackNote: decryptMessageTextSafe(m.feedbackNote),
   }));
 
   if (format === "csv") {
@@ -473,6 +477,8 @@ export async function GET(req: Request) {
       reasoningParts: m.reasoningParts,
       model: m.model,
       feedback: m.feedback,
+      feedbackReason: m.feedbackReason,
+      feedbackNote: m.feedbackNote,
       promptTokens: m.promptTokens,
       completionTokens: m.completionTokens,
       costMicroUsd: m.costMicroUsd,

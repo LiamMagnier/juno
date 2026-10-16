@@ -30,7 +30,10 @@ const ThoughtProcessPanel = nextDynamic(
   () => import("@/components/chat/thought-process-panel").then((m) => m.ThoughtProcessPanel),
   { ssr: false },
 );
-import { useThoughtPanel } from "@/components/chat/thought-panel-context";
+import { ThoughtPanelProvider, useThoughtPanel, type ThoughtPanelContextValue } from "@/components/chat/thought-panel-context";
+import { ThoughtInline } from "@/components/chat/thought-inline";
+import { Collapse } from "@/components/ui/collapse";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { LiveLine, useHeldPhase } from "@/components/chat/live-line";
 import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
@@ -171,8 +174,25 @@ export function ActivityTimeline({
   const panel = useThoughtPanel();
   const open = !!panel && panel.openId === messageId;
   const panelDomId = `thought-panel-${messageId}`;
+  const inlineDomId = `thought-inline-${messageId}`;
+  const sheetDomId = `thought-sheet-${messageId}`;
   const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const fullButtonRef = React.useRef<HTMLButtonElement>(null);
   const list = React.useMemo(() => events ?? [], [events]);
+
+  /*
+   * THE STRIP UNFOLDS IN PLACE (G14). Pressing it opens the run under the
+   * live line (ThoughtInline) instead of swapping the conversation for a
+   * panel; the docked panel is one press further, as "Open full trace", and a
+   * phone gets a bottom sheet over the chat rather than a column that
+   * replaces it. Local state, keyed by this row's own lifetime — the row keeps
+   * its renderKey across the optimistic → saved id swap, so a disclosure
+   * opened while the answer streamed is still open once it lands.
+   */
+  const [inlineOpen, setInlineOpen] = React.useState(false);
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  // The sheet (and its lazily loaded panel) mounts on first use, not per row.
+  const [sheetMounted, setSheetMounted] = React.useState(false);
 
   // Focus comes back on close — the panel took it on open and nothing else
   // claimed it (Esc, or the close button, which unmounts under the caret and
@@ -185,8 +205,11 @@ export function ActivityTimeline({
       const active = document.activeElement;
       // preventScroll, or the browser scrolls the transcript back up to this row
       // the instant the dock closes — throwing the reader off the answer they
-      // had just scrolled down to read.
-      if (!active || active === document.body) triggerRef.current?.focus({ preventScroll: true });
+      // had just scrolled down to read. Back to "Open full trace" when the
+      // disclosure that holds it is still open, else to the strip.
+      if (!active || active === document.body) {
+        (fullButtonRef.current ?? triggerRef.current)?.focus({ preventScroll: true });
+      }
     }
     wasOpen.current = open;
   }, [open]);
@@ -205,7 +228,46 @@ export function ActivityTimeline({
   const setPanelOpenId = panel?.setOpenId;
   React.useEffect(() => {
     if (open && !renders) setPanelOpenId?.(null);
+    if (!renders) {
+      setInlineOpen(false);
+      setSheetOpen(false);
+    }
   }, [open, renders, setPanelOpenId]);
+
+  /*
+   * "Open full trace": the dock beside the chat when the split is engaged,
+   * else the bottom sheet. Measured at the press, off the same split mount
+   * the dock's own CSS reads (thought-panel-context `coversChat`). A surface
+   * with no dock at all (the dev galleries) gets the sheet.
+   */
+  const openFull = React.useCallback(() => {
+    if (panel && !(panel.coversChat?.() ?? false)) {
+      panel.setOpenId(open ? null : messageId);
+      return;
+    }
+    setSheetMounted(true);
+    setSheetOpen(true);
+  }, [messageId, open, panel]);
+
+  // Inside the sheet, the panel's "Ask to run again" must hand the chat back
+  // before it fills the composer, exactly as the dock does below the split;
+  // and a jump to a citation closes the sheet first (`coversChat`).
+  const sheetPanel = React.useMemo<ThoughtPanelContextValue | null>(
+    () =>
+      panel
+        ? {
+            ...panel,
+            coversChat: () => true,
+            seedDraft: panel.seedDraft
+              ? (text: string) => {
+                  setSheetOpen(false);
+                  panel.seedDraft?.(text);
+                }
+              : undefined,
+          }
+        : null,
+    [panel],
+  );
 
   // THE run's clock and THE run's model — singular, and passed down to the panel
   // rather than rebuilt there. Calibration happens on the render that first sees
@@ -315,15 +377,16 @@ export function ActivityTimeline({
   // carries the state instead. It changes once per run, on settle; the live
   // phase itself is announced by the live line's own region, once per phase.
   const label = streaming
-    ? "Open thought process, in progress"
-    : [hasReasoning ? "Open thought process, complete" : "Open run details, complete", restingLine, run.note]
+    ? "Thought process, in progress"
+    : [hasReasoning ? "Thought process, complete" : "Run details, complete", restingLine, run.note]
         .filter(Boolean)
         .join(", ");
 
   // Live blocks: only the search line still streams under the strip. Reasoning
   // no longer renders here (summary first; the panel owns the full trace).
   const searchSites = streaming ? toSearchSites(run.sources) : [];
-  const showSearch = !!streaming && !!run.query;
+  // The open disclosure already lists the search; one query drawn twice is noise.
+  const showSearch = !!streaming && !!run.query && !inlineOpen;
   const hasLiveBlocks = showSearch;
 
   return (
@@ -340,15 +403,15 @@ export function ActivityTimeline({
         <button
           ref={triggerRef}
           type="button"
-          onClick={() => panel?.setOpenId(open ? null : messageId)}
-          aria-expanded={open}
-          aria-controls={open ? panelDomId : undefined}
+          onClick={() => setInlineOpen((v) => !v)}
+          aria-expanded={inlineOpen}
+          aria-controls={inlineOpen ? inlineDomId : undefined}
           aria-label={label}
           className={cn(
-            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center rounded-md px-2 text-left",
+            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md px-2 text-left",
             "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none coarse:min-h-11",
-            open && "bg-accent",
-            hasLiveBlocks ? "mb-0.5" : "mb-1.5"
+            (inlineOpen || open) && "bg-accent",
+            hasLiveBlocks || inlineOpen ? "mb-0.5" : "mb-1.5"
           )}
         >
           <LiveLine
@@ -361,6 +424,15 @@ export function ActivityTimeline({
             // the phase is spoken by the announcer beside it instead.
             announce={false}
           />
+          {/* The same caret as the resting line, so the strip says it opens
+              while it is live too; it turns a quarter when open. */}
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              inlineOpen && "rotate-90"
+            )}
+          />
         </button>
       ) : (
         /*
@@ -371,14 +443,15 @@ export function ActivityTimeline({
         <button
           ref={triggerRef}
           type="button"
-          onClick={() => panel?.setOpenId(open ? null : messageId)}
-          aria-expanded={open}
-          aria-controls={open ? panelDomId : undefined}
+          onClick={() => setInlineOpen((v) => !v)}
+          aria-expanded={inlineOpen}
+          aria-controls={inlineOpen ? inlineDomId : undefined}
           aria-label={label}
           className={cn(
-            "group/thought -ml-2 mb-1.5 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md pl-2 pr-1.5 text-left text-nav text-muted-foreground",
+            "group/thought -ml-2 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md pl-2 pr-1.5 text-left text-nav text-muted-foreground",
             "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-11",
-            open && "bg-accent text-foreground"
+            inlineOpen ? "mb-0.5" : "mb-1.5",
+            (inlineOpen || open) && "bg-accent text-foreground"
           )}
         >
           <span aria-hidden="true" className="min-w-0 truncate">
@@ -389,11 +462,25 @@ export function ActivityTimeline({
             aria-hidden="true"
             className={cn(
               "size-4 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-              open && "rotate-90"
+              inlineOpen && "rotate-90"
             )}
           />
         </button>
       )}
+
+      {/* The run, unfolded in place: grid rows 0fr → 1fr with a fade (Collapse),
+          folding back the same way, snapped under reduced motion. */}
+      <Collapse open={inlineOpen}>
+        <ThoughtInline
+          id={inlineDomId}
+          run={run}
+          streaming={streaming}
+          onOpenFull={openFull}
+          fullOpen={open || sheetOpen}
+          fullControls={open ? panelDomId : sheetOpen ? sheetDomId : undefined}
+          fullButtonRef={fullButtonRef}
+        />
+      </Collapse>
 
       {/* LIVE REASONING STAYS OUT OF THE TRANSCRIPT. Summary first, detail on
           demand (Claude Code / Codex): the strip above is the whole live status
@@ -443,6 +530,28 @@ export function ActivityTimeline({
             panel.container
           )
         : null}
+
+      {/* A phone's full trace: a bottom sheet over the chat, never a column that
+          replaces it. The conversation stays visible above the sheet. */}
+      {sheetMounted && (
+        <BottomSheet tall open={sheetOpen} onOpenChange={setSheetOpen} title="Thought process">
+          <ThoughtPanelProvider value={sheetPanel}>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ThoughtProcessPanel
+                id={sheetDomId}
+                messageId={messageId}
+                onClose={() => setSheetOpen(false)}
+                run={run}
+                reasoning={reasoning}
+                streaming={streaming}
+                live={live}
+                finishNote={finishNote}
+                presentation="sheet"
+              />
+            </div>
+          </ThoughtPanelProvider>
+        </BottomSheet>
+      )}
     </>
   );
 }

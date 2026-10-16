@@ -87,6 +87,24 @@ if (!URL) {
     assert.equal(sql?.latencyN, 4);
   });
 
+  test("a thumbs-down's reason is mirrored as a category, and cleared with the rating", async () => {
+    const { prisma, recordRoutingOutcome, markRoutingSignal } = await load();
+    const messageId = `m-${randomUUID()}`;
+    await recordRoutingOutcome(base({ messageId, modelId: `test:reason-${randomUUID().slice(0, 8)}` }));
+    await markRoutingSignal(messageId, { feedback: "DOWN", feedbackReason: "inaccurate" });
+    let row = await prisma.routingOutcome.findFirst({ where: { messageId } });
+    assert.equal(row?.feedback, "DOWN");
+    assert.equal(row?.feedbackReason, "inaccurate");
+    // A bare DOWN (the native apps) leaves the reason it already has.
+    await markRoutingSignal(messageId, { feedback: "DOWN" });
+    row = await prisma.routingOutcome.findFirst({ where: { messageId } });
+    assert.equal(row?.feedbackReason, "inaccurate");
+    await markRoutingSignal(messageId, { feedback: "UP", feedbackReason: null });
+    row = await prisma.routingOutcome.findFirst({ where: { messageId } });
+    assert.equal(row?.feedback, "UP");
+    assert.equal(row?.feedbackReason, null);
+  });
+
   test("a regenerate's new outcome takes over the message link; the old keeps its mark", async () => {
     const { prisma, recordRoutingOutcome, markRoutingSignal } = await load();
     const messageId = `m-${randomUUID()}`;

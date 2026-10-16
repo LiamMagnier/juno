@@ -937,8 +937,7 @@ struct DesktopMessageRow: View {
                     MessageActionButton(
                         "Bad response",
                         icon: .thumbsDown,
-                        isOn: shown.feedback == .down,
-                        celebrates: true
+                        isOn: shown.feedback == .down
                     ) {
                         actions.setFeedback?(shown.feedback == .down ? nil : .down)
                     }
