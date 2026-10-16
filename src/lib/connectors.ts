@@ -95,7 +95,7 @@ export interface ConnectorOAuthSession {
   resource: string;
 }
 
-const CONNECTORS = {
+const CONNECTORS: Record<string, ConnectorDef> = {
   github: {
     id: "github",
     kind: "oauth_app",
@@ -211,7 +211,7 @@ const CONNECTORS = {
     },
   },
   ...Object.fromEntries(firstPartyDefinitions(env.appUrl, process.env).map((def) => [def.id, def])),
-} as Record<ConnectorId, ConnectorDef>;
+};
 
 export function getConnector(id: string): ConnectorDef | undefined {
   return (CONNECTORS as Record<string, ConnectorDef>)[id];

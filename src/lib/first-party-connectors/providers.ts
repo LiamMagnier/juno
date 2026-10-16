@@ -7,7 +7,7 @@ export function isFirstPartyId(id: string): id is FirstPartyId {
 }
 
 /** Separate from sign-in OAuth: linking mail must never change login scopes. */
-export function firstPartyDefinitions(appUrl: string, vars: NodeJS.ProcessEnv): ConnectorDef[] {
+export function firstPartyDefinitions(appUrl: string, vars: Readonly<Record<string, string | undefined>>): ConnectorDef[] {
   const google = { clientId: vars.CONNECTOR_GOOGLE_CLIENT_ID, clientSecret: vars.CONNECTOR_GOOGLE_CLIENT_SECRET };
   const microsoft = { clientId: vars.CONNECTOR_MICROSOFT_CLIENT_ID, clientSecret: vars.CONNECTOR_MICROSOFT_CLIENT_SECRET };
   const specs: Array<{ id: FirstPartyId; label: string; description: string; scope: string }> = [
