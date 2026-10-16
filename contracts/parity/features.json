@@ -331,7 +331,7 @@
         },
         "/api/artifacts/[id]/draft": {
           "status": "web-only",
-          "note": "Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
+          "note": "Seals or discards the web design editor's working copy (ArtifactDraft), and reads, autosaves and drops the web canvas's unsaved source edit (ArtifactCanvasDraft, G12). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
         },
         "/api/artifacts/[id]/duplicate": {
           "status": "native",

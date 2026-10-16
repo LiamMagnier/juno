@@ -234,7 +234,7 @@ Design is a type of artifact (register #73).
 | `/api/artifacts` | GET | Native | JunoChatKit | The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list. |
 | `/api/artifacts/[id]` | GET, POST, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/download` | GET | Native | JunoChatKit | Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter). |
-| `/api/artifacts/[id]/draft` | POST | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
+| `/api/artifacts/[id]/draft` | GET, POST, PUT, DELETE | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft), and reads, autosaves and drops the web canvas's unsaved source edit (ArtifactCanvasDraft, G12). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
 | `/api/artifacts/[id]/duplicate` | POST | Native | JunoChatKit | Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history. |
 | `/api/artifacts/[id]/export` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/poster` | GET | Native | JunoChatKit |  |
