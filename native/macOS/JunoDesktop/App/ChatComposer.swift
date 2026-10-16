@@ -1204,6 +1204,139 @@ struct ChatComposer: View {
     // MARK: Body
 
     var body: some View {
+        followingShell
+        // The reader filing the draft under another project, or the preference
+        // being edited on the Projects page while this composer is open.
+        .onChange(of: projectPreferredModelID) { _, _ in configureSelection() }
+        .onChange(of: documentContext) { _, _ in groundingNote = nil }
+        .onChange(of: draftProjectID) { _, _ in consumeDraftProject() }
+        .onChange(of: draftPrompt) { _, _ in consumeDraftPrompt() }
+        .onChange(of: selectedModelID) { _, _ in configureThinking() }
+        // Pro composes with effort rather than replacing it, and Pro at
+        // Instant is a contradiction the web resolves by raising effort to
+        // Medium; so does this.
+        .onChange(of: proMode) { _, isOn in
+            guard isOn, thinkingStopID == JunoThinkingLadder.instantStopID,
+                let medium = thinkingScale?.stopID(for: .medium)
+            else { return }
+            thinkingStopID = medium
+        }
+        // The reply the queued turn was waiting on has ended.
+        .onChange(of: isGenerating) { _, generating in
+            guard !generating, let queued = queuedTurn else { return }
+            queuedTurn = nil
+            dispatch(queued, restoreOnRefusal: true)
+        }
+        .onChange(of: request?.id) { _, _ in
+            guard let request else { return }
+            switch request.kind {
+            case .chooseFiles:
+                if canAttach { showingFileImporter = true }
+            case .attach(let urls):
+                attach(urls, securityScoped: false)
+            case .seed(let opening):
+                seed(opening)
+            case .quote(let text):
+                seed(ChatComposerRequest.quoted(text))
+            case .send(let text):
+                // Only ever offered over an empty draft, so nothing the
+                // reader wrote is replaced.
+                guard draftIsEmpty else { return }
+                prompt = text
+                submit()
+            case .research(let question):
+                // "Research this": the question, sent as Research — only over
+                // an empty draft, like a follow-up.
+                guard draftIsEmpty, researchAvailable, DesktopPlanGate.shared.require(.research) else { return }
+                deepResearch = true
+                prompt = question
+                submit()
+            case .focus:
+                // Chat › Focus Composer (⇧⎋) and a question's Reply Below: the
+                // caret after what is there, as the web's ⇧Esc puts it.
+                focused = true
+                placeCaretAtEnd()
+            }
+        }
+        .onChange(of: draftIsEmpty, initial: true) { _, isEmpty in
+            draftIsEmptyChanged?(isEmpty)
+        }
+        // Chat › Stop Generating (⌘.): the menu bar owns the chord now, and
+        // this is what it stops — published only while there is something to.
+        .focusedSceneValue(\.junoComposerStop, stopCommand)
+    }
+
+    /// What `body` draws and follows, in three runs of modifiers rather
+    /// than one: a single chain of them all was more than Xcode 26's type
+    /// checker would take ("unable to type-check this expression in
+    /// reasonable time"). The same modifiers, in the same order.
+    private var followingShell: some View {
+        presentingShell
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: showsCollapsedDraft)
+        // The queued strip rises in with a steer and leaves as the run reads it.
+        .animation(pendingSteerMotion, value: pendingSteerIDs)
+        // Once the draft is back under the inline ceiling, forget it was ever
+        // expanded — otherwise the next huge paste lands straight in the field.
+        .onChange(of: prompt) { _, text in
+            if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
+            firstTurnError = nil
+        }
+        // The unsent draft follows the conversation to the account's other
+        // devices (docs/code-v2/REMOTE-CONTROL.md §5). Not a private chat,
+        // a new chat or a project's composer: none has a thread to sync.
+        .modifier(DesktopChatDraftSync(
+            conversationID: privateChat == nil && fixedProjectID == nil ? model.selectedConversationID : nil,
+            text: $prompt
+        ))
+        // A refused first send stays said until the reader edits the words or
+        // moves to a chat with a transcript of its own — not when the store
+        // quietly settles or drops the conversation it tried to create.
+        .onChange(of: model.selectedConversationID) { _, selected in
+            if let selected, !model.messages(for: selected).isEmpty { firstTurnError = nil }
+        }
+        .onChange(of: voiceActive) { _, active in
+            isInCall = active
+            armPasteMonitor()
+            // A refusal that named the call means nothing once it is over.
+            if !active { voiceTurnError = nil }
+            if active {
+                // A new call starts clean, and a call and a dictation cannot
+                // share the microphone.
+                voiceHangUp.reset()
+                if dictation != nil { cancelDictation() }
+            }
+        }
+        // Private mode on or off: a turn queued for the other side of the line
+        // does not cross it, and a note about the last send is about a chat
+        // that is no longer on screen.
+        .onChange(of: isPrivate) { _, _ in
+            queuedTurn = nil
+            groundingNote = nil
+            // The monitor's handler holds the composer as it was when armed,
+            // private mode included; left stale, a pasted file would slip past
+            // `canAttach` into a private chat that cannot send it.
+            armPasteMonitor()
+        }
+        .onChange(of: quota) { _, _ in armPasteMonitor() }
+        .onChange(of: model.modelCatalog) { _, _ in configureSelection() }
+        .onChange(of: model.selectedConversationID) { _, selected in
+            // A pick is about the conversation it was made in; moving on
+            // retires it so the next conversation's project preference applies.
+            modelChosenByReader = false
+            // A note about the last send describes a message in the chat it
+            // went to. Carried into another it is a claim about nothing on screen.
+            groundingNote = nil
+            if let fixedProjectID {
+                selectedProjectID = fixedProjectID
+            } else {
+                selectedProjectID = selected == nil ? nil : model.selectedConversation?.projectId
+            }
+            configureSelection()
+            if selected == nil { selectedConnectors = [] }
+        }
+    }
+
+    private var presentingShell: some View {
         JunoComposerShell(
             captionAbove: { captionsAbove },
             above: { aboveSlot },
@@ -1298,127 +1431,6 @@ struct ChatComposer: View {
             // microphone nobody can see.
             dictation?.cancel()
         }
-        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: showsCollapsedDraft)
-        // The queued strip rises in with a steer and leaves as the run reads it.
-        .animation(pendingSteerMotion, value: pendingSteerIDs)
-        // Once the draft is back under the inline ceiling, forget it was ever
-        // expanded — otherwise the next huge paste lands straight in the field.
-        .onChange(of: prompt) { _, text in
-            if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
-            firstTurnError = nil
-        }
-        // The unsent draft follows the conversation to the account's other
-        // devices (docs/code-v2/REMOTE-CONTROL.md §5). Not a private chat,
-        // a new chat or a project's composer: none has a thread to sync.
-        .modifier(DesktopChatDraftSync(
-            conversationID: privateChat == nil && fixedProjectID == nil ? model.selectedConversationID : nil,
-            text: $prompt
-        ))
-        // A refused first send stays said until the reader edits the words or
-        // moves to a chat with a transcript of its own — not when the store
-        // quietly settles or drops the conversation it tried to create.
-        .onChange(of: model.selectedConversationID) { _, selected in
-            if let selected, !model.messages(for: selected).isEmpty { firstTurnError = nil }
-        }
-        .onChange(of: voiceActive) { _, active in
-            isInCall = active
-            armPasteMonitor()
-            // A refusal that named the call means nothing once it is over.
-            if !active { voiceTurnError = nil }
-            if active {
-                // A new call starts clean, and a call and a dictation cannot
-                // share the microphone.
-                voiceHangUp.reset()
-                if dictation != nil { cancelDictation() }
-            }
-        }
-        // Private mode on or off: a turn queued for the other side of the line
-        // does not cross it, and a note about the last send is about a chat
-        // that is no longer on screen.
-        .onChange(of: isPrivate) { _, _ in
-            queuedTurn = nil
-            groundingNote = nil
-            // The monitor's handler holds the composer as it was when armed,
-            // private mode included; left stale, a pasted file would slip past
-            // `canAttach` into a private chat that cannot send it.
-            armPasteMonitor()
-        }
-        .onChange(of: quota) { _, _ in armPasteMonitor() }
-        .onChange(of: model.modelCatalog) { _, _ in configureSelection() }
-        .onChange(of: model.selectedConversationID) { _, selected in
-            // A pick is about the conversation it was made in; moving on
-            // retires it so the next conversation's project preference applies.
-            modelChosenByReader = false
-            // A note about the last send describes a message in the chat it
-            // went to. Carried into another it is a claim about nothing on screen.
-            groundingNote = nil
-            if let fixedProjectID {
-                selectedProjectID = fixedProjectID
-            } else {
-                selectedProjectID = selected == nil ? nil : model.selectedConversation?.projectId
-            }
-            configureSelection()
-            if selected == nil { selectedConnectors = [] }
-        }
-        // The reader filing the draft under another project, or the preference
-        // being edited on the Projects page while this composer is open.
-        .onChange(of: projectPreferredModelID) { _, _ in configureSelection() }
-        .onChange(of: documentContext) { _, _ in groundingNote = nil }
-        .onChange(of: draftProjectID) { _, _ in consumeDraftProject() }
-        .onChange(of: draftPrompt) { _, _ in consumeDraftPrompt() }
-        .onChange(of: selectedModelID) { _, _ in configureThinking() }
-        // Pro composes with effort rather than replacing it, and Pro at
-        // Instant is a contradiction the web resolves by raising effort to
-        // Medium; so does this.
-        .onChange(of: proMode) { _, isOn in
-            guard isOn, thinkingStopID == JunoThinkingLadder.instantStopID,
-                let medium = thinkingScale?.stopID(for: .medium)
-            else { return }
-            thinkingStopID = medium
-        }
-        // The reply the queued turn was waiting on has ended.
-        .onChange(of: isGenerating) { _, generating in
-            guard !generating, let queued = queuedTurn else { return }
-            queuedTurn = nil
-            dispatch(queued, restoreOnRefusal: true)
-        }
-        .onChange(of: request?.id) { _, _ in
-            guard let request else { return }
-            switch request.kind {
-            case .chooseFiles:
-                if canAttach { showingFileImporter = true }
-            case .attach(let urls):
-                attach(urls, securityScoped: false)
-            case .seed(let opening):
-                seed(opening)
-            case .quote(let text):
-                seed(ChatComposerRequest.quoted(text))
-            case .send(let text):
-                // Only ever offered over an empty draft, so nothing the
-                // reader wrote is replaced.
-                guard draftIsEmpty else { return }
-                prompt = text
-                submit()
-            case .research(let question):
-                // "Research this": the question, sent as Research — only over
-                // an empty draft, like a follow-up.
-                guard draftIsEmpty, researchAvailable, DesktopPlanGate.shared.require(.research) else { return }
-                deepResearch = true
-                prompt = question
-                submit()
-            case .focus:
-                // Chat › Focus Composer (⇧⎋) and a question's Reply Below: the
-                // caret after what is there, as the web's ⇧Esc puts it.
-                focused = true
-                placeCaretAtEnd()
-            }
-        }
-        .onChange(of: draftIsEmpty, initial: true) { _, isEmpty in
-            draftIsEmptyChanged?(isEmpty)
-        }
-        // Chat › Stop Generating (⌘.): the menu bar owns the chord now, and
-        // this is what it stops — published only while there is something to.
-        .focusedSceneValue(\.junoComposerStop, stopCommand)
     }
 
     // MARK: Slots
