@@ -10,6 +10,7 @@ import {
   clearLocalCanvasDraft,
   draftAtRisk,
   parseServerCanvasDraft,
+  pruneLocalCanvasDrafts,
   readLocalCanvasDraft,
   syncAfterLocalWrite,
   syncAfterServerWrite,
@@ -44,6 +45,9 @@ import {
 
 /** Incognito edits, held for this page's lifetime only (see `remember`). */
 const memoryDrafts = new Map<string, CanvasDraftCopy>();
+
+/** Expired device copies of every artifact are swept once per page load. */
+let prunedThisPage = false;
 
 interface Pending {
   artifactId: string;
@@ -130,20 +134,42 @@ export function useCanvasDraft({
     return ok;
   }, []);
 
+  /** The artifact on screen, so a late answer about the one left behind changes nothing here. */
+  const artifactRef = React.useRef(artifactId);
+  artifactRef.current = artifactId;
+
+  /**
+   * Writes the edit to the server. `leaving`: the page or the artifact may be
+   * going away, so the request is sent `keepalive` (it outlives the page) when
+   * the body fits the browser's keepalive budget. A bigger body goes as an
+   * ordinary request, which finishes whenever the page stays (a hidden tab)
+   * and is cancelled on unload, where the device copy is the fallback.
+   */
   const sendServer = React.useCallback(
-    async (pending: Pending, seq: number) => {
+    async (pending: Pending, seq: number, leaving = false) => {
+      if (serverOff.current) return;
       let ok = false;
-      const request = fetch(draftUrl(pending.artifactId), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: pending.content, baseVersion: pending.baseVersion }),
-      });
+      const body = JSON.stringify({ content: pending.content, baseVersion: pending.baseVersion });
+      let request: Promise<Response>;
+      try {
+        request = fetch(draftUrl(pending.artifactId), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: leaving && body.length <= KEEPALIVE_BODY_LIMIT,
+        });
+      } catch {
+        request = Promise.reject(new Error("fetch failed"));
+      }
+      // A discard or a save waits for this before it deletes (see `clear`).
       inflight.current = request.catch(() => null);
       try {
         const res = await request;
         ok = res.ok;
         // Gone, a design, or too large: retrying will not change the answer.
-        if (res.status === 404 || res.status === 409 || res.status === 413) serverOff.current = true;
+        if ((res.status === 404 || res.status === 409 || res.status === 413) && artifactRef.current === pending.artifactId) {
+          serverOff.current = true;
+        }
       } catch {
         ok = false;
       }
@@ -153,32 +179,31 @@ export function useCanvasDraft({
     [setSync]
   );
 
-  /** The keepalive write on the way out: no answer is read, the page may already be gone. */
-  const sendKeepalive = React.useCallback((pending: Pending) => {
-    if (serverOff.current) return;
-    const body = JSON.stringify({ content: pending.content, baseVersion: pending.baseVersion });
-    if (body.length > KEEPALIVE_BODY_LIMIT) return;
-    try {
-      void fetch(draftUrl(pending.artifactId), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body,
-        keepalive: true,
-      }).catch(() => {});
-    } catch {
-      /* The device copy is the fallback. */
-    }
-  }, []);
+  /**
+   * Writes whatever is still waiting for `pending`, now: the device copy
+   * synchronously, the server's as a leaving request. `report`: the edit is
+   * still the one on screen, so the status follows these writes (not when the
+   * artifact itself is being left).
+   */
+  const flushPending = React.useCallback(
+    (pending: Pending, report: boolean) => {
+      const waitingLocal = localTimer.current !== null;
+      const waitingServer = serverTimer.current !== null;
+      cancelTimers();
+      const seq = report ? sequence.current : -1;
+      if (waitingLocal) {
+        const ok = writeLocal(pending);
+        if (report && !waitingServer) setSync(syncAfterLocalWrite(ok, false));
+      }
+      if (waitingServer) void sendServer(pending, seq, true);
+    },
+    [cancelTimers, sendServer, setSync, writeLocal]
+  );
 
   const flush = React.useCallback(() => {
     const pending = pendingRef.current;
-    if (!pending) return;
-    const waitingLocal = localTimer.current !== null;
-    const waitingServer = serverTimer.current !== null;
-    cancelTimers();
-    if (waitingLocal) writeLocal(pending);
-    if (waitingServer) sendKeepalive(pending);
-  }, [cancelTimers, sendKeepalive, writeLocal]);
+    if (pending) flushPending(pending, true);
+  }, [flushPending]);
 
   const record = React.useCallback(
     (content: string, baseVersion: number) => {
@@ -231,6 +256,10 @@ export function useCanvasDraft({
     setSync(null);
     setOfferClosed(null);
     setCandidates(null);
+    if (persist && !prunedThisPage) {
+      prunedThisPage = true;
+      pruneLocalCanvasDrafts(browserStorage());
+    }
     if (!persist) {
       if (remember) setCandidates({ artifactId, local: memoryDrafts.get(artifactId) ?? null, server: null });
       return;
@@ -256,17 +285,13 @@ export function useCanvasDraft({
     return () => {
       controller.abort();
       const pending = pendingRef.current;
-      if (pending && pending.artifactId === artifactId) {
-        const waitingLocal = localTimer.current !== null;
-        const waitingServer = serverTimer.current !== null;
-        cancelTimers();
-        if (waitingLocal) writeLocal(pending);
-        if (waitingServer) sendKeepalive(pending);
-      }
+      // The answer to this last write belongs to an artifact no longer on
+      // screen and must not set the next one's status.
+      if (pending && pending.artifactId === artifactId) flushPending(pending, false);
       pendingRef.current = null;
       sequence.current += 1;
     };
-  }, [artifactId, cancelTimers, persist, remember, sendKeepalive, setSync, writeLocal]);
+  }, [artifactId, flushPending, persist, remember, setSync]);
 
   // The way out of the page: flush, and ask first only when the edit is at risk.
   const atRiskRef = React.useRef(false);

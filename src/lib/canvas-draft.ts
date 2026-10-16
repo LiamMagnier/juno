@@ -92,15 +92,84 @@ export function readLocalCanvasDraft(storage: Storage | null, artifactId: string
   }
 }
 
-/** Writes the device copy. False when storage is missing, full or blocked. */
+/** Every device copy's key, with its last write time (0 when unreadable). */
+function localCanvasDraftEntries(storage: Storage): Array<{ key: string; at: number }> {
+  const entries: Array<{ key: string; at: number }> = [];
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i);
+    if (!key || !key.startsWith(CANVAS_DRAFT_STORAGE_PREFIX)) continue;
+    let at = 0;
+    try {
+      const parsed: unknown = JSON.parse(storage.getItem(key) ?? "");
+      if (isCopy(parsed)) at = Date.parse(parsed.updatedAt);
+    } catch {
+      /* Unreadable: oldest of all. */
+    }
+    entries.push({ key, at });
+  }
+  return entries;
+}
+
+/**
+ * Drops device copies past the TTL (or unreadable) for every artifact, not only
+ * the one being opened: a copy is otherwise removed only when its own artifact
+ * opens again, and copies of artifacts never reopened would pile up in the
+ * origin's shared storage quota, which the rest of the app writes to as well.
+ */
+export function pruneLocalCanvasDrafts(storage: Storage | null, now: number = Date.now()): void {
+  if (!storage) return;
+  try {
+    for (const { key, at } of localCanvasDraftEntries(storage)) {
+      if (!at || now - at > LOCAL_CANVAS_DRAFT_TTL_MS) storage.removeItem(key);
+    }
+  } catch {
+    /* Blocked storage has nothing to prune. */
+  }
+}
+
+/** Every device copy, gone: signing out leaves no artifact source behind in this browser. */
+export function clearAllLocalCanvasDrafts(storage: Storage | null): void {
+  if (!storage) return;
+  try {
+    for (const { key } of localCanvasDraftEntries(storage)) storage.removeItem(key);
+  } catch {
+    /* Blocked storage has nothing to clear. */
+  }
+}
+
+/**
+ * Writes the device copy. False when storage is missing, full or blocked.
+ *
+ * A full quota first gives up older copies of OTHER artifacts (oldest first;
+ * their server copies remain), so the edit being typed now wins the space.
+ */
 export function writeLocalCanvasDraft(storage: Storage | null, artifactId: string, copy: CanvasDraftCopy): boolean {
   if (!storage) return false;
+  const key = canvasDraftStorageKey(artifactId);
+  const value = JSON.stringify(copy);
   try {
-    storage.setItem(canvasDraftStorageKey(artifactId), JSON.stringify(copy));
+    storage.setItem(key, value);
     return true;
   } catch {
-    return false;
+    /* Full or blocked: make room below, then try once more per copy given up. */
   }
+  try {
+    const others = localCanvasDraftEntries(storage)
+      .filter((entry) => entry.key !== key)
+      .sort((a, b) => a.at - b.at);
+    for (const entry of others) {
+      storage.removeItem(entry.key);
+      try {
+        storage.setItem(key, value);
+        return true;
+      } catch {
+        /* Still full: give up the next oldest. */
+      }
+    }
+  } catch {
+    /* Blocked storage. */
+  }
+  return false;
 }
 
 export function clearLocalCanvasDraft(storage: Storage | null, artifactId: string): void {

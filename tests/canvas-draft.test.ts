@@ -6,10 +6,12 @@ import {
   LOCAL_CANVAS_DRAFT_TTL_MS,
   canvasDraftOffer,
   canvasDraftStorageKey,
+  clearAllLocalCanvasDrafts,
   clearLocalCanvasDraft,
   draftAtRisk,
   draftSyncWords,
   parseServerCanvasDraft,
+  pruneLocalCanvasDrafts,
   readLocalCanvasDraft,
   relativeDraftAge,
   syncAfterLocalWrite,
@@ -28,6 +30,8 @@ import { serverOnlyIn } from "./fixtures/server-only-graph";
 class MemoryStorage implements Storage {
   private map = new Map<string, string>();
   failWrites = false;
+  /** Total characters the store holds before a write throws, like a full origin quota. */
+  capacity = Number.POSITIVE_INFINITY;
   get length() {
     return this.map.size;
   }
@@ -45,6 +49,9 @@ class MemoryStorage implements Storage {
   }
   setItem(key: string, value: string) {
     if (this.failWrites) throw new Error("QuotaExceededError");
+    let used = value.length;
+    for (const [k, v] of this.map) if (k !== key) used += v.length;
+    if (used > this.capacity) throw new Error("QuotaExceededError");
     this.map.set(key, value);
   }
 }
@@ -85,6 +92,39 @@ test("blocked or missing storage never throws", () => {
   assert.equal(writeLocalCanvasDraft(null, "a", { content: "x", baseVersion: 1, updatedAt: iso(0) }), false);
   assert.equal(readLocalCanvasDraft(null, "a", NOW), null);
   clearLocalCanvasDraft(null, "a");
+});
+
+test("device copies of artifacts never reopened are swept, and other storage is left alone", () => {
+  const storage = new MemoryStorage();
+  writeLocalCanvasDraft(storage, "fresh", { content: "x", baseVersion: 1, updatedAt: iso(1000) });
+  writeLocalCanvasDraft(storage, "stale", { content: "y", baseVersion: 1, updatedAt: iso(LOCAL_CANVAS_DRAFT_TTL_MS + 1) });
+  storage.setItem(canvasDraftStorageKey("junk"), "{not json");
+  storage.setItem("alevr:other-feature", "keep me");
+  pruneLocalCanvasDrafts(storage, NOW);
+  assert.ok(storage.getItem(canvasDraftStorageKey("fresh")));
+  assert.equal(storage.getItem(canvasDraftStorageKey("stale")), null);
+  assert.equal(storage.getItem(canvasDraftStorageKey("junk")), null);
+  assert.equal(storage.getItem("alevr:other-feature"), "keep me");
+  clearAllLocalCanvasDrafts(storage);
+  assert.equal(storage.getItem(canvasDraftStorageKey("fresh")), null, "signing out leaves no source behind");
+  assert.equal(storage.getItem("alevr:other-feature"), "keep me");
+  pruneLocalCanvasDrafts(null);
+  clearAllLocalCanvasDrafts(null);
+});
+
+test("a full quota gives up older copies of other artifacts, oldest first, never other storage", () => {
+  const storage = new MemoryStorage();
+  writeLocalCanvasDraft(storage, "oldest", { content: "a".repeat(400), baseVersion: 1, updatedAt: iso(30_000) });
+  writeLocalCanvasDraft(storage, "older", { content: "b".repeat(400), baseVersion: 1, updatedAt: iso(20_000) });
+  storage.setItem("alevr:prefs", "p".repeat(200));
+  const used = ["oldest", "older"].reduce((n, id) => n + (storage.getItem(canvasDraftStorageKey(id))?.length ?? 0), 200);
+  storage.capacity = used + 300;
+  assert.equal(writeLocalCanvasDraft(storage, "now", { content: "c".repeat(400), baseVersion: 2, updatedAt: iso(0) }), true);
+  assert.equal(storage.getItem(canvasDraftStorageKey("oldest")), null, "the oldest copy made room");
+  assert.ok(storage.getItem(canvasDraftStorageKey("older")), "only as much as needed was given up");
+  assert.equal(storage.getItem("alevr:prefs"), "p".repeat(200));
+  storage.capacity = 100;
+  assert.equal(writeLocalCanvasDraft(storage, "huge", { content: "d".repeat(5000), baseVersion: 1, updatedAt: iso(0) }), false);
 });
 
 test("the server's answer is read defensively", () => {
@@ -174,7 +214,12 @@ test("leaving the page flushes, and asks only when the edit is at risk", () => {
   const hook = readFileSync("src/components/canvas/use-canvas-draft.ts", "utf8");
   assert.match(hook, /window\.addEventListener\("beforeunload", onBeforeUnload\)/);
   assert.match(hook, /window\.addEventListener\("pagehide", flush\)/);
-  assert.match(hook, /keepalive: true/);
+  // On the way out the write is keepalive when it fits the browser's budget;
+  // a bigger one still goes, as an ordinary request, rather than not at all.
+  assert.match(hook, /keepalive: leaving && body\.length <= KEEPALIVE_BODY_LIMIT/);
+  assert.match(hook, /if \(waitingServer\) void sendServer\(pending, seq, true\);/);
+  // A late answer about an artifact left behind never switches off the next one's autosave.
+  assert.match(hook, /artifactRef\.current === pending\.artifactId\) \{\s*serverOff\.current = true;/);
   // A discard waits for an autosave in flight, so a late write cannot bring the draft back.
   assert.match(hook, /const before = inflight\.current \?\? Promise\.resolve\(\);\s*void before\.then\(\(\) => fetch\(draftUrl\(artifactId\), \{ method: "DELETE" \}\)\)/);
   // The incognito memory copy never reaches storage or the server, and goes on discard.
