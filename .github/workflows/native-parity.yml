@@ -49,3 +49,35 @@ jobs:
       # and labels come from the pull_request event payload.
       - name: Web files the apps mirror carry a parity label
         run: node scripts/check-native-parity-label.mjs
+
+  # ---------------------------------------------------------------------------
+  # The wave 2 pipeline (spec P1): one source for every value and string.
+  #
+  # globals.css and contracts/product/juno-shell-v1.json are projected to
+  # TypeScript, Swift and the iPhone's string catalog by generators. A pull
+  # request that edits a source without regenerating fails here, by name,
+  # whatever labels it carries — the label above says a human looked; this
+  # says the projections match. The contrast matrix measures every text,
+  # glyph and boundary pair on every ground in light, dark and high contrast
+  # (spec §3.1), and the native design gates enforce the globs packages list
+  # in eslint-rules/enforce/*.json.
+  # ---------------------------------------------------------------------------
+  drift:
+    name: Tokens, strings and contrast
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Design tokens match globals.css (TS, Swift, spring twins)
+        run: npm run design:tokens:check
+      - name: Shared strings match the shell contract (TS, Swift, Shell.xcstrings)
+        run: npm run shell:contract:check
+      - name: Contrast matrix holds in all four appearances
+        run: npx tsx scripts/check-contrast-matrix.ts
+      - name: Native design gates hold, enforce globs included
+        run: npm run native:design:check

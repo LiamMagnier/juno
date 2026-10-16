@@ -302,7 +302,7 @@
         },
         {
           "id": "research",
-          "label": "Deep Field",
+          "label": "Deep research",
           "kind": "toggle",
           "icon": "ComposerIcons.research",
           "optional": true
@@ -520,5 +520,810 @@
     "skills",
     "automations",
     "connections"
-  ]
+  ],
+  "strings": {
+    "$comment": "The shared string table (wave 2 spec \u00a76.18), English and French. scripts/generate-shell-contract.mjs projects it to src/lib/strings (TypeScript), JunoShellContract.swift (macOS) and native/iOS/JunoMobile/Resources/Shell.xcstrings (table Shell); a key missing a French value, a plural form or a matching placeholder fails generation. Placeholders are {name}; n, k, p and s are integers. Sentence case everywhere; entries marked menu also get Title Case on the macOS menu bar.",
+    "locales": [
+      "en",
+      "fr"
+    ],
+    "retired": [
+      "How can I help you today?",
+      "Private chat",
+      "What can I help with?",
+      "Automations",
+      "New automation"
+    ],
+    "entries": {
+      "home.greeting": {
+        "comment": "Home greeting when the account has no first name.",
+        "en": "What\u2019s next?",
+        "fr": "Et maintenant\u00a0?"
+      },
+      "home.greetingNamed": {
+        "comment": "Home greeting.",
+        "en": "What\u2019s next, {firstName}?",
+        "fr": "Et maintenant, {firstName}\u00a0?"
+      },
+      "composer.placeholderHome": {
+        "comment": "Composer placeholder on home.",
+        "en": "Ask Alevr",
+        "fr": "Demander \u00e0 Alevr"
+      },
+      "composer.placeholderThread": {
+        "comment": "Composer placeholder in a thread.",
+        "en": "Ask a follow-up",
+        "fr": "Poser une question de suivi"
+      },
+      "incognito.name": {
+        "comment": "The incognito chat's name, set in display above the disc.",
+        "en": "Incognito chat",
+        "fr": "Conversation incognito"
+      },
+      "incognito.promise": {
+        "comment": "What incognito promises today. The training clause waits for owner sign-off S8.",
+        "en": "This chat won\u2019t appear in your history and won\u2019t be added to memory.",
+        "fr": "Cette conversation n\u2019appara\u00eetra pas dans votre historique et ne sera pas ajout\u00e9e \u00e0 la m\u00e9moire."
+      },
+      "incognito.confirmTitle": {
+        "comment": "Asked when leaving a non-empty incognito chat by in-app navigation.",
+        "en": "End this incognito chat?",
+        "fr": "Mettre fin \u00e0 cette conversation incognito\u00a0?"
+      },
+      "incognito.confirmBody": {
+        "comment": "Body of the incognito confirmation.",
+        "en": "It isn\u2019t saved, so leaving ends it.",
+        "fr": "Elle n\u2019est pas enregistr\u00e9e\u00a0: la quitter y met fin."
+      },
+      "incognito.confirmEnd": {
+        "comment": "Incognito confirmation, the leaving button.",
+        "en": "End chat",
+        "fr": "Mettre fin"
+      },
+      "incognito.confirmKeep": {
+        "comment": "Incognito confirmation, the staying button.",
+        "en": "Keep chatting",
+        "fr": "Continuer"
+      },
+      "incognito.dontAskAgain": {
+        "comment": "Checkbox, stored per device.",
+        "en": "Don\u2019t ask again",
+        "fr": "Ne plus demander"
+      },
+      "status.running": {
+        "comment": "Status word: Alevr is working.",
+        "en": "Running",
+        "fr": "En cours"
+      },
+      "status.needsYou": {
+        "comment": "Status word: waiting on the reader.",
+        "en": "Needs you",
+        "fr": "Vous attend"
+      },
+      "status.ready": {
+        "comment": "Status word: finished and not yet seen.",
+        "en": "Ready",
+        "fr": "Pr\u00eat"
+      },
+      "status.blocked": {
+        "comment": "Status word: failed or blocked.",
+        "en": "Blocked",
+        "fr": "Bloqu\u00e9"
+      },
+      "now.heading": {
+        "comment": "Sidebar section heading.",
+        "en": "Now",
+        "fr": "Maintenant"
+      },
+      "now.headingCount": {
+        "comment": "Sidebar Now fold label with its count.",
+        "en": "Now \u00b7 {n}",
+        "fr": "Maintenant \u00b7 {n}"
+      },
+      "now.more": {
+        "comment": "Now shows at most 5 rows.",
+        "plural": "n",
+        "en": {
+          "one": "+{n} more",
+          "other": "+{n} more"
+        },
+        "fr": {
+          "one": "+{n} autre",
+          "other": "+{n} autres"
+        }
+      },
+      "now.inFlight": {
+        "comment": "Home strip heading, shown only when Now is not empty.",
+        "en": "In flight",
+        "fr": "Activit\u00e9 en cours"
+      },
+      "now.updates": {
+        "comment": "Pill for inserts held while the pointer is over the list.",
+        "plural": "n",
+        "en": {
+          "one": "{n} update",
+          "other": "{n} updates"
+        },
+        "fr": {
+          "one": "{n} mise \u00e0 jour",
+          "other": "{n} mises \u00e0 jour"
+        }
+      },
+      "now.open": {
+        "comment": "Trailing button on an In flight row.",
+        "en": "Open",
+        "fr": "Ouvrir"
+      },
+      "now.announceNeedsYou": {
+        "comment": "Polite announcement, at most one per 5 seconds.",
+        "plural": "n",
+        "en": {
+          "one": "{n} chat needs you",
+          "other": "{n} chats need you"
+        },
+        "fr": {
+          "one": "{n} conversation vous attend",
+          "other": "{n} conversations vous attendent"
+        }
+      },
+      "product.routines": {
+        "comment": "Routines destination (the /automations route stays).",
+        "en": "Routines",
+        "fr": "Routines",
+        "menu": true
+      },
+      "product.newRoutine": {
+        "comment": "Create a routine.",
+        "en": "New routine",
+        "fr": "Nouvelle routine",
+        "menu": true
+      },
+      "product.research": {
+        "comment": "The research feature's visible label.",
+        "en": "Deep research",
+        "fr": "Recherche approfondie"
+      },
+      "product.researchBrand": {
+        "comment": "The research feature's brand subtitle. Not translated.",
+        "en": "Deep Field",
+        "fr": "Deep Field"
+      },
+      "turn.thinking": {
+        "comment": "TurnStatus phase word.",
+        "en": "Thinking",
+        "fr": "R\u00e9flexion"
+      },
+      "turn.searching": {
+        "comment": "TurnStatus phase word.",
+        "plural": "n",
+        "en": {
+          "one": "Searching {n} site",
+          "other": "Searching {n} sites"
+        },
+        "fr": {
+          "one": "Recherche sur {n} site",
+          "other": "Recherche sur {n} sites"
+        }
+      },
+      "turn.runningCode": {
+        "comment": "TurnStatus phase word.",
+        "en": "Running code",
+        "fr": "Ex\u00e9cution du code"
+      },
+      "turn.elapsed": {
+        "comment": "Seconds elapsed, after a middle dot, from 3s.",
+        "en": "{n}s",
+        "fr": "{n} s"
+      },
+      "turn.thoughtFor": {
+        "comment": "Settled summary when reasoning happened (n rounded up).",
+        "en": "Thought for {n}s",
+        "fr": "R\u00e9flexion de {n} s"
+      },
+      "turn.workedFor": {
+        "comment": "Settled summary when tools ran without reasoning.",
+        "en": "Worked for {n}s",
+        "fr": "Travail de {n} s"
+      },
+      "turn.sources": {
+        "comment": "Summary part, only when true.",
+        "plural": "k",
+        "en": {
+          "one": "{k} source",
+          "other": "{k} sources"
+        },
+        "fr": {
+          "one": "{k} source",
+          "other": "{k} sources"
+        }
+      },
+      "turn.ranCode": {
+        "comment": "Summary part, only when true. Lower case: it follows a middle dot.",
+        "en": "ran code",
+        "fr": "code ex\u00e9cut\u00e9"
+      },
+      "turn.reconnecting": {
+        "comment": "Stream dropped, retrying for up to 15s.",
+        "en": "Reconnecting\u2026",
+        "fr": "Reconnexion\u2026"
+      },
+      "turn.stopped": {
+        "comment": "Summary after a failed reconnect or a mid-stream failure.",
+        "en": "Stopped",
+        "fr": "Arr\u00eat\u00e9"
+      },
+      "turn.failed": {
+        "comment": "Failure box.",
+        "en": "Something went wrong. Try again.",
+        "fr": "Une erreur s\u2019est produite. R\u00e9essayez."
+      },
+      "turn.needsApproval": {
+        "comment": "A tool inside the turn needs approval.",
+        "en": "Needs your approval",
+        "fr": "Attend votre approbation"
+      },
+      "turn.userStopped": {
+        "comment": "Settled-stopped summary.",
+        "en": "You stopped this answer",
+        "fr": "Vous avez arr\u00eat\u00e9 cette r\u00e9ponse"
+      },
+      "turn.continue": {
+        "comment": "Continue a stopped answer.",
+        "en": "Continue",
+        "fr": "Continuer"
+      },
+      "turn.fallback": {
+        "comment": "Auto fell back to another model.",
+        "en": "{failed} was unavailable, so Auto used {used}.",
+        "fr": "{failed} n\u2019\u00e9tait pas disponible\u00a0: Auto a utilis\u00e9 {used}."
+      },
+      "turn.capacity": {
+        "comment": "HTTP 429.",
+        "en": "Waiting for capacity \u00b7 {s}s",
+        "fr": "En attente de capacit\u00e9 \u00b7 {s} s"
+      },
+      "turn.answerReady": {
+        "comment": "The one polite announcement on settle.",
+        "en": "Answer ready",
+        "fr": "R\u00e9ponse pr\u00eate"
+      },
+      "transcript.jumpToLatest": {
+        "comment": "n counts parts that arrived while the reader was away.",
+        "plural": "n",
+        "en": {
+          "one": "Jump to latest \u00b7 {n} new",
+          "other": "Jump to latest \u00b7 {n} new"
+        },
+        "fr": {
+          "one": "Aller au plus r\u00e9cent \u00b7 {n} nouveau",
+          "other": "Aller au plus r\u00e9cent \u00b7 {n} nouveaux"
+        }
+      },
+      "transcript.modelUnavailable": {
+        "comment": "A model the user chose is unavailable.",
+        "en": "{model} isn\u2019t available right now.",
+        "fr": "{model} n\u2019est pas disponible pour le moment."
+      },
+      "transcript.useAuto": {
+        "comment": "Button beside the model-unavailable line.",
+        "en": "Use Auto",
+        "fr": "Utiliser Auto"
+      },
+      "transcript.showMore": {
+        "comment": "A clamped user bubble.",
+        "en": "Show more",
+        "fr": "Afficher plus"
+      },
+      "transcript.selection": {
+        "comment": "The quote card's label.",
+        "en": "Selection",
+        "fr": "S\u00e9lection"
+      },
+      "transcript.dropToAttach": {
+        "comment": "Drop overlay.",
+        "en": "Drop files to attach",
+        "fr": "D\u00e9posez des fichiers pour les joindre"
+      },
+      "composer.queuedOne": {
+        "comment": "A refused second queued send.",
+        "en": "One message is already waiting",
+        "fr": "Un message est d\u00e9j\u00e0 en attente"
+      },
+      "composer.uploadingFiles": {
+        "comment": "Upload progress in the controls row, before composer.uploadProgress.",
+        "plural": "n",
+        "en": {
+          "one": "Uploading {n} file",
+          "other": "Uploading {n} files"
+        },
+        "fr": {
+          "one": "Envoi de {n} fichier",
+          "other": "Envoi de {n} fichiers"
+        }
+      },
+      "composer.uploadProgress": {
+        "comment": "Upload progress: files is composer.uploadingFiles.",
+        "en": "{files} \u00b7 {p}%",
+        "fr": "{files} \u00b7 {p} %"
+      },
+      "composer.uploadWait": {
+        "comment": "Tooltip on the disabled send button.",
+        "en": "Waiting for the upload to finish",
+        "fr": "En attente de la fin de l\u2019envoi"
+      },
+      "composer.quota": {
+        "comment": "Quota strip.",
+        "en": "You\u2019ve reached your {plan} limit. It resets at {time}.",
+        "fr": "Vous avez atteint la limite de votre forfait {plan}. Elle sera r\u00e9initialis\u00e9e \u00e0 {time}."
+      },
+      "composer.quotaTooltip": {
+        "comment": "Tooltip on the disabled send button.",
+        "en": "Limit reached \u00b7 resets at {time}",
+        "fr": "Limite atteinte \u00b7 r\u00e9initialisation \u00e0 {time}"
+      },
+      "composer.upgrade": {
+        "comment": "Quota strip action, where an upgrade exists.",
+        "en": "Upgrade",
+        "fr": "Mettre \u00e0 niveau"
+      },
+      "state.offline": {
+        "comment": "Offline banner.",
+        "en": "Offline \u00b7 you can read, sending is paused",
+        "fr": "Hors ligne \u00b7 lecture possible, envoi en pause"
+      },
+      "state.notFound": {
+        "comment": "In-app 404 title.",
+        "en": "This page isn\u2019t here",
+        "fr": "Cette page n\u2019existe pas"
+      },
+      "state.backToChat": {
+        "comment": "Error and 404 link.",
+        "en": "Back to chat",
+        "fr": "Retour aux conversations"
+      },
+      "state.backToCode": {
+        "comment": "Error link inside Code.",
+        "en": "Back to Code",
+        "fr": "Retour \u00e0 Code"
+      },
+      "state.searchEverything": {
+        "comment": "404 action and palette mode.",
+        "en": "Search everything",
+        "fr": "Tout rechercher"
+      },
+      "state.sessionExpired": {
+        "comment": "Session-expired dialog.",
+        "en": "Your session expired. Sign in again to continue.",
+        "fr": "Votre session a expir\u00e9. Reconnectez-vous pour continuer."
+      },
+      "state.signIn": {
+        "comment": "Session-expired dialog action.",
+        "en": "Sign in",
+        "fr": "Se connecter"
+      },
+      "state.signedOut": {
+        "comment": "Toast after signing out.",
+        "en": "Signed out",
+        "fr": "D\u00e9connect\u00e9"
+      },
+      "state.tryAgain": {
+        "comment": "Retry action.",
+        "en": "Try again",
+        "fr": "R\u00e9essayer"
+      },
+      "sidebar.empty": {
+        "comment": "Under the Recent heading; the shortcut in the platform form.",
+        "en": "No chats yet. Start one with {shortcut}.",
+        "fr": "Aucune conversation pour l\u2019instant. Commencez-en une avec {shortcut}."
+      },
+      "library.restored": {
+        "comment": "Toast after restoring from trash.",
+        "en": "Restored to Library",
+        "fr": "Restaur\u00e9 dans la biblioth\u00e8que"
+      },
+      "library.open": {
+        "comment": "Toast action after restoring.",
+        "en": "Open",
+        "fr": "Ouvrir"
+      },
+      "approval.run": {
+        "comment": "Approval verb.",
+        "en": "Run",
+        "fr": "Ex\u00e9cuter"
+      },
+      "approval.editFiles": {
+        "comment": "Approval verb.",
+        "plural": "n",
+        "en": {
+          "one": "Edit {n} file",
+          "other": "Edit {n} files"
+        },
+        "fr": {
+          "one": "Modifier {n} fichier",
+          "other": "Modifier {n} fichiers"
+        }
+      },
+      "approval.send": {
+        "comment": "Approval verb.",
+        "en": "Send",
+        "fr": "Envoyer"
+      },
+      "approval.deleteForGood": {
+        "comment": "Approval verb.",
+        "en": "Delete for good",
+        "fr": "Supprimer d\u00e9finitivement"
+      },
+      "approval.buy": {
+        "comment": "Approval verb.",
+        "en": "Buy",
+        "fr": "Acheter"
+      },
+      "approval.notNow": {
+        "comment": "Approval secondary action. Esc never denies.",
+        "en": "Not now",
+        "fr": "Pas maintenant"
+      },
+      "approval.tellInstead": {
+        "comment": "Approval action: reply instead of approving.",
+        "en": "Tell Alevr instead",
+        "fr": "Dire autre chose \u00e0 Alevr"
+      },
+      "approval.keepPlanning": {
+        "comment": "Plan approval secondary action.",
+        "en": "Keep planning",
+        "fr": "Continuer \u00e0 planifier"
+      },
+      "approval.approveAndBuild": {
+        "comment": "Plan approval primary action.",
+        "en": "Approve and build",
+        "fr": "Approuver et construire"
+      },
+      "approval.allowSession": {
+        "comment": "Standing grant behind the verb's caret.",
+        "en": "Allow for this session",
+        "fr": "Autoriser pour cette session"
+      },
+      "approval.armed": {
+        "comment": "Screen-reader text while the verb is disarmed (500ms).",
+        "en": "Available in a moment",
+        "fr": "Disponible dans un instant"
+      },
+      "approval.review": {
+        "comment": "Button inserted after the active input when an approval announces.",
+        "en": "Review approval",
+        "fr": "Examiner la demande"
+      },
+      "approval.showAll": {
+        "comment": "A command longer than 8 lines.",
+        "en": "Show all",
+        "fr": "Tout afficher"
+      },
+      "approval.announceOne": {
+        "comment": "The first, assertive announcement.",
+        "en": "Approval needed: {title}",
+        "fr": "Approbation requise\u00a0: {title}"
+      },
+      "approval.announceMany": {
+        "comment": "Batched polite announcement.",
+        "plural": "n",
+        "en": {
+          "one": "{n} approval waiting",
+          "other": "{n} approvals waiting"
+        },
+        "fr": {
+          "one": "{n} approbation en attente",
+          "other": "{n} approbations en attente"
+        }
+      },
+      "voice.tapToTalk": {
+        "comment": "Voice, ready.",
+        "en": "Tap to talk",
+        "fr": "Touchez pour parler"
+      },
+      "voice.listening": {
+        "comment": "Voice, listening (also announced).",
+        "en": "Listening",
+        "fr": "\u00c9coute"
+      },
+      "voice.thinking": {
+        "comment": "Voice, thinking.",
+        "en": "Thinking",
+        "fr": "R\u00e9flexion"
+      },
+      "voice.speaking": {
+        "comment": "Voice, speaking (announced).",
+        "en": "Alevr is speaking",
+        "fr": "Alevr parle"
+      },
+      "voice.interrupted": {
+        "comment": "The user talked over the answer.",
+        "en": "Go ahead",
+        "fr": "Allez-y"
+      },
+      "voice.muted": {
+        "comment": "Voice, muted.",
+        "en": "Muted",
+        "fr": "Micro coup\u00e9"
+      },
+      "voice.deniedTitle": {
+        "comment": "Microphone permission denied.",
+        "en": "Alevr can\u2019t hear you",
+        "fr": "Alevr ne vous entend pas"
+      },
+      "voice.deniedBody": {
+        "comment": "place is one of the voice.place* strings.",
+        "en": "Microphone access is off. Turn it on in {place}.",
+        "fr": "L\u2019acc\u00e8s au micro est d\u00e9sactiv\u00e9. Activez-le dans {place}."
+      },
+      "voice.placeMac": {
+        "comment": "Where to turn the microphone on, macOS.",
+        "en": "System Settings",
+        "fr": "R\u00e9glages Syst\u00e8me"
+      },
+      "voice.placeIOS": {
+        "comment": "Where to turn the microphone on, iOS.",
+        "en": "Settings",
+        "fr": "R\u00e9glages"
+      },
+      "voice.placeWeb": {
+        "comment": "Where to turn the microphone on, web.",
+        "en": "your browser\u2019s site settings",
+        "fr": "les param\u00e8tres du site dans votre navigateur"
+      },
+      "voice.openSettings": {
+        "comment": "Native only.",
+        "en": "Open settings",
+        "fr": "Ouvrir les r\u00e9glages"
+      },
+      "voice.disconnected": {
+        "comment": "Followed by Try again.",
+        "en": "Voice disconnected",
+        "fr": "Voix d\u00e9connect\u00e9e"
+      },
+      "voice.ended": {
+        "comment": "Voice, ended.",
+        "en": "Ended",
+        "fr": "Termin\u00e9"
+      },
+      "plan.codeLocked": {
+        "comment": "Tooltip on the locked Code segment.",
+        "en": "Code is on Pro",
+        "fr": "Code est inclus dans Pro"
+      },
+      "plan.codeTitle": {
+        "comment": "Plan-gating dialog title.",
+        "en": "Code is part of Pro",
+        "fr": "Code fait partie de Pro"
+      },
+      "plan.codeBody": {
+        "comment": "Plan-gating dialog body.",
+        "en": "Run coding agents on your repositories and your Mac.",
+        "fr": "Ex\u00e9cutez des agents de code sur vos d\u00e9p\u00f4ts et votre Mac."
+      },
+      "plan.seePlans": {
+        "comment": "Plan-gating dialog primary action.",
+        "en": "See plans",
+        "fr": "Voir les forfaits"
+      },
+      "plan.notNow": {
+        "comment": "Plan-gating dialog secondary action.",
+        "en": "Not now",
+        "fr": "Pas maintenant"
+      },
+      "signIn.title": {
+        "comment": "Sign-in title, in display.",
+        "en": "Welcome back",
+        "fr": "Bon retour"
+      },
+      "signIn.subtitle": {
+        "comment": "Sign-in lede.",
+        "en": "Sign in to continue to Alevr.",
+        "fr": "Connectez-vous pour continuer sur Alevr."
+      },
+      "signIn.newHere": {
+        "comment": "Before the create-account link.",
+        "en": "New to Alevr?",
+        "fr": "Nouveau sur Alevr\u00a0?"
+      },
+      "signIn.createAccount": {
+        "comment": "Create-account link.",
+        "en": "Create an account",
+        "fr": "Cr\u00e9er un compte"
+      },
+      "signIn.google": {
+        "comment": "Provider button.",
+        "en": "Continue with Google",
+        "fr": "Continuer avec Google"
+      },
+      "signIn.apple": {
+        "comment": "Provider button.",
+        "en": "Continue with Apple",
+        "fr": "Continuer avec Apple"
+      },
+      "signIn.email": {
+        "comment": "Field label.",
+        "en": "Email",
+        "fr": "E-mail"
+      },
+      "signIn.password": {
+        "comment": "Field label.",
+        "en": "Password",
+        "fr": "Mot de passe"
+      },
+      "signIn.continue": {
+        "comment": "Step button.",
+        "en": "Continue",
+        "fr": "Continuer"
+      },
+      "signIn.change": {
+        "comment": "Change the email on step 2.",
+        "en": "Change",
+        "fr": "Modifier"
+      },
+      "signIn.magicLink": {
+        "comment": "Step 2 alternative.",
+        "en": "Email me a link instead",
+        "fr": "M\u2019envoyer un lien par e-mail"
+      },
+      "signIn.forgotPassword": {
+        "comment": "Web.",
+        "en": "Forgot your password?",
+        "fr": "Mot de passe oubli\u00e9\u00a0?"
+      },
+      "signIn.forgotPasswordShort": {
+        "comment": "macOS.",
+        "en": "Forgot password?",
+        "fr": "Mot de passe oubli\u00e9\u00a0?"
+      },
+      "signIn.providerHint": {
+        "comment": "Web, step 2.",
+        "en": "Signed up with Google or Apple? Use those buttons above.",
+        "fr": "Inscrit avec Google ou Apple\u00a0? Utilisez les boutons ci-dessus."
+      },
+      "signIn.providerHintMac": {
+        "comment": "macOS, until native provider sign-in (G68).",
+        "en": "Signed up with Google or Apple? Continue in the browser.",
+        "fr": "Inscrit avec Google ou Apple\u00a0? Continuez dans le navigateur."
+      },
+      "signIn.notLinked": {
+        "comment": "OAuthAccountNotLinked, shown only after the provider authenticated the owner.",
+        "en": "This email already has a password. Sign in with it below.",
+        "fr": "Un mot de passe existe d\u00e9j\u00e0 pour cet e-mail. Connectez-vous ci-dessous avec ce mot de passe."
+      },
+      "signIn.inFrench": {
+        "comment": "After a legal link whose page is in French.",
+        "en": "(in French)",
+        "fr": "(en fran\u00e7ais)"
+      },
+      "onboarding.title": {
+        "comment": "Page 1 title, in display.",
+        "en": "Make Alevr yours",
+        "fr": "Faites d\u2019Alevr le v\u00f4tre"
+      },
+      "onboarding.name": {
+        "comment": "Field label.",
+        "en": "Name",
+        "fr": "Nom"
+      },
+      "onboarding.theme": {
+        "comment": "Field label.",
+        "en": "Theme",
+        "fr": "Th\u00e8me"
+      },
+      "onboarding.accent": {
+        "comment": "Field label.",
+        "en": "Accent",
+        "fr": "Couleur d\u2019accent"
+      },
+      "onboarding.saveFailed": {
+        "comment": "Inline field error.",
+        "en": "Couldn\u2019t save this. Try again.",
+        "fr": "Impossible d\u2019enregistrer. R\u00e9essayez."
+      },
+      "onboarding.import": {
+        "comment": "Web page 2.",
+        "en": "Import from ChatGPT or Claude",
+        "fr": "Importer depuis ChatGPT ou Claude"
+      },
+      "onboarding.commandsTip": {
+        "comment": "Web page 2, the palette tip.",
+        "en": "Press {shortcut} for commands",
+        "fr": "Appuyez sur {shortcut} pour les commandes"
+      },
+      "onboarding.macTitle": {
+        "comment": "macOS page 2 title.",
+        "en": "Alevr on your Mac",
+        "fr": "Alevr sur votre Mac"
+      },
+      "onboarding.quickEntry": {
+        "comment": "macOS page 2 row.",
+        "en": "Quick Entry",
+        "fr": "Saisie rapide"
+      },
+      "onboarding.chooseShortcut": {
+        "comment": "When the default Quick Entry shortcut is taken.",
+        "en": "Choose a shortcut",
+        "fr": "Choisir un raccourci"
+      },
+      "onboarding.tryIt": {
+        "comment": "macOS page 2 action.",
+        "en": "Try it",
+        "fr": "Essayer"
+      },
+      "onboarding.menuBar": {
+        "comment": "macOS page 2 row.",
+        "en": "Menu bar",
+        "fr": "Barre des menus"
+      },
+      "onboarding.notifyWhenDone": {
+        "comment": "macOS page 2 row.",
+        "en": "Tell me when work finishes",
+        "fr": "Me pr\u00e9venir quand un travail se termine"
+      },
+      "onboarding.importShort": {
+        "comment": "macOS page 2 row.",
+        "en": "Import",
+        "fr": "Importer"
+      },
+      "onboarding.notifications": {
+        "comment": "iOS page 2 row.",
+        "en": "Notifications",
+        "fr": "Notifications"
+      },
+      "onboarding.widgets": {
+        "comment": "iOS page 2 row.",
+        "en": "Widgets and Control Center",
+        "fr": "Widgets et centre de contr\u00f4le"
+      },
+      "onboarding.pairMac": {
+        "comment": "iOS page 2 row, optional.",
+        "en": "Pair a Mac",
+        "fr": "Associer un Mac"
+      },
+      "onboarding.skip": {
+        "comment": "Skip a page.",
+        "en": "Skip",
+        "fr": "Passer"
+      },
+      "onboarding.getStarted": {
+        "comment": "Finish onboarding; focus moves to the composer.",
+        "en": "Get started",
+        "fr": "Commencer"
+      },
+      "menu.askAlevr": {
+        "comment": "Menu bar extra's first item and Quick Entry.",
+        "en": "Ask Alevr\u2026",
+        "fr": "Demander \u00e0 Alevr\u2026",
+        "menu": true
+      },
+      "menu.newChat": {
+        "comment": "Menu command.",
+        "en": "New chat",
+        "fr": "Nouvelle conversation",
+        "menu": true
+      },
+      "menu.newCodeSession": {
+        "comment": "Menu command and palette action.",
+        "en": "New code session",
+        "fr": "Nouvelle session Code",
+        "menu": true
+      },
+      "menu.search": {
+        "comment": "Menu command.",
+        "en": "Search",
+        "fr": "Rechercher",
+        "menu": true
+      },
+      "quickEntry.conflict": {
+        "comment": "Quick Entry when its hotkey is taken.",
+        "en": "{shortcut} is used by another app",
+        "fr": "{shortcut} est utilis\u00e9 par une autre app"
+      },
+      "quickEntry.rebindFailed": {
+        "comment": "A rebind that failed.",
+        "en": "That shortcut is in use by another app.",
+        "fr": "Ce raccourci est d\u00e9j\u00e0 utilis\u00e9 par une autre app."
+      }
+    }
+  }
 }

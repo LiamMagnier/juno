@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Emits the Mac's half of the shell contract.
+ * Emits the Mac's half of the shell contract, and the shared string table
+ * (wave 2 spec §6.18) for all three clients.
  *
  * `contracts/product/juno-shell-v1.json` is the web's information architecture
  * as data: the products, each product's sidebar (action rows, destinations,
@@ -30,11 +31,14 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const contractPath = join(root, "contracts/product/juno-shell-v1.json");
+const args = process.argv.slice(2);
+// `--contract=<path>` reads another contract (the tests' fixtures); every
+// output flag below points the three projections elsewhere.
+const contractArg = args.find((value) => value.startsWith("--contract="));
+const contractPath = contractArg ? resolve(contractArg.slice("--contract=".length)) : join(root, "contracts/product/juno-shell-v1.json");
 const junoIconSource = join(root, "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoBrand.swift");
 const defaultOutput = join(root, "native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift");
 
-const args = process.argv.slice(2);
 const check = args.includes("--check");
 const outputArg = args.find((value) => value.startsWith("--output="));
 const outputPath = outputArg ? resolve(outputArg.slice("--output=".length)) : defaultOutput;
@@ -164,6 +168,71 @@ for (const [alias, target] of Object.entries(settings.aliases ?? {})) {
   if (!settingsIDs.has(target)) fail(`settings.aliases.${alias}: "${target}" is not a section.`);
   if (settingsIDs.has(alias)) fail(`settings.aliases.${alias}: an alias cannot shadow a section id.`);
 }
+
+// ── The string table (wave 2 spec §6.18) ───────────────────────────────────
+//
+// One table, English and French, for every surface the spec names: the home
+// greeting, the status vocabulary, every TurnStatus wording, approvals, voice,
+// plan gating, sign-in and onboarding. Projected three ways from here, so a
+// string changed once changes on the web, the Mac and the iPhone together, and
+// a key without a French value (or a plural form, or with a placeholder the
+// other language drops) fails generation instead of shipping half-translated.
+
+/** Placeholders that are integers; every other `{name}` is a string. */
+const INT_ARGS = new Set(["n", "k", "p", "s"]);
+const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
+const placeholders = (text) => [...text.matchAll(PLACEHOLDER)].map((m) => m[1]);
+
+const table = contract.strings ?? null;
+const locales = table?.locales ?? [];
+const stringEntries = Object.entries(table?.entries ?? {});
+if (!table) fail("strings: missing (spec §6.18).");
+else {
+  if (JSON.stringify(locales) !== JSON.stringify(["en", "fr"])) fail('strings.locales: must be ["en", "fr"].');
+  const retired = new Set((table.retired ?? []).map((s) => s.toLowerCase()));
+  for (const [key, entry] of stringEntries) {
+    const where = `strings.entries.${key}`;
+    if (!/^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/.test(key)) fail(`${where}: keys are surface.camelCase.`);
+    if (typeof entry.comment !== "string" || !entry.comment) fail(`${where}: needs a comment for translators.`);
+    const forms = entry.plural ? ["one", "other"] : [null];
+    if (entry.plural && !INT_ARGS.has(entry.plural)) fail(`${where}: plural "${entry.plural}" is not an integer placeholder.`);
+    const texts = {};
+    for (const locale of locales) {
+      const value = entry[locale];
+      for (const form of forms) {
+        const text = form === null ? value : value?.[form];
+        if (typeof text !== "string" || text.trim() === "") {
+          fail(`${where}: no ${locale}${form ? ` "${form}"` : ""} value — every key needs every locale.`);
+          continue;
+        }
+        if (/^\s|\s$/.test(text)) fail(`${where}.${locale}: leading or trailing space.`);
+        if (retired.has(text.toLowerCase())) fail(`${where}.${locale}: "${text}" is a RETIRED string.`);
+        (texts[locale] ??= []).push(text);
+      }
+    }
+    const set = (locale) => [...new Set((texts[locale] ?? []).flatMap(placeholders))].sort().join(",");
+    if (set("en") !== set("fr")) fail(`${where}: English uses {${set("en")}} but French uses {${set("fr")}}.`);
+    if (entry.plural && !set("en").split(",").includes(entry.plural)) fail(`${where}: plural "${entry.plural}" is not in the text.`);
+    // A string catalog varies a whole string by plural only when it has one
+    // argument; compose a second value through another key instead.
+    if (entry.plural && set("en") !== entry.plural) fail(`${where}: a plural entry carries only its plural placeholder {${entry.plural}}.`);
+  }
+}
+
+// The projections below assume a whole table; report a broken one first.
+if (problems.length > 0) {
+  console.error(`The shell contract is not valid (${relative(root, contractPath)}):`);
+  for (const problem of problems) console.error(`  - ${problem}`);
+  process.exit(1);
+}
+
+/** `turn.thoughtFor` → `turnThoughtFor`. */
+const stringIdent = (key) => key.replace(/\.([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
+/** The entry's placeholders in first-appearance order (English, plural forms included). */
+const entryArgs = (entry) => {
+  const texts = entry.plural ? [entry.en.one, entry.en.other] : [entry.en];
+  return [...new Set(texts.flatMap(placeholders))];
+};
 
 // ── Swift ───────────────────────────────────────────────────────────────────
 
@@ -430,29 +499,215 @@ ${Object.entries(settings.aliases ?? {})
 }
 `;
 
+// ── The string table, three ways ────────────────────────────────────────────
+
+/** Escape for a Swift string literal; invisible spaces are spelled out. */
+const swiftText = (text) =>
+  String(text)
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/ /g, "\\u{00A0}")
+    .replace(/ /g, "\\u{202F}");
+/** A Swift literal with `{name}` placeholders interpolated. */
+const swiftInterpolated = (text) => `"${swiftText(text).replace(PLACEHOLDER, (_, name) => `\\(${name})`)}"`;
+const swiftParams = (args) => args.map((name) => `${name}: ${INT_ARGS.has(name) ? "Int" : "String"}`);
+
+function swiftStringMember(key, entry) {
+  const name = stringIdent(key);
+  const args = entryArgs(entry);
+  const doc = `    /// \`${key}\`: ${entry.comment.replace(/\n/g, " ")}`;
+  const body = (locale) => {
+    const value = entry[locale];
+    if (!entry.plural) return swiftInterpolated(value);
+    return `language.plural(${entry.plural}) == .one ? ${swiftInterpolated(value.one)} : ${swiftInterpolated(value.other)}`;
+  };
+  const lines = [doc];
+  const params = [...swiftParams(args), "in language: JunoShellLanguage = .current"].join(", ");
+  lines.push(`    static func ${name}(${params}) -> String {`);
+  lines.push(`        switch language {`);
+  for (const locale of locales) lines.push(`        case .${locale}: ${body(locale)}`);
+  lines.push(`        }`);
+  lines.push(`    }`);
+  if (args.length === 0) {
+    lines.push(`    static var ${name}: String { ${name}(in: .current) }`);
+  }
+  if (entry.menu) {
+    // macOS menu-bar commands are Title Case (Apple's rule); French keeps sentence case.
+    lines.push(`    /// The macOS menu bar's Title Case form.`);
+    lines.push(`    static func ${name}Title(in language: JunoShellLanguage = .current) -> String {`);
+    lines.push(`        switch language {`);
+    for (const locale of locales) {
+      lines.push(`        case .${locale}: ${swiftInterpolated(locale === "en" ? titleCase(entry.en) : entry[locale])}`);
+    }
+    lines.push(`        }`);
+    lines.push(`    }`);
+  }
+  return lines.join("\n");
+}
+
+const swiftStrings = `
+/// The languages the shared string table carries (\`strings.locales\`).
+enum JunoShellLanguage: String, CaseIterable, Sendable {
+${locales.map((locale) => `    case ${locale}`).join("\n")}
+
+    /// The app's language: the first localization the bundle resolves to.
+    static var current: Self {
+        let preferred = Bundle.main.preferredLocalizations.first ?? "en"
+        return Self(rawValue: String(preferred.prefix(2)).lowercased()) ?? .en
+    }
+
+    enum PluralCategory: Sendable { case one, other }
+
+    /// CLDR integer plural rules: English \`one\` is 1; French \`one\` is 0 and 1.
+    func plural(_ count: Int) -> PluralCategory {
+        switch self {
+        case .en: count == 1 ? .one : .other
+        case .fr: count == 0 || count == 1 ? .one : .other
+        }
+    }
+}
+
+/// The shared string table (wave 2 spec §6.18): every product string the web,
+/// the Mac and the iPhone show alike, English and French. Read these instead of
+/// typing the words again.
+enum JunoShellStrings {
+${stringEntries.map(([key, entry]) => swiftStringMember(key, entry)).join("\n\n")}
+
+    /// Strings no surface may show any more.
+    static let retired: [String] = [${(table?.retired ?? []).map(swiftString).join(", ")}]
+}
+`;
+
+const swiftOut = `${swift}${swiftStrings}`;
+
+// TypeScript: the table as data, for src/lib/strings/index.ts to format.
+const tsValue = (value) => JSON.stringify(value).replace(/ /g, "\\u00a0").replace(/ /g, "\\u202f");
+const tsOut = `// Generated by scripts/generate-shell-contract.mjs from contracts/product/juno-shell-v1.json.
+// Do not edit: change the contract and run \`npm run shell:contract:generate\`.
+// \`npm run shell:contract:check\` fails CI when this file is stale.
+//
+// shell-contract-digest: ${digest}
+
+/** The languages the table carries. */
+export const SHELL_LOCALES = ${tsValue(locales)} as const;
+
+/** One plural entry: a CLDR category per form, chosen by the \`plural\` placeholder. */
+export type ShellPlural = { readonly one: string; readonly other: string };
+
+/** Placeholders that are numbers; every other \`{name}\` is a string. */
+export const SHELL_INT_ARGS = ${tsValue([...INT_ARGS])} as const;
+
+/** The shared string table (spec §6.18), by key. */
+export const SHELL_STRINGS = {
+${stringEntries
+  .map(([key, entry]) => {
+    const fields = [
+      `en: ${tsValue(entry.en)}`,
+      `fr: ${tsValue(entry.fr)}`,
+      ...(entry.plural ? [`plural: ${tsValue(entry.plural)}`] : []),
+      ...(entry.menu ? ["menu: true"] : []),
+    ];
+    return `  /** ${entry.comment.replace(/\*\//g, "* /")} */\n  ${tsValue(key)}: { ${fields.join(", ")} },`;
+  })
+  .join("\n")}
+} as const;
+
+export type ShellStringKey = keyof typeof SHELL_STRINGS;
+
+/** Strings no surface may show any more. */
+export const SHELL_RETIRED_STRINGS = ${tsValue(table?.retired ?? [])} as const;
+`;
+
+/**
+ * Shell.xcstrings, the iPhone's string catalog for the table (table name
+ * "Shell"). Keys are the contract's; placeholders become format specifiers,
+ * positional when there is more than one, and plural entries use the catalog's
+ * plural variations. Serialised the way Xcode writes catalogs (two-space
+ * indent, `" : "`, keys sorted) so opening it in Xcode is not a diff.
+ */
+function xcstringsValue(text, args) {
+  // A literal percent sign is `%%` in a format string ("{p}%" → "%2$lld%%").
+  return text.replace(/%/g, "%%").replace(PLACEHOLDER, (_, name) => {
+    const spec = INT_ARGS.has(name) ? "lld" : "@";
+    return args.length > 1 ? `%${args.indexOf(name) + 1}$${spec}` : `%${spec}`;
+  });
+}
+function xcstringsUnit(text, args) {
+  return { stringUnit: { state: "translated", value: xcstringsValue(text, args) } };
+}
+const catalog = {
+  sourceLanguage: "en",
+  strings: Object.fromEntries(
+    [...stringEntries]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, entry]) => {
+        const args = entryArgs(entry);
+        const localizations = Object.fromEntries(
+          locales.map((locale) => {
+            const value = entry[locale];
+            if (!entry.plural) return [locale, xcstringsUnit(value, args)];
+            return [locale, { variations: { plural: { one: xcstringsUnit(value.one, args), other: xcstringsUnit(value.other, args) } } }];
+          }),
+        );
+        return [key, { comment: entry.comment, extractionState: "manual", localizations }];
+      }),
+  ),
+  version: "1.0",
+};
+/** Xcode's catalog style: keys sorted, two spaces, `" : "`. */
+function xcodeJSON(value, indent = "") {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  const inner = `${indent}  `;
+  if (Array.isArray(value)) return `[\n${value.map((v) => inner + xcodeJSON(v, inner)).join(",\n")}\n${indent}]`;
+  const keys = Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (keys.length === 0) return "{\n\n" + indent + "}";
+  return `{\n${keys.map((k) => `${inner}${JSON.stringify(k)} : ${xcodeJSON(value[k], inner)}`).join(",\n")}\n${indent}}`;
+}
+const xcstringsOut = `${xcodeJSON(catalog)}\n`;
+
+const tsArg = args.find((value) => value.startsWith("--ts-output="));
+const xcArg = args.find((value) => value.startsWith("--xcstrings-output="));
+const tsPath = tsArg ? resolve(tsArg.slice("--ts-output=".length)) : join(root, "src/lib/strings/shell.generated.ts");
+const xcstringsPath = xcArg ? resolve(xcArg.slice("--xcstrings-output=".length)) : join(root, "native/iOS/JunoMobile/Resources/Shell.xcstrings");
+
 if (problems.length > 0) {
   console.error(`The shell contract is not valid (${relative(root, contractPath)}):`);
   for (const problem of problems) console.error(`  - ${problem}`);
   process.exit(1);
 }
 
+const outputs = [
+  [outputPath, swiftOut],
+  [tsPath, tsOut],
+  [xcstringsPath, xcstringsOut],
+];
+
 if (check) {
-  let current = null;
-  try {
-    current = readFileSync(outputPath, "utf8");
-  } catch {
-    // Reported below.
+  let stale = false;
+  for (const [path, expected] of outputs) {
+    let current = null;
+    try {
+      current = readFileSync(path, "utf8");
+    } catch {
+      // Reported below.
+    }
+    if (current !== expected) {
+      console.error(
+        `${relative(root, path)} is ${current === null ? "missing" : "stale"}: `
+          + `${relative(root, contractPath)} changed without it. Run: npm run shell:contract:generate`,
+      );
+      stale = true;
+    }
   }
-  if (current !== swift) {
-    console.error(
-      `${relative(root, outputPath)} is ${current === null ? "missing" : "stale"}: `
-        + `${relative(root, contractPath)} changed without it. Run: npm run shell:contract:generate`,
-    );
-    process.exit(1);
-  }
-  console.log(`Swift shell contract matches ${relative(root, contractPath)} (v${contract.version}, ${digest.slice(0, 12)}…).`);
+  if (stale) process.exit(1);
+  console.log(
+    `Swift shell contract, TypeScript strings and Shell.xcstrings match ${relative(root, contractPath)} `
+      + `(v${contract.version}, ${stringEntries.length} strings, ${digest.slice(0, 12)}…).`,
+  );
 } else {
-  mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(outputPath, swift, "utf8");
-  console.log(`Wrote ${relative(root, outputPath)} (v${contract.version}, ${digest.slice(0, 12)}…).`);
+  for (const [path, contents] of outputs) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, contents, "utf8");
+    console.log(`Wrote ${relative(root, path)} (v${contract.version}, ${digest.slice(0, 12)}…).`);
+  }
 }
