@@ -238,7 +238,8 @@ struct ComputerActionOverlayView: View {
 
     private func label(_ mark: ComputerActionOverlayModel.Mark) -> some View {
         Text("Alevr")
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .font(.caption2.weight(.semibold))
+            .fontDesign(.rounded)
             .tracking(0.1)
             .foregroundStyle(.white)
             .padding(.horizontal, 9)
@@ -305,26 +306,37 @@ struct ComputerUsePreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "cursorarrow.motionlines")
+                JunoIconView(.monitorUp, size: 14)
                     .foregroundStyle(Color.junoAccent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.mark?.appName ?? "Computer use")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                     Text(isPaused ? "Paused · you're in control" : "Alevr is working")
-                        .font(.system(size: 10))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                .lineLimit(1)
                 .help("Drag this preview to move it")
                 Spacer(minLength: 4)
-                Button(isPaused ? "Resume" : "Pause") { presence.togglePause(sessionID: model.sessionID) }
+                Button { presence.togglePause(sessionID: model.sessionID) } label: {
+                    Text(isPaused ? "Resume" : "Pause")
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(minWidth: JunoLayout.pointerTarget, minHeight: JunoLayout.pointerTarget)
+                        .contentShape(.rect)
+                }
+                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
                     .accessibilityLabel(isPaused ? "Resume computer use" : "Pause computer use")
                 Button { presence.stop() } label: {
-                    Image(systemName: "stop.fill").font(.system(size: 10))
+                    JunoIconView(.stop, size: 11)
+                        .frame(minWidth: JunoLayout.pointerTarget, minHeight: JunoLayout.pointerTarget)
+                        .contentShape(.rect)
                 }
+                .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
                 .accessibilityLabel("Stop computer use")
                 .help("Stop computer use · Esc")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(StudioQuietButtonStyle())
             .controlSize(.small)
             .padding(12)
             GeometryReader { geometry in
@@ -350,10 +362,10 @@ struct ComputerUsePreviewView: View {
             }
             .frame(height: 180)
             HStack(alignment: .top, spacing: 7) {
-                Image(systemName: isPaused ? "pause.fill" : (model.mark?.live == true ? "cursorarrow" : "eye"))
-                    .font(.system(size: 10)).foregroundStyle(Color.junoAccent)
+                JunoIconView(isPaused ? .pause : (model.mark?.live == true ? .scan : .eye), size: 11)
+                    .foregroundStyle(Color.junoAccent)
                 Text(isPaused ? "Resume when you're ready." : (model.mark?.label ?? "Observing the app"))
-                    .font(.system(size: 11)).lineLimit(2)
+                    .font(.caption).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
