@@ -108,4 +108,9 @@ test("every composer asks the touch rule before Return sends", () => {
   assert.match(source("src/components/code/code-composer.tsx"), /!touchReturnBreaksLine\(e\)/);
   assert.match(source("src/components/code/code-session-composer.tsx"), /!touchReturnBreaksLine\(e\)/);
   assert.match(source("src/components/work/composer/work-thread-composer.tsx"), /!touchReturnBreaksLine\(event\)/);
+  // Orbit's two "describe an agent" composers and Compare's prompt box each
+  // have a send button, so Return on a phone can break the line there too.
+  const orbit = source("src/components/agents/agents-home.tsx");
+  assert.equal(orbit.match(/!touchReturnBreaksLine\(event\)/g)?.length, 2);
+  assert.match(source("src/components/compare/compare-view.tsx"), /!touchReturnBreaksLine\(e\)/);
 });

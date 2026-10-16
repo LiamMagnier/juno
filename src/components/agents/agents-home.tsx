@@ -28,6 +28,7 @@ import { formatAgo, localStateSentence } from "./agent-bits";
 import { announceAgentsChanged, hireAgent, updateAgent } from "./agents-transport";
 import { useAgents } from "./use-agents";
 import { AGENT_NOUN, AGENT_STATE_NAMES, BRAND, FEATURE_NAMES } from "@/lib/brand/names";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 
 /*
  * Orbit, the agents home (docs/rework/brand/ORBIT_SYSTEM.md; design V3 crew
@@ -355,7 +356,8 @@ function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; auto
           maxLength={6000}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            // Return on an on-screen keyboard breaks the line; the button sends (G35).
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
               event.preventDefault();
               void create(value);
             }
@@ -423,7 +425,8 @@ function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading
               onBlur={() => setFocused(false)}
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                // Return on an on-screen keyboard breaks the line; the button sends (G35).
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
                   event.preventDefault();
                   void create(value);
                 }
