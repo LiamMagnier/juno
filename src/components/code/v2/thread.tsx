@@ -4,8 +4,9 @@
  * The thread (TARGET §5, §6): the conversation is the interface.
  *
  * Portions adapted from T3 Code, Copyright (c) 2026 T3 Tools Inc., MIT License
- * (the settled-turn fold "Worked for 3m 43s", WorkLog row geometry with a
- * shine on the live row, the changed-files summary after the answer).
+ * (the settled-turn fold "Worked for 3m 43s", WorkLog row geometry, the
+ * changed-files summary after the answer). The live row carries the galaxy,
+ * Alevr's one working mark, where T3 swept a shine through its verb.
  *
  * - A user message is a right-aligned bubble; hovering it shows its time and
  *   "Revert to here" (checkpoints live here and in the header menu, never as
@@ -36,7 +37,7 @@ import { TEAM_PHASE_VALUES } from "@/lib/code-v2/contracts";
 import { TEAM_PHASE_LABELS } from "@/lib/code-v2/team";
 import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
-import { Glyph, useNow } from "./primitives";
+import { Glyph, LiveMark, useNow } from "./primitives";
 import { cn } from "@/lib/utils";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
@@ -192,9 +193,10 @@ export function LogRow({ line, forceOpen, onOpenDock }: { line: LogLine; forceOp
   const clickable = !!line.expand || !!line.open;
   const content = (
     <>
-      <span className={cn("verb", line.live && "cv2-shine")}>{line.verb}</span>
+      <span className={cn("verb", line.live && "cv2-live")}>{line.verb}</span>
       {line.body !== undefined && <span className="obj">{line.body}</span>}
       {line.counts && <Counts adds={line.counts.adds} dels={line.counts.dels} />}
+      {line.live && <LiveMark />}
       {line.expand && <Glyph name="chevron-right" size={12} className="chev" />}
       {line.time && <span className="t">{line.time}</span>}
     </>
@@ -222,8 +224,9 @@ function ReadsRow({ items, forceOpen, onOpenDock }: { items: Extract<TurnItem, {
   return (
     <>
       <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen((v) => !v)}>
-        <span className={cn("verb", live && "cv2-shine")}>{live ? "Reading" : "Read"}</span>
+        <span className={cn("verb", live && "cv2-live")}>{live ? "Reading" : "Read"}</span>
         <span className="obj">{items.length} files</span>
+        {live && <LiveMark />}
         <Glyph name="chevron-right" size={12} className="chev" />
       </button>
       {shown && (
@@ -286,7 +289,8 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
   return (
     <div role="group" aria-label={teamHead(items)}>
       <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen(!shown)}>
-        <span className={cn("verb", live && "cv2-shine")}>{teamHead(items)}</span>
+        <span className={cn("verb", live && "cv2-live")}>{teamHead(items)}</span>
+        {live && <LiveMark />}
         <Glyph name="chevron-right" size={12} className="chev" />
         {elapsed > 0 && <span className="t">{formatDuration(elapsed)}</span>}
       </button>
@@ -308,7 +312,7 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
               }}
             >
               <span className="who">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
-              <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")}>{step.text}</span>
+              <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-live")}>{step.text}</span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
             </button>
             </React.Fragment>
@@ -329,8 +333,9 @@ function ComputerLine({ items, props }: { items: ComputerActionItem[]; props: Th
   return (
     <>
       <button type="button" className="cv2-wl" onClick={() => props.onOpenDock?.({ tab: "screen", target: last.id })}>
-        <span className={cn("verb", live && "cv2-shine")}>{live ? `Using ${app ?? "the computer"}` : `Used ${app ?? "the computer"}`}</span>
+        <span className={cn("verb", live && "cv2-live")}>{live ? `Using ${app ?? "the computer"}` : `Used ${app ?? "the computer"}`}</span>
         <span className="obj">{last.summary ?? last.target ?? `${items.length} steps`}</span>
+        {live && <LiveMark />}
       </button>
       {src && (
         <button type="button" className="cv2-thumb" aria-label="Open the screen" onClick={() => props.onOpenDock?.({ tab: "screen", target: last.id })}>
@@ -574,6 +579,11 @@ function TurnView({
   const open = vis.steps;
   const visibleSteps = open ? steps : steps.filter((i) => i.kind === "plan" && i.awaitingApproval);
   const live = turn.status === "running" || turn.status === "waiting";
+  // The fold's steps mount on its first opening and then stay, so closing it
+  // collapses the rows it shows instead of emptying the box first and
+  // animating a blank (a fold that only animated one way).
+  const [foldMounted, setFoldMounted] = React.useState(open);
+  if (open && !foldMounted) setFoldMounted(true);
   return (
     <section data-turn={turn.id} aria-label={`Turn ${turn.ordinal + 1}`} className="cv2-turn">
       {turn.user && <UserBubble turn={turn} revert={revert} />}
@@ -586,13 +596,16 @@ function TurnView({
         </button>
       )}
       {live && steps.length === 0 && (
-        <div className="cv2-wl">
-          <span className="verb cv2-shine">Working</span>
+        <div className="cv2-wl" role="status">
+          <LiveMark className="lead" />
+          <span className="verb cv2-live">Working</span>
         </div>
       )}
       {vis.header ? (
         <div className={cn("cv2-fold", open && "open")}>
-          <div className="cv2-fold-inner">{open && <Steps turn={turn} items={steps} detail={vis.detail} props={props} now={now} />}</div>
+          <div className="cv2-fold-inner" inert={!open}>
+            {foldMounted && <Steps turn={turn} items={steps} detail={vis.detail} props={props} now={now} />}
+          </div>
         </div>
       ) : (
         visibleSteps.length > 0 && <Steps turn={turn} items={visibleSteps} detail={vis.detail} props={props} now={now} />
@@ -674,8 +687,9 @@ export function Thread(props: ThreadProps) {
     <div className="cv2-scroll" ref={scrollRef} onScroll={onScroll}>
       <div className="cv2-col">
         {props.starting && (
-          <div className="cv2-wl">
-            <span className="verb cv2-shine">{props.starting}</span>
+          <div className="cv2-wl" role="status">
+            <LiveMark className="lead" />
+            <span className="verb cv2-live">{props.starting}</span>
           </div>
         )}
         {turns.map((turn, i) => (

@@ -15,7 +15,7 @@ import * as React from "react";
 import Link from "next/link";
 import { groupSkills, matchSkills, skillsChipLabel, type CodeSkillChoice } from "@/lib/code-v2/skills";
 import type { CodeSkillsState } from "./use-code-skills";
-import { ComposerPopover, DrawCheck, Glyph, Spinner } from "./primitives";
+import { ComposerPopover, DrawCheck, Glyph, LiveMark } from "./primitives";
 
 export function SkillsChip({ skills, open, onToggle }: { skills: CodeSkillsState; open: boolean; onToggle: () => void }) {
   const label = skillsChipLabel(skills.selected, skills.once);
@@ -126,7 +126,7 @@ export function SkillsPanel({ skills, onClose, initialQuery = "" }: { skills: Co
   const body =
     skills.choices === null && !skills.failed ? (
       <div className="cv2-skill-empty">
-        <Spinner size={14} />
+        <LiveMark />
         <span>Looking for skills</span>
       </div>
     ) : skills.failed && list.length === 0 ? (
