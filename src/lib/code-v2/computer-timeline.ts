@@ -138,9 +138,19 @@ export function buildComputerTimeline(
  * (`computer.frame`) and hands back blob URLs.
  */
 export function defaultScreenshotResolver(ref: string): string | null {
-  // `//host/x` is another origin, not a same-origin path.
-  if (ref.startsWith("data:image/") || ref.startsWith("https://") || (ref.startsWith("/") && !ref.startsWith("//"))) return ref;
+  if (ref.startsWith("data:image/") || ref.startsWith("https://") || isSameOriginPath(ref)) return ref;
   return null;
+}
+
+/**
+ * A path on this origin. `//host/x` is another origin, and so is `/\host/x`
+ * (browsers read a backslash as a slash) or `/<tab>/host` (they drop tabs
+ * and line breaks before parsing), so the second character after removing
+ * those must not be a slash of either kind.
+ */
+function isSameOriginPath(ref: string): boolean {
+  const cleaned = ref.replace(/[\t\n\r]/g, "");
+  return cleaned.startsWith("/") && cleaned[1] !== "/" && cleaned[1] !== "\\";
 }
 
 /**

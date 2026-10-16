@@ -146,6 +146,8 @@ test("the resolver only passes URLs the web can load", () => {
   assert.equal(defaultScreenshotResolver("javascript:alert(1)"), null);
   assert.equal(defaultScreenshotResolver("/api/x.png"), "/api/x.png");
   assert.equal(defaultScreenshotResolver("//evil.example/x.png"), null, "protocol-relative is another origin");
+  assert.equal(defaultScreenshotResolver("/\\evil.example/x.png"), null, "browsers read /\\host as //host");
+  assert.equal(defaultScreenshotResolver("/\t/evil.example/x.png"), null, "a stripped tab or newline can make //host too");
   assert.equal(defaultScreenshotResolver("alevr-shot://claude:t7/toolu_1.jpg"), null);
   assert.ok(!String(defaultScreenshotResolver("alevr-shot://s/a.jpg")).startsWith("/api/code/screenshots"));
 });

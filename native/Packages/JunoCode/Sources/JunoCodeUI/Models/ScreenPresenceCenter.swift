@@ -70,3 +70,11 @@ public final class ScreenPresenceCenter {
         Task { await service.stopAll(reason: .menuBar) }
     }
 }
+
+extension ScreenPresenceCenter {
+    /// Where the presence draws: which screen holds the caption, the
+    /// caption's frame, the window outline's frame (``ScreenPresenceLayout``).
+    /// Named here so the app shell, which links this module and not
+    /// JunoScreenControl, never imports a package it does not depend on.
+    public typealias Layout = ScreenPresenceLayout
+}

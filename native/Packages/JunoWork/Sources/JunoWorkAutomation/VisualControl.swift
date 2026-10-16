@@ -312,7 +312,7 @@ public struct VisualControl: AutomationControl, WorkTool {
         }
 
         do {
-            let result = try await perform(request, input: input, context: context, token: token)
+            let result = try await perform(request, context: context, token: token)
             await gate.finish(
                 token,
                 characterCount: request.intent == .enterText ? request.text?.count : nil
@@ -330,7 +330,6 @@ public struct VisualControl: AutomationControl, WorkTool {
 
     private func perform(
         _ request: AutomationRequest,
-        input: WorkToolValue,
         context: WorkToolContext,
         token: AutomationRunToken
     ) async throws -> WorkToolResult {
@@ -398,7 +397,6 @@ public struct VisualControl: AutomationControl, WorkTool {
                 target: focus,
                 label: label,
                 request: request,
-                input: input,
                 context: context,
                 token: token
             )
@@ -451,7 +449,6 @@ public struct VisualControl: AutomationControl, WorkTool {
                 target: hit,
                 label: label,
                 request: request,
-                input: input,
                 context: context,
                 token: token
             )
@@ -481,7 +478,6 @@ public struct VisualControl: AutomationControl, WorkTool {
         target: WorkScreenTarget?,
         label: String,
         request: AutomationRequest,
-        input: WorkToolValue,
         context: WorkToolContext,
         token: AutomationRunToken
     ) async throws {
@@ -499,8 +495,6 @@ public struct VisualControl: AutomationControl, WorkTool {
             try await WorkScreenFloor.confirm(
                 tool: name,
                 request: request,
-                input: input,
-                actionDigest: actionDigest(input: input),
                 reason: reason,
                 summary: label + ".",
                 context: context,

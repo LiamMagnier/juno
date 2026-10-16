@@ -1,7 +1,6 @@
 import AppKit
 import JunoCodeUI
 import JunoDesignSystem
-import JunoScreenControl
 import Observation
 import QuartzCore
 import SwiftUI
@@ -83,7 +82,7 @@ final class DesktopScreenPresence {
 
         if active, !center.isTakeover, let window = center.targetWindowFrame {
             outline.update(DesktopScreenWindowOutline(personHasControl: center.isPaused))
-            outline.place(ScreenPresenceLayout.outlineFrame(around: window))
+            outline.place(ScreenPresenceCenter.Layout.outlineFrame(around: window))
             outline.show(reduceMotion: reduce)
         } else {
             outline.hide(reduceMotion: reduce)
@@ -104,12 +103,12 @@ final class DesktopScreenPresence {
         let size = caption.fittingSize
         let screens = NSScreen.screens
         let mainIndex = NSScreen.main.flatMap { main in screens.firstIndex { $0 == main } }
-        guard let index = ScreenPresenceLayout.screenIndex(
+        guard let index = ScreenPresenceCenter.Layout.screenIndex(
             holding: target,
             screens: screens.map(\.frame),
             mainIndex: mainIndex
         ) else { return }
-        caption.place(ScreenPresenceLayout.captionFrame(size: size, visibleFrame: screens[index].visibleFrame))
+        caption.place(ScreenPresenceCenter.Layout.captionFrame(size: size, visibleFrame: screens[index].visibleFrame))
         caption.show(reduceMotion: reduceMotion)
     }
 

@@ -247,7 +247,8 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
     /// Read straight from the element, at the moment of acting: its title,
     /// description and role description (the words the floor matches, as
     /// Code's hit-test reads them), its text for a button or label whose
-    /// words live in its value, and where it is.
+    /// words live in its value, the labels drawn inside a control, and
+    /// where it is.
     public func target(elementID: String, inApp bundleIdentifier: String) async throws -> WorkScreenTarget? {
         let element = try resolve(elementID, in: bundleIdentifier)
         let role = string(element, kAXRoleAttribute)
@@ -258,6 +259,13 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
            let value = string(element, kAXValueAttribute)
         {
             texts.append(String(value.prefix(200)))
+        }
+        if !Self.textEntryRoles.contains(role ?? "") {
+            // SwiftUI, Catalyst and web views draw a "Send" button as an
+            // untitled button around a static text. Code's hit-test lands on
+            // that text; pressing the button by path never does, so its
+            // labels are read here, or the floor would see no word at all.
+            texts += labels(inside: element)
         }
         let name = (title?.isEmpty == false ? title : label) ?? ""
         let kind = Self.plainRole(role ?? "element")
@@ -272,8 +280,39 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
             spokenName: name.isEmpty ? kind : "“\(name)” \(kind)",
             role: role,
             isSecure: isSecure(element),
-            frame: frame(of: element)
+            frame: frame(of: element),
+            // The category Code reads too, so a finance app known only by
+            // its App Store category is refused here as it is on a click.
+            appStoreCategory: application?.bundleURL.flatMap {
+                Bundle(url: $0)?.infoDictionary?["LSApplicationCategoryType"] as? String
+            }
         )
+    }
+
+    /// Fields whose children are their content, not their label.
+    static let textEntryRoles: Set<String> = [
+        "AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField", "AXWebArea",
+    ]
+
+    /// The words drawn inside a control: titles, descriptions and static
+    /// text of its descendants, two levels down, at most eight of them.
+    private func labels(inside element: AXUIElement) -> [String] {
+        var texts: [String] = []
+        var visited = 0
+        var queue: [(AXUIElement, Int)] = children(of: element).map { ($0, 1) }
+        while !queue.isEmpty, visited < 8 {
+            let (child, depth) = queue.removeFirst()
+            visited += 1
+            let role = string(child, kAXRoleAttribute)
+            texts += [string(child, kAXTitleAttribute), string(child, kAXDescriptionAttribute)].compactMap { $0 }
+            if role == "AXStaticText", let value = string(child, kAXValueAttribute) {
+                texts.append(value)
+            }
+            if depth < 2, !Self.textEntryRoles.contains(role ?? "") {
+                queue += children(of: child).map { ($0, depth + 1) }
+            }
+        }
+        return texts.filter { !$0.isEmpty }.map { String($0.prefix(200)) }
     }
 
     private func frame(of element: AXUIElement) -> AutomationRect? {
@@ -501,7 +540,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
         }
 
         do {
-            let result = try await perform(request, input: input, context: context, token: token)
+            let result = try await perform(request, context: context, token: token)
             await gate.finish(
                 token,
                 characterCount: request.intent == .enterText ? request.text?.count : nil
@@ -519,7 +558,6 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
 
     private func perform(
         _ request: AutomationRequest,
-        input: WorkToolValue,
         context: WorkToolContext,
         token: AutomationRunToken
     ) async throws -> WorkToolResult {
@@ -561,7 +599,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
                 ?? "Type \(text.count) characters in \(appName)"
             try await applyFloor(
                 .type(text), target: field, label: label,
-                request: request, input: input, context: context, token: token
+                request: request, context: context, token: token
             )
             try await overlay.around(
                 runID: token.runID,
@@ -588,7 +626,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             let label = control?.spokenName.map { "Press the \($0) in \(appName)" } ?? "Press a control in \(appName)"
             try await applyFloor(
                 .press, target: control, label: label,
-                request: request, input: input, context: context, token: token
+                request: request, context: context, token: token
             )
             try await overlay.around(
                 runID: token.runID,
@@ -614,7 +652,6 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
         target: WorkScreenTarget?,
         label: String,
         request: AutomationRequest,
-        input: WorkToolValue,
         context: WorkToolContext,
         token: AutomationRunToken
     ) async throws {
@@ -632,8 +669,6 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             try await WorkScreenFloor.confirm(
                 tool: name,
                 request: request,
-                input: input,
-                actionDigest: actionDigest(input: input),
                 reason: reason,
                 summary: label + ".",
                 context: context,

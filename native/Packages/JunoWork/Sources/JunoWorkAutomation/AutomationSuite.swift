@@ -233,27 +233,23 @@ public enum WorkScreenFloor {
     /// registry's or the receipt check's.
     static let digestDomain = "juno.work.floor.v1"
 
-    /// Makes sure the person said yes to this exact action, asking now when
-    /// they have not. Suspends while the question is open.
+    /// Asks the person about this exact action, with the floor's reason, and
+    /// suspends while the question is open.
     ///
-    /// A call the registry already asked about, bound to these arguments, is
-    /// not asked twice.
+    /// Always asks, even when the registry already approved the call. The
+    /// registry asks before anything is hit-tested, so its question names a
+    /// position or an intent, never the control the floor read ("Send",
+    /// "Delete"), and the screen can change while it waits. Code works the
+    /// same way: an approval whose card carried no floor reason never covers
+    /// a control the floor asks about.
     static func confirm(
         tool: String,
         request: AutomationRequest,
-        input: WorkToolValue,
-        actionDigest: String,
         reason: String,
         summary: String,
         context: WorkToolContext,
         now: @Sendable () -> Date
     ) async throws {
-        if case .approved(let receipt) = context.authorization,
-           receipt.authorizes(digest: actionDigest, at: now())
-            || receipt.authorizes(digest: AutomationApproval.digest(tool: tool, request: request), at: now())
-        {
-            return
-        }
         let digest = WorkDigests.sha256Hex(
             WorkDigests.canonicalRecord([
                 digestDomain, tool, AutomationApproval.digest(tool: tool, request: request), reason,

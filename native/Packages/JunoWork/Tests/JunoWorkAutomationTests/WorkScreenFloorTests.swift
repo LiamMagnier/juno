@@ -263,14 +263,46 @@ final class WorkScreenFloorTests: XCTestCase {
         XCTAssertFalse(calls.contains { $0.hasPrefix("type") })
     }
 
-    /// The registry already asked about this exact call (a `send_message`
-    /// intent): the floor does not ask a second time.
-    func testAnActionThePersonAlreadyApprovedIsNotAskedTwice() async throws {
-        let approvals = WorkApprovalCoordinator(policy: .permissive)
+    /// The registry's question is asked before anything is hit-tested, so it
+    /// never names the control ("Click at 100, 200 in Notes"), and the screen
+    /// can change while it waits. A yes to it is not a yes to the floor: as
+    /// in Code, where an approval whose card carried no floor reason never
+    /// covers a control the floor asks about, the floor asks with its reason.
+    func testARegistryApprovalOfAPlainClickDoesNotCoverTheFloor() async throws {
+        let approvals = WorkApprovalCoordinator(policy: .balanced)
         let driver = ScriptedScreenDriver()
         let control = visual(gate(), driver: driver, underPoint: button("Send"))
+        let input = click()
+        // What `WorkToolRegistry` asks under Balanced for a `command` click,
+        // bound the way it binds: the tool's action digest.
+        let receipt = try await registryReceipt(approvals, control: control, input: input, risk: .command)
+
+        let ctx = WorkToolContext(runID: "run-1", toolCallID: "c", authorization: .approved(receipt), approvals: approvals)
+        let run = Task { try await control.execute(input: input, context: ctx) }
+        let question = try await firstPending(approvals)
+        XCTAssertEqual(question.risk, .irreversible)
+        XCTAssertTrue(question.summary.contains("“send” control"), question.summary)
+        var calls = await driver.recorder.calls
+        XCTAssertFalse(calls.contains { $0.hasPrefix("click") }, "the registry's yes did not click Send")
+
+        await approvals.resolve(approvalID: question.id, decision: .approved, actionDigest: question.actionDigest)
+        let result = try await run.value
+        XCTAssertTrue(result.content.contains("Clicked"))
+        calls = await driver.recorder.calls
+        XCTAssertTrue(calls.contains("click:100,200"))
+    }
+
+    /// Even a `send_message` the person approved at the registry: that card
+    /// said "send a message", not what is under the point now (a "Delete"
+    /// that opened while it waited). The floor asks, and a no clicks nothing.
+    func testARegistryApprovalOfAnIntentStillHearsTheFloor() async throws {
+        let approvals = WorkApprovalCoordinator(policy: .permissive)
+        let driver = ScriptedScreenDriver()
+        let control = visual(gate(), driver: driver, underPoint: button("Delete"))
         let input: WorkToolValue = ["intent": "send_message", "target": "com.example.notes", "x": 100, "y": 200]
         guard case .success(let request) = AutomationRequest.parse(input) else { return XCTFail() }
+        // Bound as the tool's own receipt check recomputes it, so the call
+        // gets past that check and reaches the floor.
         let digest = AutomationApproval.digest(tool: control.name, request: request)
         let asking = Task {
             await approvals.authorize(
@@ -278,17 +310,44 @@ final class WorkScreenFloorTests: XCTestCase {
                 mode: .readWrite, summary: "Send a message in Notes."
             )
         }
-        let question = try await firstPending(approvals)
-        await approvals.resolve(approvalID: question.id, decision: .approved, actionDigest: digest)
+        let first = try await firstPending(approvals)
+        await approvals.resolve(approvalID: first.id, decision: .approved, actionDigest: digest)
         guard case .approved(let receipt) = await asking.value else { return XCTFail() }
 
-        let result = try await control.execute(
-            input: input,
-            context: WorkToolContext(runID: "run-1", toolCallID: "c", authorization: .approved(receipt), approvals: approvals)
-        )
-        XCTAssertTrue(result.content.contains("Clicked"))
-        let pending = await approvals.pendingApprovals
-        XCTAssertTrue(pending.isEmpty)
+        let ctx = WorkToolContext(runID: "run-1", toolCallID: "c", authorization: .approved(receipt), approvals: approvals)
+        let run = Task { try await control.execute(input: input, context: ctx) }
+        let question = try await firstPending(approvals)
+        XCTAssertTrue(question.summary.contains("“delete” control"), question.summary)
+        await approvals.resolve(approvalID: question.id, decision: .denied, actionDigest: question.actionDigest)
+        do {
+            _ = try await run.value
+            XCTFail("a refused Delete must not be clicked")
+        } catch {
+            XCTAssertNotNil(denial(error))
+        }
+        let calls = await driver.recorder.calls
+        XCTAssertFalse(calls.contains { $0.hasPrefix("click") })
+    }
+
+    /// A receipt as `WorkToolRegistry` gets one: asked under `risk`, bound to
+    /// the tool's action digest, answered yes.
+    private func registryReceipt(
+        _ approvals: WorkApprovalCoordinator,
+        control: VisualControl,
+        input: WorkToolValue,
+        risk: WorkRiskLevel
+    ) async throws -> WorkApprovalReceipt {
+        let digest = control.actionDigest(input: input)
+        let asking = Task {
+            await approvals.authorize(
+                action: control.name, runID: "run-1", actionDigest: digest, risk: risk,
+                mode: .readWrite, summary: control.summary(input: input)
+            )
+        }
+        let question = try await firstPending(approvals)
+        await approvals.resolve(approvalID: question.id, decision: .approved, actionDigest: digest)
+        guard case .approved(let receipt) = await asking.value else { throw NoQuestionAsked() }
+        return receipt
     }
 
     // MARK: - Denials that do not ask
