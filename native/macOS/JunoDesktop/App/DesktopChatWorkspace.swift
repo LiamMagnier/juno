@@ -1596,6 +1596,132 @@ struct DesktopConversationView: View {
     @State private var systemPermissions = DesktopWorkSystemPermissions.current
 
     var body: some View {
+        followingColumn
+            .onChange(of: model.selectedMessages) { _, _ in
+                if find.isOpen { find.update(messages: findableMessages) }
+            }
+            // The budget moves when a turn finishes, so the plan is read when
+            // the column appears and again as each reply ends.
+            .task(id: model.isGenerating) {
+                guard !model.isGenerating else { return }
+                await readPlan()
+            }
+            // The web's COEXISTENCE RULE, in the one shape this window has for
+            // it: the canvas and a live call are both large right-hand claims on
+            // the conversation column, and the call also lights the whole column
+            // with its own field. Starting one dismisses the other.
+            .onChange(of: voiceSession?.id) { _, started in
+                guard started != nil, openArtifact != nil || openActivity != nil || openResearch != nil else { return }
+                withAnimation(
+                    JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
+                ) {
+                    openArtifact = nil
+                    openActivity = nil
+                    openResearch = nil
+                }
+            }
+            .alert(
+                "Voice is unavailable",
+                isPresented: voiceUnavailablePresented,
+                presenting: voiceUnavailable
+            ) { _ in
+                Button("OK") { voiceUnavailable = nil }
+            } message: { reason in
+                Text(reason)
+            }
+            .quickLookPreview($quickLookURL)
+            .modifier(ChatWorkPresentations(
+                skillCapture: $skillCapture,
+                pendingUnvalidatedSave: $pendingUnvalidatedSave,
+                systemPermissions: $systemPermissions,
+                saveSkill: { draft in await saveSkill(draft) },
+                saveUnvalidated: { attachment in
+                    guard let workFiles else { return }
+                    ChatWorkFileSaving.save(attachment, from: workFiles) { mediaFailure = $0 }
+                }
+            ))
+            // The toolbar's Outputs and the ⌘K panel open an artifact's canvas
+            // or a file's Quick Look here, where both are owned.
+            .desktopOutputRequests(
+                conversationID: privateChat == nil ? model.selectedConversationID : nil,
+                openArtifact: { open(artifact: $0) },
+                quickLook: { attachment in withFile(attachment) { openFilePanel($0) } }
+            )
+            .sheet(item: $imageEditTarget) { target in
+                imageEditSheet(target)
+            }
+            // Opener and action on one line: the targets gate reads a dialog's
+            // buttons as system-drawn only when its brace opens on that line.
+            .alert("Couldn’t open the file", isPresented: mediaFailurePresented, presenting: mediaFailure) { _ in
+                Button("OK") { mediaFailure = nil }
+            } message: { reason in
+                Text(reason)
+            }
+    }
+
+    /// What `body` draws and follows, in three runs of modifiers rather
+    /// than one: a single chain of them all was more than Xcode 26's type
+    /// checker would take ("unable to type-check this expression in
+    /// reasonable time"). The same modifiers, in the same order.
+    private var followingColumn: some View {
+        observedColumn
+            // Open in Conversation from the Artifacts page: once this chat is
+            // the one on screen, the canvas opens on that row by id.
+            .onAppear(perform: followCanvasRequest)
+            .onChange(of: DesktopPageRouter.shared.pendingCanvas) { _, _ in followCanvasRequest() }
+            .onChange(of: configuration.artifactModel?.artifacts.count) { _, _ in followCanvasRequest() }
+            // The conversation's research runs, followed while it is open —
+            // and again whenever a hand-off adds one.
+            .task(id: session.profile.id.rawValue) {
+                dismissedRecaps = Set(UserDefaults.standard.stringArray(forKey: dismissedRecapsKey) ?? [])
+            }
+            .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? ""):\(openResearchRunKey)") {
+                guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
+                await model.followResearch(conversationID: conversationID)
+            }
+            .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
+                await model.refreshChatApprovals(
+                    conversationID: model.selectedConversationID,
+                    includeRecent: true
+                )
+                // What sync does not carry — each reply's sources and run —
+                // and a generation still running that this Mac is not
+                // streaming (reopened mid-answer).
+                guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
+                await model.hydrateThread(conversationID: conversationID)
+                await model.resumeActiveGeneration(conversationID: conversationID)
+            }
+            // The network is back: pick up a generation that kept running.
+            .onChange(of: isOnline) { _, online in
+                guard online, privateChat == nil, let conversationID = model.selectedConversationID else { return }
+                Task { await model.resumeActiveGeneration(conversationID: conversationID) }
+            }
+            // A reply's id changes when it lands (the placeholder's becomes
+            // the server's): the Activity panel follows it rather than closing.
+            .onChange(of: model.selectedMessages.map(\.id)) { _, ids in
+                guard let target = openActivity, !ids.contains(target.messageID) else { return }
+                if target.messageID.hasPrefix("local-"),
+                    let landed = model.selectedMessages.last(where: { $0.role == .assistant })
+                {
+                    openActivity = DesktopActivityTarget(messageID: landed.id, focusCallID: target.focusCallID)
+                } else {
+                    openActivity = nil
+                }
+            }
+            .onChange(of: findCommand?.id) { _, _ in
+                guard let command = findCommand else { return }
+                findCommand = nil
+                switch command.kind {
+                case .open: find.open()
+                case .next: find.isOpen ? find.next() : find.open()
+                case .previous: find.isOpen ? find.previous() : find.open()
+                }
+                find.update(messages: findableMessages)
+            }
+            .onChange(of: find.query) { _, _ in find.recount() }
+    }
+
+    private var observedColumn: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
         // ``JunoDetailPage`` spells out: a `ScrollView` propagates its content's
         // ideal height rather than absorbing it, so a long transcript reports an
@@ -1670,123 +1796,13 @@ struct DesktopConversationView: View {
                 openFilePanel(url)
             }
             .background(DesktopWindowVisibilityReader { windowVisible = $0 })
-            // Open in Conversation from the Artifacts page: once this chat is
-            // the one on screen, the canvas opens on that row by id.
-            .onAppear(perform: followCanvasRequest)
-            .onChange(of: DesktopPageRouter.shared.pendingCanvas) { _, _ in followCanvasRequest() }
-            .onChange(of: configuration.artifactModel?.artifacts.count) { _, _ in followCanvasRequest() }
-            // The conversation's research runs, followed while it is open —
-            // and again whenever a hand-off adds one.
-            .task(id: session.profile.id.rawValue) {
-                dismissedRecaps = Set(UserDefaults.standard.stringArray(forKey: dismissedRecapsKey) ?? [])
-            }
-            .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? ""):\(openResearchRunKey)") {
-                guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
-                await model.followResearch(conversationID: conversationID)
-            }
-            .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
-                await model.refreshChatApprovals(
-                    conversationID: model.selectedConversationID,
-                    includeRecent: true
-                )
-                // What sync does not carry — each reply's sources and run —
-                // and a generation still running that this Mac is not
-                // streaming (reopened mid-answer).
-                guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
-                await model.hydrateThread(conversationID: conversationID)
-                await model.resumeActiveGeneration(conversationID: conversationID)
-            }
-            // The network is back: pick up a generation that kept running.
-            .onChange(of: isOnline) { _, online in
-                guard online, privateChat == nil, let conversationID = model.selectedConversationID else { return }
-                Task { await model.resumeActiveGeneration(conversationID: conversationID) }
-            }
-            // A reply's id changes when it lands (the placeholder's becomes
-            // the server's): the Activity panel follows it rather than closing.
-            .onChange(of: model.selectedMessages.map(\.id)) { _, ids in
-                guard let target = openActivity, !ids.contains(target.messageID) else { return }
-                if target.messageID.hasPrefix("local-"),
-                    let landed = model.selectedMessages.last(where: { $0.role == .assistant })
-                {
-                    openActivity = DesktopActivityTarget(messageID: landed.id, focusCallID: target.focusCallID)
-                } else {
-                    openActivity = nil
-                }
-            }
-            .onChange(of: findCommand?.id) { _, _ in
-                guard let command = findCommand else { return }
-                findCommand = nil
-                switch command.kind {
-                case .open: find.open()
-                case .next: find.isOpen ? find.next() : find.open()
-                case .previous: find.isOpen ? find.previous() : find.open()
-                }
-                find.update(messages: findableMessages)
-            }
-            .onChange(of: find.query) { _, _ in find.recount() }
-            .onChange(of: model.selectedMessages) { _, _ in
-                if find.isOpen { find.update(messages: findableMessages) }
-            }
-            // The budget moves when a turn finishes, so the plan is read when
-            // the column appears and again as each reply ends.
-            .task(id: model.isGenerating) {
-                guard !model.isGenerating else { return }
-                await readPlan()
-            }
-            // The web's COEXISTENCE RULE, in the one shape this window has for
-            // it: the canvas and a live call are both large right-hand claims on
-            // the conversation column, and the call also lights the whole column
-            // with its own field. Starting one dismisses the other.
-            .onChange(of: voiceSession?.id) { _, started in
-                guard started != nil, openArtifact != nil || openActivity != nil || openResearch != nil else { return }
-                withAnimation(
-                    JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
-                ) {
-                    openArtifact = nil
-                    openActivity = nil
-                    openResearch = nil
-                }
-            }
-            .alert(
-                "Voice is unavailable",
-                isPresented: Binding(
-                    get: { voiceUnavailable != nil },
-                    set: { if !$0 { voiceUnavailable = nil } }
-                ),
-                presenting: voiceUnavailable
-            ) { _ in
-                Button("OK") { voiceUnavailable = nil }
-            } message: { reason in
-                Text(reason)
-            }
-            .quickLookPreview($quickLookURL)
-            .modifier(ChatWorkPresentations(
-                skillCapture: $skillCapture,
-                pendingUnvalidatedSave: $pendingUnvalidatedSave,
-                systemPermissions: $systemPermissions,
-                saveSkill: { draft in await saveSkill(draft) },
-                saveUnvalidated: { attachment in
-                    guard let workFiles else { return }
-                    ChatWorkFileSaving.save(attachment, from: workFiles) { mediaFailure = $0 }
-                }
-            ))
-            // The toolbar's Outputs and the ⌘K panel open an artifact's canvas
-            // or a file's Quick Look here, where both are owned.
-            .desktopOutputRequests(
-                conversationID: privateChat == nil ? model.selectedConversationID : nil,
-                openArtifact: { open(artifact: $0) },
-                quickLook: { attachment in withFile(attachment) { openFilePanel($0) } }
-            )
-            .sheet(item: $imageEditTarget) { target in
-                imageEditSheet(target)
-            }
-            // Opener and action on one line: the targets gate reads a dialog's
-            // buttons as system-drawn only when its brace opens on that line.
-            .alert("Couldn’t open the file", isPresented: mediaFailurePresented, presenting: mediaFailure) { _ in
-                Button("OK") { mediaFailure = nil }
-            } message: { reason in
-                Text(reason)
-            }
+    }
+
+    private var voiceUnavailablePresented: Binding<Bool> {
+        Binding(
+            get: { voiceUnavailable != nil },
+            set: { if !$0 { voiceUnavailable = nil } }
+        )
     }
 
     private var mediaFailurePresented: Binding<Bool> {
