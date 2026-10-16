@@ -20,7 +20,7 @@ export const LEFTOVER_COMMAND = /(^|[\s/])(node|next|next-server|next-router-wor
  * @typedef {{ pid: number, ppid: number, pgid: number, command: string }} Proc
  */
 
-/** @param {string} text `ps -axo pid=,ppid=,pgid=,command=` output */
+/** @param {string} text `ps -A -o pid=,ppid=,pgid=,command=` output (BSD and procps alike) */
 export function parsePs(text) {
   /** @type {Proc[]} */
   const procs = [];
@@ -33,7 +33,7 @@ export function parsePs(text) {
 }
 
 export function listProcesses() {
-  return parsePs(execFileSync("ps", ["-axo", "pid=,ppid=,pgid=,command="], { encoding: "utf8" }));
+  return parsePs(execFileSync("ps", ["-A", "-o", "pid=,ppid=,pgid=,command="], { encoding: "utf8" }));
 }
 
 /**

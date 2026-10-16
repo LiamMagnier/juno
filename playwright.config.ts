@@ -53,6 +53,10 @@ const phone = { width: 390, height: 844 };
 
 const config: PlaywrightTestConfig = {
   testDir: "./e2e",
+  // Playwright empties its output folder at the start of a run. Keeping it in
+  // a subfolder leaves the runner's gate reports (test-results/design-gates),
+  // screenshots (test-results/visual-matrix) and geometry alone.
+  outputDir: "test-results/playwright",
   timeout: 60_000,
   fullyParallel: false,
   forbidOnly: isCI,

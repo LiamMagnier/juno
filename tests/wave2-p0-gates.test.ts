@@ -176,6 +176,29 @@ test("native records are evaluated against the same budgets; probes without a ga
   }
 });
 
+test("`gates.ts parity` combines web and native geometry into one parity result", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "alevr-qa-parity-"));
+  try {
+    const web = path.join(dir, "web");
+    const native = path.join(dir, "native");
+    const out = path.join(dir, "results");
+    mkdirSync(web);
+    mkdirSync(native);
+    const radii = { startStart: 12, startEnd: 12, endEnd: 8, endStart: 12 };
+    writeFileSync(path.join(web, "web-chat.json"), JSON.stringify({ context: "web-chat", platform: "web", bubble: { radii }, composer: { radius: 22 }, disc: { radius: 12 } }));
+    writeFileSync(path.join(native, "macos-chat.json"), JSON.stringify({ context: "macos-chat", platform: "macos", bubble: { radii }, composer: { radius: 24 }, disc: { radius: 12 } }));
+    const run = spawnSync(TSX, [CLI, "parity", "--out", out, web, native, path.join(dir, "missing")], { cwd: ROOT, encoding: "utf8", timeout: 60_000 });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /web-chat, macos-chat: macos-chat: composer radius 24 \(expected 22\)/);
+    const { results } = readResults([out]);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].gate, "design.bubble-composer-parity");
+    assert.equal(results[0].pass, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the catalog carries the spec §9 numbers", () => {
   const check = (id: string) => (gateById(id) as GateDefinition).check;
   assert.deepEqual(check("chat.enter-bubble"), { op: "lte", value: 100, unit: "ms", stat: "p95", minSamples: 20 });

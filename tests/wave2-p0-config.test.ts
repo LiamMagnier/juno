@@ -28,6 +28,7 @@ function env(extra: Record<string, string>): NodeJS.ProcessEnv {
 interface Resolved {
   baseURL: string;
   workers: number;
+  outputDir: string;
   projects: string[];
   webServer: null | { command: string; reuseExistingServer: boolean; url: string; envKeys: string[]; env: Record<string, string> };
 }
@@ -44,6 +45,7 @@ const ws = config.webServer as { command: string; reuseExistingServer: boolean; 
 console.log(JSON.stringify({
   baseURL: config.use?.baseURL,
   workers: config.workers,
+  outputDir: config.outputDir,
   projects: (config.projects ?? []).map((p) => p.name),
   webServer: ws ? { command: ws.command, reuseExistingServer: ws.reuseExistingServer, url: ws.url, envKeys: Object.keys(ws.env ?? {}).sort(), env: ws.env } : null,
 }));
@@ -93,6 +95,8 @@ test("with the runner, the only server is a fresh production build on E2E_PORT w
   assert.equal(config.webServer.env.DATABASE_URL, GOOD_URL);
   assert.equal(config.webServer.env.ALEVR_QA_RUNNER, "1");
   assert.ok(config.webServer.envKeys.includes("AUTH_SECRET"), "test.env keys are passed");
+  // Playwright empties its outputDir on every run; gate reports must live outside it.
+  assert.equal(config.outputDir, "test-results/playwright");
 });
 
 test("existing projects stay, firefox only in CI, and the matrix projects are added", () => {

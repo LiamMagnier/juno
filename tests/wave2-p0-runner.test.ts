@@ -203,6 +203,32 @@ test("a safe run creates alevr_<package>_test, passes only the allowlist to Play
   }
 });
 
+test("each run starts with an empty report directory, and a foreign directory is refused", () => {
+  const fixture = makeRoot();
+  try {
+    const reports = path.join(fixture.dir, "reports");
+    const first = runRunner(fixture, {}, ["--no-seed", "--report-dir", reports]);
+    assert.equal(first.status, 0, first.stderr);
+    assert.ok(existsSync(path.join(reports, ".alevr-qa-report")));
+    writeFileSync(path.join(reports, "stale.json"), JSON.stringify({ gate: "shell.sidebar-cls", pass: false }));
+    const second = runRunner(fixture, {}, ["--no-seed", "--report-dir", reports]);
+    assert.equal(second.status, 0, second.stderr);
+    assert.ok(!existsSync(path.join(reports, "stale.json")), "a stale result from an earlier run was cleared");
+
+    const foreign = path.join(fixture.dir, "not-reports");
+    mkdirSync(foreign);
+    writeFileSync(path.join(foreign, "keep.txt"), "mine");
+    writeFileSync(fixture.log, "");
+    const refused = runRunner(fixture, {}, ["--no-seed", "--report-dir", foreign]);
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /is not empty and is not a QA report directory/);
+    assert.ok(existsSync(path.join(foreign, "keep.txt")), "nothing outside a QA report directory is deleted");
+    assert.equal(calls(fixture), "", "refused before any database step");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("Playwright's exit code is the runner's, and the database is still dropped", () => {
   const fixture = makeRoot("exit 7");
   try {

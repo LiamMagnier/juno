@@ -77,6 +77,20 @@ if [ "$NODE_MAJOR" -lt 24 ]; then log "Refusing: Node 24 or newer is required (f
 # 1. Safety first: nothing below runs unless this passes.
 node scripts/qa/assert-safe-env.mjs --cwd "$INVOKED_FROM"
 
+# Each run's gate results start from empty, so a stale file from an earlier
+# run can never pass or fail this one. Only a directory this runner made (it
+# carries the marker file) is ever cleared; anything else is refused.
+if [ -d "$REPORT_DIR" ] && [ -n "$(ls -A "$REPORT_DIR" 2>/dev/null)" ]; then
+  if [ -f "$REPORT_DIR/.alevr-qa-report" ]; then
+    rm -rf "$REPORT_DIR"
+  else
+    log "Refusing: $REPORT_DIR is not empty and is not a QA report directory. Pick another --report-dir."
+    exit 2
+  fi
+fi
+mkdir -p "$REPORT_DIR"
+: > "$REPORT_DIR/.alevr-qa-report"
+
 RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/alevr-qa.XXXXXX")"
 DB_STARTED=0
 export ALEVR_QA_RUNNER_PGID="$(ps -o pgid= -p $$ | tr -d ' ')"
@@ -125,7 +139,6 @@ if [ "$SEED" = 1 ]; then
 fi
 
 # 3. Playwright, in a process group of its own so teardown can stop all of it.
-mkdir -p "$REPORT_DIR"
 log "Running Playwright against a production build on 127.0.0.1:$PORT (database ${DATABASE_URL##*/})."
 set -m
 env -i "${CHILD_ENV[@]}" "$ROOT/node_modules/.bin/playwright" test "${PW_ARGS[@]+"${PW_ARGS[@]}"}" &

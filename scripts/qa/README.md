@@ -31,8 +31,14 @@ bash scripts/qa/run-prod-e2e.sh --package p5 -- e2e/wave2/p5-chat --project=chro
 | `--reuse-build` | Skips `next build` when `.next` was built from exactly this `HEAD` and working tree. |
 | `--update-baselines` | Writes visual and heap baselines instead of comparing against them. |
 | `--chromium-channel chrome` | Runs the Chromium projects on an installed Chrome instead of Playwright's download (local only). |
-| `--report-dir <dir>` | Where gate results go (default `test-results/design-gates`). |
+| `--report-dir <dir>` | Where gate results go (default `test-results/design-gates`). It is emptied at the start of each run; a non-empty directory the runner did not create is refused. |
 | `--no-seed` | Skips the E2E account, research and QA fixture seeds. |
+
+Outputs: gate results in `test-results/design-gates` (plus `summary.json`),
+screenshots in `test-results/visual-matrix`, web geometry in
+`test-results/web-geometry`, and Playwright's own traces and attachments in
+`test-results/playwright` (Playwright empties that folder on every run, which
+is why it is a subfolder).
 
 What the runner guarantees, in order:
 
