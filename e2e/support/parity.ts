@@ -20,9 +20,11 @@ import type { Page } from "@playwright/test";
 import { BUDGETS } from "./budgets";
 
 export const PARITY_SELECTORS = {
-  bubble: '[data-alevr-bubble], [class*="var(--user-bubble))"]',
-  composer: "[data-alevr-composer], .composer-surface",
-  disc: '[data-alevr-disc], .composer-surface button[type="submit"]',
+  // Chat's bubble carries the token in its class; Code v2's is .cv2-you.
+  bubble: '[data-alevr-bubble], [class*="var(--user-bubble))"], .cv2-you',
+  composer: "[data-alevr-composer], .composer-surface, .cv2-composer",
+  // ComposerPrimaryAction marks its face (send, stop, voice) with data-face.
+  disc: "[data-alevr-disc], .composer-surface button[data-face], .cv2-composer .cv2-send",
 } as const;
 
 export interface LogicalRadii {

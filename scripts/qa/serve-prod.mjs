@@ -14,46 +14,24 @@
 // Playwright dies first.
 //
 // ALEVR_QA_REUSE_BUILD=1 (run-prod-e2e.sh --reuse-build) skips the build only
-// when .next/alevr-qa-build.json matches the current HEAD and working tree
-// exactly; anything else rebuilds.
+// when .next/alevr-qa-build.json matches the current build inputs exactly:
+// every committed, changed and untracked file outside the paths that cannot
+// reach `next build` (tests, e2e, native, docs, workflows, this harness).
+// Anything else rebuilds.
 
-import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildFingerprint, canReuseBuild, writeStamp } from "./lib/build-stamp.mjs";
 import { checkSafeEnv, filterToAllowlist, readTestEnv } from "./lib/safe-env.mjs";
 import { freePort, pgidOf } from "./lib/proc.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN = path.join(ROOT, "node_modules", ".bin");
-const STAMP = path.join(ROOT, ".next", "alevr-qa-build.json");
 
 function log(message) {
   console.error(`[qa:serve] ${message}`);
-}
-
-function treeFingerprint() {
-  try {
-    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
-    const status = execFileSync("git", ["status", "--porcelain=v1", "-z", "-uall"], { cwd: ROOT });
-    const diff = execFileSync("git", ["diff", "HEAD", "--binary"], { cwd: ROOT, maxBuffer: 256 * 1024 * 1024 });
-    const hash = createHash("sha256").update(status).update(diff).digest("hex");
-    return { head, tree: hash, node: process.version };
-  } catch {
-    return null;
-  }
-}
-
-function canReuseBuild(fingerprint) {
-  if (process.env.ALEVR_QA_REUSE_BUILD !== "1" || !fingerprint) return false;
-  if (!existsSync(path.join(ROOT, ".next", "BUILD_ID")) || !existsSync(STAMP)) return false;
-  try {
-    const stamp = JSON.parse(readFileSync(STAMP, "utf8"));
-    return stamp.head === fingerprint.head && stamp.tree === fingerprint.tree && stamp.node === fingerprint.node;
-  } catch {
-    return false;
-  }
 }
 
 function run(command, args, env, label) {
@@ -99,9 +77,9 @@ async function main() {
   process.on("SIGTERM", () => stop("SIGTERM"));
   process.on("SIGINT", () => stop("SIGINT"));
 
-  const fingerprint = treeFingerprint();
-  if (canReuseBuild(fingerprint)) {
-    log(`reusing the production build for ${fingerprint?.head.slice(0, 9)} (tree unchanged).`);
+  const fingerprint = buildFingerprint(ROOT);
+  if (process.env.ALEVR_QA_REUSE_BUILD === "1" && canReuseBuild(ROOT, fingerprint)) {
+    log(`reusing the production build (build inputs unchanged; HEAD ${fingerprint?.head.slice(0, 9)}).`);
   } else {
     // The same steps as `npm run build` minus `prisma generate`: the client in
     // node_modules is the caller's (worktrees share it), so a schema change
@@ -109,7 +87,7 @@ async function main() {
     run(process.execPath, [path.join(ROOT, "scripts", "generate-i18n-catalog.mjs")], env, "i18n catalog");
     const buildEnv = { ...env, NODE_OPTIONS: "--max-old-space-size=8192" };
     run(path.join(BIN, "next"), ["build"], buildEnv, "next build");
-    if (fingerprint) writeFileSync(STAMP, `${JSON.stringify(fingerprint, null, 2)}\n`);
+    if (fingerprint) writeStamp(ROOT, fingerprint);
   }
   if (stopping) return;
 

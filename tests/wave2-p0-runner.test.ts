@@ -15,6 +15,7 @@ import {
   parseTestEnv,
 } from "../scripts/qa/lib/safe-env.mjs";
 import { findLeftovers, parsePs } from "../scripts/qa/lib/proc.mjs";
+import { buildFingerprint, canReuseBuild, writeStamp } from "../scripts/qa/lib/build-stamp.mjs";
 
 /*
  * P0 runner safety (spec appendix P0, "Runner safety", with fake values only).
@@ -373,4 +374,48 @@ test("the ps check counts descendants and recorded groups, and never itself", ()
   const leftovers = findLeftovers({ procs, rootPid: 100, pgids: [101], excludePids: [104] }).map((p) => p.pid);
   assert.deepEqual(leftovers, [101, 102, 103]);
   assert.deepEqual(findLeftovers({ procs, rootPid: 100, pgids: [], excludePids: [104] }).map((p) => p.pid), [101]);
+});
+
+test("--reuse-build reuses only a build whose inputs are unchanged; harness edits do not count", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "alevr-qa-stamp-"));
+  const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "QA", GIT_AUTHOR_EMAIL: "qa@example.test", GIT_COMMITTER_NAME: "QA", GIT_COMMITTER_EMAIL: "qa@example.test" };
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, env: gitEnv, encoding: "utf8" });
+  try {
+    mkdirSync(path.join(dir, "src"));
+    mkdirSync(path.join(dir, "e2e"));
+    writeFileSync(path.join(dir, "src", "page.tsx"), "export default 1;\n");
+    writeFileSync(path.join(dir, "e2e", "a.spec.ts"), "// spec\n");
+    git("init", "-q", "-b", "main");
+    git("add", ".");
+    git("commit", "-q", "-m", "init");
+    const first = buildFingerprint(dir);
+    assert.ok(first);
+    mkdirSync(path.join(dir, ".next"));
+    writeFileSync(path.join(dir, ".next", "BUILD_ID"), "x");
+    writeStamp(dir, first);
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), true);
+
+    writeFileSync(path.join(dir, "e2e", "a.spec.ts"), "// edited spec\n");
+    writeFileSync(path.join(dir, "e2e", "new.spec.ts"), "// new spec\n");
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), true, "spec edits cannot change the build");
+
+    writeFileSync(path.join(dir, "src", "page.tsx"), "export default 2;\n");
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), false, "an uncommitted source change rebuilds");
+    git("checkout", "--", "src/page.tsx");
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), true);
+
+    writeFileSync(path.join(dir, "src", "extra.ts"), "export const x = 1;\n");
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), false, "an untracked source file rebuilds");
+    rmSync(path.join(dir, "src", "extra.ts"));
+
+    git("commit", "-q", "--allow-empty", "-m", "empty");
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), true, "a new HEAD with the same inputs reuses");
+    rmSync(path.join(dir, ".next", "BUILD_ID"));
+    assert.equal(canReuseBuild(dir, buildFingerprint(dir)), false, "no build, nothing to reuse");
+    const notARepo = mkdtempSync(path.join(tmpdir(), "alevr-qa-norepo-"));
+    assert.equal(buildFingerprint(notARepo), null);
+    rmSync(notARepo, { recursive: true, force: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
