@@ -6,6 +6,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { createGalaxyRegistry } from "@/components/brand/galaxy-registry";
+import { DURATION } from "@/lib/design/tokens.generated";
 import { galaxyDots, galaxyStillKey, galaxyStillMask, galaxyStillRule, galaxyStillSvg } from "@/components/brand/galaxy-frame";
 import { GALAXY_MOTION, GalaxyMark, galaxyRestDim, galaxyStatusFor } from "@/components/brand/galaxy-mark";
 import { StatusMark } from "@/components/brand/status-mark";
@@ -89,6 +90,8 @@ test("galaxy phases map onto the status vocabulary, and the motion numbers are t
   assert.equal(galaxyStatusFor("error"), "blocked");
   assert.equal(galaxyStatusFor("idle"), "idle");
   assert.equal(GALAXY_MOTION.enterMs, 360, "entrance moved from 420 to 360 (D2)");
+  assert.equal(GALAXY_MOTION.enterMs, DURATION.slow, "on the ladder");
+  assert.equal(GALAXY_MOTION.dimMs, DURATION.base);
   assert.equal(GALAXY_MOTION.periodMs, 2400);
   assert.equal(GALAXY_MOTION.calmPeriodMs, 4800);
   assert.equal(GALAXY_MOTION.calmAfterMs, 20_000);

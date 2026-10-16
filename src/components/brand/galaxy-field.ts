@@ -40,8 +40,9 @@ export const GALAXY_WIND_PERIOD = 11;
 export const GALAXY_TRAIL_STEP = 0.075;
 export const GALAXY_TRAIL_FADES = [0.42, 0.22, 0.1] as const;
 export const GALAXY_CORE_BREATH = 2.8;
-export const GALAXY_ENTER_MS = 420;
-export const GALAXY_EXIT_MS = 240;
+/** The entrance spiral (wave 2, D2: 420 → 360, the slow rung) and the step back to 60% (220, the base rung). */
+export const GALAXY_ENTER_MS = 360;
+export const GALAXY_EXIT_MS = 220;
 /** The frame drawn when motion is reduced (spec: t = 1.2 s). */
 export const GALAXY_STATIC_TIME = 1.2;
 

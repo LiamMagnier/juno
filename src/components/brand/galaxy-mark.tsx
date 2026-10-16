@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { watchCanvas } from "@/lib/canvas/canvas-lifecycle";
-import { DURATION, SCRIPT_COLOR, TIMING_TOKENS } from "@/lib/design/tokens.generated";
+import { SCRIPT_COLOR, TIMING_TOKENS } from "@/lib/design/tokens.generated";
 import { TIMING } from "@/lib/interaction";
 import { reducedMotionAt, subscribeReducedMotion } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
-import { GALAXY_STATIC_TIME, easeOutCubic } from "./galaxy-field";
+import { GALAXY_ENTER_MS, GALAXY_EXIT_MS, GALAXY_STATIC_TIME, easeOutCubic } from "./galaxy-field";
 import { breathAt, galaxyCoreRadius, galaxyDots, galaxyStillKey, galaxyStillRule } from "./galaxy-frame";
 import { galaxyRegistry, type GalaxyPriority, type GalaxyRegistry } from "./galaxy-registry";
 import type { ThinkingPhase } from "./thinking-schedule";
@@ -49,9 +49,9 @@ const GALAXY_SETTLED_DIM = 0.6;
 /** The motion constants of the mark (spec §3.4, P2 (12)). */
 export const GALAXY_MOTION = {
   /** The entrance: a spiral in from 0.6 of the radius. */
-  enterMs: DURATION.slow,
+  enterMs: GALAXY_ENTER_MS,
   /** The step back to 60% after a stop. */
-  dimMs: DURATION.base,
+  dimMs: GALAXY_EXIT_MS,
   /** The exponential stop's time constant. */
   stopTauMs: 350,
   /** The running period, and the calmer one after `calmAfterMs` of continuous work. */
