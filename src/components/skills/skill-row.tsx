@@ -24,7 +24,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * shapes fighting over one edge.
  */
 export const skillLibraryRowClass =
-  "group/row relative flex min-h-16 items-center gap-3 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none ";
+  // `ed-row`: a row of an `.ed-list` (editorial.css keys its hover hairline on it).
+  "ed-row group/row relative flex min-h-16 items-center gap-3 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none ";
 
 /**
  * A skill inside a source starts where the source's NAME starts: the row's

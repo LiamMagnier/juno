@@ -200,7 +200,15 @@
   letter-spacing: -0.01em;
 }
 .ed-list > * { position: relative; }
-.ed-list > * + *::before {
+/* No `* + *` or `:hover + *`: a sibling combinator whose left side has no
+   class, id or attribute makes Chrome restyle every sibling after an inserted
+   element, subtrees and all, on every insertion anywhere in the page, every
+   transcript row included (scripts/postcss/sibling-invalidation.cjs).
+   `:where(:not(:first-child))` is the same rows at the same specificity; the
+   hover rule is keyed on `ed-row`, which every row of these lists carries. A
+   row without it keeps its hairline under the hovered row above it, and
+   nothing else changes. */
+.ed-list > :where(:not(:first-child))::before {
   content: "";
   position: absolute;
   inset: 0 12px auto;
@@ -208,9 +216,9 @@
   transition: opacity 160ms var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1));
   pointer-events: none;
 }
-.dark .ed-list > * + *::before { border-top-color: hsl(var(--foreground) / 0.08); }
+.dark .ed-list > :where(:not(:first-child))::before { border-top-color: hsl(var(--foreground) / 0.08); }
 .ed-list > :hover::before,
-.ed-list > :hover + *::before { opacity: 0; }
+.ed-list > :where(.ed-row):hover + *::before { opacity: 0; }
 
 /* A Customize section's title (customize-section.tsx): the tile-name rung. */
 .customize-title {

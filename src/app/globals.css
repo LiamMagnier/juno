@@ -2893,8 +2893,15 @@
    * and for the same reason. The reset still does its job (killing the UA's
    * 1em block margins) and this owns the rhythm, which was always the split
    * the two rules intended.
+   *
+   * Written `:where(:not(:first-child))`, not `* + *`: the same elements at the
+   * same (0,2,0), without a sibling combinator. A `+` or `~` whose left side has
+   * no class, id or attribute makes Chrome restyle every sibling after an
+   * inserted element, subtrees and all, on every insertion anywhere in the
+   * page: each row the transcript mounted restyled the whole page
+   * (scripts/postcss/sibling-invalidation.cjs).
    */
-  .prose-juno.prose-juno > * + * { margin-top: 0.85em; }
+  .prose-juno.prose-juno > :where(:not(:first-child)) { margin-top: 0.85em; }
   /* h3–h6, never h1/h2: the model's headings are demoted two levels before
      they reach the DOM (src/lib/markdown-headings.ts), because the turn
      markers ("Juno replied") are the page's h2s and the conversation title is
@@ -2912,7 +2919,13 @@
     text-wrap: balance;
   }
   .prose-juno.prose-juno > :is(h3, h4, h5, h6):not(:first-child) { margin-top: 1.6em; }
-  .prose-juno.prose-juno > :is(h3, h4, h5, h6) + * { margin-top: 0.45em; }
+  /* Keyed on the attribute markdown.tsx stamps on every heading it writes, one
+     selector per tag: a tag alone, or any :is() on the left of `+`, is the
+     unkeyed kind (see the rhythm rule above). Same elements, same (0,2,1). */
+  .prose-juno.prose-juno > h3:where([data-md-heading]) + *,
+  .prose-juno.prose-juno > h4:where([data-md-heading]) + *,
+  .prose-juno.prose-juno > h5:where([data-md-heading]) + *,
+  .prose-juno.prose-juno > h6:where([data-md-heading]) + * { margin-top: 0.45em; }
   /* Each heading a clear step above the 16px body (critique 1: the old h5 at
      17px read as bold body). `##` is the heading models reach for most, so it
      lands on 19px, the gallery thread's section heading; `###` keeps a whole

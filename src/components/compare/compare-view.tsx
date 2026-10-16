@@ -385,7 +385,7 @@ export function CompareView() {
             <p className="ed-annot mb-1.5">Try one</p>
             <ul className="ed-list -mx-3 max-w-2xl">
               {SAMPLE_PROMPTS.map((sample, i) => (
-                <li key={sample}>
+                <li key={sample} className="ed-row">
                   <button
                     type="button"
                     onClick={() => {

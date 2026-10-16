@@ -189,7 +189,7 @@ function Sections({ sections }: { sections: SummarySection[] }) {
   // Two columns once the panel is wide enough to set two readable measures:
   // the summary reads like a profile, not one 900px line.
   return (
-    <div className="gap-10 @[40rem]/summary:columns-2 [&>section+section]:mt-5">
+    <div className="gap-10 @[40rem]/summary:columns-2 [&>section:not(:first-child)]:mt-5">
       {sections.map((section) => (
         <section key={section.title} className="break-inside-avoid">
           <h3 className="text-ui font-medium text-foreground">{section.title}</h3>

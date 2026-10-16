@@ -280,7 +280,7 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 
 /* The plan gate and clarify gate sit inside the section, flat. */
 .rf-gate [role="group"] > div:first-child { padding-inline: 0; padding-top: 20px; }
-.rf-gate .rf-scope > div:first-child > * + * { margin-top: 28px; }
+.rf-gate .rf-scope > div:first-child > :where(:not(:first-child)) { margin-top: 28px; }
 .rf-gate [role="group"] > footer { padding-inline: 0; background: transparent; }
 
 /* The report document's headings (report-document.tsx). */
@@ -319,14 +319,23 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 .research-document .report-group + .report-group { margin-top: 1.25rem; }
 /* A heading sits close to what it introduces, and far from what came before. */
 .research-document .report-group:has(> .prose-juno > :is(h3, h4, h5):last-child) + .report-group { margin-top: 0.75rem; }
-.research-document .prose-juno.prose-juno > :is(h3, h4, h5) + * { margin-top: 0.75rem; }
+/* One selector per tag, keyed on markdown.tsx's heading attribute (see the
+   prose-juno heading rhythm in globals.css). Same elements, same (0,3,1). */
+.research-document .prose-juno.prose-juno > h3:where([data-md-heading]) + *,
+.research-document .prose-juno.prose-juno > h4:where([data-md-heading]) + *,
+.research-document .prose-juno.prose-juno > h5:where([data-md-heading]) + * { margin-top: 0.75rem; }
 .research-document .prose-juno.prose-juno > :is(h4, h5):not(:first-child) { margin-top: 2rem; }
 .research-document .report-section > .report-group:not(:first-child) > .prose-juno > :is(h4, h5):first-child { margin-top: 1rem; }
 
 /* Lists breathe: one item is one claim with its sources. */
 .research-document .prose-juno :is(ul, ol) { padding-left: 1.35em; }
 .research-document .prose-juno li { margin-block: 0.6em; padding-left: 0.2em; }
-.research-document .prose-juno li > p + p { margin-top: 0.5em; }
+/* On the first paragraph of each pair, not the second: the left side of
+   `p + p` is only a tag, which Chrome cannot key, so it restyled the page on
+   every insertion anywhere (globals.css, the prose-juno rhythm rule). The
+   margins collapse, so the gap is the same 0.5em of the same font, at the same
+   (0,2,3). */
+.research-document .prose-juno li > p:has(+ p) { margin-bottom: 0.5em; }
 
 /* Code, display maths and tables scroll inside their own box, never over a rail. */
 .research-document .prose-juno pre,
