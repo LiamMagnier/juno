@@ -4264,6 +4264,52 @@
 }
 
 /*
+ * ——— View transitions (lib/view-transition.ts) ———
+ *
+ * Two moves use the browser's same-document view transition, and only while
+ * one is running (html[data-vt]):
+ *
+ *   thread  a list row opening its chat. The page (PageTransition's
+ *           `.app-page`) leaves at about 0.65x the entrance on the accelerate
+ *           curve and the new one fades in with a 6px rise; the rest of the
+ *           shell (the sidebar's selection moving) only crossfades.
+ *   canvas  an artifact going docked ⇄ fullscreen. The panel's box morphs
+ *           between the two (it is named `canvas-panel` by script, and not at
+ *           all under reduced motion), its snapshots drawn at their own size
+ *           and clipped by the moving box so nothing stretches.
+ *
+ * Every offset is multiplied by --motion-shift, so under reduced motion each
+ * one is a plain crossfade: the audit's fallback, never a cut.
+ */
+html[data-vt]::view-transition-old(root),
+html[data-vt]::view-transition-new(root) {
+  animation-duration: var(--dur-fast);
+}
+html[data-vt="thread"] .app-page { view-transition-name: app-page; }
+html[data-vt="thread"]::view-transition-group(app-page) { animation-duration: var(--dur-base); }
+html[data-vt="thread"]::view-transition-old(app-page) {
+  animation: vt-page-out calc(var(--dur-base) * 0.65) var(--ease-in) both;
+}
+html[data-vt="thread"]::view-transition-new(app-page) {
+  animation: vt-page-in var(--dur-base) var(--ease-out-soft) both;
+}
+@keyframes vt-page-out { to { opacity: 0; } }
+@keyframes vt-page-in { from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); } }
+html[data-vt="canvas"]::view-transition-group(canvas-panel) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-out-strong);
+  overflow: clip;
+}
+html[data-vt="canvas"]::view-transition-old(canvas-panel),
+html[data-vt="canvas"]::view-transition-new(canvas-panel) {
+  width: 100%;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+  animation-duration: var(--dur-base);
+}
+
+/*
  * ——— Interface preferences (Settings › Appearance, Capabilities) ———
  *
  * Per-device choices mirrored onto <html> by lib/ui-prefs.ts (and before

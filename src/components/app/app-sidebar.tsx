@@ -62,6 +62,7 @@ import { workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
+import { openWithViewTransition } from "@/lib/view-transition";
 import { cachedJson } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
@@ -2312,7 +2313,11 @@ function ConversationRow({
     >
       <Link
         href={`/chat/${conversation.id}`}
-        onClick={onNavigate}
+        onClick={(event) => {
+          onNavigate();
+          // The thread arrives through a view transition (lib/view-transition.ts).
+          openWithViewTransition(event, router, `/chat/${conversation.id}`);
+        }}
         /* Prefetched on aim, not on scroll — see lib/intent-prefetch.ts. */
         prefetch={false}
         {...intentPrefetch(router, `/chat/${conversation.id}`)}
@@ -2735,7 +2740,10 @@ function ProjectRow({
               <Link
                 key={c.id}
                 href={`/chat/${c.id}`}
-                onClick={onNavigate}
+                onClick={(event) => {
+                  onNavigate();
+                  openWithViewTransition(event, router, `/chat/${c.id}`);
+                }}
                 prefetch={false}
                 {...intentPrefetch(router, `/chat/${c.id}`)}
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}

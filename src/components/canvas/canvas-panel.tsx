@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -53,6 +53,8 @@ import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
 import { staggerDelay, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { reducedMotionAt } from "@/lib/motion-preference";
+import { supportsViewTransitions, withViewTransition } from "@/lib/view-transition";
 import type { ClientArtifact, ClientArtifactVersion } from "@/types/chat";
 
 const EXTENSIONS: Record<string, string> = {
@@ -267,6 +269,22 @@ export function CanvasPanel({
   const [exportingFormat, setExportingFormat] = React.useState<OfficeFormat | null>(null);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
+  // Docked ⇄ fullscreen through a view transition: the panel's box morphs
+  // between the two and the chat beside it crossfades, both ways. It is one
+  // node in both modes, so every scroll position inside it stays where it
+  // was. Under reduced motion the box does not travel and only the crossfade
+  // plays; without the API it toggles plainly, with the fade-in on the root.
+  const toggleFullscreen = React.useCallback(() => {
+    const el = rootRef.current;
+    if (!el || !supportsViewTransitions()) {
+      onToggleFullscreen();
+      return;
+    }
+    if (!reducedMotionAt(el)) el.style.viewTransitionName = "canvas-panel";
+    void withViewTransition("canvas", () => flushSync(onToggleFullscreen)).finally(() => {
+      el.style.viewTransitionName = "";
+    });
+  }, [onToggleFullscreen]);
   // Viewport breakpoints can't see the panel: a 500px canvas on a desktop
   // screen is still "sm:". Contextual-action labels key off the PANEL width —
   // and so does the preview-width control, which has nothing to show when the
@@ -746,12 +764,12 @@ export function CanvasPanel({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
         e.preventDefault();
-        onToggleFullscreen();
+        toggleFullscreen();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [fullscreen, onToggleFullscreen]);
+  }, [fullscreen, toggleFullscreen]);
 
   // One quiet status word in the header — real state only.
   // Plain words, no dot; nothing once it is simply running fine (the green
@@ -787,7 +805,11 @@ export function CanvasPanel({
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
       aria-label={fullscreen ? artifact.title : undefined}
-      className={cn("flex h-full flex-col bg-background", fullscreen && "fixed inset-0 z-modal motion-safe:animate-fade-in")}
+      className={cn(
+        "flex h-full flex-col bg-background",
+        fullscreen && "fixed inset-0 z-modal",
+        fullscreen && !supportsViewTransitions() && "motion-safe:animate-fade-in",
+      )}
     >
       {/* ——— Header: identity + one primary action + overflow + window controls ——— */}
       {/* bg-card, not bg-card/50 + backdrop-blur-md. The panel root below is an
@@ -914,7 +936,7 @@ export function CanvasPanel({
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={onToggleFullscreen}
+              onClick={toggleFullscreen}
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
               className="hidden text-muted-foreground hover:text-foreground @[50rem]/split:inline-flex"
             >

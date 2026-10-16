@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { reducedMotionAt } from "@/lib/run/loop-phase";
+import { notifyRouteCommitted, viewTransitionActive } from "@/lib/view-transition";
 
 /**
  * Cross-route entrance for the app shell's content area: a 160ms crossfade
@@ -51,20 +51,35 @@ function routeGroup(pathname: string): string {
  *    build: Orbit → agent took ~400 ms with the server answering in ~20 ms
  *    (docs/rework/program/PERFORMANCE.md). Now the wrapper stays mounted and
  *    the same entrance is played with the Web Animations API, which leaves no
- *    `transform` behind when it finishes (constraint 1 still holds) and never
- *    runs under reduced motion.
+ *    `transform` behind when it finishes (constraint 1 still holds).
+ *
+ * 4. REDUCED MOTION IS A CROSSFADE, NOT A CUT. The rise is multiplied by
+ *    --motion-shift, which the reduced tier zeroes, so the same call plays an
+ *    opacity-only fade there (opacity is feedback, Tier A). It used to skip
+ *    the entrance outright under the preference.
+ *
+ * 5. A VIEW TRANSITION OWNS ITS OWN NAVIGATION. A list row that opens its
+ *    detail through lib/view-transition.ts (a recent chat, a project's chat)
+ *    gets the browser's old-to-new crossfade, which has the exit this wrapper
+ *    cannot give; the entrance here then stands down so the page is not
+ *    faded twice.
  */
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const group = routeGroup(pathname ?? "/");
   const ref = React.useRef<HTMLDivElement>(null);
   const previous = React.useRef(group);
+  // A view transition waiting on this route (a list row opening its thread)
+  // takes its "after" snapshot once the new path has committed.
+  React.useLayoutEffect(() => {
+    if (pathname) notifyRouteCommitted(pathname);
+  }, [pathname]);
   React.useLayoutEffect(() => {
     if (previous.current === group) return;
     previous.current = group;
     const el = ref.current;
     if (!el || typeof el.animate !== "function") return;
-    if (reducedMotionAt(el)) return;
+    if (viewTransitionActive()) return;
     const style = getComputedStyle(document.documentElement);
     const duration = parseFloat(style.getPropertyValue("--dur-exit")) || 160;
     const easing = style.getPropertyValue("--ease-out-soft").trim() || "ease-out";
@@ -76,5 +91,7 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
     );
     return () => animation.cancel();
   }, [group]);
-  return <div ref={ref} className="h-full">{children}</div>;
+  // `app-page`: the box a thread view transition names (globals.css), so the
+  // page crossfades and rises while the sidebar beside it only crossfades.
+  return <div ref={ref} className="app-page h-full">{children}</div>;
 }
