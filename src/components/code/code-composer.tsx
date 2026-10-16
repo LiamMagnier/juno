@@ -62,6 +62,7 @@ import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
 import { LandingSkillsChip, seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
+import { useCodePrefs } from "@/components/code/v2/use-code-prefs";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -460,11 +461,19 @@ export function CodeComposer({
     target === "device" ? (selectedWorkspace?.key ?? selectedWorkspace?.path ?? null) : (selectedRepo?.fullName ?? null),
   );
   const [mode, setMode] = React.useState<ComposerMode>(() => landingMode(target, null));
+  // The account's default (Settings › Code) under the project's last; a pick made here wins until the target changes.
+  const { runtimeMode: accountRuntime, interactionMode: accountInteraction } = useCodePrefs().prefs;
+  const modeChosen = React.useRef(false);
   React.useEffect(() => {
-    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null));
+    modeChosen.current = false;
   }, [target, modeProjectKey]);
+  React.useEffect(() => {
+    if (modeChosen.current) return;
+    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null, accountRuntime ? { runtimeMode: accountRuntime, interactionMode: accountInteraction } : null));
+  }, [target, modeProjectKey, accountRuntime, accountInteraction]);
   const chooseMode = React.useCallback(
     (next: ComposerMode) => {
+      modeChosen.current = true;
       setMode(next);
       if (modeProjectKey) writeStoredJson(modeProjectKey, applyComposerMode(next, "auto-edit"));
     },

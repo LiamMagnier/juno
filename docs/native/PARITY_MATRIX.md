@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-347 routes: 226 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+349 routes: 226 native, 55 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 14 | 6 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 16 | 6 | 0 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -547,6 +547,8 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/workspaces` | GET, PUT | Planned |  | The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet. |
 | `/api/v1/code/devices/[deviceId]` | DELETE | Native | JunoCodeKit |  |
 | `/api/code/routing/[conversationId]` | GET, PUT | Web only |  | Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run. |
+| `/api/code/prefs` | GET, PATCH | Planned |  | The account's Code defaults (access, work log, team and budget) that web Settings edits without a session open. The Mac keeps its own defaults until it reads these. |
+| `/api/code/feedback` | GET, PUT | Planned |  | Good / Bad response on answers in a Mac-hosted Code v2 session, keyed by turn (those answers have no Message row). The Mac's v2 thread has no answer feedback yet. |
 | `/api/code/v2/link/[deviceId]` | POST | Native | JunoCodeRemote, JunoMobile | The controller side of the Code v2 device link: the web and the iPhone's remote (JunoCodeRemote) drive the env server on a paired Mac through it. Needs a live remote-control pair (docs/code-v2/REMOTE-CONTROL.md). |
 | `/api/code/pairing` | POST | Native | JunoCodeKit | A Mac's pairing offer for its "Control this Mac remotely" sheet: a QR token (phone) or a URL plus code (browser). |
 | `/api/code/pairing/offers/[offerId]` | GET | Native | JunoCodeKit | The Mac's sheet polls its offer: pending, approved, denied or expired. |

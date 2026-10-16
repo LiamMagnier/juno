@@ -61,7 +61,7 @@ export function SettingsSidebar({ pane, onPane, onBack }: { pane: SettingsPane; 
   );
 }
 
-function Group({ title, note, children }: { title?: string; note?: string; children: React.ReactNode }) {
+export function Group({ title, note, children }: { title?: string; note?: string; children: React.ReactNode }) {
   return (
     <section style={{ marginTop: 24 }}>
       {title && <h2 className="cv2-msect" style={{ padding: "0 2px 8px", height: "auto", margin: 0, fontWeight: 400 }}>{title}</h2>}
@@ -71,7 +71,7 @@ function Group({ title, note, children }: { title?: string; note?: string; child
   );
 }
 
-function Row({ title, sub, control, onClick, checked }: { title: React.ReactNode; sub?: React.ReactNode; control?: React.ReactNode; onClick?: () => void; checked?: boolean }) {
+export function Row({ title, sub, control, onClick, checked }: { title: React.ReactNode; sub?: React.ReactNode; control?: React.ReactNode; onClick?: () => void; checked?: boolean }) {
   const body = (
     <>
       <span className="cv2-grow" style={{ minWidth: 0 }}>
@@ -175,7 +175,7 @@ export function SettingsContent({
         )}
         {pane === "orchestration" && (
           <>
-            <p className="cv2-note">Defaults for every new team run. Change them for one run from the composer.</p>
+            <p className="cv2-note">The team this session runs with. Change it for one run from the composer.</p>
             <Group title="Team">
               <Row title={ROLE_COPY.lead.name} sub={ROLE_COPY.lead.duty} control={<span className="cv2-mute">{model(lead)}</span>} />
               <Row title={ROLE_COPY.workers.name} sub={ROLE_COPY.workers.duty.replace("{n}", String(routing.workers?.length ?? 3))} control={<span className="cv2-mute">{model(routing.workers?.[0])}</span>} />
@@ -208,7 +208,7 @@ export function SettingsContent({
           </>
         )}
         {pane === "permissions" && (
-          <Group title="New sessions start with">
+          <Group title="This session’s access">
             {RUNTIME_MODES.map((m) => (
               <Row key={m.mode} title={m.label} sub={m.description} checked={m.mode === runtimeMode} onClick={() => onRuntimeMode?.(m.mode)} />
             ))}
