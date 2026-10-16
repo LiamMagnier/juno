@@ -2,7 +2,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { formatAxe, runAxe } from "../../support/axe";
 import { applyCvdFilter, compareShapeMasks, CVD_GATE_KINDS, simulateCvd } from "../../support/cvd";
-import { matrixRoutes, readQaFixtures } from "../../support/fixtures";
+import { matrixRoutes, readQaFixtures, routeRenderProblem } from "../../support/fixtures";
 import { recordGate } from "../../support/gate-recorder";
 import { formatBytes, heapRatio, measureHeapAfterGc, readHeapBaseline, writeHeapBaseline } from "../../support/heap";
 import { installLayoutShiftRecorder, readLayoutShifts } from "../../support/layout-shift";
@@ -26,7 +26,9 @@ import { captureMatrixShot, describeMatrix, settleAnimations } from "../../suppo
 
 const ROOT = process.cwd();
 const BASELINES = path.join(ROOT, "e2e", "wave2", "p0-harness", "baselines");
-const NATIVE_GEOMETRY_DIR = path.join(ROOT, "test-results", "native-geometry");
+// Where scripts/qa/native-perf.sh writes geometry by default ($ALEVR_QA_REPORT_DIR/native-geometry,
+// with test-results/native as the report directory), so a local native run feeds this gate.
+const NATIVE_GEOMETRY_DIR = path.join(ROOT, "test-results", "native", "native-geometry");
 // Web records also go here, so CI's summary job can combine them with the
 // native job's exports (scripts/qa/gates.ts parity).
 const WEB_GEOMETRY_DIR = process.env.ALEVR_QA_REPORT_DIR
@@ -35,13 +37,18 @@ const WEB_GEOMETRY_DIR = process.env.ALEVR_QA_REPORT_DIR
 const fixtures = readQaFixtures();
 const anonymous = { storageState: { cookies: [], origins: [] } };
 
-async function openAndSettle(page: Page, route: string): Promise<number> {
+async function openAndSettle(page: Page, route: string, expect_: { anonymous?: boolean; notFound?: boolean } = {}): Promise<number> {
   const response = await page.goto(route, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("load");
   // Bounded: chat pages keep a live connection open, so the network is never idle for long.
   await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
   await settleAnimations(page);
-  return response?.status() ?? 0;
+  const status = response?.status() ?? 0;
+  // A gate measured on the sign-in redirect or an error page would pass for
+  // the wrong reason, so every route must land where it was asked to.
+  const problem = routeRenderProblem({ requested: route, finalUrl: page.url(), status, ...expect_ });
+  expect(problem, problem ?? "").toBeNull();
+  return status;
 }
 
 test.describe("cross-cutting gates @gates", () => {
@@ -109,7 +116,7 @@ test.describe("cross-cutting gates @gates", () => {
     test.describe("anonymous", () => {
       test.use(anonymous);
       test("axe: sign-in", async ({ page }, testInfo) => {
-        await openAndSettle(page, "/sign-in");
+        await openAndSettle(page, "/sign-in", { anonymous: true });
         const report = await runAxe(page);
         await recordGate(testInfo, "a11y.axe", { value: report.blocking.length, detail: formatAxe(report), context: { route: "/sign-in" } });
       });
@@ -178,7 +185,7 @@ describeMatrix("visual matrix @matrix", (variant) => {
       if (route.anonymous) test.use(anonymous);
       test(`route ${route.name}`, async ({ page }, testInfo) => {
         test.skip(!route.path, route.reason ?? "no path");
-        const status = await openAndSettle(page, route.path!);
+        const status = await openAndSettle(page, route.path!, { anonymous: route.anonymous, notFound: route.notFound });
         const shot = await captureMatrixShot(page, testInfo, { name: `route-${route.name}`, variant, baselineDir: path.join(BASELINES, "visual") });
         const detail =
           shot.status === "changed" && shot.diff

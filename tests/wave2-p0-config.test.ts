@@ -134,3 +134,16 @@ test("package.json runs e2e only through the runner", async () => {
     if (/playwright/.test(command)) assert.fail(`script ${name} calls Playwright directly: ${command}`);
   }
 });
+
+test("design-gates.yml can read main's commit status, keeps its database local, and requires enforced gates to be measured", async () => {
+  const { readFileSync } = await import("node:fs");
+  const workflow = readFileSync(path.join(ROOT, ".github", "workflows", "design-gates.yml"), "utf8");
+  // check-base.sh calls GET /commits/main/status, which needs statuses: read
+  // once the workflow narrows the token's permissions.
+  assert.match(workflow, /^permissions:\n(?:  .*\n)*  statuses: read$/m);
+  assert.match(workflow, /^  checks: read$/m);
+  assert.doesNotMatch(workflow, /secrets\./, "the design gates read no secrets");
+  assert.match(workflow, /- 55439:5432/);
+  assert.doesNotMatch(workflow, /DATABASE_URL:/, "the runner's default local *_test URL is the only database");
+  assert.match(workflow, /gates\.ts evaluate --require-enforced /);
+});

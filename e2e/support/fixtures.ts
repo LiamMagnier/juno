@@ -28,7 +28,9 @@ export function readQaFixtures(runDir: string | undefined = process.env.ALEVR_QA
 }
 
 /** The routes of P0's visual matrix (spec P0 (5)), with the seeded ids filled in. */
-export function matrixRoutes(fixtures: QaFixtures): { name: string; path: string | null; anonymous?: boolean; reason?: string }[] {
+export function matrixRoutes(
+  fixtures: QaFixtures
+): { name: string; path: string | null; anonymous?: boolean; notFound?: boolean; reason?: string }[] {
   return [
     { name: "chat-home", path: "/chat" },
     {
@@ -51,6 +53,42 @@ export function matrixRoutes(fixtures: QaFixtures): { name: string; path: string
     { name: "automations", path: "/automations" },
     { name: "settings", path: "/settings" },
     { name: "sign-in", path: "/sign-in", anonymous: true },
-    { name: "not-found", path: "/this-page-does-not-exist-qa" },
+    { name: "not-found", path: "/this-page-does-not-exist-qa", notFound: true },
   ];
+}
+
+/**
+ * Why a navigation did not land on the page a gate meant to measure, or null
+ * when it did. A gate run against the sign-in redirect (an expired session) or
+ * an error page would otherwise pass for the wrong reason: axe would audit the
+ * sign-in form and the matrix would capture it under the route's name.
+ *
+ * @param input.requested the path the test opened
+ * @param input.finalUrl  page.url() after the navigation settled
+ * @param input.status    the document's HTTP status (0 when there was no response)
+ * @param input.anonymous the route is opened without the E2E session
+ * @param input.notFound  the route is the 404 page, so 404 is the expected status
+ */
+export function routeRenderProblem(input: {
+  requested: string;
+  finalUrl: string;
+  status: number;
+  anonymous?: boolean;
+  notFound?: boolean;
+}): string | null {
+  const { requested, finalUrl, status } = input;
+  let pathname: string;
+  try {
+    pathname = new URL(finalUrl).pathname;
+  } catch {
+    return `${requested} ended on an unparsable URL "${finalUrl}".`;
+  }
+  if (input.notFound) {
+    return status === 404 ? null : `${requested} answered ${status || "no response"}, not the 404 page.`;
+  }
+  if (!status || status >= 400) return `${requested} answered ${status || "no response"}.`;
+  if (!input.anonymous && /^\/(sign-in|sign-up|auth-error)(\/|$)/.test(pathname)) {
+    return `${requested} redirected to ${pathname}: the E2E session is missing or expired, so the gate would measure the sign-in page.`;
+  }
+  return null;
 }

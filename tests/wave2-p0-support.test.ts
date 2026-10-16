@@ -6,7 +6,7 @@ import path from "node:path";
 import { axeSourcePath, summarizeAxe, type AxeViolation } from "../e2e/support/axe";
 import { composite, contrastRatio, parseCssColor, relativeLuminance, requiredTextContrast } from "../e2e/support/contrast";
 import { compareShapeMasks, cvdFilterSvg, CVD_MATRICES, simulateColor, simulateCvd } from "../e2e/support/cvd";
-import { matrixRoutes, readQaFixtures } from "../e2e/support/fixtures";
+import { matrixRoutes, readQaFixtures, routeRenderProblem } from "../e2e/support/fixtures";
 import { heapRatio, readHeapBaseline, writeHeapBaseline } from "../e2e/support/heap";
 import { summarizeShifts } from "../e2e/support/layout-shift";
 import { evaluateParity, parityMismatches, readGeometryRecords, readNativeGeometry, type GeometryRecord } from "../e2e/support/parity";
@@ -279,4 +279,20 @@ test("axe counts only serious and critical violations, and its source is the ins
   assert.deepEqual(report.blocking.map((b) => b.id), ["color-contrast", "aria-valid-attr"]);
   assert.equal(report.blockingNodes, 4);
   assert.match(axeSourcePath(), /axe-core[\\/]axe\.min\.js$/);
+});
+
+test("a gate route must land where it was asked: no sign-in redirect, no error page, 404 only for the 404 route", () => {
+  const base = "http://127.0.0.1:4000";
+  assert.equal(routeRenderProblem({ requested: "/library", finalUrl: `${base}/library`, status: 200 }), null);
+  assert.equal(routeRenderProblem({ requested: "/settings", finalUrl: `${base}/settings/general`, status: 200 }), null);
+  assert.match(
+    routeRenderProblem({ requested: "/library", finalUrl: `${base}/sign-in?callbackUrl=%2Flibrary`, status: 200 }) ?? "",
+    /redirected to \/sign-in/
+  );
+  assert.equal(routeRenderProblem({ requested: "/sign-in", finalUrl: `${base}/sign-in`, status: 200, anonymous: true }), null);
+  assert.match(routeRenderProblem({ requested: "/code", finalUrl: `${base}/code`, status: 500 }) ?? "", /answered 500/);
+  assert.match(routeRenderProblem({ requested: "/code", finalUrl: `${base}/code`, status: 0 }) ?? "", /no response/);
+  assert.equal(routeRenderProblem({ requested: "/nope", finalUrl: `${base}/nope`, status: 404, notFound: true }), null);
+  assert.match(routeRenderProblem({ requested: "/nope", finalUrl: `${base}/nope`, status: 200, notFound: true }) ?? "", /not the 404 page/);
+  assert.equal(matrixRoutes({ qaThreadId: null, qaCodeSessionId: null, researchRunId: null }).find((r) => r.name === "not-found")?.notFound, true);
 });

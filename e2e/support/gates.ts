@@ -289,7 +289,12 @@ export function readResults(dirs: readonly string[], catalog: readonly GateDefin
  * Applies modes to a run's results. Enforced gates with a failing result fail
  * the run; report-only failures are warnings; configuration errors fail it.
  */
-export function evaluateResults(config: GateConfig, results: readonly GateResult[], extraErrors: readonly string[] = []): RunSummary {
+export function evaluateResults(
+  config: GateConfig,
+  results: readonly GateResult[],
+  extraErrors: readonly string[] = [],
+  options: { requireEnforced?: boolean } = {}
+): RunSummary {
   const byGate = new Map<string, GateResult[]>();
   const errors = [...config.errors, ...extraErrors];
   const known = new Set(config.catalog.map((gate) => gate.id));
@@ -309,6 +314,16 @@ export function evaluateResults(config: GateConfig, results: readonly GateResult
     const status: EvaluatedGate["status"] = list.length === 0 ? "unmeasured" : !failed ? "pass" : mode === "enforce" ? "fail" : "warn";
     return { id: gate.id, title: gate.title, mode, enforcedBy: config.enforcedBy.get(gate.id) ?? [], results: list, status };
   });
+  // A full run (CI's summary job) must measure every enforced gate: an
+  // enforced gate whose test was skipped or never ran would otherwise pass by
+  // saying nothing. Partial local runs leave this off and only get a note.
+  if (options.requireEnforced) {
+    for (const gate of gates) {
+      if (gate.mode === "enforce" && gate.status === "unmeasured") {
+        errors.push(`${gate.id} is enforced by ${gate.enforcedBy.join(", ")} but this run recorded no measurement for it.`);
+      }
+    }
+  }
   const failures = gates.filter((g) => g.status === "fail");
   const warnings = gates.filter((g) => g.status === "warn");
   return { exitCode: failures.length > 0 || errors.length > 0 ? 1 : 0, gates, failures, warnings, errors };

@@ -39,8 +39,8 @@ function writeResult(dir: string, result: Partial<GateResult> & { gate: string; 
   writeFileSync(path.join(folder, `${Math.random().toString(36).slice(2)}.json`), JSON.stringify({ observed: null, stat: null, budget: "", detail: "", recordedAt: "", ...result }));
 }
 
-function evaluateCli(root: string, results: string) {
-  return spawnSync(TSX, [CLI, "evaluate", "--root", root, results], { cwd: ROOT, encoding: "utf8", timeout: 60_000 });
+function evaluateCli(root: string, results: string, flags: string[] = []) {
+  return spawnSync(TSX, [CLI, "evaluate", "--root", root, ...flags, results], { cwd: ROOT, encoding: "utf8", timeout: 60_000 });
 }
 
 const SEEDED_REGRESSION = { gate: "shell.sidebar-cls", pass: false, observed: 0.2, detail: "0.2 CLS (budget = 0)" };
@@ -92,6 +92,24 @@ test("an enforced gate that passes keeps the run green", () => {
     const run = evaluateCli(root, results);
     assert.equal(run.status, 0, run.stdout + run.stderr);
     assert.match(run.stdout, /pass {2}shell\.sidebar-cls \(enforced by p4-fixture\)/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an enforced gate with no measurement fails a full run (--require-enforced) and only notes a partial one", () => {
+  const root = fixtureRoot({ "p4-fixture": `export const enforce = ["shell.sidebar-cls"];\n` });
+  const results = path.join(root, "results");
+  try {
+    writeResult(results, { gate: "chat.tail-drain", pass: true, observed: 10, detail: "10ms" });
+    const partial = evaluateCli(root, results);
+    assert.equal(partial.status, 0, partial.stdout + partial.stderr);
+    assert.match(partial.stdout, /note {2}shell\.sidebar-cls is enforced by p4-fixture but was not measured/);
+    const full = evaluateCli(root, results, ["--require-enforced"]);
+    assert.equal(full.status, 1, full.stdout + full.stderr);
+    assert.match(full.stdout, /ERROR shell\.sidebar-cls is enforced by p4-fixture but this run recorded no measurement/);
+    const summary = JSON.parse(readFileSync(path.join(results, "summary.json"), "utf8"));
+    assert.equal(summary.exitCode, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

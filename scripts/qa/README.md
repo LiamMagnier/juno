@@ -98,7 +98,8 @@ In a spec, record a measurement with `recordGate(testInfo, id, measurement)`
 (`e2e/support/gate-recorder.ts`): an enforced gate that fails fails the test.
 After the tests, `npx tsx scripts/qa/gates.ts evaluate <report dir>...` (the
 runner and CI call it) prints the table, writes `summary.json` and exits 1 on
-any enforced failure. Native suites write records (`Wave2PerfReport.swift`)
+any enforced failure. CI's summary job adds `--require-enforced`, so an
+enforced gate that recorded no measurement in the full run also fails. Native suites write records (`Wave2PerfReport.swift`)
 that the same command evaluates against the same budgets.
 
 ```sh

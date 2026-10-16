@@ -44,6 +44,8 @@ concurrency:
 permissions:
   contents: read
   checks: read
+  # check-base.sh reads main's combined commit status as well as its check runs.
+  statuses: read
 
 jobs:
   base:
@@ -188,7 +190,7 @@ jobs:
       - name: Apply gate modes
         run: |
           mkdir -p reports/web/design-gates reports/native
-          npx tsx scripts/qa/gates.ts evaluate reports/web/design-gates reports/native reports/combined
+          npx tsx scripts/qa/gates.ts evaluate --require-enforced reports/web/design-gates reports/native reports/combined
       - name: Publish the summary
         if: always()
         uses: actions/upload-artifact@v4

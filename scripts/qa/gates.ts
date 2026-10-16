@@ -1,7 +1,10 @@
 // The gate registry's command line (spec §9, §14, P0 (4) and (8)).
 //
 //   npx tsx scripts/qa/gates.ts list                    every gate, its owner and its live mode
-//   npx tsx scripts/qa/gates.ts evaluate <dir>...       apply modes to result files; exit 1 on an enforced failure
+//   npx tsx scripts/qa/gates.ts evaluate [--require-enforced] <dir>...
+//                                                       apply modes to result files; exit 1 on an enforced failure
+//                                                       (--require-enforced: also on an enforced gate with no result,
+//                                                       for full runs such as CI's summary job)
 //   npx tsx scripts/qa/gates.ts readme [--write]        check (or rewrite) the table in scripts/qa/README.md
 //   npx tsx scripts/qa/gates.ts parity --out <results> <geometry dir>...
 //                                                       combine web and native geometry exports into one
@@ -38,14 +41,16 @@ function main(argv: string[]): number {
   }
 
   if (command === "evaluate") {
-    if (rest.length === 0) {
+    const requireEnforced = rest.includes("--require-enforced");
+    const dirs = rest.filter((arg) => arg !== "--require-enforced");
+    if (dirs.length === 0) {
       console.error("evaluate needs at least one results directory.");
       return 64;
     }
-    const { results, errors } = readResults(rest.map((dir) => path.resolve(dir)));
-    const summary = evaluateResults(config, results, errors);
+    const { results, errors } = readResults(dirs.map((dir) => path.resolve(dir)));
+    const summary = evaluateResults(config, results, errors, { requireEnforced });
     console.log(formatSummary(summary));
-    const out = path.resolve(rest[0], "summary.json");
+    const out = path.resolve(dirs[0], "summary.json");
     writeFileSync(
       out,
       `${JSON.stringify(
@@ -112,7 +117,7 @@ function main(argv: string[]): number {
     return 0;
   }
 
-  console.error("usage: gates.ts list | evaluate <dir>... | readme [--write] | parity --out <dir> <dir>...  [--root <dir>]");
+  console.error("usage: gates.ts list | evaluate [--require-enforced] <dir>... | readme [--write] | parity --out <dir> <dir>...  [--root <dir>]");
   return 64;
 }
 
