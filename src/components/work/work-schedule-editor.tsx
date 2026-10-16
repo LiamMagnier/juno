@@ -18,7 +18,9 @@ import {
   type WorkUnattendedPolicy,
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES, type WorkNotifyPolicy } from "@/lib/work/notifications";
-import { parseScheduleRunConfig, type ClientWorkSchedule } from "@/lib/work/schedule";
+import { isTimeTriggerKind, parseScheduleRunConfig, type ClientWorkSchedule, type JsonObject } from "@/lib/work/schedule";
+import { describeTimeTrigger, parseSchedulePhrase } from "@/lib/work/schedule-phrase";
+import type { RoutineDraftHandoff } from "@/components/work/routine-draft";
 import { parseCodeRoutineConfig } from "@/lib/work/code-routine";
 import {
   CODE_PERMISSION_MODES,
@@ -331,21 +333,44 @@ function blankDraft(): ScheduleDraft {
   };
 }
 
+/**
+ * A new routine started from a chat card's "More options": the card's fields
+ * over the blank draft. Cloud, as the card said; everything else as a blank
+ * routine has it, for the person to change here.
+ */
+function draftFromHandoff(handoff: RoutineDraftHandoff): ScheduleDraft {
+  const blank = blankDraft();
+  return {
+    ...blank,
+    name: handoff.name,
+    instructions: handoff.instructions,
+    timezone: handoff.timezone,
+    target: "cloud",
+    triggers: [{ kind: handoff.trigger.kind, config: { ...handoff.trigger.config }, enabled: true }],
+    notifyPolicy: oneOf(WORK_NOTIFY_POLICIES, handoff.notifyPolicy, "on_finish"),
+    budget: { ...blank.budget, costUsd: ceilingField(handoff.budgetMicroUsd / 1_000_000) },
+  };
+}
+
 export function WorkScheduleEditor({
   schedule,
   hosts,
   onSaved,
   onCancel,
+  prefill = null,
 }: {
   /** Null to create. Otherwise the schedule being edited. */
   schedule: ClientWorkSchedule | null;
   hosts: readonly ClientWorkHost[] | null;
   onSaved: (schedule: ClientWorkSchedule) => void;
   onCancel: () => void;
+  /** A create seeded from a chat card (routine-draft.ts). Read once, at mount. */
+  prefill?: RoutineDraftHandoff | null;
 }) {
   const [draft, setDraft] = React.useState<ScheduleDraft>(() =>
-    schedule === null ? blankDraft() : draftFrom(schedule)
+    schedule !== null ? draftFrom(schedule) : prefill ? draftFromHandoff(prefill) : blankDraft()
   );
+  const handoff = React.useRef(schedule === null ? prefill : null);
   const [saving, setSaving] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
   const [grants, setGrants] = React.useState<ClientWorkGrant[] | null>(null);
@@ -443,6 +468,12 @@ export function WorkScheduleEditor({
       // belong to the routine's own kind, which is the check that catches a
       // client sending the wrong half of this form.
       ...(schedule === null ? { runKind: draft.runKind } : {}),
+      // A routine finished here from a chat card: its key, so the card shows
+      // it as scheduled, and the apps the card named.
+      ...(schedule === null && handoff.current?.proposalKey ? { proposalKey: handoff.current.proposalKey } : {}),
+      ...(schedule === null && draft.runKind === "work" && handoff.current && handoff.current.connectorIds.length > 0
+        ? { connectorIds: handoff.current.connectorIds }
+        : {}),
       ...(code
         ? {
             code: {
@@ -607,6 +638,23 @@ export function WorkScheduleEditor({
 
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">When it runs</h2>
+        <DescribeWhen
+          disabled={saving}
+          onUse={(trigger) =>
+            setDraft((current) => {
+              // Replaces the first clock trigger, or leads the list when there
+              // is none: the sentence is a schedule, and event triggers beside
+              // it are left alone.
+              const index = current.triggers.findIndex((t) => isTimeTriggerKind(t.kind));
+              const next = { kind: trigger.kind, config: { ...trigger.config }, enabled: true };
+              const triggers =
+                index >= 0
+                  ? current.triggers.map((t, i) => (i === index ? next : t))
+                  : [next, ...current.triggers];
+              return { ...current, triggers };
+            })
+          }
+        />
         <TriggerListEditor
           triggers={draft.triggers}
           onChange={(triggers) => set("triggers", triggers)}
@@ -1230,5 +1278,78 @@ function PolicyGroup<T extends string>({
         ))}
       </RadioGroup>
     </fieldset>
+  );
+}
+
+/**
+ * "Describe when": a schedule typed as a sentence, read by the same parser the
+ * chat's routine card uses (src/lib/work/schedule-phrase.ts), so "every
+ * weekday at 8am" means the same schedule here as there. What it understood is
+ * said back under the field before it is used; Use replaces the routine's
+ * first clock trigger, and the form below shows exactly what was set, for
+ * anything the sentence could not say.
+ */
+function DescribeWhen({
+  disabled,
+  onUse,
+}: {
+  disabled: boolean;
+  onUse: (trigger: { kind: string; config: JsonObject }) => void;
+}) {
+  const id = React.useId();
+  const [phrase, setPhrase] = React.useState("");
+  const [used, setUsed] = React.useState<string | null>(null);
+  const read = phrase.trim() === "" ? null : parseSchedulePhrase(phrase);
+  const use = () => {
+    if (!read?.ok) return;
+    onUse({ kind: read.schedule.kind, config: read.schedule.config });
+    setUsed(describeTimeTrigger(read.schedule.kind, read.schedule.config));
+    setPhrase("");
+  };
+  return (
+    <div className="mb-3">
+      <Label htmlFor={`${id}-when`}>Describe when</Label>
+      <div className="mt-1 flex gap-2">
+        <Input
+          id={`${id}-when`}
+          value={phrase}
+          onChange={(event) => {
+            setPhrase(event.target.value);
+            setUsed(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              use();
+            }
+          }}
+          placeholder="Every weekday at 8am"
+          aria-describedby={`${id}-read`}
+          aria-invalid={read !== null && !read.ok}
+          disabled={disabled}
+          className="max-w-sm"
+        />
+        <Button type="button" variant="outline" disabled={disabled || !read?.ok} onClick={use} className="font-normal">
+          Use
+        </Button>
+      </div>
+      <p
+        id={`${id}-read`}
+        aria-live="polite"
+        className={
+          read !== null && !read.ok
+            ? "mt-1 text-caption leading-relaxed text-warning-foreground"
+            : "mt-1 text-caption leading-relaxed text-muted-foreground"
+        }
+      >
+        {used !== null
+          ? `Set to: ${used}.`
+          : read === null
+            ? "Or set it below, trigger by trigger."
+            : read.ok
+              ? `Reads as: ${describeTimeTrigger(read.schedule.kind, read.schedule.config)}.`
+              : read.message}
+      </p>
+    </div>
   );
 }

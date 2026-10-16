@@ -31,6 +31,7 @@ import { estimateCostUsd } from "@/lib/pricing";
 import { coerceChatOrigin } from "@/lib/chat-origin";
 import { readToolDetail } from "@/lib/chat/tool-detail";
 import { readContextReceipt } from "@/lib/chat/context-tokens";
+import { readRoutineProposal } from "@/lib/work/routine-proposal";
 import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
 // import { serializeActivity } from "@/lib/chat/run-record";
 
@@ -116,6 +117,10 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
     // The context-token receipt: parsed against its schema, so a row that does
     // not match is dropped here rather than handed to a renderer that trusts it.
     const contextReceipt = readContextReceipt(record.contextReceipt);
+    // A routine the model drafted (`propose_routine`). Read field by field for
+    // the reason above: without this line the card streams live and is gone
+    // after a reload, and with it a row that does not match is dropped.
+    const routineProposal = readRoutineProposal(record.routineProposal);
 
     return [
       {
@@ -131,6 +136,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
         ...(toolStatus ? { toolStatus } : {}),
         ...(agentChange ? { agentChange } : {}),
         ...(contextReceipt ? { contextReceipt } : {}),
+        ...(routineProposal ? { routineProposal } : {}),
       },
     ];
   });

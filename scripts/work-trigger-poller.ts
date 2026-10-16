@@ -48,13 +48,20 @@
  *
  * WHAT IT CANNOT DO, AND SAYS SO
  *
- * Email, calendar and first-party connector events have real sources. Other
- * connectors and unsupported folder sources are refused by triggerSupport;
+ * `email_filter` and `calendar_window` read the account's mail and calendar
+ * connectors, `topic_monitor` reads the web through the account's search, and
+ * `connector_event` reads first-party connector events with a persisted source.
+ * Other connectors and unsupported folder sources are refused by triggerSupport;
  * `triggerSupport` refuses them by name, `normalizeTriggerDrafts` refuses to
  * store them, and the editor refuses to offer them. A trigger of one of those
  * kinds that reaches this process anyway — written by a newer build, or by
  * another client — is recorded in `lastPollError` rather than quietly matching
  * nothing for ever.
+ *
+ * Every read that fails says why in `lastPollError`, which the routine's row
+ * shows as its health (src/lib/work/schedule-health.ts) with a Reconnect where
+ * a connector is the cause. The first failure after a good read also sends one
+ * notification (`noteTriggerFailure`); the retries after it do not.
  */
 
 import "server-only";
@@ -72,6 +79,8 @@ import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
+import { notifyUser } from "@/lib/notifications";
+import { shouldNotifyTriggerFailure, triggerFailureNotice } from "@/lib/work/schedule-health";
 import {
   appendEvents,
   createRun,
@@ -780,6 +789,53 @@ async function settle(
     where: { id: trigger.id, userId: trigger.userId },
     data: { ...data, lastPolledAt: new Date(), pollLockedUntil: null },
   });
+  await noteTriggerFailure(trigger, data.lastPollError);
+}
+
+/**
+ * One notification when a trigger that was reading its source starts failing
+ * (an expired iCloud password, a disconnected app), and none for the retries
+ * after it: `shouldNotifyTriggerFailure` is true only on the transition. The
+ * routine's row says the same thing in its health line. Never throws.
+ */
+async function noteTriggerFailure(trigger: TriggerRow, nextError: string | null): Promise<void> {
+  if (!shouldNotifyTriggerFailure(trigger.lastPollError, nextError) || nextError === null) return;
+  try {
+    const schedule = await prisma.workSchedule.findFirst({
+      where: { id: trigger.scheduleId, userId: trigger.userId },
+      select: { id: true, name: true, enabled: true },
+    });
+    if (!schedule || !schedule.enabled) return;
+    const notice = triggerFailureNotice({
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
+      triggerKind: trigger.kind,
+      error: nextError,
+    });
+    await notifyUser({
+      userId: trigger.userId,
+      type: notice.connectorId ? "connector_expired" : "system_alert",
+      title: notice.title,
+      body: notice.body,
+      priority: "high",
+      sourceType: "work_trigger",
+      sourceId: trigger.id,
+      path: notice.path,
+      channel: "needs_you",
+      collapseKey: `trigger-failing:${trigger.id}`,
+      actionData: { scheduleId: schedule.id, ...(notice.connectorId ? { connectorId: notice.connectorId } : {}) },
+      push: {
+        title: notice.title,
+        body: notice.body,
+        threadId: `routine-${schedule.id}`,
+        collapseId: `trigger-failing-${trigger.id}`.slice(0, 64),
+        interruption: "active",
+        data: { scheduleId: schedule.id },
+      },
+    });
+  } catch (error) {
+    log("could not send the trigger failure notice", { triggerId: trigger.id, error: String(error) });
+  }
 }
 
 /**

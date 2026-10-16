@@ -11,6 +11,9 @@ import { START_TASK_TOOL_ID, chatTaskToolEnabled, isTaskApproval } from "@/lib/c
 import { HAND_OFF_TOOL_ID, isHandoffApproval } from "@/lib/chat/handoff-tool";
 import { chatAgentConfigToolsEnabled } from "@/lib/chat/agent-config-tools";
 import { LOCAL_FOLDER_FEATURE, localFolderToolsEnabled } from "@/lib/chat/local-folder";
+import { chatRoutineToolEnabled } from "@/lib/chat/routine-tool";
+import { PROPOSE_ROUTINE_TOOL_ID } from "@/lib/work/routine-proposal";
+import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { SseSender } from "@/lib/chat-stream";
 import type { StallWatchdog } from "@/lib/chat-stall";
@@ -150,7 +153,32 @@ export async function resolveApprovals({
   });
   const localFolder = localFolderOn ? (input.localFolder ?? null) : null;
 
-  return { taskGate, taskToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext, localFolder };
+  /*
+   * Whether the model may draft a recurring routine for the person to confirm
+   * (src/lib/chat/routine-tool.ts). The task gate's conditions, a client that
+   * draws the card (the web only for now: a native app would show a reply
+   * saying "confirm below" with nothing below it), and not an agent's thread,
+   * where routines go through `propose_setup_change`.
+   */
+  const routineToolOn = chatRoutineToolEnabled({
+    clientDrawsProposal: legacyChatClientForOrigin(input) === "web",
+    privateMode: taskGate.privateMode,
+    voiceMode: taskGate.voiceMode,
+    regenerate: taskGate.regenerate,
+    userMessageId,
+    researchActive,
+    artifactEdit,
+    conversationKind: conversation.kind,
+    agentThread: turnAgentId !== null && turnAgentId !== undefined,
+    agenticTools: !!modelInfo.agenticTools,
+    functionToolsReachModel: taskGate.functionToolsReachModel,
+    skillPermits: narrowRuntimeToolsForSkill([PROPOSE_ROUTINE_TOOL_ID], appliedSkill).length > 0,
+    lockdown: taskGate.lockdown,
+    planHasWorkModel: taskGate.planHasWorkModel,
+    plan,
+  });
+
+  return { taskGate, taskToolOn, routineToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext, localFolder };
 }
 
 export type TurnApprovals = Awaited<ReturnType<typeof resolveApprovals>>;

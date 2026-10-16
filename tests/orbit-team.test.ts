@@ -134,7 +134,12 @@ test("a multi-deliverable job is noticed; questions and single asks stay in chat
   ]) {
     assert.equal(detectBackgroundWork(chat).kind, "chat", chat);
   }
-  const ongoing = detectBackgroundWork("Every morning check all the tickets and summarise new ones in a report");
+  // A schedule is a routine, never a task that runs once (G07): its own
+  // verdict, which gets no start_task hint.
+  const recurring = detectBackgroundWork("Every morning check all the tickets and summarise new ones in a report");
+  assert.equal(recurring.kind, "recurring");
+  assert.equal(backgroundWorkHint(recurring), null);
+  const ongoing = detectBackgroundWork("Keep an eye on all the tickets and summarise new ones in a report");
   assert.equal(ongoing.kind, "background");
   assert.ok(ongoing.kind === "background" && !ongoing.team);
 });

@@ -281,6 +281,7 @@ async function handleChat(req: Request) {
       promptContext: context.promptContext,
       untrustedContentInTurn,
       taskToolOn: approvals.taskToolOn,
+      routineToolOn: approvals.routineToolOn,
       useWebSearch,
       useAlevrSearch,
       attachmentToolToggles,

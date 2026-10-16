@@ -41,6 +41,7 @@ import {
 import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { dependenciesSatisfied } from "@/lib/work/board";
+import { PARKED_RUN_TTL_MS } from "@/lib/work/schedule-health";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -1452,8 +1453,12 @@ export interface ReclaimStalledRunsResult {
  * guard is there to catch a query that forgot its userId and this one omits it
  * on purpose.
  */
-/** How long an unattended routine run may stay parked for an answer before it is ended. */
-export const PARKED_ROUTINE_RUN_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * How long an unattended routine run may stay parked for an answer before it
+ * is ended. Defined beside the routine health that tells the person when that
+ * will happen (schedule-health.ts), so the two cannot disagree.
+ */
+export const PARKED_ROUTINE_RUN_TTL_MS = PARKED_RUN_TTL_MS;
 
 export const PARKED_ROUTINE_RUN_EXPIRED_DETAIL =
   "Stopped after waiting 24 hours for an answer or approval that never came, so this routine's next runs are not held up. Nothing more was done; start it again from the routine when you're ready.";

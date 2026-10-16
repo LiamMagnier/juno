@@ -26,17 +26,21 @@ import { FEATURE_NAMES } from "@/lib/brand/names";
  * The route is `/automations` and the product name is **Automations**. It was
  * `/work/schedules`, which was wrong twice over: Work is no longer a place
  * (docs/design/TWO_PRODUCTS.md §2), and a schedule is only one trigger family
- * — Juno can also start a task from email filters, calendar windows, topic
- * monitors, connector events, folder changes and manual one-click runs.
- * "Schedules" hid those event triggers and made a capability that already
- * existed look missing next to ChatGPT Work, Claude Cowork and
- * Gemini/Antigravity. The old URL still answers and still lands here; the email
- * footer on every task notification points at it.
+ * — a routine can also start from an email, a calendar window, a topic monitor,
+ * a call to its fire URL or a press of Run now. (Connector-event and folder
+ * triggers are refused until they have a producer; see TRIGGER_KIND_LIMITS.)
+ * The old URL still answers and still lands here; the email footer on every
+ * task notification points at it.
  *
  * Each automation points at one durable task, so repeated executions add to one
  * transcript and one deliverable history instead of producing a pile of
  * disconnected jobs. Live and paused automations stay split so `nextRunAt` never
- * makes a paused row look like it is about to fire.
+ * makes a paused row look like it is about to fire. Each row says whether the
+ * routine is working (its health: a trigger that cannot read its source, a run
+ * waiting on you, runs that failed), with the one fix it needs.
+ *
+ * Routines can also be drafted from chat (`propose_routine`): the card there
+ * creates them through the same route this page's editor uses.
  */
 /**
  * The last list this tab loaded, kept for the next visit: switching Customize

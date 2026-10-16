@@ -6,6 +6,7 @@ import type { ClientWorkHost } from "@/lib/work/serializers";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import { fetchWorkHosts } from "@/components/work/work-transport";
+import { readRoutineDraft, type RoutineDraftHandoff } from "@/components/work/routine-draft";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
@@ -19,15 +20,31 @@ import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
  * disabled with "Any of my Macs" in it, and the one thing that genuinely
  * requires the list — pinning to a named Mac — is refused by the form with a
  * sentence rather than by a save that 404s on a host id nobody could choose.
+ *
+ * `?draft=<id>` opens it on a routine handed over from a chat card's "More
+ * options" (src/components/work/routine-draft.ts). The id names an entry in
+ * this tab's session storage, never the routine itself, and the editor waits
+ * the one effect it takes to read it so it starts on the right fields.
  */
 export default function NewAutomationPage() {
   const router = useRouter();
   const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
+  const [prefill, setPrefill] = React.useState<RoutineDraftHandoff | null | undefined>(undefined);
 
   React.useEffect(() => {
     void fetchWorkHosts().then((result) => {
       if (result.kind === "ok") setHosts(result.value);
     });
+  }, []);
+
+  React.useEffect(() => {
+    let id: string | null = null;
+    try {
+      id = new URLSearchParams(window.location.search).get("draft");
+    } catch {
+      id = null;
+    }
+    setPrefill(readRoutineDraft(id));
   }, []);
 
   return (
@@ -39,12 +56,15 @@ export default function NewAutomationPage() {
         backHref="/automations"
         backLabel="Back to routines"
       />
-      <WorkScheduleEditor
-        schedule={null}
-        hosts={hosts}
-        onSaved={(schedule) => router.push(`/automations/${schedule.id}`)}
-        onCancel={() => router.push("/automations")}
-      />
+      {prefill !== undefined && (
+        <WorkScheduleEditor
+          schedule={null}
+          hosts={hosts}
+          prefill={prefill}
+          onSaved={(schedule) => router.push(`/automations/${schedule.id}`)}
+          onCancel={() => router.push("/automations")}
+        />
+      )}
     </AppPage>
   );
 }

@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { useHeightSwap } from "@/lib/use-height-swap";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ActivityLines } from "@/components/chat/team-activity";
+import { FinishedTaskActions, TaskConnectionNotice, TaskLiveControl } from "@/components/chat/task-card-actions";
 import { isTeamActivity, teamMemberLines, workSummaryLines } from "@/lib/agents/activity-words";
 import { useReducedMotion } from "@/lib/motion-preference";
 
@@ -96,9 +97,11 @@ function planPosition(plan: readonly PlanStep[]): { at: number; total: number } 
  * progress signal; the Continuum mark beside the title is the live presence,
  * handing its tone on only when a real step arrives, and still while the task
  * waits on you. Every thing that needs the person is then listed the same way
- * (a question or an approval: the attention words, then what). There is no
- * Pause, because the task has none; Stop is the one control, and it stays
- * while the task is blocked on you.
+ * (a question or an approval: the attention words, then what). Pause sits
+ * beside Stop while it works, and Resume when a person paused it; Stop stays
+ * while the task is blocked on you. A finished card offers what comes next:
+ * Continue or Retry after a failure, Run again or Make a routine after a
+ * success (task-card-actions.tsx).
  */
 export function WorkRunPanel({
   work,
@@ -190,6 +193,11 @@ export function WorkRunPanel({
             {progress}
           </p>
         </div>
+        {!finished && (
+          <div className="-mt-0.5 shrink-0">
+            <TaskLiveControl work={work} />
+          </div>
+        )}
         <AnimatePresence initial={false}>
           {!finished && work.steering !== null && (
             <motion.div
@@ -204,6 +212,7 @@ export function WorkRunPanel({
           )}
         </AnimatePresence>
       </header>
+      <TaskConnectionNotice work={work} className="px-4 pb-3 @[30rem]:pl-12" />
 
       <div ref={bodyRef}>
         <div key={bodyKey} className={cn(bodyKey !== firstBodyKey && "animate-fade-in")}>
@@ -571,6 +580,9 @@ function TerminalRun({
         </div>
       )}
 
+      {/* What comes next: Continue or Retry after a failure, Run again or
+          Make a routine after a success. */}
+      <FinishedTaskActions work={work} session={session} run={run} />
     </div>
   );
 }

@@ -55,6 +55,10 @@ const AgentChangeCard = nextDynamic(
   () => import("@/components/chat/agent-change-card").then((m) => m.AgentChangeCard),
   { ssr: false },
 );
+const RoutineProposalList = nextDynamic(
+  () => import("@/components/chat/routine-proposal-card").then((m) => m.RoutineProposalList),
+  { ssr: false },
+);
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 
@@ -1419,6 +1423,12 @@ export const MessageItem = React.memo(function MessageItem({
             )}
           </div>
         )}
+
+        {/* Routines the model drafted (`propose_routine`), under the reply that
+            says so: Schedule, Edit, Not now (routine-proposal-card.tsx). */}
+        {view.activity?.some((evt) => Boolean(evt.routineProposal)) ? (
+          <RoutineProposalList activity={view.activity} />
+        ) : null}
 
         {/* Footer, below the answer it backs — the inline chips are the citation,
             this is the bibliography. */}

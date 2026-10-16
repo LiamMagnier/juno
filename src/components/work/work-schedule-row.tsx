@@ -7,6 +7,7 @@ import { ChevronRight, Loader2, Pause, Play } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
+import type { ClientScheduleHealth, ScheduleHealthTone } from "@/lib/work/schedule-health";
 import { parseCodeRoutineConfig } from "@/lib/work/code-routine";
 import {
   WORK_SYNC_EVENT,
@@ -71,7 +72,7 @@ function nextFireSentence(schedule: ClientWorkSchedule): string {
 }
 
 /**
- * What this schedule will send, in three words.
+ * What this schedule will send, in a few words.
  *
  * On the row rather than only in the editor because this list is where somebody
  * notices that the hourly sweep they set up last month is the reason their inbox
@@ -79,24 +80,62 @@ function nextFireSentence(schedule: ClientWorkSchedule): string {
  * that has been failing for a week reads exactly like one that has been working,
  * unless the row says nothing was ever going to tell them.
  *
- * `none` is the only one that gets a sentence, because it is the only one whose
- * consequence is silence. The other three are stated flatly; the editor carries
- * the full explanation, including the blocked-run exception that `none` cannot
- * silence.
+ * "Tells you", not "Emails": a run's notice goes to the inbox and to every
+ * phone, Mac and browser that asked for pushes first, and email after
+ * (src/lib/work/notify/deliver.ts). `none` is the only one that gets a
+ * sentence, because it is the only one whose consequence is silence; the
+ * editor carries the full explanation, including the stuck-run exception.
  */
 function notifySentence(notifyPolicy: string): string | null {
   switch (notifyPolicy) {
     case "none":
-      return "No email unless a run gets stuck";
+      return "Quiet unless a run gets stuck";
     case "on_attention":
-      return "Emails when it needs you";
+      return "Tells you when it needs you";
     case "on_finish":
-      return "Emails on every run";
+      return "Tells you after every run";
     case "all":
-      return "Emails on everything";
+      return "Tells you about everything";
     default:
       return null;
   }
+}
+
+const HEALTH_DOT: Record<ScheduleHealthTone, string> = {
+  ok: "bg-[hsl(var(--success))]",
+  live: "bg-primary",
+  attention: "bg-[hsl(var(--attention))]",
+  error: "bg-destructive",
+  quiet: "bg-muted-foreground/50",
+};
+
+/**
+ * Whether the routine is working, as a dot and words (G42): "Healthy",
+ * "Can’t read mail", "Last run failed", "Waiting for you · stops in 5h". The
+ * dot is never the only signal; the words are what is read, and the detail
+ * line under them says why when there is a why.
+ */
+function HealthLine({ health }: { health: ClientScheduleHealth }) {
+  const expiresIn = health.waitingExpiresAt ? Date.parse(health.waitingExpiresAt) - Date.now() : null;
+  const hours = expiresIn !== null && expiresIn > 0 ? Math.max(1, Math.round(expiresIn / 3_600_000)) : null;
+  return (
+    <span className="mt-1.5 block" data-health={health.state}>
+      <span className="flex min-w-0 items-center gap-1.5 text-ui text-foreground/75">
+        <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", HEALTH_DOT[health.tone])} />
+        <span className={cn("truncate", health.tone === "error" && "text-foreground")}>{health.label}</span>
+        {hours !== null && (
+          <span className="shrink-0 text-muted-foreground">
+            · stops in {hours}h unanswered
+          </span>
+        )}
+      </span>
+      {health.detail && (
+        <span className="mt-0.5 block truncate pl-3 text-caption text-muted-foreground" title={health.detail}>
+          {health.detail}
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function WorkScheduleRow({
@@ -116,6 +155,10 @@ export function WorkScheduleRow({
   // the sidebar as its own session, which needs no line here.
   const notify = isCode ? null : notifySentence(schedule.notifyPolicy);
   const parsedCode = isCode ? parseCodeRoutineConfig(schedule.codeConfig) : null;
+  // Paused is already said by the row's own first words and its section, so
+  // the health line is for the routines that are meant to be running.
+  const health = schedule.health && schedule.health.state !== "paused" ? schedule.health : null;
+  const fix = health?.action ?? null;
 
   const toggle = async () => {
     setBusy("toggle");
@@ -207,6 +250,7 @@ export function WorkScheduleRow({
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
           </span>
+          {health && <HealthLine health={health} />}
           <span className="ed-annot mt-1.5 block truncate">
             {nextFireSentence(schedule)}
             {schedule.lastRunAt !== null && ` · last ran ${workTimeAgo(schedule.lastRunAt)}`}
@@ -226,9 +270,22 @@ export function WorkScheduleRow({
           "flex shrink-0 items-center gap-1 py-3 pr-2.5 max-sm:-mt-1 max-sm:pb-2.5 max-sm:pl-1.5 max-sm:pt-0",
           "transition-opacity duration-fast ease-out-soft",
           "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100 max-sm:opacity-100",
-          busy !== null && "opacity-100"
+          // A routine that needs fixing keeps its fix in view.
+          (busy !== null || fix !== null) && "opacity-100"
         )}
       >
+        {fix !== null && (
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className={cn("h-7 px-2.5 text-micro font-normal", workRowControlClass)}
+          >
+            <Link href={fix.href} aria-label={`${fix.label}: ${schedule.name}`}>
+              {fix.label}
+            </Link>
+          </Button>
+        )}
         {/*
           The living task this schedule keeps.
           A schedule points at ONE session and re-runs it, so its transcript and
