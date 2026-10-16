@@ -1,6 +1,7 @@
 "use client";
 
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { useLatched } from "@/lib/use-presence";
 import { Loader2, Minus, X, type IconComponent } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
@@ -92,6 +93,9 @@ const MARK_LAYERS = Object.keys(MARK_ICON) as PlanStepState[];
  * scale collapses and the fade keeps its timing.
  */
 function StepMark({ state }: { state: PlanStepState }) {
+  // The galaxy mounts once the step has been live on screen, and then stays to
+  // fade under the tick; a plan that loads already settled draws none.
+  const galaxy = useLatched(state === "active");
   return (
     <span
       className={cn(
@@ -124,7 +128,7 @@ function StepMark({ state }: { state: PlanStepState }) {
             {layer === "active" ? (
               // Live state is the one thing allowed to move, and only while it
               // is live: the galaxy stops the moment the step is not.
-              <GalaxyMark phase={on ? "working" : "idle"} size={12} />
+              galaxy ? <GalaxyMark phase={on ? "working" : "idle"} size={12} /> : null
             ) : (
               <Icon motion="none" className={layer === "done" || layer === "failed" ? "size-2.5" : "size-3"} />
             )}

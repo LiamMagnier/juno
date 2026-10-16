@@ -42,6 +42,21 @@ export function usePresence(open: boolean, fallbackMs: number) {
 }
 
 /**
+ * True from the first render where `value` is true, and from then on.
+ *
+ * For something that should mount only once it is needed and then stay for
+ * its exit: a fold's rows after its first opening, or a working mark in a row
+ * that was live while the reader watched (so it can fade under the outcome).
+ * A row that arrives already settled never mounts it, which keeps a long feed
+ * from carrying one idle canvas per row.
+ */
+export function useLatched(value: boolean): boolean {
+  const [latched, setLatched] = React.useState(value);
+  if (value && !latched) setLatched(true);
+  return value || latched;
+}
+
+/**
  * The last non-empty value, so a surface that is leaving keeps showing what it
  * showed (a toast's words, a dock's tab) while it animates out.
  */

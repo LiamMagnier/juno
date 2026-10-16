@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { useLatched } from "@/lib/use-presence";
 import {
   Ban,
   ChevronRight,
@@ -911,6 +912,10 @@ function FeedMarker({
 }) {
   const layer = "[grid-area:1/1] size-3 transition-[opacity,transform] duration-fast ease-out-soft";
   const hidden = "scale-75 opacity-0 motion-reduce:scale-100";
+  // Mounted only once this row has run while on screen: a feed that loads a
+  // finished task must not carry one canvas (and its observers and entrance
+  // frames) per settled row under the outcome glyph.
+  const galaxy = useLatched(running);
   return (
     <span
       className="absolute -left-[21px] top-1 grid size-3.5 place-items-center rounded-full bg-background"
@@ -918,7 +923,9 @@ function FeedMarker({
     >
       {/* The galaxy while the call runs (the one working mark); it stops and
           steps back as the outcome fades in over it. */}
-      <GalaxyMark phase={running ? "working" : "finished"} size={12} className={cn(layer, "text-primary", !running && hidden)} />
+      {galaxy && (
+        <GalaxyMark phase={running ? "working" : "finished"} size={12} className={cn(layer, "text-primary", !running && hidden)} />
+      )}
       <Icon className={cn(layer, tone, running && hidden)} />
     </span>
   );

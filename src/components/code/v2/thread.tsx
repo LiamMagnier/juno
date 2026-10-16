@@ -39,6 +39,7 @@ import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
 import { Glyph, LiveMark, useNow } from "./primitives";
 import { cn } from "@/lib/utils";
+import { useLatched } from "@/lib/use-presence";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
 import { prefersReducedMotion } from "@/lib/motion-preference";
@@ -581,9 +582,10 @@ function TurnView({
   const live = turn.status === "running" || turn.status === "waiting";
   // The fold's steps mount on its first opening and then stay, so closing it
   // collapses the rows it shows instead of emptying the box first and
-  // animating a blank (a fold that only animated one way).
-  const [foldMounted, setFoldMounted] = React.useState(open);
-  if (open && !foldMounted) setFoldMounted(true);
+  // animating a blank (a fold that only animated one way). Only the fold's own
+  // opening counts: the steps a live turn showed outside any fold do not keep
+  // every settled turn of the session carrying a hidden copy of its rows.
+  const foldMounted = useLatched(vis.header && open);
   return (
     <section data-turn={turn.id} aria-label={`Turn ${turn.ordinal + 1}`} className="cv2-turn">
       {turn.user && <UserBubble turn={turn} revert={revert} />}
