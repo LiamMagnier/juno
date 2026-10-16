@@ -289,7 +289,7 @@ test("a download is one file, or a bundle for a design, with provenance and a bo
   const base = { id: "a1", identifier: "pricing", title: "Pricing / page", type: "HTML", language: null };
   assert.equal(artifactFileName(base), "Pricing page.html");
   assert.equal(artifactFileName({ ...base, type: "CODE", language: "python" }), "Pricing page.py");
-  assert.equal(artifactFileName({ ...base, type: "DESIGN" }), "Pricing page.juno.design.json");
+  assert.equal(artifactFileName({ ...base, type: "DESIGN" }), "Pricing page.alevr.design.json");
   assert.equal(isMultiFileType("DESIGN"), true);
   assert.equal(isMultiFileType("HTML"), false);
 
@@ -322,7 +322,7 @@ test("a download is one file, or a bundle for a design, with provenance and a bo
   assert.deepEqual(bounded.map((f) => f.path), ["Pricing page.html", "history/v1.html", "README.md"], "the budget stops the archive");
 
   const design = bundleFiles({ artifact: { ...base, type: "DESIGN" }, version: 1, content: serializeDesignDocument(signInDocument()) });
-  assert.deepEqual(design.map((f) => f.path), ["Pricing page.juno.design.json", "poster.svg", "handoff.json", "README.md"]);
+  assert.deepEqual(design.map((f) => f.path), ["Pricing page.alevr.design.json", "poster.svg", "handoff.json", "README.md"]);
 });
 
 test("the Library merges artifacts and deliverables newest first, behind a position cursor", () => {
