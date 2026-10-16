@@ -64,6 +64,7 @@ test("a non-animating galaxy is a still frame with no canvas element", () => {
     assert.match(html, /class="alevr-galaxy-still"/, `${phase}: the still frame`);
     assert.match(html, /data-galaxy-still="10-12"/, "the still frame at the static clock");
     assert.doesNotMatch(html, /data-animating/);
+    assert.match(html, /\.alevr-galaxy-still\[data-galaxy-still=&quot;10-12&quot;\]|\.alevr-galaxy-still\[data-galaxy-still="10-12"\]/, `${phase}: the still frame's mask rule ships with it`);
   }
   const waiting = renderToStaticMarkup(React.createElement(GalaxyMark, { phase: "waiting", size: 12, registry }));
   assert.doesNotMatch(waiting, /alevr-galaxy-hand/, "waiting is the run line's still frame, not needs you");

@@ -5,7 +5,7 @@ import test from "node:test";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { pageEntranceKeyframes, PAGE_ENTRANCE } from "@/components/app/page-transition";
+import { pageEntranceKeyframes, PAGE_ENTRANCE, routeClickTarget } from "@/components/app/page-transition";
 import { AttachmentChip, ATTACHMENT_CHIP_SIZE, progressDashOffset, QuoteCard } from "@/components/ui/attachment-chip";
 import { Badge, badgeSizeFor } from "@/components/ui/badge";
 import { Collapse, CollapseChevron } from "@/components/ui/collapse";
@@ -223,6 +223,36 @@ test("page transition: a 160 opacity fallback, 6px only when motion is allowed, 
   ]);
   assert.deepEqual(pageEntranceKeyframes(0), [{ opacity: 0 }, { opacity: 1 }], "reduced motion: opacity only");
   assert.match(read("src/components/app/page-transition.tsx"), /fill: "none"/);
+});
+
+test("every plain in-app link click starts the route budget", () => {
+  const location = { origin: "https://alevr.test", pathname: "/chat", href: "https://alevr.test/chat" };
+  const anchor = (href: string, attrs: Record<string, string> = {}) => ({
+    getAttribute: (name: string) => (name === "href" ? href : attrs[name] ?? null),
+    hasAttribute: (name: string) => name in attrs,
+  });
+  const click = (href: string, over: Partial<MouseEvent> = {}, attrs: Record<string, string> = {}) =>
+    routeClickTarget(
+      {
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        defaultPrevented: false,
+        target: { closest: () => anchor(href, attrs) } as unknown as EventTarget,
+        ...over,
+      },
+      location,
+    );
+  assert.equal(click("/library"), "/library");
+  assert.equal(click("https://alevr.test/code/abc"), "/code/abc");
+  assert.equal(click("/chat"), null, "same path");
+  assert.equal(click("#section"), null, "a hash");
+  assert.equal(click("https://example.com/x"), null, "another origin");
+  assert.equal(click("/library", { metaKey: true }), null, "a new tab");
+  assert.equal(click("/library", { button: 1 }), null);
+  assert.equal(click("/library", {}, { target: "_blank" }), null);
 });
 
 test("skeleton: 200ms before it shows, at least 400ms once shown, busy and labelled", () => {

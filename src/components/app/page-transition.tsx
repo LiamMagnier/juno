@@ -3,7 +3,29 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 import { DURATION } from "@/lib/design/tokens.generated";
-import { markShellVisible } from "@/lib/perf-marks";
+import { markRouteClick, markShellVisible } from "@/lib/perf-marks";
+
+/**
+ * The pathname a click navigates to inside the app, or null: a plain primary
+ * click on a same-origin link to another path (a modified click opens a tab,
+ * and a hash or same-path link is not a route change).
+ */
+export function routeClickTarget(
+  event: Pick<MouseEvent, "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "defaultPrevented" | "target">,
+  location: Pick<Location, "origin" | "pathname" | "href">,
+): string | null {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+  const target = event.target as Element | null;
+  const anchor = target && typeof target.closest === "function" ? target.closest("a[href]") : null;
+  if (!anchor || anchor.getAttribute("target") === "_blank" || anchor.hasAttribute("download")) return null;
+  try {
+    const url = new URL(anchor.getAttribute("href")!, location.href);
+    if (url.origin !== location.origin || url.pathname === location.pathname) return null;
+    return url.pathname;
+  } catch {
+    return null;
+  }
+}
 import { notifyRouteCommitted, viewTransitionActive } from "@/lib/view-transition";
 
 /** The fallback entrance (spec P2 (18)): 160 opacity, plus a 6px rise only while motion is allowed. */
@@ -88,6 +110,16 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
   const previous = React.useRef(group);
   // A view transition waiting on this route (a list row opening its thread)
   // takes its "after" snapshot once the new path has committed.
+  // Every in-app link click starts the route budget (alevr:route-click), not
+  // only the ones that run a view transition: one capture listener for the shell.
+  React.useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      const href = routeClickTarget(event, window.location);
+      if (href) markRouteClick(href);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
   const firstPath = React.useRef(true);
   React.useLayoutEffect(() => {
     if (!pathname) return;
