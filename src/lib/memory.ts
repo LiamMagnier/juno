@@ -68,6 +68,7 @@ import { checkBudget, recordSpend } from "@/lib/spend";
 import { getUserPlan } from "@/lib/usage";
 import { createUnattributedSpendMeter, unattributedDailyCeilingMicroUsd } from "@/lib/metering/unit-prices";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /*
  * Incremental memory architecture
@@ -1124,7 +1125,7 @@ export async function extractConversationMemory(opts: {
   // Message bodies are encrypted at rest — decrypt at the read boundary.
   const messages = (
     await prisma.message.findMany({
-      where: { conversationId: convo.id, role: "USER", ...(since ? { createdAt: { gt: since } } : {}) },
+      where: { conversationId: convo.id, role: "USER", ...ON_ACTIVE_PATH, ...(since ? { createdAt: { gt: since } } : {}) },
       orderBy: { createdAt: "asc" },
       select: { id: true, content: true, createdAt: true },
     })

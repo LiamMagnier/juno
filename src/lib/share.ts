@@ -9,6 +9,7 @@ import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
 import { artifactLineageTakenDown } from "@/lib/artifact-takedown";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ON_ACTIVE_PATH, pathIdsTo, shownLeafId } from "@/lib/chat/branches";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -128,6 +129,9 @@ export async function createShare(userId: string, kind: ShareKind, targetId: str
         conversationId: targetId,
         title: conversation.title,
         snapshotAt: new Date(),
+        // The branch being read now (src/lib/chat/branches.ts): an edit or a
+        // branch switch after sharing never changes what the link shows.
+        leafMessageId: await shownLeafId(prisma, targetId),
       },
     });
   }
@@ -284,12 +288,18 @@ export interface SharedChatSnapshot {
 export async function getSharedChatSnapshot(share: Share): Promise<SharedChatSnapshot | null> {
   if (share.kind !== "CHAT" || !share.conversationId) return null;
 
+  // The branch the link was made on: the shared leaf's ancestors. A link
+  // made before branches (no leaf) reads the shown branch; the first branch
+  // operation in its chat pins it to the leaf it showed. A pinned leaf that
+  // was deleted since falls back the same way.
+  const path = share.leafMessageId ? await pathIdsTo(prisma, share.conversationId, share.leafMessageId) : null;
   const [messages, artifacts] = await Promise.all([
     prisma.message.findMany({
       where: {
         conversationId: share.conversationId,
         createdAt: { lte: share.snapshotAt },
         role: { in: ["USER", "ASSISTANT"] },
+        ...(path ? { id: { in: path } } : ON_ACTIVE_PATH),
       },
       orderBy: { createdAt: "asc" },
       // `activity` IS DELIBERATELY ABSENT, and must stay absent. It carries the

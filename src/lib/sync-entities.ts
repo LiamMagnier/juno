@@ -34,6 +34,7 @@ import {
 } from "@/lib/work/serializers";
 import { serializeSchedule } from "@/lib/work/schedule";
 import { serializeSkill, serializeSkillVersion } from "@/lib/work/skills";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /**
  * Adapts a serializer's return value to `EntityData`.
@@ -135,9 +136,13 @@ const loaders: Record<string, EntityLoader> = {
       ]),
     );
   },
+  // The shown branch only (src/lib/chat/branches.ts). A message that left
+  // the path hydrates as a tombstone, so a synced transcript drops it; when
+  // its branch is shown again the row changes, the change feed carries it,
+  // and it hydrates live again.
   message: async (accountId, ids) => {
     const rows = await prisma.message.findMany({
-      where: { id: { in: ids }, conversation: { userId: accountId } },
+      where: { id: { in: ids }, conversation: { userId: accountId }, ...ON_ACTIVE_PATH },
     });
     return new Map(
       rows.map((row) => [

@@ -100,24 +100,6 @@ function expandForStorage(artifact: ParsedArtifact): ParsedArtifact | null {
 }
 
 /**
- * Let go of the artifacts a message first emitted, without deleting them.
- *
- * An artifact outlives the answer that made it: by the time that answer is
- * edited away or regenerated, the row can carry hand edits, design
- * checkpoints and public share links, all of which cascade from it. So
- * `messageId` is never a delete key. The row stays, with every version and
- * share, and is detached; the next emission of its identifier appends to it
- * (see `persistArtifacts`). A deleted message detaches its artifacts on its
- * own through the foreign key's `SetNull`; an answer overwritten in place by
- * a regenerate has to be let go of explicitly, which is this.
- *
- * Returned unawaited so it can join a batch `$transaction`.
- */
-export function detachArtifactsFromMessage(messageId: string, userId: string) {
-  return prisma.artifact.updateMany({ where: { messageId, userId }, data: { messageId: null } });
-}
-
-/**
  * The handle an artifact keeps when a re-emission of its identifier brings a
  * different type: `{identifier}~{last six characters of its id}`. The id is
  * the artifact's identity and never changes; the identifier is only the
@@ -371,7 +353,7 @@ async function writeArtifact(
 
   const existing = await db.artifact.findFirst({
     where: { conversationId, identifier: a.identifier, userId: owner.userId },
-    select: { id: true, type: true, currentVersion: true, deletedAt: true, messageId: true },
+    select: { id: true, type: true, currentVersion: true, deletedAt: true, messageId: true, message: { select: { onActivePath: true } } },
   });
 
   if (!existing) return { artifacts: [await newArtifact()] };
@@ -438,10 +420,12 @@ async function writeArtifact(
       title: a.title,
       language: a.language ?? null,
       // messageId stays pinned to the message that first created the
-      // artifact while that message is still there, so the inline card
+      // artifact while that message is still shown, so the inline card
       // in a later turn reads as an update. A detached row (its message
-      // was edited away or regenerated) is claimed by this message.
-      ...(existing.messageId ? {} : { message: { connect: { id: messageId } } }),
+      // was deleted), or one whose message is on a branch no longer shown
+      // (src/lib/chat/branches.ts: an edit or a regenerate moved it aside),
+      // is claimed by this message.
+      ...(existing.messageId && existing.message?.onActivePath !== false ? {} : { message: { connect: { id: messageId } } }),
     }
   );
   return { artifacts: [await readClientArtifact(db, locked.id, owner.userId)] };

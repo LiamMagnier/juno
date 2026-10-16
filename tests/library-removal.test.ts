@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  BRANCH_COPY_ORIGIN,
   libraryItemPlacement,
   libraryUse,
   libraryViewWhere,
@@ -107,13 +108,16 @@ test("a file that is not in the reader's Library is not found, and nothing is wr
 
 type Placement = { deletedAt: Date | null; libraryRemovedAt: Date | null };
 
-/** Enough of Prisma's `where` to evaluate the two views: `null`, `{ not: null }`, `OR`. */
-function holds(row: Placement, where: Record<string, unknown>): boolean {
+/** Enough of Prisma's `where` to evaluate the two views: `null`, `{ not: null }`, `{ not: value }`, `OR`. */
+function holds(row: Placement & { origin?: string }, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([field, condition]) => {
     if (field === "OR") return (condition as Record<string, unknown>[]).some((branch) => holds(row, branch));
     const value = row[field as keyof Placement];
     if (condition === null) return value === null;
     if (condition && typeof condition === "object" && (condition as { not?: unknown }).not === null) return value !== null;
+    if (condition && typeof condition === "object" && typeof (condition as { not?: unknown }).not === "string") {
+      return (row as Record<string, unknown>)[field] !== (condition as { not: string }).not;
+    }
     throw new Error(`unexpected condition on ${field}`);
   });
 }
@@ -123,10 +127,24 @@ test("every row is in exactly one of the Library and Recently deleted", () => {
   const deleted = libraryViewWhere("deleted");
   for (const deletedAt of [null, earlier]) {
     for (const libraryRemovedAt of [null, earlier]) {
-      const row = { deletedAt, libraryRemovedAt };
+      const row = { deletedAt, libraryRemovedAt, origin: "upload" };
       const label = JSON.stringify(row);
       assert.equal(holds(row, library), !deletedAt && !libraryRemovedAt, label);
       assert.notEqual(holds(row, library), holds(row, deleted), label);
+    }
+  }
+});
+
+test("an edited question's copied files are in neither list: the originals already are", () => {
+  // Editing a question copies its attachments onto the new wording
+  // (src/lib/chat/branches.ts); listing the copies would show every file twice.
+  const library = libraryViewWhere("library");
+  const deleted = libraryViewWhere("deleted");
+  for (const deletedAt of [null, earlier]) {
+    for (const libraryRemovedAt of [null, earlier]) {
+      const row = { deletedAt, libraryRemovedAt, origin: BRANCH_COPY_ORIGIN };
+      assert.equal(holds(row, library), false, JSON.stringify(row));
+      assert.equal(holds(row, deleted), false, JSON.stringify(row));
     }
   }
 });
@@ -214,23 +232,14 @@ test("the truncation tombstones exactly the hidden files it leaves unused, after
   assert.deepEqual(none, []);
 });
 
-test("the edit route settles hidden files inside its transaction, before the messages go", () => {
+test("editing a question deletes no message, so it has no Library removals to settle", () => {
+  // An edit used to delete every later message and had to finish the Library
+  // delete of the files only they used. It is a branch now
+  // (src/lib/chat/branches.ts): the later messages stay, with their files.
   const route = read("src/app/api/messages/[id]/route.ts");
-  // Interactive, so the settle and the delete share one transaction.
-  assert.match(route, /prisma\.\$transaction\(async \(tx\) =>/);
-  const settle = route.indexOf("settleLibraryRemovalsBeforeTruncation(tx, user.id, message.id)");
-  const truncate = route.indexOf("tx.message.deleteMany(");
-  assert.ok(settle !== -1, "the edit route settles Library removals");
-  assert.ok(truncate !== -1, "the edit route truncates inside the transaction");
-  assert.ok(settle < truncate, "settled before the messages (and their messageIds) go");
-
-  const removal = read("src/lib/library-removal.ts");
-  // The rows the deleteMany takes, stated the same way, every one locked (not
-  // only the hidden ones, so a removal committing meanwhile is waited for).
-  assert.match(removal, /later\."createdAt" > edited\."createdAt"/);
-  assert.match(removal, /FOR UPDATE OF a/);
-  assert.doesNotMatch(removal, /"libraryRemovedAt" IS NOT NULL\s+FOR UPDATE OF a/);
-  assert.match(removal, /tombstoneAttachment\(tx, userId, \{ id \}\)/);
+  assert.doesNotMatch(route, /deleteMany\(/);
+  assert.match(route, /forkMessage\(/);
+  assert.doesNotMatch(read("src/lib/library-removal.ts"), /settleLibraryRemovalsBeforeTruncation/);
 });
 
 test("restoring a hidden file only clears the column while it is still only hidden", () => {

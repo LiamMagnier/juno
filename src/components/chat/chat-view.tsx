@@ -2583,6 +2583,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 onOpenArtifact={openArtifactByIdentifier}
                 onArtifactChanged={handleArtifactChanged}
                 onRegenerate={chat.regenerate}
+                onRegenerateAt={privateMode ? undefined : chat.regenerateAt}
+                onSelectBranch={privateMode ? undefined : chat.selectBranch}
                 onContinue={chat.continueResponse}
                 onEdit={chat.editAndResend}
                 onResend={chat.resendUnsent}

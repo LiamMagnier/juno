@@ -192,6 +192,24 @@ export function planHistorySummary(input: {
   return { action: "extend", fromCount: 0, toCount: start, previous: null };
 }
 
+/**
+ * Whether the stored summary may stand in for the messages before the window
+ * when its update could not finish in time.
+ *
+ * Only while it still describes them: no more messages than lie outside the
+ * window (a regenerate of an earlier answer reads the conversation as it
+ * stood then, and a summary of what came after would leak it), and the same
+ * ones. An edit or a branch switch (src/lib/chat/branches.ts) changes which
+ * messages come first. The shown path in thread order is one line of
+ * ancestors, so the message at the summary's boundary still being the one it
+ * stopped at proves every message before it is unchanged. `boundaryId` is the
+ * id of the message at index `stored.coveredCount` now.
+ */
+export function storedSummaryHolds(stored: StoredHistorySummary, start: number, boundaryId: string | null | undefined): boolean {
+  if (!stored.text.trim() || stored.coveredCount > start) return false;
+  return !!boundaryId && boundaryId === stored.untilMessageId;
+}
+
 export const HISTORY_SUMMARY_SYSTEM = `You keep a running summary of the earlier part of a conversation between a user and ${PRODUCT_NAME}, an AI assistant. The summary replaces those messages in the assistant's context, so it must let the assistant continue the conversation as if it still had them.
 
 Write the updated summary from the previous summary (if any) and the messages that follow it. Keep, in this order of priority:

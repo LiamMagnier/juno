@@ -4,7 +4,6 @@ import {
   assistantWriteMode,
   reasoningPartsColumn,
   assistantTurnFields,
-  versionSnapshot,
 } from "@/lib/chat/assistant-turn";
 import {
   codeSessionRefusal,
@@ -76,8 +75,9 @@ test("the Code refusal names the endpoint that does work, not just the one that 
 
 const encrypt = (value: string) => `enc:${value}`;
 
-test("a regenerate supersedes only while the row it replaces still exists", () => {
-  assert.equal(assistantWriteMode("msg_1", true), "supersede");
+test("a regenerate branches only while the answer it replaces still exists", () => {
+  // A new sibling of the old answer (src/lib/chat/branches.ts), never an overwrite.
+  assert.equal(assistantWriteMode("msg_1", true), "branch");
   // Deleted from another tab mid-generation: append rather than fail. The user
   // asked for an answer; losing it because the thing it replaced is gone helps
   // nobody.
@@ -87,18 +87,14 @@ test("a regenerate supersedes only while the row it replaces still exists", () =
 
 test("reasoning parts are encrypted individually while the array shape stays plain", () => {
   // The count of steps is not the secret; their contents are.
-  const column = reasoningPartsColumn(["one", "two"], encrypt, "append");
+  const column = reasoningPartsColumn(["one", "two"], encrypt);
   assert.deepEqual(column, { action: "set", values: ["enc:one", "enc:two"] });
 });
 
-test("overwriting with no parts CLEARS the column; appending with none omits it", () => {
-  // The distinction is the whole point. A regenerate can swap a part-emitting
-  // model for one that sends none, and leaving the old array behind shows the
-  // PREVIOUS answer's steps above the new answer's reasoning — a fabricated
-  // chain of thought, assembled by an ORM default.
-  assert.deepEqual(reasoningPartsColumn([], encrypt, "supersede"), { action: "clear" });
-  assert.deepEqual(reasoningPartsColumn([], encrypt, "omit" as never), { action: "omit" });
-  assert.deepEqual(reasoningPartsColumn([], encrypt, "append"), { action: "omit" });
+test("a turn with no parts omits the column, on a regenerate as on any turn", () => {
+  // Every write is a fresh row, so NULL keeps meaning "this provider streamed
+  // unbroken prose" — the old answer keeps its own steps on its own row.
+  assert.deepEqual(reasoningPartsColumn([], encrypt), { action: "omit" });
 });
 
 test("the assistant's text is encrypted and its accounting is passed through", () => {
@@ -147,12 +143,10 @@ test("an unreported cache split is null, not zero — absent is not a miss", () 
   assert.equal(fields.cacheWriteTokens, null);
 });
 
-test("an unreported cache split is an explicit null, so a regenerate CLEARS the old one", () => {
-  // The supersede path hands these straight to prisma.message.update. Prisma
-  // reads `undefined` as "leave the column alone", so a regenerate onto a
-  // provider with no cache reporting would leave the PREVIOUS answer's cache
-  // numbers sitting under the new answer. `in` distinguishes the two states
-  // that `assert.equal(…, null)` above cannot.
+test("an unreported cache split is an explicit null, stated rather than left out", () => {
+  // Prisma reads `undefined` as "leave the column alone", which only an update
+  // can get wrong; the record states the split as unknown either way. `in`
+  // distinguishes the two states that `assert.equal(…, null)` above cannot.
   const fields = assistantTurnFields(
     { content: "x", model: "m", promptTokens: null, completionTokens: null },
     encrypt
@@ -161,38 +155,6 @@ test("an unreported cache split is an explicit null, so a regenerate CLEARS the 
   assert.ok("cacheWriteTokens" in fields, "the key must be present for the update to clear it");
   assert.notEqual(fields.cacheReadTokens, undefined);
   assert.notEqual(fields.cacheWriteTokens, undefined);
-});
-
-test("the version snapshot copies ciphertext verbatim", () => {
-  // Decrypting to re-encrypt would put plaintext in memory for no reason and
-  // couple the history rows to the current key.
-  const snapshot = versionSnapshot({
-    id: "m1",
-    content: "enc:v1:abc",
-    reasoning: "enc:v1:def",
-    model: "anthropic:x",
-    promptTokens: 5,
-    completionTokens: 6,
-    sources: [{ url: "https://a" }],
-  });
-  assert.equal(snapshot.content, "enc:v1:abc");
-  assert.equal(snapshot.reasoning, "enc:v1:def");
-  assert.equal(snapshot.messageId, "m1");
-});
-
-test("a snapshot of an answer that cited nothing omits sources entirely", () => {
-  // Writing an explicit null and writing nothing are different states in the
-  // column, and only one of them means "this answer cited nothing".
-  const snapshot = versionSnapshot({
-    id: "m1",
-    content: "enc:x",
-    reasoning: null,
-    model: null,
-    promptTokens: null,
-    completionTokens: null,
-    sources: null,
-  });
-  assert.equal("sources" in snapshot, false);
 });
 
 // ------------------------------------------------------------- post-processing

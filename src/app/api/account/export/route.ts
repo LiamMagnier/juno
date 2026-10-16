@@ -11,6 +11,7 @@ import { getUserPlan } from "@/lib/usage";
 import { isStorageAvailable } from "@/lib/env";
 import { getObjectBytes } from "@/lib/storage";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,15 @@ function csvField(value: string | null | undefined): string {
  * `?format=csv` returns the message history as a CSV instead. `?format=juno`
  * stamps the JSON as the open, versioned Juno interchange format so it can be
  * uploaded back through /api/import.
+ *
+ * Branches (src/lib/chat/branches.ts): the JSON and the package are the
+ * whole account, so they carry every branch — the earlier wordings and
+ * answers an edit or regenerate kept, which are the person's data as much as
+ * the shown thread — with `parentId`, `branchGroupId`, `onActivePath` and
+ * `branchSelected` on each message, which is enough for /api/import to
+ * rebuild the tree. The CSV, a spreadsheet of what each chat reads, has the
+ * shown branch only. `?branches=all` or `?branches=shown` picks either way
+ * for any format.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -56,6 +66,8 @@ export async function GET(req: Request) {
   const requestedFormat = new URL(req.url).searchParams.get("format");
   const format = requestedFormat === "csv" ? "csv" : requestedFormat === "juno" ? "juno" : "json";
   const isJuno = format === "juno";
+  const requestedBranches = new URL(req.url).searchParams.get("branches");
+  const allBranches = requestedBranches === "all" || (requestedBranches !== "shown" && format !== "csv");
   const date = new Date().toISOString().slice(0, 10);
 
   const [account, plan, settings, conversations, rawMessages, memories, memorySummary, projects, attachments, spendTotals, spendByKind, projectMemorySummaries] =
@@ -112,7 +124,7 @@ export async function GET(req: Request) {
         },
       }),
       prisma.message.findMany({
-        where: { conversation: { userId: user.id } },
+        where: { conversation: { userId: user.id }, ...(allBranches ? {} : ON_ACTIVE_PATH) },
         orderBy: { createdAt: "asc" },
         take: MAX_MESSAGE_ROWS + 1,
         select: {
@@ -131,6 +143,10 @@ export async function GET(req: Request) {
           sources: true,
           activity: true,
           createdAt: true,
+          parentId: true,
+          branchGroupId: true,
+          onActivePath: true,
+          branchSelected: true,
           attachments: { select: { id: true } },
         },
       }),
@@ -394,7 +410,7 @@ export async function GET(req: Request) {
 
   if (format === "csv") {
     const titleById = new Map(conversations.map((c) => [c.id, c.title]));
-    const lines = ["conversation,role,model,content,createdAt"];
+    const lines = [allBranches ? "conversation,role,model,content,createdAt,id,parentId,branchGroupId,onActivePath" : "conversation,role,model,content,createdAt"];
     for (const m of messages) {
       lines.push(
         [
@@ -403,6 +419,7 @@ export async function GET(req: Request) {
           csvField(m.model),
           csvField(m.content),
           csvField(m.createdAt.toISOString()),
+          ...(allBranches ? [csvField(m.id), csvField(m.parentId), csvField(m.branchGroupId), csvField(String(m.onActivePath))] : []),
         ].join(",")
       );
     }
@@ -464,6 +481,11 @@ export async function GET(req: Request) {
       attachmentIds: m.attachments.map((attachment) => stableAttachmentId.get(attachment.id) ?? attachment.id),
       attachmentSourceIds: m.attachments.map((attachment) => stableAttachmentId.get(attachment.id) ?? attachment.id),
       createdAt: m.createdAt,
+      // `parentId` and `branchGroupId` name other rows by their `id` here, and
+      // /api/import rebuilds the tree from them (restoreImportedBranches).
+      ...(allBranches
+        ? { parentId: m.parentId, branchGroupId: m.branchGroupId, onActivePath: m.onActivePath, branchSelected: m.branchSelected }
+        : {}),
     };
     const list = byConversation.get(m.conversationId);
     if (list) list.push(row);
@@ -599,6 +621,9 @@ export async function GET(req: Request) {
       })),
     },
     messagesTruncated: truncated,
+    // Which messages are here: every branch, each message carrying its place
+    // in the tree, or (with ?branches=shown) each conversation's shown branch.
+    messageBranches: allBranches ? "all" : "shown",
     ...(truncated
       ? { truncationNote: `Message export is capped at ${MAX_MESSAGE_ROWS.toLocaleString("en-US")} rows; older messages are included first.` }
       : {}),

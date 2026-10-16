@@ -183,7 +183,11 @@
         },
         "/api/messages/[id]": {
           "status": "planned",
-          "note": "Edit-and-resend of a sent question, keeping the old text as a version; the Mac's question editor does not call it."
+          "note": "Edit a sent question as a new branch, keeping the old wording and every answer after it; the apps branch locally (NativeBranchNavigator) and do not call it."
+        },
+        "/api/messages/[id]/branch": {
+          "status": "planned",
+          "note": "Switch the shown branch from the pager under an edited question or a regenerated answer; the apps read only the shown branch and keep their own local tree."
         },
         "/api/messages/[id]/feedback": "native",
         "/api/messages/[id]/versions": "native",

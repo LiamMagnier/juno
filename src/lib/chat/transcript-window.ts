@@ -84,6 +84,23 @@ export function placeInlineRuns(
   return placed;
 }
 
+/**
+ * The first row arriving below rows that were already in the transcript: the
+ * index from which a branch switch's rows rise in (message-list.tsx). A row is
+ * arriving when its key is new; only rows after the first row that was
+ * already here count, so older history paged in above never animates, and
+ * neither does a list that is new as a whole (a conversation just opened).
+ * Infinity when nothing arrives.
+ */
+export function firstArrivalAfterHeld(keys: readonly string[], held: ReadonlySet<string>): number {
+  let seenHeld = false;
+  for (let i = 0; i < keys.length; i++) {
+    if (held.has(keys[i])) seenHeld = true;
+    else if (seenHeld) return i;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
 declare global {
   interface Window {
     /** Development-only: renders per transcript row key (see countTranscriptRender). */

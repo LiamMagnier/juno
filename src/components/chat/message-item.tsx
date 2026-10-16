@@ -208,10 +208,12 @@ function stripTrailingSourcesSection(content: string): string {
 }
 
 /**
- * ChatGPT-style "‹ 2/3 ›" version pager, shown whenever a message has preserved
- * prior versions (regenerate and edit-and-resend never overwrite history). It
- * sits in the action-toolbar row but OUTSIDE the hover-revealed cluster so the
- * existence of history stays discoverable at a glance.
+ * ChatGPT-style "‹ 2/3 ›" pager, shown whenever a message has alternatives: the
+ * branches an edit or a regenerate made (`message.branch`, which switch the
+ * whole continuation below), or, on a message that has never branched, the
+ * older wordings kept before branches existed (`message.versions`, text
+ * only). It sits in the action-toolbar row but OUTSIDE the hover-revealed
+ * cluster so the existence of history stays discoverable at a glance.
  */
 function VersionPager({
   index,
@@ -603,6 +605,11 @@ interface MessageItemProps {
    *  (code sessions), which hides the corresponding buttons entirely —
    *  an action that cannot run must not render. */
   onRegenerate?: (options?: RegenerateOptions) => void;
+  /** Regenerate an earlier answer as a new branch at its turn. Absent on
+   *  surfaces where only the newest answer can be redone (Code, rooms). */
+  onRegenerateAt?: (id: string, options?: RegenerateOptions) => void;
+  /** Show another branch: the "‹ 2/3 ›" pager on a message with `branch`. */
+  onSelectBranch?: (id: string) => Promise<unknown> | void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
   /** Re-send a user turn the server never received (`ChatMessage.unsent`),
@@ -670,6 +677,8 @@ export const MessageItem = React.memo(function MessageItem({
   onOpenArtifact,
   onArtifactChanged,
   onRegenerate,
+  onRegenerateAt,
+  onSelectBranch,
   onContinue,
   onEdit,
   onResend,
@@ -790,6 +799,31 @@ export const MessageItem = React.memo(function MessageItem({
     setVersionIndex(next);
   };
 
+  // ---- Branch pager (src/lib/chat/branches.ts) ----
+  // A message with alternatives steps through branches on the server: the
+  // turn and everything after it switch, and this row stays where it is (the
+  // new branch's first row takes over its render key). Held while a reply is
+  // being written, so an answer never lands under a question no longer shown.
+  const branch = message.branch && message.branch.siblingIds.length > 1 ? message.branch : null;
+  const [switchingBranch, setSwitchingBranch] = React.useState(false);
+  const stepBranch = async (dir: -1 | 1) => {
+    const target = branch?.siblingIds[branch.index + dir];
+    if (!target || !onSelectBranch || switchingBranch) return;
+    setSwitchingBranch(true);
+    try {
+      await onSelectBranch(target);
+    } finally {
+      setSwitchingBranch(false);
+    }
+  };
+  const pager = branch ? (
+    onSelectBranch ? (
+      <VersionPager index={branch.index} total={branch.siblingIds.length} loading={busy || switchingBranch} onStep={stepBranch} />
+    ) : null
+  ) : totalVersions > 1 ? (
+    <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
+  ) : null;
+
   // What the bubble displays: an older read-only version, or the live message.
   const viewingOld = versionIndex < versionCount ? versionDetails?.[versionIndex] : undefined;
   const view: ChatMessage = viewingOld
@@ -822,7 +856,7 @@ export const MessageItem = React.memo(function MessageItem({
   // into a new saved conversation and navigates there. Self-contained (needs
   // only the message row), so it requires no plumbing through chat-view.
   const [branching, setBranching] = React.useState(false);
-  const branch = async () => {
+  const branchInNewChat = async () => {
     if (branching || !message.conversationId) return;
     setBranching(true);
     try {
@@ -1053,9 +1087,7 @@ export const MessageItem = React.memo(function MessageItem({
         )}
         {!editing && !message.pending && !isVoice && (
           <div className="mt-1 flex items-center">
-            {totalVersions > 1 && (
-              <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
-            )}
+            {pager}
             <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
               <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
@@ -1078,11 +1110,9 @@ export const MessageItem = React.memo(function MessageItem({
                   <ActionIcons.edit className="size-4" />
                 </IconAction>
               )}
-              {onFork && !busy && !privateMode && !message.unsent && (
-                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
-                  <GitFork className="size-4" />
-                </IconAction>
-              )}
+              {/* No branch glyph here: editing IS branching on a question
+                  (the pager above switches between wordings), and a new chat
+                  is branched from an answer's More menu, one verb in one place. */}
             </div>
           </div>
         )}
@@ -1421,9 +1451,7 @@ export const MessageItem = React.memo(function MessageItem({
             on phones it stays in More. */}
         {!isVoice && !message.streaming && !message.error && (
           <div className="mt-1.5 flex items-center">
-            {totalVersions > 1 && (
-              <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
-            )}
+            {pager}
             <div
               className={cn(
                 // `fast`: the bar is chrome answering the pointer, and a toolbar
@@ -1478,8 +1506,15 @@ export const MessageItem = React.memo(function MessageItem({
                   />
                 </IconAction>
               )}
-              {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
-                <RegenerateMenu onRegenerate={onRegenerate} currentModelId={view.model ?? currentModelId} />
+              {/* Every answer can be tried again. The newest is redone in place;
+                  an earlier one becomes a new branch at its turn, and the
+                  answer it replaces stays, with everything after it, one
+                  step back on the pager. */}
+              {!isMediaOnly && !busy && !privateMode && (isLast ? onRegenerate : onRegenerateAt) && (
+                <RegenerateMenu
+                  onRegenerate={isLast ? onRegenerate! : (options) => onRegenerateAt?.(message.id, options)}
+                  currentModelId={view.model ?? currentModelId}
+                />
               )}
               {showMore && (
                 <DropdownMenu>
@@ -1514,19 +1549,20 @@ export const MessageItem = React.memo(function MessageItem({
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark
-                              names a repository ref in Juno Code. This forks a
-                              CONVERSATION. */}
-                          <GitBranch className="size-4" /> Branch from here
+                              names a repository ref in Alevr Code. This forks a
+                              CONVERSATION. "In new chat", because a branch
+                              inside this chat is what Edit and Regenerate make. */}
+                          <GitBranch className="size-4" /> Branch in new chat
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className={MENU_W}>
                           {canBranchSaved && (
-                            <DropdownMenuItem onSelect={() => void branch()}>
-                              <GitBranch className="size-4" /> Into a new saved chat
+                            <DropdownMenuItem onSelect={() => void branchInNewChat()}>
+                              <GitBranch className="size-4" /> Saved chat
                             </DropdownMenuItem>
                           )}
                           {canForkPrivate && (
                             <DropdownMenuItem onSelect={() => onFork?.(message.id)}>
-                              <GitFork className="size-4" /> Fork privately
+                              <GitFork className="size-4" /> Private chat
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuSubContent>

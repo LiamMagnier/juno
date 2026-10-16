@@ -10,7 +10,7 @@ import { TranscriptRail } from "@/components/chat/transcript-rail";
 import { useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { shouldLoadOlder } from "@/lib/chat/history-client";
-import { countTranscriptRender, placeInlineRuns } from "@/lib/chat/transcript-window";
+import { countTranscriptRender, firstArrivalAfterHeld, placeInlineRuns } from "@/lib/chat/transcript-window";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, LoadOlderRequest, RegenerateOptions, SendResult } from "@/hooks/use-chat";
@@ -47,6 +47,10 @@ interface MessageListProps {
   /** Chat-only turn actions — optional so non-chat surfaces (code sessions)
    *  reuse the rendering without dead buttons. See MessageItemProps. */
   onRegenerate?: (options?: RegenerateOptions) => void;
+  /** Regenerate an earlier answer as a new branch — see MessageItemProps.onRegenerateAt. */
+  onRegenerateAt?: (id: string, options?: RegenerateOptions) => void;
+  /** Show another branch — see MessageItemProps.onSelectBranch. */
+  onSelectBranch?: (id: string) => Promise<unknown> | void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
   /** Re-send a turn the server never received — see MessageItemProps.onResend. */
@@ -152,6 +156,8 @@ export function MessageList(props: MessageListProps) {
   const onOpenArtifact = useLatestHandler(props.onOpenArtifact);
   const onArtifactChanged = useLatestHandler(props.onArtifactChanged);
   const onRegenerate = useLatestHandler(props.onRegenerate);
+  const onRegenerateAt = useLatestHandler(props.onRegenerateAt);
+  const onSelectBranch = useLatestHandler(props.onSelectBranch);
   const onContinue = useLatestHandler(props.onContinue);
   const onEdit = useLatestHandler(props.onEdit);
   const onResend = useLatestHandler(props.onResend);
@@ -207,10 +213,30 @@ export function MessageList(props: MessageListProps) {
   // Older pages prepended above (paged history) shift every index by their
   // length, so the count is offset by where the previous first row now sits:
   // history arriving above must not replay its entrance either.
-  const seenRef = React.useRef({ count: messages.length, firstKey: messages[0] ? (messages[0].renderKey ?? messages[0].id) : undefined });
+  //
+  // A branch switch (the "‹ 2/3 ›" pager) replaces the rows after a turn with
+  // another branch's. Those rows are new to this list though their indices
+  // may be old ones, so they rise in too: whatever follows a row that was
+  // already here and was not here itself is arriving now. The switched turn
+  // keeps its key (use-chat hands it over), so it holds still.
+  const seenRef = React.useRef({
+    count: messages.length,
+    firstKey: messages[0] ? (messages[0].renderKey ?? messages[0].id) : undefined,
+    keys: new Set(messages.map((m) => m.renderKey ?? m.id)),
+  });
   const animateFrom = seenRef.current.count + (seenRef.current.firstKey ? (transcript.layout.indexByKey.get(seenRef.current.firstKey) ?? 0) : 0);
+  const arrivedFrom = React.useMemo(
+    () => firstArrivalAfterHeld(messages.map((m) => m.renderKey ?? m.id), seenRef.current.keys),
+    // Recomputed per message list only; the ref holds the previous list's keys.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messages],
+  );
   React.useEffect(() => {
-    seenRef.current = { count: messages.length, firstKey: messages[0] ? (messages[0].renderKey ?? messages[0].id) : undefined };
+    seenRef.current = {
+      count: messages.length,
+      firstKey: messages[0] ? (messages[0].renderKey ?? messages[0].id) : undefined,
+      keys: new Set(messages.map((m) => m.renderKey ?? m.id)),
+    };
   }, [messages]);
 
   // The newest user turn is the one ↑ edits from an empty composer.
@@ -361,11 +387,15 @@ export function MessageList(props: MessageListProps) {
               isLast={i === messages.length - 1}
               busy={props.busy}
               status={i === messages.length - 1 ? props.status : undefined}
-              animateIn={i >= animateFrom}
+              animateIn={i >= animateFrom || (i >= arrivedFrom && !seenRef.current.keys.has(m.renderKey ?? m.id))}
               artifactsByIdentifier={artifactsByIdentifier}
               onOpenArtifact={onOpenArtifact}
               onArtifactChanged={onArtifactChanged}
               onRegenerate={onRegenerate}
+              // A room plans who answers from its newest message, so only that
+              // answer can be redone there.
+              onRegenerateAt={props.onRegenerateAt && !props.speakerFor ? onRegenerateAt : undefined}
+              onSelectBranch={props.onSelectBranch ? onSelectBranch : undefined}
               onContinue={onContinue}
               onEdit={onEdit}
               onResend={onResend}

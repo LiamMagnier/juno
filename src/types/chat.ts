@@ -84,6 +84,15 @@ export interface ClientMessage {
   conversationId?: string;
   /** Prior contents preserved across regenerate / edit-and-resend, oldest first. The message itself is always the NEWEST version; these are read-only history for the "‹ 2/3 ›" pager. */
   versions?: ClientMessageVersion[];
+  /**
+   * Where this message sits among its alternatives (src/lib/chat/branches.ts):
+   * an edit of a question or a regenerate of an answer adds a sibling and
+   * keeps the old one with everything that followed it. Absent when the
+   * message has never had an alternative. Supersedes `versions` for any
+   * message that has it; `versions` then lists the alternatives before this
+   * one, for the apps' version pager, which does not read `branch` yet.
+   */
+  branch?: ClientMessageBranch;
   attachments: ClientAttachment[];
   sources?: ClientSource[];
   activity?: ClientActivityEvent[];
@@ -161,6 +170,14 @@ export interface ClientSource {
   /** Where it came from (SPEC §2.4): written for every source that comes from an
    *  `LlmEvent` `sources` or from a research completion. Absent on older rows. */
   origin?: ChatSourceOrigin;
+}
+
+/** A message's place among its alternatives: the "‹ 2/3 ›" pager under a turn. */
+export interface ClientMessageBranch {
+  /** Zero-based position of this message, oldest alternative first. */
+  index: number;
+  /** Every alternative at this point of the thread, oldest first, this one included. */
+  siblingIds: string[];
 }
 
 /** Metadata for one preserved prior version of a message (regenerate / edit-and-resend history). */
