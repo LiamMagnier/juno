@@ -160,3 +160,8 @@ test("small touch targets reach 44px without moving their neighbours", () => {
   assert.match(pressable, /size: "md", class: "[^"]*hit-44/);
   assert.match(source("src/components/code/v2/code-v2.css"), /\.cv2-nav-tick::before/);
 });
+
+test("page headers keep to one lede line on a phone", () => {
+  const header = source("src/components/app/app-page-header.tsx");
+  assert.match(header, /line-clamp-1[^"]*@\[40rem\]\/page:line-clamp-none/);
+});

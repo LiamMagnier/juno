@@ -309,8 +309,10 @@ export default function ProjectsPage() {
         actions={empty || error ? undefined : newProject}
       />
 
+      {/* Folded on a phone (G54): the filter's All count already says how
+          many projects there are, and this line pushed the first one down. */}
       {!loading && !empty && !error && (
-        <p className="mb-4 text-ui tabular-nums text-muted-foreground" aria-label="Project totals">
+        <p className="mb-4 hidden text-ui tabular-nums text-muted-foreground @[40rem]/page:block" aria-label="Project totals">
           {topCount} projects · {folderCount} folders · {chatCount} chats
         </p>
       )}
