@@ -224,6 +224,12 @@ export interface ResearchRunViewAdditions {
   workingMs?: number;
   assistantMessageId?: string | null;
   /**
+   * The report as saved in Library (the completion's MARKDOWN artifact), for
+   * the reader's Share and the recap's Library link. Null while the run is
+   * live, on runs whose report was never saved, and once it is trashed.
+   */
+  reportArtifactId?: string | null;
+  /**
    * The model that wrote the report, for "Written by". Null when it is not
    * recorded (runs from before models were recorded, an evidence digest).
    */

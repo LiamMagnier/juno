@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-348 routes: 226 native, 53 planned, 56 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+349 routes: 226 native, 54 planned, 56 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
-| [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
+| [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 14 | 6 | 0 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
@@ -478,6 +478,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/research/[id]` | GET | Native | JunoChatKit |  |
 | `/api/research/[id]/clarify` | POST | Native | JunoChatKit |  |
 | `/api/research/[id]/control` | POST | Native | JunoChatKit |  |
+| `/api/research/[id]/export` | POST | Planned |  | A finished report as a Word document, from the Markdown the web's full-screen reader builds (G37). The apps' report reader has no Word export yet. |
 | `/api/research/[id]/plan` | POST | Native | JunoChatKit |  |
 | `/api/research/[id]/steer` | POST | Native | JunoChatKit |  |
 | `/api/research/citations` | GET | Native | JunoChatKit |  |

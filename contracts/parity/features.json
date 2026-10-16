@@ -820,6 +820,10 @@
         "/api/research/[id]": "native",
         "/api/research/[id]/clarify": "native",
         "/api/research/[id]/control": "native",
+        "/api/research/[id]/export": {
+          "status": "planned",
+          "note": "A finished report as a Word document, from the Markdown the web's full-screen reader builds (G37). The apps' report reader has no Word export yet."
+        },
         "/api/research/[id]/plan": "native",
         "/api/research/[id]/steer": "native",
         "/api/research/citations": "native"

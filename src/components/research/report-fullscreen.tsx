@@ -137,8 +137,9 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
             </div>
             <div className="flex items-center gap-1">
               <ReportExportButtons
-                input={{ run, report: model.report, citationOrder: model.citationOrder }}
+                input={{ run, model, title }}
                 onPdf={() => printReport(title)}
+                onLeave={() => onOpenChange(false)}
               />
               <DialogClose asChild>
                 <Button variant="ghost" size="icon-sm" aria-label={closeName}>

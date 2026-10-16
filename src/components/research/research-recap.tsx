@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { ArrowRight, ArrowUpRight, ChevronDown, RotateCcw, ShieldCheck } from "@/components/ui/icons";
+import { artifactPath } from "@/lib/artifact-links";
 import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { completedDuration, formatMicroUsd } from "@/components/research/run-format";
@@ -42,6 +44,7 @@ const RECAP_COPY = {
   time: "Time",
   openReport: "Read the report",
   library: "Saved in Library",
+  openLibrary: "Open the saved report in Library",
   noReport: "This research stopped before it wrote a report.",
   showWork: "How it was researched",
   hideWork: "Hide how it was researched",
@@ -169,8 +172,20 @@ export function ResearchRecap({
               {run.digest ? RECAP_COPY.openDigest : RECAP_COPY.openReport}
               <ArrowRight aria-hidden className="size-4 shrink-0" />
             </Button>
-            {/* Completion writes the report into Library in the same transaction as this message. */}
-            {run.assistantMessageId && <span className="rf-annot ms-2">{RECAP_COPY.library}</span>}
+            {/* Completion writes the report into Library in the same transaction
+                as this message; once the run knows where, the words are a door. */}
+            {run.reportArtifactId ? (
+              <Link
+                href={artifactPath(run.reportArtifactId)}
+                title={RECAP_COPY.openLibrary}
+                className="rf-annot ms-2 inline-flex items-center gap-1 rounded-xs underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground motion-reduce:transition-none"
+              >
+                {RECAP_COPY.library}
+                <ArrowUpRight aria-hidden className="size-3 shrink-0" />
+              </Link>
+            ) : run.assistantMessageId ? (
+              <span className="rf-annot ms-2">{RECAP_COPY.library}</span>
+            ) : null}
           </>
         ) : canRetry ? (
           <>
