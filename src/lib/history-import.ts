@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { isFeedbackReason, normalizeFeedbackNote, type FeedbackReason } from "@/lib/feedback-reasons";
 
 /*
  * Parsers for ChatGPT, Claude, Gemini and Juno data-export ZIPs. The providers
@@ -31,6 +32,9 @@ export interface ImportedMessage {
   reasoningParts?: string[] | null;
   model?: string | null;
   feedback?: "UP" | "DOWN" | null;
+  /** Why a DOWN was given, and the reader's note (plain text here; sealed on import). */
+  feedbackReason?: FeedbackReason | null;
+  feedbackNote?: string | null;
   promptTokens?: number | null;
   completionTokens?: number | null;
   costMicroUsd?: number | null;
@@ -422,6 +426,9 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       ? entry.reasoningParts.filter((part): part is string => typeof part === "string").slice(0, 200)
       : null;
     const feedback = entry.feedback === "UP" || entry.feedback === "DOWN" ? entry.feedback : null;
+    // A reason only means something beside the DOWN it explains (feedbackWrite).
+    const feedbackReason = feedback === "DOWN" && isFeedbackReason(entry.feedbackReason) ? entry.feedbackReason : null;
+    const feedbackNote = feedback === "DOWN" && typeof entry.feedbackNote === "string" ? normalizeFeedbackNote(entry.feedbackNote) : null;
     const numberValue = (value: unknown) => (typeof value === "number" && Number.isInteger(value) ? value : null);
     const jsonValue = (value: unknown) => (value && typeof value === "object" ? value : null);
     raw.push({
@@ -435,6 +442,8 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       reasoningParts,
       model: typeof entry.model === "string" && entry.model.length <= 200 ? entry.model : null,
       feedback,
+      feedbackReason,
+      feedbackNote,
       promptTokens: numberValue(entry.promptTokens),
       completionTokens: numberValue(entry.completionTokens),
       costMicroUsd: numberValue(entry.costMicroUsd),

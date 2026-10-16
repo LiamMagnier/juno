@@ -673,6 +673,9 @@ export async function POST(req: Request) {
               : {}),
             ...(message.model ? { model: message.model } : {}),
             ...(message.feedback ? { feedback: message.feedback } : {}),
+            ...(message.feedbackReason ? { feedbackReason: message.feedbackReason } : {}),
+            // Sealed like the body, as the feedback route seals it.
+            ...(message.feedbackNote ? { feedbackNote: encryptMessageText(message.feedbackNote) } : {}),
             ...(message.promptTokens != null ? { promptTokens: message.promptTokens } : {}),
             ...(message.completionTokens != null ? { completionTokens: message.completionTokens } : {}),
             ...(message.costMicroUsd != null ? { costMicroUsd: message.costMicroUsd } : {}),

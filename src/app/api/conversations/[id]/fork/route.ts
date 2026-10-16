@@ -71,6 +71,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           reasoning: m.reasoning,
           model: m.model,
           feedback: m.feedback,
+          // The rating travels with its reason, or a branch would hold a
+          // thumbs-down that no longer says why.
+          feedbackReason: m.feedbackReason,
+          feedbackNote: m.feedbackNote, // ciphertext copied verbatim, like content
           promptTokens: m.promptTokens,
           completionTokens: m.completionTokens,
           // Carried with the token counts, not dropped. A fork is a copy of

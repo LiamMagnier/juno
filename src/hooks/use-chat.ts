@@ -24,6 +24,7 @@ import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import { rangesForStoredText, type ContextToken } from "@/lib/chat/context-tokens";
 import { sketchGuideForGeneration } from "@/lib/sketch/sketch-core";
 import type { ClientWorkSession } from "@/lib/work/serializers";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import {
   formatPreflightClarificationVisibleMessage,
   isPreflightClarificationResult,
@@ -2075,7 +2076,13 @@ export function useChat(opts: UseChatOptions) {
     };
   }, [opts.privateMode]);
 
-  const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
+  const setFeedback = React.useCallback((
+    messageId: string,
+    feedback: "UP" | "DOWN" | null,
+    // Why it was rated down (the reason picker). Only sent with DOWN; the
+    // server keeps an earlier reason when a later request omits it.
+    detail?: FeedbackDetail,
+  ) => {
     // Optimistic, but honest: capture the previous value while applying the
     // new one, and roll back with a toast if the API doesn't accept it.
     let previous: "UP" | "DOWN" | null = null;
@@ -2093,7 +2100,7 @@ export function useChat(opts: UseChatOptions) {
     fetch(`/api/messages/${messageId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ feedback }),
+      body: JSON.stringify(feedback === "DOWN" && detail ? { feedback, ...detail } : { feedback }),
     })
       .then((res) => {
         if (!res.ok) rollback();

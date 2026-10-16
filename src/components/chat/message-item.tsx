@@ -4,13 +4,12 @@ import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Volume2 } from "@/components/ui/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, Volume2 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
-import { Burst, Swell } from "@/components/ui/micro";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +37,8 @@ import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
+import { MessageFeedback } from "@/components/chat/message-feedback";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import { codeLiveCopy } from "@/components/code/code-activity";
 import { writtenPaths } from "@/lib/chat/tool-receipt";
 /**
@@ -271,7 +272,6 @@ function IconAction({
   children,
   active,
   busy,
-  celebrate,
   buttonRef,
   shortcut,
 }: {
@@ -285,19 +285,8 @@ function IconAction({
   buttonRef?: React.Ref<HTMLButtonElement>;
   /** In flight. Shows a spinner and blocks a second press. */
   busy?: boolean;
-  /**
-   * Swell and burst when this turns ON (components/ui/micro.tsx).
-   *
-   * Opt-in, and only two of the row's six actions take it. Copy, branch and
-   * regenerate are TRANSPORT — they move something somewhere, and the
-   * something is its own receipt (a toast, a new message, a rewritten
-   * answer). Feedback has no receipt at all: the thumb tints, and a tint on a
-   * 16px glyph at the bottom of a long answer is the easiest state change in
-   * the product to miss. The burst is that receipt, and it is worth the
-   * flourish precisely because rating an answer is the one thing here the
-   * person does FOR us rather than for themselves.
-   */
-  celebrate?: boolean;
+  // No celebration here: the thumbs live in message-feedback.tsx, where up
+  // swells and down never does.
 }) {
   return (
     <Tooltip>
@@ -316,11 +305,6 @@ function IconAction({
         >
           {busy ? (
             <Loader2 className="size-4 animate-spin" />
-          ) : celebrate ? (
-            <span className="relative inline-flex items-center justify-center">
-              <Swell on={!!active}>{children}</Swell>
-              <Burst on={!!active} />
-            </span>
           ) : (
             children
           )}
@@ -611,7 +595,7 @@ interface MessageItemProps {
   /** This is the newest user turn: `juno:edit-last-user-message` (↑ in an
    *  empty composer) opens it for editing. */
   editOnRequest?: boolean;
-  onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
+  onFeedback: (id: string, value: "UP" | "DOWN" | null, detail?: FeedbackDetail) => void;
   /** False for a bubble with no persisted Message row behind it (code sessions
    *  render optimistic ones): feedback is keyed by message id, so offering it
    *  would POST an id the server has never seen. Defaults to true. */
@@ -1454,16 +1438,9 @@ export const MessageItem = React.memo(function MessageItem({
                 </IconAction>
               )}
               {!privateMode && canFeedback && (
-                <>
-                  {/* A rated thumb is filled: `weight="fill"` is this set's
-                      "on", so the state reads in the drawing, not only the tint. */}
-                  <IconAction celebrate label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
-                    <ThumbsUp className="size-4" weight={message.feedback === "UP" ? "fill" : undefined} />
-                  </IconAction>
-                  <IconAction celebrate label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
-                    <ThumbsDown className="size-4" weight={message.feedback === "DOWN" ? "fill" : undefined} />
-                  </IconAction>
-                </>
+                // Up swells; down never celebrates and asks what went wrong
+                // (message-feedback.tsx).
+                <MessageFeedback messageId={message.id} feedback={message.feedback} onFeedback={onFeedback} />
               )}
               {onSpeak && hasTextContent && (
                 // On the row, not in More: listening is a way of reading the

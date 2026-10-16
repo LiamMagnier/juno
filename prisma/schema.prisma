@@ -876,6 +876,12 @@ model Message {
   reasoningParts   Json? // [encrypted part, …] — discrete reasoning summary parts
   model            String?
   feedback         Feedback? // thumbs up/down on assistant messages
+  // Why a thumbs-down was given (src/lib/feedback-reasons.ts ids), and the
+  // reader's optional note, sealed with the message keyring like `content`.
+  // Both are cleared whenever `feedback` stops being DOWN. Nullable and
+  // additive: every message rated before the picker simply has no reason.
+  feedbackReason   String?
+  feedbackNote     String?   @db.Text
   promptTokens     Int?
   completionTokens Int?
   // The prompt-cache split of `promptTokens`, as the PROVIDER reported it.
@@ -5139,6 +5145,10 @@ model RoutingOutcome {
   userEdited        Boolean  @default(false)
   /// UP | DOWN, mirrored from Message.feedback.
   feedback          String?
+  /// The thumbs-down reason id (src/lib/feedback-reasons.ts), mirrored from
+  /// Message.feedbackReason. The category only: the reader's note is content
+  /// and never reaches this table.
+  feedbackReason    String?
   costMicroUsd      Int?
   /// The router's expected total for the pick, to measure calibration.
   expectedMicroUsd  Int?

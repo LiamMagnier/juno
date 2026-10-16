@@ -127,6 +127,30 @@ test("preserves Juno message metadata and recognizes a full JSON account snapsho
   assert.deepEqual(parsed.conversations[0].messages[0].sources, [{ title: "Juno", url: "https://example.com" }]);
 });
 
+test("a thumbs-down's reason and note survive an export and import, and only beside a DOWN", () => {
+  const parsed = parseHistoryExport(
+    JSON.stringify({
+      schemaVersion: "juno.export.v2",
+      conversations: [{
+        id: "conversation-source",
+        messages: [
+          { id: "m1", role: "user", content: "How long is a heat pump's payback?" },
+          { id: "m2", role: "assistant", content: "Eight to twelve years.", feedback: "DOWN", feedbackReason: "too_long", feedbackNote: "  Half the length.  " },
+          { id: "m3", role: "assistant", content: "Still eight.", feedback: "UP", feedbackReason: "too_long", feedbackNote: "stale" },
+          { id: "m4", role: "assistant", content: "Ten.", feedback: "DOWN", feedbackReason: "not-a-reason" },
+        ],
+      }],
+    }),
+    "juno",
+  );
+  const [, down, up, unknown] = parsed.conversations[0].messages;
+  assert.equal(down.feedbackReason, "too_long");
+  assert.equal(down.feedbackNote, "Half the length.");
+  assert.equal(up.feedbackReason, null, "a reason never rides on an UP");
+  assert.equal(up.feedbackNote, null);
+  assert.equal(unknown.feedbackReason, null, "an id outside the vocabulary is dropped, not stored");
+});
+
 test("import archive budgets reject ZIP inflation and case-folded collisions", () => {
   assert.match(
     importArchiveBudgetProblems([
