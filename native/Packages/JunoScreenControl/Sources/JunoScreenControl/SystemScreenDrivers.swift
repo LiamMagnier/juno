@@ -47,6 +47,20 @@ public struct SystemScreenEnvironment: ScreenEnvironment {
         self.ownProcess = ownProcess
     }
 
+    /// Resolve Launch Services metadata on the main run loop. A just-launched
+    /// app may have a bundle URL before NSRunningApplication fills its id.
+    @MainActor
+    static func identity(pid: Int32) -> RunningApp? {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier == pid })
+            ?? NSRunningApplication(processIdentifier: pid), !app.isTerminated else { return nil }
+        let bundle = app.bundleURL.flatMap { Bundle(url: $0) }
+        guard let id = app.bundleIdentifier ?? bundle?.bundleIdentifier, !id.isEmpty else { return nil }
+        return RunningApp(
+            pid: pid, bundleID: id, name: app.localizedName ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String ?? id,
+            isActive: app.isActive, appStoreCategory: AppCategoryCache.category(of: app.bundleURL)
+        )
+    }
+
     public func runningApps() async -> [RunningApp] {
         let apps = await MainActor.run {
             NSWorkspace.shared.runningApplications.compactMap { app -> (Int32, String, String, Bool, URL?)? in
@@ -76,9 +90,9 @@ public struct SystemScreenEnvironment: ScreenEnvironment {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]]
         else { return [] }
-        let running = NSRunningApplication(processIdentifier: pid)
-        let bundleID = running?.bundleIdentifier ?? ""
-        let appName = running?.localizedName ?? bundleID
+        guard let running = await Self.identity(pid: pid) else { return [] }
+        let bundleID = running.bundleID
+        let appName = running.name
         return list.compactMap { info -> WindowInfo? in
             guard (info[kCGWindowOwnerPID as String] as? Int32) == pid,
                   (info[kCGWindowLayer as String] as? Int) == 0,
@@ -442,11 +456,11 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         )
     }
 
-    private func target(of element: AXUIElement) -> ScreenTarget? {
+    private func target(of element: AXUIElement) async -> ScreenTarget? {
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success else { return nil }
-        let app = NSRunningApplication(processIdentifier: pid)
-        let bundleID = app?.bundleIdentifier ?? ""
+        guard let app = await SystemScreenEnvironment.identity(pid: pid) else { return nil }
+        let bundleID = app.bundleID
         var defaultButton: String?
         let appElement = AXUIElementCreateApplication(pid)
         if let window = attribute(appElement, kAXFocusedWindowAttribute),
@@ -464,8 +478,8 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         return ScreenTarget(
             pid: pid,
             bundleID: bundleID,
-            appName: app?.localizedName ?? bundleID,
-            appStoreCategory: AppCategoryCache.category(of: app?.bundleURL),
+            appName: app.name,
+            appStoreCategory: app.appStoreCategory,
             element: info(element, id: "h", depth: 0),
             defaultButtonTitle: defaultButton,
             actionTexts: pressedTexts(from: element)
@@ -504,7 +518,8 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
     }
 
     public func target(at point: ScreenPoint, within pid: Int32?) async -> ScreenTarget? {
-        element(at: point, within: pid).flatMap(target(of:))
+        guard let element = element(at: point, within: pid) else { return nil }
+        return await target(of: element)
     }
 
     private func focused(pid: Int32) -> AXUIElement? {
@@ -518,13 +533,19 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
     }
 
     public func focusedTarget(pid: Int32) async -> ScreenTarget? {
-        focused(pid: pid).flatMap(target(of:))
+        guard let element = focused(pid: pid) else { return nil }
+        return await target(of: element)
     }
 
     public func snapshot(pid: Int32, maxDepth: Int) async throws -> AXSnapshot {
         try Task.checkCancellation()
         // Never keep old ids usable after a failed or cancelled refresh.
         lock.withLock { references[pid] = nil }
+        guard let running = await SystemScreenEnvironment.identity(pid: pid) else {
+            lock.withLock { references[pid] = nil }
+            throw ScreenControlError.driverFailed("macOS has not confirmed the app's identity. Take a fresh screenshot before reading its controls again.")
+        }
+        try Task.checkCancellation()
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
         var windowValue = attribute(app, kAXFocusedWindowAttribute) ?? attribute(app, kAXMainWindowAttribute)
@@ -547,10 +568,9 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         }
         try Task.checkCancellation()
         lock.withLock { references[pid] = refs }
-        let running = NSRunningApplication(processIdentifier: pid)
         return AXSnapshot(
-            bundleID: running?.bundleIdentifier ?? "",
-            appName: running?.localizedName ?? "",
+            bundleID: running.bundleID,
+            appName: running.name,
             windowTitle: string(window, kAXTitleAttribute),
             elements: elements,
             truncationReason: completion == .timeLimit ? "the app exceeded the three-second read budget"

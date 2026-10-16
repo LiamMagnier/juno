@@ -59,6 +59,24 @@ struct SessionProjectionTests {
     }
 
     @Test
+    func aStaleComputerViewIsARecoveryWhileRealFailuresStayVisible() {
+        for (tool, message, recovery) in [
+            ("computer_use", "The screen changed; take a new screenshot.", true),
+            ("computer", "Not done: The screen changed; take a new screenshot.", true),
+            ("computer_menu", "Permission denied", false),
+            ("run_command", "The screen changed; take a new screenshot.", false)
+        ] {
+            let record = ActivityNarrativeGroup.ToolCallRecord(
+                id: "call", toolName: tool, summary: "Click", status: .failed,
+                resultSummary: message, startedAt: Date()
+            )
+            #expect(record.status == .failed, "the agent still receives the real failed result")
+            #expect(record.isStaleScreenRecovery == recovery)
+            #expect(record.isPresentedAsFailure == !recovery)
+        }
+    }
+
+    @Test
     func theTitleIsASentenceAboutTheWork() {
         let title = SessionProjection.title(for: [
             ToolTally(name: "read_file", count: 3),

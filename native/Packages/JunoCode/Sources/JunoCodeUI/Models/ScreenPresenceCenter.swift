@@ -28,6 +28,7 @@ public final class ScreenPresenceCenter {
     /// The app Juno is using, for notifications.
     public private(set) var appName: String?
 
+    @ObservationIgnored private var sessionID: String?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private let service: ScreenControlService
     /// The height of the main display in points, for flipping CoreGraphics'
@@ -51,6 +52,7 @@ public final class ScreenPresenceCenter {
     }
 
     func apply(_ state: ScreenPresenceState) {
+        sessionID = state.holder?.id
         caption = state.caption
         isActive = state.holder != nil
         isTakeover = state.mode == .takeover && isActive
@@ -62,6 +64,16 @@ public final class ScreenPresenceCenter {
 
     private func flip(_ rect: ScreenRect) -> CGRect {
         CGRect(x: rect.x, y: mainDisplayHeight() - rect.y - rect.height, width: rect.width, height: rect.height)
+    }
+
+    /// The floating preview's explicit handoff; uses the same service as the thread.
+    public func togglePause(sessionID requested: String? = nil) {
+        guard let sessionID = requested ?? sessionID else { return }
+        let service = self.service
+        Task {
+            if case .paused = await service.state(sessionID: sessionID) { await service.resume(sessionID: sessionID) }
+            else { await service.pause(sessionID: sessionID) }
+        }
     }
 
     /// The menu bar's "Stop Juno using apps".

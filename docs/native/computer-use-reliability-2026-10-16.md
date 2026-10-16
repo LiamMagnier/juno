@@ -1,4 +1,4 @@
-# Computer-use reliability: Alevr 1.11.2
+# Computer-use reliability: Alevr 1.12.0 (110)
 
 ## OpenAI research and implementation boundary
 
@@ -44,6 +44,9 @@ Additional changes:
   concurrent discovery coalesced. Each image is fresh, geometry is read live,
   window identity includes PID, and missing windows invalidate discovery.
   Failed capture invalidates the cache without retrying input.
+- App identity is resolved on the main run loop with a verified bundle-URL
+  fallback for newly launched apps. Unknown identities fail closed instead of
+  producing anonymous controls. A repeated real-Mac check exposed this case.
 - Oversized and non-integral arguments are rejected without trapping Swift
   integer conversions. Extreme zoom bounds are clamped before conversion.
 - Batches enforce the advertised 20-action limit before performing anything.
@@ -55,12 +58,39 @@ Additional changes:
   plain-folder change review. Repository detection now stops explicitly at
   the filesystem root; both the root and non-repository cases are tested.
 
+## Computer-use experience
+
+- A persistent, crisp arrow marks the agent's target. A small Alevr tag replaces
+  the large label next to the cursor. Input gets one subtle ring; movement uses
+  the existing short spring and honors Reduce Motion. No real pointer is moved
+  for background control.
+- A movable, nonactivating preview shows the actual captured app, action and
+  cursor, with Pause/Resume and Stop. The desktop overlay is shown only while
+  that target app is in front. The preview stays visible between steps, refreshes
+  from actual observations and final batch frames, and is excluded from capture.
+  Images remain in memory and clear on Stop, release and grant revocation.
+- The pointer maps through the captured window bounds and aspect-fit image,
+  including letterboxing and displays with negative origins. Opening an app now
+  retains its captured frame for the first action and preview.
+- The known stale-screen conflict is displayed as a neutral refresh condition in
+  both thread formats. The original failed tool result remains intact: the model
+  must take a fresh screenshot before continuing. Real execution and permission
+  errors remain errors; no input is blindly retried.
+- Computer-use instructions explicitly support authorized repetitive tasks in
+  the reader's own app, with bounded steps, verification and progress updates.
+  They prohibit invented rate limits or terms-of-service restrictions and retain
+  real site/security boundaries. This improves guidance; it cannot guarantee
+  every provider model will comply with every legitimate request.
+
 ## Validation
 
 Run `bash scripts/native-test.sh JunoScreenControl JunoCode`. The regression
 tests cover the cold-controls crash, cached-frame reuse, unavailable images,
 Stop/deactivation during capture, cyclic/wide/slow trees, cache coalescing,
-expiry/invalidation, numeric boundaries and partial typing.
+expiry/invalidation, numeric boundaries and partial typing. UI regressions cover
+persistent preview state, late results after Stop, cross-session events, stale-view
+presentation and cursor mapping. Offscreen visual review covers light/dark and
+working/paused preview states without opening any foreground app.
 
 Opt-in real-Mac check:
 `JUNO_LIVE_SCREEN_TESTS=1 JUNO_SWIFT_FILTER=SystemScreenDriversLiveTests bash scripts/native-test.sh JunoScreenControl`.

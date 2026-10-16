@@ -72,6 +72,8 @@ public final class ComputerUseDesktopHost {
 final class ComputerActionOverlayWindow {
     private let model: ComputerActionOverlayModel
     private var panel: NSPanel?
+    private var previewPanel: NSPanel?
+    private var activationObserver: NSObjectProtocol?
 
     init(model: ComputerActionOverlayModel) {
         self.model = model
@@ -79,12 +81,24 @@ final class ComputerActionOverlayWindow {
 
     func start() {
         model.start()
+        ScreenPresenceCenter.shared.start()
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.render(self.model.mark)
+            }
+        }
         observe()
     }
 
     func stop() {
         model.stop()
         panel?.orderOut(nil)
+        previewPanel?.orderOut(nil)
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
+        activationObserver = nil
     }
 
     private func observe() {
@@ -97,6 +111,17 @@ final class ComputerActionOverlayWindow {
 
     private func render(_ mark: ComputerActionOverlayModel.Mark?) {
         guard let mark else {
+            panel?.orderOut(nil)
+            previewPanel?.orderOut(nil)
+            // Release decoded image state as well as the feed's Data.
+            previewPanel?.contentView = nil
+            previewPanel = nil
+            return
+        }
+        showPreview()
+        // Background input never moves the reader's pointer. Draw over the app
+        // only while it is actually in front; its preview always shows the target.
+        guard !mark.paused, NSWorkspace.shared.frontmostApplication?.localizedName == mark.appName else {
             panel?.orderOut(nil)
             return
         }
@@ -113,6 +138,34 @@ final class ComputerActionOverlayWindow {
             host.rootView = ComputerActionOverlayView(model: model, screenFrame: screen.frame)
         }
         panel.orderFrontRegardless()
+    }
+
+    private func showPreview() {
+        guard model.mark?.thumbnail != nil else { previewPanel?.orderOut(nil); return }
+        if previewPanel == nil {
+            let panel = NSPanel(
+                contentRect: CGRect(x: 0, y: 0, width: 336, height: 282),
+                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true
+            )
+            panel.level = .floating
+            panel.isReleasedWhenClosed = false
+            panel.hidesOnDeactivate = false
+            panel.isMovableByWindowBackground = true
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.sharingType = .none
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.contentView = NSHostingView(rootView: ComputerUsePreviewView(model: model, presence: .shared))
+            panel.contentView?.wantsLayer = true
+            panel.contentView?.layer?.cornerRadius = 16
+            panel.contentView?.layer?.masksToBounds = true
+            if let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame {
+                panel.setFrameOrigin(CGPoint(x: frame.maxX - 356, y: frame.minY + 20))
+            }
+            previewPanel = panel
+        }
+        previewPanel?.orderFrontRegardless()
     }
 
     static func makePanel() -> NSPanel {
@@ -143,8 +196,8 @@ struct ComputerActionOverlayView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let ring: CGFloat = 30
-    private static let labelWidth: CGFloat = 340
+    private static let ring: CGFloat = 22
+    private static let labelWidth: CGFloat = 66
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -171,41 +224,29 @@ struct ComputerActionOverlayView: View {
 
     private func ring(_ mark: ComputerActionOverlayModel.Mark) -> some View {
         ZStack {
-            // A dark hairline under the stroke keeps it legible on white.
             Circle()
-                .strokeBorder(Color.black.opacity(0.28), lineWidth: 1)
-                .frame(width: Self.ring + 3, height: Self.ring + 3)
-            Circle()
-                .strokeBorder(mark.live ? Color.junoAccent : Color.white.opacity(0.92), lineWidth: 2)
-                .frame(width: Self.ring, height: Self.ring)
+                .fill(Color.white.opacity(mark.live ? 0.12 : 0))
+                .overlay(Circle().strokeBorder(Color.white.opacity(mark.live ? 0.7 : 0), lineWidth: 1))
+                .frame(width: 22, height: 22)
+                .animation(reduceMotion ? nil : JunoMotion.fast, value: mark.live)
+            AgentCursorGlyph()
+                .frame(width: 22, height: 30)
+                .offset(x: 11, y: 15)
         }
-        .id(mark.serial)
-        .transition(reduceMotion ? .opacity : .scale(scale: 1.6).combined(with: .opacity))
         .accessibilityHidden(true)
     }
 
     private func label(_ mark: ComputerActionOverlayModel.Mark) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(mark.label)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Color.junoForeground)
-                .lineLimit(2)
-            // How to stop is said once, in the presence caption under the
-            // menu bar; this line only reports a step that failed.
-            if mark.succeeded == false {
-                Text("Didn't go through")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug)
-        .fixedSize(horizontal: false, vertical: true)
-        // Opaque, not glass: this label is read over whatever app is on screen,
-        // and text through a blur has no fixed contrast (glass gate, §0.1).
-        .junoCard(cornerRadius: JunoRadius.control)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Alevr: \(mark.label)")
+        Text("Alevr")
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .tracking(0.1)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.16), radius: 3, y: 2)
+            .accessibilityLabel("Alevr: \(mark.label)")
     }
 
     /// AppKit global (bottom-left) → this panel's SwiftUI space (top-left).
@@ -223,6 +264,124 @@ struct ComputerActionOverlayView: View {
         var y = ring.y + Self.ring / 2 + 26
         if y > screenFrame.height - 40 { y = ring.y - Self.ring / 2 - 26 }
         return CGPoint(x: x, y: y)
+    }
+}
+
+/// A familiar arrow silhouette with a real stem and a precise top-left tip.
+/// The double edge stays legible over both bright and dark target content.
+struct AgentPointer: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            let points: [CGPoint] = [
+                CGPoint(x: 0, y: 0), CGPoint(x: 0, y: 0.77),
+                CGPoint(x: 0.28, y: 0.59), CGPoint(x: 0.52, y: 1),
+                CGPoint(x: 0.73, y: 0.89), CGPoint(x: 0.49, y: 0.49),
+                CGPoint(x: 0.94, y: 0.49)
+            ]
+            path.addLines(points.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) })
+            path.closeSubpath()
+        }
+    }
+}
+
+struct AgentCursorGlyph: View {
+    var body: some View {
+        AgentPointer()
+            .fill(.white)
+            .overlay(AgentPointer().stroke(Color.black.opacity(0.85), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round)))
+            .shadow(color: .black.opacity(0.24), radius: 1.5, y: 1)
+    }
+}
+
+/// A movable, nonactivating view of the actual captured app. Images remain
+/// memory-only and the panel is excluded from the agent's own captures.
+struct ComputerUsePreviewView: View {
+    let model: ComputerActionOverlayModel
+    let presence: ScreenPresenceCenter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var image: NSImage?
+    private var isPaused: Bool { model.mark?.paused == true }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "cursorarrow.motionlines")
+                    .foregroundStyle(Color.junoAccent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.mark?.appName ?? "Computer use")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(isPaused ? "Paused · you're in control" : "Alevr is working")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .help("Drag this preview to move it")
+                Spacer(minLength: 4)
+                Button(isPaused ? "Resume" : "Pause") { presence.togglePause(sessionID: model.sessionID) }
+                    .accessibilityLabel(isPaused ? "Resume computer use" : "Pause computer use")
+                Button { presence.stop() } label: {
+                    Image(systemName: "stop.fill").font(.system(size: 10))
+                }
+                .accessibilityLabel("Stop computer use")
+                .help("Stop computer use · Esc")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .padding(12)
+            GeometryReader { geometry in
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.12)
+                    if let image {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                        if let point = previewPoint(in: geometry.size, image: image) {
+                            AgentCursorGlyph()
+                                .frame(width: 16, height: 22)
+                                .position(x: point.x + 8, y: point.y + 11)
+                                .animation(reduceMotion ? nil : JunoMotion.standard, value: point)
+                                .accessibilityHidden(true)
+                        }
+                    } else {
+                        Text("Waiting for the first view…")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .clipped()
+            }
+            .frame(height: 180)
+            HStack(alignment: .top, spacing: 7) {
+                Image(systemName: isPaused ? "pause.fill" : (model.mark?.live == true ? "cursorarrow" : "eye"))
+                    .font(.system(size: 10)).foregroundStyle(Color.junoAccent)
+                Text(isPaused ? "Resume when you're ready." : (model.mark?.label ?? "Observing the app"))
+                    .font(.system(size: 11)).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .frame(width: 336, height: 282)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onChange(of: model.mark?.thumbnail, initial: true) { _, data in
+            image = data.flatMap { NSImage(data: $0) }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Alevr computer use preview")
+    }
+
+    private func previewPoint(in size: CGSize, image: NSImage) -> CGPoint? {
+        guard let mark = model.mark, let point = mark.capturePoint, let bounds = mark.windowFrame else { return nil }
+        return Self.previewPoint(point, bounds: bounds, imageSize: image.size, viewport: size)
+    }
+
+    static func previewPoint(_ point: ScreenPoint, bounds: ScreenRect, imageSize: CGSize, viewport: CGSize) -> CGPoint? {
+        guard bounds.width > 0, bounds.height > 0, imageSize.width > 0, imageSize.height > 0 else { return nil }
+        let x = (point.x - bounds.x) / bounds.width
+        let y = (point.y - bounds.y) / bounds.height
+        guard (0...1).contains(x), (0...1).contains(y) else { return nil }
+        let scale = min(viewport.width / imageSize.width, viewport.height / imageSize.height)
+        let width = imageSize.width * scale
+        let height = imageSize.height * scale
+        return CGPoint(x: (viewport.width - width) / 2 + x * width, y: (viewport.height - height) / 2 + y * height)
     }
 }
 

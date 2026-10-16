@@ -142,6 +142,8 @@ public actor ScreenControlService: ScreenControlling {
         var takeoverDisplayID: UInt32?
         var budget: ImageBudget = .anthropicStandard
         var frame: Frame?
+        var previewHash: String?
+        var previewData: Data?
         var snapshot: AXSnapshot?
         /// Frames captured for a pending approval, by prepared-action id.
         var pendingFrames: [String: Frame] = [:]
@@ -188,6 +190,8 @@ public actor ScreenControlService: ScreenControlling {
         session.generation &+= 1
         session.grants.revokeAll()
         session.frame = nil
+        session.previewHash = nil
+        session.previewData = nil
         session.snapshot = nil
         session.pendingFrames = [:]
         session.typedSinceCommit = []
@@ -201,21 +205,47 @@ public actor ScreenControlService: ScreenControlling {
         await publishPresence()
     }
 
-    /// An overlay cue for an input action; observations draw nothing.
-    private func cue(_ prepared: PreparedScreenAction, sessionID: String, phase: ComputerActionCue.Phase) {
+    /// Reuse only the small presentation thumbnail; model observations remain fresh.
+    private func preview(_ sessionID: String) -> (Data?, ScreenRect?) {
+        guard let frame = sessions[sessionID]?.frame else { return (nil, nil) }
+        if sessions[sessionID]?.previewHash != frame.hash {
+            let data = Self.thumbnail(frame.image)
+            sessions[sessionID]?.previewHash = frame.hash
+            sessions[sessionID]?.previewData = data
+        }
+        return (sessions[sessionID]?.previewData, frame.geometry.globalBounds)
+    }
+
+    private func observe(_ sessionID: String, label: String) {
+        let (image, bounds) = preview(sessionID)
+        feed.post(ComputerActionCue(
+            sessionID: sessionID, label: label, point: nil,
+            appName: sessions[sessionID]?.target?.name, phase: .observing,
+            at: deps.now(), thumbnail: image, windowFrame: bounds
+        ))
+    }
+
+    private func cue(_ prepared: PreparedScreenAction, sessionID: String, generation: UInt64, phase: ComputerActionCue.Phase) {
         guard prepared.isInput else { return }
+        // Stop may finish while an input is suspended. Never restore its preview.
+        guard sessions[sessionID]?.isRunning == true, sessions[sessionID]?.generation == generation else { return }
+        let (image, bounds) = preview(sessionID)
+        let focused = sessions[sessionID]?.snapshot?.elements.first(where: { $0.focused })?.frame.center
         feed.post(ComputerActionCue(
             sessionID: sessionID,
             label: prepared.summary,
-            point: prepared.point,
+            point: prepared.point ?? focused,
             appName: prepared.target.appName,
             phase: phase,
-            at: deps.now()
+            at: deps.now(), thumbnail: image, windowFrame: bounds
         ))
     }
 
     /// Grants lapse without ending screen control: a model change.
     public func revokeGrants(sessionID: String) async {
+        feed.post(ComputerActionCue(sessionID: sessionID, label: "", point: nil, appName: nil, phase: .cleared))
+        sessions[sessionID]?.previewHash = nil
+        sessions[sessionID]?.previewData = nil
         sessions[sessionID]?.grants.revokeAll()
         sessions[sessionID]?.generation &+= 1
         sessions[sessionID]?.target = nil
@@ -265,6 +295,8 @@ public actor ScreenControlService: ScreenControlling {
             session.generation &+= 1
             session.grants.revokeAll()
             session.frame = nil
+            session.previewHash = nil
+            session.previewData = nil
             session.snapshot = nil
             session.pendingFrames = [:]
             session.typedSinceCommit = []
@@ -285,6 +317,7 @@ public actor ScreenControlService: ScreenControlling {
         guard sessions[sessionID]?.isRunning == true else { return }
         sessions[sessionID]?.paused = false
         sessions[sessionID]?.frame = nil
+        feed.post(ComputerActionCue(sessionID: sessionID, label: "Resuming", point: nil, appName: sessions[sessionID]?.target?.name, phase: .paused(false)))
         await publishPresence()
     }
 
@@ -293,6 +326,7 @@ public actor ScreenControlService: ScreenControlling {
         guard sessions[sessionID]?.isRunning == true else { return }
         sessions[sessionID]?.paused = true
         sessions[sessionID]?.generation &+= 1
+        feed.post(ComputerActionCue(sessionID: sessionID, label: "Paused", point: nil, appName: sessions[sessionID]?.target?.name, phase: .paused(true)))
         await publishPresence()
     }
 
@@ -330,6 +364,9 @@ public actor ScreenControlService: ScreenControlling {
     private func handleEviction(_ sessionID: String, reason: ScreenControlStopReason) async {
         guard var session = sessions[sessionID], session.claim != nil else { return }
         releaseHeldButton(&session)
+        feed.post(ComputerActionCue(sessionID: sessionID, label: "", point: nil, appName: nil, phase: .cleared))
+        session.previewHash = nil
+        session.previewData = nil
         session.stopNotice = reason
         session.claim = nil
         session.generation &+= 1
@@ -701,6 +738,9 @@ public actor ScreenControlService: ScreenControlling {
             if sessions[sessionID]?.target?.bundleID.lowercased() == grant.bundleID.lowercased() {
                 sessions[sessionID]?.target = nil
                 sessions[sessionID]?.frame = nil
+                sessions[sessionID]?.previewHash = nil
+                sessions[sessionID]?.previewData = nil
+                feed.post(ComputerActionCue(sessionID: sessionID, label: "", point: nil, appName: nil, phase: .cleared))
             }
             released.append(grant.displayName)
         }
@@ -804,6 +844,9 @@ public actor ScreenControlService: ScreenControlling {
             }
         }
         guard let frame else { throw ScreenControlError.windowGone(app: target.name) }
+        try checkpoint(sessionID, generation)
+        sessions[sessionID]?.frame = frame
+        observe(sessionID, label: "Opened \(target.name)")
         sessions[sessionID]?.grants.touch(now: deps.now())
         return result(summary: "Opened \(target.name).", frame: frame)
     }
@@ -1367,16 +1410,16 @@ public actor ScreenControlService: ScreenControlling {
             if sessions[sessionID]?.inFlight == token { sessions[sessionID]?.inFlight = nil }
             sessions[sessionID]?.pendingFrames[prepared.id] = nil
         }
-        cue(prepared, sessionID: sessionID, phase: .acting)
+        cue(prepared, sessionID: sessionID, generation: generation, phase: .acting)
         do {
             let outcome = try await run(prepared, sessionID: sessionID, generation: generation, attachFrame: attachFrame)
             emitStep(prepared, sessionID: sessionID, toolCallID: toolCallID, summary: outcome.summary, succeeded: true)
-            cue(prepared, sessionID: sessionID, phase: .settled(succeeded: true))
+            cue(prepared, sessionID: sessionID, generation: generation, phase: .settled(succeeded: true))
             return outcome
         } catch {
             let sentence = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             emitStep(prepared, sessionID: sessionID, toolCallID: toolCallID, summary: sentence, succeeded: false)
-            cue(prepared, sessionID: sessionID, phase: .settled(succeeded: false))
+            cue(prepared, sessionID: sessionID, generation: generation, phase: .settled(succeeded: false))
             throw error
         }
     }
@@ -1410,6 +1453,7 @@ public actor ScreenControlService: ScreenControlling {
             let frame = try await captureFrame(sessionID, generation: generation)
             sessions[sessionID]?.frame = frame
             sessions[sessionID]?.grants.touch(now: deps.now())
+            observe(sessionID, label: "Looking at \(frame.appName)")
             return result(summary: "Screenshot of \(frame.appName).", frame: frame)
         case .zoom:
             return try await zoom(action, sessionID: sessionID, generation: generation)
@@ -1821,6 +1865,7 @@ public actor ScreenControlService: ScreenControlling {
         let generation = try await requireRunning(sessionID)
         let frame = try await settledCapture(sessionID, generation: generation)
         sessions[sessionID]?.frame = frame
+        observe(sessionID, label: "Checking \(frame.appName)")
         return result(summary: "Screen after the batch.", frame: frame)
     }
 
@@ -1850,6 +1895,7 @@ public actor ScreenControlService: ScreenControlling {
             try checkpoint(sessionID, generation)
             sessions[sessionID]?.frame = frame
         }
+        observe(sessionID, label: "Reading controls in \(target.name)")
         return snapshot.text(in: sessions[sessionID]?.frame?.geometry, filter: filter, query: query)
     }
 
