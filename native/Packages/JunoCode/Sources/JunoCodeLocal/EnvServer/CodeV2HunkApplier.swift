@@ -55,7 +55,11 @@ public struct CodeV2HunkApplier: Sendable {
         var url = directory.standardizedFileURL
         while true {
             if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) { return true }
-            let parent = url.deletingLastPathComponent()
+            // Standardized at every step, not only the first: the parent of
+            // the directory URL `file:///` is `file:///../`, then `/../..`,
+            // and so on, so a folder outside any repository walked upwards
+            // forever and Accept hung.
+            let parent = url.deletingLastPathComponent().standardizedFileURL
             if parent.path == url.path || parent.path.isEmpty { return false }
             url = parent
         }
