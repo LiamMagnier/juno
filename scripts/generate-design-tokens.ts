@@ -277,7 +277,8 @@ export function springTwin(visualDuration: number, bounce: number): SpringTwin {
   const x = springPosition(visualDuration, bounce);
   let last = 0;
   for (let ms = 0; ms <= 5000; ms += 0.5) if (Math.abs(1 - x(ms / 1000)) > SPRING_REST_DELTA) last = ms;
-  const settleMs = Math.ceil(last);
+  // The first whole millisecond after the last sample outside the rest delta.
+  const settleMs = Math.floor(last) + 1;
   const round = (v: number) => Math.round(v * 1000) / 1000;
   for (const n of [16, 24, 32, 48, 64, 96]) {
     const points = Array.from({ length: n + 1 }, (_, i) => (i === n ? 1 : round(x(((i / n) * settleMs) / 1000))));

@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 4e5a727b18b93b3a
+// tokens-digest: 7146e8b119ad0a4c
 //
 
 import CoreGraphics
@@ -157,7 +157,7 @@ public enum JunoGeneratedColors {
     public static let border = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.8745, 0.8784, 0.8863),
         dark: JunoColorToken(unchecked: 0.2118, 0.2157, 0.2275),
-        highContrastLight: JunoColorToken(unchecked: 0.456, 0.472, 0.504),
+        highContrastLight: JunoColorToken(unchecked: 0.4465, 0.4622, 0.4935),
         highContrastDark: JunoColorToken(unchecked: 0.5008, 0.5104, 0.5392)
     )
 
@@ -300,7 +300,7 @@ public enum JunoGeneratedColors {
     /// `--destructive`
     public static let destructive = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.7224, 0.1176, 0.1579),
-        dark: JunoColorToken(unchecked: 0.892, 0.388, 0.4216),
+        dark: JunoColorToken(unchecked: 0.889, 0.371, 0.4055),
         highContrastLight: JunoColorToken(unchecked: 0.595, 0.085, 0.119),
         highContrastDark: JunoColorToken(unchecked: 0.982, 0.658, 0.6796)
     )
@@ -316,7 +316,7 @@ public enum JunoGeneratedColors {
     /// `--destructive-ink`
     public static let destructiveInk = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.7224, 0.1176, 0.1579),
-        dark: JunoColorToken(unchecked: 0.892, 0.388, 0.4216),
+        dark: JunoColorToken(unchecked: 0.898, 0.422, 0.4537),
         highContrastLight: JunoColorToken(unchecked: 0.595, 0.085, 0.119),
         highContrastDark: JunoColorToken(unchecked: 0.982, 0.658, 0.6796)
     )
@@ -349,7 +349,7 @@ public enum JunoGeneratedColors {
     public static let hairline = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.2016, 0.193, 0.1584, 0.06),
         dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316, 0.08),
-        highContrastLight: JunoColorToken(unchecked: 0.456, 0.472, 0.504),
+        highContrastLight: JunoColorToken(unchecked: 0.4465, 0.4622, 0.4935),
         highContrastDark: JunoColorToken(unchecked: 0.5008, 0.5104, 0.5392)
     )
 
@@ -620,7 +620,7 @@ public enum JunoGeneratedColors {
     /// `--status-blocked`  // no .dark override; light value applies to both
     public static let statusBlocked = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.7224, 0.1176, 0.1579),
-        dark: JunoColorToken(unchecked: 0.892, 0.388, 0.4216),
+        dark: JunoColorToken(unchecked: 0.889, 0.371, 0.4055),
         highContrastLight: JunoColorToken(unchecked: 0.595, 0.085, 0.119),
         highContrastDark: JunoColorToken(unchecked: 0.982, 0.658, 0.6796)
     )
@@ -940,18 +940,18 @@ public struct JunoGeneratedSpring: Hashable, Sendable {
 
 /// `--spring-<name>-params` (spec §4.4).
 public enum JunoGeneratedSprings {
-    /// `--spring-snap`: 0.18s / 0, settles in 255ms
-    public static let snap = JunoGeneratedSpring(visualDuration: 0.18, bounce: 0.0, settle: 0.255)
-    /// `--spring-standard`: 0.22s / 0.05, settles in 271ms
-    public static let standard = JunoGeneratedSpring(visualDuration: 0.22, bounce: 0.05, settle: 0.271)
+    /// `--spring-snap`: 0.18s / 0, settles in 256ms
+    public static let snap = JunoGeneratedSpring(visualDuration: 0.18, bounce: 0.0, settle: 0.256)
+    /// `--spring-standard`: 0.22s / 0.05, settles in 272ms
+    public static let standard = JunoGeneratedSpring(visualDuration: 0.22, bounce: 0.05, settle: 0.272)
     /// `--spring-layout`: 0.36s / 0, settles in 511ms
     public static let layout = JunoGeneratedSpring(visualDuration: 0.36, bounce: 0.0, settle: 0.511)
-    /// `--spring-emphasized`: 0.36s / 0.1, settles in 376ms
-    public static let emphasized = JunoGeneratedSpring(visualDuration: 0.36, bounce: 0.1, settle: 0.376)
-    /// `--spring-reward`: 0.36s / 0.18, settles in 491ms
-    public static let reward = JunoGeneratedSpring(visualDuration: 0.36, bounce: 0.18, settle: 0.491)
-    /// `--spring-articulate`: 0.22s / 0.15, settles in 284ms
-    public static let articulate = JunoGeneratedSpring(visualDuration: 0.22, bounce: 0.15, settle: 0.284)
+    /// `--spring-emphasized`: 0.36s / 0.1, settles in 377ms
+    public static let emphasized = JunoGeneratedSpring(visualDuration: 0.36, bounce: 0.1, settle: 0.377)
+    /// `--spring-reward`: 0.36s / 0.18, settles in 492ms
+    public static let reward = JunoGeneratedSpring(visualDuration: 0.36, bounce: 0.18, settle: 0.492)
+    /// `--spring-articulate`: 0.22s / 0.15, settles in 285ms
+    public static let articulate = JunoGeneratedSpring(visualDuration: 0.22, bounce: 0.15, settle: 0.285)
 }
 
 /// The shell tokens of spec §3.12, in points (the web's px, 1:1).
