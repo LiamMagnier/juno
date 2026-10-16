@@ -87,8 +87,11 @@ struct DesktopIconCatalogTests {
         let renderer = ImageRenderer(content: JunoIconView(.plus, size: 16).foregroundStyle(.black))
         renderer.scale = 4
         let cgImage = try #require(renderer.cgImage)
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: 16, height: 16))
-        let ink = try #require(Self.inkBounds(of: image))
+        // Measured on the rendered pixels themselves. Redrawn into a 2x
+        // context first, the 4x edges were resampled before the threshold,
+        // and how that rounds is the OS's business: macOS 26 lost half a
+        // point at each end of the bar (10pt) where macOS 27 kept it.
+        let ink = try #require(Self.inkBounds(of: cgImage, scale: renderer.scale))
         #expect(abs(ink.width - 16 * 178 / 256) <= 1, "ink is \(ink.width)pt wide")
         #expect(abs(ink.height - 16 * 178 / 256) <= 1, "ink is \(ink.height)pt tall")
         #expect(abs(ink.midX - 8) <= 0.75, "ink is centred at x \(ink.midX)")
@@ -100,6 +103,36 @@ struct DesktopIconCatalogTests {
     private static func symbol(_ name: String, pointSize: CGFloat) -> NSImage? {
         guard let image = NSImage(named: name) else { return nil }
         return image.withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular)) ?? image
+    }
+
+    /// The bounds of a rendered image's opaque pixels, in points at `scale`,
+    /// read one to one with no resampling; nil when nothing is drawn.
+    private static func inkBounds(of image: CGImage, scale: CGFloat) -> CGRect? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0 else { return nil }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * width + x) * 4 + 3] > 127 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return nil }
+        return CGRect(
+            x: CGFloat(minX) / scale, y: CGFloat(minY) / scale,
+            width: CGFloat(maxX - minX + 1) / scale, height: CGFloat(maxY - minY + 1) / scale
+        )
     }
 
     /// The bounds of the drawn pixels, in points, or nil when nothing is drawn.
