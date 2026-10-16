@@ -309,6 +309,7 @@ export function ThoughtProcessPanel({
   streaming,
   live,
   finishNote,
+  presentation = "dock",
 }: {
   /** DOM id, so the trigger's aria-controls points at something real. */
   id: string;
@@ -330,7 +331,16 @@ export function ThoughtProcessPanel({
    *  down rather than re-derived: `finishReason` lives on the message, not in
    *  the run's event stream, and there must be exactly one wording of it. */
   finishNote?: string | null;
+  /**
+   * Where it is drawn. `dock` (the default) is the column beside the chat,
+   * which covers the chat below the split. `sheet` is the bottom sheet a phone
+   * opens instead (activity-timeline.tsx): it never covers the chat, so the
+   * close control is always a dismissal, the header doubles as the sheet's
+   * drag handle, and the sheet's own rise replaces the dock's slide.
+   */
+  presentation?: "dock" | "sheet";
 }) {
+  const sheet = presentation === "sheet";
   const rootRef = React.useRef<HTMLElement>(null);
   const scrollerRef = React.useRef<HTMLDivElement>(null);
   const findRef = React.useRef<HTMLInputElement>(null);
@@ -770,7 +780,7 @@ export function ThoughtProcessPanel({
       tabIndex={-1}
       aria-labelledby={`${id}-title`}
       data-state={streaming ? "live" : run.stopped ? "stopped" : "done"}
-      className="tpp tpp-enter flex size-full flex-col bg-card focus:outline-none"
+      className={cn("tpp flex size-full flex-col focus:outline-none", sheet ? "bg-transparent" : "tpp-enter bg-card")}
     >
       {/* ── HEADER — one row, 48px ───────────────────────────────────────── */}
       {/* `min-h-12`, not `h-12`: `pt-safe` pads INTO a fixed height, so on a
@@ -778,8 +788,12 @@ export function ThoughtProcessPanel({
           eaten the header's content rather than sitting above it. The
           hairline appears only once the content scrolls under it. */}
       <header
+        // In a sheet the header is also the drag handle (bottom-sheet.tsx).
+        data-sheet-drag={sheet ? "" : undefined}
         className={cn(
-          "flex min-h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 pt-safe transition-colors duration-base",
+          "flex min-h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 transition-colors duration-base",
+          // A sheet starts well below the notch; only the dock can be the top surface.
+          !sheet && "pt-safe",
           heroVisible ? "border-transparent" : "border-[var(--tpp-line)]",
         )}
       >
@@ -787,10 +801,11 @@ export function ThoughtProcessPanel({
           {/* Below the split this dock covers the chat entirely, so the close
               control has to read as a way BACK rather than as a dismissal. The
               step is the split mount's (chat-view, code-session-view), not the
-              window's: this panel is portalled into whichever surface owns it. */}
+              window's: this panel is portalled into whichever surface owns it.
+              A sheet covers nothing, so it keeps the dismissal below. */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Pressable kind="icon" size="md" onClick={onClose} className="-ml-1 @[50rem]/split:hidden">
+              <Pressable kind="icon" size="md" onClick={onClose} className={cn("-ml-1", sheet ? "hidden" : "@[50rem]/split:hidden")}>
                 <ChevronLeft className="size-4" aria-hidden="true" />
                 <span className="sr-only">Back to chat</span>
               </Pressable>
@@ -940,7 +955,7 @@ export function ThoughtProcessPanel({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Pressable kind="icon" size="md" onClick={onClose} className="hidden @[50rem]/split:inline-flex" aria-label="Close">
+              <Pressable kind="icon" size="md" onClick={onClose} className={sheet ? "inline-flex" : "hidden @[50rem]/split:inline-flex"} aria-label="Close">
                 <ActionIcons.dismiss className="size-4" aria-hidden="true" />
               </Pressable>
             </TooltipTrigger>
