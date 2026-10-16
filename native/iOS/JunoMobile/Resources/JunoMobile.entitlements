@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Push: agent, Work, research and Code approval notifications, and "Continue
+  on iPhone". The value comes from native/Config/JunoMobile-Push.xcconfig, which
+  follows the signing identity (development for Apple Development, production
+  for Apple Distribution). Each App ID (.JunoMobile, .debug, .next) needs the
+  Push Notifications capability for signing to accept it.
+
+  Do not let Xcode or XcodeGen rewrite this file: an `entitlements:` block in
+  project.yml regenerates it from that block's properties, which is how push
+  was lost before. `npm run native:entitlements:check` fails CI without the key.
+-->
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>aps-environment</key>
+	<string>$(JUNO_APS_ENVIRONMENT)</string>
+</dict>
 </plist>

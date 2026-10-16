@@ -54,6 +54,39 @@ enum JunoMobileWidgetRoute {
   }
 }
 
+/// What the quick-actions widget offers at each size.
+///
+/// WidgetKit follows exactly one destination in a small widget and in every
+/// Lock Screen accessory: the widget's own URL. Links inside are ignored, so
+/// the small square that used to draw four tiles opened the app wherever it
+/// was tapped, and the tiles (about 200pt of them) were clipped by a square
+/// that is about 160pt tall. Those sizes now offer one action and say so; only
+/// the medium widget, where links work, offers the row. Shared with the app so
+/// its tests hold every destination to the deep-link parser.
+enum JunoMobileQuickAction: String, CaseIterable, Sendable {
+  case chat
+  case voice
+  case code
+  case dictate
+
+  /// How many destinations the size can honour.
+  enum Room: Sendable {
+    /// `systemSmall` and the Lock Screen accessories: the widget URL alone.
+    case single
+    /// `systemMedium`: a row of links.
+    case row
+  }
+
+  static func actions(for room: Room) -> [JunoMobileQuickAction] {
+    switch room {
+    case .single: [.chat]
+    case .row: allCases
+    }
+  }
+
+  var url: URL { JunoMobileWidgetRoute.url(path: rawValue) }
+}
+
 #if !WIDGET_EXTENSION
 @MainActor
 final class JunoMobileLiveActivityCoordinator {

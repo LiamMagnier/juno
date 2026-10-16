@@ -1,0 +1,28 @@
+// Push for the iPhone app: the value of the `aps-environment` entitlement.
+//
+// Resources/JunoMobile.entitlements reads it as $(JUNO_APS_ENVIRONMENT), and
+// JunoMobile-Debug, -Stable and -Next include this file. Without the
+// entitlement, `registerForRemoteNotifications` fails on every build, which
+// silently kills agent, Work, research and Code approval pushes and
+// "Continue on iPhone" (commit 615d3a5b0 dropped it once already).
+// `npm run native:entitlements:check` fails CI when it goes missing again.
+//
+// The value follows the signing identity, because that is what decides the
+// provisioning profile, and code signing refuses an entitlement the profile
+// does not carry:
+//
+//   Apple Development   -> a development profile -> development
+//   Apple Distribution  -> an App Store profile  -> production
+//
+// Today every configuration signs with Apple Development (Base.xcconfig), so
+// Debug, Stable and Next all build with `development`. The App Store export in
+// native/Scripts/release-ios.sh and release-ios.yml re-signs the archive with
+// the distribution profile, which rewrites the value to `production` in the
+// shipped app. A build signed directly with Apple Distribution gets
+// `production` here without anyone editing a file. Anything unrecognised falls
+// back to `development`, the value every development profile carries.
+JUNO_APS_ENVIRONMENT_FOR_Apple_Development = development
+JUNO_APS_ENVIRONMENT_FOR_iPhone_Developer = development
+JUNO_APS_ENVIRONMENT_FOR_Apple_Distribution = production
+JUNO_APS_ENVIRONMENT_FOR_iPhone_Distribution = production
+JUNO_APS_ENVIRONMENT = $(JUNO_APS_ENVIRONMENT_FOR_$(CODE_SIGN_IDENTITY:c99extidentifier):default=development)

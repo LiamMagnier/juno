@@ -18,6 +18,11 @@
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>UIAppFonts</key>
+  <array>
+    <string>Newsreader24pt-Regular.ttf</string>
+    <string>Newsreader24pt-Medium.ttf</string>
+  </array>
   <key>NSExtension</key>
   <dict>
     <key>NSExtensionPointIdentifier</key>
