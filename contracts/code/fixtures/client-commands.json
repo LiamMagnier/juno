@@ -528,6 +528,13 @@
         "cwd": "/Users/me/Projects/storefront",
         "runtimeMode": "full"
       }
+    },
+    {
+      "id": "frame-1",
+      "type": "computer.frame",
+      "params": {
+        "ref": "alevr-shot://claude:t7/toolu_1.jpg"
+      }
     }
   ]
 }

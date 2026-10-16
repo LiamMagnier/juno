@@ -1725,6 +1725,8 @@ public enum CodeV2 {
         case projectRemove = "project.remove"
         // access lane: the composer's access picker, applied to the thread at once (mid-turn included).
         case sessionSetMode = "session.setMode"
+        // computer lane: one stored frame of the screen-control timeline, from the Mac's shots folder.
+        case computerFrame = "computer.frame"
     }
 
     // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)

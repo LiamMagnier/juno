@@ -988,6 +988,10 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   // thread's mode applies at once, mid-turn included; switching to Full access answers the pending
   // approvals Full access would not have asked about.
   "session.setMode",
+  // computer lane (additive): one stored frame of the Mac's screen-control timeline, read by the env
+  // server from the Mac app's shots folder, so the web's Screen pane and the thread's thumbnails show
+  // the Mac's real frames. A stored file only, never a live capture.
+  "computer.frame",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -1098,6 +1102,12 @@ export interface ClientCommandParams {
   "host.capture": { target: RemoteCaptureTarget };
   /** Answered by the Mac app: keeps a file sent from a paired device (`data` is base64) for a message's attachments. */
   "host.upload": { name: string; mediaType: string; data: string };
+  /**
+   * A `computer_action` item's stored frame: `ref` is its `screenshotRef`, `alevr-shot://<session>/<call>.jpg`
+   * (or `.png`). The env server reads it from the Mac's shots folder and refuses anything else: another
+   * scheme, a path outside the folder, a symlink, an oversized file.
+   */
+  "computer.frame": { ref: string };
 }
 
 // remote lane (additive)
@@ -1293,6 +1303,8 @@ export interface ClientCommandResults {
   "project.remove": { sessionIds: string[] };
   /** `approved`: pending approvals the new mode answered (Full access, inside the project). */
   "session.setMode": { runtimeMode: RuntimeMode; interactionMode: InteractionMode; approved: number };
+  /** `data` is the stored frame, base64; `bytes` is its decoded size. */
+  "computer.frame": { mime: "image/jpeg" | "image/png"; data: string; bytes: number };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

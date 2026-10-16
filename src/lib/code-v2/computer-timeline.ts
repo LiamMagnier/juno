@@ -133,12 +133,13 @@ export function buildComputerTimeline(
 /**
  * Screenshot refs the web can show directly: data URLs, https URLs and
  * same-origin paths. `alevr-shot://<session>/<file>` refs live on the Mac and
- * reach the web through the env server's screenshot route.
+ * have no URL here: they resolve to null (the stage keeps its alt text) unless
+ * the view passes `useMacScreenshots`, which fetches them over the env link
+ * (`computer.frame`) and hands back blob URLs.
  */
 export function defaultScreenshotResolver(ref: string): string | null {
-  if (ref.startsWith("data:image/") || ref.startsWith("https://") || ref.startsWith("/")) return ref;
-  const shot = /^alevr-shot:\/\/([^/]+)\/(.+)$/.exec(ref);
-  if (shot) return `/api/code/screenshots/${encodeURIComponent(shot[1])}/${encodeURIComponent(shot[2])}`;
+  // `//host/x` is another origin, not a same-origin path.
+  if (ref.startsWith("data:image/") || ref.startsWith("https://") || (ref.startsWith("/") && !ref.startsWith("//"))) return ref;
   return null;
 }
 

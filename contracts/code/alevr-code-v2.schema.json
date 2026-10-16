@@ -217,7 +217,8 @@
         "host.capture",
         "host.upload",
         "project.remove",
-        "session.setMode"
+        "session.setMode",
+        "computer.frame"
       ]
     },
     "ServerEventType": {
@@ -4096,6 +4097,35 @@
               "required": [
                 "sessionId",
                 "runtimeMode"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "computer.frame"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "ref"
               ]
             }
           },

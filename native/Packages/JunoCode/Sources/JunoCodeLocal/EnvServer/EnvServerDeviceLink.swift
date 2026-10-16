@@ -113,6 +113,9 @@ public actor EnvServerDeviceLink {
         // Access lane: the composer's access picker on the phone, applied to
         // the thread at once (a waiting approval included).
         .sessionSetMode,
+        // Computer lane: a stored frame of a shared session's screen-control
+        // timeline (never a live capture), for the web's Screen pane.
+        .computerFrame,
     ]
     /// Commands this app answers itself (``hostHandler``) instead of the env server.
     public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture, .hostUpload, .projectRemove]
@@ -434,6 +437,14 @@ public actor EnvServerDeviceLink {
         case .terminalWrite, .terminalResize, .terminalClose:
             guard case let .string(id)? = object["terminalId"] else { return "A terminal is required." }
             return linkedTerminals.contains(id) ? nil : "Open the terminal first."
+        case .computerFrame:
+            // A frame belongs to the session named in its ref; only a session
+            // a remote may follow shows its screen there. The env server
+            // checks the ref's shape and the folder again.
+            guard case let .string(ref)? = object["ref"], let session = Self.frameSession(ref) else {
+                return "That is not a screenshot reference."
+            }
+            return await isShared(session) ? nil : "Open the session first."
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
              .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .skillsSelect,
              .sessionSetMode:
@@ -444,6 +455,18 @@ public actor EnvServerDeviceLink {
         default:
             return nil
         }
+    }
+
+    /// The session a `computer.frame` ref belongs to:
+    /// `alevr-shot://<session>/<call>.jpg` → `<session>`. Nil for any other
+    /// shape. The env server applies the full rule (characters, extension,
+    /// containment); this only finds whose screen it is.
+    static func frameSession(_ ref: String) -> String? {
+        let prefix = "alevr-shot://"
+        guard ref.hasPrefix(prefix) else { return nil }
+        let parts = ref.dropFirst(prefix.count).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty, parts[0] != ".", parts[0] != ".." else { return nil }
+        return String(parts[0])
     }
 
     /// The cwd of session `id` in a `session.list` result, if it is listed.

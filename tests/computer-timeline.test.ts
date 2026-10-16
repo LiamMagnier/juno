@@ -63,7 +63,8 @@ test("only computer_action items become frames, in thread order, updates keep th
   assert.equal(a2.caption, "Clicked the “Export…” button in Pages.");
   assert.equal(a2.live, false);
   assert.deepEqual(a2.point, { x: 0.5, y: 1 }, "points are clamped into the frame");
-  assert.equal(a2.src, "/api/code/screenshots/s%201/a2.jpg");
+  // A Mac frame has no URL on the web until useMacScreenshots fetches it (never the nonexistent /api/code/screenshots).
+  assert.equal(a2.src, null);
   assert.equal(frames[0].src, "data:image/png;base64,AAA");
   assert.equal(frames[2].verb, "Keys");
 });
@@ -144,6 +145,9 @@ test("the resolver only passes URLs the web can load", () => {
   assert.equal(defaultScreenshotResolver("file:///Users/x/a.png"), null);
   assert.equal(defaultScreenshotResolver("javascript:alert(1)"), null);
   assert.equal(defaultScreenshotResolver("/api/x.png"), "/api/x.png");
+  assert.equal(defaultScreenshotResolver("//evil.example/x.png"), null, "protocol-relative is another origin");
+  assert.equal(defaultScreenshotResolver("alevr-shot://claude:t7/toolu_1.jpg"), null);
+  assert.ok(!String(defaultScreenshotResolver("alevr-shot://s/a.jpg")).startsWith("/api/code/screenshots"));
 });
 
 test("the component renders the newest step, its ring and the strip, with no status pills", () => {
