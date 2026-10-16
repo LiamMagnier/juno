@@ -1086,6 +1086,25 @@ public actor AgentOrchestrator {
 
     // MARK: - The loop
 
+    /// Waits out a retry's delay: true when it ran its course, false when the
+    /// run was stopped meanwhile (`retrySleep` throws on cancellation).
+    ///
+    /// Its own function, with the closure read into a local before the call,
+    /// rather than `try await configuration.retrySleep(delay)` in a `do`
+    /// inside `runLoop`. Xcode 26's compiler freed that call's task
+    /// allocations out of order on the throwing path, so a Stop during a
+    /// backoff aborted the process ("freed pointer was not the last
+    /// allocation", swift_task_dealloc at that call).
+    private func waitBeforeRetry(_ delay: Duration) async -> Bool {
+        let sleep = configuration.retrySleep
+        do {
+            try await sleep(delay)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func runLoop() async {
         runUsageBaseline = usageLedger.total
         let startedAt = Date()
@@ -1354,14 +1373,10 @@ public actor AgentOrchestrator {
                                     )
                                 )
                             )
-                            do {
-                                try await configuration.retrySleep(delay)
-                            } catch {
-                                // Stopped while waiting: the top of the loop
-                                // ends the run as stopped.
-                                break
-                            }
-                            if Task.isCancelled { break }
+                            // Stopped while waiting: the top of the loop
+                            // ends the run as stopped.
+                            let waitedOut = await waitBeforeRetry(delay)
+                            if !waitedOut || Task.isCancelled { break }
                             continue
                         }
                     }
