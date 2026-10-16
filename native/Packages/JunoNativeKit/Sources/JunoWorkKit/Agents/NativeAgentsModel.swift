@@ -52,6 +52,15 @@ public final class NativeAgentsModel {
     public private(set) var computers: [String: NativeAgentComputer] = [:]
     /// Approvals and questions whose answer is on its way.
     public private(set) var answeringIDs: Set<String> = []
+    /// Who holds each agent's cloud computer, by agent id, as the last
+    /// computer read said (`takeover` on the payload).
+    public private(set) var computerTakeovers: [String: NativeAgentComputerTakeover] = [:]
+    /// How long each computer idles before it rests, in minutes, as the
+    /// server is configured.
+    public private(set) var computerRestMinutes: [String: Double] = [:]
+    /// The question each takeover is for, pinned at Take control, so Hand back
+    /// answers that one and nothing else (``NativeComputerHandBack``).
+    public private(set) var computerTakeoverPins: [String: NativeComputerHandBack.Pin] = [:]
 
     /// Called when an agent starts needing the person between two reads of
     /// the roster — never for the first read, which is a state and not a
@@ -171,6 +180,9 @@ public final class NativeAgentsModel {
         gates = [:]
         computers = [:]
         answeringIDs = []
+        computerTakeovers = [:]
+        computerRestMinutes = [:]
+        computerTakeoverPins = [:]
         polledWaitingIDs = nil
         settledGateIDs = []
         gateReads = [:]
@@ -926,10 +938,10 @@ public final class NativeAgentsModel {
     public func computerAction(agentID: String, action: String) async {
         guard let accountID else { return }
         do {
-            let updated = try await client.computerAction(agentID: agentID, action: action, for: accountID)
+            let reading = try await client.computerActionReading(agentID: agentID, action: action, for: accountID)
             guard self.accountID == accountID else { return }
+            apply(reading, agentID: agentID)
             if var detail = details[agentID] {
-                detail.computer = updated
                 detail.computerConfigured = true
                 details[agentID] = detail
             }
@@ -938,6 +950,16 @@ public final class NativeAgentsModel {
         }
     }
 
+    /// Reads the computer again: its status, who holds control, the rest time.
+    public func refreshComputer(agentID: String) async {
+        guard let accountID else { return }
+        guard let reading = try? await client.computerReading(agentID: agentID, for: accountID) else { return }
+        guard self.accountID == accountID else { return }
+        apply(reading, agentID: agentID)
+    }
+
+    /// A one-time `/computer-view` link. In control it is refused, with a
+    /// sentence, while another client holds control.
     public func computerHandoffURL(agentID: String, mode: String) async -> String? {
         guard let accountID else { return nil }
         do {
@@ -949,52 +971,117 @@ public final class NativeAgentsModel {
         }
     }
 
-    public func computerHeartbeat(agentID: String, mode: String, ended: Bool = false) async {
-        guard let accountID else { return }
+    /// What one heartbeat said about control.
+    public enum ComputerBeat: Equatable, Sendable {
+        /// Landed. `takeoverActive` is nil from a server that does not say.
+        case landed(takeoverActive: Bool?)
+        /// Another client holds control; the sentence says which.
+        case heldElsewhere(String)
+        /// Did not land. In control, the takeover may lapse.
+        case failed
+    }
+
+    @discardableResult
+    public func computerHeartbeat(agentID: String, mode: String, ended: Bool = false) async -> ComputerBeat {
+        guard let accountID else { return .failed }
         do {
-            let updated = try await client.computerHeartbeat(
+            let reading = try await client.computerHeartbeatReading(
                 agentID: agentID,
                 mode: mode,
                 ended: ended,
                 for: accountID
             )
-            guard self.accountID == accountID else { return }
-            if var detail = details[agentID] {
-                detail.computer = updated
-                details[agentID] = detail
-            }
+            guard self.accountID == accountID else { return .failed }
+            apply(reading, agentID: agentID)
+            return .landed(takeoverActive: reading.takeover?.active)
+        } catch let held as NativeAgentComputerHeldElsewhere {
+            guard self.accountID == accountID else { return .failed }
+            apply(held.reading, agentID: agentID)
+            return .heldElsewhere(held.message)
         } catch {
-            // Periodic keepalive; do not surface transient network errors
+            // Periodic keepalive; the viewer says when control may lapse.
+            return .failed
         }
     }
 
-    public func computerHandBack(agentID: String) async {
-        guard let accountID else { return }
+    /// Take control: pins the question this takeover is for, from the
+    /// questions open right now. Call it before the control link is minted.
+    public func pinComputerTakeover(agentID: String) {
+        computerTakeoverPins[agentID] = NativeComputerHandBack.pin(openQuestions(agentID: agentID))
+    }
+
+    /// Forgets the pin without answering anything: control ended without a
+    /// Hand back from here (taken back elsewhere, or never connected).
+    public func dropComputerTakeoverPin(agentID: String) {
+        computerTakeoverPins[agentID] = nil
+    }
+
+    /// Hand back: ends the control session, then answers the pinned takeover
+    /// question with ``NativeComputerHandBack/answer``, and nothing when the
+    /// question has gone or it is unclear which one asked for the computer.
+    /// Returns whether control was handed back.
+    @discardableResult
+    public func computerHandBack(agentID: String) async -> Bool {
+        guard let accountID else { return false }
+        let pin = computerTakeoverPins[agentID]
         do {
-            let updated = try await client.computerHeartbeat(
+            let reading = try await client.computerHeartbeatReading(
                 agentID: agentID,
                 mode: "control",
                 ended: true,
                 for: accountID
             )
-            guard self.accountID == accountID else { return }
-            if var detail = details[agentID] {
-                detail.computer = updated
-                details[agentID] = detail
-            }
-            if let gate = (gates[agentID] ?? []).first(where: { $0.question != nil }),
-                let question = gate.question
-            {
-                await answer(
-                    agentID: agentID,
-                    sessionID: gate.task.sessionID,
-                    question: question,
-                    text: "Done. I've finished on your computer; continue."
-                )
-            }
+            guard self.accountID == accountID else { return false }
+            apply(reading, agentID: agentID)
+        } catch let held as NativeAgentComputerHeldElsewhere {
+            // Another client holds it: there was nothing here to hand back,
+            // and no question is answered on its behalf.
+            guard self.accountID == accountID else { return false }
+            apply(held.reading, agentID: agentID)
+            computerTakeoverPins[agentID] = nil
+            lastErrorDescription = held.message
+            return false
         } catch {
             record(error)
+            return false
         }
+        computerTakeoverPins[agentID] = nil
+        let open = openQuestions(agentID: agentID)
+        guard let chosen = NativeComputerHandBack.question(open, pin: pin),
+            let place = questionPlace(chosen.id, agentID: agentID)
+        else { return true }
+        await answer(
+            agentID: agentID,
+            sessionID: place.sessionID,
+            question: place.question,
+            text: NativeComputerHandBack.answer
+        )
+        return true
+    }
+
+    /// Every question an agent's tasks are stopped at, oldest gate first.
+    private func openQuestions(agentID: String) -> [NativeComputerHandBack.Candidate] {
+        (gates[agentID] ?? []).compactMap { gate in
+            gate.question.map { NativeComputerHandBack.Candidate(id: $0.questionID, question: $0.text, why: $0.why) }
+        }
+    }
+
+    private func questionPlace(_ id: String, agentID: String) -> (sessionID: String, question: WorkQuestionPrompt)? {
+        for gate in gates[agentID] ?? [] {
+            if let question = gate.question, question.questionID == id {
+                return (gate.task.sessionID, question)
+            }
+        }
+        return nil
+    }
+
+    private func apply(_ reading: NativeAgentComputerReading, agentID: String) {
+        if let computer = reading.computer, var detail = details[agentID] {
+            detail.computer = computer
+            details[agentID] = detail
+        }
+        if let takeover = reading.takeover { computerTakeovers[agentID] = takeover }
+        if let minutes = reading.restMinutes, minutes.isFinite, minutes > 0 { computerRestMinutes[agentID] = minutes }
     }
 
     public func computerPoster(agentID: String) async -> Data? {
@@ -1046,4 +1133,86 @@ public final class NativeAgentsModel {
         return NativeFailureClassification.isConnectivityFailure(error) ? .offline : .failed
     }
 
+}
+
+/// Which open question "Hand back" answers: the port of
+/// src/lib/agents/computer-handback.ts, so the apps and the web answer the
+/// same question, or none. Both test suites read the wording cases from
+/// tests/fixtures/computer-handback-cases.json.
+///
+/// Take control pins the one open question that asks for the computer, and
+/// every question already open. Hand back answers the pinned question if it
+/// is still open, and nothing if it has gone. With nothing pinned, it answers
+/// a takeover question asked while the person had control, when there is
+/// exactly one. When in doubt it answers nothing: the person can still reply,
+/// and a wrong canned answer cannot be taken back.
+public enum NativeComputerHandBack {
+    /// What Hand back tells the run. `HAND_BACK_ANSWER`, verbatim.
+    public static let answer = "Done. I've finished on your computer; continue."
+
+    public struct Candidate: Equatable, Sendable {
+        public let id: String
+        public let question: String
+        public let why: String?
+
+        public init(id: String, question: String, why: String?) {
+            self.id = id
+            self.question = question
+            self.why = why
+        }
+    }
+
+    public struct Pin: Equatable, Sendable {
+        /// The takeover question open at Take control, or nil for none (or more than one).
+        public let questionID: String?
+        /// Every question open at Take control. None of them was asked of this takeover.
+        public let openAtStart: [String]
+
+        public init(questionID: String?, openAtStart: [String]) {
+            self.questionID = questionID
+            self.openAtStart = openAtStart
+        }
+    }
+
+    /// The words the computer prompt asks for ("ask them to take over your
+    /// computer") and the ways a model rephrases them. Deliberately narrow,
+    /// and the same patterns as the web's `TAKEOVER_WORDING`.
+    private static let wording: [NSRegularExpression] = [
+        #"\b(?:take|taking|took) (?:over|control)\b"#,
+        #"\btake-?over\b"#,
+        #"\bhand(?:ing)? (?:it |control |the (?:computer|screen) )?back\b"#,
+        #"\b(?:on|onto|into|use|using) (?:my|this|the) (?:computer|desktop|screen)\b"#,
+    ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+
+    /// Whether a question is the agent asking the person to take over its computer.
+    public static func isTakeoverQuestion(question: String, why: String?) -> Bool {
+        let text = "\(question)\n\(why ?? "")"
+        let range = NSRange(text.startIndex..., in: text)
+        return wording.contains { $0.firstMatch(in: text, options: [], range: range) != nil }
+    }
+
+    public static func isTakeoverQuestion(_ candidate: Candidate) -> Bool {
+        isTakeoverQuestion(question: candidate.question, why: candidate.why)
+    }
+
+    /// Called on Take control, with the questions open at that moment.
+    public static func pin(_ questions: [Candidate]) -> Pin {
+        let takeovers = questions.filter { isTakeoverQuestion($0) }
+        return Pin(
+            questionID: takeovers.count == 1 ? takeovers[0].id : nil,
+            openAtStart: questions.map(\.id)
+        )
+    }
+
+    /// The question Hand back answers, or nil to answer nothing. A nil `pin`
+    /// means control was not taken through ``pin(_:)``: every open question
+    /// then counts as asked during it.
+    public static func question(_ questions: [Candidate], pin: Pin?) -> Candidate? {
+        if let pinned = pin?.questionID {
+            return questions.first { $0.id == pinned }
+        }
+        let before = Set(pin?.openAtStart ?? [])
+        let asked = questions.filter { !before.contains($0.id) && isTakeoverQuestion($0) }
+        return asked.count == 1 ? asked[0] : nil
+    }
 }

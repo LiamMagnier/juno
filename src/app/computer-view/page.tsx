@@ -39,9 +39,13 @@ function Expired() {
 export default async function ComputerViewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ c?: string }>;
+  searchParams: Promise<{ c?: string; w?: string }>;
 }) {
-  const { c } = await searchParams;
+  const { c, w } = await searchParams;
+  // `w=1`: a browser window opened from the overlay's "Open in a new window".
+  // It has the person's session, so it shows Hand back itself; without it this
+  // is an app's sheet, which draws its own header and Hand back.
+  const standaloneWindow = w === "1";
   if (!(await isAgentComputerConfigured())) return <Expired />;
   // A browser signed in to another account may not use somebody else's link.
   // The apps' web view has no session, which is the normal case.
@@ -59,6 +63,9 @@ export default async function ComputerViewPage({
       initialMode={grant.mode}
       handoffTicket={grant.ticket}
       fullBleed
+      standaloneWindow={standaloneWindow}
+      embedded={!standaloneWindow}
+      inputTools
     />
   );
 }

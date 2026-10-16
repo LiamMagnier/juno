@@ -1,0 +1,118 @@
+{
+  "$comment": "Which open question Hand back answers. Read by tests/agents-computer-handback.test.ts (src/lib/agents/computer-handback.ts) and by native/Packages/JunoNativeKit/Tests/JunoWorkKitTests/NativeAgentComputerHandBackTests.swift (NativeComputerHandBack), so the web and the apps answer the same question, or none. openAtTakeControl null means control was not taken through Take control (no pin).",
+  "answer": "Done. I've finished on your computer; continue.",
+  "questions": {
+    "SIGN_IN": {
+      "id": "toolu_signin",
+      "question": "Could you take over my computer and sign in to the bank?",
+      "why": "The site wants a password only you should type."
+    },
+    "CAPTCHA": {
+      "id": "toolu_captcha",
+      "question": "There's a CAPTCHA on my screen. Can you solve it on my computer?",
+      "why": "I can't get past it."
+    },
+    "TWO_FACTOR": {
+      "id": "toolu_2fa",
+      "question": "Please take control for the 2FA step.",
+      "why": null
+    },
+    "ENTER_CODE": {
+      "id": "toolu_code",
+      "question": "Can you enter the code?",
+      "why": "Take over and hand it back when you're done."
+    },
+    "FOLDER": {
+      "id": "toolu_folder",
+      "question": "Which folder should I save the report in?",
+      "why": "There are two called Invoices."
+    },
+    "PASSWORD_ACCOUNT": {
+      "id": "toolu_account",
+      "question": "Which account should I sign in with, work or personal?",
+      "why": "You have two."
+    },
+    "PASSWORD_MENTION": {
+      "id": "toolu_password",
+      "question": "Should I save the password in your notes?",
+      "why": null
+    }
+  },
+  "isTakeover": [
+    { "question": "SIGN_IN", "expected": true },
+    { "question": "CAPTCHA", "expected": true },
+    { "question": "TWO_FACTOR", "expected": true },
+    { "question": "ENTER_CODE", "expected": true },
+    { "question": "FOLDER", "expected": false },
+    { "question": "PASSWORD_ACCOUNT", "expected": false },
+    { "question": "PASSWORD_MENTION", "expected": false }
+  ],
+  "handBack": [
+    {
+      "name": "answers the takeover question pinned at Take control, not the first one",
+      "openAtTakeControl": ["FOLDER", "SIGN_IN"],
+      "openAtHandBack": ["FOLDER", "SIGN_IN"],
+      "expected": "SIGN_IN"
+    },
+    {
+      "name": "taking control to look around with an unrelated question open answers nothing",
+      "openAtTakeControl": ["FOLDER"],
+      "openAtHandBack": ["FOLDER"],
+      "expected": null
+    },
+    {
+      "name": "two unrelated questions open answers nothing",
+      "openAtTakeControl": ["PASSWORD_ACCOUNT", "FOLDER"],
+      "openAtHandBack": ["PASSWORD_ACCOUNT", "FOLDER"],
+      "expected": null
+    },
+    {
+      "name": "the pinned question answered elsewhere meanwhile answers nothing",
+      "openAtTakeControl": ["SIGN_IN"],
+      "openAtHandBack": [],
+      "expected": null
+    },
+    {
+      "name": "the pinned question gone never falls through to an unrelated one",
+      "openAtTakeControl": ["SIGN_IN"],
+      "openAtHandBack": ["FOLDER"],
+      "expected": null
+    },
+    {
+      "name": "the pinned question gone never falls through to a later takeover",
+      "openAtTakeControl": ["SIGN_IN"],
+      "openAtHandBack": ["CAPTCHA"],
+      "expected": null
+    },
+    {
+      "name": "a takeover question asked while the person had control is the one",
+      "openAtTakeControl": ["FOLDER"],
+      "openAtHandBack": ["FOLDER", "CAPTCHA"],
+      "expected": "CAPTCHA"
+    },
+    {
+      "name": "with nothing pinned, the single open takeover question is the one",
+      "openAtTakeControl": null,
+      "openAtHandBack": ["FOLDER", "SIGN_IN"],
+      "expected": "SIGN_IN"
+    },
+    {
+      "name": "two takeover questions open at Take control answers neither",
+      "openAtTakeControl": ["SIGN_IN", "CAPTCHA"],
+      "openAtHandBack": ["SIGN_IN", "CAPTCHA"],
+      "expected": null
+    },
+    {
+      "name": "two takeover questions asked during control answers neither",
+      "openAtTakeControl": [],
+      "openAtHandBack": ["SIGN_IN", "CAPTCHA"],
+      "expected": null
+    },
+    {
+      "name": "two takeover questions and nothing pinned answers neither",
+      "openAtTakeControl": null,
+      "openAtHandBack": ["SIGN_IN", "CAPTCHA"],
+      "expected": null
+    }
+  ]
+}

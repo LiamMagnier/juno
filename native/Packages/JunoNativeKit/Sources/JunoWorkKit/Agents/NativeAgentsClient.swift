@@ -765,6 +765,15 @@ public struct NativeAgentsClient: Sendable {
         action: String,
         for accountID: AccountID
     ) async throws -> NativeAgentCloudComputer? {
+        try await computerActionReading(agentID: agentID, action: action, for: accountID).computer
+    }
+
+    /// `computerAction`, with who holds control and the rest time.
+    public func computerActionReading(
+        agentID: String,
+        action: String,
+        for accountID: AccountID
+    ) async throws -> NativeAgentComputerReading {
         try validate(agentID)
         let response = try await send(
             .post,
@@ -773,7 +782,15 @@ public struct NativeAgentsClient: Sendable {
             for: accountID
         )
         guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
-        return root["computer"].flatMap(decodeComputer)
+        return reading(root["computer"])
+    }
+
+    /// The computer as `GET /api/agents/{id}/computer` reads it now.
+    public func computerReading(agentID: String, for accountID: AccountID) async throws -> NativeAgentComputerReading {
+        try validate(agentID)
+        let response = try await get("/api/agents/\(agentID)/computer", for: accountID)
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        return reading(root["computer"])
     }
 
     public func computerView(
@@ -807,8 +824,20 @@ public struct NativeAgentsClient: Sendable {
         ended: Bool = false,
         for accountID: AccountID
     ) async throws -> NativeAgentCloudComputer? {
+        try await computerHeartbeatReading(agentID: agentID, mode: mode, ended: ended, for: accountID).computer
+    }
+
+    /// One heartbeat, read whole. A `409 held_elsewhere` — another client
+    /// holds control — throws ``NativeAgentComputerHeldElsewhere`` with the
+    /// server's sentence, so a viewer can drop to watching and say why.
+    public func computerHeartbeatReading(
+        agentID: String,
+        mode: String = "watch",
+        ended: Bool = false,
+        for accountID: AccountID
+    ) async throws -> NativeAgentComputerReading {
         try validate(agentID)
-        let response = try await send(
+        let response = try await transmit(
             .post,
             "/api/agents/\(agentID)/computer/heartbeat",
             body: .object([
@@ -817,8 +846,39 @@ public struct NativeAgentsClient: Sendable {
             ]),
             for: accountID
         )
+        if response.statusCode == 409, let detail = try? object(response),
+            detail["error"]?.stringValue == "held_elsewhere"
+        {
+            throw NativeAgentComputerHeldElsewhere(
+                message: optionalString(detail["message"])
+                    ?? "Another of your devices has control. Hand back there first.",
+                reading: reading(detail["computer"])
+            )
+        }
+        try requireSuccess(response)
         guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
-        return root["computer"].flatMap(decodeComputer)
+        return reading(root["computer"])
+    }
+
+    private func reading(_ value: JunoJSONValue?) -> NativeAgentComputerReading {
+        guard let value, case .object(let raw) = value else { return NativeAgentComputerReading() }
+        return NativeAgentComputerReading(
+            computer: decodeComputer(value),
+            takeover: Self.decodeTakeover(raw["takeover"]),
+            restMinutes: raw["restMinutes"]?.numberValue
+        )
+    }
+
+    /// `takeover { active, holderKind, until }`, or nil from a server that
+    /// does not send it.
+    static func decodeTakeover(_ value: JunoJSONValue?) -> NativeAgentComputerTakeover? {
+        guard case .object(let raw)? = value else { return nil }
+        let holder = raw["holderKind"]?.stringValue.flatMap(NativeAgentComputerTakeover.HolderKind.init(rawValue:))
+        return NativeAgentComputerTakeover(
+            active: raw["active"]?.boolValue ?? false,
+            holderKind: holder,
+            until: raw["until"]?.date
+        )
     }
 
     public func computerPoster(agentID: String, for accountID: AccountID) async throws -> Data? {
@@ -865,4 +925,51 @@ public struct NativeAgentsClient: Sendable {
             error: error
         )
     }
+}
+
+/// Who holds an agent's computer right now: `takeover` on the computer
+/// payload (`PublicTakeover` in src/lib/computer/takeover.ts).
+public struct NativeAgentComputerTakeover: Equatable, Sendable {
+    public enum HolderKind: String, Equatable, Sendable {
+        case web
+        case app
+    }
+
+    public var active: Bool
+    public var holderKind: HolderKind?
+    /// When the window lapses without another heartbeat.
+    public var until: Date?
+
+    public init(active: Bool, holderKind: HolderKind? = nil, until: Date? = nil) {
+        self.active = active
+        self.holderKind = holderKind
+        self.until = until
+    }
+}
+
+/// A computer payload read whole: the computer, who holds control, and how
+/// long it idles before it rests, as the server is configured.
+public struct NativeAgentComputerReading: Equatable, Sendable {
+    public var computer: NativeAgentCloudComputer?
+    public var takeover: NativeAgentComputerTakeover?
+    public var restMinutes: Double?
+
+    public init(
+        computer: NativeAgentCloudComputer? = nil,
+        takeover: NativeAgentComputerTakeover? = nil,
+        restMinutes: Double? = nil
+    ) {
+        self.computer = computer
+        self.takeover = takeover
+        self.restMinutes = restMinutes
+    }
+}
+
+/// The server's `409 held_elsewhere`: another client holds control, so this
+/// one may neither keep it nor hand it back. The message is for people.
+public struct NativeAgentComputerHeldElsewhere: Error, LocalizedError, Equatable, Sendable {
+    public let message: String
+    public let reading: NativeAgentComputerReading
+
+    public var errorDescription: String? { message }
 }

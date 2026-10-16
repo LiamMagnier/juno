@@ -23,8 +23,11 @@ const mod = Module as unknown as {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
 };
 const origLoad = mod._load;
+/** Stand-ins for the route tests in (d), set before those routes first load. */
+const routeStubs = new Map<string, unknown>();
 mod._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === "server-only") return {};
+  if (routeStubs.has(request)) return routeStubs.get(request);
   return origLoad.call(this, request, parent, isMain);
 };
 
@@ -315,6 +318,164 @@ describe("(b) a takeover is exclusive", () => {
     assert.equal(attachment.attached, false);
     if (!attachment.attached) assert.equal(attachment.note, store.COMPUTER_DISK_FULL_NOTE);
     assert.equal((await memDb.findByAgent("user_1", "agent_full"))?.leaseRunId, null, "no lease left behind");
+  });
+});
+
+describe("(d) control belongs to one client, and every client can see who has it", () => {
+  let memDb: ReturnType<typeof store.createInMemoryComputerPersistence>;
+  const prevProvider = process.env.AGENT_COMPUTER_PROVIDER;
+  /** The device session the routes see: null is the web, a string an app install. */
+  let device: string | null = null;
+  /** A fixed-window limiter, the same arithmetic as src/lib/rate-limit.ts, in memory. */
+  const windows = new Map<string, { count: number; resetAt: number }>();
+  routeStubs.set("@/lib/code-remote", { requireUser: async () => ({ user: { id: "user_1" }, error: null }) });
+  routeStubs.set("@/lib/agents/store", {
+    findAgent: async (_userId: string, agentId: string) => ({ id: agentId }),
+    recordAgentEvent: async () => undefined,
+  });
+  routeStubs.set("@/lib/session", { getCurrentDeviceSessionId: async () => device });
+  routeStubs.set("@/lib/rate-limit", {
+    rateLimit: async ({ key, limit, windowSec }: { key: string; limit: number; windowSec: number }) => {
+      const now = Date.now();
+      const current = windows.get(key);
+      const next = !current || current.resetAt <= now ? { count: 1, resetAt: now + windowSec * 1000 } : { ...current, count: current.count + 1 };
+      windows.set(key, next);
+      return { success: next.count <= limit, remaining: Math.max(0, limit - next.count), resetAt: new Date(next.resetAt) };
+    },
+  });
+  type RouteModule = {
+    POST: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
+  };
+  const heartbeatRoute = () => req("../src/app/api/agents/[id]/computer/heartbeat/route") as RouteModule;
+  const viewRoute = () => req("../src/app/api/agents/[id]/computer/view/route") as RouteModule;
+  const computerRoute = () => req("../src/app/api/agents/[id]/computer/route") as RouteModule;
+  const post = (route: RouteModule, agentId: string, body: unknown) =>
+    route.POST(
+      new Request(`https://alevr.test/api/agents/${agentId}/computer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      { params: Promise.resolve({ id: agentId }) }
+    );
+
+  beforeEach(() => {
+    process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-auth-secret-32-bytes-minimum-length!!";
+    process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    resetComputerProviderCache();
+    fakeComputerProvider.reset();
+    memDb = store.createInMemoryComputerPersistence();
+    store.setComputerStorePersistenceForTest(memDb);
+    windows.clear();
+    device = null;
+  });
+  afterEach(() => {
+    store.setComputerStorePersistenceForTest(null);
+    if (prevProvider === undefined) delete process.env.AGENT_COMPUTER_PROVIDER;
+    else process.env.AGENT_COMPUTER_PROVIDER = prevProvider;
+    resetComputerProviderCache();
+  });
+
+  it("the payload carries takeover { active, holderKind, until } and the rest time", async () => {
+    await store.ensureAwake("user_1", "agent_t", { autoEnable: true });
+    const idle = await store.loadAgentComputerStatusPayload("user_1", "agent_t");
+    assert.deepEqual(idle?.takeover, { active: false, holderKind: null, until: null });
+    assert.equal(typeof idle?.restMinutes, "number");
+    assert.ok((idle?.restMinutes ?? 0) > 0);
+
+    await store.openComputerViewSession("user_1", "agent_t", "control", { deviceSessionId: "phone-A" });
+    const held = await store.loadAgentComputerStatusPayload("user_1", "agent_t");
+    assert.equal(held?.takeover.active, true);
+    assert.equal(held?.takeover.holderKind, "app");
+    assert.ok(held?.takeover.until && Date.parse(held.takeover.until) > Date.now());
+    assert.doesNotMatch(JSON.stringify(held), /phone-A/, "never the device session id");
+
+    await store.heartbeatComputerViewSession("user_1", "agent_t", { mode: "control", ended: true, deviceSessionId: "phone-A" });
+    await store.openComputerViewSession("user_1", "agent_t", "control");
+    assert.equal((await store.loadAgentComputerStatusPayload("user_1", "agent_t"))?.takeover.holderKind, "web");
+
+    // And the route that every client reads sends it.
+    const res = await post(heartbeatRoute(), "agent_t", { mode: "watch" });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { computer: { takeover: unknown; restMinutes: unknown } };
+    assert.deepEqual(Object.keys(body.computer.takeover as object).sort(), ["active", "holderKind", "until"]);
+    assert.equal(typeof body.computer.restMinutes, "number");
+  });
+
+  it("control or hand back from a client that does not hold it is a 409 with a sentence and no password", async () => {
+    await store.ensureAwake("user_1", "agent_t", { autoEnable: true });
+    await store.openComputerViewSession("user_1", "agent_t", "control", { deviceSessionId: "phone-A" });
+
+    device = null; // the web
+    for (const body of [{ mode: "control" }, { mode: "control", handoff: true }]) {
+      const res = await post(viewRoute(), "agent_t", body);
+      assert.equal(res.status, 409, JSON.stringify(body));
+      const answer = (await res.json()) as Record<string, unknown>;
+      assert.equal(answer.error, "held_elsewhere");
+      assert.equal(answer.message, takeover.TAKEOVER_HELD_BY_APP);
+      for (const secret of ["password", "token", "relayUrl", "url"]) assert.equal(secret in answer, false, secret);
+    }
+    await assert.rejects(() => store.openComputerViewSession("user_1", "agent_t", "control"), store.TakeoverHeldElsewhereError);
+    // Watching is anybody's.
+    assert.equal((await post(viewRoute(), "agent_t", { mode: "watch" })).status, 200);
+
+    for (const who of [null, "phone-B"]) {
+      device = who;
+      const res = await post(heartbeatRoute(), "agent_t", { mode: "control", ended: true });
+      assert.equal(res.status, 409, `hand back from ${who ?? "the web"}`);
+      const answer = (await res.json()) as Record<string, unknown>;
+      assert.equal(answer.error, "held_elsewhere");
+      assert.equal(typeof answer.message, "string");
+      assert.equal(await store.computerBlockedReason("user_1", "agent_t"), takeover.TAKEOVER_REFUSAL, "still held");
+    }
+
+    device = "phone-A";
+    assert.equal((await post(heartbeatRoute(), "agent_t", { mode: "control", ended: true })).status, 200);
+    assert.equal(await store.computerBlockedReason("user_1", "agent_t"), null, "the holder handed back");
+  });
+
+  it("two agents working plus an open overlay never get a 429 on control heartbeats", async () => {
+    await store.ensureAwake("user_1", "agent_a", { autoEnable: true });
+    await store.ensureAwake("user_1", "agent_b", { autoEnable: true });
+    // The overlay on agent A is in control; agent B's PiP watches.
+    await store.openComputerViewSession("user_1", "agent_a", "control");
+    device = null;
+    // A minute of B's PiP: three beats, plus one each time the tab came back.
+    for (let i = 0; i < 8; i += 1) {
+      assert.equal((await post(heartbeatRoute(), "agent_b", { mode: "watch" })).status, 200, `watch beat ${i} on agent B`);
+    }
+    // The same minute of A's control beats, a few extra from tab switches.
+    for (let i = 0; i < 8; i += 1) {
+      assert.equal((await post(heartbeatRoute(), "agent_a", { mode: "control" })).status, 200, `control beat ${i} on agent A`);
+    }
+    assert.equal(await store.computerBlockedReason("user_1", "agent_a"), takeover.TAKEOVER_REFUSAL, "control held throughout");
+    // Hand back is never limited.
+    for (let i = 0; i < 3; i += 1) await post(heartbeatRoute(), "agent_a", { mode: "control" });
+    assert.equal((await post(heartbeatRoute(), "agent_a", { mode: "control", ended: true })).status, 200);
+  });
+
+  it("reset refuses while a task holds the lease, bills the open interval and clears the takeover", async () => {
+    const awake = await store.ensureAwake("user_1", "agent_r", { autoEnable: true });
+    await store.acquireComputerLease("user_1", "agent_r", "run_1");
+    await assert.rejects(() => store.resetComputer("user_1", "agent_r"), (error: Error) => error.message === store.RESET_WHILE_LEASED_MESSAGE);
+    assert.equal(await fakeComputerProvider.state(awake.handle), "running", "nothing was destroyed under the task");
+    const refused = await post(computerRoute(), "agent_r", { action: "reset" });
+    assert.equal(refused.status, 409);
+    assert.equal(((await refused.json()) as { message: string }).message, "A task is using it. Stop it first.");
+
+    await store.releaseComputerLease("user_1", "agent_r", "run_1");
+    await store.openComputerViewSession("user_1", "agent_r", "control");
+    const now = new Date();
+    const before = await memDb.updateByAgent("user_1", "agent_r", { lastResumedAt: new Date(now.getTime() - 90_000), activeSeconds: 10 });
+    const epoch = before.takeoverEpoch ?? 0;
+    const row = await store.resetComputer("user_1", "agent_r", now);
+    assert.equal(row.activeSeconds, 100, "the awake interval up to the reset is counted and billed");
+    assert.equal(row.lastResumedAt, null);
+    assert.equal(row.billingStoppedAt ?? null, null);
+    assert.equal(row.takeoverUntil ?? null, null);
+    assert.equal(row.takeoverBy ?? null, null);
+    assert.equal(row.takeoverEpoch ?? 0, epoch, "the epoch only ever grows");
+    assert.equal(await store.computerBlockedReason("user_1", "agent_r"), null);
   });
 });
 
