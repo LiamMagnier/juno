@@ -500,7 +500,9 @@
 
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
-       behind; warm ink from the same family as --shadow-* follows. */
+       behind. It is a near-black with a faint warm cast (hue 48, the same
+       family as --hairline); the shadows moved to graphite with the
+       refoundation and this did not, so tune it here if the two should meet. */
     --scrim: 48 12% 8% / 0.26;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
@@ -540,7 +542,7 @@
     --aura-band: clamp(17rem, 38vh, 36rem);
 
     /* Design-canvas selection chrome (design-canvas.tsx), mirrored in Tailwind
-       as canvas-{selection,handle,measure}. Deliberately OUTSIDE the warm
+       as canvas-{selection,handle,measure}. Deliberately OUTSIDE the product
        palette: canvas chrome must read as "not content" over artwork that may
        use any of the product's own accents, and the palette's one hole — blue —
        is what every editing canvas (Figma, Sketch, Illustrator) has trained as
@@ -1921,8 +1923,8 @@
    * nothing else was:
    *
    *   1. Every literal is now the token that already means that thing here, so
-   *      these blocks re-tint with [data-accent] and read correctly on warm
-   *      paper instead of on #fff. A hardcoded grey inside a themed app is a
+   *      these blocks re-tint with [data-accent] and read correctly on the
+   *      app's own paper (and on charcoal) instead of on #fff. A hardcoded grey inside a themed app is a
    *      component that is right in exactly one theme.
    *   2. `prefers-color-scheme` → `.dark`. next-themes puts that class on <html>
    *      and the OS preference is only its default; keyed on the media query,
@@ -2088,7 +2090,7 @@
    * sizes are tuned against it — but exposed so a larger canvas can open it up.
    * ------------------------------------------------------------------------- */
   /* AIcss puts the lattice on #fafafa over #fff — a fill you can only just find,
-     which is the point: the canvas is a held space, not a card. Warm paper needs
+     which is the point: the canvas is a held space, not a card. The page's paper needs
      the full muted token to land in the same relationship, because --muted at
      .45 over a 97%-lightness background is genuinely invisible. No border, per
      the original: an outline would make it a frame around nothing. */
@@ -3146,7 +3148,7 @@
 
 @layer utilities {
   /*
-   * Loading skeleton — a warm well that BREATHES. It does not shimmer.
+   * Loading skeleton — a quiet well that BREATHES. It does not shimmer.
    *
    * It used to: a translucent band with a `--primary`-tinted peak, travelling
    * left to right on a 1.6s linear loop. Measured on a cold sidebar load, that
@@ -3565,7 +3567,7 @@
  * Sonner draws [data-close-button] from its OWN grey ramp: `background:
  * var(--normal-bg)` — #fff on light, #000 on dark — a `--gray4` edge, an 8px
  * radius, and a default `translate(-35%, -35%)` that hangs it off the toast's
- * top-left corner. On the warm flat toast that was the only cold, un-tokened
+ * top-left corner. On the flat, tokened toast that was the only un-tokened
  * object in the product, and it appeared on every one of the ~285 toasts the
  * app raises. It is now the same recipe as every other bare glyph affordance:
  * a tonal control on the toast's own ground, inside its edge, on the trailing
@@ -3680,7 +3682,7 @@
  * (0,3,0), sonner's `[data-button]` rule is (0,3,0) too, and sonner's sheet is
  * appended to <head> at runtime, so it won every tie. Every action shipped as
  * sonner's stock button — a near-black slab, 24px tall, 12px type, a 4px
- * corner — the one cold object on a warm toast.
+ * corner — the one un-tokened object on the toast.
  *
  * Measured, it is a neutral control now rather than the accent: the toast
  * already says what happened, and its button is an offer ("Undo"), not the
