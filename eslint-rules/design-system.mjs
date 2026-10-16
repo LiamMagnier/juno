@@ -253,6 +253,9 @@ export const RADIUS_PX = {
   surface: 12,
   lg: 12,
   "composer-action": 12,
+  // The one user bubble (wave 2 D6): card radius with an 8px end-end tuck.
+  bubble: 12,
+  "bubble-tuck": 8,
   menu: 14,
   panel: 16,
   composer: 22,
