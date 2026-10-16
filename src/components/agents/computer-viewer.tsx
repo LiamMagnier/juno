@@ -124,6 +124,38 @@ export function typeIntoRemote(rfb: { sendKey(keysym: number, code: string | nul
   return sent;
 }
 
+/**
+ * What one input event on the soft keyboard's proxy sends to the computer: a
+ * key, some text, or nothing. Call it only outside a composition.
+ *
+ * Composed text (Chinese, Japanese, Korean, and the iOS keyboards that mark
+ * text) is typed once, on compositionend. WebKit (Safari, and the web view in
+ * the iOS app) fires compositionend first and then one more input event for
+ * the same text, no longer composing; typing that too would send every word
+ * twice. `justCommitted` is the text compositionend typed in this task.
+ */
+export function proxyInputAction(
+  input: { inputType: string; data: string | null },
+  value: string,
+  justCommitted: string | null
+): { keysym: number } | { text: string } | null {
+  switch (input.inputType) {
+    case "insertCompositionText":
+    case "deleteCompositionText":
+    case "insertFromComposition":
+      return null;
+    case "deleteContentBackward":
+      return { keysym: 0xff08 };
+    case "insertLineBreak":
+    case "insertParagraph":
+      return { keysym: 0xff0d };
+  }
+  const text = input.data ?? value;
+  if (!text) return null;
+  if (justCommitted !== null && text === justCommitted) return null;
+  return { text };
+}
+
 /** noVNC's `GH_INITSTATE` (core/input/gesturehandler.js): every gesture still possible. */
 const NOVNC_GESTURE_INIT_STATE = 127;
 
@@ -255,6 +287,8 @@ export function ComputerViewer({
   const attemptsRef = useRef(0);
   const reconnectTimer = useRef<number | null>(null);
   const composingRef = useRef(false);
+  /** Text a composition just typed, until the input event WebKit sends after it. */
+  const committedRef = useRef<string | null>(null);
   const credentialsRef = useRef<{ relayUrl: string; token: string; password: string; mode: ViewerMode } | null>(
     initialRelayUrl && initialToken && initialPassword
       ? { relayUrl: initialRelayUrl, token: initialToken, password: initialPassword, mode: initialMode }
@@ -716,11 +750,16 @@ export function ComputerViewer({
     const native = event.nativeEvent as InputEvent;
     const input = event.currentTarget;
     if (composingRef.current || native.isComposing) return;
+    const action = proxyInputAction(
+      { inputType: native.inputType ?? "", data: native.data ?? null },
+      input.value,
+      committedRef.current
+    );
+    committedRef.current = null;
     const rfb = rfbForInput();
-    if (rfb) {
-      if (native.inputType === "deleteContentBackward") rfb.sendKey(0xff08, null);
-      else if (native.inputType === "insertLineBreak" || native.inputType === "insertParagraph") rfb.sendKey(0xff0d, null);
-      else typeIntoRemote(rfb, native.data ?? input.value);
+    if (rfb && action) {
+      if ("keysym" in action) rfb.sendKey(action.keysym, null);
+      else typeIntoRemote(rfb, action.text);
     }
     input.value = "";
   };
@@ -729,6 +768,11 @@ export function ComputerViewer({
     composingRef.current = false;
     const rfb = rfbForInput();
     if (rfb && event.data) typeIntoRemote(rfb, event.data);
+    // WebKit's input event for the same text follows in this task; it was typed here.
+    committedRef.current = event.data || null;
+    window.setTimeout(() => {
+      committedRef.current = null;
+    }, 0);
     event.currentTarget.value = "";
   };
 

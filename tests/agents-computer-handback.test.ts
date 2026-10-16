@@ -184,6 +184,26 @@ test("the soft keyboard and Type text reach the computer as key presses", async 
   assert.match(source, /sendHandBackBeacon\(agentId\)/);
 });
 
+test("composed text from a soft keyboard is typed once, in WebKit's event order too", async () => {
+  const { proxyInputAction } = await import("@/components/agents/computer-viewer");
+  // Ordinary keys and edits.
+  assert.deepEqual(proxyInputAction({ inputType: "insertText", data: "a" }, "a", null), { text: "a" });
+  assert.deepEqual(proxyInputAction({ inputType: "deleteContentBackward", data: null }, "", null), { keysym: 0xff08 });
+  assert.deepEqual(proxyInputAction({ inputType: "insertLineBreak", data: null }, "", null), { keysym: 0xff0d });
+  assert.equal(proxyInputAction({ inputType: "insertText", data: null }, "", null), null);
+  // Safari and the iOS app's web view: compositionend typed "日本", then one
+  // more input event arrives with the same text, no longer composing.
+  assert.equal(proxyInputAction({ inputType: "insertFromComposition", data: "日本" }, "", "日本"), null);
+  assert.equal(proxyInputAction({ inputType: "insertText", data: "日本" }, "", "日本"), null, "older WebKit calls it insertText");
+  assert.equal(proxyInputAction({ inputType: "deleteCompositionText", data: null }, "", "日本"), null);
+  // The same word typed again later is typed.
+  assert.deepEqual(proxyInputAction({ inputType: "insertText", data: "日本" }, "", null), { text: "日本" });
+
+  const source = readFileSync(new URL("../src/components/agents/computer-viewer.tsx", import.meta.url), "utf8");
+  assert.match(source, /committedRef\.current = event\.data \|\| null;/);
+  assert.match(source, /proxyInputAction\(\s*\{ inputType: native\.inputType \?\? "", data: native\.data \?\? null \},\s*input\.value,\s*committedRef\.current\s*\)/);
+});
+
 test("a pinch to zoom in control leaves noVNC's touch handling clean (the real gesture handler)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const { default: GestureHandler } = (await import(
