@@ -129,6 +129,55 @@ test("Responses: a user input opens, a function call output continues", () => {
   );
 });
 
+test("a tool's screenshots on a user message after its result continue the turn", () => {
+  // Chat Completions and Responses cannot carry a picture inside a tool
+  // result, so the engines send it as a user message straight after the run
+  // of results (one per result that had pictures). That is the loop, not the
+  // person: a computer-use turn with ten screenshots is still one turn.
+  const shot = { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } };
+  assert.equal(
+    opens("openai-chat", {
+      model: "gpt-6-sol",
+      messages: [
+        { role: "user", content: "Open the settings page" },
+        { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "screenshot" } }, { id: "c2", type: "function", function: { name: "screenshot" } }] },
+        { role: "tool", tool_call_id: "c1", content: "Captured" },
+        { role: "tool", tool_call_id: "c2", content: "Captured" },
+        { role: "user", content: [shot] },
+        { role: "user", content: [shot] },
+      ],
+    }),
+    false,
+  );
+  assert.equal(
+    opens("openai-responses", {
+      model: "gpt-6-sol",
+      input: [
+        { role: "user", content: [{ type: "input_text", text: "Open the settings page" }] },
+        { type: "function_call", call_id: "c1", name: "screenshot", arguments: "{}" },
+        { type: "function_call_output", call_id: "c1", output: "Captured" },
+        { role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,AAAA" }] },
+      ],
+    }),
+    false,
+  );
+  // The person's next message follows the model's reply, and opens.
+  assert.equal(
+    opens("openai-chat", {
+      model: "gpt-6-sol",
+      messages: [
+        { role: "user", content: "Open the settings page" },
+        { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "screenshot" } }] },
+        { role: "tool", tool_call_id: "c1", content: "Captured" },
+        { role: "user", content: [shot] },
+        { role: "assistant", content: "It is open." },
+        { role: "user", content: "Now turn on dark mode" },
+      ],
+    }),
+    true,
+  );
+});
+
 test("a side call that offers no tools is never a turn, on any wire", () => {
   // The auto-reviewer, the completion judge, a hook's prompt, a title or a
   // summary: the engine's own words in a user message, sent with no tools.

@@ -84,11 +84,36 @@ function anthropicOpening(body: Record<string, unknown>): unknown | null {
   return content;
 }
 
+/**
+ * Whether the closing user message(s) of a list sit straight after a tool's
+ * result: the Chat Completions and Responses spelling of Anthropic's "a tool
+ * result anywhere in the closing message". Those wires cannot carry a picture
+ * inside a tool result, so the engines send a tool's screenshots as a user
+ * message right after the run of results (the Swift engine's
+ * `pendingImageMessages`, agent-core's compat and Responses adapters alike),
+ * and text that rode along with the results lands there too. Without this,
+ * every screenshot step of a computer-use or browser turn read as a new turn.
+ * A person's new turn follows the model's reply, never a bare tool result;
+ * the one exception (a turn stopped between its tools and the reply) is left
+ * uncounted, the cheap direction to be wrong in, as on the Anthropic wire.
+ */
+function followsToolResult(items: readonly unknown[], isToolResult: (item: Record<string, unknown>) => boolean): boolean {
+  let index = items.length - 1;
+  while (index >= 0) {
+    const item = items[index];
+    if (!isRecord(item) || item.role !== "user") break;
+    index -= 1;
+  }
+  const before = items[index];
+  return index >= 0 && index < items.length - 1 && isRecord(before) && isToolResult(before);
+}
+
 /** The closing message of a Chat Completions body, if it is the person speaking. */
 function chatOpening(body: Record<string, unknown>): unknown | null {
   const messages = Array.isArray(body.messages) ? body.messages : null;
   const last = messages?.at(-1);
   if (!isRecord(last) || last.role !== "user") return null;
+  if (followsToolResult(messages!, (item) => item.role === "tool" || item.role === "function")) return null;
   const content = last.content;
   if (typeof content === "string") return content.trim() ? content : null;
   return Array.isArray(content) && content.length > 0 ? content : null;
@@ -105,6 +130,7 @@ function responsesOpening(body: Record<string, unknown>): unknown | null {
   // A message item may omit `type` (the easy-input form) but always has a role.
   if (last.role !== "user") return null;
   if (last.type !== undefined && last.type !== "message") return null;
+  if (followsToolResult(input, (item) => typeof item.type === "string" && RESPONSES_TOOL_OUTPUTS.has(item.type))) return null;
   return last.content ?? null;
 }
 

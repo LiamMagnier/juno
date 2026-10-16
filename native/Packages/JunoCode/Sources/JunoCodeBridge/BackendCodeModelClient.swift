@@ -521,11 +521,13 @@ public struct BackendCodeModelClient: AgentModelClient {
         if status == 401 || status == 403 {
             return .unauthorized
         }
-        if status == 402, failure.code == "QUOTA_EXCEEDED" {
+        if status == 402, failure.code == "QUOTA_EXCEEDED" || failure.code == "EMAIL_UNVERIFIED" {
             // The Juno proxy's budget and usage-window wall, which it marks
-            // with this code. The proxy passes a provider's own status through
-            // unchanged, so a bare 402 is the provider's billing (DeepSeek's
-            // "Insufficient Balance"), which another model can still serve.
+            // with this code, and its unconfirmed-address refusal (the same
+            // admission a chat turn meets). The proxy passes a provider's own
+            // status through unchanged, so a bare 402 is the provider's billing
+            // (DeepSeek's "Insufficient Balance"), which another model can
+            // still serve; these two no other model can get round.
             return .planLimitReached(message: message)
         }
         if status == 402

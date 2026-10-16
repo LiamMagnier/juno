@@ -771,6 +771,18 @@ final class BackendCodeModelClientTests: XCTestCase {
         XCTAssertEqual(failure, .planLimitReached(message: "You have used this plan's allowance until 5 pm."))
     }
 
+    /// The proxy refuses an unconfirmed address the way chat does. No other
+    /// model can get round it, so it ends the run with its own sentence
+    /// rather than falling back through every model.
+    func testTheProxysEmailUnverified402EndsTheRun() async {
+        let failure = await error(
+            for: 402,
+            body: #"{"error":"Confirm your email address to start sending messages.","code":"EMAIL_UNVERIFIED"}"#,
+            model: "anthropic:claude-sonnet-5"
+        )
+        XCTAssertEqual(failure, .planLimitReached(message: "Confirm your email address to start sending messages."))
+    }
+
     // MARK: - Thinking block binding
 
     private static let endTurn = """
