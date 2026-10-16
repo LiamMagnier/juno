@@ -2155,15 +2155,21 @@ function SectionAction({
 /** Inline rename field for a chat row. */
 function InlineNameInput({
   initial = "",
+  label,
   placeholder,
   onCommit,
   onCancel,
+  onKeyClose,
   nested,
 }: {
   initial?: string;
+  /** The field's accessible name; the placeholder vanishes once there is a title in it. */
+  label: string;
   placeholder?: string;
   onCommit: (value: string) => void;
   onCancel: () => void;
+  /** Called just before Enter or Escape closes the field (not a blur or a Save click). */
+  onKeyClose?: () => void;
   nested?: boolean;
 }) {
   const [draft, setDraft] = React.useState(initial);
@@ -2176,6 +2182,7 @@ function InlineNameInput({
   return (
     <div className={cn("flex min-h-8 items-center gap-1 py-0.5 pr-1", nested ? "ml-4 pl-2" : "pl-2")}>
       <Input
+        aria-label={label}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={placeholder}
@@ -2183,8 +2190,12 @@ function InlineNameInput({
         onFocus={(e) => e.currentTarget.select()}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
+          if (e.key === "Enter" && !committed.current) {
+            onKeyClose?.();
+            commit();
+          }
+          if (e.key === "Escape" && !committed.current) {
+            onKeyClose?.();
             committed.current = true;
             onCancel();
           }
@@ -2267,10 +2278,30 @@ function ConversationRow({
 
   const { patch } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
 
+  /* The rename field replaces the row, so Enter or Escape unmounted the
+     focused input and dropped focus on <body>: the reader's next Tab started
+     over at the top of the page. Put it back on the row they renamed, but
+     only when a key closed the field: after a blur (a click elsewhere) or a
+     Save click the pointer user is somewhere else, and focusing the row right
+     after the text field would draw the keyboard ring on it. */
+  const linkRef = React.useRef<HTMLAnchorElement>(null);
+  const wasRenaming = React.useRef(renaming);
+  const renameClosedByKey = React.useRef(false);
+  React.useEffect(() => {
+    if (wasRenaming.current === renaming) return;
+    wasRenaming.current = renaming;
+    const byKey = renameClosedByKey.current;
+    renameClosedByKey.current = false;
+    if (renaming || !byKey) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) linkRef.current?.focus({ preventScroll: true });
+  }, [renaming]);
+
   if (renaming) {
     return (
       <InlineNameInput
         initial={conversation.title}
+        label={isCodeSession ? "Rename session" : "Rename chat"}
         placeholder={isCodeSession ? "Session name" : "Chat name"}
         nested={nested}
         onCommit={(value) => {
@@ -2279,6 +2310,9 @@ function ConversationRow({
           if (title && title !== conversation.title) patch({ title });
         }}
         onCancel={() => setRenaming(null)}
+        onKeyClose={() => {
+          renameClosedByKey.current = true;
+        }}
       />
     );
   }
@@ -2306,6 +2340,7 @@ function ConversationRow({
       )}
     >
       <Link
+        ref={linkRef}
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
         /* Prefetched on aim, not on scroll — see lib/intent-prefetch.ts. */

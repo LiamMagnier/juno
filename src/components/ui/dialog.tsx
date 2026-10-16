@@ -4,6 +4,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ActionIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
+import { useDialogFocusReturn } from "@/components/ui/focus-return";
 import { cn } from "@/lib/utils";
 
 const Dialog = DialogPrimitive.Root;
@@ -72,22 +73,29 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
->(({ className, children, hideClose, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        "overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
-        className
-      )}
-      {...props}
-    >
-      {children}
-      {!hideClose && <DialogCloseButton />}
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+>(({ className, children, hideClose, onCloseAutoFocus, ...props }, ref) => {
+  // Focus goes back to whatever opened the dialog, not only to a
+  // <DialogTrigger> — see focus-return.tsx.
+  const focusReturn = useDialogFocusReturn(onCloseAutoFocus);
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          "overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
+          className
+        )}
+        onCloseAutoFocus={focusReturn.onCloseAutoFocus}
+        {...props}
+      >
+        {focusReturn.capture}
+        {children}
+        {!hideClose && <DialogCloseButton />}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

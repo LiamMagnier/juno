@@ -4,6 +4,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { DialogOverlay } from "@/components/ui/dialog";
+import { useDialogFocusReturn } from "@/components/ui/focus-return";
 import { cn } from "@/lib/utils";
 
 /** A side sheet (Radix Dialog under the hood → focus trap + Escape + scroll lock).
@@ -35,7 +36,10 @@ const SheetContent = React.forwardRef<
     title?: string;
     scrim?: "mobile" | "always";
   }
->(({ className, children, side = "left", title = "Navigation", scrim = "mobile", ...props }, ref) => (
+>(({ className, children, side = "left", title = "Navigation", scrim = "mobile", onCloseAutoFocus, ...props }, ref) => {
+  // Focus goes back to whatever opened the sheet — see focus-return.tsx.
+  const focusReturn = useDialogFocusReturn(onCloseAutoFocus);
+  return (
   <DialogPrimitive.Portal>
     <DialogOverlay className={scrim === "mobile" ? "md:hidden" : undefined} />
     <DialogPrimitive.Content
@@ -47,15 +51,18 @@ const SheetContent = React.forwardRef<
           : "right-0 rounded-l-panel border-r-0 pr-safe [--sheet-from:100%]",
         className
       )}
+      onCloseAutoFocus={focusReturn.onCloseAutoFocus}
       {...props}
     >
+      {focusReturn.capture}
       <VisuallyHidden.Root>
         <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
       </VisuallyHidden.Root>
       {children}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
-));
+  );
+});
 SheetContent.displayName = "SheetContent";
 
 export { Sheet, SheetTrigger, SheetClose, SheetContent };
