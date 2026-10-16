@@ -125,7 +125,8 @@ final class JunoVoiceGlowEngineTests: XCTestCase {
         XCTAssertFalse(segments.isEmpty)
         // Right positive, left negative, and symmetric.
         XCTAssertEqual(segments.filter { $0.arc > 0 }.count, segments.filter { $0.arc < 0 }.count)
-        XCTAssertEqual(outline.halfLength, 2 * 126 + 2 * 26 + .pi * 24, accuracy: 1e-9)
+        let expectedHalfLength = 2.0 * 126.0 + 2.0 * 26.0 + Double.pi * 24.0
+        XCTAssertEqual(outline.halfLength, expectedHalfLength, accuracy: 1e-9)
         // The first piece on the right sits on the bottom edge, near the centre.
         let first = segments[0].path.boundingRect
         XCTAssertEqual(first.midY, 100, accuracy: 0.5)

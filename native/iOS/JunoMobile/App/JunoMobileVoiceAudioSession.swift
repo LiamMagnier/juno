@@ -43,9 +43,9 @@ final class JunoMobileVoiceAudioSession {
       ) { [weak self] notification in
         let raw = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
         let options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
-        let suspended = (notification.userInfo?[AVAudioSessionInterruptionWasSuspendedKey] as? Bool) ?? false
         Task { @MainActor [weak self] in
-          self?.handleInterruption(typeRaw: raw, optionsRaw: options, wasSuspended: suspended)
+          // Supported iOS versions no longer deliver legacy suspension interruptions.
+          self?.handleInterruption(typeRaw: raw, optionsRaw: options, wasSuspended: false)
         }
       }
     )

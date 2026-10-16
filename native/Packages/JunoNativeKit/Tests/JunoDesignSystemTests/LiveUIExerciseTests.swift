@@ -4,6 +4,7 @@ import XCTest
 
 /// The exercise card and Run (owner, 2026-10-09: "On IOS & MacOS add the new
 /// exercices tool and the ability to run code like we did on the website").
+@MainActor
 final class LiveUIExerciseTests: XCTestCase {
     func testAnExerciseParsesAndNeverCarriesASolution() throws {
         let source = #"{"ui":[{"type":"exercise","title":"Exercice 1","tag":"SQL","prompt":"Affiche **les employés**.","language":"SQL","hints":["a","b","c","d","e","f"],"solution":"SELECT 1"}]}"#
