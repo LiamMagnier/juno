@@ -96,6 +96,7 @@ import { cachedJson } from "@/lib/client-cache";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
+import { OPEN_ARTIFACT_EVENT, type OpenArtifactDetail } from "@/lib/artifact-events";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -1180,6 +1181,20 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       setClosingDocument(null);
     }
   }, []);
+
+  // "Open in canvas" from a surface inside this chat that does not hold the
+  // canvas itself (the research reader): src/lib/artifact-events.ts.
+  React.useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<OpenArtifactDetail>).detail;
+      if (!detail || (detail.conversationId && detail.conversationId !== conversationId)) return;
+      if (!openableArtifactsRef.current.some((x) => x.identifier === detail.identifier)) return;
+      openArtifactByIdentifier(detail.identifier);
+      detail.opened = true;
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, open);
+    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, open);
+  }, [conversationId, openArtifactByIdentifier]);
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {

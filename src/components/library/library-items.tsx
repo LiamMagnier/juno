@@ -369,7 +369,7 @@ export function EntryMenu({ entry, actions, className }: { entry: LibraryEntry; 
   if (made?.kind === "artifact") {
     return (
       <span className={className}>
-        <ArtifactLifecycleActions id={made.id} title={entry.title} version={made.version} latest={made.version} />
+        <ArtifactLifecycleActions id={made.id} title={entry.title} version={made.version} latest={made.version} type={made.type} />
       </span>
     );
   }
