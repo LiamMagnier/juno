@@ -196,6 +196,13 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   React.useEffect(() => writeStored(WIDTH_KEY, String(dock.width)), [dock.width]);
   React.useEffect(() => writeStored(DETAIL_KEY, detail), [detail]);
   React.useEffect(() => dispatch({ type: "thread-changed", threadId: model.thread.id }), [model.thread.id]);
+  // The dock reads the whole session (every change, command and file), so
+  // opening it brings in the turns a paged thread has not loaded yet, as
+  // Chat's outputs panel does.
+  const loadAllHistory = model.history?.hasOlder ? model.history.loadOlder : null;
+  React.useEffect(() => {
+    if (dock.open && loadAllHistory) void loadAllHistory({ all: true });
+  }, [dock.open, loadAllHistory]);
   React.useEffect(() => {
     const on = () => setHidden(document.visibilityState === "hidden");
     document.addEventListener("visibilitychange", on);
@@ -579,6 +586,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
               <>
                 <Thread
                   items={model.items}
+                  history={model.history}
                   state={model.state}
                   instances={model.instances}
                   detailLevel={detail}

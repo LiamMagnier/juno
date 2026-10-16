@@ -21,6 +21,19 @@ import type { DetailLevel } from "@/lib/code-v2/turns";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
 import type { ByokKeyRecord } from "@/lib/code-v2/byok-client";
 import type { CodeSkillsState } from "./use-code-skills";
+import type { LoadOlderRequest } from "@/lib/chat/history-client";
+
+/**
+ * A thread opened on its newest page (lib/chat/history-page.ts): `items` are
+ * the newest turns, and older ones are read as the reader scrolls up, through
+ * the same pager and loader Chat uses (lib/chat/history-client.ts).
+ */
+export interface PagedHistory {
+  hasOlder: boolean;
+  loading: boolean;
+  /** Resolves to null when nothing could be read. */
+  loadOlder(request?: LoadOlderRequest): Promise<unknown>;
+}
 
 export interface TerminalSession {
   id: string;
@@ -95,6 +108,8 @@ export interface WorkspaceActions {
 export interface WorkspaceModel {
   thread: WorkspaceThread;
   items: TurnItem[];
+  /** Older turns still to read above `items`. Absent: `items` are the whole session. */
+  history?: PagedHistory;
   state: SessionState;
   resumeAt?: string;
   /** A turn the env server starts by itself when the limit resets. */

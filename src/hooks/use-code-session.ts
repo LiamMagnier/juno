@@ -4,7 +4,9 @@ import type { CloudSkillRef } from "@/lib/code-v2/cloud-skills";
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
-import type { ClientAttachment, ClientMessage } from "@/types/chat";
+import type { ClientAttachment, ClientMessage, ConversationHistory } from "@/types/chat";
+import { COMPLETE_HISTORY, prependOlder } from "@/lib/chat/history-merge";
+import { createOlderHistoryLoader, type LoadOlderRequest } from "@/lib/chat/history-client";
 import { canSteerRun } from "@/lib/code-steer-policy";
 import { CodeTaskTranscript, type CodeActivityRow } from "@/lib/agent-protocol/code-task-transcript";
 
@@ -335,12 +337,54 @@ async function readSseFrames(body: ReadableStream<Uint8Array>, onFrame: (frame: 
 interface UseCodeSessionOptions {
   conversationId: string;
   initialMessages: ClientMessage[];
+  /**
+   * Whether `initialMessages` is the newest page of a longer conversation
+   * (lib/chat/history-page.ts), exactly as Chat opens. Absent: they are the
+   * whole of it, and `loadOlderMessages` has nothing to read.
+   */
+  initialHistory?: ConversationHistory;
   /** Bumps the sidebar's lastMessageAt so the session floats up while used. */
   onActivity?: () => void;
 }
 
 export function useCodeSession(opts: UseCodeSessionOptions) {
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
+  const messagesRef = React.useRef(messages);
+  messagesRef.current = messages;
+  const conversationIdRef = React.useRef(opts.conversationId);
+  conversationIdRef.current = opts.conversationId;
+  /*
+   * PAGED HISTORY, THE SAME AS CHAT. The route sends the newest page; older
+   * turns are read a page at a time as the reader scrolls up, through the one
+   * loader Chat uses (lib/chat/history-client.ts). Pages land above with a
+   * functional update, so a live bubble streaming at the foot is never
+   * overwritten by a page that was read before its last delta.
+   */
+  const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
+  const historyRef = React.useRef(history);
+  historyRef.current = history;
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const [olderLoader] = React.useState(() =>
+    createOlderHistoryLoader<ChatMessage>({
+      conversationId: () => conversationIdRef.current,
+      messages: () => messagesRef.current,
+      history: () => historyRef.current,
+      setLoading: setLoadingOlder,
+      land: (older, nextHistory) => {
+        const next = prependOlder<ChatMessage>(messagesRef.current, older);
+        messagesRef.current = next;
+        historyRef.current = nextHistory;
+        setMessages((prev) => prependOlder<ChatMessage>(prev, older));
+        setHistory(nextHistory);
+        return next;
+      },
+    }),
+  );
+  /** Read further back: the next page, through one message, or `all` the rest. */
+  const loadOlderMessages = React.useCallback(
+    (request: LoadOlderRequest = {}): Promise<ChatMessage[] | null> => olderLoader.load(request),
+    [olderLoader],
+  );
   const [status, setStatus] = React.useState<CodeSessionStatus>("idle");
   const [pendingQuestion, setPendingQuestion] = React.useState<import("@/lib/agent-protocol/fold").AgentQuestionItem | null>(null);
   const [pendingPlan, setPendingPlan] = React.useState<import("@/lib/agent-protocol/fold").AgentPlanProposalItem | null>(null);
@@ -415,6 +459,12 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
 
   React.useEffect(() => {
     setMessages(opts.initialMessages);
+    messagesRef.current = opts.initialMessages;
+    const pageHistory = opts.initialHistory ?? COMPLETE_HISTORY;
+    setHistory(pageHistory);
+    historyRef.current = pageHistory;
+    olderLoader.reset();
+    setLoadingOlder(false);
     setStatus("idle");
     setPendingApproval(null);
     setPendingQuestion(null);
@@ -1119,6 +1169,10 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
 
   return {
     messages,
+    /** Whether older messages exist above `messages`; see loadOlderMessages. */
+    history,
+    loadingOlder,
+    loadOlderMessages,
     status,
     activeTask,
     pendingApproval,

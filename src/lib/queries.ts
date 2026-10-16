@@ -136,7 +136,8 @@ function readArtifacts(userId: string, conversationId: string) {
 /**
  * The whole thread: every message, oldest first. The contract of
  * GET /api/conversations/[id] without paging parameters, which the Mac and
- * iPhone apps read (NativeThreadClient.swift) and the Code surfaces render.
+ * iPhone apps read (NativeThreadClient.swift). The web surfaces, Code
+ * included, open on getConversationThreadPage instead.
  */
 export async function getConversationThread(
   userId: string,

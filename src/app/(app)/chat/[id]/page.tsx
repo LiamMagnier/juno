@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { getConversationThread, getConversationThreadPage } from "@/lib/queries";
+import { getConversationThreadPage } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
 // Not imported directly: this route renders ONE of two surfaces and the chat
 // one is the overwhelming case. See the loader for why the split lives there.
@@ -44,14 +44,14 @@ export default async function ConversationPage({
     redirect(`/code/${id}`);
   }
   if (thread.conversation.kind === "code" && codeSessionHasTarget) {
-    // The legacy Code surface renders its whole transcript; it does not page.
-    const whole = await getConversationThread(user.id, id);
-    if (!whole) notFound();
+    // The legacy Code surface pages like the chat one: the newest page here,
+    // older turns as the reader scrolls back.
     return (
       <CodeSessionView
-        conversation={whole.conversation}
-        initialMessages={whole.messages}
-        initialArtifacts={whole.artifacts}
+        conversation={thread.conversation}
+        initialMessages={thread.messages}
+        initialHistory={thread.history}
+        initialArtifacts={thread.artifacts}
       />
     );
   }

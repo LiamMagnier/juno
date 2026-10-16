@@ -57,6 +57,7 @@ import type {
   ClientAttachment,
   ClientConversation,
   ClientMessage,
+  ConversationHistory,
   GenerationStatus,
 } from "@/types/chat";
 
@@ -167,10 +168,16 @@ interface CodeSessionViewProps {
   conversation: ClientConversation;
   initialMessages: ClientMessage[];
   /**
+   * Whether `initialMessages` is the newest page of a longer session
+   * (lib/chat/history-page.ts). The transcript reads further back as the
+   * reader scrolls up, exactly as Chat's does. Absent: the whole session.
+   */
+  initialHistory?: ConversationHistory;
+  /**
    * The conversation's artifacts, loaded by the page alongside the messages.
    *
    * Passed down rather than fetched here, and that is the whole point: the page
-   * already reads them in `getConversationThread`, so a fetch on this side would
+   * already reads them in `getConversationThreadPage`, so a fetch on this side would
    * be a SECOND data path for one set of rows, with its own loading state and
    * its own opportunity to disagree with the first. This surface used to hand
    * `MessageList` a literal `[]` and a no-op opener, which meant an artifact
@@ -179,7 +186,7 @@ interface CodeSessionViewProps {
   initialArtifacts: ClientArtifact[];
 }
 
-export function CodeSessionView({ conversation, initialMessages, initialArtifacts }: CodeSessionViewProps) {
+export function CodeSessionView({ conversation, initialMessages, initialHistory, initialArtifacts }: CodeSessionViewProps) {
   const { setActiveConversationId, updateConversation, conversations, features, settings } = useApp();
   const workspaceName = conversation.codeWorkspaceName?.trim() || "Code session";
   const workspacePath = conversation.codeWorkspacePath ?? null;
@@ -208,6 +215,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   const session = useCodeSession({
     conversationId: conversation.id,
     initialMessages,
+    initialHistory,
     onActivity: () => updateConversation(conversation.id, { lastMessageAt: new Date().toISOString() }),
   });
 
@@ -1156,6 +1164,9 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                      unconditional. */
                   key={conversation.id}
                   entrance
+                  history={session.history}
+                  loadingOlder={session.loadingOlder}
+                  onLoadOlder={session.loadOlderMessages}
                   messages={session.messages}
                   surface="code"
                   inlineRuns={codeActivity}
