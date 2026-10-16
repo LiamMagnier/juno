@@ -192,16 +192,117 @@ export function computerAction(
   return call(`${base(id)}/computer`, { method: "POST", body: { action } }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
 }
 
+/** Who holds an agent's computer right now (`takeover` on the computer payload). */
+export interface ClientComputerTakeover {
+  active: boolean;
+  holderKind: "web" | "app" | null;
+  until: string | null;
+}
+
+/** The computer payload with the parts the takeover screens read. */
+export type ClientAgentComputerLive = ClientAgentComputer & {
+  takeover?: ClientComputerTakeover | null;
+  /** Idle minutes before it rests, as the server is configured. */
+  restMinutes?: number;
+};
+
+/** The takeover on a payload, or null when it is missing or malformed (an older server). */
+export function readComputerTakeover(computer: unknown): ClientComputerTakeover | null {
+  if (!computer || typeof computer !== "object") return null;
+  const raw = (computer as Record<string, unknown>).takeover;
+  if (!raw || typeof raw !== "object") return null;
+  const t = raw as Record<string, unknown>;
+  return {
+    active: t.active === true,
+    holderKind: t.holderKind === "app" ? "app" : t.holderKind === "web" ? "web" : null,
+    until: typeof t.until === "string" ? t.until : null,
+  };
+}
+
+/** One entry in a folder on the agent's computer, as `GET /computer/files` lists it. */
 export interface ClientAgentComputerFile {
   name: string;
+  /** The absolute path on the computer; what a download or a drill-in sends back. */
+  path: string;
+  type: "file" | "directory";
   sizeBytes: number;
   modifiedAt: string;
 }
 
-export function fetchComputerFiles(id: string): Promise<AgentOutcome<ClientAgentComputerFile[]>> {
-  return call(`${base(id)}/computer/files`, {}, (d) =>
-    Array.isArray(d.files) ? (d.files as ClientAgentComputerFile[]) : []
+export interface ClientAgentComputerFolder {
+  path: string;
+  entries: ClientAgentComputerFile[];
+}
+
+/** The work folder, which the files route lists when no path is given. */
+export const COMPUTER_WORK_FOLDER = "/home/agent/work";
+
+/**
+ * A folder on the agent's computer. The route answers `{ path, entries }`; a
+ * 409 (asleep) or a 400 (a refused path) is the route's own sentence, never an
+ * empty folder.
+ */
+export function fetchComputerFiles(id: string, path?: string): Promise<AgentOutcome<ClientAgentComputerFolder>> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  return call(`${base(id)}/computer/files${query}`, {}, (d) => ({
+    path: typeof d.path === "string" && d.path ? d.path : path ?? COMPUTER_WORK_FOLDER,
+    entries: Array.isArray(d.entries) ? d.entries.flatMap(readComputerFile) : [],
+  }));
+}
+
+function readComputerFile(raw: unknown): ClientAgentComputerFile[] {
+  if (!raw || typeof raw !== "object") return [];
+  const e = raw as Record<string, unknown>;
+  if (typeof e.name !== "string" || typeof e.path !== "string") return [];
+  return [
+    {
+      name: e.name,
+      path: e.path,
+      type: e.type === "directory" ? "directory" : "file",
+      sizeBytes: typeof e.sizeBytes === "number" && Number.isFinite(e.sizeBytes) ? e.sizeBytes : 0,
+      modifiedAt: typeof e.modifiedAt === "string" ? e.modifiedAt : "",
+    },
+  ];
+}
+
+/** Where a file on the agent's computer downloads from: the files route itself, in download mode. */
+export function computerFileDownloadUrl(id: string, path: string): string {
+  return `${base(id)}/computer/files?path=${encodeURIComponent(path)}&download=1`;
+}
+
+/**
+ * One viewer heartbeat. A control beat holds the takeover; `ended` is Hand
+ * back. The outcome carries the computer payload, so a viewer can tell when
+ * control was taken back elsewhere, and a 409 is the server saying another
+ * client holds control.
+ */
+export function computerHeartbeat(
+  id: string,
+  mode: "watch" | "control",
+  ended = false
+): Promise<AgentOutcome<ClientAgentComputerLive | null>> {
+  return call(
+    `${base(id)}/computer/heartbeat`,
+    { method: "POST", body: ended ? { mode, ended: true } : { mode } },
+    (d) => (d.computer ?? null) as ClientAgentComputerLive | null
   );
+}
+
+/**
+ * Hand back as the page goes away (a closed tab, a navigation): a beacon
+ * outlives the page where a fetch may not. Returns whether it was queued.
+ */
+export function sendHandBackBeacon(id: string): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return false;
+  // text/plain, not application/json: Chrome refuses a beacon whose Blob type
+  // is not CORS-safelisted (it throws, and nothing is sent). The route reads
+  // the body as JSON whatever its type.
+  const body = new Blob([JSON.stringify({ mode: "control", ended: true })], { type: "text/plain;charset=UTF-8" });
+  try {
+    return navigator.sendBeacon(`${base(id)}/computer/heartbeat`, body);
+  } catch {
+    return false;
+  }
 }
 
 export function updateRoutine(scheduleId: string, enabled: boolean): Promise<AgentOutcome<true>> {

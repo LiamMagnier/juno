@@ -11,11 +11,14 @@ import {
 } from "./live-view";
 import {
   TAKEOVER_REFUSAL,
+  publicTakeover,
   takeoverActive,
   takeoverClosed,
+  takeoverConflict,
   takeoverHolder,
   takeoverOpened,
   takeoverReleasableBy,
+  type PublicTakeover,
 } from "./takeover";
 import {
   COMPUTER_PATH_REFUSED,
@@ -75,6 +78,10 @@ export interface PublicAgentComputerState {
   diskMb: number | null;
   diskQuotaMb: number;
   lastError: string | null;
+  /** Who holds control right now, if anyone (src/lib/computer/takeover.ts). */
+  takeover: PublicTakeover;
+  /** Idle minutes before an awake computer rests, as this server is configured. */
+  restMinutes: number;
 }
 
 export interface ComputerStorePersistence {
@@ -809,6 +816,8 @@ export async function getPublicComputerState(
       diskMb: null,
       diskQuotaMb: env.agentComputer.diskQuotaMb,
       lastError: null,
+      takeover: publicTakeover(null, new Date()),
+      restMinutes: env.agentComputer.restMinutes,
     };
   }
   return {
@@ -825,6 +834,8 @@ export async function getPublicComputerState(
     diskMb: row.diskMb,
     diskQuotaMb: env.agentComputer.diskQuotaMb,
     lastError: row.lastError,
+    takeover: publicTakeover(row, new Date()),
+    restMinutes: env.agentComputer.restMinutes,
   };
 }
 
@@ -839,6 +850,10 @@ export interface AgentComputerApiPayload {
   error: string | null;
   diskMb?: number | null;
   diskQuotaMb?: number;
+  /** Who holds control, so every client can say so and notice a lapse. */
+  takeover: PublicTakeover;
+  /** Idle minutes before it rests: "Idle. It rests after 3 minutes." */
+  restMinutes: number;
 }
 
 export async function loadAgentComputerStatusPayload(
@@ -896,6 +911,8 @@ export async function loadAgentComputerStatusPayload(
     error: state.lastError,
     diskMb: state.diskMb,
     diskQuotaMb: state.diskQuotaMb,
+    takeover: state.takeover,
+    restMinutes: state.restMinutes,
   };
 }
 
@@ -1283,9 +1300,13 @@ export async function sleepComputer(
   });
 }
 
+/** Said when the person resets a computer a task is still using. */
+export const RESET_WHILE_LEASED_MESSAGE = "A task is using it. Stop it first.";
+
 export async function resetComputer(
   userId: string,
-  agentId: string
+  agentId: string,
+  now = new Date()
 ): Promise<AgentComputerRow> {
   const provider = computerProvider();
   if (!provider) {
@@ -1293,13 +1314,38 @@ export async function resetComputer(
   }
 
   const existing = await activePersistence.findByAgent(userId, agentId);
+  // Destroying the container under a running task would land its next action
+  // in a fresh desktop; the task is stopped first, by the person.
+  if (existing?.leaseRunId && existing.leaseExpiresAt && existing.leaseExpiresAt.getTime() > now.getTime()) {
+    throw new ComputerError(RESET_WHILE_LEASED_MESSAGE);
+  }
+
+  // The awake time up to now is billed before anything is destroyed: a failed
+  // ledger write stops the reset here and leaves the interval for a retry,
+  // instead of losing it with the container.
+  const elapsedSeconds =
+    existing?.lastResumedAt
+      ? Math.max(0, Math.floor(((existing.billingStoppedAt ?? now).getTime() - existing.lastResumedAt.getTime()) / 1000))
+      : 0;
+  if (existing && elapsedSeconds > 0) {
+    await activePersistence.updateByAgent(userId, agentId, { billingStoppedAt: existing.billingStoppedAt ?? now });
+    await billComputerSeconds({
+      userId,
+      agentId,
+      seconds: elapsedSeconds,
+      runId: existing.leaseRunId,
+      since: existing.lastResumedAt,
+    });
+  }
+
   const oldHandle = decodeHandle(existing?.containerRef, agentId);
+  if (existing?.streamOn) await stopStream({ handle: oldHandle, provider }).catch(() => {});
   await provider.destroy(oldHandle, { removeVolume: true });
   posterCache.delete(agentId);
 
   const cdpToken = randomBytes(24).toString("hex");
   const newHandle = await provider.create({ agentId, userId, cdpToken });
-  const now = new Date();
+  const activeSeconds = (existing?.activeSeconds ?? 0) + elapsedSeconds;
 
   return activePersistence.upsertByAgent(
     userId,
@@ -1317,7 +1363,7 @@ export async function resetComputer(
       lastResumedAt: null,
       lastActiveAt: now,
       lastViewedAt: null,
-      activeSeconds: existing?.activeSeconds ?? 0,
+      activeSeconds,
       diskMb: 0,
       lastError: null,
     },
@@ -1330,9 +1376,13 @@ export async function resetComputer(
       leaseRunId: null,
       leaseExpiresAt: null,
       lastResumedAt: null,
+      billingStoppedAt: null,
       lastActiveAt: now,
+      activeSeconds,
       diskMb: 0,
       lastError: null,
+      // A clean desktop has nobody in control of it. The epoch stays: it only grows.
+      ...takeoverClosed(),
     }
   );
 }
@@ -1543,6 +1593,29 @@ export class AsleepComputerError extends Error {
   }
 }
 
+/** Control was asked for, or handed back, by a client that does not hold it. The message is for people. */
+export class TakeoverHeldElsewhereError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TakeoverHeldElsewhereError";
+  }
+}
+
+/**
+ * Why this client may not take control or hand it back right now, or null.
+ * The routes answer 409 with it; the store itself still ignores a hand back
+ * from a client that does not hold control, whoever calls it.
+ */
+export async function computerTakeoverConflict(
+  userId: string,
+  agentId: string,
+  deviceSessionId: string | null | undefined,
+  now = new Date()
+): Promise<string | null> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  return takeoverConflict(row, takeoverHolder(deviceSessionId ?? null), now);
+}
+
 /**
  * Why the agent may not use its computer right now, or null. Read by the
  * runner before (and after) every computer and browser tool call: while the
@@ -1641,6 +1714,14 @@ export async function openComputerViewSession(
     throw new AsleepComputerError();
   }
 
+  // Control is one client's at a time. Another tab or device asking for it
+  // while someone holds it gets a sentence, never the control password, and
+  // never a link that would hand it out when opened.
+  if (mode === "control") {
+    const conflict = takeoverConflict(existing, takeoverHolder(opts?.deviceSessionId ?? null), new Date());
+    if (conflict) throw new TakeoverHeldElsewhereError(conflict);
+  }
+
   if (opts?.handoff) {
     // A single-use, session-bound link (src/lib/computer/handoff.ts). The
     // takeover opens when the link is used, not when it is made.
@@ -1712,7 +1793,14 @@ export async function openComputerViewSession(
   // Control is exclusive: from here until Hand back (or a lapsed window) the
   // agent's computer tools refuse.
   if (mode === "control") {
-    await holdComputerTakeover(userId, agentId, takeoverHolder(opts?.deviceSessionId ?? null), now);
+    const holder = takeoverHolder(opts?.deviceSessionId ?? null);
+    await holdComputerTakeover(userId, agentId, holder, now);
+    // Waking the computer and starting the stream take a while. Another
+    // client that took control meanwhile keeps it (extending a live takeover
+    // never changes its holder), and this one gets its sentence, not the
+    // control password.
+    const conflict = takeoverConflict(await activePersistence.findByAgent(userId, agentId), holder, new Date());
+    if (conflict) throw new TakeoverHeldElsewhereError(conflict);
   }
 
   return {

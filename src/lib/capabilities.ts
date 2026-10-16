@@ -554,7 +554,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
     name: "Agent computers",
     summary: "Leases, exclusive takeover with an epoch fence and holder-only hand-back, secret-input redaction, agent-navigation site policy and teardown on account deletion; security acceptance still blocked on a real host.",
     status: "beta",
-    platforms: ["web", "macos"],
+    platforms: ["web", "macos", "ios"],
     maturity: surfaces(
       blocked("src/lib/computer/store.ts", "Production security acceptance requires a real docker host: in-flight xdotool/shell cancellation and process freeze during takeover, Xvfb access control, egress proxy and DNS policy, VNC rotation on lapse, orphan reconciliation and volume quotas (docs/rework/program/SECURITY_PERMISSIONS.md §3)."),
       implemented("src/components/agents/computer-viewer.tsx"),
