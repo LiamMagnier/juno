@@ -203,6 +203,34 @@ jobs:
         run: npm run native:design:check
 
   # ---------------------------------------------------------------------------
+  # The apps' signing configuration: the iPhone's push entitlement, how it is
+  # signed, and one deployment floor per app.
+  #
+  # Commit 615d3a5b0 regenerated the iPhone project and left its entitlements
+  # an empty dict. Every build stayed green, because an app without
+  # `aps-environment` still compiles, signs and installs; it just never gets
+  # a push token, so agent, Work, research and Code approval pushes all died.
+  # project.yml and the .pbxproj also sat at iOS 18 while the xcconfigs and
+  # the packages required 26. This fails on either, naming the rule.
+  #
+  # Linux and `node:*` only, so it runs on every push. Generating the iPhone
+  # project runs the same script (project.yml's postGenCommand).
+  # ---------------------------------------------------------------------------
+  signing-config:
+    name: Entitlements and deployment targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Push entitlement, signing and deployment targets hold
+        run: npm run native:entitlements:check
+
+  # ---------------------------------------------------------------------------
   # What the web changed that nobody weighed for native
   # (MACOS_LIQUID_GLASS_REDESIGN.md §A4.4, §A4.5 and §A4.9).
   #
