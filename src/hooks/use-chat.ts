@@ -239,6 +239,12 @@ interface UseChatOptions {
   connectors?: string[];
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
+  /**
+   * The composer's mode for tasks this chat starts
+   * (src/lib/chat/task-approval-mode.ts), read at send time. A getter because
+   * the chat view learns a new chat's id only after this hook has run.
+   */
+  taskApprovalMode?: () => "conservative" | "balanced" | "permissive" | null;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
   onQuota?: (quota: ClientQuota) => void;
   onMemoryUpdated?: () => void;
@@ -260,6 +266,8 @@ export function useChat(opts: UseChatOptions) {
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
   const historyRef = React.useRef(history);
+  // Read at send time; held apart so calling it is not a call on `opts`.
+  const readTaskApprovalMode = opts.taskApprovalMode;
   historyRef.current = history;
   const [loadingOlder, setLoadingOlder] = React.useState(false);
   const olderRequestRef = React.useRef<Promise<ChatMessage[] | null> | null>(null);
@@ -1467,6 +1475,10 @@ export function useChat(opts: UseChatOptions) {
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
+          // How often a task the model starts here stops to ask. Rides every
+          // send so a new chat keeps the mode picked before it existed; the
+          // server saves it on the conversation.
+          taskApprovalMode: opts.privateMode ? undefined : readTaskApprovalMode?.() ?? undefined,
                 .filter((m) => !m.error && (m.role === "USER" || m.role === "ASSISTANT"))
                 .map((m) => ({ role: m.role, content: m.content }))
             : undefined,
@@ -1509,6 +1521,7 @@ export function useChat(opts: UseChatOptions) {
       messages,
     ]
   );
+      readTaskApprovalMode,
 
   const send = React.useCallback(
     async (text: string, attachments: ClientAttachment[] = [], sendOptions?: SendOptions): Promise<SendResult> => {

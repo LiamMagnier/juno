@@ -672,6 +672,12 @@ model Conversation {
   // This conversation's own "Let conversations message each other" toggle:
   // "on", "off", or NULL to follow the account setting for its kind.
   crossMessages     String?
+  // How often a task started from this chat stops to ask: one of the Work
+  // approval modes ("conservative" | "balanced" | "permissive", the wire
+  // values in src/lib/work/domain.ts), or NULL for the default. Chosen from
+  // the chat composer; a project's or an agent's stricter mode still wins at
+  // dispatch (src/lib/chat/task-approval-mode.ts).
+  taskApprovalMode  String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())

@@ -22,6 +22,7 @@ import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
 import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
+import { parseChatTaskMode } from "@/lib/chat/task-approval-mode";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
 import type { ActiveConnector } from "@/lib/mcp";
@@ -182,7 +183,7 @@ export async function buildNativeTools({
   user: TurnUser;
   input: ChatRequestBody;
   conversationId: string;
-  conversation: { projectId: string | null };
+  conversation: { projectId: string | null; taskApprovalMode?: string | null };
   userMessageId: string | null;
   approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext">;
   appliedSkill: TurnSkill["appliedSkill"];
@@ -230,6 +231,9 @@ export async function buildNativeTools({
                 status: agentContext.agent.status,
               }
             : null,
+          // The composer's mode for this chat: what this request carried, else
+          // what the conversation saved (accept.ts writes one into the other).
+          approvalMode: parseChatTaskMode(input.taskApprovalMode ?? conversation.taskApprovalMode),
           generationId,
           onApprovalRequest: requestApproval,
           // The panel appears as soon as the run exists rather than on the

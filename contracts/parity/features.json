@@ -130,6 +130,10 @@
           "note": "Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire)."
         },
         "/api/chat/follow-ups": "native",
+        "/api/conversations/[id]/task-mode": {
+          "status": "planned",
+          "note": "How often a task started from this chat asks (the web composer's hand chip, src/lib/chat/task-approval-mode.ts). The apps do not offer the choice yet, so their chats' tasks run as the saved mode or the default; request.taskApprovalMode in the chat wire is the same choice sent with a turn."
+        },
         "/api/chat/local-tools/[callId]": {
           "status": "native",
           "note": "The Mac answers a chat turn's local folder tool call here (NativeLocalFolderWire); the waiting turn reads it from an in-memory wait, so it needs a single backend instance."

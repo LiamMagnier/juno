@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 199,
-    "planned": 227,
+    "planned": 228,
     "web-only": 45,
     "unclassified": 0
   },
@@ -472,6 +472,16 @@
         "workHandoff": {
           "type": "boolean",
           "x-native": "native"
+        },
+        "taskApprovalMode": {
+          "type": "string",
+          "enum": [
+            "conservative",
+            "balanced",
+            "permissive"
+          ],
+          "x-native": "planned",
+          "x-native-note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
         },
         "localFolder": {
           "x-native": "native"

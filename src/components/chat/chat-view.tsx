@@ -96,6 +96,9 @@ import { cachedJson } from "@/lib/client-cache";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
+import { TaskModeChip } from "@/components/chat/task-mode-chip";
+import { useConversationTaskMode } from "@/hooks/use-conversation-task-mode";
+import type { ChatTaskMode } from "@/lib/chat/task-approval-mode";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -432,6 +435,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const chat = useChat({
     conversationId,
     initialMessages,
+  // The composer's task mode reaches the request through a getter: the hook
+  // that holds it follows the conversation id this chat learns from useChat.
+  const taskModeRef = React.useRef<ChatTaskMode | null>(null);
+  const readTaskMode = React.useCallback(() => taskModeRef.current, []);
+
     initialHistory,
     initialArtifacts,
     model,
@@ -445,6 +453,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     privateMode,
     onQuota: setQuota,
     onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
+    taskApprovalMode: readTaskMode,
     onMeta: ({ conversationId: id, title, titleSource, isNew }) => {
       localGenerationSeenRef.current = true;
       if (isNew) {
@@ -547,6 +556,28 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // this view, where the route id is null — and then only when it names the
   // chat this view created, not the thread the reader just left (/chat/B →
   // /chat used to read B's research run and tasks once more on the way in).
+  // How often a task this chat starts stops to ask (G15). Offered where a
+  // turn can start a task at all: a saved chat on a plan with agents.
+  const tasksPossible = !privateMode && PLANS[quota.plan].agents;
+  const taskMode = useConversationTaskMode(currentConversationId, tasksPossible);
+  React.useEffect(() => {
+    taskModeRef.current = tasksPossible ? taskMode.chosen : null;
+  }, [taskMode.chosen, tasksPossible]);
+  // Memoised like the composer's other props: the composer is `React.memo`, and
+  // a fresh element on every streamed token would re-render it for each one.
+  const taskModeControl = React.useMemo(
+    () =>
+      tasksPossible ? (
+        <TaskModeChip
+          chosen={taskMode.chosen}
+          effective={taskMode.effective}
+          narrowedBy={taskMode.narrowedBy}
+          onChange={taskMode.change}
+        />
+      ) : undefined,
+    [tasksPossible, taskMode.chosen, taskMode.effective, taskMode.narrowedBy, taskMode.change],
+  );
+
   const currentConversationId =
     conversationId ??
     (activeConversationId && activeConversationId === ownedConversationIdRef.current ? activeConversationId : createdIdRef.current);
@@ -2053,6 +2084,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // never through the composer's own submit — so the composer's
       // `setResearch(false)` after a send never ran, and the pill it had been
       // seeded with quietly made the NEXT typed message a second research run.
+      taskModeControl={taskModeControl}
       initialResearch={!!initialPromptResearch && !initialPrompt}
       model={model}
       onModelChange={setModel}

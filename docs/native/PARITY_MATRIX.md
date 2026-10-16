@@ -22,13 +22,13 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-347 routes: 226 native, 52 planned, 55 web only, 14 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+348 routes: 226 native, 53 planned, 55 web only, 14 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 3 | 1 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
@@ -127,6 +127,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/chat/cancel` | POST | Native | JunoChatKit |  |
 | `/api/chat/clarify` | POST | Planned |  | Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire). |
 | `/api/chat/follow-ups` | POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/task-mode` | GET, PATCH | Planned |  | How often a task started from this chat asks (the web composer's hand chip, src/lib/chat/task-approval-mode.ts). The apps do not offer the choice yet, so their chats' tasks run as the saved mode or the default; request.taskApprovalMode in the chat wire is the same choice sent with a turn. |
 | `/api/chat/local-tools/[callId]` | POST | Native | JunoChatKit | The Mac answers a chat turn's local folder tool call here (NativeLocalFolderWire); the waiting turn reads it from an in-memory wait, so it needs a single backend instance. |
 | `/api/mentions` | GET | Native | JunoChatKit | The composer's @ lookup for typed context tokens (agents, files, projects, apps with their connection and approval state, skills, chats, artifacts). Both apps' composers call it and send the chosen tokens as request.context. |
 | `/api/chat/receipt` | GET | Planned |  | Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire). |

@@ -702,6 +702,8 @@ export interface ChatRequestBody {
   clientFeatures?: ClientFeature[];
   /** IANA zone of the browser, e.g. "Europe/Paris". Used by current_time and research only. */
   timeZone?: string;
+  /** How often a task the model starts stops to ask (see `taskApprovalMode` in request.ts). */
+  taskApprovalMode?: "conservative" | "balanced" | "permissive";
   /** Effective UI locale (<html lang>), BCP-47. Never used to format UI copy. */
   locale?: string;
 }
