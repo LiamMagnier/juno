@@ -15,6 +15,8 @@ final class LiveUIExerciseTests: XCTestCase {
         XCTAssertEqual(exercise.id, "exercise_0")
     }
 
+    // `LiveExerciseView` is a view, so its helpers are main-actor isolated.
+    @MainActor
     func testSendPostsTheWebsMessage() {
         XCTAssertEqual(
             LiveExerciseView.message(title: "Exercice 1", language: "sql", answer: "  SELECT *\nFROM employees;\n\n"),
@@ -23,6 +25,7 @@ final class LiveUIExerciseTests: XCTestCase {
         XCTAssertEqual(LiveExerciseView.message(title: "Alias", language: nil, answer: "A second name.\n"), "**Alias**\n\nA second name.")
     }
 
+    @MainActor
     func testTheStatementReadsBoldAndCode() {
         let statement = LiveExerciseView.statement("Affiche **les employés** du département `60`, et 2 * 3.")
         XCTAssertEqual(String(statement.characters), "Affiche les employés du département 60, et 2 * 3.")

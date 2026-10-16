@@ -125,7 +125,12 @@ final class JunoVoiceGlowEngineTests: XCTestCase {
         XCTAssertFalse(segments.isEmpty)
         // Right positive, left negative, and symmetric.
         XCTAssertEqual(segments.filter { $0.arc > 0 }.count, segments.filter { $0.arc < 0 }.count)
-        XCTAssertEqual(outline.halfLength, 2 * 126 + 2 * 26 + .pi * 24, accuracy: 1e-9)
+        // Half the outline: half of the bottom and top edges (126 each), one
+        // side (52) and two quarter arcs of radius 24. In typed steps, because
+        // as a single literal expression it is too much for the type checker.
+        let straights: Double = 2 * 126 + 2 * 26
+        let corners: Double = .pi * 24
+        XCTAssertEqual(outline.halfLength, straights + corners, accuracy: 1e-9)
         // The first piece on the right sits on the bottom edge, near the centre.
         let first = segments[0].path.boundingRect
         XCTAssertEqual(first.midY, 100, accuracy: 0.5)
