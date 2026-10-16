@@ -35,6 +35,8 @@ const SandboxFrame = nextDynamic(
   { ssr: false },
 );
 import { LiveLine } from "@/components/chat/live-line";
+import { BuildStage, useBuildWindow } from "@/components/canvas/live-blueprint";
+import { isBlueprintSource, type BlueprintBlock } from "@/lib/live-blueprint";
 import { TIMING } from "@/lib/interaction";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 import { runtimeFor } from "@/lib/artifact-runtime";
@@ -324,15 +326,31 @@ export function ArtifactInlineCard({
     setConsoleEntries([]);
   }, [type, language, streaming]);
 
+  // A page being written shows its live blueprint (live-blueprint.tsx) where
+  // the preview will be, then dissolves into the preview once the finished
+  // source renders. Every other kind keeps the write-in as its view.
+  const buildable = !isDesign && isBlueprintSource(type, language);
+  const building = useBuildWindow(!!streaming && buildable, runStatus === "done" || runStatus === "error");
+  const [revealLine, setRevealLine] = React.useState<{ line: number; nonce: number } | null>(null);
+  const showInCode = React.useCallback((block: BlueprintBlock) => {
+    setRevealLine({ line: block.line, nonce: Date.now() });
+    setView("code");
+  }, []);
+  const chooseView = React.useCallback((next: ArtifactView) => {
+    setRevealLine(null);
+    setView(next);
+  }, []);
+
   React.useEffect(() => {
     if (streaming) {
-      setView("code");
+      setView(buildable ? "preview" : "code");
     } else {
       setView(inlinePreview ? "preview" : "code");
     }
-  }, [streaming, inlinePreview]);
+  }, [streaming, inlinePreview, buildable]);
 
   const showPreview = inlinePreview && view === "preview";
+  const showBuild = buildable && view === "preview" && (hasContent || !!streaming);
   const showConsole = hasConsole && view === "console";
   const sourceLanguage = rt.lang || language || type.toLowerCase();
 
@@ -521,11 +539,12 @@ export function ArtifactInlineCard({
         )}
 
         <div className="flex shrink-0 items-center gap-1 self-end @[24rem]:self-auto">
-          {/* View switcher — hidden while streaming (the write-in IS the view). */}
-          {!isDesign && rt.mode !== "semantic" && !streaming && !trashed && hasContent && viewOptions.length > 1 && (
+          {/* View switcher — hidden while streaming (the write-in IS the view),
+              except for a page, whose blueprint and source can be traded. */}
+          {!isDesign && rt.mode !== "semantic" && (!streaming || buildable) && !trashed && hasContent && viewOptions.length > 1 && (
             <SegmentedControl
               value={view}
-              onChange={setView}
+              onChange={chooseView}
               options={viewOptions}
               ariaLabel="Artifact view"
               // The 32px rung, the card header's control height; everything
@@ -622,6 +641,37 @@ export function ArtifactInlineCard({
             <SemanticArtifactView type={type as SemanticArtifactType} content={resolvedContent} readOnly />
           </div>
         )
+      ) : showBuild ? (
+        // A page: its blueprint while it is written, then the preview it
+        // dissolves into (the same mat and sheet as the branch below). The
+        // sandbox mounts only once the source is whole: half a page is not a
+        // page, and re-booting a frame per token is what the blueprint spares.
+        <div key={view} className="h-[min(44vh,360px)] min-h-[240px] overflow-hidden motion-safe:animate-fade-in">
+          <BuildStage
+            building={building}
+            content={resolvedContent}
+            type={type}
+            language={language}
+            streaming={!!streaming}
+            onJump={showInCode}
+          >
+            {!streaming && hasContent ? (
+              <div className="h-full bg-background p-2">
+                <div className="h-full overflow-hidden rounded-sm bg-white ring-1 ring-inset ring-border/70">
+                  <RuntimePreview
+                    type={type}
+                    content={resolvedContent}
+                    language={language}
+                    runNonce={runNonce}
+                    mode={rt.mode}
+                    onStatus={setRunStatus}
+                    onConsole={handleConsole}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </BuildStage>
+        </div>
       ) : hasContent ? (
         // One stable height across views + a fast cross-fade on switch: the
         // card never jumps, the content quietly trades places.
@@ -671,6 +721,7 @@ export function ArtifactInlineCard({
               streaming={streaming}
               wrap={type === "MARKDOWN"}
               ariaLabel={`${title || "Artifact"} source`}
+              revealLine={revealLine}
             />
           )}
         </div>

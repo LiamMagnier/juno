@@ -1,0 +1,448 @@
+/*
+ * The live blueprint (live-blueprint.tsx): the page's structure, drawn from
+ * its source while Alevr writes it.
+ *
+ * Graphite hairlines on the panel's own ground; presence only where the
+ * pointer or focus is (presence means live, here: "this one"). Every moving
+ * property is transform or opacity, except each outline's one-shot draw-on
+ * (stroke-dashoffset, --dur-slow, once per block). Durations and curves are the
+ * motion tokens; the reduced plan is decided in script (blueprintMotionPlan,
+ * through lib/motion-preference) and arrives as [data-reduced], so the OS and
+ * the in-app Motion setting give the same answer here as everywhere else.
+ */
+
+.bp-stage {
+  position: relative;
+  isolation: isolate;
+}
+
+/* The preview underneath: hidden while the blueprint stands, then fades up
+   from a hair smaller as the blueprint dissolves over it. */
+.bp-preview {
+  height: 100%;
+  transition:
+    opacity var(--dur-slow) var(--ease-out-soft),
+    transform var(--dur-slow) var(--ease-out-soft);
+}
+.bp-preview[data-state="waiting"] {
+  opacity: 0;
+  transform: scale(0.985);
+  pointer-events: none;
+}
+.bp-stage[data-reduced] .bp-preview {
+  transform: none;
+  transition: opacity var(--dur-slow) var(--ease-out-soft);
+}
+
+.bp-root {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 20px;
+  background: hsl(var(--background));
+  animation: bp-fade var(--dur-base) var(--ease-out-soft) both;
+}
+.bp-root[data-state="closed"] {
+  pointer-events: none;
+  animation: bp-dissolve var(--dur-slow) var(--ease-out-soft) forwards;
+}
+.bp-root[data-reduced][data-state="closed"] {
+  animation-name: bp-fade-out;
+}
+/* Off screen or in a hidden tab, nothing runs. */
+.bp-root[data-paused],
+.bp-root[data-paused] * {
+  animation-play-state: paused !important;
+}
+
+.bp-status {
+  display: flex;
+  justify-content: center;
+  min-height: 24px;
+  max-width: 100%;
+}
+
+/* The sheet: the page being drawn. Newest blocks stay in view; the oldest
+   slip under a fade at the top once the page outgrows the panel. */
+.bp-sheet-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(100%, 520px);
+  perspective: 1200px;
+}
+.bp-sheet {
+  position: relative;
+  height: 100%;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  overflow: hidden;
+  transform-origin: 50% 50%;
+}
+.bp-sheet[data-tilting] {
+  will-change: transform;
+}
+.bp-sheet::before {
+  /* The page's own background, once the source sets one. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--bp-page, transparent) 10%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out-soft);
+  pointer-events: none;
+}
+.bp-sheet[data-page-ink]::before {
+  opacity: 1;
+}
+.bp-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  height: 100%;
+  padding: 12px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+}
+
+/* ── A row ─────────────────────────────────────────────────────────────── */
+
+.bp-row {
+  --bp-line: hsl(var(--foreground) / 0.22);
+  position: relative;
+  flex: none;
+  border-radius: 4px;
+  padding: 18px 10px 10px;
+  animation: bp-snap var(--dur-base) var(--ease-out-soft) both;
+}
+.bp-root[data-reduced] .bp-row {
+  animation-name: bp-fade;
+}
+.bp-row::before {
+  /* Ink: the colour the source gives this block, else a quiet surface once
+     the page has started to be styled. Faded in after the outline draws. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--bp-fill, hsl(var(--foreground) / 0.035));
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out-soft) var(--dur-base);
+  pointer-events: none;
+}
+.bp-row[data-inked]::before,
+.bp-sheet[data-styled] .bp-row::before {
+  opacity: 1;
+}
+.bp-row[data-inked] {
+  --bp-fill: color-mix(in oklab, var(--bp-ink) 16%, transparent);
+}
+.bp-row[data-active] {
+  --bp-line: hsl(var(--presence));
+}
+.bp-row[data-active]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: hsl(var(--presence) / 0.06);
+  pointer-events: none;
+  animation: bp-fade var(--dur-fast) var(--ease-out-soft) both;
+}
+
+.bp-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.bp-outline rect {
+  fill: none;
+  stroke: var(--bp-line);
+  stroke-width: 1;
+  transition: stroke var(--dur-fast) var(--ease-out-soft);
+}
+.bp-root:not([data-reduced]) .bp-outline rect {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: bp-draw var(--dur-slow) var(--ease-out-soft) forwards;
+}
+
+.bp-label {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  pointer-events: none;
+}
+.bp-row[data-active] .bp-label {
+  color: hsl(var(--presence));
+}
+
+/* The hit area: the whole row, under its contents, so a row is one target
+   and a leaf inside it is another. */
+.bp-hit {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  cursor: default;
+  background: transparent;
+}
+.bp-hit[data-jump] {
+  cursor: pointer;
+}
+.bp-hit:focus-visible,
+.bp-leaf:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
+.bp-body {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.bp-body > * {
+  pointer-events: auto;
+}
+.bp-row[data-kind="nav"] .bp-body,
+.bp-row[data-kind="header"] .bp-body,
+.bp-row[data-kind="footer"] .bp-body {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.bp-row[data-kind="nav"] { min-height: 34px; }
+.bp-row[data-kind="header"] { min-height: 44px; }
+.bp-row[data-kind="hero"] { min-height: 92px; }
+.bp-row[data-kind="section"],
+.bp-row[data-kind="aside"],
+.bp-row[data-kind="form"],
+.bp-row[data-kind="table"],
+.bp-row[data-kind="cards"] { min-height: 58px; }
+.bp-row[data-kind="list"],
+.bp-row[data-kind="footer"] { min-height: 40px; }
+.bp-row[data-kind="canvas"] { min-height: 96px; }
+
+/* ── Leaves ────────────────────────────────────────────────────────────── */
+
+.bp-leaf {
+  --bp-line: hsl(var(--foreground) / 0.24);
+  position: relative;
+  flex: none;
+  display: block;
+  border-radius: 2px;
+  animation: bp-pop var(--dur-base) var(--ease-out-soft) both;
+}
+.bp-root[data-reduced] .bp-leaf {
+  animation-name: bp-fade;
+}
+.bp-leaf[data-active] {
+  --bp-line: hsl(var(--presence));
+}
+.bp-leaf[data-wide] {
+  flex-basis: 100%;
+}
+
+.bp-heading {
+  height: 6px;
+  width: 34%;
+  border-radius: 2px;
+  background: var(--bp-line);
+}
+.bp-heading[data-level="1"] {
+  height: 9px;
+  width: 52%;
+}
+.bp-leaf[data-active] .bp-heading {
+  background: hsl(var(--presence));
+}
+
+/* Text is the dot rule: 1px dots on a 4px pitch, foreground at 16% (20% in
+   dark), one run per line. */
+.bp-lines {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+.bp-dots {
+  height: 3px;
+  background-image: radial-gradient(circle, hsl(var(--foreground) / 0.16) 0.75px, transparent 1px);
+  background-size: 4px 3px;
+  background-position: 0 0;
+}
+.dark .bp-dots {
+  background-image: radial-gradient(circle, hsl(var(--foreground) / 0.2) 0.75px, transparent 1px);
+}
+.bp-leaf[data-active] .bp-dots {
+  background-image: radial-gradient(circle, hsl(var(--presence)) 0.75px, transparent 1px);
+}
+.bp-dots:nth-child(3n + 1) { width: 100%; }
+.bp-dots:nth-child(3n + 2) { width: 88%; }
+.bp-dots:nth-child(3n) { width: 62%; }
+
+.bp-image {
+  width: 64px;
+  height: 40px;
+  border: 1px solid var(--bp-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bp-image svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.bp-image line {
+  stroke: var(--bp-line);
+  stroke-width: 1;
+}
+
+.bp-pill {
+  width: 44px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--bp-line);
+}
+.bp-leaf[data-inked] .bp-pill {
+  background: color-mix(in oklab, var(--bp-ink) 40%, transparent);
+}
+
+.bp-field {
+  width: 88px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid var(--bp-line);
+}
+
+.bp-link {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bp-line);
+}
+
+.bp-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* A row drawn inside a row, and a container's items. */
+.bp-sub {
+  position: relative;
+  min-height: 24px;
+  border: 1px dashed hsl(var(--foreground) / 0.18);
+  border-radius: 2px;
+  padding: 4px 6px;
+}
+.bp-sub[data-active] {
+  border-color: hsl(var(--presence));
+}
+.bp-items {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+.bp-item {
+  height: 28px;
+  border: 1px solid var(--bp-line, hsl(var(--foreground) / 0.22));
+  border-radius: 2px;
+  animation: bp-pop var(--dur-base) var(--ease-out-soft) both;
+}
+.bp-root[data-reduced] .bp-item {
+  animation-name: bp-fade;
+}
+.bp-grid-lines {
+  width: 100%;
+  height: 34px;
+  background-image:
+    linear-gradient(hsl(var(--foreground) / 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--foreground) / 0.16) 1px, transparent 1px);
+  background-size: 25% 11px;
+}
+.bp-field-dots {
+  width: 100%;
+  height: 64px;
+  background-image: radial-gradient(circle, hsl(var(--foreground) / 0.16) 0.75px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+/* The calm skeleton, when the source names nothing we can draw (a canvas or
+   WebGL app, or the first lines of a page). Decorative. */
+.bp-ghost {
+  --bp-line: hsl(var(--foreground) / 0.14);
+  position: relative;
+  flex: none;
+  border-radius: 4px;
+  animation: bp-snap var(--dur-base) var(--ease-out-soft) both;
+}
+.bp-ghost:nth-child(1) { height: 30px; }
+.bp-ghost:nth-child(2) { height: 96px; animation-delay: var(--dur-fast); }
+.bp-ghost:nth-child(3) { height: 64px; animation-delay: var(--dur-base); }
+.bp-root[data-reduced] .bp-ghost {
+  animation-name: bp-fade;
+}
+
+/* ── The hover note ────────────────────────────────────────────────────── */
+
+.bp-note {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  max-width: min(320px, calc(100% - 32px));
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.08);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: bp-fade var(--dur-fast) var(--ease-out-soft) both;
+}
+.bp-note-line {
+  color: hsl(var(--muted-foreground));
+  margin-right: 6px;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────────── */
+
+@keyframes bp-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bp-fade-out {
+  to { opacity: 0; }
+}
+@keyframes bp-snap {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bp-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bp-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes bp-dissolve {
+  to { opacity: 0; transform: scale(1.025); }
+}

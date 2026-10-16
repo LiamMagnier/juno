@@ -149,6 +149,7 @@ export function CodeSurface({
   wrap,
   ariaLabel,
   className,
+  revealLine,
 }: {
   value: string;
   language?: string | null;
@@ -164,6 +165,11 @@ export function CodeSurface({
   wrap?: boolean;
   ariaLabel?: string;
   className?: string;
+  /**
+   * Bring this 1-based line into view and select it (the live blueprint's
+   * "show in code"). A new `nonce` repeats the reveal for the same line.
+   */
+  revealLine?: { line: number; nonce: number } | null;
 }) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -181,6 +187,23 @@ export function CodeSurface({
   const deferredValue = React.useDeferredValue(value);
   const highlighted = React.useMemo(() => highlightHtml(deferredValue, language), [deferredValue, language]);
   const showHighlight = highlighted != null && deferredValue === value;
+
+  React.useEffect(() => {
+    if (!revealLine) return;
+    const el = scrollRef.current;
+    const ta = textareaRef.current;
+    if (!el || !ta) return;
+    const rows = ta.value.split("\n");
+    const index = Math.max(0, Math.min(rows.length - 1, revealLine.line - 1));
+    const style = getComputedStyle(ta);
+    const lineHeight = parseFloat(style.lineHeight) || 20;
+    const padTop = parseFloat(style.paddingTop) || 0;
+    el.scrollTop = Math.max(0, padTop + index * lineHeight - el.clientHeight / 3);
+    let start = 0;
+    for (let i = 0; i < index; i++) start += rows[i].length + 1;
+    ta.focus({ preventScroll: true });
+    ta.setSelectionRange(start, start + rows[index].length);
+  }, [revealLine]);
 
   // Streaming pin only holds while the reader is already at the bottom —
   // scrolling up to read the top of a long artifact must not be fought.
