@@ -8,24 +8,22 @@ import { formatDuration, formatMicroUsd } from "@/components/work/work-vocabular
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
- * A failed run, read back as a diagnosis.
+ * A run that did not finish cleanly, read back as a diagnosis, in the task
+ * card (work-run-panel.tsx `TerminalRun`).
  *
- * The page already states WHY a run ended — the terminal detail sits in a
- * warning note under the title, in the executor's own words. What it did not
- * state, anywhere, is the thing a person actually needs before deciding what to
- * do next: how far it got, and whether it left anything behind.
+ * The card already states WHY a run ended — the terminal detail sits above
+ * this, in the executor's own words. What this adds is the thing a person
+ * needs before choosing between the card's Continue and Retry: how far it got,
+ * and whether it left anything behind.
  *
- * That question has a real cost attached. "Try again" on a run that changed
- * nothing is free; the same button on a run that half-applied a batch of file
- * changes is a second attempt on top of a first one's mess, and the reader had
- * no way to tell those apart without reading the whole feed and knowing what to
- * look for.
+ * That choice has a real cost attached. Retry on a run that changed nothing is
+ * free; the same press on a run that half-applied a batch of file changes is a
+ * second attempt on top of a first one's mess, which is what Continue (a new
+ * attempt told where the last one stopped) is for.
  *
  * Nothing here is inferred and nothing is a guess at a cause. Every line is a
- * count of something already derived from the event stream for a panel further
- * down the rail, stated once, at the top, where the decision is being made. The
- * panels below remain the place to go for the detail — this is the summary that
- * says whether going there is necessary.
+ * count of something already derived from the event stream, stated once,
+ * where the decision is being made; the card's Details fold holds the rest.
  */
 
 export function WorkOutcomeDigest({

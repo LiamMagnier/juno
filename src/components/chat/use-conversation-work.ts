@@ -16,11 +16,13 @@ import {
   decideWorkApproval,
   fetchConversationTasks,
   fetchWorkSessions,
+  startWorkSessionRun,
   steerWorkRun,
   subscribeToWorkEvents,
+  workIdempotencyKey,
   type WorkApprovalDecisionInput,
 } from "@/components/work/work-transport";
-import { mergeDiscoveredTasks } from "@/lib/work/conversation-tasks";
+import { mergeDiscoveredTasks, nextDiscoveryDelay, shouldResubscribe } from "@/lib/work/conversation-tasks";
 import { derivePendingSteers, type PendingSteer } from "@/components/work/steering/pending-steers";
 import {
   deriveApprovals,
@@ -76,10 +78,99 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  *
  * `useConversationWork` keeps the old contract (follow the newest task) for the
  * one caller that wants exactly that, the computer overlay.
+ *
+ * A NEW ATTEMPT IN THE SAME TASK IS FOLLOWED TOO. The stream ends on its
+ * `done` frame, and the card used to reopen it only when the session id
+ * changed, so a routine re-firing in the same session, or a Retry, left the
+ * plan and events frozen on the old run under a header showing the new status.
+ * The follower now reopens the stream when discovery says the task moved on
+ * after the stream's last word (`shouldResubscribe`), and when the card itself
+ * starts another attempt; the first frame re-bases on the current run.
+ *
+ * DISCOVERY ASKS ONLY AS OFTEN AS IT HAS TO. Four seconds while a task is live
+ * or something just changed, backing off to thirty when nothing is; not at all
+ * while the tab is hidden; once straight away on coming back, on focus and on
+ * any Work mutation (`startDiscoveryLoop`, `nextDiscoveryDelay`). The model's
+ * own task never waits for it: the chat stream's `work` frame adopts it.
  */
 
-/** How often a conversation re-asks whether it has a task. Research's interval. */
-const DISCOVERY_POLL_MS = 4_000;
+/**
+ * The discovery loop: ask, wait as long as `nextDiscoveryDelay` says, ask
+ * again. Stops while the tab is hidden and asks once on the way back, and
+ * asks at once on window focus and on `WORK_SYNC_EVENT`. `discover` reports
+ * whether the answer changed and whether anything is live, or null when the
+ * read failed (which backs off like a quiet answer). Returns the cleanup.
+ */
+function startDiscoveryLoop(
+  discover: () => Promise<{ changed: boolean; anyLive: boolean } | null>
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let delay: number | null = null;
+  let inFlight = false;
+  const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+
+  const tick = async () => {
+    if (cancelled || inFlight) return;
+    // Hidden: nothing is scheduled; `wake` asks again when the tab returns.
+    if (hidden()) return;
+    inFlight = true;
+    const outcome = await discover().catch(() => null);
+    inFlight = false;
+    if (cancelled) return;
+    delay = nextDiscoveryDelay({
+      previousMs: delay,
+      changed: outcome?.changed ?? false,
+      anyLive: outcome?.anyLive ?? false,
+    });
+    clearTimeout(timer);
+    if (!hidden()) timer = setTimeout(() => void tick(), delay);
+  };
+  const wake = () => {
+    if (cancelled || hidden()) return;
+    clearTimeout(timer);
+    delay = null;
+    void tick();
+  };
+
+  if (typeof window !== "undefined") {
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener(WORK_SYNC_EVENT, wake);
+  }
+  void tick();
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+    if (typeof window !== "undefined") {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener(WORK_SYNC_EVENT, wake);
+    }
+  };
+}
+
+/** What the finished card's buttons ask for. */
+export type WorkStartAgainKind = "retry" | "run_again" | "continue";
+
+export type WorkStartAgainOutcome =
+  | { kind: "started" }
+  /** The route quoted a cost above the bar; ask, then call again with `confirmExpensive`. */
+  | { kind: "confirm"; estimatedCostMicroUsd: number }
+  /** Refused or failed, already said in a toast. */
+  | { kind: "refused" };
+
+export interface ConversationWorkActions {
+  /** Pauses the running attempt. True when the server took it. */
+  pause: () => Promise<boolean>;
+  /** Resumes an attempt a person paused. True when the server took it. */
+  resume: () => Promise<boolean>;
+  /** Another attempt at the task: Retry, Run again, or Continue with the card's brief. */
+  startAgain: (
+    kind: WorkStartAgainKind,
+    options?: { continuation?: string; confirmExpensive?: boolean }
+  ) => Promise<WorkStartAgainOutcome>;
+}
 
 export interface ConversationWorkSteering {
   /** What send does right now: answer the open question, or steer. */
@@ -124,6 +215,16 @@ export interface ConversationWork {
    * should be there.
    */
   adopt: (session: ClientWorkSession) => void;
+  /**
+   * `lost` when the run's stream stopped for a reason it will not retry on its
+   * own (signed out, refused, gone): the card says so and offers Reconnect
+   * instead of freezing on the last frame. Absent on hand-built fixtures.
+   */
+  connection?: "live" | "lost";
+  /** Opens the stream again from its cursor. */
+  reconnect?: () => void;
+  /** Pause, Resume and the finished card's new attempts. Absent on fixtures. */
+  actions?: ConversationWorkActions;
 }
 
 /**
@@ -143,29 +244,43 @@ export function useConversationWork(conversationId: string | null): Conversation
    */
   const adoptions = React.useRef(0);
 
+  const newestRef = React.useRef<ClientWorkSession | null>(null);
+  newestRef.current = newest;
+
   React.useEffect(() => {
     setNewest(null);
     if (!conversationId) return;
 
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
     const discover = async () => {
       const asked = adoptions.current;
       const result = await fetchWorkSessions({ conversationId, limit: 1 });
-      if (!cancelled && result.kind === "ok" && asked === adoptions.current) {
-        const found = result.value[0] ?? null;
-        // Only when it is genuinely a different task, and never a draft. Writing
-        // the same row back every four seconds would re-render the panel — and
-        // the composer — on a timer, for a fact that did not change; the draft
-        // rule is argued over `adoptDiscoveredSession`.
-        setNewest((current) => adoptDiscoveredSession(current, found));
+      if (cancelled || result.kind !== "ok") return null;
+      // An adoption overtook this answer: it may predate the adopted task, so
+      // none of it is applied (not even the same-task refresh below, which
+      // could read a stale `newestRef` before the adoption has rendered). The
+      // next read comes quickly.
+      if (asked !== adoptions.current) return { changed: true, anyLive: true };
+      const before = newestRef.current;
+      // Only when it is genuinely a different task, and never a draft. Writing
+      // the same row back on every read would re-render the panel — and the
+      // composer — on a timer, for a fact that did not change; the draft rule
+      // is argued over `adoptDiscoveredSession`.
+      const found = result.value[0] ?? null;
+      let after = adoptDiscoveredSession(before, found);
+      // The same task, touched since: handed on so the follower can tell a new
+      // attempt from the one it finished following (`shouldResubscribe`). The
+      // follower never resets its cursor for the same id, so this is safe.
+      if (after === before && before && found && found.id === before.id && found.updatedAt !== before.updatedAt) {
+        after = found;
       }
-      if (!cancelled) timer = setTimeout(discover, DISCOVERY_POLL_MS);
+      if (after !== before) setNewest(after);
+      return { changed: after !== before, anyLive: found !== null && !isTerminalStatus(found.status) };
     };
-    void discover();
+    const stop = startDiscoveryLoop(discover);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      stop();
     };
   }, [conversationId]);
 
@@ -200,6 +315,18 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
   const sessionId = session?.id ?? null;
   const sessionIdRef = React.useRef<string | null>(null);
   sessionIdRef.current = sessionId;
+  const sessionRef = React.useRef<ClientWorkSession | null>(null);
+  sessionRef.current = session;
+
+  /*
+   * Which subscription this is. Bumped to reopen the stream for the same task:
+   * a new attempt discovery found after the stream's `done`, one the card just
+   * started, or a Reconnect. `streamEnded` is set by the stream's own end, so
+   * a discovery row is only read as "a new attempt" once the old one is over.
+   */
+  const [epoch, setEpoch] = React.useState(0);
+  const streamEnded = React.useRef(false);
+  const [connection, setConnection] = React.useState<"live" | "lost">("live");
 
   /*
    * The resume cursor, both halves, in a ref.
@@ -220,18 +347,29 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
     if (!initial) {
       if (sessionIdRef.current !== null) {
         cursor.current = { runId: null, after: 0 };
+        streamEnded.current = false;
         setEvents([]);
         setRun(null);
         setSession(null);
+        setConnection("live");
       }
       return;
     }
     if (initial.id !== sessionIdRef.current) {
       cursor.current = { runId: null, after: 0 };
+      streamEnded.current = false;
       setEvents([]);
       setRun(null);
       setSession(initial);
+      setConnection("live");
       return;
+    }
+    // The same task, finished following, has moved on: a routine fired again
+    // in this session, or another client retried it. Reopen the stream; its
+    // first frame re-bases on the current attempt.
+    if (shouldResubscribe({ streamEnded: streamEnded.current, followed: sessionRef.current, discovered: initial })) {
+      streamEnded.current = false;
+      setEpoch((value) => value + 1);
     }
     setSession((current) =>
       current && Date.parse(initial.updatedAt) > Date.parse(current.updatedAt) ? initial : current
@@ -253,10 +391,11 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
 
   // The run's own events. Opened once there is a task to follow, and closed
   // again when the conversation moves. A finished run closes the stream from the
-  // server with a `done` frame and is not reopened: it is over, and there is
-  // nothing further to hear.
+  // server with a `done` frame; it is reopened only when the task moves on
+  // (`epoch`, above): a new attempt, or a Reconnect.
   React.useEffect(() => {
     if (sessionId === null) return;
+    streamEnded.current = false;
     return subscribeToWorkEvents(sessionId, {
       cursor: () => cursor.current,
       onFrame: (frame) => {
@@ -276,13 +415,23 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
         if (frameRunId !== null) cursor.current.runId = frameRunId;
         mergeEvents(frame.events);
       },
-      // A conversation whose run cannot be followed simply stops updating. This
-      // is an addition to a chat and is never a reason to break one, so there is
-      // no error state here: the panel keeps the last frame it had, and the task
-      // page is where a reader goes to find out why.
-      onStopped: () => {},
+      // A finished run is the normal end. Anything else that stops the stream
+      // for good (signed out, refused, gone) used to leave the card frozen on
+      // its last frame, reading as a task that had stalled; now the card says
+      // it lost the connection and offers Reconnect. The chat is never broken
+      // by it.
+      onStopped: (outcome) => {
+        streamEnded.current = true;
+        if (outcome.kind !== "finished") setConnection("lost");
+      },
     });
-  }, [sessionId, mergeEvents]);
+  }, [sessionId, epoch, mergeEvents]);
+
+  const reconnect = React.useCallback(() => {
+    streamEnded.current = false;
+    setConnection("live");
+    setEpoch((value) => value + 1);
+  }, []);
 
   const plan = React.useMemo(() => derivePlan(events), [events]);
   const questions = React.useMemo(() => deriveOpenQuestions(events), [events]);
@@ -428,6 +577,82 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
     };
   }, [mode, sessionId, answer, steer, run]);
 
+  /** Pause or resume the attempt on screen, with the server's refusal said aloud. */
+  const control = React.useCallback(
+    async (action: "pause" | "resume"): Promise<boolean> => {
+      if (run === null) {
+        toast.error("This task hasn’t reported in yet. Try again in a moment.");
+        return false;
+      }
+      const result = await controlWorkRun(run.id, action);
+      if (result.kind === "ok") {
+        setRun(result.value);
+        setSession((current) => (current ? { ...current, status: result.value.status } : current));
+        window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+        return true;
+      }
+      toast.error(
+        result.kind === "blocked"
+          ? result.explanation
+          : action === "pause"
+            ? `Couldn’t reach ${PRODUCT_NAME} to pause that. The task is still going.`
+            : `Couldn’t reach ${PRODUCT_NAME} to resume that. It is still paused.`
+      );
+      return false;
+    },
+    [run]
+  );
+
+  /**
+   * Another attempt at this task: Retry (same brief, after a failure), Run
+   * again (after a success) or Continue (a new attempt told where the last one
+   * stopped). The stream is reopened at once so the card follows the new run
+   * rather than waiting for discovery to notice it.
+   */
+  const startAgain = React.useCallback(
+    async (
+      kind: WorkStartAgainKind,
+      options: { continuation?: string; confirmExpensive?: boolean } = {}
+    ): Promise<WorkStartAgainOutcome> => {
+      if (sessionId === null) return { kind: "refused" };
+      const continuing = kind === "continue" && run !== null && !!options.continuation;
+      const result = await startWorkSessionRun(sessionId, {
+        origin: kind === "retry" ? "retry" : kind === "continue" ? "resume" : "manual",
+        idempotencyKey: workIdempotencyKey(),
+        ...(continuing ? { continueFromRunId: run!.id, continuation: options.continuation } : {}),
+        ...(options.confirmExpensive ? { confirmExpensive: true } : {}),
+      });
+      if (result.kind === "ok") {
+        // The last attempt's plan and events belong to it; the new stream's
+        // snapshot fills the card again from the new attempt's first event.
+        cursor.current = { runId: null, after: 0 };
+        setEvents([]);
+        setRun(result.value);
+        setSession((current) => (current ? { ...current, status: result.value.status } : current));
+        streamEnded.current = false;
+        setConnection("live");
+        setEpoch((value) => value + 1);
+        window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+        return { kind: "started" };
+      }
+      if (result.kind === "blocked" && result.confirmation?.kind === "expensive_work") {
+        return { kind: "confirm", estimatedCostMicroUsd: result.confirmation.estimatedCostMicroUsd };
+      }
+      toast.error(
+        result.kind === "blocked"
+          ? result.explanation
+          : (result.message ?? `Couldn’t start that again. Nothing was started, so trying again is safe.`)
+      );
+      return { kind: "refused" };
+    },
+    [sessionId, run]
+  );
+
+  const actions = React.useMemo<ConversationWorkActions>(
+    () => ({ pause: () => control("pause"), resume: () => control("resume"), startAgain }),
+    [control, startAgain]
+  );
+
   const adopt = React.useCallback((next: ClientWorkSession) => {
     // Already following it: the discovery poll found the row first, or a
     // reconnected stream replayed the frame. Resetting here would clear the
@@ -435,9 +660,11 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
     // would lose everything the run had said so far.
     if (sessionIdRef.current === next.id) return;
     cursor.current = { runId: null, after: 0 };
+    streamEnded.current = false;
     setEvents([]);
     setRun(null);
     setSession(next);
+    setConnection("live");
   }, []);
 
   // One object per change, not per render: the chat view keeps each card's
@@ -458,13 +685,13 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
       decide,
       answer,
       adopt,
+      connection,
+      reconnect,
+      actions,
     }),
-    [session, run, events, plan, questions, openApprovals, currentAction, pendingSteers, documents, busy, steering, decide, answer, adopt]
+    [session, run, events, plan, questions, openApprovals, currentAction, pendingSteers, documents, busy, steering, decide, answer, adopt, connection, reconnect, actions]
   );
 }
-
-/** How often a conversation re-asks which tasks it has. Research's interval. */
-const TASKS_POLL_MS = DISCOVERY_POLL_MS;
 
 export interface ConversationWorkSessions {
   /** Every task the conversation draws, oldest first: the order the cards stack in. */
@@ -486,23 +713,29 @@ export interface ConversationWorkSessions {
  */
 export function useConversationWorkSessions(conversationId: string | null): ConversationWorkSessions {
   const [sessions, setSessions] = React.useState<ClientWorkSession[]>([]);
+  const sessionsRef = React.useRef<ClientWorkSession[]>([]);
+  sessionsRef.current = sessions;
 
   React.useEffect(() => {
     setSessions([]);
+    sessionsRef.current = [];
     if (!conversationId) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const discover = async () => {
+    // Adaptive, not a fixed four seconds for ever: see `startDiscoveryLoop`.
+    const stop = startDiscoveryLoop(async () => {
       const result = await fetchConversationTasks(conversationId);
-      if (!cancelled && result.kind === "ok") {
-        setSessions((current) => mergeDiscoveredTasks(current, result.value));
+      if (cancelled || result.kind !== "ok") return null;
+      const before = sessionsRef.current;
+      const after = mergeDiscoveredTasks(before, result.value);
+      if (after !== before) {
+        sessionsRef.current = after;
+        setSessions(after);
       }
-      if (!cancelled) timer = setTimeout(discover, TASKS_POLL_MS);
-    };
-    void discover();
+      return { changed: after !== before, anyLive: after.some((row) => !isTerminalStatus(row.status)) };
+    });
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      stop();
     };
   }, [conversationId]);
 

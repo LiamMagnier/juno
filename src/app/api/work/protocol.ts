@@ -582,6 +582,15 @@ export const startRunSchema = z.object({
   /** Required after the server's preflight estimate crosses the warning bar. */
   confirmExpensive: z.boolean().optional(),
   idempotencyKey: idempotencyKey.optional(),
+  /**
+   * A Continue from the finished card (src/lib/work/continuation.ts): the
+   * attempt this one picks up from, and the card's account of where it
+   * stopped. The route checks the attempt is this task's and ended in a way
+   * worth continuing, and puts the account in the new attempt's log as an
+   * instruction. Both or neither.
+   */
+  continueFromRunId: id.optional(),
+  continuation: z.string().trim().min(1).max(4_000).optional(),
 });
 
 export const runControlSchema = z.object({

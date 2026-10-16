@@ -1656,6 +1656,41 @@ export function controlWorkRun(
   return post(`/api/work/runs/${runId}/control`, { action }, (data) => data.run as ClientWorkRun);
 }
 
+/** What the finished card's Retry, Run again and Continue send. */
+export interface WorkStartAgainInput {
+  /** `retry` after a failure, `manual` for Run again, `resume` for Continue. */
+  origin: "retry" | "manual" | "resume";
+  /** Continue: the attempt it picks up from, and the card's account of it. */
+  continueFromRunId?: string;
+  continuation?: string;
+  /** Sent only after the person said yes to the estimate the route quoted. */
+  confirmExpensive?: boolean;
+  /** One per press, so a retried request lands on the run it already made. */
+  idempotencyKey: string;
+}
+
+/**
+ * A new attempt at a task the card already shows, through the same dispatch
+ * a first start uses (plan, window, caps, the cost preflight).
+ */
+export function startWorkSessionRun(
+  sessionId: string,
+  input: WorkStartAgainInput
+): Promise<WorkResult<ClientWorkRun>> {
+  return post(
+    `/api/work/sessions/${encodeURIComponent(sessionId)}/runs`,
+    {
+      origin: input.origin,
+      idempotencyKey: input.idempotencyKey,
+      ...(input.continueFromRunId && input.continuation
+        ? { continueFromRunId: input.continueFromRunId, continuation: input.continuation }
+        : {}),
+      ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
+    },
+    (data) => data.run as ClientWorkRun
+  );
+}
+
 /** The routine a chat proposal card already scheduled, or null when it has not. */
 export function fetchScheduleForProposal(proposalKey: string): Promise<WorkResult<ClientWorkSchedule | null>> {
   return get(

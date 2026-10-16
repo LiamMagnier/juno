@@ -223,10 +223,12 @@ test("a discovery answer that left before the task existed cannot take the adopt
   // an adoption overtook instead of applying it.
   const hook = source("src/components/chat/use-conversation-work.ts");
   const discover = hook.slice(hook.indexOf("const discover = async () => {"));
-  assert.match(
-    discover.slice(0, discover.indexOf("setSession(")),
-    /const asked = adoptions\.current;[\s\S]*?result\.kind === "ok" && asked === adoptions\.current\)/
-  );
+  const body = discover.slice(0, discover.indexOf("startDiscoveryLoop(discover)"));
+  // The guard comes before anything is applied: nothing between it and the
+  // read may touch the panel.
+  assert.match(body, /const asked = adoptions\.current;[\s\S]*?if \(asked !== adoptions\.current\) return/);
+  const guard = body.indexOf("if (asked !== adoptions.current) return");
+  assert.equal(body.slice(0, guard).includes("setNewest("), false);
   const adopt = hook.slice(hook.indexOf("const adopt = React.useCallback"));
   assert.match(adopt.slice(0, adopt.indexOf("}, []);")), /adoptions\.current \+= 1;/);
 });
