@@ -121,7 +121,17 @@ public actor AgentOrchestrator {
             maximumRetainedImages: Int = 20,
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
-            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            // `Task.sleep(nanoseconds:)`, not `Task.sleep(for:)`. The latter
+            // is generic code emitted into this module, and Xcode 26's
+            // compiler leaves its task allocations behind when the sleep is
+            // cancelled: a Stop during a backoff aborted the process
+            // ("freed pointer was not the last allocation"). The clamp keeps
+            // the product inside UInt64; a backoff is seconds long.
+            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
+                let (seconds, attoseconds) = duration.components
+                let whole = UInt64(clamping: min(seconds, 18_000_000_000))
+                try await Task.sleep(nanoseconds: whole * 1_000_000_000 + UInt64(clamping: attoseconds / 1_000_000_000))
+            },
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
             repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,
@@ -1086,25 +1096,6 @@ public actor AgentOrchestrator {
 
     // MARK: - The loop
 
-    /// Waits out a retry's delay: true when it ran its course, false when the
-    /// run was stopped meanwhile (`retrySleep` throws on cancellation).
-    ///
-    /// Its own function, with the closure read into a local before the call,
-    /// rather than `try await configuration.retrySleep(delay)` in a `do`
-    /// inside `runLoop`. Xcode 26's compiler freed that call's task
-    /// allocations out of order on the throwing path, so a Stop during a
-    /// backoff aborted the process ("freed pointer was not the last
-    /// allocation", swift_task_dealloc at that call).
-    private func waitBeforeRetry(_ delay: Duration) async -> Bool {
-        let sleep = configuration.retrySleep
-        do {
-            try await sleep(delay)
-            return true
-        } catch {
-            return false
-        }
-    }
-
     private func runLoop() async {
         runUsageBaseline = usageLedger.total
         let startedAt = Date()
@@ -1373,10 +1364,14 @@ public actor AgentOrchestrator {
                                     )
                                 )
                             )
-                            // Stopped while waiting: the top of the loop
-                            // ends the run as stopped.
-                            let waitedOut = await waitBeforeRetry(delay)
-                            if !waitedOut || Task.isCancelled { break }
+                            do {
+                                try await configuration.retrySleep(delay)
+                            } catch {
+                                // Stopped while waiting: the top of the loop
+                                // ends the run as stopped.
+                                break
+                            }
+                            if Task.isCancelled { break }
                             continue
                         }
                     }
