@@ -130,7 +130,10 @@ export const DESCRIBE_TARGET_SCRIPT = String.raw`(function (arg) {
     if (named) labelled = String(named.textContent || "");
   }
   var fieldLabel = target.labels && target.labels.length ? String(target.labels[0].textContent || "") : "";
-  var field = tag === "input" || tag === "textarea" || tag === "select";
+  // An editable region's text is what someone typed (a draft, a message), not
+  // its name, so it is read no more than an input's value is.
+  var field = tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable === true ||
+    role === "textbox" || role === "searchbox";
   var text = field ? "" : String(target.innerText || target.textContent || "");
   var name = text.trim() || target.getAttribute("aria-label") || labelled.trim() || fieldLabel.trim() ||
     target.getAttribute("alt") || target.getAttribute("placeholder") || target.getAttribute("title") ||
@@ -510,15 +513,57 @@ export function connectAgentBrowser(
   async function describeInFront(point: { x: number; y: number } | null): Promise<PageTarget | null> {
     const pages = context ? context.pages().filter((candidate) => !candidate.isClosed()) : [];
     const ordered = page && !page.isClosed() ? [page, ...pages.filter((candidate) => candidate !== page)] : pages;
-    const expression = `${DESCRIBE_TARGET_SCRIPT}(${JSON.stringify(point)})`;
-    for (const candidate of ordered.slice(0, 8)) {
-      try {
-        const answer = readPageTarget(await candidate.evaluate(expression));
-        if (answer) return answer;
-      } catch {
-        // A tab mid-navigation has no document to ask; the next one might.
-      }
-    }
+    return describeAcrossPages(ordered, point);
+  }
+}
+
+/** The slice of a Playwright page `describeAcrossPages` uses. */
+export interface DescribablePage {
+  isClosed(): boolean;
+  url(): string;
+  evaluate(expression: string): Promise<unknown>;
+}
+
+/** An http(s) URL's hostname, lowercased, or null for anything else (about:blank, chrome://, data:). */
+function trustedHost(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    return /^[a-z0-9.-]{1,253}$/.test(host) ? host : null;
+  } catch {
     return null;
   }
+}
+
+/**
+ * Asks each tab in turn (the agent's own first); the first one that answers
+ * names the target.
+ *
+ * The script runs in the page's own JavaScript world, so the page can answer
+ * whatever it likes: a page that replaces `String` or `document.hasFocus` can
+ * report any host. The role and name are page content whatever happens (the
+ * marked screenshot beside them is the ground truth). The site is not: an
+ * approval reading "on accounts.google.com" while the agent is on another
+ * site is the sentence a hostile page would most want to write. So the host
+ * always comes from the browser's own record of the tab's address, never from
+ * the page, and a tab with no web address gives no description at all.
+ */
+export async function describeAcrossPages(
+  pages: readonly DescribablePage[],
+  point: { x: number; y: number } | null,
+): Promise<PageTarget | null> {
+  const expression = `${DESCRIBE_TARGET_SCRIPT}(${JSON.stringify(point)})`;
+  for (const candidate of pages.slice(0, 8)) {
+    try {
+      if (candidate.isClosed()) continue;
+      const host = trustedHost(candidate.url());
+      if (!host) continue;
+      const answer = readPageTarget(await candidate.evaluate(expression));
+      if (answer) return { ...answer, host };
+    } catch {
+      // A tab mid-navigation has no document to ask; the next one might.
+    }
+  }
+  return null;
 }

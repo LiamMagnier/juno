@@ -5,6 +5,25 @@ import sharp from "sharp";
 import { isStorageConfigured } from "@/lib/env";
 import { deleteObject, getObjectBytes, putObject } from "@/lib/storage";
 import { workFramePath } from "@/lib/work/domain";
+import {
+  FRAME_SEGMENT as SEGMENT,
+  frameRefsInEvents,
+  frameStorageKey,
+  isFrameRef,
+  type RunFrameEvent,
+} from "@/lib/computer/frame-keys";
+
+// The pure key and event helpers live in frame-keys.ts (no storage, no sharp)
+// so account deletion can find frames without loading an image library.
+export {
+  accountFrameKeys,
+  frameRefForCall,
+  frameRefsInEvents,
+  frameStorageKey,
+  isFrameRef,
+  type AccountFrameEvent,
+  type RunFrameEvent,
+} from "@/lib/computer/frame-keys";
 
 /*
  * Every step of a cloud computer run, kept.
@@ -32,27 +51,6 @@ import { workFramePath } from "@/lib/work/domain";
 
 /** Frames kept per run. A long run keeps its first 300 steps. */
 export const MAX_FRAMES_PER_RUN = 300;
-
-const SEGMENT = /^[A-Za-z0-9_-]{1,128}$/;
-
-/** A frame reference as events carry it and the route accepts it. */
-export function isFrameRef(value: unknown): value is string {
-  return typeof value === "string" && SEGMENT.test(value);
-}
-
-/** The frame reference for a tool call id, as the agent-core tools derive it. */
-export function frameRefForCall(callId: string, suffix?: "pre"): string | null {
-  const base = callId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120);
-  if (!/[A-Za-z0-9]/.test(base)) return null;
-  return suffix ? `${base}-${suffix}` : base;
-}
-
-export function frameStorageKey(userId: string, runId: string, ref: string): string {
-  if (!SEGMENT.test(userId) || !SEGMENT.test(runId) || !isFrameRef(ref)) {
-    throw new Error("Invalid frame key");
-  }
-  return `computer-frames/${userId}/${runId}/${ref}.jpg`;
-}
 
 /** Where a client loads a frame: the owner-only route. */
 export function framePath(runId: string, ref: string): string {
@@ -159,47 +157,6 @@ export async function readRunFrame(
   if (!isFrameRef(ref) || !SEGMENT.test(userId) || !SEGMENT.test(runId)) return null;
   const bytes = await storage.get(frameStorageKey(userId, runId, ref));
   return bytes && isJpeg(bytes) ? bytes : null;
-}
-
-/** The facts `deleteRunFrames` needs from the run's events. */
-export interface RunFrameEvent {
-  kind: string;
-  payload: unknown;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-/**
- * Every frame ref a run's events can name: the frame on each `tool_finished`,
- * the pre-action frame on each approval, and — for a frame whose event was
- * never written — the ref every computer call's id derives.
- */
-export function frameRefsInEvents(events: readonly RunFrameEvent[]): string[] {
-  const refs = new Set<string>();
-  for (const event of events) {
-    const payload = record(event.payload);
-    if (!payload) continue;
-    if (event.kind === "tool_finished") {
-      const ref = record(payload.frame)?.ref;
-      if (isFrameRef(ref)) refs.add(ref);
-    }
-    if (event.kind === "approval_requested") {
-      const ref = record(record(record(payload.request)?.detail)?.frame)?.ref;
-      if (isFrameRef(ref)) refs.add(ref);
-    }
-    if (event.kind === "tool_started" && typeof payload.tool === "string" && payload.tool.startsWith("computer_")) {
-      const callId = typeof payload.callId === "string" ? payload.callId : null;
-      for (const suffix of [undefined, "pre"] as const) {
-        const ref = callId ? frameRefForCall(callId, suffix) : null;
-        if (ref) refs.add(ref);
-      }
-    }
-  }
-  return [...refs];
 }
 
 /**

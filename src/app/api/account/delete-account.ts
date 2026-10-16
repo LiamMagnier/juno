@@ -3,6 +3,7 @@ import { isStripeConfigured } from "@/lib/env";
 import { getStripe } from "@/lib/stripe";
 import { deleteObject } from "@/lib/storage";
 import { thumbnailObjectKey } from "@/lib/attachments/thumbnail";
+import { accountFrameKeys, COMPUTER_FRAME_EVENTS_FILTER } from "@/lib/computer/frame-keys";
 
 /*
  * Permanent account deletion (GDPR right to be forgotten), shared by
@@ -50,7 +51,7 @@ export async function deleteAccountPermanently(user: {
   // The reads are not best-effort. If one fails, the deletion stops with the
   // user row still in place and can be retried; carrying on would erase the
   // only record of objects that were never purged.
-  const [attachments, attachmentVersions, deliverableVersions, importObjects, toolRuns, skillBundles] = await Promise.all([
+  const [attachments, attachmentVersions, deliverableVersions, importObjects, toolRuns, skillBundles, computerFrameEvents] = await Promise.all([
     prisma.attachment.findMany({
       where: { userId: user.id },
       select: { storageKey: true },
@@ -93,6 +94,13 @@ export async function deleteAccountPermanently(user: {
       where: { skill: { userId: user.id }, bundleKey: { not: null } },
       select: { bundleKey: true },
     }),
+    // Cloud computer step frames (src/lib/computer/frames.ts): a screenshot
+    // of the agent's screen per step, named only by the run's events, which
+    // cascade with the user. Only computer events can name one.
+    prisma.workEvent.findMany({
+      where: { userId: user.id, ...COMPUTER_FRAME_EVENTS_FILTER },
+      select: { runId: true, kind: true, payload: true },
+    }),
   ]);
 
   const keys = new Set<string>();
@@ -111,6 +119,7 @@ export async function deleteAccountPermanently(user: {
     keys.add(`${logKey}stderr.log`);
   }
   for (const { bundleKey } of skillBundles) if (bundleKey) keys.add(bundleKey);
+  for (const key of accountFrameKeys(user.id, computerFrameEvents)) keys.add(key);
 
   // Agent computers (Computer Use audit 2026-10-04, gap 8): each one is a
   // container and two volumes OUTSIDE Postgres, and the browser volume holds

@@ -717,5 +717,54 @@ describe("(e) approvals show the verb, the text and the marked screen", () => {
     assert.equal(remoteBrowser.readPageTarget({ role: "button", name: "x", host: "evil example" }), null);
     assert.equal(remoteBrowser.canDescribePoints({ describePoint: async () => null, describeFocus: async () => null }), true);
     assert.equal(remoteBrowser.canDescribePoints({}), false);
+
+    // An editable region's text is what someone typed, never its name.
+    const draft = element({ tagName: "div", attrs: { "aria-label": "Message body" }, text: "my account number is 12345678" });
+    draft.isContentEditable = true;
+    const editor = new Function("window", "document", "location", `return ${remoteBrowser.DESCRIBE_TARGET_SCRIPT};`)(
+      { devicePixelRatio: 1, screenX: 0, screenY: 0, outerWidth: 1280, innerWidth: 1280, outerHeight: 800, innerHeight: 720 },
+      {
+        hasFocus: () => true,
+        visibilityState: "visible",
+        body: {},
+        documentElement: {},
+        activeElement: draft,
+        getElementById: () => null,
+        elementFromPoint: () => null,
+      },
+      { hostname: "mail.example.com" },
+    ) as (arg: null) => unknown;
+    const named = remoteBrowser.readPageTarget(editor(null));
+    assert.deepEqual(named, { role: "textbox", name: "Message body", host: "mail.example.com" });
+    assert.doesNotMatch(JSON.stringify(named), /12345678/, "a draft's contents never become a name");
+  });
+
+  it("the site in a semantic sentence is the browser's own record of the tab, never the page's word", async () => {
+    // A hostile page can answer anything from its own JavaScript world, the
+    // host included (it only has to replace `String`). The tab's address is
+    // the browser's, so that is the host the sentence uses.
+    const tab = (url: string, answer: unknown, closed = false) => ({
+      isClosed: () => closed,
+      url: () => url,
+      evaluate: async () => answer,
+    });
+    const lying = tab("https://evil.example/pay", { role: "button", name: "Cancel", host: "accounts.google.com" });
+    assert.deepEqual(await remoteBrowser.describeAcrossPages([lying], { x: 1, y: 1 }), {
+      role: "button",
+      name: "Cancel",
+      host: "evil.example",
+    });
+    // No web address, no description: about:blank, chrome:// and data: pages fall back to coordinates.
+    for (const url of ["about:blank", "chrome://settings", "data:text/html,hi"]) {
+      assert.equal(await remoteBrowser.describeAcrossPages([tab(url, { role: "button", name: "OK", host: "example.com" })], null), null);
+    }
+    // A closed or throwing tab is skipped and the next one answers.
+    const throwing = { isClosed: () => false, url: () => "https://a.example/", evaluate: async () => { throw new Error("navigating"); } };
+    const next = tab("https://b.example/", { role: "link", name: "Docs", host: "b.example" });
+    assert.deepEqual(await remoteBrowser.describeAcrossPages([tab("https://c.example/", null, true), throwing, next], null), {
+      role: "link",
+      name: "Docs",
+      host: "b.example",
+    });
   });
 });

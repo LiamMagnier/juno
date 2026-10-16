@@ -179,6 +179,18 @@ test('waiting on a screen that is changing is not a repeat; waiting on a frozen 
     same.push(JSON.stringify(stuck.signatureInput!({ seconds: 5 })));
   }
   assert.equal(new Set(same).size, 1, 'the stall detector still sees a loop on a frozen screen');
+
+  // A bare look is not a wait: on an animated page every frame differs, so a
+  // frame-aware look would never repeat and a model looking instead of acting
+  // would only stop at the step cap. Looks between actions stay identical.
+  const animated = harness({ frames: ['tick-1', 'tick-2', 'tick-3', 'tick-4', 'tick-5'] });
+  const look = byName(animated.deps, 'computer_screenshot');
+  const looks: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    looks.push(JSON.stringify(look.signatureInput!({ reason: 'check' })));
+    await look.execute({ reason: 'check' }, { cwd: '/tmp', callId: `l${i}` });
+  }
+  assert.equal(new Set(looks).size, 1, 'four looks with no action in between are a repeat');
 });
 
 test('settling returns as soon as two captures agree, or at the 500 ms cap', async () => {
@@ -213,6 +225,24 @@ test('settling returns as soon as two captures agree, or at the 500 ms cap', asy
   assert.equal(busy.stable, false);
   assert.ok(busy.settleMs >= SETTLE_TIMEOUT_MS, `${busy.settleMs}ms`);
   assert.ok(busy.settleMs < SETTLE_TIMEOUT_MS + busyClock.captureCostMs + 1, `${busy.settleMs}ms`);
+
+  // A settling capture that fails after the action already landed keeps the
+  // last good frame: a step reported as crashed is one the model repeats.
+  const flakyClock = virtualClock();
+  let attempts = 0;
+  const flaky = await settleScreen(shot('after-click'), {
+    capture: async () => {
+      flakyClock.spend();
+      attempts += 1;
+      if (attempts === 2) throw new Error('docker exec timed out');
+      return shot('changing');
+    },
+    now: flakyClock.now,
+    pause: flakyClock.pause,
+  });
+  assert.equal(flaky.stable, false);
+  assert.equal(flaky.shot.hash, 'changing', 'the last frame that did arrive');
+  assert.equal(attempts, 2, 'no polling after the failure');
 
   // Through a tool, on a fake provider whose frames change: the model and
   // the stored frame both get the settled screen, not the first one.
@@ -334,6 +364,29 @@ test('a click names its target when Chromium is in front, and falls back to coor
     (await typing.preview!({ text: 'flights' }, { callId: 'c6', forApproval: false }))?.summary,
     'Type 7 characters into the “Search” search field on example.com',
   );
+
+  // A line break is typed as Return, which sends the form: the sentence says
+  // so before the target, where a long name cannot cut it off, and so does the
+  // coordinate fallback. The card's body cannot show a trailing line break.
+  assert.equal(
+    (await typing.preview!({ text: 'flights\n' }, { callId: 'c7', forApproval: false }))?.summary,
+    'Type 8 characters, ending with Return, into the “Search” search field on example.com',
+  );
+  assert.equal(
+    (await typing.preview!({ text: 'a\nb\r\nc' }, { callId: 'c8', forApproval: false }))?.summary,
+    'Type 6 characters, including 2 Returns, into the “Search” search field on example.com',
+  );
+  const longHost = byName(
+    harness({ describeFocus: async () => ({ role: 'textbox', name: 'n'.repeat(80), host: `${'a'.repeat(150)}.example` }) }).deps,
+    'computer_type',
+  );
+  assert.match(
+    (await longHost.preview!({ text: 'ok\n' }, { callId: 'c9', forApproval: false }))?.summary ?? '',
+    /^Type 3 characters, ending with Return, into /,
+  );
+  const plainTyping = byName(harness().deps, 'computer_type');
+  assert.equal(plainTyping.summarize({ text: 'rm -rf ~\n' }), 'Type 9 characters, ending with Return, on example.com');
+  assert.equal(plainTyping.summarize({ text: 'x' }), 'Type 1 character on example.com');
 });
 
 test('an approved click whose target changed before it ran does nothing', async () => {

@@ -260,7 +260,16 @@ export async function settleScreen(
     if (opts.signal?.aborted) break;
     await pause(Math.min(intervalMs, Math.max(0, deadline - now())), opts.signal);
     const before = now();
-    const next = await opts.capture();
+    let next: ComputerShotData;
+    try {
+      next = await opts.capture();
+    } catch {
+      // The action has already happened and returned a frame. A settling
+      // capture that fails must not turn the step into an error: the model
+      // would read "Tool crashed", assume the click never landed and press
+      // the same button again. The last good frame stands.
+      break;
+    }
     captureMs = now() - before;
     if (shotFingerprint(next) === shotFingerprint(previous)) {
       return { shot: next, settleMs: now() - started, captureMs, stable: true };
@@ -400,13 +409,30 @@ export function describeClickTarget(
   return boundSummary(`${verb} ${phrase} on ${host}`);
 }
 
+/**
+ * What typed text's line breaks will do, said before the target so a long
+ * sentence can never cut it off. `xdotool type` presses Return for each one,
+ * which sends the form or runs the line in a terminal; the approval card's
+ * body shows the text, but a trailing line break is invisible there.
+ */
+export function typedReturnsPhrase(text: string): string {
+  const breaks = text.match(/\r\n|\r|\n/g)?.length ?? 0;
+  if (breaks === 0) return '';
+  if (breaks === 1) return /(?:\r\n|\r|\n)$/.test(text) ? ', ending with Return,' : ', including a Return,';
+  return `, including ${breaks} Returns,`;
+}
+
+function typedCount(length: number, text: string): string {
+  return `${length} ${length === 1 ? 'character' : 'characters'}${typedReturnsPhrase(text)}`;
+}
+
 /** "Type 12 characters into the “Search” field on example.com", or null. */
-export function describeTypeTarget(length: number, target: ComputerPointTarget | null): string | null {
+export function describeTypeTarget(length: number, target: ComputerPointTarget | null, text = ''): string | null {
   if (!target) return null;
   const phrase = targetPhrase(target);
   const host = cleanHost(target.host ?? '');
   if (!phrase || !host) return null;
-  return boundSummary(`Type ${length} ${length === 1 ? 'character' : 'characters'} into ${phrase} on ${host}`);
+  return boundSummary(`Type ${typedCount(length, text)} into ${phrase} on ${host}`);
 }
 
 function targetKey(target: ComputerPointTarget | null): string | null {
@@ -583,11 +609,17 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
   });
 
   /*
-   * The last frame any tool saw. Looking and waiting change nothing, so the
-   * stall detector would read the fourth identical "wait 5 seconds" as a loop
-   * even while a download bar was visibly moving; with the frame in the
-   * signature, a look that found the screen changed is not a repeat, and one
-   * that found it exactly as before still is.
+   * The last frame any tool saw. Waiting changes nothing, so the stall
+   * detector would read the fourth identical "wait 5 seconds" as a loop even
+   * while a download bar was visibly moving; with the frame in the signature,
+   * a wait that found the screen changed is not a repeat, and one that found
+   * it exactly as before still is.
+   *
+   * Only `computer_wait` uses it. A bare look keeps the screen epoch alone: a
+   * page with anything animated (a clock, a carousel, a video) changes every
+   * frame, so a frame-aware look would never repeat and a model looking in a
+   * loop instead of acting would run to the step cap. Waiting on a changing
+   * screen has its own tool, with a pause built in.
    */
   let lastFrame = '';
   const seen = (shot: ComputerShotData) => {
@@ -625,7 +657,7 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     riskFor: () => 'safe',
     provenanceFor: () => pixelProvenance('work.computer.screenshot'),
     isHealthy: () => deps.isHealthy(),
-    signatureInput: withFrame,
+    signatureInput: withEpoch,
     spec: {
       name: 'computer_screenshot',
       description:
@@ -743,12 +775,12 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     },
     summarize: (input) => {
       const raw = String(input.text ?? '');
-      return boundSummary(`Type ${raw.length} characters on ${siteHostname(deps.currentUrl())}`);
+      return boundSummary(`Type ${typedCount(raw.length, raw)} on ${siteHostname(deps.currentUrl())}`);
     },
     async preview(input, ctx): Promise<WorkToolPreview | null> {
       const text = String(input.text ?? '');
       const target = await describe(deps.describeFocus && (() => deps.describeFocus!()));
-      const summary = describeTypeTarget(text.length, target);
+      const summary = describeTypeTarget(text.length, target, text);
       const key = targetKey(target);
       if (ctx.forApproval && summary && key) approvedTargets.set(ctx.callId, key);
       // The text itself is what the person is deciding about, so the card

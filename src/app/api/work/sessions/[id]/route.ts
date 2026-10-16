@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { WORK_LIVE_STATUSES } from "@/lib/work/domain";
@@ -6,7 +6,6 @@ import { finishRun } from "@/lib/work/store";
 import { serializeRun, serializeSession } from "@/lib/work/serializers";
 import { pendingApprovalsForRun } from "@/lib/work/approvals";
 import { patchSessionSchema } from "@/app/api/work/protocol";
-import { deleteRunFrames } from "@/lib/computer/frames";
 
 export const runtime = "nodejs";
 
@@ -111,10 +110,18 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   });
 
   // The rows stay for the audit trail; the screenshots of the agent's screen
-  // do not (src/lib/computer/frames.ts). Best effort: the frames route already
-  // refuses every frame of a deleted session.
+  // do not (src/lib/computer/frames.ts). Best effort, and after the response:
+  // a long computer run is hundreds of objects deleted one by one, which is no
+  // reason to keep the person's delete waiting, and the frames route already
+  // refuses every frame of a deleted session. Loaded lazily, so the session
+  // routes do not load the image library frames.ts carries.
   const runs = await prisma.workRun.findMany({ where: { sessionId: id, userId: user.id }, select: { id: true } });
-  for (const run of runs) await deleteRunFrames(run.id, user.id).catch(() => 0);
+  if (runs.length > 0) {
+    after(async () => {
+      const { deleteRunFrames } = await import("@/lib/computer/frames");
+      for (const run of runs) await deleteRunFrames(run.id, user.id).catch(() => 0);
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }
