@@ -126,10 +126,29 @@ test("running both generators twice yields no diff", () => {
     assert.deepEqual(snapshot(), once);
     const check = tokens("--check");
     assert.equal(check.status, 0, check.stderr || check.stdout);
-    // The shell contract generator writes in place too; twice is a no-op (it reads the repo's contract).
-    const shell = () => spawnSync(process.execPath, [resolve(REPO, "scripts/generate-shell-contract.mjs"), "--check"], { cwd: REPO, encoding: "utf8" });
-    const s1 = shell();
-    assert.equal(s1.status, 0, s1.stderr || s1.stdout);
+    // The shell contract generator, twice, into scratch outputs: identical runs,
+    // identical to what is checked in.
+    const outs = {
+      swift: join(cwd, "native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift"),
+      ts: join(cwd, "src/lib/strings/shell.generated.ts"),
+      xcstrings: join(cwd, "native/iOS/JunoMobile/Resources/Shell.xcstrings"),
+    };
+    const shell = () =>
+      spawnSync(
+        process.execPath,
+        [resolve(REPO, "scripts/generate-shell-contract.mjs"), `--output=${outs.swift}`, `--ts-output=${outs.ts}`, `--xcstrings-output=${outs.xcstrings}`],
+        { cwd: REPO, encoding: "utf8" }
+      );
+    const read = () => Object.values(outs).map((p) => readFileSync(p, "utf8"));
+    assert.equal(shell().status, 0);
+    const shellOnce = read();
+    assert.equal(shell().status, 0);
+    assert.deepEqual(read(), shellOnce);
+    assert.deepEqual(shellOnce, [
+      "native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift",
+      "src/lib/strings/shell.generated.ts",
+      "native/iOS/JunoMobile/Resources/Shell.xcstrings",
+    ].map((p) => readFileSync(resolve(REPO, p), "utf8")));
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
