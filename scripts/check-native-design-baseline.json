@@ -1,11 +1,11 @@
 {
   "glass": {
-    "total": 20,
+    "total": 14,
     "modules": {
-      "JunoNativeKit (shared)": 4,
+      "JunoNativeKit (shared)": 3,
       "JunoCode (shared)": 2,
-      "JunoDesktop (macOS)": 6,
-      "JunoMobile (iOS)": 8
+      "JunoDesktop (macOS)": 4,
+      "JunoMobile (iOS)": 5
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioGoalRow.swift": 1,
@@ -13,13 +13,9 @@
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatApprovalView.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoCodeRun.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIExercise.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIParts.swift": 1,
-      "native/iOS/JunoMobile/App/JunoMobileAttachmentMenu.swift": 1,
-      "native/iOS/JunoMobile/App/JunoMobileDictation.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobilePhoneShell.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileWorkView.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 2,
-      "native/macOS/JunoDesktop/App/DesktopDictation.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopScreenPresence.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopVoice.swift": 1
     }
@@ -48,9 +44,9 @@
     }
   },
   "spacing": {
-    "total": 17,
+    "total": 16,
     "modules": {
-      "JunoDesktop (macOS)": 13,
+      "JunoDesktop (macOS)": 12,
       "JunoMobile (iOS)": 4
     },
     "files": {
@@ -60,7 +56,6 @@
       "native/macOS/JunoDesktop/App/ActivityRow.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopAssistantsScreen.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopCustomizeScreen.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopSettingsGeneralPane.swift": 1,
       "native/macOS/JunoDesktop/App/InlineArtifactCard.swift": 1,
       "native/macOS/JunoDesktop/App/MessageActions.swift": 1,
@@ -74,29 +69,28 @@
     "files": {}
   },
   "targets": {
-    "total": 190,
+    "total": 150,
     "modules": {
-      "JunoNativeKit (shared)": 33,
-      "JunoCode (shared)": 84,
-      "JunoDesktop (macOS)": 52,
-      "JunoMobile (iOS)": 21
+      "JunoNativeKit (shared)": 34,
+      "JunoCode (shared)": 45,
+      "JunoDesktop (macOS)": 44,
+      "JunoMobile (iOS)": 27
     },
     "files": {
-      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2Agents.swift": 4,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ComposerParts.swift": 5,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2Agents.swift": 3,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ComposerParts.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ContextGauge.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2Dock.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ModelPicker.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2OrchestratePicker.swift": 2,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ThreadView.swift": 3,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2TierSelector.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2TeamEditor.swift": 1,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ThreadView.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2TierSelector.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/Settings/StudioSettingsView.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioApprovalPrompt.swift": 4,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioLanding.swift": 4,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioSessionView.swift": 2,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioSidePanel.swift": 13,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioSessionView.swift": 1,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioSidePanel.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioThreadView.swift": 1,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/PreviewChrome.swift": 17,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskDetailView.swift": 4,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Review/DiffLineViews.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Review/OpenQuicklySheet.swift": 2,
@@ -105,6 +99,7 @@
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeBranchNavigator.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeCompareView.swift": 3,
+      "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeComposerTray.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeImageEditSheet.swift": 4,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeImageEditView.swift": 4,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeMemoryManagerView.swift": 2,
@@ -114,28 +109,30 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoAIcssSearch.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoAIcssTodo.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoComposerAura.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoEffortPanel.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoMathView.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoModelSelector.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceAura.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceOrb.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUILearning.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIView.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileArchivedView.swift": 2,
-      "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 5,
+      "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 3,
+      "native/iOS/JunoMobile/App/JunoMobileHandoff.swift": 1,
+      "native/iOS/JunoMobile/App/JunoMobileLinkComposer.swift": 3,
+      "native/iOS/JunoMobile/App/JunoMobileLinkSurfaces.swift": 2,
+      "native/iOS/JunoMobile/App/JunoMobileLinkThread.swift": 3,
       "native/iOS/JunoMobile/App/JunoMobileMessageImages.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileMessageMenu.swift": 8,
       "native/iOS/JunoMobile/App/JunoMobileOnboarding.swift": 3,
-      "native/iOS/JunoMobile/App/JunoMobileVoiceFullScreen.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopAutomationEditor.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopAutomationPage.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopAutomationsScreen.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 11,
-      "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 6,
+      "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 3,
+      "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopConnectionsScreen.swift": 3,
       "native/macOS/JunoDesktop/App/DesktopCustomConnectorSheets.swift": 5,
       "native/macOS/JunoDesktop/App/DesktopHostPage.swift": 3,
+      "native/macOS/JunoDesktop/App/DesktopRemoteControlViews.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopWorkSettings.swift": 8,
       "native/macOS/JunoDesktop/App/JunoDesktopRootView.swift": 3
     }
