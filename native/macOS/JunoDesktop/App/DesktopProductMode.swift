@@ -110,11 +110,17 @@ extension View {
     /// `.tabs` where it exists, `.segmented` where it does not.
     @ViewBuilder
     func junoProductPickerStyle() -> some View {
+        // A runtime availability check cannot name a type absent from the
+        // Xcode 26 SDK used by CI and supported macOS 26 builds.
+        #if compiler(>=6.4)
         if #available(macOS 27, *) {
             pickerStyle(.tabs)
         } else {
             pickerStyle(.segmented)
         }
+        #else
+        pickerStyle(.segmented)
+        #endif
     }
 }
 
