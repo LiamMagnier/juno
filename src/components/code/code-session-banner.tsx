@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, MotionConfig, motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -196,11 +196,11 @@ export function CodeSessionBanner({
   const shownActivity = activity ?? lastActivity.current;
 
   return (
-    // `reducedMotion="user"` rather than a `useReducedMotion()` at each site:
-    // the framer motion in this header is a chip swap and a row entrance, and
-    // both should degrade to the opacity-only Tier B that globals.css applies
-    // to the CSS keyframes beside them.
-    <MotionConfig reducedMotion="user">
+    // No MotionConfig here: the app's root provider already maps the reader's
+    // Motion choice onto framer (the chip swap and row entrance degrade to the
+    // opacity-only tier, as the CSS keyframes beside them do). A nested
+    // reducedMotion="user" read the OS alone and overrode Settings › Motion.
+    <>
       <header
         // `bg-background` flat: the translucency bought nothing — this row is
         // `shrink-0` in a flex column, so nothing scrolls beneath it, and on a
@@ -440,7 +440,7 @@ export function CodeSessionBanner({
           </div>
         </div>
       </header>
-    </MotionConfig>
+    </>
   );
 }
 

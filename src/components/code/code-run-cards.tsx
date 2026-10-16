@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
-import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
+import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons";
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
@@ -321,8 +321,11 @@ export function CodeRunStack({
   isCloud,
   steering,
 }: CodeRunStackProps) {
+  // No MotionConfig of its own: the app's root provider carries the reader's
+  // Motion choice (System, Reduced, Full), and a nested reducedMotion="user"
+  // would answer to the OS alone and override it.
   return (
-    <MotionConfig reducedMotion="user">
+    <>
       {/* ALWAYS MOUNTED. A live region inserted at the same moment its text
           appears is frequently never announced at all (chat/approval-card makes
           the same argument), and the approval card's own sr-only span did
@@ -417,7 +420,7 @@ export function CodeRunStack({
           </motion.div>
         )}
       </AnimatePresence>
-    </MotionConfig>
+    </>
   );
 }
 
