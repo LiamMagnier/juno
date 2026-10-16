@@ -134,6 +134,8 @@ export interface SavedTurnPlan {
   conversationModelId: string;
   userMessageId: string | null;
   staleAssistantId: string | null;
+  /** The message a reply that replaces nothing follows (accept.ts), written as its parent. */
+  answersMessageId?: string | null;
   artifactEditTarget: (ArtifactSourceForEdit & { id: string }) | null;
   contextAttachmentIds: string[];
   clarificationVisibleContent: string | null;
@@ -204,6 +206,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     conversationModelId,
     userMessageId,
     staleAssistantId,
+    answersMessageId,
     artifactEditTarget,
     contextAttachmentIds,
     clarificationVisibleContent,
@@ -351,6 +354,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       user,
       conversationId,
       staleAssistantId,
+      answersMessageId,
       modelId,
       acc,
       activityLog,
@@ -761,7 +765,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       );
 
       // Persist the assistant message — generation succeeded, so it's safe to
-      // version-and-overwrite the answer being regenerated (see the helper).
+      // branch off the answer being regenerated (see the helper).
       // promptTokens stores the full prompt size (cache included) so the
       // reloaded cost estimate lines up with the stream.
       if (!(await receipt.renew())) throw new DurableReceiptLeaseLostError();
@@ -1008,7 +1012,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           );
           if (heldReemits.size > 0) acc.replaceText(holdArtifactBodies(acc.text, heldReemits));
           // Same version-preserving persistence as the success path — a
-          // partial answer still supersedes (never destroys) the previous one.
+          // partial answer still branches off (never destroys) the previous one.
           if (!(await receipt.renew())) throw new DurableReceiptLeaseLostError();
           const assistant = await persistAssistantTurn({
             content: acc.text,

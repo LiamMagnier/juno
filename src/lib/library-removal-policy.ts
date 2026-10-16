@@ -152,9 +152,18 @@ export async function settleLibraryRemovalsWith(store: MessageDeleteStore): Prom
  */
 export function libraryViewWhere(view: "library" | "deleted"): Prisma.AttachmentWhereInput {
   return view === "deleted"
-    ? { OR: [{ deletedAt: { not: null } }, { libraryRemovedAt: { not: null } }] }
-    : { deletedAt: null, libraryRemovedAt: null };
+    ? { OR: [{ deletedAt: { not: null } }, { libraryRemovedAt: { not: null } }], origin: { not: BRANCH_COPY_ORIGIN } }
+    : { deletedAt: null, libraryRemovedAt: null, origin: { not: BRANCH_COPY_ORIGIN } };
 }
+
+/**
+ * The attachment rows an edited question carries (src/lib/chat/branches.ts).
+ * Editing a question writes the new wording as a sibling message, and its
+ * files come with it as copies that reuse the same stored objects. They are
+ * the same files the person already has in the Library, so neither list shows
+ * them a second time.
+ */
+export const BRANCH_COPY_ORIGIN = "branch_copy";
 
 /** The columns `libraryItemPlacement` reads. */
 export interface LibraryPlacementRow extends LibraryUseRow {

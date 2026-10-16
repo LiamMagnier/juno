@@ -19,6 +19,7 @@ import type {
   ClientAttachment,
   ClientConversation,
   ClientMessage,
+  ClientMessageBranch,
   ClientSource,
 } from "@/types/chat";
 import type { ArtifactType } from "@/lib/message-content";
@@ -227,7 +228,12 @@ export async function serializeAttachment(att: AttachmentForClient): Promise<Cli
 type MessageVersionMeta = Pick<MessageVersion, "id" | "model" | "createdAt">;
 
 export async function serializeMessage(
-  msg: Message & { attachments: AttachmentForClient[]; versions?: MessageVersionMeta[] }
+  msg: Message & {
+    attachments: AttachmentForClient[];
+    versions?: MessageVersionMeta[];
+    /** Its place among its alternatives, when the reader computed it (src/lib/chat/branches.ts). */
+    branch?: ClientMessageBranch | null;
+  }
 ): Promise<ClientMessage> {
   // Prefer the exact cost written at generation time (includes cache writes +
   // tool fees). Recomputing from token counts alone systematically under-bills
@@ -272,6 +278,8 @@ export async function serializeMessage(
     versions: msg.versions?.length
       ? msg.versions.map((v) => ({ id: v.id, model: v.model, createdAt: v.createdAt.toISOString() }))
       : undefined,
+    // The "‹ 2/3 ›" pager across branches. Absent for a message with no alternatives.
+    branch: msg.branch ?? undefined,
   };
 }
 

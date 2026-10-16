@@ -911,6 +911,30 @@ model Message {
   // every turn the reader routed by hand, and for every turn written before
   // Auto Router 2.0. Cleared (not kept) when a regenerate supersedes the row.
   routing          Json?
+  // Branches (src/lib/chat/branches.ts, rules in branch-model.ts). Editing a
+  // question or regenerating an answer adds a SIBLING row and keeps the old
+  // one with everything that followed it, so a thread is a tree:
+  //
+  //  - parentId: the message this one follows (a plain pointer, like
+  //    forkedFromId). Writers that do not know about branches leave it NULL
+  //    and the row follows the previous message on the active path; a branch
+  //    operation writes those pointers down before it moves anything, so a
+  //    row that leaves the active path always records where it sat.
+  //  - branchGroupId: shared by the alternatives at one point of the thread
+  //    (the first one's id). NULL for a message that has never had one.
+  //  - branchSelected: the alternative chosen in its group. Kept while the
+  //    branch around it is not shown, so returning to a branch restores the
+  //    choices made inside it.
+  //  - onActivePath: the denormalised "shown" bit. Every transcript reader
+  //    (paging, the model's history, search, sharing, export, memory, native
+  //    sync) filters on it, so the rest of the product sees one linear thread.
+  //
+  // Additive: constant defaults are metadata-only in PostgreSQL 11+, and every
+  // existing row is a linear, shown, never-branched message.
+  parentId         String?
+  branchGroupId    String?
+  branchSelected   Boolean   @default(true)
+  onActivePath     Boolean   @default(true)
   createdAt        DateTime  @default(now())
 
   conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -2393,6 +2417,12 @@ model Share {
   artifactId     String?
   title          String    @default("") // denormalized for lists + OG cards
   snapshotAt     DateTime  @default(now())
+  /// The last message of the branch that was shown when the snapshot was
+  /// taken. The public page renders that message's ancestors, so editing or
+  /// switching branches after sharing never changes what the link shows.
+  /// NULL on links made before branches: they read the shown path up to
+  /// snapshotAt, and the first branch operation in their chat pins them.
+  leafMessageId  String?
   views          Int       @default(0)
   revokedAt      DateTime?
   /// Removed by Juno (admin takedown), as distinct from revoked by its owner.

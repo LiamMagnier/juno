@@ -4,21 +4,27 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser } from "@/lib/session";
-import { settleLibraryRemovalsBeforeTruncation } from "@/lib/library-removal";
+import { branchRefusalResponse, copyMessageAttachments, forkMessage } from "@/lib/chat/branches";
+import { isRefusal } from "@/lib/chat/branch-model";
+import { getClientMessage } from "@/lib/queries";
 
 const schema = z.object({ content: z.string().trim().min(1) });
 
 /**
- * Edit a user message: update its content and truncate everything after it.
- * The ORIGINAL content is snapshotted into a MessageVersion first (ciphertext
- * copied verbatim — the crypto is row-independent, see message-crypto.ts), so
- * an edit never destroys history: the pager on the message shows every prior
- * wording, oldest first, with the Message row always holding the newest.
+ * Edit a question: a NEW BRANCH, never a truncation (src/lib/chat/branches.ts).
  *
- * Artifacts made by the truncated answers are NOT deleted. They can carry
- * hand edits, design checkpoints and public share links; they stay, detached,
- * and the next answer that emits the same identifier appends a version to
- * the same row (see detachArtifactsFromMessage in artifacts-store.ts).
+ * The edited wording is written as a sibling of the original message, with the
+ * same parent and a copy of its attachments, and becomes the shown branch. The
+ * original and every message that followed it stay exactly as they were, off
+ * the shown path, and the "‹ 1/2 ›" pager under the question switches back to
+ * them. Nothing is deleted, so nothing has to be detached, settled or
+ * re-indexed: artifacts keep their message, files keep theirs.
+ *
+ * The client asks for the new answer next (POST /api/chat with `regenerate`),
+ * which answers the shown leaf — the new wording.
+ *
+ * Response: the new message as the transcript renders it, and `replacedId`,
+ * the row the client replaces it from.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -27,6 +33,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const message = await prisma.message.findFirst({
     where: { id, conversation: { userId: user.id } },
+    select: { id: true, role: true, conversationId: true },
   });
   if (!message) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (message.role !== "USER") return NextResponse.json({ error: "Only your messages can be edited." }, { status: 400 });
@@ -35,40 +42,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
   const result = await prisma.$transaction(async (tx) => {
-    // Preserve the pre-edit wording as read-only history.
-    const version = await tx.messageVersion.create({
-      data: { messageId: message.id, content: message.content },
+    const forked = await forkMessage(tx, { userId: user.id, conversationId: message.conversationId, targetId: id }, async (fields) => {
+      const created = await tx.message.create({
+        data: {
+          conversationId: message.conversationId,
+          role: "USER",
+          content: encryptMessageText(parsed.data.content),
+          ...fields,
+        },
+        select: { id: true },
+      });
+      // The question keeps its files: the new wording is asked about the same
+      // attachments, and the old branch keeps its own rows.
+      await copyMessageAttachments(tx, user.id, { fromMessageId: id, toMessageId: created.id, conversationId: message.conversationId });
+      return created;
     });
-    await tx.message.update({ where: { id }, data: { content: encryptMessageText(parsed.data.content) } });
-    // Its session-recall tokens describe the old wording: drop them, and the
-    // next index pass re-reads the new one (src/lib/recall).
-    await tx.messageRecallIndex.deleteMany({ where: { messageId: id, userId: user.id } });
-    // The later messages' attachments survive their delete (messageId is
-    // SetNull). A file the reader had taken out of the Library stayed only
-    // because one of these messages used it; with the message gone it is
-    // deleted as they asked, rather than left in Recently deleted with
-    // nothing using it.
-    await settleLibraryRemovalsBeforeTruncation(tx, user.id, message.id);
-    // Later messages' own MessageVersion rows cascade with them. Their
-    // artifacts do not: Artifact.messageId is SetNull too, so each one is
-    // detached here with its versions and share links intact.
+    if (isRefusal(forked)) return forked;
+    // The answers this edit moved off the path were not what the reader wanted.
     const discarded = await tx.message.findMany({
-      where: { conversationId: message.conversationId, createdAt: { gt: message.createdAt }, role: "ASSISTANT" },
+      where: { conversationId: message.conversationId, id: { in: forked.plan.hidden }, role: "ASSISTANT" },
       select: { id: true },
     });
-    await tx.message.deleteMany({
-      where: { conversationId: message.conversationId, createdAt: { gt: message.createdAt } },
-    });
-    return { version, discarded: discarded.map((m) => m.id) };
+    return { created: forked.created, discarded: discarded.map((row) => row.id) };
   });
-  // The answers this edit discarded were not what the reader wanted: a signal
-  // for Auto's feedback loop, on content-free rows (src/lib/router/telemetry-store.ts).
+  if (isRefusal(result)) {
+    const refusal = branchRefusalResponse(result);
+    return NextResponse.json({ error: refusal.error }, { status: refusal.status });
+  }
+  // A signal for Auto's feedback loop, on content-free rows (src/lib/router/telemetry-store.ts).
   await markRoutingSignal(result.discarded, { edited: true });
-  const version = result.version;
 
-  // Version metadata so the client can grow the pager without a refetch.
-  return NextResponse.json({
-    ok: true,
-    version: { id: version.id, model: version.model, createdAt: version.createdAt.toISOString() },
-  });
+  const created = await getClientMessage(message.conversationId, result.created.id);
+  return NextResponse.json({ ok: true, message: created, replacedId: id });
 }

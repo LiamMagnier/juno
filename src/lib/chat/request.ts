@@ -175,6 +175,14 @@ export const chatBodySchema = z
     // so the next turn is not silently shaped by a button pressed two answers
     // ago. Ignored unless `regenerate` is set.
     regenerateInstruction: z.string().trim().min(1).max(400).optional(),
+    /**
+     * Which answer a regenerate replaces (src/lib/chat/branches.ts). Absent:
+     * the newest one, as before. Present: any answer on the shown path; the
+     * model reads the conversation up to the question it answered, and the
+     * new answer becomes a sibling of the old one, which is kept with
+     * everything that followed it.
+     */
+    regenerateMessageId: z.string().cuid().optional(),
     voiceMode: z.boolean().optional(),
     // LEGACY, native-only. No web client sends this since canvas became a
     // model decision; the server default is ON, so only an explicit `false`
@@ -318,6 +326,13 @@ export const chatBodySchema = z
       .optional(),
   })
   .superRefine((input, ctx) => {
+    if (input.regenerateMessageId && (!input.regenerate || !input.conversationId || input.privateMode || input.roomTurn || input.crossReply)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["regenerateMessageId"],
+        message: "Regenerating a particular answer is a regenerate of a saved conversation, and not a room turn or a reply to another conversation.",
+      });
+    }
     if (input.crossReply && (!input.regenerate || !input.conversationId || input.message?.trim() || input.privateMode)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

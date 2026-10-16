@@ -336,6 +336,7 @@ async function handleChat(req: Request) {
       conversationModelId: model.conversationModelId,
       userMessageId,
       staleAssistantId: accepted.staleAssistantId,
+      answersMessageId: accepted.answersMessageId,
       artifactEditTarget,
       contextAttachmentIds: accepted.contextAttachmentIds,
       clarificationVisibleContent: accepted.clarificationVisibleContent,
