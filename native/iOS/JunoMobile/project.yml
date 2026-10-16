@@ -121,6 +121,17 @@ targets:
       # Activities draw the same marks as the app instead of SF Symbols.
       - path: Resources/Assets.xcassets
         buildPhase: resources
+      # The app's string catalog, so the widget's words are translated with
+      # the app's instead of shipping in English only.
+      - path: Resources/Localizable.xcstrings
+        buildPhase: resources
+      # The small widget's "New chat" is set in the display serif. JunoSerif
+      # checks for the regular face before using any of them, so both ship
+      # (Widgets/Info.plist registers them); without them it is New York.
+      - path: Resources/Fonts/Newsreader24pt-Regular.ttf
+        buildPhase: resources
+      - path: Resources/Fonts/Newsreader24pt-Medium.ttf
+        buildPhase: resources
     configFiles:
       Debug: ../../Config/JunoMobile-Debug.xcconfig
       Stable: ../../Config/JunoMobile-Stable.xcconfig
