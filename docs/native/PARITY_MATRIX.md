@@ -22,14 +22,14 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-347 routes: 226 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+348 routes: 226 native, 53 planned, 56 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 3 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
@@ -157,6 +157,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/messages/[id]/versions` | GET | Native | JunoChatKit |  |
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/share/[id]` | DELETE | Native | JunoChatKit |  |
+| `/api/share/copy` | POST | Web only |  | Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws. |
 | `/api/share/report` | POST | Web only |  | Reporting a shared link happens on the shared page, which only the web draws. |
 
 <a id="search"></a>

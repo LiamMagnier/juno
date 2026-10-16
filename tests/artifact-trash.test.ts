@@ -205,6 +205,7 @@ if (!DB_URL) {
     mock.module("@/components/share/shared-chat-transcript", { namedExports: { SharedChatTranscript: Stub } });
     mock.module("@/components/share/shared-artifact-viewer", { namedExports: { SharedArtifactViewer: Stub } });
     mock.module("@/components/share/report-share-dialog", { namedExports: { ReportShareButton: Stub } });
+    mock.module("@/components/share/share-copy-button", { namedExports: { ShareCopyButton: Stub } });
     mock.module("@/components/canvas/sandbox-document-frame", { namedExports: { SandboxProfileProvider: Stub } });
     mock.module("@/components/landing/plate", { namedExports: { Plate: Stub } });
     mock.module("@/components/ui/app-page", { namedExports: { AppPage: Stub } });

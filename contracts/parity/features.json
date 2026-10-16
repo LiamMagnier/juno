@@ -189,6 +189,10 @@
         "/api/messages/[id]/versions": "native",
         "/api/share": "native",
         "/api/share/[id]": "native",
+        "/api/share/copy": {
+          "status": "web-only",
+          "note": "Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws."
+        },
         "/api/share/report": {
           "status": "web-only",
           "note": "Reporting a shared link happens on the shared page, which only the web draws."
