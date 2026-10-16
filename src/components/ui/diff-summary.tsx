@@ -198,7 +198,7 @@ export function DiffSummary({
                     </Button>
                   </div>
 
-                  <pre className="max-h-80 overflow-x-auto font-mono text-caption leading-relaxed whitespace-pre font-normal text-foreground/90 select-text">
+                  <pre className="max-h-80 overflow-x-auto font-mono text-caption leading-relaxed whitespace-pre font-normal text-foreground select-text">
                     {(file.patch ?? "").split("\n").map((line, i) => {
                       const isAdd = line.startsWith("+") && !line.startsWith("+++");
                       const isDel = line.startsWith("-") && !line.startsWith("---");
@@ -211,7 +211,7 @@ export function DiffSummary({
                             "px-2 py-0.5 rounded-xs",
                             isAdd && "bg-success/15 text-success-ink",
                             isDel && "bg-destructive/15 text-destructive-ink",
-                            isHunk && "text-muted-foreground/70 bg-secondary/60"
+                            isHunk && "text-muted-foreground bg-secondary/60"
                           )}
                         >
                           {line}

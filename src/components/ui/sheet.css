@@ -388,6 +388,52 @@ html[data-input-modality="keyboard"] .ui-overlay-infrequent[data-state="open"] {
   }
 }
 
+/* ——— The user bubble (spec D6, ui/user-bubble.tsx) [S3] ——————————————
+
+   Radius 12 with the 8 tuck on the logical end-end corner (it mirrors in
+   RTL), from the radius tokens, so the S3 shape is one mapping in globals. */
+
+.ui-user-bubble {
+  border-radius: var(--radius-bubble, 12px);
+  border-end-end-radius: var(--radius-bubble-tuck, 8px);
+}
+
+/* ——— Approvals (spec C16, §3.8, components/approvals) ———————————————
+
+   An opaque card with a 2px leading edge in the needs-you role (the signal
+   ink, S1), the one focus ring when focus is moved to it, and the "Review
+   approval" skip button an announcing approval inserts after the active
+   field: hidden until it is focused, then a small card beside the field. */
+
+.ui-approval {
+  border-inline-start: 2px solid hsl(var(--status-needs-you));
+}
+.ui-approval:focus-visible {
+  outline: var(--ring-width, 2px) solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.ui-approval-review {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.ui-approval-review:focus-visible {
+  position: relative;
+  width: auto;
+  height: auto;
+  clip: auto;
+  margin-inline-start: 8px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  box-shadow: inset 0 0 0 1px hsl(var(--status-needs-you));
+}
+
 /* ——— Toasts (spec C15) ———————————————————————————————————————————
 
    Sonner's own motion is overridden: a toast rises 8px × shift over 220 on

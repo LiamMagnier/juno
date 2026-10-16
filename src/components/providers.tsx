@@ -10,10 +10,14 @@ import { AutoTranslate } from "@/components/i18n/auto-translate";
 import { MotionConfig } from "framer-motion";
 import { useUiPref } from "@/lib/ui-prefs";
 import { framerReducedMotion } from "@/lib/motion-preference";
+import { ApprovalAnnouncerProvider } from "@/components/approvals/announcer";
+import { installInputModality } from "@/components/ui/input-modality";
 
 /** Settings › Appearance › Motion reaches framer-motion too, not only CSS: Reduced holds it still, Full lets it move on a device that reduces. */
 function MotionPreference({ children }: { children: React.ReactNode }) {
   const [motion] = useUiPref("motion");
+  // Overlays opened from the keyboard only fade (spec C7): track the last input kind for sheet.css.
+  React.useEffect(() => installInputModality(), []);
   return <MotionConfig reducedMotion={framerReducedMotion(motion)}>{children}</MotionConfig>;
 }
 
@@ -47,15 +51,18 @@ export function Providers({
     // both are the usual sources of Auth.js "ClientFetchError: Load failed".
     <SessionProvider session={session} refetchOnWindowFocus={false}>
       <ThemeProvider attribute="class" defaultTheme={defaultTheme} enableSystem disableTransitionOnChange nonce={nonce}>
-        <TooltipProvider delayDuration={200}>
-          <MotionPreference>{children}</MotionPreference>
+        {/* The tooltip timing is the provider's own default (500 / 300, spec C7). */}
+        <TooltipProvider>
+          <MotionPreference>
+            {/* One approval announcer per window (spec C16), with the ⌥⌘A chord. */}
+            <ApprovalAnnouncerProvider>{children}</ApprovalAnnouncerProvider>
+          </MotionPreference>
           <AutoTranslate locale={locale} autoDetect={autoDetect} />
           {/*
-            Position, offsets and the close button now live in sonner.tsx, with
-            the reasoning that used to sit here: the bottom offset depends on
-            whether the route has a composer to clear, and that is a
-            `usePathname()` read, which belongs beside the component it styles
-            rather than in the provider tree.
+            The Toaster stays mounted for the whole app (spec C15). Its bottom
+            offset is calc(var(--composer-h, 0px) + 16px) (sonner.tsx): the
+            composer publishes its height on :root and resets it to 0 when it
+            unmounts, so no route list is needed.
 
             No `richColors`: it emits sonner's own success/error/warning background
             and border custom properties at equal specificity to ours, so any of the

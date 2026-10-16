@@ -62,7 +62,7 @@ const buttonVariants = cva(
         secondary: "control-neu text-foreground",
         ghost:
           "border-transparent bg-transparent shadow-none hover:bg-accent hover:text-foreground active:bg-selected",
-        link: "border-transparent text-primary underline-offset-4 hover:underline active:text-primary/75",
+        link: "border-transparent text-primary underline-offset-4 hover:underline active:opacity-75",
       },
       // Every size grows to a ~44px hit area on touch devices (coarse:) so a
       // field with a button beside it stays aligned on a phone.

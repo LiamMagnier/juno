@@ -73,9 +73,9 @@ const merge = extendTailwindMerge({
       "font-size": [
         {
           text: [
-            "hero", "display", "page-title", "title", "heading",
+            "hero", "home-title", "display", "page-title", "title", "heading",
             "body-lg", "reading", "body", "nav", "ui", "label", "caption",
-            "micro",
+            "micro", "kbd",
           ],
         },
       ],

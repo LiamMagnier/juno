@@ -67,7 +67,7 @@ export interface InsertHold {
 }
 
 export function createInsertHold(onChange: (state: InsertHoldState) => void, clock: HoldClock = realClock): InsertHold {
-  let shown = new Set<string>();
+  const shown = new Set<string>();
   let current: Array<{ id: string; kind: InsertKind }> = [];
   const queuedAt = new Map<string, { at: number; kind: InsertKind }>();
   let holding = false;
@@ -207,6 +207,8 @@ export function useInsertHold<T>(
   }, [enabled, hold]);
 
   // Re-read after either a sync (new items) or a timer flush (setState).
+  // `synced` and `state` are the triggers, not inputs: a sync or a timer flush changed the hold.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const current = React.useMemo(() => hold.state(), [hold, synced, state]);
 
   // Pointer over the rows, or focus within the list, holds.
