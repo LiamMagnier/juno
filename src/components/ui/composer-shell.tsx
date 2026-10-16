@@ -3,7 +3,7 @@
 import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Image from "next/image";
-import { AnimatePresence, MotionConfig, motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { AudioLines, Loader2, Send, Square } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
@@ -579,7 +579,7 @@ const FACE_MOTION = {
   // One disc, three faces (C12, C13, C16; MOTION_AND_THINKING "Send / Stop /
   // Mic: existing semantic glyph change"): the glyphs overlap and swap in
   // place, opacity with scale 0.8 to 1 on fast. Reduced motion keeps the fade
-  // (MotionConfig below drops the scale). Nothing delays Stop.
+  // (the app's root MotionConfig drops the scale). Nothing delays Stop.
   initial: { opacity: 0, scale: 0.8 },
   animate: { opacity: 1, scale: 1 },
   exit: { opacity: 0, scale: 0.8 },
@@ -656,7 +656,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
         )}
         {...props}
       >
-        <MotionConfig reducedMotion="user">
+        <>
           <AnimatePresence initial={false} mode="sync">
             {face === "busy" ? (
               <motion.span key="busy" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
@@ -683,7 +683,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               </motion.span>
             )}
           </AnimatePresence>
-        </MotionConfig>
+        </>
       </button>
     );
   }
@@ -911,7 +911,7 @@ export function ComposerAttachmentRow({
     // concentric. It was 16px across and 14px down — two different insets
     // into one corner, which no single radius can be concentric with.
     <div className={cn("flex flex-wrap gap-2 px-3.5 pt-3.5 empty:hidden", className)}>
-      <MotionConfig reducedMotion="user">
+      <>
         <AnimatePresence initial={false}>
           {uploads.map((upload) => (
             <motion.div key={upload.localId} layout {...TILE_MOTION} className="min-w-0">
@@ -924,7 +924,7 @@ export function ComposerAttachmentRow({
             </motion.div>
           ))}
         </AnimatePresence>
-      </MotionConfig>
+      </>
     </div>
   );
 }

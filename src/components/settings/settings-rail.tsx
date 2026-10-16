@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MotionConfig, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Pressable } from "@/components/ui/pressable";
 import {
   ALL_SETTINGS_SECTIONS,
@@ -53,7 +53,8 @@ const FADE_PX = 24;
  * THE SELECTION TRAVELS. It is one shared `layoutId` element rather than a
  * background per row, so choosing a section slides the fill from the old row
  * to the new one on the standard spring. Under reduced motion framer turns
- * the slide into a swap (`MotionConfig reducedMotion="user"`).
+ * the slide into a swap: the app's root MotionConfig maps Settings › Motion
+ * (System, Reduced, Full) onto framer, so this rail sets none of its own.
  *
  * Glyph ink follows ICONS_AND_MOTION.md §1.2: muted at rest, the row's
  * foreground on hover or when selected. The accent is not used: a selected
@@ -251,7 +252,7 @@ export function SettingsRail({
 
   if (hrefFor) {
     return (
-      <MotionConfig reducedMotion="user">
+      <>
         <nav aria-label="Settings sections">
           {searchField}
           <div ref={listRef} onScroll={measure} className={listClass} style={listStyle}>
@@ -285,12 +286,12 @@ export function SettingsRail({
             {noMatch}
           </div>
         </nav>
-      </MotionConfig>
+      </>
     );
   }
 
   return (
-    <MotionConfig reducedMotion="user">
+    <>
       {searchField}
       <div
         ref={listRef}
@@ -330,6 +331,6 @@ export function SettingsRail({
         ))}
         {noMatch}
       </div>
-    </MotionConfig>
+    </>
   );
 }

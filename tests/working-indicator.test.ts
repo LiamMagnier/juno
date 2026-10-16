@@ -106,3 +106,23 @@ test("the galaxy's spec exists where the code cites it", () => {
   // The stop is an exponential ease (tau 0.35 s), never a cut.
   assert.match(mark, /Math\.exp\(-dt \/ 0\.35\)/);
 });
+
+test("a row that was never live on screen mounts no galaxy (one canvas per settled row was the cost)", () => {
+  const timeline = read("src/components/work/work-timeline.tsx");
+  assert.match(timeline, /const galaxy = useLatched\(running\);/);
+  assert.match(timeline, /\{galaxy && \(\s*<GalaxyMark phase=\{running \? "working" : "finished"\}/);
+  const plan = read("src/components/work/detail/work-progress.tsx");
+  assert.match(plan, /const galaxy = useLatched\(state === "active"\);/);
+  assert.match(plan, /galaxy \? <GalaxyMark phase=\{on \? "working" : "idle"\} size=\{12\} \/> : null/);
+  // Code's fold latches on its own opening, not on the steps a live turn showed outside it.
+  assert.match(read("src/components/code/v2/thread.tsx"), /const foldMounted = useLatched\(vis\.header && open\);/);
+});
+
+test("product surfaces inherit the app's Motion choice instead of overriding it with the OS", () => {
+  // A nested MotionConfig reducedMotion="user" reads the OS alone and beats the
+  // root provider that maps Settings › Motion (System, Reduced, Full).
+  const offenders = sources("src/components")
+    .filter((file) => !/^src\/components\/(landing|public)\//.test(file))
+    .filter((file) => /<MotionConfig reducedMotion="user"/.test(read(file)));
+  assert.deepEqual(offenders, []);
+});
