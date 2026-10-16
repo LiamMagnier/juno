@@ -492,6 +492,17 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     case "turn.queue":
       deps.conversations?.noteUserInput(cmd.params.sessionId);
       return sessions.queue({ ...cmd.params, input: userOnly(cmd.params.input) });
+    // queue lane: the session's own queue, changed for every device at once.
+    case "queue.remove":
+      return sessions.removeQueued(cmd.params);
+    case "queue.edit":
+      deps.conversations?.noteUserInput(cmd.params.sessionId);
+      return sessions.editQueued(cmd.params);
+    case "queue.move":
+      return sessions.moveQueued(cmd.params);
+    case "queue.promote":
+      deps.conversations?.noteUserInput(cmd.params.sessionId);
+      return sessions.promoteQueued(cmd.params);
     case "conversation.deliver":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
       return deps.conversations.deliver(cmd.params.sessionId, cmd.params.message);

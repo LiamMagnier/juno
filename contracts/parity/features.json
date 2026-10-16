@@ -985,6 +985,14 @@
           "status": "web-only",
           "note": "Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run."
         },
+        "/api/code/prefs": {
+          "status": "planned",
+          "note": "The account's Code defaults (access, work log, team and budget) that web Settings edits without a session open. The Mac keeps its own defaults until it reads these."
+        },
+        "/api/code/feedback": {
+          "status": "planned",
+          "note": "Good / Bad response on answers in a Mac-hosted Code v2 session, keyed by turn (those answers have no Message row). The Mac's v2 thread has no answer feedback yet."
+        },
         "/api/code/v2/link/[deviceId]": {
           "status": "native",
           "note": "The controller side of the Code v2 device link: the web and the iPhone's remote (JunoCodeRemote) drive the env server on a paired Mac through it. Needs a live remote-control pair (docs/code-v2/REMOTE-CONTROL.md)."

@@ -31,7 +31,9 @@ export const DEFAULT_KEYBINDINGS: readonly Keybinding[] = [
   { key: "mod+shift+w", command: "picker.contextWindow", when: "!terminalFocus" },
   { key: "mod+shift+l", command: "thread.cycleDetail", when: "!terminalFocus" },
   { key: "mod+enter", command: "composer.steer", when: "composerFocus && turnRunning" },
-  { key: "escape", command: "approval.deny", when: "approvalOpen && !popoverOpen" },
+  // Denying is an explicit act (Cursor guards its approval prompts the same way): ⌘⌫, never a
+  // stray Esc. Esc with an approval open only leaves the request (workspace.tsx).
+  { key: "mod+backspace", command: "approval.deny", when: "approvalOpen && !popoverOpen && !editableFocus" },
   { key: "enter", command: "approval.allowOnce", when: "approvalOpen && !composerFocus && !popoverOpen" },
   { key: "mod+shift+enter", command: "approval.allowSession", when: "approvalOpen" },
   { key: "arrowleft", command: "approval.previous", when: "approvalOpen && approvalMany && !editableFocus" },
@@ -158,8 +160,8 @@ export function resolveKeybinding(e: KeyEventLike, ctx: KeyContext, bindings: re
 export function formatKey(spec: string, mac = true): string {
   const p = parseKey(spec);
   const names: Record<string, string> = mac
-    ? { enter: "↵", escape: "Esc", arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→", "/": "/" }
-    : { enter: "Enter", escape: "Esc", arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
+    ? { enter: "↵", escape: "Esc", backspace: "⌫", arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→", "/": "/" }
+    : { enter: "Enter", escape: "Esc", backspace: "Backspace", arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
   const key = names[p.key] ?? p.key.toUpperCase();
   if (mac) return `${p.alt ? "⌥" : ""}${p.mod ? "⌘" : ""}${p.shift ? "⇧" : ""}${key}`;
   return [p.mod ? "Ctrl" : "", p.alt ? "Alt" : "", p.shift ? "Shift" : "", key].filter(Boolean).join("+");

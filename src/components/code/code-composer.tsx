@@ -43,6 +43,7 @@ import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
 import { seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
+import { useCodePrefs } from "@/components/code/v2/use-code-prefs";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
@@ -378,12 +379,20 @@ export function CodeComposer({
   /** What a send reads: set at once by `/plan`, a render before the state lands. */
   const modeRef = React.useRef(mode);
   modeRef.current = mode;
+  // The account's default (Settings › Code) under the project's last; a pick made here wins until the target changes.
+  const { runtimeMode: accountRuntime, interactionMode: accountInteraction } = useCodePrefs().prefs;
+  const modeChosen = React.useRef(false);
   React.useEffect(() => {
-    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null));
+    modeChosen.current = false;
   }, [target, modeProjectKey]);
+  React.useEffect(() => {
+    if (modeChosen.current) return;
+    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null, accountRuntime ? { runtimeMode: accountRuntime, interactionMode: accountInteraction } : null));
+  }, [target, modeProjectKey, accountRuntime, accountInteraction]);
   const chooseMode = React.useCallback(
     (next: ComposerMode) => {
       modeRef.current = next;
+      modeChosen.current = true;
       setMode(next);
       if (modeProjectKey) writeStoredJson(modeProjectKey, applyComposerMode(next, "auto-edit"));
     },

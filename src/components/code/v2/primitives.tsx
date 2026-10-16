@@ -237,6 +237,8 @@ export type MenuEntry =
       onSelect?: () => void;
       /** Keep the menu open after selecting (toggles). */
       keepOpen?: boolean;
+      /** Destructive (Delete): drawn in the destructive ink. */
+      danger?: boolean;
     };
 
 type MenuItemEntry = Exclude<MenuEntry, { kind: "sep" } | { kind: "section" }>;
@@ -301,7 +303,7 @@ export function MenuList({ entries, onClose, label, initialPath = [] }: { entrie
             aria-checked={e.checked}
             aria-disabled={e.disabled || undefined}
             aria-haspopup={e.sub ? "menu" : undefined}
-            className={cn("cv2-mi", e.l2 && "two")}
+            className={cn("cv2-mi", e.l2 && "two", e.danger && "danger")}
             data-active={i === hi}
             onMouseEnter={() => setHi(i)}
             onClick={() => run(e)}

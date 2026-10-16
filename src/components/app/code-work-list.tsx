@@ -41,9 +41,10 @@ import {
 import { ChevronDown } from "@/components/ui/icons";
 import { Icon } from "@/components/ui/juno-icons";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { RUN_STATE_META, isBlockedOnYou, runState } from "@/lib/code-runs";
+import { RUN_STATE_META, isBlockedOnYou, prSettled, runState } from "@/lib/code-runs";
 import { newestPerConversation } from "@/lib/conversation-status";
 import {
+  settledByPullRequest,
   shellThreads,
   subscribeThreadStates,
   threadStateFromRun,
@@ -64,6 +65,7 @@ import { Button } from "@/components/ui/button";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
 import { reducedMotionAt } from "@/lib/motion-preference";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { InlineTitleInput, useCodeSessionActions } from "@/components/code/v2/session-actions";
 
 interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
 
@@ -97,35 +99,83 @@ function stateWords(t: ThreadSummary): string | null {
   return null;
 }
 
+/** What a row's menu can do (the app shell's list passes these; the gallery passes none). */
+export interface WorkRowActions {
+  rename(id: string, title: string): void;
+  setPinned(id: string, pinned: boolean): void;
+  share(id: string): void;
+  archive(id: string): void;
+  remove(id: string): void;
+}
+
+/*
+ * The row's kebab floats over its right end, as in the Chat list: hidden at
+ * rest, faded in with the row's hover fill, always shown on touch (a phone
+ * never hovers, and the drawer is its only route to these verbs), and kept
+ * while its menu is open. A right-click on the row opens the same menu.
+ */
+const ROW_KEBAB =
+  "absolute right-1 top-1.5 grid size-7 place-items-center rounded-control text-muted-foreground opacity-0 outline-none transition-opacity duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 motion-reduce:transition-none coarse:size-10 coarse:opacity-100";
+const TRAILING_YIELDS = "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0";
+
 function WorkRow({
   t,
   active,
   now,
   href,
   onOpen,
+  actions,
 }: {
   t: ThreadSummary;
   active: boolean;
   now: number;
   href?: string;
   onOpen?: (id: string) => void;
+  actions?: WorkRowActions;
 }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [renaming, setRenaming] = React.useState(false);
   const where = t.pr ? `#${t.pr}` : t.branch;
   const state = stateWords(t);
+  if (renaming && actions) {
+    return (
+      <div data-flip={t.id} className="flex min-h-11 items-center rounded-control px-1">
+        <InlineTitleInput
+          initial={t.title}
+          className="h-8 w-full rounded-control border border-input bg-background px-2 text-nav outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onCommit={(value) => {
+            setRenaming(false);
+            if (value.trim() && value.trim() !== t.title) actions.rename(t.id, value);
+          }}
+          onCancel={() => setRenaming(false)}
+        />
+      </div>
+    );
+  }
   const inner = (
     <>
       <span className="flex min-w-0 items-center gap-2">
-        <span className={cn("min-w-0 flex-1 truncate text-nav", t.unread && "font-medium text-foreground")}>{t.title}</span>
-        <span className="flex shrink-0 items-center text-caption tabular-nums text-muted-foreground">
+        <span
+          className={cn("min-w-0 flex-1 truncate text-nav", t.unread && "font-medium text-foreground")}
+          onDoubleClick={actions ? (e) => (e.preventDefault(), setRenaming(true)) : undefined}
+        >
+          {t.title}
+        </span>
+        <span className={cn("flex shrink-0 items-center gap-1 text-caption tabular-nums text-muted-foreground", actions && TRAILING_YIELDS)}>
           {t.state === "running" ? (
             // The galaxy in Code's coral: the one working mark, still the moment the run stops.
             <GalaxyMark phase="working" size={14} className="text-[hsl(var(--signal))]" />
           ) : t.state === "waiting" ? (
             <Icon name="hand" size={14} className="text-[hsl(var(--signal))]" />
           ) : (
-            relativeAge(t.updatedAt, now)
+            <>
+              {/* A pin reports a state here, so it does not articulate on hover. */}
+              {t.pinned && <Icon name="pin" size={12} className="shrink-0" aria-hidden />}
+              {relativeAge(t.updatedAt, now)}
+            </>
           )}
           {state && <span className="sr-only">{state}</span>}
+          {t.pinned && <span className="sr-only">Pinned</span>}
         </span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
@@ -139,7 +189,7 @@ function WorkRow({
       </span>
     </>
   );
-  const cls = "flex min-w-0 flex-1 flex-col py-1 pr-1.5 text-left";
+  const cls = cn("flex min-w-0 flex-1 flex-col py-1 pr-1.5 text-left", actions && "coarse:pr-10");
   const label = state ? `${t.title}. ${state}` : t.title;
   return (
     <div
@@ -147,6 +197,14 @@ function WorkRow({
       data-active={active ? "" : undefined}
       data-conversation-row={t.id}
       className={cn("group relative flex min-h-11 items-center rounded-control pl-2 pr-1", LIST_ROW_TRANSITION, listRowClass(active))}
+      onContextMenu={
+        actions
+          ? (e) => {
+              e.preventDefault();
+              setMenuOpen(true);
+            }
+          : undefined
+      }
     >
       {href ? (
         <Link href={href} prefetch={false} onClick={() => onOpen?.(t.id)} aria-current={active ? "page" : undefined} title={label} className={cls}>
@@ -156,6 +214,35 @@ function WorkRow({
         <button type="button" onClick={() => onOpen?.(t.id)} aria-current={active ? "page" : undefined} title={label} className={cls}>
           {inner}
         </button>
+      )}
+      {actions && (
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={ROW_KEBAB} aria-label="Session options" title="Options">
+              <Icon name="more" size={14} />
+            </button>
+          </DropdownMenuTrigger>
+          {/* One hairline, before Delete: the actions are one list, and the rule puts a beat
+              in front of the one row that cannot be undone. */}
+          <DropdownMenuContent align="end" className={MENU_W}>
+            <DropdownMenuItem onSelect={() => setRenaming(true)}>
+              <Icon name="rename" size={16} /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.setPinned(t.id, !t.pinned)}>
+              <Icon name={t.pinned ? "unpin" : "pin"} size={16} /> {t.pinned ? "Unpin" : "Pin"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.share(t.id)}>
+              <Icon name="share" size={16} /> Share…
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => actions.archive(t.id)}>
+              <Icon name="archive" size={16} /> Archive
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => actions.remove(t.id)}>
+              <Icon name="delete" size={16} /> Delete…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   );
@@ -174,6 +261,7 @@ export function CodeWorkList({
   onOpen,
   removalTargets = [],
   onRemoveProject,
+  rowActions,
 }: {
   threads: readonly ThreadSummary[];
   activeId?: string;
@@ -181,6 +269,8 @@ export function CodeWorkList({
   onOpen?: (id: string) => void;
   removalTargets?: readonly RemovableCodeProject[];
   onRemoveProject?: (project: RemovableCodeProject) => Promise<void>;
+  /** Each row's menu (rename, pin, share, archive, delete); without it rows have none. */
+  rowActions?: WorkRowActions;
 }) {
   const [removing, setRemoving] = React.useState<RemovableCodeProject | null>(null);
   const [removalError, setRemovalError] = React.useState<string | null>(null);
@@ -198,7 +288,7 @@ export function CodeWorkList({
   const order = [...list.active, ...(showSettled ? list.settled : [])].map((t) => `${t.id}.${t.state}`).join(",");
   useFlip(root, order);
   const row = (t: ThreadSummary) => (
-    <WorkRow key={t.id} t={t} active={t.id === activeId} now={now} href={hrefFor?.(t.id)} onOpen={onOpen} />
+    <WorkRow key={t.id} t={t} active={t.id === activeId} now={now} href={hrefFor?.(t.id)} onOpen={onOpen} actions={rowActions} />
   );
 
   return (
@@ -311,16 +401,20 @@ export function CodeShellList({ onNavigate }: { onNavigate?: () => void }) {
     if (ids.includes(activeConversationId ?? "")) router.push("/code");
     router.refresh();
   };
-  const { runs, reachableFor } = useCodeRuns({ enabled: true, perConversation: true });
+  const { runs, reachableFor, openPrUrls, openPageWasFull } = useCodeRuns({ enabled: true, perConversation: true });
   const live = React.useSyncExternalStore(subscribeThreadStates, threadStatesSnapshot, () => EMPTY);
 
+  const newest = React.useMemo(
+    () =>
+      newestPerConversation(
+        runs,
+        (run) => run.conversationId,
+        (run) => run.createdAt,
+      ),
+    [runs],
+  );
   const runStates = React.useMemo(() => {
     const out = new Map<string, ThreadState>();
-    const newest = newestPerConversation(
-      runs,
-      (run) => run.conversationId,
-      (run) => run.createdAt,
-    );
     for (const [conversationId, run] of newest) {
       const reachable = reachableFor(run);
       const state = runState(run, reachable);
@@ -328,14 +422,28 @@ export function CodeShellList({ onNavigate }: { onNavigate?: () => void }) {
       out.set(conversationId, threadStateFromRun(state, isBlockedOnYou(run, reachable)));
     }
     return out;
-  }, [runs, reachableFor]);
+  }, [newest, reachableFor]);
+  // A session whose pull request merged or closed settles by itself.
+  const settled = React.useMemo(
+    () => settledByPullRequest(conversations, newest, (run) => prSettled(run, openPrUrls, openPageWasFull)),
+    [conversations, newest, openPrUrls, openPageWasFull],
+  );
 
-  const threads = React.useMemo(() => shellThreads(conversations, runStates, live), [conversations, runStates, live]);
+  const threads = React.useMemo(() => shellThreads(conversations, runStates, live, settled), [conversations, runStates, live, settled]);
   // The route names the open session; off a session route, the open
   // conversation does, when it is one of these sessions.
   const activeId =
     pathname?.match(/^\/(?:code|chat)\/([^/?#]+)/)?.[1] ??
     (activeConversationId && threads.some((t) => t.id === activeConversationId) ? activeConversationId : undefined);
 
-  return <CodeWorkList removalTargets={removalTargets} onRemoveProject={removeProject} threads={threads} activeId={activeId} hrefFor={(id) => `/code/${id}`} onOpen={() => onNavigate?.()} />;
+  // The same verbs as the open session's own menu (session-actions.tsx), with its dialogs.
+  const session = useCodeSessionActions();
+  const rowActions: WorkRowActions = { rename: session.rename, setPinned: session.setPinned, share: session.requestShare, archive: session.archive, remove: session.requestDelete };
+
+  return (
+    <>
+      <CodeWorkList removalTargets={removalTargets} onRemoveProject={removeProject} threads={threads} activeId={activeId} hrefFor={(id) => `/code/${id}`} onOpen={() => onNavigate?.()} rowActions={rowActions} />
+      {session.ui}
+    </>
+  );
 }

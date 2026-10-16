@@ -144,6 +144,31 @@
 .cv2-crumb .slash { color: hsl(var(--muted-foreground) / 0.6); font-weight: 400; }
 .cv2-crumb .title { display: inline-flex; align-items: center; gap: 4px; min-width: 0; border-radius: 6px; padding: 2px 4px; margin-left: -4px; color: hsl(var(--foreground)); transition: background-color var(--dur-fast, 120ms); }
 .cv2-crumb .title:hover, .cv2-crumb .title[aria-expanded="true"] { background: hsl(var(--accent)); }
+/* Inline rename (double-click the title, or Session › Rename): the title's own box, now a field. */
+.cv2-crumb .cv2-title-edit { min-width: 120px; width: min(360px, 40vw); height: 26px; margin-left: -4px; padding: 0 6px; border-radius: 6px; font: inherit; color: hsl(var(--foreground)); background: hsl(var(--background)); box-shadow: 0 0 0 1px var(--cv2-edge), 0 0 0 3px hsl(var(--ring) / 0.18); outline: none; }
+
+/* Under a settled answer: Copy, Good / Bad response, Retry. Quiet until the turn is pointed at,
+   except on the newest answer (the one people act on) and on touch, which never hovers. */
+.cv2-answer-actions { display: flex; align-items: center; gap: 2px; margin: 2px 0 6px -6px; opacity: 0; transition: opacity var(--dur-fast, 120ms) var(--ease-out-soft, ease-out); }
+.cv2-turn:hover .cv2-answer-actions, .cv2-answer-actions:focus-within, .cv2-answer-actions[data-latest="true"] { opacity: 1; }
+@media (hover: none) { .cv2-answer-actions { opacity: 1; } }
+.cv2-answer-actions .cv2-iconbtn[aria-pressed="true"] { background: transparent; color: hsl(var(--foreground)); }
+.cv2-answer-actions .cv2-iconbtn[aria-pressed="true"]:hover { background: hsl(var(--accent)); }
+
+/* New agents since the Agents tab was last looked at: a count on the panel button, in ink
+   (coral stays reserved for working and needs-you). */
+.cv2-badged { position: relative; }
+.cv2-badge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font-size: 12px; line-height: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: hsl(var(--background)); background: hsl(var(--foreground)); box-shadow: 0 0 0 2px hsl(var(--background)); pointer-events: none; animation: cv2-badge-in var(--dur-fast, 120ms) var(--ease-out-soft, ease-out) both; }
+@keyframes cv2-badge-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+
+/* One quiet line under the empty-state composer (first run: Connections, offered, not opened). */
+.cv2-hint { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 0 2px 0 4px; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); animation: cv2-fade var(--dur-base, 200ms) var(--ease-out-soft, ease-out) both; }
+.cv2-hint .cv2-link { font-size: 12px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: hsl(var(--muted-foreground) / 0.5); }
+.cv2-hint .cv2-iconbtn { width: 24px; height: 24px; }
+
+/* Destructive menu row (Session › Delete). */
+.cv2-mi.danger { color: hsl(var(--destructive)); }
+.cv2-mi.danger .cv2-ic { color: inherit; }
 .cv2-top-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; position: relative; }
 .cv2-body { position: relative; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 .cv2-thread-col { position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -622,10 +647,7 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 .dark .cv2-palette, .dark .cv2-sheet { border: 0; }
 
 /* Toast */
-.cv2-toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; border-radius: 12px; background: hsl(var(--popover)); box-shadow: var(--cv2-shadow-pop), 0 0 0 1px var(--cv2-pop-edge); font-size: 14px; animation: cv2-toast-in var(--dur-mid) var(--cv2-ease) both; }
-@keyframes cv2-toast-in { from { opacity: 0; transform: translate(-50%, calc(4px * var(--motion-shift, 1))); } to { opacity: 1; transform: translateX(-50%); } }
-.cv2-toast[data-state="closed"] { animation: cv2-toast-out var(--cv2-exit-mid) var(--ease-in) both; pointer-events: none; }
-@keyframes cv2-toast-out { to { opacity: 0; transform: translate(-50%, calc(4px * var(--motion-shift, 1))); } }
+/* No toast of its own: Code uses the app's (sonner), so one screen never shows two systems. */
 
 /* ── Narrow layouts ─────────────────────────────────────────────────── */
 @media (max-width: 1279px) { .cv2-dock { min-width: 400px; } }

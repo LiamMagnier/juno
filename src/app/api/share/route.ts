@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
-import { createShare, listShares, serializeShare, ShareTakenDownError } from "@/lib/share";
+import { createShare, listShares, serializeShare, ShareNeedsTranscriptError, ShareTakenDownError, ShareTranscriptRefusedError } from "@/lib/share";
 import { artifactWriteLimited } from "@/lib/artifact-rate-limit";
+import { sanitizeSharedTranscript, type SharedTranscriptEntry } from "@/lib/share-transcript";
 
 export const runtime = "nodejs";
 
@@ -28,10 +29,14 @@ const createSchema = z
     kind: z.enum(["CHAT", "ARTIFACT"]),
     conversationId: z.string().cuid().optional(),
     artifactId: z.string().cuid().optional(),
+    // A Code session whose transcript lives on the user's Mac sends it with
+    // the link (src/lib/share-transcript.ts re-checks, bounds and redacts it).
+    transcript: z.array(z.unknown()).optional(),
   })
   .refine((d) => (d.kind === "CHAT" ? !!d.conversationId : !!d.artifactId), {
     message: "Target id is required",
-  });
+  })
+  .refine((d) => d.kind === "CHAT" || d.transcript === undefined, { message: "Only a chat link takes a transcript" });
 
 /**
  * Create a link, or return the target's newest active one. An explicit action:
@@ -52,13 +57,23 @@ export async function POST(req: Request) {
   const { kind, conversationId, artifactId } = parsed.data;
   const targetId = kind === "CHAT" ? conversationId! : artifactId!;
 
+  let transcript: SharedTranscriptEntry[] | undefined;
+  if (parsed.data.transcript !== undefined) {
+    const checked = sanitizeSharedTranscript(parsed.data.transcript);
+    if (!checked.ok) return NextResponse.json({ error: checked.error, code: "transcript_invalid" }, { status: 400 });
+    transcript = checked.entries;
+  }
+
   // createShare owner-checks the target and reuses the newest active link.
   let share;
   try {
-    share = await createShare(user.id, kind, targetId);
+    share = await createShare(user.id, kind, targetId, transcript ? { transcript } : {});
   } catch (err) {
     if (err instanceof ShareTakenDownError) {
       return NextResponse.json({ error: err.message, code: "share_taken_down" }, { status: 403 });
+    }
+    if (err instanceof ShareTranscriptRefusedError || err instanceof ShareNeedsTranscriptError) {
+      return NextResponse.json({ error: err.message, code: "transcript_invalid" }, { status: 400 });
     }
     throw err;
   }

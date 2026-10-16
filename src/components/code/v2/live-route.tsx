@@ -22,6 +22,7 @@ import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstanc
 import { legacyToItems, type LegacySessionInput } from "@/lib/code-v2/legacy-adapter";
 import { fallbackSetupCommand, managedSetup } from "@/lib/code-v2/providers-view";
 import { queueReducer, type QueueRow } from "@/lib/code-v2/composer";
+import { overlayQueue, promoteOutcomeMessage, queueErrorMessage, reconcileQueueOps, type QueueOp } from "@/lib/code-v2/queue-sync";
 import { routingAvoidsAlevrBilling } from "@/lib/code-v2/role-routing";
 import { sessionItems } from "@/lib/code-v2/session-store";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
@@ -47,9 +48,16 @@ import { useThreadDraftSync } from "@/lib/sync/thread-draft-client";
 import type { Attachment, TurnItem } from "@/lib/code-v2/contracts";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 import type { DraftChannel } from "./types";
+import { transcriptFromTurns } from "@/lib/share-transcript";
+import { registerSessionTranscript, useCodeSessionActions } from "./session-actions";
+import { useAnswerFeedback } from "./use-answer-feedback";
+import { useCodePrefs } from "./use-code-prefs";
 
 /** A thread with no skills chosen, as one stable value. */
 const NO_SKILLS: SkillActivation[] = [];
+
+let opCounter = 0;
+const newOpId = () => `qop${Date.now().toString(36)}${(opCounter++).toString(36)}`;
 
 export interface CodeV2RouteProps {
   conversation: {
@@ -150,11 +158,37 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   const selection = reconcileSelection(instances, prefs.selection, { awaitingDevice });
   const selectionListed = instances.some((i) => i.id === selection.instanceId && i.models?.some((m) => m.id === selection.model));
   const [routing, setRoutingState] = React.useState<RoleRouting>({ preset: "solo", orchestrator: selection });
+  // A team set before the thread's own routing has been read (the team chip seeds a fresh-looking
+  // thread from the project's last team or the account default the moment it mounts, and a Mac
+  // thread looks fresh until its log arrives) waits here: a stored team wins, and nothing
+  // overwrites it on the server.
+  const routingLoaded = React.useRef(false);
+  const earlyRouting = React.useRef<RoleRouting | null>(null);
+  const latestPersistRouting = React.useRef<(r: RoleRouting) => void>(() => undefined);
+  // This browser already ran this thread on a Mac: it only looked fresh while its log loaded,
+  // and a Solo thread stays Solo (a default is for new sessions).
+  const ranOnMacHere = React.useRef(!!storedSession);
   React.useEffect(() => {
+    routingLoaded.current = false;
+    earlyRouting.current = null;
+    let live = true;
     fetch(`/api/code/routing/${conversation.id}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((b: { routing?: RoleRouting | null } | null) => b?.routing && setRoutingState(b.routing))
-      .catch(() => undefined);
+      .then((b: { routing?: RoleRouting | null } | null) => {
+        if (!live) return;
+        if (b?.routing) setRoutingState(b.routing);
+        else if (earlyRouting.current && ranOnMacHere.current) setRoutingState((r) => ({ preset: "solo", orchestrator: r.orchestrator }));
+        else if (earlyRouting.current) latestPersistRouting.current(earlyRouting.current);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!live) return;
+        routingLoaded.current = true;
+        earlyRouting.current = null;
+      });
+    return () => {
+      live = false;
+    };
   }, [conversation.id]);
   const effectiveRouting: RoleRouting = { ...routing, orchestrator: selection };
 
@@ -179,7 +213,13 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
 
   const items = useEnv && env.view ? sessionItems(env.view) : legacy.items;
   const state = useEnv && env.view ? env.view.state : legacy.state;
-  const queue: QueueRow[] = useEnv && env.view ? env.view.queue.map((q) => ({ id: q.id, text: q.input.text })) : localQueue;
+  // A Mac thread's queue is the env server's; Remove / Edit / reorder / Steer now are requests to it,
+  // drawn optimistically until its queue shows them (lib/code-v2/queue-sync.ts).
+  const viewQueue = useEnv && env.view ? env.view.queue : null;
+  const serverQueue = React.useMemo<QueueRow[]>(() => (viewQueue ?? []).map((q) => ({ id: q.id, text: q.input.text })), [viewQueue]);
+  const [queueOps, setQueueOps] = React.useState<QueueOp[]>([]);
+  React.useEffect(() => setQueueOps((ops) => reconcileQueueOps(serverQueue, ops)), [serverQueue]);
+  const queue: QueueRow[] = viewQueue ? overlayQueue(serverQueue, queueOps) : localQueue;
 
   // Drain the local queue when a CodeTask run settles.
   React.useEffect(() => {
@@ -209,7 +249,14 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   }, [state]);
 
   const cwd = conversation.codeWorkspacePath ?? "";
-  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode);
+  // A thread that never chose a mode starts from its project's last, then the account's default.
+  // The account's default reaches only a thread with nothing in it yet (a new session). A thread
+  // that already ran without choosing a mode keeps what it ran with (its project's last, else
+  // Accept edits): a default changed in Settings, or read on another browser where this thread
+  // has no stored choice, never moves an existing session to a different access level.
+  const { prefs: account } = useCodePrefs();
+  const accountPair = account.runtimeMode && items.length === 0 ? { runtimeMode: account.runtimeMode, interactionMode: account.interactionMode } : null;
+  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode, accountPair);
   /**
    * The modes a send reads. Set at once by a mode change, so `/plan fix the
    * build` sends under Plan in the same tick it switched (state lands a render later).
@@ -218,6 +265,11 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   modesRef.current = { runtimeMode, interactionMode };
   /** This thread's mode was chosen (here, on the landing or on another device), not just defaulted. */
   const modeChosen = React.useRef(false);
+  // The first send pins the pair it ran with, so the thread's mode is its own from then on.
+  const pinModeOnSend = () => {
+    const pair = modesRef.current;
+    if (!prefs.runtimeMode) setPrefs((p) => (p.runtimeMode ? p : { ...p, ...pair }));
+  };
   const rememberMode = (pair: ProjectModeDefault) => {
     modesRef.current = pair;
     modeChosen.current = true;
@@ -309,9 +361,53 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   }, [liveView, envClient]);
   const skills = useCodeSkills({ threadKey: conversation.id, snapshotSkills: env.view?.skills, listLocal, remote: remoteSkills, listRevision: env.skillsRevision, localKind: envClient ? "mac" : cloudRepoKey ? "repo" : undefined });
 
+  // Session menu verbs, shared with the sidebar row's menu; its dialogs render below.
+  const sessionActions = useCodeSessionActions();
+  const pinned = conversations.find((c) => c.id === conversation.id)?.pinned ?? false;
+  // A Mac thread's transcript is not on the server: a share link carries it (messages and answers only).
+  const itemsRef = React.useRef(items);
+  itemsRef.current = items;
+  const onMac = useEnv && !!env.view;
+  React.useEffect(() => {
+    if (!onMac) return;
+    return registerSessionTranscript(conversation.id, () => transcriptFromTurns(itemsRef.current));
+  }, [onMac, conversation.id]);
+  const feedback = useAnswerFeedback({
+    conversationId: conversation.id,
+    onMac,
+    items,
+    legacyMessages: session.messages as unknown as { id: string; feedback?: "UP" | "DOWN" | null }[],
+    setLegacyFeedback: session.setFeedback,
+    model: selection.model,
+  });
+
+  /**
+   * A queue change on a Mac thread: drawn at once, sent to the env server, and
+   * taken back (with the reason) if the Mac refuses it. False off a Mac thread,
+   * where the CodeTask path's client-side queue is the real one.
+   */
+  const onMacQueue = (op: QueueOp, run: (client: NonNullable<typeof env.client>, sessionId: string) => Promise<unknown>): boolean => {
+    const client = env.client;
+    const sessionId = env.view?.id;
+    if (!useEnv || !client || !sessionId) return false;
+    setQueueOps((ops) => [...ops, op]);
+    run(client, sessionId).catch((e) => {
+      setQueueOps((ops) => ops.filter((o) => o.opId !== op.opId));
+      toast.error(queueErrorMessage(e));
+    });
+    return true;
+  };
+
   const persistRouting = (r: RoleRouting) => {
     setRoutingState(r);
     void fetch(`/api/code/routing/${conversation.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routing: r }) }).catch(() => undefined);
+  };
+  latestPersistRouting.current = persistRouting;
+  /** The team chip's setter: drawn at once, but saved only once the thread's own routing is known. */
+  const setRouting = (r: RoleRouting) => {
+    if (routingLoaded.current) return persistRouting(r);
+    earlyRouting.current = r;
+    setRoutingState(r);
   };
 
   /*
@@ -415,6 +511,7 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
       stopAgent: (agentId: string) => { void env.client!.request("agent.interrupt", { sessionId: env.view!.id, agentId }).catch((e) => toast.error(e.message)); },
     } : {}),
     async send(text, attachments = []) {
+      pinModeOnSend();
       if (useEnv && env.client) {
         const client = env.client;
         const files = await filesForMac(attachments, text);
@@ -478,7 +575,7 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
       setPrefs((p) => ({ ...p, selection: sel }));
       publishChoices({ selection: sel });
     },
-    setRouting: persistRouting,
+    setRouting,
     setRuntimeMode: (m) => {
       rememberMode({ runtimeMode: m, interactionMode });
       setPrefs((p) => ({ ...p, runtimeMode: m, interactionMode: p.interactionMode ?? interactionMode }));
@@ -494,22 +591,69 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
       setPrefs((p) => ({ ...p, interactionMode: m, runtimeMode: p.runtimeMode ?? runtimeMode }));
       publishChoices({ interactionMode: m });
     },
-    editQueued: (id, text) => setLocalQueue((q) => queueReducer(q, { type: "edit", id, text })),
-    removeQueued: (id) => setLocalQueue((q) => queueReducer(q, { type: "remove", id })),
-    moveQueued: (id, to) => setLocalQueue((q) => queueReducer(q, { type: "move", id, to })),
+    editQueued(id, text) {
+      if (onMacQueue({ opId: newOpId(), kind: "edit", id, text }, (client, sessionId) => client.request("queue.edit", { sessionId, queuedId: id, text }))) return;
+      setLocalQueue((q) => queueReducer(q, { type: "edit", id, text }));
+    },
+    removeQueued(id) {
+      const sent = onMacQueue({ opId: newOpId(), kind: "remove", id }, async (client, sessionId) => {
+        const { removed } = await client.request("queue.remove", { sessionId, queuedId: id });
+        if (!removed) toast.message("That message had already started, so it stays in the thread.");
+      });
+      if (!sent) setLocalQueue((q) => queueReducer(q, { type: "remove", id }));
+    },
+    moveQueued(id, to) {
+      if (onMacQueue({ opId: newOpId(), kind: "move", id, to }, (client, sessionId) => client.request("queue.move", { sessionId, queuedId: id, to }))) return;
+      setLocalQueue((q) => queueReducer(q, { type: "move", id, to }));
+    },
     steerQueued(id) {
       const row = queue.find((q) => q.id === id);
       if (!row) return;
+      // Steer now on a Mac thread is one step on the env server: never steered AND left queued.
+      const op: QueueOp = { opId: newOpId(), kind: "remove", id };
+      const sent = onMacQueue(op, async (client, sessionId) => {
+        const { outcome } = await client.request("queue.promote", { sessionId, queuedId: id });
+        const note = promoteOutcomeMessage(outcome);
+        // "next": it stays queued, at the front. Stop hiding it.
+        if (outcome === "next") setQueueOps((ops) => ops.filter((o) => o.opId !== op.opId));
+        if (note) toast.message(note);
+      });
+      if (sent) return;
       setLocalQueue((q) => queueReducer(q, { type: "take", id }));
       const files = queuedFiles.current.get(id) ?? [];
       queuedFiles.current.delete(id);
       void actions.steer(row.text, files);
     },
     rollback: useEnv
-      ? (checkpointId) => {
-          if (env.client && env.view) void env.client.request("checkpoint.rollback", { sessionId: env.view.id, checkpointId });
+      ? async (checkpointId) => {
+          if (!env.client || !env.view) return false;
+          try {
+            await env.client.request("checkpoint.rollback", { sessionId: env.view.id, checkpointId });
+            return true;
+          } catch (e) {
+            // Said, not swallowed: Edit and Retry stop here rather than send over the old files.
+            toast.error(e instanceof Error && e.message ? e.message : "Could not restore that checkpoint on your Mac.");
+            return false;
+          }
         }
       : undefined,
+    // Retry and the error row's Retry: the turn's own message again (with its attachments on a Mac thread).
+    async resend(message) {
+      if (useEnv && env.client) {
+        const sessionId = await ensureEnvSession();
+        return env.client.request("turn.start", {
+          sessionId,
+          input: { text: message.text, ...(message.attachments?.length ? { attachments: message.attachments } : {}) },
+          selection,
+          routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting,
+          runtimeMode,
+          interactionMode,
+        });
+      }
+      return sendLegacy(message.text);
+    },
+    feedbackFor: (turnId) => feedback.get(turnId),
+    setFeedback: (turnId, value) => feedback.set(turnId, value),
     approvePlan(itemId, approve) {
       const planId = itemId.replace(/^plan-/, "");
       if (useEnv && env.client && env.view) void env.client.request("approval.respond", { sessionId: env.view.id, requestId: planId, decision: approve ? "accept" : "decline" });
@@ -580,10 +724,12 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
     terminalResize: env.ready ? env.resizeTerminal : undefined,
     closeTerminal: env.ready ? env.closeTerminal : undefined,
     openTerminal: env.ready ? (command) => void env.openTerminal(cwd, command) : undefined,
-    renameThread: (title) => {
-      updateConversation(conversation.id, { title });
-      void fetch(`/api/conversations/${conversation.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }).catch(() => undefined);
-    },
+    // The session menu (session-actions.tsx): the same verbs as the sidebar row's menu.
+    renameThread: (title) => sessionActions.rename(conversation.id, title),
+    pinThread: (pinned) => sessionActions.setPinned(conversation.id, pinned),
+    shareThread: () => sessionActions.requestShare(conversation.id),
+    archiveThread: () => sessionActions.archive(conversation.id),
+    deleteThread: () => sessionActions.requestDelete(conversation.id),
   };
 
   /*
@@ -678,10 +824,12 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   const model: WorkspaceModel = {
     thread: {
       id: conversation.id,
-      title: conversation.title || "Code session",
+      // The app's copy first: a rename (here or from the sidebar) shows at once.
+      title: conversations.find((c) => c.id === conversation.id)?.title || conversation.title || "Code session",
       repo: meta.repoOwner && meta.repoName ? `${meta.repoOwner}/${meta.repoName}` : (conversation.codeWorkspaceName ?? "Code session"),
       branch: meta.branch ?? undefined,
       cwd,
+      pinned,
     },
     items: firstItems ?? items,
     // Paging belongs to the CodeTask transcript; the env server's view arrives whole.
@@ -716,42 +864,45 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   };
 
   return (
-    <CodeWorkspace
-      model={model}
-      sidebar={false}
-      byok={byok}
-      // Never over a task the landing just sent: the Connections sheet used to open as the first prompt went.
-      firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && items.length === 0 && !firstItems && !handoff.pending()}
-      onProbe={env.ready ? env.probe : undefined}
-      onRefreshSubscriptions={env.refreshSubscriptions}
-      onManaged={
-        env.ready && env.client
-          ? (instanceId, op) => {
-              if (!env.client) throw new Error("Your Mac is not connected.");
-              return managedCall(env.client, instanceId, op);
-            }
-          : undefined
-      }
-      onSetup={async (instance, action) => {
-        const managed = managedSetup(instance, action);
-        if (managed && env.client) {
-          if (managed.type === "provider.install") await env.client.request("provider.install", managed.params);
-          else await env.client.request("provider.auth", managed.params);
-          return;
+    <>
+      <CodeWorkspace
+        model={model}
+        sidebar={false}
+        byok={byok}
+        // Never over a task the landing just sent: the Connections sheet used to open as the first prompt went.
+        firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && items.length === 0 && !firstItems && !handoff.pending()}
+        onProbe={env.ready ? env.probe : undefined}
+        onRefreshSubscriptions={env.refreshSubscriptions}
+        onManaged={
+          env.ready && env.client
+            ? (instanceId, op) => {
+                if (!env.client) throw new Error("Your Mac is not connected.");
+                return managedCall(env.client, instanceId, op);
+              }
+            : undefined
         }
-        let command: string | null = null;
-        if (env.client) {
-          try {
-            const { step } = await env.client.request("provider.setup", { instanceId: instance.id, action });
-            command = step?.command ?? null;
-          } catch {
-            command = null;
+        onSetup={async (instance, action) => {
+          const managed = managedSetup(instance, action);
+          if (managed && env.client) {
+            if (managed.type === "provider.install") await env.client.request("provider.install", managed.params);
+            else await env.client.request("provider.auth", managed.params);
+            return;
           }
-        }
-        command ??= fallbackSetupCommand(instance, action);
-        if (!command) throw new Error("Alevr does not know this runtime's command yet. Run it yourself, then press Re-check.");
-        await env.openTerminal(cwd || "~", command, action === "install" ? `Install ${instance.label}` : `Sign in to ${instance.label}`);
-      }}
-    />
+          let command: string | null = null;
+          if (env.client) {
+            try {
+              const { step } = await env.client.request("provider.setup", { instanceId: instance.id, action });
+              command = step?.command ?? null;
+            } catch {
+              command = null;
+            }
+          }
+          command ??= fallbackSetupCommand(instance, action);
+          if (!command) throw new Error("Alevr does not know this runtime's command yet. Run it yourself, then press Re-check.");
+          await env.openTerminal(cwd || "~", command, action === "install" ? `Install ${instance.label}` : `Sign in to ${instance.label}`);
+        }}
+      />
+      {sessionActions.ui}
+    </>
   );
 }

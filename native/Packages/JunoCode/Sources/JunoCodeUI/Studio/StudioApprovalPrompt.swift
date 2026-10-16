@@ -177,7 +177,10 @@ struct StudioApprovalPrompt: View {
             }
             return .handled
         }
-        .onKeyPress(.escape) {
+        // Denial is an explicit act: ⌘⌫, never a stray Esc (Esc leaves the
+        // request waiting, as in the v2 takeover and on the web).
+        .onKeyPress(.delete, phases: .down) { press in
+            guard press.modifiers.contains(.command), !redirectFocused else { return .ignored }
             Task { await controller.deny(request.id) }
             return .handled
         }

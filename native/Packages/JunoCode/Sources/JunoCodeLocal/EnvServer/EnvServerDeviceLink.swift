@@ -113,6 +113,9 @@ public actor EnvServerDeviceLink {
         // Access lane: the composer's access picker on the phone, applied to
         // the thread at once (a waiting approval included).
         .sessionSetMode,
+        // Queue lane: Remove, Edit, reorder and Steer now on the thread's own
+        // queue (session-scoped, checked like every other session command).
+        .queueRemove, .queueEdit, .queueMove, .queuePromote,
     ]
     /// Commands this app answers itself (``hostHandler``) instead of the env server.
     public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture, .hostUpload, .projectRemove]
@@ -436,7 +439,7 @@ public actor EnvServerDeviceLink {
             return linkedTerminals.contains(id) ? nil : "Open the terminal first."
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
              .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .skillsSelect,
-             .sessionSetMode:
+             .sessionSetMode, .queueRemove, .queueEdit, .queueMove, .queuePromote:
             // A session in a shared folder may be answered from the phone's
             // notification without opening it first (and after this app restarts).
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }

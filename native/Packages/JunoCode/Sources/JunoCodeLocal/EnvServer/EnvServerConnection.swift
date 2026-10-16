@@ -367,6 +367,36 @@ public extension EnvServerConnection {
         return try await request(.turnQueue, params: P(sessionId: sessionId, input: input), as: QueueResult.self).queuedId
     }
 
+    // MARK: Queue lane: the session's own queue (every device hears `queue.updated`).
+
+    /// Takes a queued message out. False when it had already left the queue.
+    func queueRemove(sessionId: String, queuedId: String) async throws -> Bool {
+        struct P: Encodable { let sessionId: String; let queuedId: String }
+        struct R: Decodable { let removed: Bool }
+        return try await request(.queueRemove, params: P(sessionId: sessionId, queuedId: queuedId), as: R.self).removed
+    }
+
+    /// Replaces a queued message's text; empty text removes it.
+    func queueEdit(sessionId: String, queuedId: String, text: String) async throws -> Bool {
+        struct P: Encodable { let sessionId: String; let queuedId: String; let text: String }
+        struct R: Decodable { let updated: Bool }
+        return try await request(.queueEdit, params: P(sessionId: sessionId, queuedId: queuedId, text: text), as: R.self).updated
+    }
+
+    /// Moves a queued message to index `to`.
+    func queueMove(sessionId: String, queuedId: String, to: Int) async throws -> Bool {
+        struct P: Encodable { let sessionId: String; let queuedId: String; let to: Int }
+        struct R: Decodable { let moved: Bool }
+        return try await request(.queueMove, params: P(sessionId: sessionId, queuedId: queuedId, to: to), as: R.self).moved
+    }
+
+    /// Steer now, in one step on the env server: "steered", "next", "started" or "gone".
+    func queuePromote(sessionId: String, queuedId: String) async throws -> String {
+        struct P: Encodable { let sessionId: String; let queuedId: String }
+        struct R: Decodable { let outcome: String }
+        return try await request(.queuePromote, params: P(sessionId: sessionId, queuedId: queuedId), as: R.self).outcome
+    }
+
     func turnInterrupt(sessionId: String, turnId: String?) async throws {
         struct P: Encodable { let sessionId: String; let turnId: String? }
         _ = try await send(.turnInterrupt, params: P(sessionId: sessionId, turnId: turnId))

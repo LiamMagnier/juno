@@ -101,6 +101,8 @@ function ApprovalTakeover({
   onShowDiff?: () => void;
 }) {
   const req = requests[Math.min(index, requests.length - 1)];
+  // Deny is ⌘⌫ (keymap.ts); a stray Esc never answers a request.
+  const mac = useIsMac();
   const primary = React.useRef<HTMLButtonElement>(null);
   const [answers, setAnswers] = React.useState<Record<string, string[]>>({});
   const [other, setOther] = React.useState("");
@@ -156,7 +158,7 @@ function ApprovalTakeover({
           <div className="cv2-approve-actions">
             <span className="spacer" />
             {opts.includes("decline") && (
-              <button type="button" className="cv2-btn ghost" title="Deny (Esc)" onClick={() => onRespond(req.requestId, "decline")}>
+              <button type="button" className="cv2-btn ghost" title={mac ? "Deny (⌘⌫)" : "Deny (Ctrl+Backspace)"} onClick={() => onRespond(req.requestId, "decline")}>
                 Deny
               </button>
             )}
@@ -211,7 +213,7 @@ function ApprovalTakeover({
           ))}
           <div className="cv2-approve-actions">
             <span className="spacer" />
-            <button type="button" className="cv2-btn ghost" title="Skip (Esc)" onClick={() => onRespond(req.requestId, "decline")}>
+            <button type="button" className="cv2-btn ghost" title={mac ? "Skip (⌘⌫)" : "Skip (Ctrl+Backspace)"} onClick={() => onRespond(req.requestId, "decline")}>
               Skip
             </button>
             <button

@@ -13,6 +13,7 @@ import type {
   SessionState,
   SessionUsage,
   TurnItem,
+  UserMessageItem,
 } from "@/lib/code-v2/contracts";
 import type { QueueRow } from "@/lib/code-v2/composer";
 import type { DockTab } from "@/lib/code-v2/dock";
@@ -80,6 +81,8 @@ export interface WorkspaceThread {
   repo: string;
   branch?: string;
   cwd?: string;
+  /** Pinned in the sidebar (session menu says Unpin). */
+  pinned?: boolean;
 }
 
 export interface WorkspaceActions {
@@ -103,7 +106,13 @@ export interface WorkspaceActions {
   compact?(instructions?: string): void;
   /** `/clear`: a fresh thread in the same project (`draft` becomes its draft), without spending a turn. */
   clearThread?(draft?: string): void;
-  rollback?(checkpointId: string): void;
+  /** Resolves once the host answered, false when it could not restore the files (Edit and Retry wait for it). */
+  rollback?(checkpointId: string): void | Promise<boolean | void>;
+  /** Sends a turn's opening message again, with its attachments where the host can (Retry). */
+  resend?(message: UserMessageItem): void | Promise<unknown>;
+  /** The verdict on a turn's answer, and setting it (null clears). */
+  feedbackFor?(turnId: string): "UP" | "DOWN" | null;
+  setFeedback?(turnId: string, value: "UP" | "DOWN" | null): void;
   /**
    * A hunk decision. `file` is the parsed file the hunk belongs to (the host
    * builds the patch from it). Resolving `false` means the host could not
@@ -127,6 +136,11 @@ export interface WorkspaceActions {
   closeTerminal?(terminalId: string): void;
   openTerminal?(command?: string): void;
   renameThread?(title: string): void;
+  /** Session menu (lib: session-actions.tsx): pin, share a read-only link, archive with Undo, delete after a confirm. */
+  pinThread?(pinned: boolean): void;
+  shareThread?(): void;
+  archiveThread?(): void;
+  deleteThread?(): void;
 }
 
 export interface WorkspaceModel {

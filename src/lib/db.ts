@@ -274,6 +274,9 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["DevicePair", "userId"],
   ["PairingToken", "userId"],
   ["ThreadSync", "userId"],
+  // Thumbs on answers in Mac-hosted Code sessions (/api/code/feedback): every
+  // call filters on the requester's userId.
+  ["CodeTurnFeedback", "userId"],
 ]);
 
 /**
