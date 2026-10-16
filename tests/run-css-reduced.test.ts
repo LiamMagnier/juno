@@ -45,7 +45,8 @@ function compiled(): string {
 const REDUCED_SCOPE = ':where([data-motion^="reduce"], [data-motion^="reduce"] *)';
 
 test("the run tokens, the z rung and the print rule landed", () => {
-  for (const token of ["--loop-beat: 1.2s;", "--loop: 2.4s;", "--loop-calm: 4.8s;", "--z-panel: 30;", "--spring-pop-dur: 370ms;"]) {
+  // `--spring-pop` is retired onto the reward spring (wave 2 D28), aliased until its uses move.
+  for (const token of ["--loop-beat: 1.2s;", "--loop: 2.4s;", "--loop-calm: 4.8s;", "--z-panel: 30;", "--spring-pop-dur: var(--spring-reward-dur);"]) {
     assert.ok(css.includes(token), `${token} is missing`);
   }
   assert.ok(css.indexOf("--z-panel: 30;") < css.indexOf("--z-aura: 40;"));

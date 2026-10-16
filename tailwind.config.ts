@@ -6,8 +6,9 @@ import containerQueries from "@tailwindcss/container-queries";
 /*
  * Juno design tokens (Slice 0 — Foundation)
  * -----------------------------------------
- * Type scale ............ text-{display,page-title,title,heading,body-lg,body,ui,label,caption,micro}
- *                         (+ legacy `hero`) · serif = human moments · sans = UI body · mono = labels/metadata
+ * Type scale ............ text-{home-title,display,page-title,title,heading,body-lg,reading,body,nav,ui,label,kbd}
+ *                         (+ marketing `hero`; `caption` deprecated and `micro` retired, both 12px) ·
+ *                         serif = human moments · sans = UI body · mono = labels/metadata/keycaps
  * Motion ................ ease-{out-soft,out-strong,out-expo,in,in-out,breathe,out-back,spring,drawer} ·
  *                         duration-{press,fast,exit,base,slow,emphasis}
  *                         (mirrored as --ease-* / --dur-* in globals.css, where the
@@ -64,6 +65,8 @@ const config: Config = {
         presence: {
           DEFAULT: "hsl(var(--presence) / <alpha-value>)",
           ink: "hsl(var(--presence-ink) / <alpha-value>)",
+          // The finished-away wash (C22); carries its own alpha.
+          wash: "hsl(var(--presence-wash))",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
@@ -83,6 +86,32 @@ const config: Config = {
         // weaker than one the pointer is merely over. `secondary` is a tonal
         // fill (bubbles, tracks, badges), not a state. See globals.css.
         selected: "hsl(var(--selected) / <alpha-value>)",
+        // Wave 2 roles (globals.css §3.1). `muted-on-fill` is quiet text on a
+        // hover or selected fill, where `muted-foreground` fails AA; the
+        // bubble-hover fill is for controls drawn on the user bubble.
+        "muted-on-fill": "hsl(var(--muted-foreground-on-fill) / <alpha-value>)",
+        "ink-tertiary": "hsl(var(--ink-tertiary) / <alpha-value>)",
+        "user-bubble": {
+          DEFAULT: "hsl(var(--user-bubble) / <alpha-value>)",
+          hover: "hsl(var(--user-bubble-hover) / <alpha-value>)",
+        },
+        // The status roles (§3.4). StatusMark and every status consumer read
+        // these, never presence / signal / destructive directly, so the
+        // needs-you mapping (sign-off S1) changes in globals.css alone.
+        status: {
+          running: "hsl(var(--status-running) / <alpha-value>)",
+          "needs-you": "hsl(var(--status-needs-you) / <alpha-value>)",
+          "needs-you-ink": "hsl(var(--status-needs-you-ink) / <alpha-value>)",
+          ready: "hsl(var(--status-ready) / <alpha-value>)",
+          blocked: "hsl(var(--status-blocked) / <alpha-value>)",
+        },
+        signal: {
+          DEFAULT: "hsl(var(--signal) / <alpha-value>)",
+          ink: "hsl(var(--signal-ink) / <alpha-value>)",
+          // Carries its own alpha (0.14 / 0.18): never add a second one.
+          wash: "hsl(var(--signal-wash))",
+        },
+        attention: "hsl(var(--attention) / <alpha-value>)",
         popover: {
           DEFAULT: "hsl(var(--popover) / <alpha-value>)",
           foreground: "hsl(var(--popover-foreground) / <alpha-value>)",
@@ -201,6 +230,12 @@ const config: Config = {
         // so a shell that got 2px rounder hands its children a share of it.
         "composer-control": "10px",
         "composer-action": "12px",
+        // The one user bubble (spec D6, sign-off S3): card radius, with an 8px
+        // tuck on the logical end-end corner — `rounded-bubble
+        // rounded-ee-bubble-tuck`, which mirrors in RTL. Mirrored as
+        // --radius-bubble / --radius-bubble-tuck in globals.css for CSS recipes.
+        bubble: "12px",
+        "bubble-tuck": "8px",
         // Provider/product marks. A PERCENTAGE, not px, so one value is one shape
         // at every size — 24% is the iOS app-icon superellipse ratio these marks
         // are imitating. Owned by <ProviderLogo>; call sites must not override it.
@@ -422,9 +457,24 @@ const config: Config = {
          * display tracking, so an app page opens in the homepage's voice.
          *   m = 3.125cqi, b = 12px = 0.75rem
          */
+        //
+        // Wave 2 (spec §3.5): Newsreader 500 — every app h1, Settings
+        // included, sets this rung in `font-serif`. Below a 640px viewport it
+        // is a fixed 1.75rem (globals.css, `.text-page-title` in utilities),
+        // which a clamp keyed to the column cannot say.
         "page-title": [
           "clamp(2rem, 0.75rem + 3.125cqi, 2.75rem)",
-          { lineHeight: "1.08", letterSpacing: "-0.03em", fontWeight: "600" },
+          { lineHeight: "1.08", letterSpacing: "-0.03em", fontWeight: "500" },
+        ],
+        /*
+         * The home greeting (spec §3.5, C3): Newsreader 400, one step under
+         * `display` at the narrow end and over it at the wide one, keyed to the
+         * column like the rungs above.
+         *   home-title  34px → 50px : m = 2.2cqi, b = 24px = 1.5rem
+         */
+        "home-title": [
+          "clamp(2.125rem, 1.5rem + 2.2cqi, 3.125rem)",
+          { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "400" },
         ],
         title: [
           "1.375rem",
@@ -474,12 +524,10 @@ const config: Config = {
          * and their rhythm comes from the row grid, not from leading.
          */
         ui: ["0.8125rem", { lineHeight: "1.5" }],
-        // Eyebrow/metadata — sizing only; pair with `font-mono` + `uppercase`.
-        // 0.10em is the editorial maximum for caps: above ~0.12em uppercase
-        // micro-labels stop grouping into words and read as decoration. It is also
-        // the most likely SC 1.4.12 failure in the tree, since tracking stacks with
-        // a user-forced 0.12em on fixed-height chips. AsciiWordmark keeps its own
-        // 0.12em — that is a logotype, not a label.
+        // All metadata and section headings (spec §3.5): JetBrains Mono 500,
+        // sentence case, tabular figures. globals.css gives `.text-label` the
+        // mono face and tabular-nums at zero specificity (`:where`), so an
+        // explicit `font-sans` beside it still wins.
         /*
          * 0.01em, down from 0.10em. A tenth of an em is a CAPS tracking: caps
          * are all the same height with no ascenders or descenders to separate
@@ -492,22 +540,25 @@ const config: Config = {
           "0.75rem",
           { lineHeight: "1.4", letterSpacing: "0.01em", fontWeight: "500" },
         ],
-        caption: ["0.6875rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
         /*
-         * The mono metadata floor — token counts, model ids, timestamps, the
-         * smallest eyebrow chips. Pair with `font-mono` (and often
-         * `uppercase`), like `label` two rungs up. 10.5px, deliberately ABOVE
-         * the 10px (139 sites) and 9px (20 sites) it replaces: below ~10.5px
-         * the mono face's hairline strokes start losing whole pixels to
-         * antialiasing on 1x displays, and most of these sites are
-         * muted-foreground on top of that — the floor is where the smallest
-         * voice in the product stays legible rather than decorative. (The half
-         * pixel rounds per-DPR at 1x and renders true at 2x.) Tracking stays
-         * at caption's 0.02em, far under label's 0.10em: mono's fixed advance
-         * already separates glyphs, and at this size added air reads as gaps
-         * between letters, not as an eyebrow.
+         * THE TYPE FLOOR (spec D16, owner sign-off S4): 12px on the web. The
+         * two rungs under it are lifted here, in one place, which raises every
+         * one of their ~1,344 uses at once; each package then moves its own
+         * uses to the semantic rung (`label` for metadata, `ui` for controls).
+         * `caption` is a deprecated name for 12px sans; `micro` is RETIRED and
+         * aliased to it until its last use moves. The transcript-chrome lint
+         * (eslint-rules) flags both inside the turn body, the composer,
+         * tooltips, notifications and the sidebar.
          */
-        micro: ["0.65625rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
+        caption: ["0.75rem", { lineHeight: "1.4" }],
+        micro: ["0.75rem", { lineHeight: "1.4" }],
+        /*
+         * The one rung under the floor, and only for keycaps and count badges of
+         * up to three characters (Kbd and Badge; the lint keeps it there). 11px
+         * mono — globals.css gives `.text-kbd` the mono face and tabular
+         * figures, which a fontSize entry cannot.
+         */
+        kbd: ["0.6875rem", { lineHeight: "1.45" }],
       },
       /*
        * Text colour is NOT the same ramp as fill colour.
@@ -605,25 +656,20 @@ const config: Config = {
         // Agents (docs/design/agents-rework/DIRECTION.md): a face changing its
         // look in the studio, and a new agent arriving. Spring overshoot, once.
         "studio-swap": {
-          "0%": { opacity: "0.55", transform: "scale(0.9)" },
-          "60%": { opacity: "1", transform: "scale(1.04)" },
+          "0%": { opacity: "0.55", transform: "scale(calc(1 - 0.1 * var(--motion-shift, 1)))" },
+          "60%": { opacity: "1", transform: "scale(calc(1 + 0.04 * var(--motion-shift, 1)))" },
           "100%": { opacity: "1", transform: "scale(1)" },
         },
         "agent-arrive": {
-          "0%": { opacity: "0", transform: "scale(0.6) translateY(12px)" },
-          "55%": { opacity: "1", transform: "scale(1.06) translateY(0)" },
+          "0%": { opacity: "0", transform: "scale(calc(1 - 0.4 * var(--motion-shift, 1))) translateY(calc(12px * var(--motion-shift, 1)))" },
+          "55%": { opacity: "1", transform: "scale(calc(1 + 0.06 * var(--motion-shift, 1))) translateY(0)" },
           "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
         },
-        // A new turn in the transcript (owner, 2026-10-08: new content fades in as it is
-        // revealed): the rise-in's settle, a touch longer, out of a slight blur.
-        "turn-in": {
-          from: {
-            opacity: "0",
-            transform: "translateY(calc(8px * var(--motion-shift, 1)))",
-            filter: "blur(4px)",
-          },
-          to: { opacity: "1", transform: "translateY(0)", filter: "blur(0)" },
-        },
+        // `turn-in` (420ms out of a 4px blur) is RETIRED (spec C1): no entrance
+        // blurs, and the assistant turn's root does not animate at all. The
+        // user bubble rises with `animate-rise-user`; parts settle with
+        // `animate-settle-part`. Both keyframes live in globals.css, beside
+        // the tier table, so plain CSS rules can name them too.
         "rise-in": {
           from: {
             opacity: "0",
@@ -822,7 +868,7 @@ const config: Config = {
         // One-shot flourish when the thumb lands on the top tier.
         "ultra-pop": {
           "0%": { transform: "translateY(-50%) scale(1)" },
-          "45%": { transform: "translateY(-50%) scale(1.18)" },
+          "45%": { transform: "translateY(-50%) scale(calc(1 + 0.18 * var(--motion-shift, 1)))" },
           "100%": { transform: "translateY(-50%) scale(1)" },
         },
       },
@@ -836,21 +882,26 @@ const config: Config = {
         // fault the accordion pair above was fixed for.
         "fade-in": "fade-in var(--dur-base) var(--ease-out-soft)",
         "fade-in-up": "fade-in-up var(--dur-base) var(--ease-out-soft)",
-        "pulse-ring": "pulse-ring 1.6s var(--ease-breathe) infinite",
+        "pulse-ring": "pulse-ring var(--loop-breathe) var(--ease-breathe) infinite",
         // One-shot variant (quiz correct-answer flourish) — the arbitrary
         // [animation-iteration-count:1] override does NOT work on animate-*
         // utilities (the shorthand re-declares iteration-count later in the
         // stylesheet at equal specificity), so a named one-shot is required.
-        "pulse-ring-once": "pulse-ring 1.6s var(--ease-breathe) 1 both",
+        "pulse-ring-once": "pulse-ring var(--loop-breathe) var(--ease-breathe) 1 both",
         // linear: the band exits one edge and teleports to the other, so there is
         // no turn to ease — an eased sweep decelerates into the seam and jumps.
-        blink: "blink 1.1s steps(1) infinite",
+        blink: "blink var(--loop-beat) steps(1) infinite",
         // 6px of travel is a --dur-base move on the default decelerate; the
         // old slow/out-strong pairing was sized for the 8px it no longer has.
         "rise-in": "rise-in var(--dur-base) var(--ease-out-soft)",
-        "turn-in": "turn-in 420ms var(--ease-out-soft) both",
+        // The user bubble lands (C1): a 6px × shift rise over the fast rung,
+        // painted within 100ms of Enter. Keyframe in globals.css.
+        "rise-user": "rise-user var(--dur-fast) var(--ease-out-soft) both",
+        // An answer part arriving mid-stream: 4px × shift over the base rung,
+        // no blur. Keyframe in globals.css.
+        "settle-part": "settle-part var(--dur-base) var(--ease-out-soft) both",
         "studio-swap": "studio-swap var(--dur-emphasis) var(--ease-spring) both",
-        "agent-arrive": "agent-arrive 640ms var(--ease-spring) both",
+        "agent-arrive": "agent-arrive var(--dur-emphasis) var(--ease-spring) both",
         // Drawers (sheet.tsx). Enter on the drawer curve at --dur-base — a
         // 280px panel wants ~240ms — and leave faster on the accelerate, as
         // every exit here does.
@@ -865,7 +916,7 @@ const config: Config = {
         // A loop turns around at both ends, so it takes the symmetric curve —
         // `ease-in-out` the keyword is NOT --ease-in-out the token, and neither
         // is the loop curve. See --ease-breathe.
-        "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
+        "icon-breathe": "icon-breathe var(--loop-galaxy) var(--ease-breathe) infinite",
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).

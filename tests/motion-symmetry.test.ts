@@ -67,8 +67,10 @@ test("route changes crossfade under reduced motion instead of cutting", () => {
 test("view transitions: list to thread and docked to fullscreen canvas", () => {
   const css = read("src/app/globals.css");
   assert.match(css, /html\[data-vt="thread"\] \.app-page \{ view-transition-name: app-page; \}/);
-  assert.match(css, /@keyframes vt-page-in \{ from \{ opacity: 0; transform: translateY\(calc\(6px \* var\(--motion-shift, 1\)\)\); \} \}/);
-  assert.match(css, /html\[data-vt\="thread"\]::view-transition-old\(app-page\) \{\s*animation: vt-page-out calc\(var\(--dur-base\) \* 0\.65\) var\(--ease-in\) both;/);
+  // Wave 2 (spec C18): the new page rises 4px × shift over the exit rung, the
+  // old one leaves over the fast rung on the accelerate (P1 owns the CSS).
+  assert.match(css, /@keyframes vt-page-in \{ from \{ opacity: 0; transform: translateY\(calc\(4px \* var\(--motion-shift, 1\)\)\); \} \}/);
+  assert.match(css, /html\[data-vt\="thread"\]::view-transition-old\(app-page\) \{\s*animation: vt-page-out var\(--dur-fast\) var\(--ease-in\) both;/);
   assert.match(css, /::view-transition-group\(canvas-panel\)/);
   assert.match(read("src/components/app/app-sidebar.tsx"), /openWithViewTransition\(event, router, `\/chat\/\$\{conversation\.id\}`\)/);
   assert.match(read("src/components/projects/project-chat-list.tsx"), /openWithViewTransition\(event, router, `\/chat\/\$\{chat\.id\}`\)/);
