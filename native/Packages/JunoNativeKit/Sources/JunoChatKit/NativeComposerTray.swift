@@ -178,6 +178,7 @@ struct NativeTrayMenu<Label: View, Content: View>: View {
         .fixedSize()
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(identifier)
+        .contentShape(.rect)
         #if os(macOS)
         .help(accessibilityLabel)
         #endif
@@ -566,6 +567,7 @@ struct NativeTraySoundPill: View {
         .accessibilityValue(on ? "On" : "Off")
         .accessibilityAddTraits(on ? .isSelected : [])
         .accessibilityIdentifier(identifier)
+        .contentShape(.rect)
     }
 }
 
@@ -599,6 +601,7 @@ struct NativeTrayLengthControl: View {
         .fixedSize()
         .accessibilityLabel("\(control.option.label): \(control.chip)")
         .accessibilityIdentifier(identifier)
+        .contentShape(.rect)
         .popover(isPresented: $open, arrowEdge: .top) {
             panel
                 #if os(iOS)

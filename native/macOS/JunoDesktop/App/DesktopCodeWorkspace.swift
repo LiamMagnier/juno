@@ -2028,6 +2028,7 @@ private struct DesktopCodeRemoteCanvas: View {
                 Task { await remote.pollEvents(deviceID: deviceID, sessionID: sessionID) }
             }
             .buttonStyle(.junoGlass)
+            .contentShape(.capsule)
             .controlSize(.small)
         }
         .padding(.horizontal, JunoSpace.snug)
@@ -2101,6 +2102,7 @@ private struct DesktopCodeRelayApproval: View {
             HStack(spacing: JunoSpace.snug) {
                 Spacer(minLength: 0)
                 Button("Deny", role: .destructive) { respond(false) }
+                    .contentShape(.rect)
                     .keyboardShortcut(.escape, modifiers: .shift)
                 // The one primary action on the card, so it keeps the accent —
                 // `code-session-view.tsx` gives its own Allow button the default
@@ -2108,6 +2110,7 @@ private struct DesktopCodeRelayApproval: View {
                 // where the web puts it; it left the places the web does not.
                 Button("Approve") { respond(true) }
                     .buttonStyle(.junoProminent)
+                    .contentShape(.capsule)
                     .tint(Color.junoAccent)
                     .keyboardShortcut(.return, modifiers: .shift)
             }

@@ -73,6 +73,7 @@ struct StudioConversationMessageRow: View {
                             .font(Studio.Font.metaEmphasis)
                             .foregroundStyle(Studio.Ink.primary)
                             .accessibilityHint("Opens \(event.peerTitle)")
+                            .contentShape(.rect)
                     }
                 }
                 if event.direction != .notice, !event.text.isEmpty {

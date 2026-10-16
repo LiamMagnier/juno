@@ -749,7 +749,10 @@ struct CodeV2ScreenBusyPanel: View {
         }
         .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .junoGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // A panel in the pane's column is content, so it is opaque: the raised
+        // fill and a hairline, never glass (§0.1).
+        .background(Studio.Surface.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Studio.Surface.hairline))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(busy.title)
     }

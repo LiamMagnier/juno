@@ -205,12 +205,14 @@ struct PreviewPaneView: View {
                 .buttonStyle(StudioQuietButtonStyle())
                 .help("Stop this server")
                 .accessibilityIdentifier("juno.code.preview.stop")
+                .contentShape(.rect)
         } else {
             Button("Start") { lease.requestStart() }
                 .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
                 .disabled(lease.selectedConfiguration == nil && lease.catalog.defaultConfiguration == nil)
                 .help(lease.selectedConfiguration.map { "Run \(PreviewConfigurationDescription.commandText($0))" } ?? "No server to start")
                 .accessibilityIdentifier("juno.code.preview.start")
+                .contentShape(.rect)
         }
     }
 
@@ -237,6 +239,7 @@ struct PreviewPaneView: View {
         .disabled(lease.page == nil)
         .help("Device size: \(lease.page?.viewport.preset.title ?? "Responsive")")
         .accessibilityLabel("Device size")
+        .contentShape(.rect)
     }
 
     private var deviceIcon: JunoIcon {
@@ -273,6 +276,7 @@ struct PreviewPaneView: View {
         .disabled(lease.page == nil)
         .help("Appearance: \(lease.page?.viewport.colorScheme.title ?? "System")")
         .accessibilityLabel("Appearance")
+        .contentShape(.rect)
     }
 
     private var moreMenu: some View {
@@ -301,6 +305,7 @@ struct PreviewPaneView: View {
         .fixedSize()
         .help("More")
         .accessibilityLabel("More preview options")
+        .contentShape(.rect)
     }
 
     private func openAddress() {
@@ -420,6 +425,7 @@ struct PreviewBannerRow: View {
             ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
                 Button(action.0, action: action.1)
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.snug)
@@ -461,14 +467,18 @@ struct PreviewEmptyState: View {
                 .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous))
                 HStack {
                     Button("Start again") { lease.requestStart() }.buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                        .contentShape(.rect)
                     Button("Show log", action: showLog).buttonStyle(StudioQuietButtonStyle())
+                        .contentShape(.rect)
                 }
             case let .exited(code)?:
                 Text("\(lease.selectedName ?? "The server") stopped on its own (exit code \(code))")
                     .font(Studio.Font.labelEmphasis)
                 HStack {
                     Button("Start again") { lease.requestStart() }.buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                        .contentShape(.rect)
                     Button("Show log", action: showLog).buttonStyle(StudioQuietButtonStyle())
+                        .contentShape(.rect)
                 }
             default:
                 idle
@@ -492,9 +502,11 @@ struct PreviewEmptyState: View {
                 .multilineTextAlignment(.center)
             HStack {
                 Button("Start") { lease.requestStart() }.buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .contentShape(.rect)
                 if configuration.source == .discovered {
                     Button("Save to \(lease.catalog.editableFileRelativePath)") { lease.saveConfiguration(configuration.name) }
                         .buttonStyle(StudioQuietButtonStyle())
+                        .contentShape(.rect)
                 }
             }
             if configuration.source == .discovered {
@@ -519,10 +531,12 @@ struct PreviewEmptyState: View {
                 if lease.catalog.hasXcodeProject, let openSimulator = lease.simulatorOpener {
                     Button("Open the Simulator") { openSimulator() }
                         .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                        .contentShape(.rect)
                 }
                 if lease.hasEditableFile, let url = lease.launchFileURL {
                     Button("Edit \(lease.catalog.editableFileRelativePath)") { NSWorkspace.shared.open(url) }
                         .buttonStyle(StudioQuietButtonStyle())
+                        .contentShape(.rect)
                 }
             }
         }
@@ -564,6 +578,7 @@ struct PreviewDiscoveredList: View {
                         Button("Start") { lease.startConfiguration(configuration.name) }
                             .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
                             .accessibilityIdentifier("juno.code.preview.start.\(configuration.name)")
+                            .contentShape(.rect)
                     }
                     .padding(.horizontal, JunoSpace.cozy)
                     .padding(.vertical, JunoSpace.snug)
@@ -619,9 +634,11 @@ struct PreviewConfigApprovalCard: View {
                     .keyboardShortcut(.cancelAction).contentShape(.rect)
                 Button("Start once", action: startOnce)
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                    .contentShape(.rect)
                 Button("Always for this configuration", action: always)
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
                     .help("Remembered on this Mac for these exact bytes; any change asks again")
+                    .contentShape(.rect)
             }
         }
         .accessibilityElement(children: .contain)
@@ -675,6 +692,7 @@ struct PreviewLogDrawer: View {
                 Button(action: close) { JunoIconView(.chevronDown, size: 14) }
                     .buttonStyle(StudioIconButtonStyle())
                     .help("Hide the log")
+                    .contentShape(.rect)
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.hairline)
@@ -810,6 +828,7 @@ struct PreviewSecretsSheet: View {
                 Button("Done", action: done)
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
                     .keyboardShortcut(.defaultAction)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.region)
@@ -834,6 +853,7 @@ struct PreviewSecretsSheet: View {
                         reload()
                     }
                     .buttonStyle(StudioQuietButtonStyle())
+                    .contentShape(.rect)
                 }
             }
         }

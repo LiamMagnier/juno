@@ -42,7 +42,7 @@ struct DesktopSettingsScreen: View {
         if let code = section.studioSection {
             VStack(spacing: 0) {
                 DesktopSettingsPageLead(title: section == .code ? "Session defaults" : section.label, lede: "")
-                    .padding(.horizontal, 28).padding(.top, 24)
+                    .padding(.horizontal, JunoSpace.wide).padding(.top, JunoSpace.section)
                 StudioSettingsView(workbench: context.services.codeWorkbench, initialSection: code, embedded: true)
                     .id(section)
             }

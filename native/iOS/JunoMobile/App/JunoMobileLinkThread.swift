@@ -631,6 +631,8 @@ struct JunoMobileLinkSubagentRow: View {
           .lineLimit(2)
       }
     }
+    // The whole row, not just its glyphs, opens the trace.
+    .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityHint("Open the agent’s full trace")
@@ -758,7 +760,9 @@ struct JunoMobileLinkApprovalCard: View {
     .padding(.horizontal, JunoSpace.cozy)
     .padding(.top, JunoSpace.cozy)
     .padding(.bottom, JunoSpace.micro)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    // Something to read and answer, so it is opaque: the card fill and its
+    // hairline, never glass.
+    .junoCard(cornerRadius: 22)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("juno.mobile.link-approval")
   }
@@ -776,7 +780,9 @@ struct JunoMobileLinkSmallButton: View {
         .font(.subheadline.weight(.medium))
         .foregroundStyle(prominent ? Color.junoCanvas : Color.primary)
         .padding(.horizontal, JunoSpace.regular)
-        .frame(height: 32)
+        // At least 32, so the capsule grows with Dynamic Type instead of
+        // clipping its title.
+        .frame(minHeight: 32)
         .background {
           if prominent {
             Capsule().fill(Color.junoAccent)
@@ -784,7 +790,8 @@ struct JunoMobileLinkSmallButton: View {
             Capsule().fill(Color.junoMuted)
           }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, JunoSpace.tight)
+        .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoPress)
@@ -821,7 +828,8 @@ struct JunoMobileLinkQuestionCard: View {
                 .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 36)
                 .background(Color.junoMuted.opacity(chosen ? 1 : 0.5), in: Capsule())
-                .padding(.vertical, 4)
+                .padding(.vertical, JunoSpace.hairline)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
@@ -844,7 +852,7 @@ struct JunoMobileLinkQuestionCard: View {
     .padding(.horizontal, JunoSpace.cozy)
     .padding(.top, JunoSpace.cozy)
     .padding(.bottom, JunoSpace.micro)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    .junoCard(cornerRadius: 22)
     .accessibilityIdentifier("juno.mobile.link-question")
   }
 
@@ -918,6 +926,7 @@ struct JunoMobileLinkAgentsView: View {
             }) { JunoMarkdownText(result).textSelection(.enabled) }
             if model.canControlSubagents, selected.status == .running || selected.status == .waiting {
               Button("Stop agent") { Task { await model.interruptAgent(selected.agentId) } }
+                .contentShape(.rect)
               HStack {
                 TextField("Message this agent", text: $message, axis: .vertical).lineLimit(1...4)
                 Button("Send") {
@@ -930,7 +939,9 @@ struct JunoMobileLinkAgentsView: View {
                     if accepted { if message == text { message = "" }; deliveryError = nil }
                     else { deliveryError = model.lastError ?? "Your message could not be delivered. It is still here." }
                   }
-                }.disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .contentShape(.rect)
               }
               if let deliveryError { JunoInlineError(message: deliveryError) }
             }

@@ -98,7 +98,12 @@ struct JunoMobileLinkAttachmentStrip: View {
         JunoIconView(.close, size: 10)
           .foregroundStyle(Color.junoSecondaryInk)
           .frame(width: 28, height: 36)
+          // A 44pt touch in the chip's 28 × 36 of layout: the frame takes the
+          // touch, the negative insets hand the extra back.
+          .frame(minWidth: 44, minHeight: 44)
           .contentShape(Rectangle())
+          .padding(.horizontal, -JunoSpace.snug)
+          .padding(.vertical, -JunoSpace.hairline)
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Remove \(file.name)")

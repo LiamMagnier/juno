@@ -675,6 +675,7 @@ public struct NativeTrayPopoverChip<Label: View, Panel: View>: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Opens a list")
         .accessibilityIdentifier(identifier)
+        .contentShape(.rect)
         #if os(macOS)
         .help(help ?? accessibilityLabel)
         #endif
