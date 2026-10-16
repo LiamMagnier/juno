@@ -149,6 +149,7 @@ const isCss = (context) => /\.css(?:\/|$)/.test(context.physicalFilename ?? cont
 // CSS: a processor that keeps line numbers, and a declaration scanner
 // ---------------------------------------------------------------------------
 
+/** @type {import("eslint").Linter.Processor} */
 export const cssProcessor = {
   meta: { name: "wave2-css" },
   preprocess(text) {
@@ -244,6 +245,7 @@ const MOTION_KEYS = new Set(["ease", "type", "bounce", "stiffness", "damping", "
 const TIME_PROPS = new Set(["transition", "transitionDuration", "transitionDelay", "animation", "animationDuration", "animationDelay"]);
 const CSS_TIME_PROPS = new Set(["transition", "transition-duration", "transition-delay", "animation", "animation-duration", "animation-delay"]);
 
+/** @type {import("eslint").Rule.RuleModule} */
 const offLadderDuration = {
   meta: {
     type: "problem",
@@ -316,6 +318,7 @@ const offLadderDuration = {
   },
 };
 
+/** @type {import("eslint").Rule.RuleModule} */
 const noTextTokenOpacity = {
   meta: {
     type: "problem",
@@ -339,6 +342,7 @@ const noTextTokenOpacity = {
   },
 };
 
+/** @type {import("eslint").Rule.RuleModule} */
 const transcriptChromeType = {
   meta: {
     type: "problem",
@@ -378,6 +382,7 @@ const transcriptChromeType = {
 const ENTRANCE_KEYS = new Set(["initial", "hidden", "from", "enter", "exit", "start", "0%", "out"]);
 const blurValue = (value) => /blur\(\s*(?!0(?:px|rem|em)?\s*\))[\d.]/.test(value);
 
+/** @type {import("eslint").Rule.RuleModule} */
 const noBlurEntrance = {
   meta: {
     type: "problem",
@@ -411,6 +416,7 @@ const noBlurEntrance = {
   },
 };
 
+/** @type {import("eslint").Rule.RuleModule} */
 const noBackdropFilter = {
   meta: {
     type: "problem",
@@ -453,6 +459,7 @@ const noBackdropFilter = {
   },
 };
 
+/** @type {import("eslint").Rule.RuleModule} */
 const guardedMotionOverrides = {
   meta: {
     type: "problem",
@@ -491,6 +498,7 @@ const guardedMotionOverrides = {
 
 const PRESENCE_HEX = /#(?:2d49c9|97a6e6)\b/gi;
 
+/** @type {import("eslint").Rule.RuleModule} */
 const noRawPresenceHex = {
   meta: {
     type: "problem",
@@ -515,6 +523,7 @@ const noRawPresenceHex = {
   },
 };
 
+/** @type {import("eslint").Rule.RuleModule} */
 const noMutedOnFill = {
   meta: {
     type: "problem",
@@ -549,6 +558,7 @@ export const rules = {
 /** The rules that read stylesheets through the processor. */
 export const CSS_RULES = ["off-ladder-duration", "no-blur-entrance", "no-backdrop-filter", "guarded-motion-overrides", "no-raw-presence-hex"];
 
+/** @type {import("eslint").ESLint.Plugin} */
 export const plugin = { meta: { name: "wave2" }, rules, processors: { css: cssProcessor } };
 
 const severity = (level, names) => Object.fromEntries(names.map((name) => [`wave2/${name}`, level]));
@@ -557,6 +567,9 @@ const severity = (level, names) => Object.fromEntries(names.map((name) => [`wave
  * The flat-config entries: every rule warns on `src/**` TypeScript and on the
  * repository's stylesheets; the enforce globs (eslint-rules/enforce/*.json)
  * turn them into errors.
+ *
+ * @param {{ enforce?: { web?: string[] } }} [options]
+ * @returns {import("eslint").Linter.Config[]}
  */
 export function wave2Configs({ enforce = { web: [] } } = {}) {
   const tsRules = Object.keys(rules);

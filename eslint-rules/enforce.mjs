@@ -23,9 +23,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-/** The enforce files under `<root>/eslint-rules/enforce`, merged. */
+/**
+ * The enforce files under `<root>/eslint-rules/enforce`, merged.
+ *
+ * @param {string} [root]
+ */
 export function loadEnforce(root = process.cwd()) {
   const dir = path.join(root, "eslint-rules", "enforce");
+  /** @type {{ web: string[], native: string[], packages: Array<{ file: string, package: string, web: string[], native: string[] }> }} */
   const out = { web: [], native: [], packages: [] };
   let names = [];
   try {
@@ -54,7 +59,11 @@ export function loadEnforce(root = process.cwd()) {
   return out;
 }
 
-/** A repo-relative glob as a RegExp: `**` any depth, `*` and `?` within a segment, `{a,b}` alternatives. */
+/**
+ * A repo-relative glob as a RegExp: `**` any depth, `*` and `?` within a segment, `{a,b}` alternatives.
+ *
+ * @param {string} glob
+ */
 export function globToRegExp(glob) {
   let re = "";
   for (let i = 0; i < glob.length; i += 1) {
@@ -88,7 +97,12 @@ export function globToRegExp(glob) {
   return new RegExp(`^${re}$`);
 }
 
-/** Whether a repo-relative path (forward slashes) matches any of the globs. */
+/**
+ * Whether a repo-relative path (forward slashes) matches any of the globs.
+ *
+ * @param {string} relativePath
+ * @param {string[]} globs
+ */
 export function matchesAny(relativePath, globs) {
   const normal = relativePath.split(path.sep).join("/").replace(/^\.\//, "");
   return globs.some((glob) => globToRegExp(glob).test(normal));
