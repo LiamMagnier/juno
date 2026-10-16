@@ -258,8 +258,9 @@ private struct CodeApprovalActivityView: View {
 
 /// `openAppWhenRun` is required — a Lock Screen button has no background
 /// runtime to talk to the relay with, so the intent hands the decision to the
-/// app through the same deep link a tap on the card would produce, and the
-/// app's existing authenticated client sends it.
+/// app through the same deep link a tap on the card would produce. The app
+/// asks the owner to confirm (`JunoMobileApprovalGate`) before its
+/// authenticated client sends it.
 struct JunoMobileApprovalIntent: AppIntent {
   static let title: LocalizedStringResource = "Respond to Alevr Code approval"
   static let openAppWhenRun = true

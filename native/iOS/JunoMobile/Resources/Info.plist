@@ -50,6 +50,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Alevr uses the camera to take a photo for a message, to show Alevr what you are looking at during a voice conversation, and to scan the code that pairs this iPhone with your Mac. Screen sharing in voice uses only what is on this screen.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Alevr asks for Face ID before it sends your answer to a request from Alevr Code on your Mac, when that answer comes from a link, a Live Activity or a notification rather than from inside the app.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Alevr uses the microphone for voice conversations and to dictate a message instead of typing it. Audio is only captured while a call or dictation is running.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
