@@ -140,6 +140,9 @@ test("a row inserted into the transcript restyles that row, not the transcript",
   // (PERFORMANCE.md, "Row insertion restyle"; tests/sibling-invalidation-guard
   // keeps such rules out of the stylesheets, this catches any that arrive another way).
   await open(page);
+  // A web font landing inside the trace restyles the whole page by itself, and
+  // the max below would read it as the insert's cost.
+  await page.evaluate(() => document.fonts.ready.then(() => true));
   await page.waitForTimeout(1000);
   const cdp = await page.context().newCDPSession(page);
   const counts: number[] = [];

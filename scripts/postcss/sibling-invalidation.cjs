@@ -40,8 +40,12 @@ function selectorParser(transform) {
   return require("postcss-selector-parser")(transform);
 }
 
-const TAILWIND_SIBLINGS = /:not\(\[hidden\]\)\s*~\s*:not\(\[hidden\]\)/g;
-const TAILWIND_REPLACEMENT = ":nth-child(n + 2 of :not([hidden]))";
+// Only the exact child form Tailwind writes. The `>` makes the left
+// `:not([hidden])` a whole compound: in `.a:not([hidden]) ~ …` or
+// `.a + :not([hidden]) ~ …` the same text means something else, and rewriting it
+// would change what the rule matches.
+const TAILWIND_SIBLINGS = />\s*:not\(\[hidden\]\)\s*~\s*:not\(\[hidden\]\)/g;
+const TAILWIND_REPLACEMENT = "> :nth-child(n + 2 of :not([hidden]))";
 
 const FORGIVING = new Set([":is", ":where", ":matches", ":-webkit-any"]);
 

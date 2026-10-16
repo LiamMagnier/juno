@@ -74,7 +74,21 @@ test("Tailwind's space and divide selectors become positional, same elements and
     sibling.rewriteTailwindSiblings(".\\[\\&_ul\\]\\:space-y-2 ul > :not([hidden]) ~ :not([hidden])"),
     ".\\[\\&_ul\\]\\:space-y-2 ul > :nth-child(n + 2 of :not([hidden]))",
   );
+  assert.equal(
+    sibling.rewriteTailwindSiblings(".x>:not([hidden])~:not([hidden])"),
+    ".x> :nth-child(n + 2 of :not([hidden]))",
+  );
   assert.equal(sibling.rewriteTailwindSiblings(".vs-face + .vs-face"), ".vs-face + .vs-face");
+  // The same text where `:not([hidden])` is not a whole compound after `>` means
+  // something else, and must be left alone.
+  for (const other of [
+    ".a:not([hidden]) ~ :not([hidden])",
+    ".a > .b:not([hidden]) ~ :not([hidden])",
+    ".a + :not([hidden]) ~ :not([hidden])",
+    ".a ~ :not([hidden]) ~ :not([hidden])",
+  ]) {
+    assert.equal(sibling.rewriteTailwindSiblings(other), other, other);
+  }
 });
 
 function stylesheets(): string[] {
