@@ -33,8 +33,8 @@ test.describe("Regenerate with a switched model", () => {
   test("switch-model retry sends the override and keeps both versions", async ({ page }) => {
     const firstModel = await sendTurn(page, `Regen probe: reply with the exact token ${TOKEN}.`);
 
-    // The actions row reveals on hover; the Regenerate ▾ trigger is only on
-    // the last assistant message while idle.
+    // The actions row reveals on hover; the Regenerate ▾ trigger is on every
+    // answer while idle (an earlier one regenerates as a new branch).
     const lastAssistant = page.locator(".prose-juno").last();
     await lastAssistant.hover();
     await page.getByRole("button", { name: "Regenerate" }).click();
@@ -66,7 +66,7 @@ test.describe("Regenerate with a switched model", () => {
     }
     expect(switched).toBe(true);
 
-    // Both versions survive: the pager reads 2/2 on the regenerated answer.
+    // Both answers survive as branches: the pager reads 2/2 on the new one.
     await expect(page.getByText("2/2").first()).toBeVisible({ timeout: 90_000 });
   });
 });

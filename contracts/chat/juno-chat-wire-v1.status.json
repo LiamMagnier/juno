@@ -29,6 +29,10 @@
     "request.model": "native",
     "request.regenerate": "native",
     "request.regenerateInstruction": "native",
+    "request.regenerateMessageId": {
+      "status": "planned",
+      "note": "Regenerate an earlier answer as a new branch (src/lib/chat/branches.ts). The apps regenerate the newest answer only, and branch locally."
+    },
     "request.voiceMode": {
       "status": "planned",
       "note": "The web sets it for a turn spoken in voice mode; the Mac's voice path does not send it yet."
@@ -216,6 +220,10 @@
     "ClientMessage.versions": {
       "status": "web-only",
       "note": "The Mac's version pager reads /api/messages/{id}/versions."
+    },
+    "ClientMessage.branch": {
+      "status": "planned",
+      "note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server."
     },
     "ClientMessage.attachments": "native",
     "ClientMessage.sources": "native",

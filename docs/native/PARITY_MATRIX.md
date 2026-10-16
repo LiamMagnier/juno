@@ -22,14 +22,14 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-347 routes: 226 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+348 routes: 226 native, 54 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 3 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
@@ -152,7 +152,8 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/conversations/[id]/tasks` | GET | Planned |  | Every task a conversation draws (all live ones plus the newest finished one), for several tasks per conversation. The apps still follow the newest task through /api/work/sessions?conversationId=, which is unchanged. |
 | `/api/folders` | GET, POST | Web only |  | The apps create and rename folders through sync (/api/v1/mutations). |
 | `/api/folders/[id]` | PATCH, DELETE | Web only |  | As /api/folders. |
-| `/api/messages/[id]` | PATCH | Planned |  | Edit-and-resend of a sent question, keeping the old text as a version; the Mac's question editor does not call it. |
+| `/api/messages/[id]` | PATCH | Planned |  | Edit a sent question as a new branch, keeping the old wording and every answer after it; the apps branch locally (NativeBranchNavigator) and do not call it. |
+| `/api/messages/[id]/branch` | POST | Planned |  | Switch the shown branch from the pager under an edited question or a regenerated answer; the apps read only the shown branch and keep their own local tree. |
 | `/api/messages/[id]/feedback` | POST | Native | JunoChatKit |  |
 | `/api/messages/[id]/versions` | GET | Native | JunoChatKit |  |
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
