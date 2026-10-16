@@ -17,6 +17,7 @@ import {
   previewBody,
   previewTarget,
 } from "@/components/work/approvals/action-verbs";
+import { ApprovalFrame, readApprovalFrame, readApprovalPoint } from "@/components/work/approvals/approval-frame";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -105,6 +106,9 @@ export function ApprovalCard({
   const verb = actionVerb(approval.action);
   const body = previewBody(approval.detail, verb);
   const target = previewTarget(approval.detail, verb);
+  // A computer step's screen, as it was just before asking (approval-frame.tsx).
+  const frame = readApprovalFrame(approval.detail);
+  const point = readApprovalPoint(approval.detail);
 
   const parameters = Object.entries(approval.detail).filter(
     ([, value]) =>
@@ -151,6 +155,8 @@ export function ApprovalCard({
           {body !== null && <PreviewBody body={body} as={verb.bodyAs} className={target !== null ? "mt-1" : undefined} />}
         </div>
       )}
+
+      {frame !== null && <ApprovalFrame frame={frame} point={point} className="mt-2.5" />}
 
       <p className="mt-2 text-ui leading-relaxed text-foreground/75">{RISK_CONSEQUENCE[approval.risk]}</p>
 

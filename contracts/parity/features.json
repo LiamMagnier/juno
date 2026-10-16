@@ -655,6 +655,10 @@
           "note": "A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58)."
         },
         "/api/work/runs/[id]/control": "native",
+        "/api/work/runs/[id]/frames/[callId]": {
+          "status": "planned",
+          "note": "One step's screenshot from a cloud computer run, owner only, for the web filmstrip and the marked approval card (src/lib/computer/frames.ts). The apps do not draw the filmstrip or the approval frame yet."
+        },
         "/api/work/sessions": "native",
         "/api/work/sessions/[id]": "native",
         "/api/work/sessions/[id]/answer": "native",

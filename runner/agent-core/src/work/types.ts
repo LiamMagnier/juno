@@ -16,7 +16,7 @@
  */
 
 import type { Usage } from '../types.js';
-import type { ToolDefinition } from '../tools/types.js';
+import type { ToolDefinition, ToolResult } from '../tools/types.js';
 
 // ---------------------------------------------------------------------------
 // Mirrored from src/lib/work/domain.ts
@@ -521,6 +521,63 @@ export interface WorkToolDefinition extends ToolDefinition {
    * Optional input normalizer for `plan.observeToolCall` stall detection.
    */
   signatureInput?(input: Record<string, unknown>): unknown;
+  /**
+   * Where on the screen this call lands, in screenshot pixels, for the ring a
+   * filmstrip draws. Pure: read from the input, never from the screen.
+   */
+  pointFor?(input: Record<string, unknown>): WorkToolPoint | null;
+  /**
+   * A better sentence than `summarize`, and extra approval detail, worked out
+   * just before the call is gated and run (the element under a click, the
+   * screen as it was before acting). Optional and allowed to fail: a preview
+   * that throws or returns null leaves `summarize` and the plain detail.
+   *
+   * Never part of `actionDigest`. The digest is taken over the action, the
+   * tool and the input, so nothing a preview adds can change what an answer
+   * authorises.
+   */
+  preview?(input: Record<string, unknown>, ctx: WorkToolPreviewContext): Promise<WorkToolPreview | null>;
+}
+
+/** A point on the agent's screen, in the pixels of its screenshots. */
+export interface WorkToolPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * One step's screenshot, by reference. The bytes live in the platform's
+ * storage, readable only by the run's owner; events carry the name.
+ */
+export interface WorkToolFrame {
+  ref: string;
+  width: number;
+  height: number;
+}
+
+export interface WorkToolPreviewContext {
+  callId: string;
+  /** True when the call is about to be put to the person. */
+  forApproval: boolean;
+  signal?: AbortSignal;
+}
+
+export interface WorkToolPreview {
+  /** Replaces `summarize` for the approval and `tool_started`. */
+  summary?: string;
+  /** Merged into the approval's `detail` (not its digest). */
+  detail?: Record<string, unknown>;
+}
+
+/**
+ * What a Work tool may hand back beyond a plain `ToolResult`: the step's
+ * stored frame and how long the screen took to settle and be captured. All
+ * optional, and all copied onto `tool_finished` as additive payload keys.
+ */
+export interface WorkToolResult extends ToolResult {
+  frame?: WorkToolFrame;
+  settleMs?: number;
+  captureMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -749,6 +806,8 @@ export type WorkEvent =
       risk: WorkRiskLevel;
       summary: string;
       provenance: WorkProvenance;
+      /** Additive: where a screen action lands (`WorkToolDefinition.pointFor`). */
+      point?: WorkToolPoint;
     }
   | {
       kind: 'tool_finished';
@@ -758,6 +817,12 @@ export type WorkEvent =
       durationMs: number;
       provenance: WorkProvenance;
       injection?: WorkInjectionSummary;
+      /** Additive: the step's stored screenshot, when it has one. */
+      frame?: WorkToolFrame;
+      /** Additive: time spent waiting for the screen to stop changing. */
+      settleMs?: number;
+      /** Additive: time one screen capture took. */
+      captureMs?: number;
     }
   | { kind: 'tool_denied'; callId: string; tool: string; reason: string }
   | { kind: 'question_asked'; question: WorkQuestion }

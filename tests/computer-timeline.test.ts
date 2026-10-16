@@ -171,3 +171,22 @@ test("the component renders the newest step, its ring and the strip, with no sta
   assert.doesNotMatch(folded, /<img/);
   assert.match(folded, /aria-expanded="false"/);
 });
+
+test("ready-made frames render without items, with no stylesheet per instance and the ring outside the scaled box", () => {
+  const frames = buildComputerTimeline([
+    step("1", { action: "screenshot", screenshotRef: "/1.png" }),
+    step("2", { status: "completed", summary: "Clicked “Save”.", screenshotRef: "/2.png", point: { x: 0.1, y: 0.2 } }),
+  ]);
+  const html = renderToStaticMarkup(
+    React.createElement(ComputerTimeline, { frames, frameSize: { width: 1280, height: 800 }, unavailableLabel: "Screenshot is on your Mac" }),
+  );
+  assert.match(html, /2 steps/);
+  assert.match(html, /Clicked “Save”\./);
+  assert.match(html, /aspect-ratio:1280 \/ 800/);
+  assert.doesNotMatch(html, /<style/, "no stylesheet injected per timeline");
+  // The wrapper carries the position and the centring translate; the inner
+  // ring is the one that animates its scale, so the two never fight.
+  assert.match(html, /class="pointer-events-none absolute -translate-x-1\/2 -translate-y-1\/2" style="left:10\.00%;top:20\.00%"/);
+  assert.match(html, /motion-safe:zoom-in-150/);
+  assert.doesNotMatch(html, /animate-\[ct-/, "the old inline keyframes are gone");
+});

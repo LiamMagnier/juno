@@ -350,10 +350,24 @@ function injectSessionState(messages: ChatMessage[], state: string | null | unde
 }
 
 /**
- * Keeps only the newest `keepLast` image parts in `messages`, replacing older
- * `{ type: 'image' }` parts with `OMITTED_SCREENSHOT_MARKER`.
+ * How many screenshots may pile up past `keepLast` before the old ones are
+ * cut. See `pruneOldMessageImages`.
  */
-export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): void {
+export const IMAGE_PRUNE_BATCH = 5;
+
+/**
+ * Keeps the newest `keepLast` image parts in `messages`, replacing older
+ * `{ type: 'image' }` parts with `OMITTED_SCREENSHOT_MARKER`.
+ *
+ * In batches when `batch` is set: the images are allowed to grow to
+ * `keepLast + batch` and are then cut back to `keepLast` in one go. Cutting
+ * one image every step rewrites the transcript at the oldest image on every
+ * request, which is where the provider's prompt cache stops matching — so a
+ * computer run paid again for most of its context once per screenshot. Cut in
+ * a batch, the prefix stays byte-identical for `batch` steps and the cache
+ * holds between cuts. `batch` 0 is the old behaviour: exactly `keepLast`.
+ */
+export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3, batch = 0): void {
   const imageLocations: Array<{ msgIdx: number; partIdx: number }> = [];
   for (let m = 0; m < messages.length; m++) {
     const msg = messages[m];
@@ -364,8 +378,8 @@ export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): vo
       }
     }
   }
+  if (imageLocations.length <= keepLast + Math.max(0, batch)) return;
   const toDrop = imageLocations.length - keepLast;
-  if (toDrop <= 0) return;
   for (let i = 0; i < toDrop; i++) {
     const loc = imageLocations[i]!;
     const msg = messages[loc.msgIdx];
@@ -604,7 +618,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     }
     // After compaction, which may have folded the last state block away.
     if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
-    pruneOldMessageImages(opts.messages, 3);
+    pruneOldMessageImages(opts.messages, 3, IMAGE_PRUNE_BATCH);
     /**
      * The assistant turn as it streamed: text, signed reasoning blocks and
      * tool calls, in arrival order. Order is the point — a provider that

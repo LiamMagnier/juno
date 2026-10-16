@@ -71,6 +71,12 @@ export class FakeProvider implements ComputerProvider {
     command: string,
     opts?: { timeoutSeconds?: number }
   ) => Promise<ExecResult> | ExecResult;
+  /**
+   * Frames a test wants the screen to show, by capture number (0-based), in
+   * place of the plain grey one: a page that is still loading, then settles.
+   */
+  public screenshotHandler?: (handle: ComputerHandle, capture: number) => Promise<Shot> | Shot;
+  private captures = 0;
 
   private record(method: string, ...args: unknown[]) {
     this.calls.push({ method, args });
@@ -85,6 +91,8 @@ export class FakeProvider implements ComputerProvider {
     this.preflightResult = { ok: true };
     this.defaultDiskUsageMb = 42;
     this.execHandler = undefined;
+    this.screenshotHandler = undefined;
+    this.captures = 0;
     this.destroyError = undefined;
   }
 
@@ -206,6 +214,8 @@ export class FakeProvider implements ComputerProvider {
     if (!c || c.state !== "running") {
       throw new Error(`Cannot screenshot non-running fake container: ${handle.name}`);
     }
+    const capture = this.captures++;
+    if (this.screenshotHandler) return await this.screenshotHandler(handle, capture);
     return getGreyShot();
   }
 

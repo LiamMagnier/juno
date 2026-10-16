@@ -15,6 +15,7 @@ import { isTerminalStatus } from "@/lib/work/domain";
 import type { ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
 import { ApprovalQueue } from "@/components/work/approvals/approval-queue";
+import { WorkComputerSteps } from "@/components/work/computer-steps";
 import { WorkDeliverableStage } from "@/components/work/detail/work-deliverable-stage";
 import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
 import { planTally } from "@/components/work/detail/work-progress";
@@ -223,6 +224,10 @@ export function WorkRunPanel({
           )}
         </div>
       </div>
+
+      {/* A cloud computer's steps, outside the live/finished swap so the same
+          filmstrip follows the run and then stays as proof of it. */}
+      <WorkComputerSteps runId={run?.id ?? null} events={work.events} className="px-4 pb-4 @[30rem]:pl-12" />
 
       {hasDetails && (
         <>

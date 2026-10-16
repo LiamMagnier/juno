@@ -67,7 +67,8 @@ import {
 } from "@/lib/work/domain";
 import { WORK_MAX_STEPS_PER_RUN } from "@/lib/work/budget";
 import { createWorkBrowser, sealedResponseHeaders, type WorkBrowser } from "@/lib/work/browser";
-import { connectAgentBrowser } from "@/lib/computer/remote-browser";
+import { canDescribePoints, connectAgentBrowser } from "@/lib/computer/remote-browser";
+import { createRunFrameRecorder, zoomFrame } from "@/lib/computer/frames";
 import { guardBrowserForTakeover, typeInChunks } from "@/lib/computer/takeover";
 import { createCredentialFill } from "@/lib/secrets/browser-fill";
 import { workTaskKey } from "@/lib/secrets/policy";
@@ -1980,8 +1981,21 @@ function buildTools(input: {
       data: shot.jpeg.toString("base64"),
       width: shot.width,
       height: shot.height,
+      // What settling compares between captures (computer-tools.ts).
+      hash: shot.sha256,
     };
   };
+
+  // Every step's frame, kept for the filmstrip and the approval card
+  // (src/lib/computer/frames.ts). The tools hand a frame over only after the
+  // takeover fence has passed it, so nothing captured while the person held
+  // control is ever stored.
+  const stepFrames = input.remoteComputer
+    ? createRunFrameRecorder({ userId: input.userId, runId: input.runId })
+    : null;
+  // The element under a click, in words, when Chromium is the window in front.
+  const pointDescriber =
+    input.remoteComputer && canDescribePoints(input.remoteComputer.browser) ? input.remoteComputer.browser : null;
 
   const remoteComputerTools = input.remoteComputer
     ? runtime.computerTools({
@@ -2031,6 +2045,32 @@ function buildTools(input: {
           bumpEpoch();
           return takeShot();
         },
+        async drag(opts) {
+          const remote = input.remoteComputer!;
+          await remote.attachment.provider.drag(remote.attachment.handle, opts);
+          bumpEpoch();
+          return takeShot();
+        },
+        async zoom(region) {
+          const remote = input.remoteComputer!;
+          const shot = await remote.attachment.provider.screenshot(remote.attachment.handle);
+          setCachedPoster(remote.attachment.agentId, shot);
+          const zoomed = await zoomFrame(shot.jpeg, region, shot);
+          return {
+            mediaType: "image/jpeg" as const,
+            data: zoomed.jpeg.toString("base64"),
+            width: zoomed.width,
+            height: zoomed.height,
+          };
+        },
+        storeFrame: (ref, shot) =>
+          stepFrames!.store(ref, { jpeg: Buffer.from(shot.data, "base64"), width: shot.width, height: shot.height }),
+        ...(pointDescriber
+          ? {
+              describePoint: (x: number, y: number) => pointDescriber.describePoint(x, y),
+              describeFocus: () => pointDescriber.describeFocus(),
+            }
+          : {}),
         async exec(command, opts) {
           const remote = input.remoteComputer!;
           const effectiveCommand = opts.cwd

@@ -62,12 +62,14 @@ export interface ComputerProvider {
   destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void>;
   state(handle: ComputerHandle): Promise<"running" | "paused" | "exited" | "missing">;
   endpoints(handle: ComputerHandle): Promise<Endpoints>;
+  /** One capture of the whole desktop, in a single exec (capture and read together). */
   screenshot(handle: ComputerHandle): Promise<Shot>;
   click(
     handle: ComputerHandle,
     opts: { x: number; y: number; button?: "left" | "right" | "double" }
   ): Promise<void>;
   type(handle: ComputerHandle, text: string): Promise<void>;
+  /** One key or chord, or several separated by spaces ("ctrl+l Return"), pressed in order. */
   key(handle: ComputerHandle, keys: string): Promise<void>;
   scroll(
     handle: ComputerHandle,
@@ -106,10 +108,4 @@ export interface ComputerProvider {
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void>;
   stopVnc(handle: ComputerHandle): Promise<void>;
-  /**
-   * Hands the CDP gate its token after every start. Through stdin into tmpfs,
-   * never through `-e`: `docker exec` inherits a container's configured env,
-   * so a token passed that way is one `env` away from the agent's shell.
-   */
-  provisionCdpToken(handle: ComputerHandle, token: string): Promise<void>;
 }
