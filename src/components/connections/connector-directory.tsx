@@ -112,6 +112,11 @@ const NATIVE_EQUIVALENT: Record<string, string> = {
   github: "github",
   figma: "figma",
   notion: "notion",
+  gmail: "gmail",
+  googlecalendar: "google-calendar",
+  googledrive: "google-drive",
+  outlook: "outlook",
+  slack: "slack",
 };
 
 /**
@@ -127,6 +132,12 @@ const NATIVE_CATEGORIES: Record<string, string[]> = {
   "apple-calendar": ["calendar"],
   "apple-mail": ["email"],
   "apple-music": ["video-&-audio"],
+  gmail: ["email"],
+  "google-calendar": ["calendar"],
+  "google-drive": ["documents", "productivity"],
+  outlook: ["email", "calendar"],
+  "microsoft-365": ["documents", "productivity"],
+  slack: ["communication"],
 };
 
 function titleize(slug: string): string {
@@ -543,9 +554,9 @@ export function ConnectorDirectory({
     () =>
       apps
         // Drop Composio's copy of an app Juno integrates natively.
-        .filter((a) => !NATIVE_EQUIVALENT[a.slug])
+        .filter((a) => a.connected || !connectors.some((c) => c.id === NATIVE_EQUIVALENT[a.slug] && c.configured))
         .map((a) => catalogToItem(a)),
-    [apps]
+    [apps, connectors]
   );
 
   const q = query.trim().toLowerCase();
@@ -574,7 +585,7 @@ export function ConnectorDirectory({
             // needs its own Composio sign-in app first is still found by
             // search and inside its category, but is not a showcase.
             items: (data.items ?? [])
-              .filter((a) => !NATIVE_EQUIVALENT[a.slug] && !a.connected && (a.managedAuth || a.noAuth))
+              .filter((a) => !connectors.some((c) => c.id === NATIVE_EQUIVALENT[a.slug] && c.configured) && !a.connected && (a.managedAuth || a.noAuth))
               .slice(0, 6),
           }))
           .catch(() => ({ category, items: [] as CatalogItem[] }))
@@ -585,7 +596,7 @@ export function ConnectorDirectory({
     return () => controller.abort();
     // `categories` is read through `sectionIds`, its stable key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview, sectionIds]);
+  }, [overview, sectionIds, connectors]);
 
   const items = React.useMemo(() => {
     // Composio items arrive already searched and category-filtered by the API;

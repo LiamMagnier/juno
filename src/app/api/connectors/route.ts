@@ -22,7 +22,7 @@ export async function GET() {
   });
   const byProvider = new Map(linked.map((c) => [c.provider, c]));
 
-  const directConnectors = listConnectors().map((def) => {
+  const directConnectors = listConnectors().filter((def) => !def.firstParty || isConnectorConfigured(def)).map((def) => {
     const conn = byProvider.get(def.id);
     return {
       id: def.id,
