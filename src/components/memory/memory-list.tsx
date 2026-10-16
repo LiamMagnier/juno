@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { prefersReducedMotion } from "@/lib/motion-preference";
 import { ChevronDown, Plus, Search, type IconComponent } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
