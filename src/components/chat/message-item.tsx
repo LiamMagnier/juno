@@ -1374,7 +1374,10 @@ export const MessageItem = React.memo(function MessageItem({
                       // A held tag's body is empty (the suggestion lives in its
                       // own row), so the card shows the saved version — which
                       // is the truth about what the artifact is now.
-                      content={artifact?.content ?? part.content}
+                      // While this reply writes the block, the card shows what is
+                      // being written (a revision's new source, which the live
+                      // blueprint draws), not the saved version it will replace.
+                      content={part.streaming && message.streaming ? (part.content ?? "") : (artifact?.content ?? part.content)}
                       version={artifact?.currentVersion}
                       // Not "Updated" while this reply's update is only waiting:
                       // the bar under the header says what did happen.

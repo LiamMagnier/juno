@@ -61,6 +61,17 @@ import { cn } from "@/lib/utils";
 import { reducedMotionAt } from "@/lib/motion-preference";
 import { supportsViewTransitions, withViewTransition } from "@/lib/view-transition";
 import type { ClientArtifact, ClientArtifactVersion } from "@/types/chat";
+import { BuildStage, useBuildWindow } from "@/components/canvas/live-blueprint";
+import { useLatest } from "@/lib/use-presence";
+import { isBlueprintSource } from "@/lib/live-blueprint";
+import type { ArtifactType } from "@/lib/message-content";
+
+/** An artifact's source as the streaming reply has written it so far. */
+export interface LiveArtifactSource {
+  content: string;
+  type: ArtifactType;
+  language?: string | null;
+}
 
 const EXTENSIONS: Record<string, string> = {
   HTML: "html",
@@ -212,6 +223,7 @@ export function CanvasPanel({
   onToggleFullscreen,
   onQuote,
   shareable,
+  liveSource,
 }: {
   artifact: ClientArtifact;
   onClose: () => void;
@@ -221,6 +233,12 @@ export function CanvasPanel({
   onQuote?: (quote: ComposerQuote) => void;
   /** Show the Share action — off for incognito artifacts (nothing persisted to share). */
   shareable?: boolean;
+  /**
+   * The new source of THIS artifact while the current reply is writing it (a
+   * regeneration), null otherwise. A page shows its live blueprint over the
+   * preview until the new version renders.
+   */
+  liveSource?: LiveArtifactSource | null;
 }) {
   const rt = React.useMemo(() => runtimeFor(artifact.type, artifact.language), [artifact.type, artifact.language]);
   const isMarkdown = artifact.type === "MARKDOWN";
@@ -262,6 +280,8 @@ export function CanvasPanel({
   const [runNonce, setRunNonce] = React.useState(0);
   const [consoleEntries, setConsoleEntries] = React.useState<ConsoleEntry[]>([]);
   const [runStatus, setRunStatus] = React.useState<RunStatus>("idle");
+  // The last version whose preview finished booting (done or error).
+  const [renderedVersion, setRenderedVersion] = React.useState<number | null>(null);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [officeFormats, setOfficeFormats] = React.useState<OfficeFormat[]>([]);
   const [exportingFormat, setExportingFormat] = React.useState<OfficeFormat | null>(null);
@@ -642,9 +662,27 @@ export function CanvasPanel({
     (status: RunStatus) => {
       setRunStatus(status);
       if (status === "done") lastGoodVersionRef.current = selectedVersion;
+      if (status === "done" || status === "error") setRenderedVersion(selectedVersion);
     },
     [selectedVersion]
   );
+
+  /*
+   * THE LIVE BLUEPRINT ON A REGENERATION. While the reply rewrites this page,
+   * the preview of the version being replaced steps back under the blueprint
+   * of the one being written (live-blueprint.tsx). It holds until a NEWER
+   * version than the one the rebuild started from has rendered, then
+   * dissolves into it; a rewrite that saved no version (held for review)
+   * times out back to the preview it covered.
+   */
+  const liveBuildable = !!liveSource && rt.mode === "web" && !isMarkdown && isBlueprintSource(liveSource.type, liveSource.language);
+  const [buildBase, setBuildBase] = React.useState<number | null>(null);
+  if (liveBuildable && buildBase === null) setBuildBase(artifact.currentVersion);
+  const rebuiltRendered = buildBase !== null && artifact.currentVersion !== buildBase && renderedVersion === artifact.currentVersion;
+  const rebuilding = useBuildWindow(liveBuildable, rebuiltRendered);
+  if (!rebuilding && buildBase !== null) setBuildBase(null);
+  // The blueprint keeps drawing the finished source while the new version boots.
+  const buildSource = useLatest(liveSource);
 
   // ——— Text selection → floating Modify/Ask bar ———
 
@@ -1416,6 +1454,13 @@ export function CanvasPanel({
                    * as a narrow preview rather than as a phone, and the one thing
                    * you are checking at that width is where the page ends.
                    */
+                  <BuildStage
+                    building={rebuilding}
+                    content={buildSource?.content ?? ""}
+                    type={buildSource?.type ?? artifact.type}
+                    language={buildSource?.language ?? artifact.language}
+                    streaming={!!liveSource}
+                  >
                   <div
                     key={selectedVersion}
                     className={cn(
@@ -1444,6 +1489,7 @@ export function CanvasPanel({
                     />
                     </div>
                   </div>
+                  </BuildStage>
                 )}
               </TabsContent>
 
