@@ -48,8 +48,8 @@
  *
  * WHAT IT CANNOT DO, AND SAYS SO
  *
- * Only `email_filter` and `calendar_window` have a source. `topic_monitor`,
- * `connector_event` and `folder_change` have no producer in this build;
+ * Email, calendar and first-party connector events have real sources. Other
+ * connectors and unsupported folder sources are refused by triggerSupport;
  * `triggerSupport` refuses them by name, `normalizeTriggerDrafts` refuses to
  * store them, and the editor refuses to offer them. A trigger of one of those
  * kinds that reaches this process anyway — written by a newer build, or by
@@ -58,6 +58,7 @@
  */
 
 import "server-only";
+import { readConnectorTriggerEvents } from "@/lib/first-party-connectors/sync-store";
 import { pathToFileURL } from "node:url";
 
 import { createHash } from "node:crypto";
@@ -670,24 +671,10 @@ async function readSource(
   }
 
   if (parsed.kind === "connector_event") {
-    const connectorName = parsed.config.connector;
-    const eventName = parsed.config.events[0] ?? "event";
-    const source = `connector:${connectorName}:${eventName}`;
-    const mark = cursor[source];
-    const establishing = mark === undefined || mark === null;
-
-    const active = await getActiveConnectors(userId);
-    const conn = active.find((c) => c.id === connectorName || c.label.toLowerCase() === connectorName.toLowerCase());
-    if (!conn) {
-      return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
-    }
-
-    // No connector is read for events (TRIGGER_KIND_LIMITS refuses the
-    // kind). This used to emit one made-up event per UTC hour, which started
-    // a paid run every hour; a stored row from before now yields nothing.
-    void establishing;
-    void mark;
-    return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
+    const provider = parsed.config.connector;
+    const stream = parsed.config.attributes.stream ?? "primary";
+    const source = `connector:${provider}:${stream}`;
+    return readConnectorTriggerEvents(userId, provider, cursor[source], stream);
   }
 
   if (parsed.kind === "folder_change") {
@@ -1349,6 +1336,6 @@ async function main(): Promise<void> {
   log("stopped");
 }
 
-export { tick as triggerPollerTick, offer as offerTriggerEvent, loadSchedule as loadTriggerSchedule };
+export { readSource as readTriggerSource, tick as triggerPollerTick, offer as offerTriggerEvent, loadSchedule as loadTriggerSchedule };
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) void main();

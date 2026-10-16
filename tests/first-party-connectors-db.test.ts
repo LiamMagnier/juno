@@ -69,6 +69,23 @@ test("first-party sync: atomic cursors, dedupe, ownership, encryption, rollback,
     await assert.rejects(syncFirstParty(other, "gmail", "primary", response(delta)), /Reconnect/);
     await assert.rejects(readConnectorTriggerEvents(other, "gmail", "0"), /Reconnect/);
   });
+  await t.test("event producer establishes quietly and returns only persisted owner events", async () => {
+    globalThis.fetch = async () => Response.json({ historyId: "201", history: [] });
+    try {
+      const baseline = await readConnectorTriggerEvents(owner, "gmail", undefined);
+      assert.equal(baseline.establishing, true);
+      assert.equal(baseline.events.length, 0);
+      const batch = await readConnectorTriggerEvents(owner, "gmail", "0");
+      assert.equal(batch.events.length, 1);
+      assert.equal(batch.events[0].connector, "gmail");
+      assert.equal(batch.events[0].event, "message_received");
+      assert.equal(batch.events[0].attributes.resourceId, "m1");
+      assert.match(batch.events[0].eventKey, /^connector:gmail:primary:\d+$/);
+      assert.doesNotMatch(JSON.stringify(batch), /private mail content/);
+      const next = await readConnectorTriggerEvents(owner, "gmail", batch.cursorPosition);
+      assert.equal(next.events.length, 0, "no hourly event is fabricated");
+    } finally { globalThis.fetch = originalFetch; }
+  });
   await t.test("blocked apps and Always ask prevent unattended sync before provider access", async () => {
     let calls = 0;
     const fetcher = async () => { calls++; return Response.json(delta); };
