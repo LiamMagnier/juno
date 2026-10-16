@@ -268,6 +268,10 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-composer.needs, .cv2-composer.needs:focus-within { border-color: hsl(var(--signal)); }
 .cv2-draft { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; font: inherit; line-height: 22px; min-height: 44px; max-height: 40vh; color: hsl(var(--foreground)); padding: 0 6px 0 0; }
 .cv2-draft.tall { min-height: 66px; }
+/* iOS Safari zooms the page into a focused field under 16px (Chat's composer
+   keeps 16px for the same reason, composer-shell.tsx), and the /code landing
+   is this composer now. */
+@media (pointer: coarse) { .cv2-draft { font-size: 16px; } }
 .cv2-draft::placeholder { color: hsl(var(--muted-foreground) / 0.9); }
 .cv2-draft:focus-visible { outline: none; }
 .cv2-cfoot { display: flex; align-items: center; gap: 2px; margin-top: 6px; margin-left: -6px; min-width: 0; }

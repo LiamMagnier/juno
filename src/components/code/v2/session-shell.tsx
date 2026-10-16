@@ -40,7 +40,8 @@ export interface StaticTurn {
   id: string;
   role: "user" | "assistant";
   text: string;
-  files?: string[];
+  /** Name and type, so the glyph is the live thread's (a picture or a document). */
+  files?: { name: string; mediaType?: string }[];
 }
 
 /** The server-loaded messages as the static thread draws them: the newest few, answers cut. */
@@ -52,7 +53,7 @@ export function staticTurns(messages: readonly Pick<ClientMessage, "id" | "role"
       id: m.id,
       role: m.role === "USER" ? "user" : "assistant",
       text: m.role === "ASSISTANT" && m.content.length > STATIC_ANSWER_CHARS ? `${m.content.slice(0, STATIC_ANSWER_CHARS).trimEnd()}…` : m.content,
-      files: m.attachments?.map((a) => a.fileName).filter(Boolean),
+      files: m.attachments?.filter((a) => a.fileName).map((a) => ({ name: a.fileName, mediaType: a.mimeType })),
     }));
 }
 
@@ -71,10 +72,11 @@ function usePendingPrompt(conversationId: string | null): StaticTurn | null {
   );
   return React.useMemo(() => {
     if (!raw) return null;
-    const pending = JSON.parse(raw) as { text: string; attachments: { fileName: string }[] };
-    // A `/name` armed on the landing is the skill, not the words.
-    const text = pending.text.replace(/^\s*\/[a-z0-9][\w-]*\s+/i, "");
-    return { id: "first-prompt", role: "user", text, files: pending.attachments.map((a) => a.fileName) };
+    const pending = JSON.parse(raw) as { text: string; attachments: { fileName: string; mimeType?: string }[] };
+    // Word for word what the live route's first bubble shows (live-route.tsx
+    // firstItems), so hydrating changes nothing. Stripping a leading `/word`
+    // here also ate commands sent to the agent ("/review the cart").
+    return { id: "first-prompt", role: "user", text: pending.text, files: pending.attachments.map((a) => ({ name: a.fileName, mediaType: a.mimeType })) };
   }, [raw]);
 }
 
@@ -170,8 +172,8 @@ export function CodeSessionStatic({
                               <div className="files">
                                 {t.files.map((f, i) => (
                                   <span key={i} className="file">
-                                    <Glyph name="document" size={12} />
-                                    {f}
+                                    <Glyph name={f.mediaType?.startsWith("image/") ? "image" : "document"} size={12} />
+                                    {f.name}
                                   </span>
                                 ))}
                               </div>

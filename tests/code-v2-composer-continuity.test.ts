@@ -168,3 +168,31 @@ test("the session composer keeps its draft per thread and syncs it", () => {
   assert.match(route, /useThreadDraftSync\(\s*syncKey,/, "one long-poll carries the draft and the choices");
   assert.match(route, /publishChoices\(\{ selection: sel \}\)/, "a model change is written to the row");
 });
+
+// ── Review fixes: nothing the reader typed is lost, and nothing stale is written ──
+
+test("choosing /model or /clear from the menu never throws the rest of the draft away", () => {
+  // The slash menu opens on any line, and Enter picks its first row ("/c" → /clear).
+  const src = read("src/components/code/v2/composer.tsx");
+  const pick = src.slice(src.indexOf("const pick = (i: number)"), src.indexOf("const onKeyDown = (e"));
+  const model = pick.slice(pick.indexOf('item.key === "model"'), pick.indexOf('item.key === "clear"'));
+  assert.match(model, /applyTrigger\(draft, caret, trigger, ""\)/, "only the typed trigger leaves the draft");
+  assert.match(model, /setPopover\("catalog"\)/);
+  assert.doesNotMatch(model, /forgetDraft|runClientCommand/, "the draft is kept");
+  const clear = pick.slice(pick.indexOf('item.key === "clear"'));
+  assert.match(clear, /!applyTrigger\(draft, caret, trigger, ""\)\.text\.trim\(\) && !attachments\.uploads\.length/, "/clear runs at once only on an otherwise empty composer");
+});
+
+test("re-attaching to a Mac session reads the Mac's choices instead of overwriting them", () => {
+  const route = read("src/components/code/v2/live-route.tsx");
+  const effect = route.slice(route.indexOf("const firstSyncKey = React.useRef(syncKey)"), route.indexOf("async function clearThread"));
+  assert.match(effect, /if \(!openingEnvSession\.current \|\| !syncKey\.startsWith\("code:"\)\) return;/, "only a session this tab opened is written");
+  assert.match(route, /if \(!env\.sessionId\) openingEnvSession\.current = true;/, "set only when no session existed");
+});
+
+test("a cloud thread's follow-up carries the composer's mode, so /plan runs under Plan", () => {
+  const route = read("src/components/code/v2/live-route.tsx");
+  const legacy = route.slice(route.indexOf("async function sendLegacy"), route.indexOf("async function filesForMac"));
+  assert.match(legacy, /cloudPermissionMode\(composerModeOf\(modesRef\.current\.runtimeMode, modesRef\.current\.interactionMode\)\)/);
+  assert.match(read("src/hooks/use-code-session.ts"), /permissionMode: choice\.permissionMode \|\| undefined/, "the task create carries it");
+});

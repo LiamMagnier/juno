@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { attachmentNote, claudeContent, localAttachments, textWithAttachments } from "../src/providers/attachments.js";
+import { CLAUDE_IMAGE_MAX_BYTES, attachmentNote, claudeContent, localAttachments, textWithAttachments } from "../src/providers/attachments.js";
 import { tempDir } from "./helpers.js";
 
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -52,6 +52,10 @@ test("a picture Claude cannot take (unreadable, too large, an unsupported type) 
   const big = claudeContent({ text: "", attachments: [{ name: "huge.png", mediaType: "image/png", ref: "/x/huge.png" }] }, reader);
   assert.deepEqual(big.map((b) => b.type), ["text"]);
   assert.match((big[0] as { text: string }).text, /huge\.png/);
+  // The ceiling is on the base64 the API receives: a 4 MB file (the web's most) is 5.3 MB encoded.
+  const four = claudeContent({ text: "", attachments: [{ name: "four.png", mediaType: "image/png", ref: "/x/four.png" }] }, { size: () => 4 * 1024 * 1024, read: () => png });
+  assert.deepEqual(four.map((b) => b.type), ["text"]);
+  assert.ok(Math.ceil(CLAUDE_IMAGE_MAX_BYTES / 3) * 4 <= 5 * 1024 * 1024, "the largest block still fits once encoded");
   const missing = claudeContent({ text: "look", attachments: [{ name: "gone.png", mediaType: "image/png", ref: "/nope/gone.png" }] });
   assert.deepEqual(missing.map((b) => b.type), ["text"]);
   const tiff = claudeContent({ text: "look", attachments: [{ name: "scan.tiff", mediaType: "image/tiff", ref: "/x/scan.tiff" }] }, { size: () => 10, read: () => png });

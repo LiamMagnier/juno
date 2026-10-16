@@ -121,13 +121,15 @@ export function useComposerAttachments({ conversationId, enabled }: { conversati
       const keepInline = keepNextInline.current;
       keepNextInline.current = false;
       const files = Array.from(event.clipboardData.files);
-      if (files.length) {
+      const text = event.clipboardData.getData("text/plain");
+      // Copying from a document often carries a picture of the text as well:
+      // with uploads off, the words still paste rather than being refused.
+      if (files.length && (enabled || !text)) {
         event.preventDefault();
         addFiles(files);
         return;
       }
       if (!enabled) return;
-      const text = event.clipboardData.getData("text/plain");
       if (!pasteBecomesFile(text, keepInline)) return;
       event.preventDefault();
       const fileName = pastedTextFileName(new Date());

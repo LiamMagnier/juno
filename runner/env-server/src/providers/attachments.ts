@@ -22,8 +22,12 @@ import type { Attachment, UserInput } from "../contracts/code-v2.js";
 
 /** The image types the Messages API accepts as a base64 block. */
 const CLAUDE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-/** Larger pictures go as a path: the API's per-image ceiling. */
-const CLAUDE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+/**
+ * Larger pictures go as a path. The API's per-image ceiling (5 MB) is measured
+ * on the base64 it receives, which is a third larger than the file, so a 4 MB
+ * picture (the most the web hands a Mac) would fail the whole turn as a block.
+ */
+export const CLAUDE_IMAGE_MAX_BYTES = Math.floor((5 * 1024 * 1024 * 3) / 4);
 
 /** The attachments that name a file on this Mac (an absolute path). */
 export function localAttachments(input: Pick<UserInput, "attachments">): Attachment[] {

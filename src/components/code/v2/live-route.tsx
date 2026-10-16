@@ -35,7 +35,7 @@ import { useEnvLink } from "./use-env-link";
 import { readRepoSkills, useCodeSkills } from "./use-code-skills";
 import type { WorkspaceModel } from "./types";
 import { CodeWorkspace } from "./workspace";
-import { initialModePair, projectModeKey, threadPrefsKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
+import { cloudPermissionMode, composerModeOf, initialModePair, projectModeKey, threadPrefsKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
 import { createFirstPromptHandoff, firstPromptNeedsSkills, type PendingFirstPrompt } from "@/lib/code-v2/first-prompt";
 import { skillsStorageKey } from "@/lib/code-v2/skills";
 import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
@@ -81,6 +81,8 @@ function writeJson(key: string, value: unknown) {
 const SEND_FAILED_MESSAGE = "Couldn’t send that to your Mac. Your message is back in the composer.";
 const CLEAR_FAILED_MESSAGE = "Couldn’t start a new session. Check your connection and try again.";
 const ATTACHMENT_READ_FAILED_MESSAGE = "Couldn’t read an attached file to send it. Try attaching it again.";
+/** A cloud run has no Mac to name while it starts. */
+const CLOUD_STARTING_LABEL = "Starting in the cloud…";
 
 /** What the composer gave a draft back with, when a send could not go. */
 type DraftIo = { read(): { text: string; editing: boolean }; apply(text: string): void; restore?(text: string, attachments: ClientAttachment[]): void };
@@ -211,8 +213,11 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
    */
   const modesRef = React.useRef({ runtimeMode, interactionMode });
   modesRef.current = { runtimeMode, interactionMode };
+  /** This thread's mode was chosen (here, on the landing or on another device), not just defaulted. */
+  const modeChosen = React.useRef(false);
   const rememberMode = (pair: ProjectModeDefault) => {
     modesRef.current = pair;
+    modeChosen.current = true;
     if (projectKey) writeJson(projectKey, pair);
   };
 
@@ -221,7 +226,12 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     if (meta.isCloud && meta.repoOwner && meta.repoName) {
       // Skills lane: the thread's account skills and the repository's own, for the runner.
       const cloudSkills = skills.takeCloud();
-      return session.send(text, { mode: "cloud", repo: { owner: meta.repoOwner, name: meta.repoName }, baseRef: meta.baseRef, workspaceName: conversation.codeWorkspaceName }, attachments, { ...choice, ...(cloudSkills ? { skills: cloudSkills } : {}) });
+      // The composer's mode, as far as a cloud sandbox enforces one, so `/plan
+      // fix it` runs under Plan. A thread that never chose one keeps the
+      // server's rule: the run inherits the last task's mode.
+      const chosen = modeChosen.current || !!(prefs.runtimeMode || prefs.interactionMode);
+      const permissionMode = chosen ? cloudPermissionMode(composerModeOf(modesRef.current.runtimeMode, modesRef.current.interactionMode)) : null;
+      return session.send(text, { mode: "cloud", repo: { owner: meta.repoOwner, name: meta.repoName }, baseRef: meta.baseRef, workspaceName: conversation.codeWorkspaceName }, attachments, { ...choice, ...(cloudSkills ? { skills: cloudSkills } : {}), ...(permissionMode ? { permissionMode } : {}) });
     }
     if (!presence.device || !cwd) return { accepted: false };
     return session.send(text, { deviceId: presence.device.id, workspacePath: cwd, workspaceName: conversation.codeWorkspaceName, workspaceKey: conversation.codeWorkspaceKey }, attachments, choice);
@@ -252,10 +262,18 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     }
   }
 
+  /** This tab is opening the thread's env session fresh (not re-attaching to one), until its choices are written. */
+  const openingEnvSession = React.useRef(false);
   async function ensureEnvSession(): Promise<string> {
-    const id = await env.open({ sessionId: env.sessionId ?? undefined, cwd, selection });
-    writeJson(sessionKey, id);
-    return id;
+    if (!env.sessionId) openingEnvSession.current = true;
+    try {
+      const id = await env.open({ sessionId: env.sessionId ?? undefined, cwd, selection });
+      writeJson(sessionKey, id);
+      return id;
+    } catch (error) {
+      openingEnvSession.current = false;
+      throw error;
+    }
   }
 
   // Skills lane: the account's skills and, when this thread runs on a Mac,
@@ -328,11 +346,19 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     }),
     [conversation.id, threadSync.changed, threadSync.cleared],
   );
-  // A Mac session that just opened takes the thread's choices with it (the Mac app reads that key).
+  /*
+   * A Mac session this tab just opened takes the thread's choices with it (the
+   * Mac app reads that key). Only one it opened: every reload re-attaches to
+   * the thread's session and moves the key the same way once the link is up,
+   * and writing then would stamp this browser's older choices over what the
+   * Mac app set since. A re-attached session reads the row instead.
+   */
   const firstSyncKey = React.useRef(syncKey);
   React.useEffect(() => {
     if (firstSyncKey.current === syncKey) return;
     firstSyncKey.current = syncKey;
+    if (!openingEnvSession.current || !syncKey.startsWith("code:")) return;
+    openingEnvSession.current = false;
     threadSync.prefsChanged(syncedPrefsOf(choicesRef.current));
   }, [syncKey, threadSync]);
 
@@ -666,7 +692,7 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     device: device ? { id: device.id, name: device.name, online: device.online } : null,
     byokKeys: keys,
     threads,
-    starting: firstWaiting || (meta.loaded && session.status === "submitting") ? `Starting on ${presence.device?.name ?? "your Mac"}…` : null,
+    starting: firstWaiting || (meta.loaded && session.status === "submitting") ? (meta.isCloud ? CLOUD_STARTING_LABEL : `Starting on ${presence.device?.name ?? "your Mac"}…`) : null,
     offline: !meta.isCloud && presence.state === "offline",
     pairingRequired: env.pairingRequired && device ? { deviceName: device.name } : null,
     // The account's skills work anywhere; a Mac adds its own.

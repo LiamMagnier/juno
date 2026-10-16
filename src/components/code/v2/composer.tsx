@@ -601,8 +601,21 @@ export const Composer = React.forwardRef<
   const pick = (i: number) => {
     const item = menuItems[i];
     if (!item || !trigger) return;
-    // /model and /clear take no words: choosing them runs them.
-    if (trigger.kind === "slash" && (item.key === "model" || item.key === "clear") && runClientCommand(`/${item.key}`, "send")) {
+    // /model takes no words: choosing it opens the picker, and only the `/mo`
+    // typed to find it leaves the draft (the menu opens on any line, so the
+    // rest of the draft is the reader's words, never thrown away).
+    if (trigger.kind === "slash" && item.key === "model") {
+      const next = applyTrigger(draft, caret, trigger, "");
+      setDraft(next.text);
+      setCaret(next.caret);
+      setMenuDismissed(false);
+      setPopover("catalog");
+      return;
+    }
+    // /clear runs at once only when it is all there is: with other words or
+    // files in the composer it goes in as text, so a stray Enter cannot carry
+    // the reader away from a draft.
+    if (trigger.kind === "slash" && item.key === "clear" && !applyTrigger(draft, caret, trigger, "").text.trim() && !attachments.uploads.length && runClientCommand("/clear", "send")) {
       setMenuDismissed(false);
       return;
     }
