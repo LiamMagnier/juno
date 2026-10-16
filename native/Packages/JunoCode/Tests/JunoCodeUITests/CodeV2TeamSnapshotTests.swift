@@ -94,6 +94,8 @@ final class CodeV2TeamAssetTests: XCTestCase {
         }
     }
 
+    // `CodeV2TeamBudgetField` is a view, so its helpers are main-actor isolated.
+    @MainActor
     func testTheBudgetFieldTakesWhatPeopleType() {
         XCTAssertEqual(CodeV2TeamBudgetField.parse("$4"), .some(4))
         XCTAssertEqual(CodeV2TeamBudgetField.parse("2.505"), .some(2.51))
