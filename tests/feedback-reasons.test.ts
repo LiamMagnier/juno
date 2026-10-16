@@ -171,8 +171,10 @@ function walk(dir: string, out: string[] = []): string[] {
 
 test("Message.feedbackNote is only touched where the message keyring is too", () => {
   const files = [...walk("src"), ...walk("scripts")].filter((f) => /\bfeedbackNote\b/.test(read(f)));
-  // The pure helper names the field in its return shape but never stores it.
-  const storing = files.filter((f) => !f.endsWith("lib/feedback-reasons.ts"));
+  // The pure helper names the field in its return shape but never stores it,
+  // and the export parser hands plain text to the import route, which seals it.
+  const PLAIN_TEXT_ONLY = ["lib/feedback-reasons.ts", "lib/history-import.ts"];
+  const storing = files.filter((f) => !PLAIN_TEXT_ONLY.some((p) => f.endsWith(p)));
   assert.ok(storing.length >= 3, `found ${storing.join(", ")}`);
   for (const file of storing) {
     const text = read(file);
