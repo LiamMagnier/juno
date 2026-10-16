@@ -26,11 +26,22 @@ export type MotionPref = MotionPreference;
 export type SendKey = "enter" | "mod-enter";
 /** What Return does on an on-screen keyboard (src/lib/composer-keys.ts, G35). */
 export type { TouchReturn };
+/**
+ * High contrast (spec §3.2). `standard` and `more` are written to
+ * `html[data-contrast]`, which globals.css reads: `more` turns it on anywhere,
+ * `standard` keeps it off even when the OS asks for more. The default,
+ * `system`, writes nothing, so `prefers-contrast: more` decides.
+ */
+export type ContrastPref = "system" | "standard" | "more";
+/** Tokens and cost on answers (spec D25): off by default; Settings › Models & routing. */
+export type ShowUsage = "off" | "tokens" | "tokensAndCost";
 
 export interface UiPrefs {
   chatFont: ChatFont;
   transcriptWidth: TranscriptWidth;
   motion: MotionPref;
+  contrast: ContrastPref;
+  showUsage: ShowUsage;
   sendKey: SendKey;
   touchReturn: TouchReturn;
   codeWrap: boolean;
@@ -54,6 +65,8 @@ export const UI_PREF_DEFAULTS: UiPrefs = {
   chatFont: "default",
   transcriptWidth: "medium",
   motion: "system",
+  contrast: "system",
+  showUsage: "off",
   sendKey: "enter",
   touchReturn: "newline",
   codeWrap: false,
@@ -70,8 +83,15 @@ const HTML_ATTRS = {
   "data-chat-font": "chatFont",
   "data-transcript-width": "transcriptWidth",
   "data-motion": "motion",
+  "data-contrast": "contrast",
+  "data-show-usage": "showUsage",
   "data-code-wrap": "codeWrap",
 } as const satisfies Record<string, keyof UiPrefs>;
+
+/** sessionStorage key: present once this tab has shown the app (spec C3, first visit per session). */
+export const FIRST_VISIT_KEY = "alevr:visited";
+/** Set on <html> before first paint for the first page of a session; use-first-visit reads it. */
+export const FIRST_VISIT_ATTR = "data-first-visit";
 
 const KEY = "alevr:ui-prefs:v1";
 const EVENT = "alevr:ui-prefs";
@@ -86,6 +106,8 @@ function sanitize(raw: unknown): UiPrefs {
   pick("chatFont", ["default", "system", "serif", "mono"]);
   pick("transcriptWidth", ["narrow", "medium", "wide"]);
   pick("motion", ["system", "reduced", "full"]);
+  pick("contrast", ["system", "standard", "more"]);
+  pick("showUsage", ["off", "tokens", "tokensAndCost"]);
   pick("sendKey", ["enter", "mod-enter"]);
   pick("touchReturn", ["newline", "send"]);
   pick("voiceEffort", VOICE_REASONING_EFFORTS);
@@ -164,10 +186,17 @@ export function uiPref<K extends keyof UiPrefs>(key: K): UiPrefs[K] {
   return readUiPrefs()[key];
 }
 
-/** Runs before first paint (layout.tsx): mirrors the stored prefs onto <html>. */
+/**
+ * Runs before first paint (layout.tsx): mirrors the stored prefs onto <html>,
+ * then marks the first page of a browser session with `data-first-visit`
+ * (spec C3). Each half has its own try/catch: blocked storage (a private
+ * window, a sandboxed frame) skips that half and never the other.
+ */
 export const UI_PREFS_BOOT_SCRIPT = `try{var p=JSON.parse(localStorage.getItem(${JSON.stringify(KEY)})||"null")||{},r=document.documentElement,m=${JSON.stringify(
   Object.fromEntries(Object.entries(HTML_ATTRS).map(([attr, key]) => [attr, [key, UI_PREF_DEFAULTS[key]]]))
-)};for(var a in m){var v=p[m[a][0]];if(v!==undefined&&v!==m[a][1])r.setAttribute(a,String(v))}}catch(e){}`;
+)};for(var a in m){var v=p[m[a][0]];if(v!==undefined&&v!==m[a][1])r.setAttribute(a,String(v))}}catch(e){}try{if(!sessionStorage.getItem(${JSON.stringify(
+  FIRST_VISIT_KEY,
+)})){sessionStorage.setItem(${JSON.stringify(FIRST_VISIT_KEY)},"1");document.documentElement.setAttribute(${JSON.stringify(FIRST_VISIT_ATTR)},"")}}catch(e){}`;
 
 /** A short chime for "your reply is ready", synthesised so no asset ships. */
 export function playReplyChime() {

@@ -130,3 +130,30 @@ export function insertLineBreak(doc: Document = document): boolean {
     return false;
   }
 }
+
+/**
+ * ⌘↩ on Apple, Ctrl+Enter elsewhere (spec §5.7): the approve chord inside an
+ * approval container, and the send chord for `mod-enter` senders in the
+ * composer. Never while an input method is composing, and never with Shift
+ * or Alt added (those mean something else).
+ */
+export function isModEnter(
+  e: { key: string; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; isComposing?: boolean; keyCode?: number },
+  apple: boolean,
+): boolean {
+  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229 || e.shiftKey || e.altKey) return false;
+  return apple ? Boolean(e.metaKey) && !e.ctrlKey : Boolean(e.ctrlKey) && !e.metaKey;
+}
+
+/**
+ * ⌥⌘A on Apple, Alt+Shift+A elsewhere (spec §5.7, §10): focus the latest
+ * approval. `code` rather than `key`, because ⌥ turns A into "å" on a Mac.
+ */
+export function isGoToApproval(
+  e: { code?: string; key: string; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean },
+  apple: boolean,
+): boolean {
+  const isA = e.code === "KeyA" || e.key.toLowerCase() === "a";
+  if (!isA || !e.altKey) return false;
+  return apple ? Boolean(e.metaKey) && !e.ctrlKey && !e.shiftKey : Boolean(e.shiftKey) && !e.ctrlKey && !e.metaKey;
+}

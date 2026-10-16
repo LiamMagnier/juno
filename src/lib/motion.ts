@@ -25,16 +25,17 @@
  * 4px + 0.96 for pop) so the two systems are indistinguishable in motion even
  * when one element uses each.
  *
- * The spring presets deliberately mirror `JunoMotion` in
- * `native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift`
- * — same duration, same bounce — so the Mac app and the web settle identically.
+ * The spring presets read the generated `SPRING` table, which also feeds
+ * `JunoMotion` natively — same duration, same bounce — so the Mac app, the
+ * iPhone and the web settle identically.
  */
 
 import type { CSSProperties } from "react";
 
 import type { Transition, Variants } from "framer-motion";
 
-import { DURATION, EASING } from "@/lib/design/tokens.generated";
+import { DURATION, EASING, SPRING, TIMING_TOKENS, type SpringToken } from "@/lib/design/tokens.generated";
+import { settleMs } from "@/lib/sheet-gesture";
 
 /** framer works in seconds; the tokens are authored in milliseconds. */
 const s = (ms: number) => ms / 1000;
@@ -107,20 +108,45 @@ export const transition = {
  * fashionable, but because interruption is the common case for anything the
  * user is driving.
  *
- * `duration` + `bounce` rather than stiffness/damping/mass: it is the same
- * parameterisation SwiftUI's `Animation.spring(duration:bounce:)` takes, so
- * these three presets and `JunoMotion`'s three are the same three springs.
+ * `visualDuration` + `bounce` rather than stiffness/damping/mass: it is the
+ * same parameterisation SwiftUI's `Animation.spring(duration:bounce:)` takes,
+ * and every value is read from the generated `SPRING` table (spec §4.4), the
+ * table that also writes the CSS `--spring-<name>` linear() twins. A framer
+ * spring and the CSS twin of the same name settle identically, and so does
+ * `JunoMotion` natively.
+ *
+ * RETIRED (D28): `spring.interactive` (a stiffness/damping pair with no name
+ * on the other platforms) moved to `snap`; `--spring-pop` users go to
+ * `reward`.
  */
+const springOf = (name: SpringToken) =>
+  ({ type: "spring", visualDuration: SPRING[name].visualDuration, bounce: SPRING[name].bounce }) as const;
+
 export const spring = {
-  /** The default settle. Mirrors `JunoMotion.standard`. */
-  standard: { type: "spring", duration: duration.base, bounce: 0 },
-  /** More overshoot, for a change that should be noticed. `JunoMotion.emphasized`. */
-  emphasized: { type: "spring", duration: duration.slow, bounce: 0.1 },
-  /** For anything tracking a pointer. `JunoMotion.spring` (interactiveSpring). */
-  interactive: { type: "spring", stiffness: 320, damping: 30, mass: 0.8 },
-  /** Layout changes — an element moving because its neighbours did. */
-  layout: { type: "spring", duration: duration.slow, bounce: 0 },
-} satisfies Record<string, Transition>;
+  /** Palette and list highlight, travelling selection, menu thumbs. 0.18 / 0. */
+  snap: springOf("snap"),
+  /** The default settle: thumbs, tiles, infrequent overlays, toasts. 0.22 / 0.05. */
+  standard: springOf("standard"),
+  /** Layout changes: gap closing, an element moving because its neighbours did. 0.36 / 0. */
+  layout: springOf("layout"),
+  /** The home→dock composer handoff only. 0.36 / 0.10. */
+  emphasized: springOf("emphasized"),
+  /** Copy check, accent tick, a chip joining, thumbs-up (never thumbs-down). 0.36 / 0.18. */
+  reward: springOf("reward"),
+  /** Destination icon poses. 0.22 / 0.15. */
+  articulate: springOf("articulate"),
+} satisfies Record<SpringToken, Transition>;
+
+/**
+ * How long a sheet or drawer takes to finish the move a finger started (spec
+ * D18, as wave 1 does it): the remaining distance at the release speed,
+ * clamped to `--settle-min`..`--settle-max` (140–300ms), on `--ease-drawer`.
+ * A faster release settles sooner; a release with no speed takes the maximum.
+ */
+export function settle(remaining: number, velocity: number): { ms: number; duration: number; ease: Bezier } {
+  const ms = settleMs(remaining, velocity);
+  return { ms, duration: s(ms), ease: ease.drawer };
+}
 
 // ---------------------------------------------------------------------------
 // Variants
@@ -197,7 +223,7 @@ export const variants = {
  *              a handful of large cards.
  * @param delay Seconds before the first child.
  */
-export const stagger = (step = 0.03, delay = 0): Variants => ({
+export const stagger = (step = s(TIMING_TOKENS.stagger.row), delay = 0): Variants => ({
   hidden: {},
   visible: { transition: { staggerChildren: step, delayChildren: delay } },
   // Exits run in reverse, nearest-to-the-action first, and faster than entry:
@@ -227,26 +253,21 @@ export const stagger = (step = 0.03, delay = 0): Variants => ({
  * Three rungs, chosen by how much each item weighs, not by how many there are.
  */
 export const STAGGER = {
-  /** Dense rows — a file list, a sidebar, a table. */
-  tight: 30,
-  /** The default. Cards and tiles in a grid. */
-  base: 45,
-  /** Large, few, and consequential — pricing tiers, onboarding steps. */
-  loose: 60,
+  /** Dense rows — a file list, a sidebar, a table. `--stagger-row`. */
+  tight: TIMING_TOKENS.stagger.row,
+  /** The default. Cards and tiles in a grid. `--stagger-tile`. */
+  base: TIMING_TOKENS.stagger.tile,
+  /** Large, few, and consequential — onboarding steps. `--stagger-onboarding`. */
+  loose: TIMING_TOKENS.stagger.onboarding,
 } as const;
 
 export type StaggerRung = keyof typeof STAGGER;
 
 /**
- * How many items still stagger before the delay stops growing.
- *
- * A cap is not an optimisation, it is the difference between choreography and a
- * queue: uncapped at 45ms, the 30th row arrives 1.35s after the first, so a long
- * list visibly loads rather than appearing. Ten is where the sequence has
- * already been read as a sequence — the existing sites that capped at all had
- * independently landed on 10 and 12.
+ * How many items stagger at all (spec D17, `--stagger-max`): four. Later
+ * items paint with the fourth, so a long list appears rather than loads.
  */
-const STAGGER_CAP = 10;
+export const STAGGER_MAX = TIMING_TOKENS.stagger.max;
 
 /**
  * Inline style for the nth item of a staggered CSS entrance.
@@ -265,7 +286,7 @@ export function staggerDelay(
   offsetMs = 0
 ): CSSProperties {
   const step = STAGGER[rung];
-  const n = Math.max(0, Math.min(index, STAGGER_CAP));
+  const n = Math.max(0, Math.min(index, STAGGER_MAX - 1));
   return { animationDelay: `${offsetMs + n * step}ms` };
 }
 

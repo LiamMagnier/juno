@@ -13,22 +13,36 @@
  * 30% of its height), kept close to what iOS sheets feel like: a quick
  * downward flick of a couple of centimetres closes; a lazy one that stops
  * halfway springs back.
+ *
+ * Every constant is read from the generated tokens (spec D18, §3.12), which
+ * also write them to Swift as `JunoGesture`, so the iPhone's sheets and these
+ * decide identically. The values are wave 1's, unchanged.
  */
 
+import { GESTURE } from "@/lib/design/tokens.generated";
+
+/** How far a pull past the rest position may travel at most, and how stiffly it resists (D18). */
+export const RUBBER_BAND_LIMIT_PX = GESTURE.rubberBandLimitPx;
+export const RUBBER_BAND_C = GESTURE.rubberBandC;
+
+/** The release settle is clamped to this range (`--settle-min` / `--settle-max`). */
+export const SETTLE_MIN_MS = GESTURE.settleMinMs;
+export const SETTLE_MAX_MS = GESTURE.settleMaxMs;
+
 /** Below this many pixels of travel, a touch has not said what it is yet. */
-export const INTENT_SLOP_PX = 8;
+export const INTENT_SLOP_PX = GESTURE.slopPx;
 
 /** A release faster than this (px/ms) toward the edge dismisses, however short the pull. */
-export const DISMISS_VELOCITY = 0.5;
+export const DISMISS_VELOCITY = GESTURE.dismissVelocity;
 /** A slow release dismisses once the panel has travelled this share of its size. */
-export const DISMISS_FRACTION = 0.3;
+export const DISMISS_FRACTION = GESTURE.dismissFraction;
 
 /** An edge pull opens once the drawer is this far out, or on a flick. */
-export const OPEN_FRACTION = 0.4;
-export const OPEN_VELOCITY = 0.3;
+export const OPEN_FRACTION = GESTURE.openFraction;
+export const OPEN_VELOCITY = GESTURE.openVelocity;
 
 /** How wide a strip at the screen's edge starts the drawer (px). */
-export const EDGE_ZONE_PX = 24;
+export const EDGE_ZONE_PX = GESTURE.edgeZonePx;
 
 /** Velocity is measured over the last stretch of the gesture only, not its whole life. */
 const VELOCITY_WINDOW_MS = 100;
@@ -57,10 +71,10 @@ export function gestureIntent(dx: number, dy: number, along: "x" | "y", sign: 1 
  * Returns the displayed offset for a finger `overshoot` px past the rest
  * position; it never exceeds `limit`.
  */
-export function rubberBand(overshoot: number, limit = 64): number {
+export function rubberBand(overshoot: number, limit: number = RUBBER_BAND_LIMIT_PX): number {
   const distance = Math.abs(overshoot);
   if (distance === 0) return 0;
-  const eased = (1 - 1 / ((distance * 0.55) / limit + 1)) * limit;
+  const eased = (1 - 1 / ((distance * RUBBER_BAND_C) / limit + 1)) * limit;
   return Math.sign(overshoot) * eased;
 }
 
@@ -121,7 +135,7 @@ export function shouldOpen({ progress, velocity }: { progress: number; velocity:
  * remaining distance at the release speed, held between a quick settle and
  * the base rung so a slow release never crawls.
  */
-export function settleMs(remaining: number, velocity: number, { min = 140, max = 300 } = {}): number {
+export function settleMs(remaining: number, velocity: number, { min = SETTLE_MIN_MS, max = SETTLE_MAX_MS } = {}): number {
   const speed = Math.abs(velocity);
   if (speed < 0.05) return max;
   return Math.round(Math.min(max, Math.max(min, Math.abs(remaining) / speed)));

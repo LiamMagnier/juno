@@ -2,7 +2,24 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
+import { DURATION } from "@/lib/design/tokens.generated";
+import { markShellVisible } from "@/lib/perf-marks";
 import { notifyRouteCommitted, viewTransitionActive } from "@/lib/view-transition";
+
+/** The fallback entrance (spec P2 (18)): 160 opacity, plus a 6px rise only while motion is allowed. */
+export const PAGE_ENTRANCE = { durationMs: DURATION.exit, risePx: 6 } as const;
+
+/**
+ * The WAAPI keyframes for the entrance. The rise is multiplied by
+ * --motion-shift, which reduced motion zeroes, and the last frame is
+ * `transform: none` with no fill, so nothing is left behind (constraint 1).
+ */
+export function pageEntranceKeyframes(shift: number): Keyframe[] {
+  const rise = PAGE_ENTRANCE.risePx * (Number.isFinite(shift) ? shift : 1);
+  return rise === 0
+    ? [{ opacity: 0 }, { opacity: 1 }]
+    : [{ opacity: 0, transform: `translateY(${rise}px)` }, { opacity: 1, transform: "none" }];
+}
 
 /**
  * Cross-route entrance for the app shell's content area: a 160ms crossfade
@@ -71,8 +88,14 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
   const previous = React.useRef(group);
   // A view transition waiting on this route (a list row opening its thread)
   // takes its "after" snapshot once the new path has committed.
+  const firstPath = React.useRef(true);
   React.useLayoutEffect(() => {
-    if (pathname) notifyRouteCommitted(pathname);
+    if (!pathname) return;
+    notifyRouteCommitted(pathname);
+    // The route budget (spec §9): alevr:route-click → alevr:shell-visible.
+    // The first commit is the page load, not a route change.
+    if (firstPath.current) firstPath.current = false;
+    else markShellVisible(pathname);
   }, [pathname]);
   React.useLayoutEffect(() => {
     if (previous.current === group) return;
@@ -81,14 +104,11 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
     if (!el || typeof el.animate !== "function") return;
     if (viewTransitionActive()) return;
     const style = getComputedStyle(document.documentElement);
-    const duration = parseFloat(style.getPropertyValue("--dur-exit")) || 160;
+    const duration = parseFloat(style.getPropertyValue("--dur-exit")) || PAGE_ENTRANCE.durationMs;
     const easing = style.getPropertyValue("--ease-out-soft").trim() || "ease-out";
     const shift = parseFloat(style.getPropertyValue("--motion-shift"));
-    const rise = 6 * (Number.isFinite(shift) ? shift : 1);
-    const animation = el.animate(
-      [{ opacity: 0, transform: `translateY(${rise}px)` }, { opacity: 1, transform: "none" }],
-      { duration, easing },
-    );
+    // 6 * (Number.isFinite(shift) ? shift : 1): see pageEntranceKeyframes.
+    const animation = el.animate(pageEntranceKeyframes(shift), { duration, easing, fill: "none" });
     return () => animation.cancel();
   }, [group]);
   // `app-page`: the box a thread view transition names (globals.css), so the
