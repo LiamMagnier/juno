@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { ProjectHooks, parseProjectHooks, readProjectHooks } from '../hooks.js';
 import { AgentSession } from '../agent.js';
 import { bashTool } from '../tools/bash.js';
@@ -131,18 +132,25 @@ test('Plan refuses hook shell even when the underlying read tool is allowed', as
   } finally { session.dispose(); if (priorHome === undefined) delete process.env.JUNO_HOME; else process.env.JUNO_HOME = priorHome; f.cleanup(); }
 });
 
-test('PostToolUse failure preserves the real result and reports failure after execution', async () => {
+test('PostToolUse failure preserves the authorized tool result and reports failure', async () => {
   const f = fixture({ version: 1, hooks: { PostToolUse: [{ command: 'exit 9' }] } });
+  const priorHome = process.env.JUNO_HOME;
+  process.env.JUNO_HOME = path.join(f.cwd, 'session-home');
   let executions = 0;
-  const hooks = new ProjectHooks({ emit: () => {}, permission: () => 'allow', requestApproval: async () => 'allow' });
+  const events: AgentEvent[] = [];
+  const provider = scriptedProvider('post-hooks', (_req, i) => i === 0 ? call('read-1', 'read_file', {}) : say('done'));
+  const session = AgentSession.create({ cwd: f.cwd, provider, mode: 'full', subagents: false,
+    tools: [{ kind: 'read', spec: { name: 'read_file', description: '', inputSchema: {} }, summarize: () => '', execute: async () => { executions++; return { output: 'actual content' }; } }],
+    callbacks: { onEvent: (e) => events.push(e), requestApproval: async () => 'allow' } });
   try {
-    const tool = hooks.wrap({ kind: 'read', spec: { name: 'read_file', description: '', inputSchema: {} }, summarize: () => '', execute: async () => { executions++; return { output: 'actual content' }; } });
-    const result = await tool.execute({}, { cwd: f.cwd });
+    await session.prompt('read the source');
+    const result = events.find((e) => e.type === 'tool_finished' && e.callId === 'read-1');
     assert.equal(executions, 1);
+    assert.ok(result && result.type === 'tool_finished');
     assert.equal(result.isError, true);
     assert.match(result.output, /actual content/);
     assert.match(result.output, /PostToolUse hook failed/);
-  } finally { f.cleanup(); }
+  } finally { session.dispose(); if (priorHome === undefined) delete process.env.JUNO_HOME; else process.env.JUNO_HOME = priorHome; f.cleanup(); }
 });
 
 test('hook execution preserves the sandbox and forwards only the supplied scrubbed environment', async () => {
@@ -162,4 +170,100 @@ test('hook execution preserves the sandbox and forwards only the supplied scrubb
     assert.equal(JSON.parse(captured!.env!.ALEVR_HOOK_CONTEXT!).input.path, 'source.txt');
     assert.deepEqual(sandbox.forwardEnv, ['PATH'], 'one invocation does not mutate the host sandbox');
   } finally { bashTool.execute = execute; f.cleanup(); }
+});
+
+
+test('a denied tool cannot run its pre-hook or the tool itself', async () => {
+  const f = fixture({ version: 1, hooks: { PreToolUse: [{ command: 'echo escaped > marker', matcher: ['write_file'] }] } });
+  const priorHome = process.env.JUNO_HOME;
+  process.env.JUNO_HOME = path.join(f.cwd, 'session-home');
+  let executions = 0;
+  let approvals = 0;
+  const provider = scriptedProvider('denied-hook', (_req, i) => i === 0 ? call('write-1', 'write_file', {}) : say('done'));
+  const session = AgentSession.create({ cwd: f.cwd, provider, mode: 'plan', subagents: false,
+    tools: [{ kind: 'edit', spec: { name: 'write_file', description: '', inputSchema: {} }, summarize: () => '', execute: async () => { executions++; return { output: 'changed' }; } }],
+    callbacks: { onEvent: () => {}, requestApproval: async () => { approvals++; return 'allow'; } } });
+  try {
+    await session.prompt('try the write');
+    assert.equal(executions, 0);
+    assert.equal(approvals, 0);
+    assert.equal(fs.existsSync(path.join(f.cwd, 'marker')), false);
+  } finally { session.dispose(); if (priorHome === undefined) delete process.env.JUNO_HOME; else process.env.JUNO_HOME = priorHome; f.cleanup(); }
+});
+
+test('a read-only child inherits project hooks and cannot run their shell in the parent Full access mode', async () => {
+  const f = fixture(config('echo escaped > marker'));
+  const priorHome = process.env.JUNO_HOME;
+  process.env.JUNO_HOME = path.join(f.cwd, 'session-home');
+  fs.writeFileSync(path.join(f.cwd, 'source.txt'), 'private child source');
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: f.cwd });
+  execFileSync('git', ['add', '.'], { cwd: f.cwd });
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture'], { cwd: f.cwd });
+  let rootCalls = 0;
+  let childCalls = 0;
+  const events: AgentEvent[] = [];
+  const provider = scriptedProvider('child-hooks', (req) => {
+    if (req.system.includes('SUBAGENT')) return childCalls++ === 0 ? call('child-read', 'read_file', { path: 'source.txt' }) : say('child done');
+    if (rootCalls++ === 0) return call('delegate-1', 'delegate_tasks', { tasks: [{ title: 'Read', prompt: 'read the source', role: 'explorer' }] });
+    if (rootCalls === 2) return call('await-1', 'await_subagents', {});
+    return say('done');
+  });
+  const session = AgentSession.create({ cwd: f.cwd, provider, mode: 'full', callbacks: { onEvent: (e) => events.push(e), requestApproval: async () => 'allow' } });
+  try {
+    await session.prompt('delegate the read');
+    const result = events.find((e) => e.type === 'tool_finished' && e.callId === 'child-read');
+    assert.ok(result && result.type === 'tool_finished', 'the child attempted its own tool');
+    assert.ok(result.agentId);
+    assert.equal(result.isError, true);
+    assert.match(result.output, /hook is blocked/);
+    assert.doesNotMatch(result.output, /private child source/);
+    assert.equal(fs.existsSync(path.join(f.cwd, 'marker')), false);
+  } finally { session.dispose(); if (priorHome === undefined) delete process.env.JUNO_HOME; else process.env.JUNO_HOME = priorHome; f.cleanup(); }
+});
+
+test('a hook FIFO is rejected without blocking the configuration reader', { skip: process.platform === 'win32' }, () => {
+  const f = fixture(config('echo okay'));
+  try {
+    fs.unlinkSync(f.file);
+    execFileSync('mkfifo', [f.file]);
+    const source = new URL('../hooks.ts', import.meta.url).href;
+    const code = `import { readProjectHooks } from ${JSON.stringify(source)}; try { readProjectHooks(${JSON.stringify(f.cwd)}); process.exit(2); } catch (e) { if (!/regular file/.test(String(e))) throw e; }`;
+    const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(child.error, undefined, 'the reader must never wait on a repository FIFO');
+    assert.equal(child.status, 0, child.stderr);
+  } finally { f.cleanup(); }
+});
+
+
+test('an authorized child tool receives the parent sandbox narrowed to its isolated worktree', async () => {
+  const f = fixture({ version: 1, hooks: {} });
+  const priorHome = process.env.JUNO_HOME;
+  process.env.JUNO_HOME = path.join(f.cwd, 'session-home');
+  fs.writeFileSync(path.join(f.cwd, 'source.txt'), 'fixture');
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: f.cwd });
+  execFileSync('git', ['add', '.'], { cwd: f.cwd });
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture'], { cwd: f.cwd });
+  let rootCalls = 0;
+  let childCalls = 0;
+  const captured: ToolContext[] = [];
+  const sandbox = { image: 'test-only-image', worktreeHostPath: f.cwd, network: 'none' as const, forwardEnv: ['PATH'] };
+  const provider = scriptedProvider('child-sandbox', (req) => {
+    if (req.system.includes('SUBAGENT')) return childCalls++ === 0 ? call('child-read', 'read_file', {}) : say('child done');
+    if (rootCalls++ === 0) return call('delegate-1', 'delegate_tasks', { tasks: [{ title: 'Read', prompt: 'read in an isolated worktree', role: 'builder', writes: true }] });
+    if (rootCalls === 2) return call('await-1', 'await_subagents', {});
+    return say('done');
+  });
+  const session = AgentSession.create({ cwd: f.cwd, provider, mode: 'full', containerSandbox: sandbox,
+    tools: [{ kind: 'read', spec: { name: 'read_file', description: '', inputSchema: {} }, summarize: () => '', execute: async (_input, ctx) => { captured.push(ctx); return { output: 'read' }; } }],
+    callbacks: { onEvent: () => {}, requestApproval: async () => 'allow' } });
+  try {
+    await session.prompt('delegate the read');
+    assert.equal(captured.length, 1);
+    assert.notEqual(captured[0].cwd, f.cwd);
+    assert.equal(captured[0].containerSandbox?.worktreeHostPath, captured[0].cwd);
+    assert.equal(captured[0].containerSandbox?.image, sandbox.image);
+    assert.equal(captured[0].containerSandbox?.network, 'none');
+    assert.deepEqual(captured[0].containerSandbox?.forwardEnv, ['PATH']);
+    assert.equal(sandbox.worktreeHostPath, f.cwd, 'the parent mount remains unchanged');
+  } finally { session.dispose(); if (priorHome === undefined) delete process.env.JUNO_HOME; else process.env.JUNO_HOME = priorHome; f.cleanup(); }
 });

@@ -16,6 +16,7 @@ import type {
 } from './types.js';
 import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
+import type { ProjectHooks } from './hooks.js';
 import { assertContainedPath, writeFileAtomic } from './tools/fs.js';
 import { PermissionEngine, classifyRisk, ruleSubjectFor, type PermissionRuleSet } from './permissions.js';
 import { addUsage } from './usage.js';
@@ -197,6 +198,8 @@ export interface SubagentHost {
   readonly provider: ProviderAdapter;
   readonly tools: ToolDefinition[];
   readonly env?: NodeJS.ProcessEnv;
+  readonly containerSandbox?: ToolContext['containerSandbox'];
+  readonly projectHooks?: ProjectHooks;
   readonly usageReporter?: UsageReporter;
   /** The root session's thinking effort; children think as hard as the root. */
   readonly reasoningEffort?: ReasoningEffort;
@@ -1924,6 +1927,8 @@ export class SubagentManager {
     const ctx: ToolContext = {
       cwd,
       env: this.host.env,
+      // Every child command, hooks included, sees only its own worktree mount.
+      ...(this.host.containerSandbox ? { containerSandbox: { ...this.host.containerSandbox, worktreeHostPath: cwd } } : {}),
       // Tools that share a host resource (background jobs) tie it to this child.
       agentId: task.id,
       ...(this.host.spillDir ? { readOnlyRoots: [this.host.spillDir] } : {}),
@@ -2170,12 +2175,21 @@ export class SubagentManager {
     let backgroundJob: string | undefined;
     let images: import('./tools/types.js').ToolResult['images'];
     try {
-      const result = await tool.execute(call.input, {
+      const executionContext: ToolContext = {
         ...ctx, callId: call.id, signal: task.aborter.signal,
         agentId: task.id, model: task.route.model,
         supportsVision: task.route.adapter.capabilities(task.route.model).vision,
         permissionMode: task.spec.writes && roleAllowsWrites(task.spec.role) ? task.mode : 'plan',
-      });
+      };
+      const before = await this.host.projectHooks?.run('PreToolUse', executionContext, { tool: call.name, input: call.input });
+      let result: import('./tools/types.js').ToolResult;
+      if (before?.ok === false) {
+        result = { output: before.reason!, isError: true };
+      } else {
+        try { result = await tool.execute(call.input, executionContext); }
+        catch (err) { result = { output: `Tool crashed: ${err instanceof Error ? err.message : String(err)}`, isError: true }; }
+        result = await this.host.projectHooks?.finishTool(call.name, call.input, result, executionContext) ?? result;
+      }
       output = result.output;
       isError = result.isError ?? false;
       exitCode = result.exitCode;

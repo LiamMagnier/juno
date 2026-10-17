@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { bashTool, MINIMAL_ENV } from './tools/bash.js';
-import type { ToolContext, ToolDefinition, ToolResult } from './tools/types.js';
+import type { ToolContext, ToolResult } from './tools/types.js';
 import type { AgentEvent, ApprovalDecision, ApprovalRequest } from './types.js';
 
 export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'Stop';
@@ -32,11 +32,13 @@ export function readProjectHooks(cwd: string): HookSnapshot | null {
   const file = path.join(dir, 'hooks.json');
   try {
     if (fs.lstatSync(dir).isSymbolicLink()) throw new Error('Hooks directory must stay inside the project');
-    const stat = fs.lstatSync(file);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 32_768) throw new Error('Hooks must be a regular file up to 32 KB');
-    const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    // Never create or truncate configuration. Nonblocking open also prevents
+    // a repository-provided FIFO from hanging before descriptor validation.
+    const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK, 0o600);
     let raw: Buffer;
     try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.size > 32_768) throw new Error('Hooks must be a regular file up to 32 KB');
       // Bound the read as well as stat: a concurrent append cannot grow it.
       raw = Buffer.alloc(32_769);
       raw = raw.subarray(0, fs.readSync(fd, raw, 0, raw.length, 0));
@@ -45,6 +47,7 @@ export function readProjectHooks(cwd: string): HookSnapshot | null {
     return { config: parseProjectHooks(raw.toString('utf8')), hash: createHash('sha256').update(raw).digest('hex'), file };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw new Error('Hooks must be a regular file up to 32 KB');
     throw err;
   }
 }
@@ -108,16 +111,10 @@ export class ProjectHooks {
     return { ok: true };
   }
 
-  wrap(tool: ToolDefinition, sandboxFor: (ctx: ToolContext) => ToolContext = (ctx) => ctx): ToolDefinition {
-    return { ...tool, execute: async (input, ctx) => {
-      const hookCtx = sandboxFor(ctx);
-      const before = await this.run('PreToolUse', hookCtx, { tool: tool.spec.name, input });
-      if (!before.ok) return { output: before.reason!, isError: true };
-      let result: ToolResult;
-      try { result = await tool.execute(input, ctx); }
-      catch (err) { result = { output: `Tool crashed: ${err instanceof Error ? err.message : String(err)}`, isError: true }; }
-      const after = await this.run('PostToolUse', hookCtx, { tool: tool.spec.name, input, result });
-      return after.ok ? result : { ...result, isError: true, output: `${result.output}\n\n${after.reason}` };
-    } };
+  /** The owning dispatcher executes the tool only after its permission gate.
+   * Hooks decorate results, never add a second tool-execution chokepoint. */
+  async finishTool(tool: string, input: Record<string, unknown>, result: ToolResult, ctx: ToolContext): Promise<ToolResult> {
+    const after = await this.run('PostToolUse', ctx, { tool, input, result });
+    return after.ok ? result : { ...result, isError: true, output: `${result.output}\n\n${after.reason}` };
   }
 }

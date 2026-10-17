@@ -355,14 +355,6 @@ export class AgentSession {
         return this.permissions.decide(ctx.permissionMode ?? this.mode, 'bash', risk, subject);
       },
     });
-    if (this.projectHooks) {
-      this.tools = this.tools.map((tool) => this.projectHooks!.wrap(tool, (ctx) => ({
-        ...ctx,
-        // Children inherit the same confinement, narrowed to their worktree.
-        ...(opts.containerSandbox && !ctx.containerSandbox ? { containerSandbox: { ...opts.containerSandbox, worktreeHostPath: ctx.cwd } } : {}),
-      })));
-      this.toolsByName = new Map(this.tools.map((tool) => [tool.spec.name, tool]));
-    }
     this.checkpoints = new CheckpointStore(store.dir);
     this.messages = store.loadMessages();
     this.repositoryMap = store.loadRepositoryMap();
@@ -397,6 +389,8 @@ export class AgentSession {
           get provider() { return session.provider; },
           get tools() { return session.tools; },
           get env() { return session.env; },
+          get containerSandbox() { return session.containerSandbox; },
+          get projectHooks() { return session.projectHooks ?? undefined; },
           get usageReporter() { return session.usageReporter; },
           get reasoningEffort() { return session.reasoningEffort; },
           get permissionRules() { return session.permissions.ruleSet; },
@@ -1120,7 +1114,15 @@ export class AgentSession {
     let backgroundJob: string | undefined;
     let images: import('./tools/types.js').ToolResult['images'];
     try {
-      const result = await tool.execute(call.input, ctx);
+      const before = await this.projectHooks?.run('PreToolUse', ctx, { tool: call.name, input: call.input });
+      let result: import('./tools/types.js').ToolResult;
+      if (before?.ok === false) {
+        result = { output: before.reason!, isError: true };
+      } else {
+        try { result = await tool.execute(call.input, ctx); }
+        catch (err) { result = { output: `Tool crashed: ${err instanceof Error ? err.message : String(err)}`, isError: true }; }
+        result = await this.projectHooks?.finishTool(call.name, call.input, result, ctx) ?? result;
+      }
       output = result.output;
       isError = result.isError ?? false;
       exitCode = result.exitCode;
