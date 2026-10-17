@@ -7,6 +7,10 @@ light on a shared machine (production builds only, nothing left running).
 
 ## The base gate
 
+Checks and statuses are read for one exact main SHA. The package must include
+that main commit. Vercel checks are excluded as directed by the owner; the
+GitHub Actions checks still must pass, including all native jobs.
+
 ```sh
 bash scripts/qa/check-base.sh            # or: npm run qa:check-base
 ```
@@ -51,8 +55,9 @@ What the runner guarantees, in order:
    `.env.production.local` (or `prisma/.env`) exists, because Next and Prisma
    would read them behind its back, and when `E2E_BASE_URL` is anything but
    `127.0.0.1` or `localhost`. Node 24 or newer is required.
-2. **A disposable database** (`ensure-test-db.mjs`): dropped if left over,
-   created, migrated with `prisma migrate deploy` using only `DATABASE_URL` and
+2. **A disposable database** (`ensure-test-db.mjs`): created only if its name
+   is unused; an existing database is refused and left intact. A successful
+   create records ownership in the run's private `database.json`, then it is migrated with `prisma migrate deploy` using only `DATABASE_URL` and
    `DIRECT_URL` (plus `PATH` and `HOME` so the CLI starts), then seeded:
    `scripts/seed-e2e-user.ts`, `scripts/seed-research-e2e.ts` and
    `seed-qa-fixtures.ts` (a 1,000-message thread and a Code session; their ids
@@ -69,8 +74,9 @@ What the runner guarantees, in order:
    dev-server path.
 5. **Teardown on EXIT, INT and TERM** (`teardown.mjs`): every recorded process
    group (Playwright's, the server's) gets `SIGTERM`, then `SIGKILL` after 10s;
-   the database is dropped; and a ps check fails the run if any `node`, `next`
-   or `postgres` process from the run is still alive.
+   only the database recorded as created by this run is dropped; and a ps check fails the run if any `node`, `next`
+   or `postgres` process from the run is still alive. If cleanup fails, the
+   run directory and ownership record are retained for diagnosis and retry.
 
 `serve-prod.mjs` does not run `prisma generate`: worktrees share
 `node_modules`, so regenerate the client yourself after a schema change.

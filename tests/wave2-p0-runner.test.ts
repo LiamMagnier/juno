@@ -50,7 +50,7 @@ function makeRoot(playwrightStub = "exit 0"): Fixture {
   // The database step records its arguments and the database it was given.
   writeFileSync(
     path.join(dir, "scripts", "qa", "ensure-test-db.mjs"),
-    `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(log)}, "db " + (process.argv.slice(2).join(" ") || "create") + " " + process.env.DATABASE_URL + "\\n");\n`
+    `import { appendFileSync, writeFileSync } from "node:fs";\nimport path from "node:path";\nif (!process.argv.includes("--drop")) writeFileSync(path.join(process.env.ALEVR_QA_RUN_DIR, "database.json"), JSON.stringify({ database: new URL(process.env.DATABASE_URL).pathname.slice(1) }));\nappendFileSync(${JSON.stringify(log)}, "db " + (process.argv.slice(2).join(" ") || "create") + " " + process.env.DATABASE_URL + "\\n");\n`
   );
   mkdirSync(path.join(dir, "node_modules", ".bin"), { recursive: true });
   const playwright = path.join(dir, "node_modules", ".bin", "playwright");

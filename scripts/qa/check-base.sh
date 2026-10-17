@@ -76,11 +76,11 @@ if ! command -v gh >/dev/null 2>&1; then
   fail "main CI could not be read: the GitHub CLI (gh) is not installed"
 else
   CI_SHA="$(gh api "repos/{owner}/{repo}/commits/$MAIN_BRANCH" --jq '.sha' 2>/dev/null)"
-  CHECKS="$(gh api "repos/{owner}/{repo}/commits/$MAIN_BRANCH/check-runs?per_page=100" \
+  CHECKS="$(gh api "repos/{owner}/{repo}/commits/$CI_SHA/check-runs?per_page=100" \
     --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null)"
   CHECKS_STATUS=$?
-  STATUS_LINE="$(gh api "repos/{owner}/{repo}/commits/$MAIN_BRANCH/status" \
-    --jq '.state + " " + (.total_count | tostring)' 2>/dev/null)"
+  STATUS_LINE="$(gh api "repos/{owner}/{repo}/commits/$CI_SHA/status" \
+    --jq '[.statuses[] | select(.context != "Vercel")] as $checks | (if any($checks[]; .state == "failure" or .state == "error") then "failure" elif any($checks[]; .state != "success") then "pending" else "success" end) + " " + ($checks | length | tostring)' 2>/dev/null)"
   STATUS_STATUS=$?
   if [ "$CHECKS_STATUS" -ne 0 ] || [ "$STATUS_STATUS" -ne 0 ]; then
     fail "main CI could not be read from GitHub (gh api failed; is gh signed in?)"
@@ -88,6 +88,8 @@ else
     total=0; bad=()
     while IFS=$'\t' read -r name status conclusion; do
       [ -z "${name:-}" ] && continue
+      # The owner explicitly excludes Vercel: production ships through Actions.
+      case "$name" in Vercel|"Vercel Preview Comments") continue ;; esac
       total=$((total + 1))
       if [ "$status" != "completed" ]; then
         bad+=("$name: $status")
@@ -104,7 +106,7 @@ else
     fi
     label="$MAIN_BRANCH${CI_SHA:+ at ${CI_SHA:0:9}}"
     if [ -n "${CI_SHA:-}" ] && [ -n "${MERGE_BASE:-}" ] && [ "$CI_SHA" != "$MERGE_BASE" ]; then
-      echo "  note  GitHub's $MAIN_BRANCH is at ${CI_SHA:0:9} but HEAD is based on ${MERGE_BASE:0:9}; the CI result is for ${CI_SHA:0:9}."
+      fail "HEAD does not include $MAIN_BRANCH at ${CI_SHA:0:9}; update the base before building wave 2"
     fi
     if [ "$total" -eq 0 ]; then
       fail "main CI has no check runs for $label"

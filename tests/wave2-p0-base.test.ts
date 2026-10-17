@@ -27,13 +27,14 @@ const GIT_ENV = {
   GIT_CONFIG_NOSYSTEM: "1",
 };
 
-type CiMode = "green" | "red" | "pending" | "status-pending" | "empty" | "error";
+type CiMode = "green" | "red" | "vercel-red" | "pending" | "status-pending" | "empty" | "error";
 
 /** A fake GitHub CLI that answers the three `gh api` calls the gate makes. */
 function fakeGh(binDir: string, mode: CiMode) {
   const checks: Record<CiMode, string> = {
     green: "test\\tcompleted\\tsuccess\\nmacOS app\\tcompleted\\tskipped\\nAnalyze\\tcompleted\\tneutral",
     red: "test\\tcompleted\\tsuccess\\niOS app\\tcompleted\\tfailure",
+    "vercel-red": "test\\tcompleted\\tsuccess\\nVercel\\tcompleted\\tfailure",
     pending: "test\\tin_progress\\t\\nmigrations\\tcompleted\\tsuccess",
     "status-pending": "test\\tcompleted\\tsuccess",
     empty: "",
@@ -45,7 +46,7 @@ if [ "${mode}" = error ]; then echo "gh: authentication required" >&2; exit 1; f
 case "$*" in
   *check-runs*) printf '${checks[mode]}\\n' ;;
   *"/status"*) echo "${status}" ;;
-  *) echo "0123456789abcdef0123456789abcdef01234567" ;;
+  *) git rev-parse main ;;
 esac
 `;
   writeFileSync(path.join(binDir, "gh"), script);
@@ -102,7 +103,7 @@ test("passes when wave 1 is in the history, nothing is unmerged and main CI is g
     assert.match(run.stdout, new RegExp(`Base SHA: ${git(repo.dir, "rev-parse", "HEAD")}`));
     assert.match(run.stdout, /pass {2}no unmerged paths/);
     assert.match(run.stdout, /pass {2}wave-1 integration commit/);
-    assert.match(run.stdout, /pass {2}main CI is green for main at 012345678 \(3 checks\)/);
+    assert.match(run.stdout, new RegExp(String.raw`pass {2}main CI is green for main at ${git(repo.dir, "rev-parse", "main").slice(0, 9)} \(3 checks\)`));
     assert.match(run.stdout, /Base gate: pass/);
   } finally {
     repo.cleanup();
@@ -201,6 +202,10 @@ test("passes on this repository's wave-1 base (CI faked green)", (t) => {
     t.skip("the working tree has unmerged paths right now");
     return;
   }
+  if (spawnSync("git", ["merge-base", "--is-ancestor", "main", "HEAD"], { cwd: ROOT }).status !== 0) {
+    t.skip("the existing package branch must be updated onto main first");
+    return;
+  }
   const bin = mkdtempSync(path.join(tmpdir(), "alevr-qa-gh-"));
   try {
     fakeGh(bin, "green");
@@ -215,4 +220,28 @@ test("passes on this repository's wave-1 base (CI faked green)", (t) => {
   } finally {
     rmSync(bin, { recursive: true, force: true });
   }
+});
+
+test("fails when the checked main commit is newer than this package's base", () => {
+  const repo = makeRepo();
+  try {
+    git(repo.dir, "checkout", "-q", "-b", "package");
+    git(repo.dir, "checkout", "-q", "main");
+    writeFileSync(path.join(repo.dir, "new-main.txt"), "new main");
+    git(repo.dir, "add", ".");
+    git(repo.dir, "commit", "-q", "-m", "advance main");
+    git(repo.dir, "checkout", "-q", "package");
+    const run = runGate(repo, ["--wave1", repo.wave1]);
+    assert.equal(run.status, 1, run.stdout);
+    assert.match(run.stdout, /HEAD does not include main/);
+  } finally { repo.cleanup(); }
+});
+
+test("the owner-excluded Vercel check cannot block an otherwise green Actions base", () => {
+  const repo = makeRepo();
+  try {
+    const run = runGate(repo, ["--wave1", repo.wave1], { gh: "vercel-red" });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, /main CI is green/);
+  } finally { repo.cleanup(); }
 });

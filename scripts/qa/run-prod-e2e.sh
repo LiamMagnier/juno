@@ -92,7 +92,6 @@ mkdir -p "$REPORT_DIR"
 : > "$REPORT_DIR/.alevr-qa-report"
 
 RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/alevr-qa.XXXXXX")"
-DB_STARTED=0
 export ALEVR_QA_RUNNER_PGID="$(ps -o pgid= -p $$ | tr -d ' ')"
 
 cleanup() {
@@ -101,12 +100,16 @@ cleanup() {
   set +e
   node scripts/qa/teardown.mjs --root-pid $$ --run-dir "$RUN_DIR" --kill-only
   local drop_status=0
-  if [ "$DB_STARTED" = 1 ]; then
-    node scripts/qa/ensure-test-db.mjs --drop || drop_status=$?
+  if [ -f "$RUN_DIR/database.json" ]; then
+    ALEVR_QA_RUN_DIR="$RUN_DIR" node scripts/qa/ensure-test-db.mjs --drop || drop_status=$?
   fi
   node scripts/qa/teardown.mjs --root-pid $$ --run-dir "$RUN_DIR" --check-only
   local ps_status=$?
-  rm -rf "$RUN_DIR"
+  if [ "$drop_status" -eq 0 ] && [ "$ps_status" -eq 0 ]; then
+    rm -rf "$RUN_DIR"
+  else
+    log "Cleanup incomplete; ownership and process records retained at $RUN_DIR."
+  fi
   if [ "$drop_status" -ne 0 ]; then log "The test database could not be dropped."; fi
   if [ "$status" -eq 0 ] && { [ "$ps_status" -ne 0 ] || [ "$drop_status" -ne 0 ]; }; then status=1; fi
   exit "$status"
@@ -128,8 +131,7 @@ while IFS= read -r -d '' pair; do CHILD_ENV+=("$pair"); done < <(node scripts/qa
 if [ "${#CHILD_ENV[@]}" -eq 0 ]; then log "Could not build the child environment."; exit 2; fi
 
 # 2. The disposable database.
-DB_STARTED=1
-node scripts/qa/ensure-test-db.mjs
+ALEVR_QA_RUN_DIR="$RUN_DIR" node scripts/qa/ensure-test-db.mjs
 
 if [ "$SEED" = 1 ]; then
   log "Seeding the E2E account and QA fixtures..."

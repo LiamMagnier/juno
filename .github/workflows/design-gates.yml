@@ -137,6 +137,17 @@ jobs:
           brew install xcodegen
       - name: Generate projects
         run: ./native/Scripts/generate-projects.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Bundle the env server required by Stable builds
+        run: |
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+          npm run env-server:bundle:mac
+          test -s native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
       - name: Performance and snapshot suites
         env:
           ALEVR_QA_REPORT_DIR: ${{ github.workspace }}/test-results/native
