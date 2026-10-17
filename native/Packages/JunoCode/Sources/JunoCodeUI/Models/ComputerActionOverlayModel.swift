@@ -37,6 +37,8 @@ public final class ComputerActionOverlayModel {
     }
 
     public private(set) var mark: Mark?
+    /// The status bar stays compact until the reader asks to see the app.
+    public var isPreviewExpanded = false
 
     @ObservationIgnored private let feed: ComputerActionFeed
     @ObservationIgnored private let mainDisplayHeight: () -> CGFloat
@@ -73,6 +75,7 @@ public final class ComputerActionOverlayModel {
         hide?.cancel()
         mark = nil
         sessionID = nil
+        isPreviewExpanded = false
     }
 
     func apply(_ cue: ComputerActionCue) {
@@ -85,9 +88,9 @@ public final class ComputerActionOverlayModel {
             serial += 1
             mark = Mark(
                 label: cue.label, appName: cue.appName,
-                point: cue.point.map(flip) ?? previous?.point ?? cue.windowFrame.map { flip($0.center) },
+                point: cue.point.map(flip) ?? previous?.point,
                 live: false, succeeded: nil, serial: serial,
-                capturePoint: cue.point ?? previous?.capturePoint ?? cue.windowFrame?.center,
+                capturePoint: cue.point ?? previous?.capturePoint,
                 thumbnail: cue.thumbnail ?? previous?.thumbnail,
                 windowFrame: cue.windowFrame ?? previous?.windowFrame
             )
@@ -126,6 +129,7 @@ public final class ComputerActionOverlayModel {
             hide?.cancel()
             mark = nil
             sessionID = nil
+            isPreviewExpanded = false
         }
     }
 
