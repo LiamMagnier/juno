@@ -133,7 +133,7 @@ test("with ALEVR_ALLOW_LOCAL_NATIVE=1 it boots a simulator for iOS and shuts it 
     const build = log.split("\n").find((line) => line.startsWith("xcodebuild")) ?? "";
     assert.match(build, /-configuration Stable/);
     assert.match(build, /-only-testing:JunoMobileTests\/Wave2SamplePerformanceTests/);
-    assert.doesNotMatch(build, /Wave2PerformanceSupportTests/, "only *PerformanceTests suites are perf suites");
+    assert.match(build, /-only-testing:JunoMobileTests\/Wave2PerformanceSupportTests/, "the clock and report regressions run alongside the sample");
     assert.match(build, /ENABLE_TESTABILITY=YES/);
     assert.equal(readFileSync(sim.state, "utf8").trim(), "SIM-ALREADY");
   } finally {
@@ -163,6 +163,8 @@ test("the snapshot suite picks up the wave-2 support snapshot suites by name", (
     assert.equal(run.status, 0, run.stderr);
     const build = readFileSync(sim.log, "utf8").split("\n").find((line) => line.startsWith("xcodebuild")) ?? "";
     assert.match(build, /-only-testing:JunoDesktopTests\/Wave2SupportSnapshotTests/);
+    assert.match(build, /-only-testing:JunoDesktopTests\/Wave2SnapshotSupportTests/);
+    assert.match(build, /-only-testing:JunoDesktopTests\/Wave2TextScaleTests/);
     assert.doesNotMatch(build, /Wave2SamplePerformanceTests/);
   } finally {
     sim.cleanup();

@@ -10,7 +10,9 @@
 # Which tests run: every XCTestCase class or Swift Testing suite whose name
 # ends in PerformanceTests (perf) or SnapshotTests (snapshots), found under
 # Tests/Performance, Tests/Snapshots/Support and Tests/Wave2 of each app (the
-# wave-2 locations; the older snapshot suites keep their own scripts). Packages
+# wave-2 locations; the older snapshot suites keep their own scripts). The
+# helper regression suites run too: clock, report, environment and text-scale
+# bugs must fail the same CI that relies on those helpers. Packages
 # add suites there by naming them; nobody edits this script to register one.
 #
 # Reports: xcresult bundles, snapshot PNGs and the JSON the Wave2 helpers write
@@ -96,9 +98,9 @@ tests_for() {
 
 SUFFIXES=()
 case "$SUITE" in
-  perf) SUFFIXES=(PerformanceTests) ;;
-  snapshots) SUFFIXES=(SnapshotTests) ;;
-  all) SUFFIXES=(PerformanceTests SnapshotTests) ;;
+  perf) SUFFIXES=(PerformanceTests PerformanceSupportTests) ;;
+  snapshots) SUFFIXES=(SnapshotTests SnapshotSupportTests TextScaleTests) ;;
+  all) SUFFIXES=(PerformanceTests PerformanceSupportTests SnapshotTests SnapshotSupportTests TextScaleTests) ;;
 esac
 
 run_app() {
