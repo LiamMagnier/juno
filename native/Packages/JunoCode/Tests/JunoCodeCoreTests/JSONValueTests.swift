@@ -40,5 +40,9 @@ final class JSONValueTests: XCTestCase {
         XCTAssertEqual(JSONValue.number(4).intValue, 4)
         XCTAssertNil(JSONValue.number(4.5).intValue)
         XCTAssertNil(JSONValue.string("4").intValue)
+        for value in [Double(Int.max), .infinity, -.infinity, .nan, 1e100] {
+            XCTAssertNil(JSONValue.number(value).intValue)
+        }
+        XCTAssertEqual(JSONValue.number(Double(Int.min)).intValue, Int.min)
     }
 }

@@ -26,6 +26,9 @@ struct StudioScreenStep: Equatable {
     /// TextEdit." or the refusal's sentence.
     var outcome: String? = nil
 
+    var isRecovering: Bool { succeeded == false && ComputerStepPresentation.needsFreshView(outcome) }
+    var isFailure: Bool { succeeded == false && !isRecovering }
+
     /// The tools drawn as step rows.
     static let tools: Set<String> = [ComputerUseToolName.computer, ComputerUseToolName.batch, ComputerUseToolName.menu]
 
@@ -110,7 +113,7 @@ struct StudioScreenStepRow: View {
             }
             Text(Self.caption(for: step))
                 .font(Studio.Font.meta)
-                .foregroundStyle(step.succeeded == false ? Studio.Ink.danger : Studio.Ink.secondary)
+                .foregroundStyle(step.isFailure ? Studio.Ink.danger : Studio.Ink.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -123,6 +126,7 @@ struct StudioScreenStepRow: View {
     /// The tool's own sentence once it finished; "Clicking in TextEdit…"
     /// while it runs.
     static func caption(for step: StudioScreenStep) -> String {
+        if step.isRecovering { return ComputerStepPresentation.refreshMessage }
         if let outcome = step.outcome, !outcome.isEmpty {
             return outcome
         }

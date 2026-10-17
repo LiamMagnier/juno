@@ -189,6 +189,30 @@ final class JunoDesignTokensTests: XCTestCase {
         return (alpha(0, 0), alpha(width / 2, height / 2))
     }
 
+    @MainActor
+    func testConcentricChildrenResolveTheHostedContainer() throws {
+        // SDK 26 resolves concentric corners during layout; a bare path has
+        // no container environment. Exercise the actual hosted shape instead.
+        let renderer = ImageRenderer(content:
+            JunoRadius.concentric().fill(Color.white)
+                .frame(width: 120, height: 40)
+                .padding(10)
+                .containerShape(.rect(cornerRadius: 20))
+        )
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        let context = try XCTUnwrap(CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        func alpha(_ x: Int, _ y: Int) -> UInt8 { pixels[(y * image.width + x) * 4 + 3] }
+        XCTAssertGreaterThan(alpha(70, 30), 240, "the child is rendered")
+        XCTAssertLessThan(alpha(11, 11), 30, "the container rounds the child's corner")
+    }
+
     /// The three names that used to mean different sizes on the two platforms.
     ///
     /// `control` and `panel` were renamed precisely because the web owns those

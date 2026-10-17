@@ -121,17 +121,7 @@ public actor AgentOrchestrator {
             maximumRetainedImages: Int = 20,
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
-            // `Task.sleep(nanoseconds:)`, not `Task.sleep(for:)`. The latter
-            // is generic code emitted into this module, and Xcode 26's
-            // compiler leaves its task allocations behind when the sleep is
-            // cancelled: a Stop during a backoff aborted the process
-            // ("freed pointer was not the last allocation"). The clamp keeps
-            // the product inside UInt64; a backoff is seconds long.
-            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
-                let (seconds, attoseconds) = duration.components
-                let whole = UInt64(clamping: min(seconds, 18_000_000_000))
-                try await Task.sleep(nanoseconds: whole * 1_000_000_000 + UInt64(clamping: attoseconds / 1_000_000_000))
-            },
+            retrySleep: (@Sendable (Duration) async throws -> Void)? = nil,
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
             repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,
@@ -155,7 +145,15 @@ public actor AgentOrchestrator {
             self.maximumRetainedImages = max(1, maximumRetainedImages)
             self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
             self.retryPolicy = retryPolicy
-            self.retrySleep = retrySleep
+            // Keep the async closure in this module. A closure literal in a
+            // public default argument is emitted again in client modules;
+            // Xcode 26 can link mismatched async frames and abort on Stop.
+            // https://github.com/swiftlang/swift/issues/92017
+            self.retrySleep = retrySleep ?? { duration in
+                let (seconds, attoseconds) = duration.components
+                let whole = UInt64(clamping: min(seconds, 18_000_000_000))
+                try await Task.sleep(nanoseconds: whole * 1_000_000_000 + UInt64(clamping: attoseconds / 1_000_000_000))
+            }
             self.retryJitter = retryJitter
             self.autonomy = autonomy
         }

@@ -16,9 +16,13 @@ import Foundation
 ///   after it, `cleared` when a stop lands mid-action. Their session id is
 ///   `work:<run id>`, the id Work holds the lock under.
 ///
-/// Observations (screenshots, accessibility reads) draw nothing.
+/// Observations refresh the live preview without implying that input was sent.
 public struct ComputerActionCue: Hashable, Sendable {
     public enum Phase: Hashable, Sendable {
+        /// A fresh observation: the preview updates while input is idle.
+        case observing
+        /// Explicit reader handoff; the last preview remains visible.
+        case paused(Bool)
         /// About to send: the ring goes to `point`, the label reads the action.
         case acting
         /// Sent; the screen has settled.
@@ -35,14 +39,18 @@ public struct ComputerActionCue: Hashable, Sendable {
     public var appName: String?
     public var phase: Phase
     public var at: Date
+    public var thumbnail: Data?
+    public var windowFrame: ScreenRect?
 
-    public init(sessionID: String, label: String, point: ScreenPoint?, appName: String?, phase: Phase, at: Date = Date()) {
+    public init(sessionID: String, label: String, point: ScreenPoint?, appName: String?, phase: Phase, at: Date = Date(), thumbnail: Data? = nil, windowFrame: ScreenRect? = nil) {
         self.sessionID = sessionID
         self.label = label
         self.point = point
         self.appName = appName
         self.phase = phase
         self.at = at
+        self.thumbnail = thumbnail
+        self.windowFrame = windowFrame
     }
 }
 

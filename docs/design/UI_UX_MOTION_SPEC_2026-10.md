@@ -1108,6 +1108,9 @@ Harness: P0. Owners enforce their gates by listing them in their own `e2e/wave2/
 
 ## 11. Owner sign-offs (needed before the dependent train ships, not before building)
 
+**Owner decisions, 2026-10-16.** The owner approved S1 (signal plus hand means needs you everywhere; signal 14 → 24/28, destructive 3 → 356), S3 (one bubble shape, 12 with an 8 tuck), S4 (home composer width equals the dock, 75ch wide prose cap, the 12px type floor on web, drawer dim 0.12) and S7 (Ultramarine becomes Cobalt). S2 stays at no change, S6 ships opt-in behind the Automation prompt, and S8 waits for a check of every provider's terms. S5 is informational.
+
+
 - **S1:** signal plus hand means needs you in every product, and the hue moves (signal 14 → 24/28, destructive 3 → 356). Amber becomes warnings only. This overrides the audit's coral-for-Code, presence-for-Chat-and-Work split. Packages build against role tokens, so a rejection changes only the role mapping in globals.css.
 - **S2:** a graphite hairline and scrim retune. The default is no change.
 - **S3:** the unified bubble shape (12/8 tuck; Code v2's 18 retired).

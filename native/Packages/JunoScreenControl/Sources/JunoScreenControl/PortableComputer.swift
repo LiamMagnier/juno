@@ -97,7 +97,12 @@ public struct PortableComputerCall: Hashable, Sendable, Codable {
         query = try? c.decodeIfPresent(String.self, forKey: .query)
         text = try? c.decodeIfPresent(String.self, forKey: .text)
         direction = try? c.decodeIfPresent(String.self, forKey: .direction)
-        amount = Self.lenientNumber(c, .amount).map { Int($0) }
+        if c.contains(.amount), try !c.decodeNil(forKey: .amount) {
+            guard let number = Self.lenientNumber(c, .amount), let integer = Int(exactly: number) else {
+                throw PortableComputerError("amount must be a whole number from 1 to 30.")
+            }
+            amount = integer
+        }
         seconds = Self.lenientNumber(c, .seconds)
         region = try? c.decodeIfPresent([Double].self, forKey: .region)
         path = try? c.decodeIfPresent([String].self, forKey: .path)

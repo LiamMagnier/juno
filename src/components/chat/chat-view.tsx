@@ -80,7 +80,8 @@ import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-vo
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
-import { stripMemoryTags } from "@/lib/message-content";
+import { parseStreamingArtifact, stripMemoryTags } from "@/lib/message-content";
+import type { LiveArtifactSource } from "@/components/canvas/canvas-panel";
 import { speechForReply } from "@/lib/chat/tool-run-speech";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
@@ -153,6 +154,8 @@ function isApplePlatform() {
  * an inline custom property, and a property with no value is not a narrow panel,
  * it is a full-bleed one. */
 const CANVAS_SSR_WIDTH = 560;
+/** How often the canvas's live blueprint is handed the rewritten source. */
+const LIVE_SOURCE_INTERVAL_MS = 200;
 
 const THOUGHT_WIDTH_KEY = "juno:thought-width";
 
@@ -1113,6 +1116,33 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     () => openableArtifacts.find((a) => a.id === openArtifactId) ?? null,
     [openableArtifacts, openArtifactId]
   );
+
+  /*
+   * The open artifact's new source while the streaming reply rewrites it, for
+   * the canvas's live blueprint. Read from the reply's tail at most every
+   * LIVE_SOURCE_INTERVAL_MS, so a token does not re-render the canvas.
+   */
+  const lastMessage = chat.messages[chat.messages.length - 1];
+  const replyText = lastMessage?.role === "ASSISTANT" && lastMessage.streaming ? lastMessage.content : null;
+  const openIdentifier = openArtifact?.identifier ?? null;
+  const [canvasLiveSource, setCanvasLiveSource] = React.useState<LiveArtifactSource | null>(null);
+  const liveSourceReadAt = React.useRef(0);
+  React.useEffect(() => {
+    const read = () => {
+      liveSourceReadAt.current = performance.now();
+      const open = replyText && openIdentifier ? parseStreamingArtifact(replyText) : null;
+      setCanvasLiveSource(
+        open && open.identifier === openIdentifier ? { content: open.content, type: open.type, language: open.language ?? null } : null
+      );
+    };
+    const wait = replyText ? liveSourceReadAt.current + LIVE_SOURCE_INTERVAL_MS - performance.now() : 0;
+    if (wait <= 0) {
+      read();
+      return;
+    }
+    const timer = window.setTimeout(read, wait);
+    return () => window.clearTimeout(timer);
+  }, [replyText, openIdentifier]);
 
   // Every file in the transcript, once each, in the order it arrived — the
   // viewer's switcher, and where the open file is looked up.
@@ -2912,6 +2942,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             onQuote={handleQuote}
             shareable={!privateMode}
+            liveSource={openArtifact ? canvasLiveSource : null}
           />
         </div>
       )}

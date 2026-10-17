@@ -8,6 +8,7 @@
 @import "../components/chat/composer.css";
 @import "../components/chat/composer-media-params.css";
 @import "../components/chat/generation.css";
+@import "../components/canvas/live-blueprint.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

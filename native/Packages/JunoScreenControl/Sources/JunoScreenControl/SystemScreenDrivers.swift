@@ -47,6 +47,20 @@ public struct SystemScreenEnvironment: ScreenEnvironment {
         self.ownProcess = ownProcess
     }
 
+    /// Resolve Launch Services metadata on the main run loop. A just-launched
+    /// app may have a bundle URL before NSRunningApplication fills its id.
+    @MainActor
+    static func identity(pid: Int32) -> RunningApp? {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier == pid })
+            ?? NSRunningApplication(processIdentifier: pid), !app.isTerminated else { return nil }
+        let bundle = app.bundleURL.flatMap { Bundle(url: $0) }
+        guard let id = app.bundleIdentifier ?? bundle?.bundleIdentifier, !id.isEmpty else { return nil }
+        return RunningApp(
+            pid: pid, bundleID: id, name: app.localizedName ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String ?? id,
+            isActive: app.isActive, appStoreCategory: AppCategoryCache.category(of: app.bundleURL)
+        )
+    }
+
     public func runningApps() async -> [RunningApp] {
         let apps = await MainActor.run {
             NSWorkspace.shared.runningApplications.compactMap { app -> (Int32, String, String, Bool, URL?)? in
@@ -76,9 +90,9 @@ public struct SystemScreenEnvironment: ScreenEnvironment {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]]
         else { return [] }
-        let running = NSRunningApplication(processIdentifier: pid)
-        let bundleID = running?.bundleIdentifier ?? ""
-        let appName = running?.localizedName ?? bundleID
+        guard let running = await Self.identity(pid: pid) else { return [] }
+        let bundleID = running.bundleID
+        let appName = running.name
         return list.compactMap { info -> WindowInfo? in
             guard (info[kCGWindowOwnerPID as String] as? Int32) == pid,
                   (info[kCGWindowLayer as String] as? Int) == 0,
@@ -221,30 +235,50 @@ final class InstalledAppsCache: @unchecked Sendable {
 // MARK: - Capture
 
 public struct SystemScreenCapture: ScreenCapturing {
+    private struct Content: @unchecked Sendable { let value: SCShareableContent }
+    private let windows = CaptureContentCache<Content> {
+        Content(value: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false))
+    }
     public init() {}
 
     public func capture(window: WindowInfo) async throws -> CapturedImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let scWindow = content.windows.first(where: { $0.windowID == window.windowID }) else {
+        var content = try await windows.value().value
+        let currentBounds = CGRect(x: window.frame.x, y: window.frame.y, width: window.frame.width, height: window.frame.height)
+        let candidate = content.windows.first { $0.windowID == window.windowID && $0.owningApplication?.processID == window.pid }
+        // Moving across displays can change the backing scale. Refresh the
+        // handle when live bounds change instead of reusing old geometry.
+        if candidate?.frame != currentBounds {
+            await windows.invalidate()
+            content = try await windows.value().value
+        }
+        guard let scWindow = content.windows.first(where: { $0.windowID == window.windowID && $0.owningApplication?.processID == window.pid }) else {
             throw ScreenControlError.windowGone(app: window.appName)
         }
         let filter = SCContentFilter(desktopIndependentWindow: scWindow)
         let scale = Double(filter.pointPixelScale)
         let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int((scWindow.frame.width * scale).rounded()))
-        configuration.height = max(1, Int((scWindow.frame.height * scale).rounded()))
+        // Geometry is read live by ScreenEnvironment, including moves and
+        // resizes since discovery. Only the window handle is reused.
+        configuration.width = max(1, Int((window.frame.width * scale).rounded()))
+        configuration.height = max(1, Int((window.frame.height * scale).rounded()))
         configuration.showsCursor = false
         configuration.ignoreShadowsSingleWindow = true
         configuration.capturesAudio = false
-        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        let image: CGImage
+        do {
+            image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        } catch {
+            await windows.invalidate()
+            throw error
+        }
         return CapturedImage(
             image: image,
-            origin: ScreenPoint(x: scWindow.frame.minX, y: scWindow.frame.minY),
-            pointWidth: scWindow.frame.width,
-            pointHeight: scWindow.frame.height,
+            origin: ScreenPoint(x: window.frame.minX, y: window.frame.minY),
+            pointWidth: window.frame.width,
+            pointHeight: window.frame.height,
             backingScale: scale,
             displayID: window.displayID,
-            windowTitle: scWindow.title
+            windowTitle: window.title
         )
     }
 
@@ -286,12 +320,82 @@ public struct SystemScreenCapture: ScreenCapturing {
 
 // MARK: - Accessibility
 
+/// A failed cross-process write can have taken effect. Only an explicitly
+/// unsupported operation is safe to replace with another input mechanism.
+enum AXWriteResult {
+    static func accepted(_ status: AXError) throws -> Bool {
+        switch status {
+        case .success: return true
+        case .actionUnsupported, .attributeUnsupported, .notImplemented: return false
+        default:
+            throw ScreenControlError.driverFailed(
+                "The app did not confirm the Accessibility input (error \(status.rawValue)). Its result is unknown; inspect a fresh screenshot before trying another action. The input was not repeated."
+            )
+        }
+    }
+}
+
 public final class SystemAccessibility: AccessibilityInspecting, @unchecked Sendable {
+    private struct Node: Hashable {
+        let element: AXUIElement
+        static func == (lhs: Self, rhs: Self) -> Bool { CFEqual(lhs.element, rhs.element) }
+        func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+    }
     private let lock = NSLock()
     /// The elements behind the ids of each app's last snapshot.
     private var references: [Int32: [String: AXUIElement]] = [:]
 
     public init() {}
+
+    /// One cross-process request for metadata, rather than one per field.
+    /// Values are read separately, after the secure-role check.
+    private func snapshotNode(_ element: AXUIElement, id: String, depth: Int, includeChildren: Bool) throws -> (AXElementInfo, [Node]) {
+        AXUIElementSetMessagingTimeout(element, 0.15)
+        var names = [
+            kAXRoleAttribute, kAXSubroleAttribute, kAXRoleDescriptionAttribute,
+            kAXTitleAttribute, kAXDescriptionAttribute, kAXPositionAttribute,
+            kAXSizeAttribute, kAXEnabledAttribute, kAXFocusedAttribute,
+        ]
+        if includeChildren { names.append(kAXChildrenAttribute) }
+        var result: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &result) == .success,
+              let values = result as? [AnyObject], values.count == names.count
+        else { throw ScreenControlError.driverFailed("The app did not respond to an Accessibility read. Try a screenshot or a shallower control search.") }
+        let fields = Dictionary(uniqueKeysWithValues: zip(names, values))
+        let role = fields[kAXRoleAttribute] as? String ?? "AXUnknown"
+        let subrole = fields[kAXSubroleAttribute] as? String
+        let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField"
+        var value: String?
+        if !secure, let raw = attribute(element, kAXValueAttribute) {
+            value = (raw as? String) ?? (raw as? NSNumber)?.stringValue
+        }
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        if let position = fields[kAXPositionAttribute], let extent = fields[kAXSizeAttribute],
+           CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(extent) == AXValueGetTypeID() {
+            // swiftlint:disable:next force_cast
+            AXValueGetValue(position as! AXValue, .cgPoint, &point)
+            // swiftlint:disable:next force_cast
+            AXValueGetValue(extent as! AXValue, .cgSize, &size)
+        }
+        let info = AXElementInfo(
+            id: id, role: role, subrole: subrole,
+            roleDescription: fields[kAXRoleDescriptionAttribute] as? String,
+            title: fields[kAXTitleAttribute] as? String,
+            label: fields[kAXDescriptionAttribute] as? String,
+            value: value,
+            frame: ScreenRect(x: point.x, y: point.y, width: size.width, height: size.height),
+            enabled: (fields[kAXEnabledAttribute] as? NSNumber)?.boolValue ?? true,
+            focused: (fields[kAXFocusedAttribute] as? NSNumber)?.boolValue ?? false,
+            depth: depth, pressable: actions(element).contains(kAXPressAction)
+        )
+        let children = (fields[kAXChildrenAttribute] as? [AnyObject] ?? []).compactMap { child -> Node? in
+            guard CFGetTypeID(child) == AXUIElementGetTypeID() else { return nil }
+            // swiftlint:disable:next force_cast
+            return Node(element: child as! AXUIElement)
+        }
+        return (info, children)
+    }
 
     private func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
         var value: AnyObject?
@@ -352,11 +456,11 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         )
     }
 
-    private func target(of element: AXUIElement) -> ScreenTarget? {
+    private func target(of element: AXUIElement) async -> ScreenTarget? {
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success else { return nil }
-        let app = NSRunningApplication(processIdentifier: pid)
-        let bundleID = app?.bundleIdentifier ?? ""
+        guard let app = await SystemScreenEnvironment.identity(pid: pid) else { return nil }
+        let bundleID = app.bundleID
         var defaultButton: String?
         let appElement = AXUIElementCreateApplication(pid)
         if let window = attribute(appElement, kAXFocusedWindowAttribute),
@@ -374,8 +478,8 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         return ScreenTarget(
             pid: pid,
             bundleID: bundleID,
-            appName: app?.localizedName ?? bundleID,
-            appStoreCategory: AppCategoryCache.category(of: app?.bundleURL),
+            appName: app.name,
+            appStoreCategory: app.appStoreCategory,
             element: info(element, id: "h", depth: 0),
             defaultButtonTitle: defaultButton,
             actionTexts: pressedTexts(from: element)
@@ -414,7 +518,8 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
     }
 
     public func target(at point: ScreenPoint, within pid: Int32?) async -> ScreenTarget? {
-        element(at: point, within: pid).flatMap(target(of:))
+        guard let element = element(at: point, within: pid) else { return nil }
+        return await target(of: element)
     }
 
     private func focused(pid: Int32) -> AXUIElement? {
@@ -428,12 +533,21 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
     }
 
     public func focusedTarget(pid: Int32) async -> ScreenTarget? {
-        focused(pid: pid).flatMap(target(of:))
+        guard let element = focused(pid: pid) else { return nil }
+        return await target(of: element)
     }
 
     public func snapshot(pid: Int32, maxDepth: Int) async throws -> AXSnapshot {
+        try Task.checkCancellation()
+        // Never keep old ids usable after a failed or cancelled refresh.
+        lock.withLock { references[pid] = nil }
+        guard let running = await SystemScreenEnvironment.identity(pid: pid) else {
+            lock.withLock { references[pid] = nil }
+            throw ScreenControlError.driverFailed("macOS has not confirmed the app's identity. Take a fresh screenshot before reading its controls again.")
+        }
+        try Task.checkCancellation()
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 2)
+        AXUIElementSetMessagingTimeout(app, 0.15)
         var windowValue = attribute(app, kAXFocusedWindowAttribute) ?? attribute(app, kAXMainWindowAttribute)
         if windowValue == nil, let windows = attribute(app, kAXWindowsAttribute) as? [AnyObject] {
             windowValue = windows.first
@@ -445,27 +559,22 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         let window = windowValue as! AXUIElement
         var elements: [AXElementInfo] = []
         var refs: [String: AXUIElement] = [:]
-        var queue: [(AXUIElement, Int)] = [(window, 0)]
-        var counter = 0
-        while !queue.isEmpty, counter < 1_500 {
-            let (element, depth) = queue.removeFirst()
-            counter += 1
-            let id = "e\(counter)"
-            elements.append(info(element, id: id, depth: depth))
-            refs[id] = element
-            guard depth < maxDepth, let children = attribute(element, kAXChildrenAttribute) as? [AnyObject] else { continue }
-            for child in children where CFGetTypeID(child) == AXUIElementGetTypeID() {
-                // swiftlint:disable:next force_cast
-                queue.append((child as! AXUIElement, depth + 1))
-            }
+        let completion = try BoundedAXTraversal<Node>().walk(root: Node(element: window), maxDepth: maxDepth) { node, depth in
+            let id = "e\(elements.count + 1)"
+            let (info, children) = try snapshotNode(node.element, id: id, depth: depth, includeChildren: depth < maxDepth)
+            elements.append(info)
+            refs[id] = node.element
+            return children
         }
+        try Task.checkCancellation()
         lock.withLock { references[pid] = refs }
-        let running = NSRunningApplication(processIdentifier: pid)
         return AXSnapshot(
-            bundleID: running?.bundleIdentifier ?? "",
-            appName: running?.localizedName ?? "",
+            bundleID: running.bundleID,
+            appName: running.name,
             windowTitle: string(window, kAXTitleAttribute),
-            elements: elements
+            elements: elements,
+            truncationReason: completion == .timeLimit ? "the app exceeded the three-second read budget"
+                : completion == .nodeLimit ? "the app exceeded the 1,500-element limit" : nil
         )
     }
 
@@ -492,22 +601,30 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         return nil
     }
 
-    private func perform(_ action: String, at point: ScreenPoint?, elementID: String?, pid: Int32) -> Bool {
-        let base = reference(elementID, pid: pid) ?? point.flatMap { element(at: $0, within: pid) }
+    private func perform(_ action: String, at point: ScreenPoint?, elementID: String?, pid: Int32) throws -> Bool {
+        let base: AXUIElement?
+        if let elementID {
+            guard let known = reference(elementID, pid: pid) else { throw ScreenControlError.unknownElement(elementID) }
+            base = known
+        } else {
+            base = point.flatMap { element(at: $0, within: pid) }
+        }
         guard let base, let element = performable(base, action: action) else { return false }
-        return AXUIElementPerformAction(element, action as CFString) == .success
+        return try AXWriteResult.accepted(AXUIElementPerformAction(element, action as CFString))
     }
 
     public func press(at point: ScreenPoint?, elementID: String?, pid: Int32) async throws -> Bool {
-        perform(kAXPressAction, at: point, elementID: elementID, pid: pid)
+        try perform(kAXPressAction, at: point, elementID: elementID, pid: pid)
     }
 
     public func showMenu(at point: ScreenPoint?, elementID: String?, pid: Int32) async throws -> Bool {
-        perform(kAXShowMenuAction, at: point, elementID: elementID, pid: pid)
+        try perform(kAXShowMenuAction, at: point, elementID: elementID, pid: pid)
     }
 
     public func setText(_ text: String, elementID: String?, pid: Int32, replace: Bool) async throws -> Bool {
-        guard let element = reference(elementID, pid: pid) ?? focused(pid: pid) else { return false }
+        let target = elementID.flatMap { reference($0, pid: pid) }
+        if let elementID, target == nil { throw ScreenControlError.unknownElement(elementID) }
+        guard let element = target ?? focused(pid: pid) else { return false }
         let role = string(element, kAXRoleAttribute)
         let subrole = string(element, kAXSubroleAttribute)
         if role == "AXSecureTextField" || subrole == "AXSecureTextField" { throw ScreenControlError.secureField }
@@ -518,7 +635,7 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         guard AXUIElementIsAttributeSettable(element, name as CFString, &settable) == .success, settable.boolValue else {
             return false
         }
-        return AXUIElementSetAttributeValue(element, name as CFString, text as CFString) == .success
+        return try AXWriteResult.accepted(AXUIElementSetAttributeValue(element, name as CFString, text as CFString))
     }
 
     public func value(elementID: String?, pid: Int32) async -> String? {

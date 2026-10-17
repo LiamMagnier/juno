@@ -139,6 +139,23 @@ final class ComputerUseToolsTests: XCTestCase {
 
     // MARK: Batches and frames
 
+    func testOversizedBatchesAndInvalidIntegersNeverReachTheScreen() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let tool = ComputerBatchTool(computer: screen, permissions: permissions, budget: .anthropicStandard)
+        let result = try await tool.execute(
+            input: ["actions": .array(Array(repeating: ["action": "screenshot"], count: 21))], context: context()
+        )
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.content.contains("at most 20"))
+        XCTAssertTrue(screen.preparedActions.isEmpty)
+        XCTAssertTrue(screen.performed.isEmpty)
+        for value in [Double(Int.max), 1e100, 1.5] {
+            XCTAssertThrowsError(try ScreenActionInput.action(from: ["action": "key", "text": "return", "repeat": .number(value)]))
+            XCTAssertThrowsError(try ScreenActionInput.action(from: ["action": "scroll", "scroll_amount": .number(value)]))
+        }
+    }
+
     func testABatchStopsAtTheFirstFailureWithTheExactText() async throws {
         let screen = FakeScreen()
         screen.failOn[.type] = .tierTooLow("Terminal is granted for clicks only; typing, keys, right-click and drags were not sent.")

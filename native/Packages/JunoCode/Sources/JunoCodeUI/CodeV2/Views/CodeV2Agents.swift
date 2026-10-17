@@ -551,6 +551,9 @@ public struct CodeV2BestOfNCompare: View {
 extension CodeV2.ComputerAction {
     /// "Click 'Save'", "Type 'cart total'", "Open Safari".
     var caption: String {
+        if status == .failed, ComputerStepPresentation.needsFreshView(error ?? summary) {
+            return ComputerStepPresentation.refreshMessage
+        }
         if let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty,
            status != .running, status != .pending {
             return summary

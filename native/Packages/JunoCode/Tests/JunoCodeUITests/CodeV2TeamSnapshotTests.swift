@@ -69,6 +69,7 @@ final class CodeV2TeamSnapshotTests: XCTestCase {
 /// the test bundle): each role's model control carries the lab's real mark
 /// and an open-me chevron, and the builders' stepper its minus and plus,
 /// all drawn from assets the Mac app ships.
+@MainActor
 final class CodeV2TeamAssetTests: XCTestCase {
     private var resources: URL {
         var root = URL(fileURLWithPath: #filePath)

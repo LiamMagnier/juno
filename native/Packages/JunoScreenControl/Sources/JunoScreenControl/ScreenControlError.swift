@@ -72,7 +72,7 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
         case let .windowGone(app):
             "\(app) has no window to capture. Open it with computer_apps open, then take a screenshot."
         case let .coordinateOutOfFrame(x, y, frame):
-            "(\(Int(x)), \(Int(y))) is outside the \(frame) frame of the latest screenshot. Use coordinates from that screenshot."
+            "(\(ScreenPoint.format(x)), \(ScreenPoint.format(y))) is outside the \(frame) frame of the latest screenshot. Use coordinates from that screenshot."
         case .noFrameYet:
             "Take a screenshot of the app first; coordinates are in the frame of the latest screenshot."
         case let .unknownElement(id):

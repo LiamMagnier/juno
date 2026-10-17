@@ -804,6 +804,13 @@ extension EnvServerTests {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "<h1>Hi</h1>\n<p>Portfolio</p>\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path))
     }
+
+    func testRepositoryDetectionStopsAtADirectoryURLForTheFilesystemRoot() {
+        XCTAssertEqual(
+            CodeV2HunkApplier.isInsideRepository(URL(fileURLWithPath: "/", isDirectory: true)),
+            FileManager.default.fileExists(atPath: "/.git")
+        )
+    }
 }
 
 // MARK: - Test doubles

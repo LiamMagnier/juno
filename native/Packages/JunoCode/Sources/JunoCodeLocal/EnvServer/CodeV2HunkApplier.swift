@@ -52,16 +52,16 @@ public struct CodeV2HunkApplier: Sendable {
     /// True when the folder, or a folder above it, holds a `.git` (a
     /// repository or a worktree's `.git` file).
     public static func isInsideRepository(_ directory: URL) -> Bool {
-        var url = directory.standardizedFileURL
+        var path = directory.standardizedFileURL.path
         while true {
-            if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) { return true }
-            // Standardized at every step, not only the first: the parent of
-            // the directory URL `file:///` is `file:///../`, then `/../..`,
-            // and so on, so a folder outside any repository walked upwards
-            // forever and Accept hung.
-            let parent = url.deletingLastPathComponent().standardizedFileURL
-            if parent.path == url.path || parent.path.isEmpty { return false }
-            url = parent
+            if FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent(".git")) { return true }
+            // On newer Foundation, deleting the last component of a
+            // directory URL for `/` can yield `/..`, then `/../..` forever.
+            // Filesystem paths have an explicit, stable root instead.
+            if path == "/" || path.isEmpty { return false }
+            let parent = (path as NSString).deletingLastPathComponent
+            if parent == path || parent.isEmpty { return false }
+            path = parent
         }
     }
 

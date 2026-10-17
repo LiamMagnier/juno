@@ -75,6 +75,17 @@ public struct ActivityNarrativeGroup: Identifiable, Sendable, Equatable {
 
         public static let maximumOutputLines = 40
 
+        /// Preserve the failed tool result for the agent, but present this
+        /// recoverable stale-view condition separately from execution errors.
+        public var isStaleScreenRecovery: Bool {
+            guard status == .failed,
+                  ComputerUseToolName.input.contains(toolName),
+                  let resultSummary else { return false }
+            return ComputerStepPresentation.needsFreshView(resultSummary)
+        }
+
+        public var isPresentedAsFailure: Bool { status == .failed && !isStaleScreenRecovery }
+
         public init(
             id: String,
             toolName: String,
@@ -561,5 +572,18 @@ public final class SessionProjection {
         let sentence = ([first.prefix(1).uppercased() + first.dropFirst()] + clauses.dropFirst())
             .joined(separator: " · ")
         return sentence
+    }
+}
+
+/// A known observation conflict is recoverable, while the original tool result
+/// remains failed so the model must observe again before sending more input.
+enum ComputerStepPresentation {
+    static let refreshMessage = "View changed · take a fresh screenshot to continue."
+
+    static func needsFreshView(_ message: String?) -> Bool {
+        guard let message else { return false }
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sentence = text.hasPrefix("Not done: ") ? String(text.dropFirst(10)) : text
+        return sentence == "The screen changed; take a new screenshot."
     }
 }

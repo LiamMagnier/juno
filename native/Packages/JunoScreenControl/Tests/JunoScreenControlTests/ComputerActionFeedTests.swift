@@ -29,18 +29,33 @@ final class ComputerActionFeedTests: XCTestCase {
             prepared: try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot)),
             toolCallID: nil, attachFrame: true
         )
-        let listening = collect(feed, count: 2)
+        let listening = collect(feed, count: 3)
         await Task.yield()
         let size = try XCTUnwrap(shot.frame?.size)
         let point = fixture.framePoint(ScreenFixture.saveButton.center, scale: Double(size.width) / 1600)
         let prepared = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .leftClick, coordinate: point))
         _ = try await fixture.service.perform(sessionID: "s1", prepared: prepared, toolCallID: "c1", attachFrame: false)
         let cues = await listening.value
-        XCTAssertEqual(cues.map(\.phase), [.acting, .settled(succeeded: true)], "a screenshot draws nothing; the click draws twice")
-        XCTAssertEqual(cues[0].label, "Click the “Save” button in TextEdit")
-        XCTAssertEqual(cues[0].appName, "TextEdit")
-        XCTAssertEqual(cues[0].point?.x ?? 0, ScreenFixture.saveButton.center.x, accuracy: 1)
-        XCTAssertEqual(cues[0].sessionID, "s1")
+        XCTAssertEqual(cues.map(\.phase), [.observing, .acting, .settled(succeeded: true)])
+        XCTAssertNotNil(cues[0].thumbnail, "the preview comes from the actual capture")
+        XCTAssertNotNil(cues[0].windowFrame)
+        XCTAssertEqual(cues[1].label, "Click the “Save” button in TextEdit")
+        XCTAssertEqual(cues[1].appName, "TextEdit")
+        XCTAssertEqual(cues[1].point?.x ?? 0, ScreenFixture.saveButton.center.x, accuracy: 1)
+        XCTAssertEqual(cues[1].sessionID, "s1")
+    }
+
+    func testOpeningAnAppStoresTheFrameForTheFirstActionAndPreview() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        _ = try await fixture.service.open(sessionID: "s1", app: "TextEdit")
+        let cues = await collect(fixture.service.feed, count: 1).value
+        XCTAssertEqual(cues.first?.phase, .observing)
+        XCTAssertNotNil(cues.first?.thumbnail)
+        let action = try await fixture.service.prepare(
+            sessionID: "s1", action: ScreenAction(kind: .leftClick, coordinate: [40, 40])
+        )
+        XCTAssertFalse(action.frameHash.isEmpty, "opening already supplied a valid action frame")
     }
 
     func testTheStopClearsTheOverlay() async throws {
