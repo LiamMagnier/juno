@@ -1,0 +1,217 @@
+# Wave-2 design gates (spec §9 and §14, package P0).
+#
+# web-gates     The e2e/wave2 suites on a production build (scripts/qa/run-prod-e2e.sh:
+#               next build + next start, never next dev) against a service Postgres
+#               whose database name ends in _test. Publishes gate JSON (p50/p95),
+#               screenshots and the Playwright report.
+# native-gates  The native *PerformanceTests and *SnapshotTests suites on Release
+#               (Stable) builds, macOS and iOS (scripts/qa/native-perf.sh).
+# summary       Combines web and native geometry into the parity gate, then applies
+#               every gate's mode (scripts/qa/gates.ts evaluate). Report-only gates
+#               warn; a gate some package lists in its e2e/wave2/<pkg>/gates.ts fails.
+# base          The wave-2 base gate (scripts/qa/check-base.sh) on pull requests and on
+#               demand: no unmerged paths, wave 1 in the history, main CI green.
+#
+# Never deploys, never reads secrets, never touches production: the only database
+# is the service container, and the runner refuses any other.
+
+name: design gates
+
+on:
+  pull_request:
+    branches: [main, integrate-wave2]
+    paths:
+      - "src/**"
+      - "e2e/**"
+      - "native/**"
+      - "prisma/**"
+      - "public/**"
+      - "scripts/qa/**"
+      - "playwright.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "tailwind.config.ts"
+      - "postcss/**"
+      - ".github/workflows/design-gates.yml"
+  push:
+    branches: [integrate-wave2]
+  workflow_dispatch: {}
+
+concurrency:
+  group: design-gates-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  checks: read
+  # check-base.sh reads main's combined commit status as well as its check runs.
+  statuses: read
+
+jobs:
+  base:
+    name: Base gate
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Ancestry needs the history, not a shallow tip.
+          fetch-depth: 0
+      - name: Fetch main
+        run: git fetch --no-tags origin main:main || git fetch --no-tags origin main
+      - name: Wave-2 base gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/qa/check-base.sh --main-branch main
+
+  web-gates:
+    name: Web gates (production build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: postgres
+        # The runner accepts exactly postgresql://postgres@127.0.0.1:55439/<name>_test.
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        # Next typechecks imported runner sources and the Work driver too.
+        # Match the main build's complete package setup on a clean checkout.
+        run: |
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: Wave-2 suites on a production build
+        run: >-
+          bash scripts/qa/run-prod-e2e.sh --package p0 --report-dir test-results/design-gates
+          --
+          e2e/wave2
+          --project=chromium-1440 --project=chromium-390 --project=webkit-390
+      - name: Publish gate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-gates-web
+          path: |
+            test-results/design-gates
+            test-results/web-geometry
+            test-results/playwright-report.json
+          if-no-files-found: warn
+      - name: Publish screenshots and the Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-gates-screenshots
+          path: |
+            test-results/visual-matrix
+            playwright-report
+          if-no-files-found: warn
+
+  native-gates:
+    name: Native gates (Release)
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest installed Xcode
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: |
+          brew update
+          brew install xcodegen
+      - name: Generate projects
+        run: ./native/Scripts/generate-projects.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Bundle the env server required by Stable builds
+        run: |
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+          npm run env-server:bundle:mac
+          test -s native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
+      - name: Performance and snapshot suites
+        env:
+          ALEVR_QA_REPORT_DIR: ${{ github.workspace }}/test-results/native
+        run: bash scripts/qa/native-perf.sh --platform all --suite all
+      - name: Publish native reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-gates-native
+          path: |
+            test-results/native
+            !test-results/native/**/*.xcresult
+          if-no-files-found: warn
+      - name: Publish result bundles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-gates-native-xcresult
+          path: test-results/native/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  summary:
+    name: Gate summary
+    needs: [web-gates, native-gates]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: design-gates-web
+          path: reports/web
+        continue-on-error: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: design-gates-native
+          path: reports/native
+        continue-on-error: true
+      - name: Combine web and native geometry
+        run: |
+          mkdir -p reports/combined
+          npx tsx scripts/qa/gates.ts parity --out reports/combined reports/web/web-geometry reports/native/native-geometry
+      - name: Apply gate modes
+        run: |
+          mkdir -p reports/web/design-gates reports/native
+          npx tsx scripts/qa/gates.ts evaluate --require-enforced reports/web/design-gates reports/native reports/combined
+      - name: Publish the summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-gates-summary
+          path: reports/web/design-gates/summary.json
+          if-no-files-found: warn

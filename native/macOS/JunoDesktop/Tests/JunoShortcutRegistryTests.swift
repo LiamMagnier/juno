@@ -119,6 +119,7 @@ struct JunoShortcutRegistryTests {
     }
 
     @Test
+    @MainActor
     func everyMenuTitleIsTitleCase() {
         var titles = registry.compactMap(\.menuTitle)
         // The titles the moment gives an item: ⌘N in Code and with nothing
@@ -211,6 +212,7 @@ struct JunoShortcutRegistryTests {
     // MARK: 5. A glyph on every menu item
 
     @Test
+    @MainActor
     func everyMenuEntryHasAGlyph() {
         for entry in registry where entry.menu != nil {
             #expect(entry.glyph != nil, "\(entry.id) has no glyph")
@@ -221,6 +223,7 @@ struct JunoShortcutRegistryTests {
     }
 
     @Test
+    @MainActor
     func theConversationMenuWearsTheWebsGlyphsInItsOrder() {
         let rows = DesktopConversationMenu.rows(pinned: false, renameTitle: "Rename…", showsOpenProject: true)
         #expect(rows.map(\.title) == [
@@ -241,18 +244,20 @@ struct JunoShortcutRegistryTests {
     // MARK: 6. The Shortcuts window is the registry
 
     @Test
+    @MainActor
     func theShortcutsWindowListsExactlyTheRegistry() {
         let window = DesktopShortcutsWindow()
-        #expect(window.groups.map(\.group) == JunoShortcutRegistry.groups.map(\.group))
-        #expect(window.groups.map(\.group) == JunoShortcutGroup.allCases)
-        let listedIDs = window.groups.flatMap(\.rows).flatMap(\.ids)
+        let groups = window.groups
+        #expect(groups.map(\.group) == JunoShortcutRegistry.groups.map(\.group))
+        #expect(groups.map(\.group) == JunoShortcutGroup.allCases)
+        let listedIDs = groups.flatMap(\.rows).flatMap(\.ids)
         let registryIDs = registry.filter { $0.group != nil && $0.listLabel != nil }.map(\.id)
         #expect(Set(listedIDs) == Set(registryIDs))
         #expect(listedIDs.count == registryIDs.count)
         // Rows only merge when two chords do one thing.
-        let newChat = window.groups.flatMap(\.rows).first { $0.label == "New chat" }
+        let newChat = groups.flatMap(\.rows).first { $0.label == "New chat" }
         #expect(newChat?.chords == [["⌘", "N"], ["⇧", "⌘", "O"]])
-        for row in window.groups.flatMap(\.rows) {
+        for row in groups.flatMap(\.rows) {
             #expect(!row.chords.isEmpty)
             #expect(row.chords.allSatisfy { !$0.isEmpty })
         }

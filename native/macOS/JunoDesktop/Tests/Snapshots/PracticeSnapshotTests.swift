@@ -147,11 +147,11 @@ private final class ConsoleStill: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     nonisolated func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any] else { return }
-        let type = body["type"] as? String
-        let height = (body["height"] as? NSNumber)?.doubleValue ?? 0
-        let status = (body["status"] as? String).flatMap(JunoCodeRunStatus.init(rawValue:))
         MainActor.assumeIsolated {
+            guard let body = message.body as? [String: Any] else { return }
+            let type = body["type"] as? String
+            let height = (body["height"] as? NSNumber)?.doubleValue ?? 0
+            let status = (body["status"] as? String).flatMap(JunoCodeRunStatus.init(rawValue:))
             if type == "juno:console-size", height > 0 { self.height = CGFloat(height) }
             if type == "juno:status", let status { self.status = status }
         }
