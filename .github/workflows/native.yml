@@ -319,11 +319,28 @@ jobs:
           xcodebuild -version
 
       - name: Test ${{ matrix.package }}
+        env:
+          SWIFT_BACKTRACE: enable=yes,interactive=no,color=no
         run: >-
           python3 scripts/run-swift-package-tests.py
           --package "${{ matrix.package }}"
           --timeout-seconds 480
           --attempts 2
+
+      # Keep native abort reports: the Swift test runner can report only SIGABRT
+      # while stdout still contains buffered successful tests. The faulting
+      # thread in the .ips file is the evidence needed to diagnose that crash.
+      - name: Preserve Swift crash reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-crash-reports-${{ matrix.package }}
+          path: |
+            ~/Library/Logs/DiagnosticReports/*xctest*.ips
+            ~/Library/Logs/DiagnosticReports/*Juno*.ips
+            ~/Library/Logs/DiagnosticReports/*swift*.ips
+          if-no-files-found: warn
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # The macOS app. Unsigned: this job verifies that the app compiles, not that it

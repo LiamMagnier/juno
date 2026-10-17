@@ -1799,7 +1799,7 @@ struct DesktopConversationView: View {
     }
 
     private var voiceUnavailablePresented: Binding<Bool> {
-        Binding(
+        Binding<Bool>(
             get: { voiceUnavailable != nil },
             set: { if !$0 { voiceUnavailable = nil } }
         )
