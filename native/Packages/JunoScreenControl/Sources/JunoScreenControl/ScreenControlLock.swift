@@ -451,8 +451,9 @@ public actor ScreenControlLock {
             guard heartbeatTask == nil else { return }
             let interval = heartbeatInterval
             heartbeatTask = Task { [weak self] in
+                let clock = ContinuousClock()
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: interval)
+                    try? await clock.sleep(until: clock.now.advanced(by: interval))
                     guard !Task.isCancelled else { return }
                     await self?.beat()
                 }

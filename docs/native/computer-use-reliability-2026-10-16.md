@@ -82,6 +82,15 @@ Additional changes:
   real site/security boundaries. This improves guidance; it cannot guarantee
   every provider model will comply with every legitimate request.
 
+The macOS 26 CI run also exposed a Swift 6.2 task-allocation abort during
+retry cancellation at `AgentOrchestrator.runLoop`'s delay call. Its signature
+matches [swiftlang/swift#86204](https://github.com/swiftlang/swift/issues/86204).
+Retry, input pacing, lock heartbeats and overlay delays now use an explicit
+`ContinuousClock.sleep(until:)`, preserving cancellation without the affected
+`Task.sleep(for:)` specialization. The lock regression observes an actual
+heartbeat and uses a synchronized fake clock, rather than assuming a timer
+must have run within 120 ms on a loaded CI machine.
+
 ## Validation
 
 Run `bash scripts/native-test.sh JunoScreenControl JunoCode`. The regression

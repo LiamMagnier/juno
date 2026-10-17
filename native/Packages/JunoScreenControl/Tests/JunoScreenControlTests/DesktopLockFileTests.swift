@@ -15,7 +15,12 @@ final class DesktopLockFileTests: XCTestCase {
     }
 
     private final class Clock: @unchecked Sendable {
-        var now = Date(timeIntervalSince1970: 1_791_489_600)
+        private let lock = NSLock()
+        private var value = Date(timeIntervalSince1970: 1_791_489_600)
+        var now: Date {
+            get { lock.withLock { value } }
+            set { lock.withLock { value = newValue } }
+        }
     }
 
     private final class Alive: @unchecked Sendable {
@@ -160,8 +165,14 @@ final class DesktopLockFileTests: XCTestCase {
             return XCTFail("the env server took the desktop the app holds")
         }
         // The heartbeat keeps it fresh while held.
+        let previousBeat = try XCTUnwrap(file.read()?.heartbeatAt)
         clock.now += 10
-        try await Task.sleep(for: .milliseconds(120))
+        var refreshed = false
+        for _ in 0..<500 {
+            if let beat = file.read()?.heartbeatAt, beat != previousBeat { refreshed = true; break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(refreshed, "the heartbeat task must actually refresh the record")
         clock.now += 10
         XCTAssertNotNil(file.holder(), "heartbeats keep the record live")
         await appLock.release(claim)

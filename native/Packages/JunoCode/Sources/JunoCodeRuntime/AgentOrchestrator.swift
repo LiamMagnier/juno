@@ -121,7 +121,12 @@ public actor AgentOrchestrator {
             maximumRetainedImages: Int = 20,
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
-            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            // Explicit clock avoids Swift 6.2's cross-module Task.sleep(for:)
+            // specialization crash (swiftlang/swift#86204).
+            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
+                let clock = ContinuousClock()
+                try await clock.sleep(until: clock.now.advanced(by: duration))
+            },
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
             repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,

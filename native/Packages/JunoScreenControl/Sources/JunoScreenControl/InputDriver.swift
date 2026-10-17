@@ -114,7 +114,10 @@ public struct InputDriver: Sendable {
     public init(
         layout: KeyboardLayout,
         sink: any EventSink,
-        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        pause: @escaping @Sendable (Duration) async throws -> Void = { duration in
+                let clock = ContinuousClock()
+                try await clock.sleep(until: clock.now.advanced(by: duration))
+            },
         checkpoint: @escaping @Sendable () async throws -> Void = {}
     ) {
         self.layout = layout

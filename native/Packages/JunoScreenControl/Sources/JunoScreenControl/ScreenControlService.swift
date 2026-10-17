@@ -37,7 +37,10 @@ public actor ScreenControlService: ScreenControlling {
             layout: @escaping @Sendable () async -> KeyboardLayout = { KeyboardLayout.usANSI },
             stopTap: (any EmergencyStopTapping)? = nil,
             now: @escaping @Sendable () -> Date = { Date() },
-            pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            pause: @escaping @Sendable (Duration) async throws -> Void = { duration in
+                let clock = ContinuousClock()
+                try await clock.sleep(until: clock.now.advanced(by: duration))
+            },
             looksLikeCredential: @escaping @Sendable (String) -> Bool = CredentialHeuristics.looksLikeCredential,
             pointerLocation: @escaping @Sendable () async -> ScreenPoint? = { nil },
             settleTimeout: TimeInterval = 0.5,
