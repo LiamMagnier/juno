@@ -332,7 +332,7 @@ jobs:
       # thread in the .ips file is the evidence needed to diagnose that crash.
       - name: Preserve Swift crash reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: swift-crash-reports-${{ matrix.package }}
           path: |
