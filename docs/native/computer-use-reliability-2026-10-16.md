@@ -116,9 +116,14 @@ discarding an encoded image. A regression verifies that the three captures
 around an action still happen while only its final image is encoded. Target
 hit tests now batch AX metadata instead of reading each field separately.
 
-The explicit-clock change alone did not eliminate the CI cancellation abort.
-The retry callback is additionally isolated from the run loop's large catch
-frame; older-toolchain confirmation is required before calling that resolved.
+The explicit-clock change and a smaller catch frame did not eliminate the CI
+cancellation abort. The underlying public async default-argument issue is
+[swiftlang/swift#92017](https://github.com/swiftlang/swift/issues/92017): the linker
+can combine incompatible copies from library and client modules. The owning
+modules now construct their default retry and input-pacing closures inside the
+initializer instead. The same fix and separate-client cancellation regressions
+were adopted from the repository's native CI repair branch (PR #98). No tests or
+compiler gates are skipped; older-toolchain confirmation is required.
 
 ## Validation
 
