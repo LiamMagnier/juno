@@ -101,15 +101,17 @@ export class BackgroundJobs {
   /** Start a command; the job is registered immediately. */
   start(command: string, ctx: ToolContext): Job {
     ctx.signal?.throwIfAborted();
-    const invocation = ctx.containerSandbox
-      ? { file: 'docker', args: buildContainerArgs(command, ctx.containerSandbox) }
-      : { file: '/bin/bash', args: ['-c', command] };
-    const child = spawn(invocation.file, invocation.args, {
+    const spawnOptions = {
       cwd: ctx.cwd,
       env: ctx.env ?? MINIMAL_ENV,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
       detached: true,
-    });
+    };
+    // Keep the container argv on a literal Docker invocation. The host
+    // shell only receives the separately authorized local command.
+    const child = ctx.containerSandbox
+      ? spawn('docker', buildContainerArgs(command, ctx.containerSandbox), spawnOptions)
+      : spawn('/bin/bash', ['-c', command], spawnOptions);
     const id = `job-${randomUUID().slice(0, 6)}`;
     let resolveExit: () => void = () => {};
     const onAbort = () => {

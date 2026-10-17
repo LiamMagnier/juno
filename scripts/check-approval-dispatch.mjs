@@ -534,6 +534,27 @@ for (const { relativePath, sourceFile, record: sink } of runnerToolSinks) {
   ]);
 }
 
+// Project hook commands have a concrete bash sink, not a generic tool
+// wrapper. Preserve shell policy, human hash review and the post-review
+// snapshot recheck before the only execution site.
+const hooksPath = "runner/agent-core/src/hooks.ts";
+const hooksSource = parse(hooksPath);
+const hookSinks = callRecords(hooksSource).filter((call) => call.receiver === "bashTool" && call.name === "execute");
+if (hookSinks.length !== 1) fail(`${hooksPath} must have one reviewed hook-command sink`);
+for (const sink of hookSinks) {
+  const owner = enclosingFunction(sink.node);
+  if (!owner || functionName(owner) !== "run") {
+    fail(`${hooksPath} hook commands must remain in the reviewed run method`);
+    continue;
+  }
+  requireOrderedCalls(hooksPath, owner, hooksSource, [
+    { description: "the shell permission decision", matches: (call) => call.name === "permission" },
+    { description: "human approval of the configuration hash", matches: (call) => call.name === "requestApproval" },
+    { description: "the post-review configuration snapshot recheck", matches: (call) => call.name === "readProjectHooks" },
+    { description: "the hook command execution", matches: (call) => call.start === sink.start },
+  ]);
+}
+
 // -------------------------------------------------------------------------
 // Native Work / Code execution: lexical, comment-free source invariants.
 // -------------------------------------------------------------------------

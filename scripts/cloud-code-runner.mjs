@@ -60,6 +60,8 @@ import path from "node:path";
 import {
   AgentProtocolProjector,
   AgentSession,
+  brokeredMcpTools,
+  mcpBridgeRequest,
   LegacyTaskDowncast,
   cloudSkillsNotice,
   createProxyProvider,
@@ -1138,9 +1140,21 @@ async function main() {
     }
   }
 
+  let connectionTools = [];
+  try {
+    connectionTools = await brokeredMcpTools(mcpBridgeRequest({
+      url: `${CALLBACK_BASE}/api/mcp/session`,
+      sessionId: TASK_ID,
+      authorization: () => `Bearer ${freshToken}`,
+    }));
+  } catch {
+    sink.hostEvent({ type: "item.notice", itemId: protocol.projector.itemId("notice"), source: "host", text: "Account connections could not be loaded. This run continues without them." });
+  }
+
   const session = AgentSession.create({
     provider,
     cwd: workdir,
+    extraTools: connectionTools,
     model: chosen.model,
     // The chosen skills (above): in the system prompt, as on the Mac.
     ...(skillAppendix ? { systemAppendix: skillAppendix } : {}),

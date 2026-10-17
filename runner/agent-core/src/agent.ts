@@ -44,6 +44,8 @@ import { BackgroundJobs, jobAwareShellTools } from './harness/jobs.js';
 import { AutoReviewer, userInstructionsFrom } from './harness/auto-review.js';
 import { loadInstructionChain, renderInstructionChain } from './harness/instructions.js';
 import { TurnItemProjector, type TurnItemOp } from './harness/turn-items.js';
+import { ProjectHooks } from './hooks.js';
+import { bashTool } from './tools/bash.js';
 
 const MAX_STEPS_PER_TURN = 60;
 /** Times a turn re-enters the loop to hand the parent its background children's notices. */
@@ -61,6 +63,8 @@ export interface AgentCallbacks {
 }
 
 export interface AgentOptions {
+  /** Exact hook config hashes reviewed outside the clone; false disables hooks. */
+  hooks?: { trustedHashes?: readonly string[] } | false;
   provider: ProviderAdapter;
   cwd: string;
   model?: string;
@@ -317,6 +321,7 @@ export class AgentSession {
   private messagingAllowed = false;
   private readonly systemAppendix: string | undefined;
   private repositoryMap: RepositoryWorkingMap | null;
+  private readonly projectHooks: ProjectHooks | null;
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -339,6 +344,16 @@ export class AgentSession {
     this.permissions = new PermissionEngine(this.cwd, {
       trustProjectSettings: opts.trustProjectSettings === true,
       ...(opts.userSettingsFile === undefined ? {} : { userSettingsFile: opts.userSettingsFile }),
+    });
+    this.projectHooks = opts.hooks === false ? null : new ProjectHooks({
+      emit: (event) => this.emit(event),
+      requestApproval: (request) => this.callbacks.requestApproval(request),
+      trustedHashes: opts.hooks?.trustedHashes,
+      permission: (command, ctx) => {
+        const { risk } = classifyRisk(bashTool, { command });
+        const subject = ruleSubjectFor('bash', { command }, ctx.cwd);
+        return this.permissions.decide(ctx.permissionMode ?? this.mode, 'bash', risk, subject);
+      },
     });
     this.checkpoints = new CheckpointStore(store.dir);
     this.messages = store.loadMessages();
@@ -374,6 +389,8 @@ export class AgentSession {
           get provider() { return session.provider; },
           get tools() { return session.tools; },
           get env() { return session.env; },
+          get containerSandbox() { return session.containerSandbox; },
+          get projectHooks() { return session.projectHooks ?? undefined; },
           get usageReporter() { return session.usageReporter; },
           get reasoningEffort() { return session.reasoningEffort; },
           get permissionRules() { return session.permissions.ruleSet; },
@@ -883,6 +900,13 @@ export class AgentSession {
     await this.subagents?.drainActive();
     // Notices the parent will never read now (it stopped): drop them.
     this.subagents?.takeNotices();
+    if (!signal.aborted && this.projectHooks) {
+      const stopped = await this.projectHooks.run('Stop', { cwd: this.cwd, env: this.env, containerSandbox: this.containerSandbox, permissionMode: this.mode, signal });
+      if (!stopped.ok) {
+        this.emit({ type: 'error', message: stopped.reason!, code: 'hook_failed' });
+        stopReason = 'error';
+      }
+    }
     this.store.meta.turnCount = turnIndex + 1;
     this.store.saveMeta();
     const subagentUsage = this.subagents?.turnSubagentUsage;
@@ -1090,7 +1114,15 @@ export class AgentSession {
     let backgroundJob: string | undefined;
     let images: import('./tools/types.js').ToolResult['images'];
     try {
-      const result = await tool.execute(call.input, ctx);
+      const before = await this.projectHooks?.run('PreToolUse', ctx, { tool: call.name, input: call.input });
+      let result: import('./tools/types.js').ToolResult;
+      if (before?.ok === false) {
+        result = { output: before.reason!, isError: true };
+      } else {
+        try { result = await tool.execute(call.input, ctx); }
+        catch (err) { result = { output: `Tool crashed: ${err instanceof Error ? err.message : String(err)}`, isError: true }; }
+        result = await this.projectHooks?.finishTool(call.name, call.input, result, ctx) ?? result;
+      }
       output = result.output;
       isError = result.isError ?? false;
       exitCode = result.exitCode;
