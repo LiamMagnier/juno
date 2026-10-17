@@ -42,7 +42,7 @@ jobs:
         with:
           # The three-dot diff needs the merge base of the PR's two tips.
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       # No `npm ci`: the script imports nothing outside `node:*`. Base, head
