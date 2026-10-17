@@ -1091,6 +1091,18 @@ public actor AgentOrchestrator {
 
     // MARK: - The loop
 
+    /// Keep the throwing async callback out of the large run-loop catch frame.
+    /// Older Swift runtimes mismanage its task allocation during cancellation.
+    private func waitForRetry(_ delay: Duration) async -> Bool {
+        let sleep = configuration.retrySleep
+        do {
+            try await sleep(delay)
+            return !Task.isCancelled
+        } catch {
+            return false
+        }
+    }
+
     private func runLoop() async {
         runUsageBaseline = usageLedger.total
         let startedAt = Date()
@@ -1359,14 +1371,7 @@ public actor AgentOrchestrator {
                                     )
                                 )
                             )
-                            do {
-                                try await configuration.retrySleep(delay)
-                            } catch {
-                                // Stopped while waiting: the top of the loop
-                                // ends the run as stopped.
-                                break
-                            }
-                            if Task.isCancelled { break }
+                            if !(await waitForRetry(delay)) { break }
                             continue
                         }
                     }

@@ -57,21 +57,25 @@ final class ComputerUsePreviewTests: XCTestCase {
         ))
         let presence = ScreenPresenceCenter()
         for dark in [true, false] {
-            for paused in [false, true] {
+            for expanded in [false, true] {
+              for paused in [false, true] {
+                model.isPreviewExpanded = expanded
                 model.apply(ComputerActionCue(sessionID: "snapshot", label: "", point: nil, appName: "Safari", phase: .paused(paused)))
                 presence.apply(ScreenPresenceState(holder: ScreenControlHolder(id: "snapshot", kind: .codeSession, title: "Create projects", appName: "Safari"), paused: paused))
                 let view = ComputerUsePreviewView(model: model, presence: presence)
                     .environment(\.colorScheme, dark ? .dark : .light)
                 let host = NSHostingView(rootView: view)
-                host.frame = CGRect(x: 0, y: 0, width: 336, height: 282)
-                let window = NSWindow(contentRect: CGRect(x: -10_000, y: -10_000, width: 336, height: 282), styleMask: [.borderless], backing: .buffered, defer: false)
+                let height = expanded ? ComputerUsePreviewView.expandedHeight : ComputerUsePreviewView.collapsedHeight
+                host.frame = CGRect(x: 0, y: 0, width: ComputerUsePreviewView.width, height: height)
+                let window = NSWindow(contentRect: CGRect(x: -10_000, y: -10_000, width: ComputerUsePreviewView.width, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
                 window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 window.contentView = host
                 for _ in 0..<4 { try await Task.sleep(for: .milliseconds(80)); host.layoutSubtreeIfNeeded() }
                 let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: rep)
-                try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent("computer-preview-\(dark ? "dark" : "light")-\(paused ? "paused" : "working").png"))
+                try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent("computer-\(expanded ? "preview" : "bar")-\(dark ? "dark" : "light")-\(paused ? "paused" : "working").png"))
                 window.contentView = nil
+              }
             }
         }
     }

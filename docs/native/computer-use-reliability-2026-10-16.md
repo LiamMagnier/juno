@@ -64,11 +64,13 @@ Additional changes:
   the large label next to the cursor. Input gets one subtle ring; movement uses
   the existing short spring and honors Reduce Motion. No real pointer is moved
   for background control.
-- A movable, nonactivating preview shows the actual captured app, action and
-  cursor, with Pause/Resume and Stop. The desktop overlay is shown only while
-  that target app is in front. The preview stays visible between steps, refreshes
-  from actual observations and final batch frames, and is excluded from capture.
-  Images remain in memory and clear on Stop, release and grant revocation.
+- A compact, movable, nonactivating status bar shows the app and current action,
+  with visible View, Pause/Resume and Stop buttons. View expands the actual
+  captured app and cursor on demand. Collapsed controls do not decode images.
+  The desktop arrow and window outline appear only while the target app is in
+  front; the old top caption steps aside while the status bar is visible.
+  Preview images refresh from observations and final batch frames, are excluded
+  from capture, remain in memory, and clear on Stop, release and grant revocation.
 - The pointer maps through the captured window bounds and aspect-fit image,
   including letterboxing and displays with negative origins. Opening an app now
   retains its captured frame for the first action and preview.
@@ -90,6 +92,33 @@ Retry, input pacing, lock heartbeats and overlay delays now use an explicit
 `Task.sleep(for:)` specialization. The lock regression observes an actual
 heartbeat and uses a synchronized fake clock, rather than assuming a timer
 must have run within 120 ms on a loaded CI machine.
+
+## Follow-up from the installed test build
+
+The reader requested a compact bar with preview on demand, fewer Full Access
+prompts, and faster execution on 17 October. Full Access now supplies ordinary
+app consent in native and connected-agent paths. Opening a named app acquires
+its permitted, session-scoped grant automatically, removing a separate grant
+call. Supervised modes still ask; blocked apps, macOS grants, Stop and
+consequential-action checks remain enforced.
+
+Portable vision routes (including Gemini) now receive `computer_sequence`:
+flat x/y or element targeting in the route's established convention, at most
+20 ordered steps, stopping at the first failure, with one final settled image.
+This reduces a known focus/type/Return sequence from three model calls to one;
+it is not a measured claim about total task speed. The tool is not exposed to
+blind routes. Its permission classification and rule stripping are the same as
+other screen input, and final frames update portable coordinate memory.
+
+Capture settling now compares unencoded pixels and encodes only the image that
+will be delivered. The pre-input freshness recheck also compares pixels without
+discarding an encoded image. A regression verifies that the three captures
+around an action still happen while only its final image is encoded. Target
+hit tests now batch AX metadata instead of reading each field separately.
+
+The explicit-clock change alone did not eliminate the CI cancellation abort.
+The retry callback is additionally isolated from the run loop's large catch
+frame; older-toolchain confirmation is required before calling that resolved.
 
 ## Validation
 

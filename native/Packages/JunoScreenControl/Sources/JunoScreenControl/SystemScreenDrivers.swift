@@ -432,35 +432,12 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         return names
     }
 
-    private func info(_ element: AXUIElement, id: String, depth: Int) -> AXElementInfo {
-        let role = string(element, kAXRoleAttribute) ?? "AXUnknown"
-        let subrole = string(element, kAXSubroleAttribute)
-        let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField"
-        var value: String?
-        if !secure, let raw = attribute(element, kAXValueAttribute) {
-            value = (raw as? String) ?? (raw as? NSNumber)?.stringValue
-        }
-        return AXElementInfo(
-            id: id,
-            role: role,
-            subrole: subrole,
-            roleDescription: string(element, kAXRoleDescriptionAttribute),
-            title: string(element, kAXTitleAttribute),
-            label: string(element, kAXDescriptionAttribute),
-            value: value,
-            frame: frame(element) ?? ScreenRect(x: 0, y: 0, width: 0, height: 0),
-            enabled: bool(element, kAXEnabledAttribute) ?? true,
-            focused: bool(element, kAXFocusedAttribute) ?? false,
-            depth: depth,
-            pressable: actions(element).contains(kAXPressAction)
-        )
-    }
-
     private func target(of element: AXUIElement) async -> ScreenTarget? {
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success else { return nil }
         guard let app = await SystemScreenEnvironment.identity(pid: pid) else { return nil }
         let bundleID = app.bundleID
+        guard let (info, _) = try? snapshotNode(element, id: "h", depth: 0, includeChildren: false) else { return nil }
         var defaultButton: String?
         let appElement = AXUIElementCreateApplication(pid)
         if let window = attribute(appElement, kAXFocusedWindowAttribute),
@@ -480,9 +457,9 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
             bundleID: bundleID,
             appName: app.name,
             appStoreCategory: app.appStoreCategory,
-            element: info(element, id: "h", depth: 0),
+            element: info,
             defaultButtonTitle: defaultButton,
-            actionTexts: pressedTexts(from: element)
+            actionTexts: pressedTexts(from: element, info: info)
         )
     }
 
@@ -491,10 +468,10 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
     /// when it is that control's label. The floor reads these too, because
     /// the label of a "Send" button is often a child static text with no
     /// title of its own.
-    private func pressedTexts(from element: AXUIElement) -> [String] {
+    private func pressedTexts(from element: AXUIElement, info: AXElementInfo) -> [String] {
         var texts: [String] = []
-        let role = string(element, kAXRoleAttribute)
-        guard let pressable = performable(element, action: kAXPressAction) else { return texts }
+        let role = info.role
+        guard let pressable = info.pressable ? element : performable(element, action: kAXPressAction) else { return texts }
         if !CFEqual(pressable, element) {
             texts += [string(pressable, kAXTitleAttribute), string(pressable, kAXDescriptionAttribute)].compactMap { $0 }
             if let value = attribute(pressable, kAXValueAttribute) as? String { texts.append(value) }
