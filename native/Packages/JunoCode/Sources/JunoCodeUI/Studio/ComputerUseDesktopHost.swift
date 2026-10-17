@@ -370,6 +370,8 @@ struct ComputerUsePreviewView: View {
         Button(action: action) {
             Text(title)
                 .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, JunoSpace.tight)
                 .frame(minWidth: JunoLayout.pointerTarget, minHeight: JunoLayout.pointerTarget)
                 .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))

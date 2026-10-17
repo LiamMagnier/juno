@@ -121,12 +121,7 @@ public actor AgentOrchestrator {
             maximumRetainedImages: Int = 20,
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
-            // Explicit clock avoids Swift 6.2's cross-module Task.sleep(for:)
-            // specialization crash (swiftlang/swift#86204).
-            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
-                let clock = ContinuousClock()
-                try await clock.sleep(until: clock.now.advanced(by: duration))
-            },
+            retrySleep: (@Sendable (Duration) async throws -> Void)? = nil,
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
             repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,
@@ -150,7 +145,15 @@ public actor AgentOrchestrator {
             self.maximumRetainedImages = max(1, maximumRetainedImages)
             self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
             self.retryPolicy = retryPolicy
-            self.retrySleep = retrySleep
+            // Keep the async closure in this module. A closure literal in a
+            // public default argument is emitted again in client modules;
+            // Xcode 26 can link mismatched async frames and abort on Stop.
+            // https://github.com/swiftlang/swift/issues/92017
+            self.retrySleep = retrySleep ?? { duration in
+                let (seconds, attoseconds) = duration.components
+                let whole = UInt64(clamping: min(seconds, 18_000_000_000))
+                try await Task.sleep(nanoseconds: whole * 1_000_000_000 + UInt64(clamping: attoseconds / 1_000_000_000))
+            }
             self.retryJitter = retryJitter
             self.autonomy = autonomy
         }
@@ -1091,18 +1094,6 @@ public actor AgentOrchestrator {
 
     // MARK: - The loop
 
-    /// Keep the throwing async callback out of the large run-loop catch frame.
-    /// Older Swift runtimes mismanage its task allocation during cancellation.
-    private func waitForRetry(_ delay: Duration) async -> Bool {
-        let sleep = configuration.retrySleep
-        do {
-            try await sleep(delay)
-            return !Task.isCancelled
-        } catch {
-            return false
-        }
-    }
-
     private func runLoop() async {
         runUsageBaseline = usageLedger.total
         let startedAt = Date()
@@ -1371,7 +1362,12 @@ public actor AgentOrchestrator {
                                     )
                                 )
                             )
-                            if !(await waitForRetry(delay)) { break }
+                            do {
+                                try await configuration.retrySleep(delay)
+                            } catch {
+                                break
+                            }
+                            if Task.isCancelled { break }
                             continue
                         }
                     }
