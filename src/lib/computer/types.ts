@@ -13,6 +13,18 @@ export interface Shot {
   width: number;
   height: number;
   sha256: string;
+  /** How long the capture took, in ms (one `docker exec` on the Docker provider). */
+  captureMs?: number;
+  /** How long a settled capture then waited for the screen to stop changing, in ms. */
+  settleMs?: number;
+}
+
+/** A region of the desktop, in its own pixels. */
+export interface ScreenRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface ExecResult {
@@ -62,12 +74,29 @@ export interface ComputerProvider {
   destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void>;
   state(handle: ComputerHandle): Promise<"running" | "paused" | "exited" | "missing">;
   endpoints(handle: ComputerHandle): Promise<Endpoints>;
+  /** One capture, in one exec. */
   screenshot(handle: ComputerHandle): Promise<Shot>;
+  /**
+   * Captures until two consecutive frames match, for at most ~500 ms, so the
+   * model sees the page after a navigation rather than the one before it.
+   * Records `captureMs` and `settleMs` on the shot.
+   */
+  settledScreenshot(handle: ComputerHandle, opts?: { timeoutMs?: number }): Promise<Shot>;
+  /**
+   * A region of the LAST frame this provider captured for `handle` (a fresh
+   * one when there is none), cropped and scaled up so small text is legible.
+   */
+  zoom(handle: ComputerHandle, region: ScreenRegion): Promise<Shot>;
   click(
     handle: ComputerHandle,
     opts: { x: number; y: number; button?: "left" | "right" | "double" }
   ): Promise<void>;
+  /** Moves the pointer without pressing anything. */
+  move(handle: ComputerHandle, opts: { x: number; y: number }): Promise<void>;
+  /** Moves the pointer and dwells, so hover menus and tooltips open. */
+  hover(handle: ComputerHandle, opts: { x: number; y: number; dwellMs?: number }): Promise<void>;
   type(handle: ComputerHandle, text: string): Promise<void>;
+  /** One key or a space-separated sequence ("ctrl+l Return"), one key per xdotool argument. */
   key(handle: ComputerHandle, keys: string): Promise<void>;
   scroll(
     handle: ComputerHandle,
@@ -106,10 +135,4 @@ export interface ComputerProvider {
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void>;
   stopVnc(handle: ComputerHandle): Promise<void>;
-  /**
-   * Hands the CDP gate its token after every start. Through stdin into tmpfs,
-   * never through `-e`: `docker exec` inherits a container's configured env,
-   * so a token passed that way is one `env` away from the agent's shell.
-   */
-  provisionCdpToken(handle: ComputerHandle, token: string): Promise<void>;
 }

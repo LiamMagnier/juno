@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
 import { ComputerError } from "./errors";
+import { DESKTOP_HEIGHT, DESKTOP_WIDTH, splitKeySequence, zoomFrame } from "./capture";
 import type {
   ComputerFileEntry,
   ComputerHandle,
   ComputerProvider,
   Endpoints,
   ExecResult,
+  ScreenRegion,
   Shot,
 } from "./types";
 
@@ -23,6 +25,36 @@ interface FakeContainerState {
   vncViewPassword?: string;
   /** The token the fake gate holds, set only by provisionCdpToken. */
   gateToken?: string;
+  /** Where the pointer is, once anything moved it. */
+  pointer?: { x: number; y: number };
+  /** How many input actions have landed: each one changes the next frame. */
+  inputs: number;
+  /** The last frame `screenshot` returned, for `zoom`. */
+  lastFrame?: Shot;
+}
+
+/**
+ * A frame that shows what the fake was told to do: a pointer ring where the
+ * last action landed and a bar that grows with every input. Enough for the
+ * step record to have a different picture per step, which is what a filmstrip
+ * and a crossfade are checked against by hand.
+ */
+async function renderSceneShot(pointer: { x: number; y: number }, inputs: number): Promise<Shot> {
+  const x = Math.max(0, Math.min(DESKTOP_WIDTH, Math.round(pointer.x)));
+  const y = Math.max(0, Math.min(DESKTOP_HEIGHT, Math.round(pointer.y)));
+  const bar = Math.min(DESKTOP_WIDTH - 80, 40 + inputs * 48);
+  const svg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${DESKTOP_WIDTH}" height="${DESKTOP_HEIGHT}">` +
+      `<rect width="100%" height="100%" fill="rgb(224,224,224)"/>` +
+      `<rect x="40" y="40" width="${DESKTOP_WIDTH - 80}" height="56" rx="10" fill="rgb(245,245,245)"/>` +
+      `<rect x="40" y="120" width="${bar}" height="12" rx="6" fill="rgb(120,120,120)"/>` +
+      `<circle cx="${x}" cy="${y}" r="18" fill="none" stroke="rgb(40,40,40)" stroke-width="4"/>` +
+      `<circle cx="${x}" cy="${y}" r="3" fill="rgb(40,40,40)"/>` +
+      `</svg>`
+  );
+  const jpeg = await sharp(svg).jpeg({ quality: 70 }).toBuffer();
+  const sha256 = createHash("sha256").update(jpeg).digest("hex");
+  return { jpeg, width: DESKTOP_WIDTH, height: DESKTOP_HEIGHT, sha256, captureMs: 0, settleMs: 0 };
 }
 
 let cachedGreyShotPromise: Promise<Shot> | null = null;
@@ -124,6 +156,7 @@ export class FakeProvider implements ComputerProvider {
       cdpToken: opts.cdpToken,
       state: "exited",
       vncRunning: false,
+      inputs: 0,
     });
     return handle;
   }
@@ -206,7 +239,33 @@ export class FakeProvider implements ComputerProvider {
     if (!c || c.state !== "running") {
       throw new Error(`Cannot screenshot non-running fake container: ${handle.name}`);
     }
-    return getGreyShot();
+    const shot = c.pointer ? await renderSceneShot(c.pointer, c.inputs) : { ...(await getGreyShot()), captureMs: 0, settleMs: 0 };
+    c.lastFrame = shot;
+    return shot;
+  }
+
+  /** As the Docker provider: here the screen never moves, so it has always settled. */
+  async settledScreenshot(handle: ComputerHandle, opts?: { timeoutMs?: number }): Promise<Shot> {
+    this.record("settledScreenshot", handle, opts);
+    const shot = await this.screenshot(handle);
+    return { ...shot, captureMs: 0, settleMs: 0 };
+  }
+
+  async zoom(handle: ComputerHandle, region: ScreenRegion): Promise<Shot> {
+    this.record("zoom", handle, region);
+    const c = this.containers.get(handle.name);
+    const frame = c?.lastFrame ?? (await this.screenshot(handle));
+    const zoomed = await zoomFrame(frame.jpeg, region, { frameWidth: frame.width, frameHeight: frame.height });
+    const sha256 = createHash("sha256").update(zoomed.jpeg).digest("hex");
+    return { jpeg: zoomed.jpeg, width: zoomed.width, height: zoomed.height, sha256, captureMs: 0, settleMs: 0 };
+  }
+
+  private landed(handle: ComputerHandle, point?: { x: number; y: number }): void {
+    const c = this.containers.get(handle.name);
+    if (!c) return;
+    if (point) c.pointer = { x: point.x, y: point.y };
+    else c.pointer ??= { x: DESKTOP_WIDTH / 2, y: DESKTOP_HEIGHT / 2 };
+    c.inputs += 1;
   }
 
   async click(
@@ -214,14 +273,28 @@ export class FakeProvider implements ComputerProvider {
     opts: { x: number; y: number; button?: "left" | "right" | "double" }
   ): Promise<void> {
     this.record("click", handle, opts);
+    this.landed(handle, opts);
+  }
+
+  async move(handle: ComputerHandle, opts: { x: number; y: number }): Promise<void> {
+    this.record("move", handle, opts);
+    this.landed(handle, opts);
+  }
+
+  async hover(handle: ComputerHandle, opts: { x: number; y: number; dwellMs?: number }): Promise<void> {
+    this.record("hover", handle, opts);
+    this.landed(handle, opts);
   }
 
   async type(handle: ComputerHandle, text: string): Promise<void> {
     this.record("type", handle, text);
+    this.landed(handle);
   }
 
+  /** Records the keys exactly as the Docker provider hands them to xdotool. */
   async key(handle: ComputerHandle, keys: string): Promise<void> {
-    this.record("key", handle, keys);
+    this.record("key", handle, keys, splitKeySequence(keys));
+    this.landed(handle);
   }
 
   async scroll(
@@ -229,6 +302,7 @@ export class FakeProvider implements ComputerProvider {
     opts: { x: number; y: number; dx?: number; dy?: number }
   ): Promise<void> {
     this.record("scroll", handle, opts);
+    this.landed(handle, opts);
   }
 
   async drag(
@@ -236,6 +310,7 @@ export class FakeProvider implements ComputerProvider {
     opts: { x1: number; y1: number; x2: number; y2: number }
   ): Promise<void> {
     this.record("drag", handle, opts);
+    this.landed(handle, { x: opts.x2, y: opts.y2 });
   }
 
   async exec(

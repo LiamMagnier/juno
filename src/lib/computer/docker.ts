@@ -1,8 +1,6 @@
 import "server-only";
-import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import sharp from "sharp";
 import { runDockerBuffer, spawnDockerWithStdin } from "@/lib/docker-cli";
 import { env } from "@/lib/env";
 import {
@@ -13,12 +11,22 @@ import {
   isSafeAgentPath,
   scrubComputerText,
 } from "./errors";
+import {
+  DESKTOP_HEIGHT,
+  DESKTOP_WIDTH,
+  encodeFrame,
+  frameFingerprint,
+  settleCapture,
+  splitKeySequence,
+  zoomFrame,
+} from "./capture";
 import type {
   ComputerFileEntry,
   ComputerHandle,
   ComputerProvider,
   Endpoints,
   ExecResult,
+  ScreenRegion,
   Shot,
 } from "./types";
 
@@ -390,6 +398,7 @@ export class DockerProvider implements ComputerProvider {
   }
 
   async stop(handle: ComputerHandle): Promise<void> {
+    this.lastFrames.delete(handle.name);
     await runDockerText(["stop", handle.name], {
       allowNonZero: true,
       timeoutMs: 30_000,
@@ -397,6 +406,7 @@ export class DockerProvider implements ComputerProvider {
   }
 
   async destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void> {
+    this.lastFrames.delete(handle.name);
     // Already gone is done; anything else (daemon down, broker refusing, volume
     // in use) throws, so a teardown that left the person's files or site
     // sign-ins behind is never reported as finished.
@@ -469,7 +479,64 @@ export class DockerProvider implements ComputerProvider {
     };
   }
 
+  /**
+   * The last PNG captured per container, for `zoom`. One frame each (about
+   * 200 KB), dropped when the container is stopped or destroyed.
+   */
+  private readonly lastFrames = new Map<string, Buffer>();
+
+  /**
+   * One capture in ONE exec: scrot writes the PNG to stdout. This used to be
+   * two — scrot to /tmp, then `cat` — which doubled the fixed cost of every
+   * screenshot (a docker exec is tens of milliseconds before anything runs).
+   */
+  private async captureRaw(handle: ComputerHandle): Promise<{ png: Buffer; ms: number }> {
+    const started = Date.now();
+    const raw = await runDockerBuffer(
+      ["exec", "--user", "1000", "-e", "DISPLAY=:0", handle.name, "scrot", "-o", "-z", "-"],
+      { timeoutMs: 15_000 }
+    );
+    if (raw.exitCode !== 0 || raw.stdout.byteLength === 0) {
+      throw dockerFailure(["exec", "scrot"], raw.exitCode, raw.stderr.toString("utf8") || "screenshot was empty");
+    }
+    this.lastFrames.set(handle.name, raw.stdout);
+    return { png: raw.stdout, ms: Date.now() - started };
+  }
+
   async screenshot(handle: ComputerHandle): Promise<Shot> {
+    const { png, ms } = await this.captureRaw(handle);
+    const { jpeg, sha256 } = await encodeFrame(png);
+    return { jpeg, width: DESKTOP_WIDTH, height: DESKTOP_HEIGHT, sha256, captureMs: ms, settleMs: 0 };
+  }
+
+  async settledScreenshot(handle: ComputerHandle, opts?: { timeoutMs?: number }): Promise<Shot> {
+    const settled = await settleCapture(
+      async () => {
+        const { png } = await this.captureRaw(handle);
+        return { frame: png, fingerprint: await frameFingerprint(png) };
+      },
+      { timeoutMs: opts?.timeoutMs }
+    );
+    const { jpeg, sha256 } = await encodeFrame(settled.frame);
+    return {
+      jpeg,
+      width: DESKTOP_WIDTH,
+      height: DESKTOP_HEIGHT,
+      sha256,
+      captureMs: settled.captureMs,
+      settleMs: settled.settleMs,
+    };
+  }
+
+  async zoom(handle: ComputerHandle, region: ScreenRegion): Promise<Shot> {
+    const started = Date.now();
+    const frame = this.lastFrames.get(handle.name) ?? (await this.captureRaw(handle)).png;
+    const zoomed = await zoomFrame(frame, region, { frameWidth: DESKTOP_WIDTH, frameHeight: DESKTOP_HEIGHT });
+    const { sha256 } = await encodeFrame(zoomed.jpeg);
+    return { jpeg: zoomed.jpeg, width: zoomed.width, height: zoomed.height, sha256, captureMs: Date.now() - started, settleMs: 0 };
+  }
+
+  async move(handle: ComputerHandle, opts: { x: number; y: number }): Promise<void> {
     await runDockerText([
       "exec",
       "--user",
@@ -477,30 +544,18 @@ export class DockerProvider implements ComputerProvider {
       "-e",
       "DISPLAY=:0",
       handle.name,
-      "scrot",
-      "-o",
-      "-z",
-      "/tmp/juno-shot.png",
+      "xdotool",
+      "mousemove",
+      "--sync",
+      String(Math.round(opts.x)),
+      String(Math.round(opts.y)),
     ]);
-    const raw = await runDockerBuffer([
-      "exec",
-      "--user",
-      "1000",
-      handle.name,
-      "cat",
-      "/tmp/juno-shot.png",
-    ]);
-    if (raw.exitCode !== 0 || raw.stdout.byteLength === 0) {
-      throw new ComputerError(COMPUTER_NOT_RESPONDING, "screenshot was empty");
-    }
-    const jpeg = await sharp(raw.stdout).jpeg({ quality: 70 }).toBuffer();
-    const sha256 = createHash("sha256").update(jpeg).digest("hex");
-    return {
-      jpeg,
-      width: 1280,
-      height: 800,
-      sha256,
-    };
+  }
+
+  async hover(handle: ComputerHandle, opts: { x: number; y: number; dwellMs?: number }): Promise<void> {
+    await this.move(handle, opts);
+    const dwell = Math.max(0, Math.min(2_000, Math.round(opts.dwellMs ?? 400)));
+    if (dwell > 0) await new Promise((resolve) => setTimeout(resolve, dwell));
   }
 
   async click(
@@ -561,7 +616,9 @@ export class DockerProvider implements ComputerProvider {
       "xdotool",
       "key",
       "--",
-      keys,
+      // "ctrl+l Return" is two keys: each its own argument, or xdotool looks
+      // for one key with that whole name and fails.
+      ...splitKeySequence(keys),
     ]);
   }
 
@@ -607,13 +664,26 @@ export class DockerProvider implements ComputerProvider {
       handle.name,
       "xdotool",
       "mousemove",
+      "--sync",
       String(Math.round(opts.x1)),
       String(Math.round(opts.y1)),
       "mousedown",
       "1",
+      // A drag needs motion between press and release: most toolkits ignore a
+      // press and a release at two points with nothing in between. So a short
+      // pause, a move through the midpoint, then the end.
+      "sleep",
+      "0.05",
       "mousemove",
+      "--sync",
+      String(Math.round((opts.x1 + opts.x2) / 2)),
+      String(Math.round((opts.y1 + opts.y2) / 2)),
+      "mousemove",
+      "--sync",
       String(Math.round(opts.x2)),
       String(Math.round(opts.y2)),
+      "sleep",
+      "0.05",
       "mouseup",
       "1",
     ]);

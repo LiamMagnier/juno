@@ -74,6 +74,11 @@ export {
   type WorkToolTierId,
   type WorkValidationCheck,
   type WorkValidationResult,
+  type WorkApprovalPreview,
+  type WorkFrameRef,
+  type WorkScreenAction,
+  type WorkScreenDescription,
+  type WorkToolFrame,
 } from './types.js';
 
 export {
@@ -185,6 +190,8 @@ export { evaluateEgress, hostMatches, normalizeHost, type EgressPolicy } from '.
  */
 export {
   DEFAULT_STREAM_SILENCE_MS,
+  IMAGE_KEEP_LAST,
+  IMAGE_PRUNE_BATCH,
   OMITTED_SCREENSHOT_MARKER,
   ProviderSilenceError,
   pruneOldMessageImages,
@@ -277,14 +284,18 @@ export {
 
 export {
   ARBITRARY_CODE_RISK,
+  COMPUTER_WAIT_MAX_SECONDS,
   REMOTE_TOOL_NAMES,
   computerTools,
+  describeTargetWords,
   isNavigationKeypress,
+  splitComputerKeys,
   TAKEOVER_OVERLAP_TEXT,
   isSafeComputerWritePath,
   type ComputerExecOutcome,
   type ComputerFileEntryItem,
   type ComputerShotData,
+  type ComputerTarget,
   type ComputerToolsDeps,
 } from './computer-tools.js';
 

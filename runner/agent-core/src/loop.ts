@@ -349,11 +349,31 @@ function injectSessionState(messages: ChatMessage[], state: string | null | unde
   return true;
 }
 
+/** How many screenshots the model keeps seeing (the newest ones). */
+export const IMAGE_KEEP_LAST = 3;
+/**
+ * How many older screenshots may pile up before history is rewritten.
+ *
+ * Every rewrite of an old message changes the transcript's prefix, and a
+ * changed prefix is a prompt-cache miss on everything after it. Pruning to
+ * three after EVERY screenshot did exactly that once a step: each new image
+ * pushed the fourth-newest out, so a long computer run re-billed its whole
+ * transcript on every turn. Letting `IMAGE_KEEP_LAST + IMAGE_PRUNE_BATCH`
+ * accumulate and then cutting back to three in one go costs one miss per
+ * batch instead of one per step (the batching Anthropic's own computer-use
+ * guidance describes).
+ */
+export const IMAGE_PRUNE_BATCH = 10;
+
 /**
  * Keeps only the newest `keepLast` image parts in `messages`, replacing older
  * `{ type: 'image' }` parts with `OMITTED_SCREENSHOT_MARKER`.
+ *
+ * With `batch > 0`, history is left exactly as it is until more than
+ * `keepLast + batch` images are present, and is then cut back to `keepLast`
+ * in one rewrite. Returns how many images were replaced.
  */
-export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): void {
+export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3, batch = 0): number {
   const imageLocations: Array<{ msgIdx: number; partIdx: number }> = [];
   for (let m = 0; m < messages.length; m++) {
     const msg = messages[m];
@@ -364,8 +384,9 @@ export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): vo
       }
     }
   }
+  if (imageLocations.length <= keepLast + Math.max(0, batch)) return 0;
   const toDrop = imageLocations.length - keepLast;
-  if (toDrop <= 0) return;
+  if (toDrop <= 0) return 0;
   for (let i = 0; i < toDrop; i++) {
     const loc = imageLocations[i]!;
     const msg = messages[loc.msgIdx];
@@ -376,6 +397,7 @@ export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): vo
       };
     }
   }
+  return toDrop;
 }
 
 export interface CompactConversationInput {
@@ -604,7 +626,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     }
     // After compaction, which may have folded the last state block away.
     if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
-    pruneOldMessageImages(opts.messages, 3);
+    pruneOldMessageImages(opts.messages, IMAGE_KEEP_LAST, IMAGE_PRUNE_BATCH);
     /**
      * The assistant turn as it streamed: text, signed reasoning blocks and
      * tool calls, in arrival order. Order is the point — a provider that

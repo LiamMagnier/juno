@@ -168,6 +168,33 @@ with the Swift runtime; each has tests in `src/test/`.
   keys it on the provider's call id, and Stop reaches a running program.
   `src/test/exec-tools.test.ts` covers both. Re-apply when re-syncing.
 
+## Cloud agent loop (October 2026, B-cloud-agent-loop)
+
+- `src/loop.ts` (`pruneOldMessageImages(messages, keepLast, batch)`,
+  `IMAGE_KEEP_LAST = 3`, `IMAGE_PRUNE_BATCH = 10`): **cache-friendly image
+  pruning.** Upstream cuts history back to the newest three screenshots before
+  every request, which rewrites an old message on every computer step and so
+  misses the prompt cache on everything after it, every turn. Here history is
+  left untouched until more than `3 + 10` images are present, then cut back to
+  three in one rewrite: one cache miss per batch instead of one per step. With
+  `batch = 0` (the default for direct callers) the function behaves exactly as
+  upstream. `src/test/loop-image-pruning.test.ts` covers both.
+- `src/work/types.ts` (`WorkScreenAction`, `WorkFrameRef`, `WorkToolFrame`,
+  `WorkApprovalPreview`, `WorkScreenDescription`; `WorkToolDefinition.describeScreen`,
+  `previewFrame`, `takeFrame`; `tool_started.screen`, `tool_finished.frame`,
+  `tool_finished.captureMs` / `settleMs`), `src/work/session.ts`
+  (`WorkSessionCallbacks.persistFrame`; the screen description resolved once
+  before the gate and reused for the approval summary and `tool_started`; the
+  frame stored after a successful call only; a computer approval's
+  `digestInput` carrying `preview { frameRef, point, target }` so
+  `actionDigest` covers the picture the card shows — other tools digest
+  exactly what they did before), and `src/work/computer-tools.ts`
+  (`computer_drag`, `computer_hover`, `computer_zoom`, `computer_wait`,
+  `describeTargetWords`, `splitComputerKeys`, semantic summaries from
+  `ComputerToolsDeps.describeTarget`): the visual step record and approvals
+  that show what will happen. `src/test/work-computer-tools.test.ts` covers
+  them. Re-apply when re-syncing.
+
 ## Build
 
 ```sh

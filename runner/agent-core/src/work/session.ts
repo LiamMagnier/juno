@@ -74,7 +74,11 @@ import {
   type WorkReport,
   type WorkRiskLevel,
   type WorkTerminalReason,
+  type WorkApprovalPreview,
+  type WorkScreenAction,
+  type WorkScreenDescription,
   type WorkToolDefinition,
+  type WorkToolFrame,
   type WorkValidationCheck,
   type WorkValidationResult,
 } from './types.js';
@@ -279,6 +283,23 @@ export interface WorkSessionCallbacks {
   requestApproval(request: WorkApprovalRequest): Promise<WorkApprovalAnswer>;
   /** Audit records the runtime wants written; the runner has no database. */
   onAudit?(intent: WorkAuditIntent): void;
+  /**
+   * Stores one computer frame and returns its reference, or null when it
+   * could not be stored. `after` is the screenshot a successful computer call
+   * returned (the step record); `before` is the frame an approval shows. The
+   * runner has the storage; the runtime only hands over pixels it already
+   * has. A throw is treated as null: a step record that failed to save is not
+   * a reason to fail the step.
+   */
+  persistFrame?(frame: {
+    callId: string;
+    tool: string;
+    kind: 'after' | 'before';
+    mediaType: 'image/jpeg' | 'image/png';
+    data: string;
+    width: number;
+    height: number;
+  }): Promise<string | null>;
   /** Called whenever the run's resumable state changed. */
   onCheckpoint?(checkpoint: WorkCheckpoint): void;
   /**
@@ -926,13 +947,17 @@ export class WorkAgentSession {
     const action = tool.actionFor(call.input);
     const risk = tool.riskFor(call.input);
     const provenance = tool.provenanceFor(call.input);
+    // Computer tools name what is under the pointer once, here, so the
+    // approval, the live caption and the step record all say the same thing.
+    const described = await this.describeScreen(tool, call.input);
+    const summary = described?.summary ?? tool.summarize(call.input);
 
     const floored = requiresExplicitApproval(action, risk);
     if (
       approvalAsksUnder(action, risk, this.options.approvalMode ?? 'conservative') &&
       (floored || !this.grantedAlways.has(action))
     ) {
-      const answer = await this.gateApproval(call, tool, action, risk);
+      const answer = await this.gateApproval(call, tool, action, risk, { summary, screen: described?.screen ?? null });
       if (answer !== 'allowed' && answer !== 'allowed_always') {
         const reason =
           answer === 'expired'
@@ -960,8 +985,9 @@ export class WorkAgentSession {
       intent,
       tier: tool.tier,
       risk,
-      summary: tool.summarize(call.input),
+      summary,
       provenance,
+      ...(described?.screen ? { screen: described.screen } : {}),
     });
 
     const ctx: ToolContext = {
@@ -984,6 +1010,11 @@ export class WorkAgentSession {
       isError = true;
     }
     this.fileGuard?.record(call.name, call.input, isError);
+    // Taken on every call so a tool never holds a frame, and kept only for a
+    // success: a call that failed, or whose result a takeover discarded, has
+    // nothing anyone should be shown.
+    const produced = tool.takeFrame?.(call.id) ?? null;
+    const frame = !isError && produced ? await this.storeFrame(call, 'after', produced) : null;
 
     this.actions.push({
       callId: call.id,
@@ -1013,6 +1044,18 @@ export class WorkAgentSession {
       durationMs: this.clock.now() - startedAt,
       provenance,
       ...(injection ? { injection } : {}),
+      ...(frame
+        ? {
+            frame: {
+              ref: frame.ref,
+              width: frame.width,
+              height: frame.height,
+              ...(frame.point ? { point: frame.point } : {}),
+            },
+          }
+        : {}),
+      ...(!isError && produced && typeof produced.captureMs === 'number' ? { captureMs: produced.captureMs } : {}),
+      ...(!isError && produced && typeof produced.settleMs === 'number' ? { settleMs: produced.settleMs } : {}),
     });
 
     const resultBlock = this.toolResult(call.id, content, isError);
@@ -1360,6 +1403,67 @@ export class WorkAgentSession {
     );
   }
 
+  /** `describeScreen`, bounded: a slow or failing page never holds a call up. */
+  private async describeScreen(
+    tool: WorkToolDefinition,
+    input: Record<string, unknown>,
+  ): Promise<WorkScreenDescription | null> {
+    if (!tool.describeScreen) return null;
+    try {
+      return await tool.describeScreen(input);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Hands one frame to the runner's storage; null when there is none or it failed. */
+  private async storeFrame(
+    call: { id: string; name: string },
+    kind: 'after' | 'before',
+    frame: WorkToolFrame,
+  ): Promise<(WorkToolFrame & { ref: string }) | null> {
+    const persist = this.options.callbacks.persistFrame;
+    if (!persist) return null;
+    try {
+      const ref = await persist({
+        callId: call.id,
+        tool: call.name,
+        kind,
+        mediaType: frame.mediaType,
+        data: frame.data,
+        width: frame.width,
+        height: frame.height,
+      });
+      return ref ? { ...frame, ref } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The frame, point and target a computer approval shows, or null. */
+  private async approvalPreview(
+    call: { id: string; name: string; input: Record<string, unknown> },
+    tool: WorkToolDefinition,
+    screen: WorkScreenAction | null,
+  ): Promise<WorkApprovalPreview | null> {
+    if (!tool.previewFrame) return null;
+    let frame: WorkToolFrame | null = null;
+    try {
+      frame = await tool.previewFrame(call.input, screen);
+    } catch {
+      frame = null;
+    }
+    if (!frame) return null;
+    const stored = await this.storeFrame(call, 'before', frame);
+    if (!stored) return null;
+    const point = screen?.point ?? frame.point;
+    return {
+      frameRef: stored.ref,
+      ...(point ? { point: { x: Math.round(point.x), y: Math.round(point.y) } } : {}),
+      ...(screen?.target ? { target: screen.target } : {}),
+    };
+  }
+
   /**
    * Put one action in front of the user and wait.
    *
@@ -1374,16 +1478,34 @@ export class WorkAgentSession {
     tool: WorkToolDefinition,
     action: string,
     risk: WorkRiskLevel,
+    described: { summary: string; screen: WorkScreenAction | null },
   ): Promise<WorkApprovalAnswer> {
-    const digestInput = canonicalJson({ action, tool: call.name, input: call.input });
+    /*
+     * A computer call is asked about with the picture it will act on: a fresh
+     * frame, the point it lands on and what is under it. The preview goes
+     * INTO the digested bytes, not beside them, so `actionDigest` covers the
+     * frame reference too and no card can show a different picture from the
+     * one approved. Other tools digest exactly what they always did, so every
+     * approval already in flight keeps verifying.
+     */
+    const preview = await this.approvalPreview(call, tool, described.screen);
+    const digestInput = canonicalJson(
+      preview
+        ? { action, tool: call.name, input: call.input, preview }
+        : { action, tool: call.name, input: call.input },
+    );
     const request: WorkApprovalRequest = {
       id: `${this.runId}:${call.id}`,
       callId: call.id,
       action,
       tool: call.name,
       risk,
-      summary: tool.summarize(call.input),
-      detail: { intent: tool.intentFor(call.input), tier: tool.tier },
+      summary: described.summary,
+      detail: {
+        intent: tool.intentFor(call.input),
+        tier: tool.tier,
+        ...(preview ? { preview } : {}),
+      },
       digestInput,
       actionDigest: sha256(digestInput),
       policyDigest: this.policyDigest,

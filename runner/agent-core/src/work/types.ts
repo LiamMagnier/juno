@@ -499,6 +499,76 @@ export interface WorkProvenance {
 }
 
 /**
+ * What a computer call does on the agent's screen, before it runs.
+ *
+ * The contract the live view, the step record and the approval card read
+ * (`tool_started.screen`). `point` is in the desktop's own pixels (1280x800
+ * on a cloud computer). `target` is the element under the point in words —
+ * `the “Sign in” button` — when the remote browser could name it, and absent
+ * when the point is outside the page or nothing answered in time.
+ */
+export interface WorkScreenAction {
+  action:
+    | 'screenshot'
+    | 'click'
+    | 'double_click'
+    | 'right_click'
+    | 'move'
+    | 'hover'
+    | 'drag'
+    | 'scroll'
+    | 'type'
+    | 'key'
+    | 'wait'
+    | 'zoom';
+  point?: { x: number; y: number };
+  target?: string;
+}
+
+/** A frame a computer call left behind, once the runner has stored it. */
+export interface WorkFrameRef {
+  /** Opaque to the runtime: `alevr-frame://<runId>/<frameId>` from the cloud runner. */
+  ref: string;
+  width: number;
+  height: number;
+  point?: { x: number; y: number };
+}
+
+/**
+ * The screenshot a computer call produced, as the tool hands it to the
+ * session for the step record. The same pixels the model was shown.
+ */
+export interface WorkToolFrame {
+  mediaType: 'image/jpeg' | 'image/png';
+  data: string;
+  width: number;
+  height: number;
+  point?: { x: number; y: number };
+  captureMs?: number;
+  settleMs?: number;
+}
+
+/**
+ * What an approval for a computer call shows: the frame the person is asked
+ * about, where the action lands on it, and what is under that point.
+ *
+ * Part of `digestInput`, so `actionDigest` covers it: a card cannot show a
+ * different picture from the one that was approved.
+ */
+export interface WorkApprovalPreview {
+  frameRef: string;
+  point?: { x: number; y: number };
+  target?: string;
+}
+
+/** What `describeScreen` resolves for one call. */
+export interface WorkScreenDescription {
+  screen: WorkScreenAction;
+  /** The call's sentence with its target named, in place of `summarize`. */
+  summary?: string;
+}
+
+/**
  * A tool as a Work run needs to see it.
  *
  * `ToolDefinition` describes what a tool does; this adds what a Work run has
@@ -521,6 +591,23 @@ export interface WorkToolDefinition extends ToolDefinition {
    * Optional input normalizer for `plan.observeToolCall` stall detection.
    */
   signatureInput?(input: Record<string, unknown>): unknown;
+  /**
+   * Computer tools: what this call will do on screen, resolved once before
+   * the approval gate (the element under the point needs the remote page).
+   * Null or a throw falls back to `summarize` and no screen payload.
+   */
+  describeScreen?(input: Record<string, unknown>): Promise<WorkScreenDescription | null>;
+  /**
+   * Computer tools: a fresh frame for the approval card, or null when the
+   * computer may not be looked at right now (the person has control).
+   */
+  previewFrame?(input: Record<string, unknown>, screen: WorkScreenAction | null): Promise<WorkToolFrame | null>;
+  /**
+   * Computer tools: the frame THIS call produced, handed over once. Read after
+   * every call so nothing is held; the session uses it only for a call that
+   * succeeded, so a result a takeover discarded leaves no frame behind.
+   */
+  takeFrame?(callId: string): WorkToolFrame | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -749,6 +836,8 @@ export type WorkEvent =
       risk: WorkRiskLevel;
       summary: string;
       provenance: WorkProvenance;
+      /** Computer tools: what happens on screen and where (see `WorkScreenAction`). */
+      screen?: WorkScreenAction;
     }
   | {
       kind: 'tool_finished';
@@ -758,6 +847,11 @@ export type WorkEvent =
       durationMs: number;
       provenance: WorkProvenance;
       injection?: WorkInjectionSummary;
+      /** Computer tools: the stored frame the call left, after a success only. */
+      frame?: WorkFrameRef;
+      /** Computer tools: how long the screenshot took, and the wait for the screen to settle. */
+      captureMs?: number;
+      settleMs?: number;
     }
   | { kind: 'tool_denied'; callId: string; tool: string; reason: string }
   | { kind: 'question_asked'; question: WorkQuestion }

@@ -1,5 +1,12 @@
-import type { ToolResult } from '../tools/types.js';
-import type { WorkProvenance, WorkRiskLevel, WorkToolDefinition } from './types.js';
+import type { ToolContext, ToolResult } from '../tools/types.js';
+import type {
+  WorkProvenance,
+  WorkRiskLevel,
+  WorkScreenAction,
+  WorkScreenDescription,
+  WorkToolDefinition,
+  WorkToolFrame,
+} from './types.js';
 
 export const REMOTE_TOOL_NAMES = [
   'computer_screenshot',
@@ -7,6 +14,10 @@ export const REMOTE_TOOL_NAMES = [
   'computer_type',
   'computer_key',
   'computer_scroll',
+  'computer_drag',
+  'computer_hover',
+  'computer_zoom',
+  'computer_wait',
   'computer_shell',
   'computer_files',
 ] as const;
@@ -18,6 +29,10 @@ export interface ComputerShotData {
   data: string;
   width: number;
   height: number;
+  /** How long the capture took, in ms. */
+  captureMs?: number;
+  /** How long a settled capture waited for the screen to stop changing, in ms. */
+  settleMs?: number;
 }
 
 export interface ComputerExecOutcome {
@@ -32,6 +47,14 @@ export interface ComputerFileEntryItem {
   path: string;
   type: 'file' | 'dir' | 'other';
   size?: number;
+}
+
+/** The element under a point of the desktop, as the remote page names it. */
+export interface ComputerTarget {
+  /** An ARIA role, explicit or implied by the tag ("button", "link", "textbox"). */
+  role: string;
+  /** Its accessible name, as the page wrote it. Untrusted page text. */
+  name: string;
 }
 
 export interface ComputerToolsDeps {
@@ -59,6 +82,20 @@ export interface ComputerToolsDeps {
   type(text: string): Promise<ComputerShotData>;
   key(keys: string): Promise<ComputerShotData>;
   scroll(opts: { x: number; y: number; direction: 'up' | 'down'; amount: number }): Promise<ComputerShotData>;
+  /** Press at one point, move to another, release. Offered only when present. */
+  drag?(opts: { x1: number; y1: number; x2: number; y2: number }): Promise<ComputerShotData>;
+  /** Move the pointer and dwell, so hover menus and tooltips open. Offered only when present. */
+  hover?(opts: { x: number; y: number }): Promise<ComputerShotData>;
+  /** A region of the last frame, scaled up. Offered only when present. */
+  zoom?(region: { x: number; y: number; width: number; height: number }): Promise<ComputerShotData>;
+  /**
+   * The element under a desktop point, or null when the point is outside the
+   * page or nothing could be read. Bounded by the tools (it never holds a call
+   * up for long) and never asked while the person has control.
+   */
+  describeTarget?(x: number, y: number): Promise<ComputerTarget | null>;
+  /** The wait `computer_wait` uses; injectable so tests need no real clock. */
+  sleep?(ms: number, signal?: AbortSignal): Promise<void>;
   exec(command: string, opts: { timeoutSeconds: number; cwd?: string }): Promise<ComputerExecOutcome>;
   listFiles(path: string): Promise<ComputerFileEntryItem[]>;
   readFile(path: string, maxBytes: number): Promise<string>;
@@ -67,6 +104,12 @@ export interface ComputerToolsDeps {
 
 const MAX_SHELL_OUTPUT_CHARS = 20_000;
 const MAX_FILE_READ_BYTES = 200 * 1024;
+const DESKTOP_WIDTH = 1280;
+const DESKTOP_HEIGHT = 800;
+/** The longest `computer_wait` the model may ask for, in seconds. */
+export const COMPUTER_WAIT_MAX_SECONDS = 10;
+/** How long naming the element under the pointer may take before the call goes on without it. */
+const DESCRIBE_TIMEOUT_MS = 800;
 
 function siteHostname(rawUrl: string): string {
   if (!rawUrl) return "the agent's desktop";
@@ -103,6 +146,24 @@ function capShellStream(label: string, value: string): string {
   return `${value.slice(0, MAX_SHELL_OUTPUT_CHARS)}\n[${label} cut off at ${MAX_SHELL_OUTPUT_CHARS} characters]`;
 }
 
+const clampX = (value: unknown, fallback = 0) =>
+  Math.max(0, Math.min(DESKTOP_WIDTH, Math.round(Number.isFinite(Number(value)) ? Number(value) : fallback)));
+const clampY = (value: unknown, fallback = 0) =>
+  Math.max(0, Math.min(DESKTOP_HEIGHT, Math.round(Number.isFinite(Number(value)) ? Number(value) : fallback)));
+
+/**
+ * A `computer_key` string as the separate keys it names: "ctrl+l Return" is
+ * two presses. The provider hands each to xdotool as its own argument; passed
+ * whole, xdotool looked for one key called "ctrl+l Return" and failed.
+ */
+export function splitComputerKeys(raw: string): string[] {
+  return raw
+    .split(/\s+/)
+    .map((key) => key.trim())
+    .filter(Boolean)
+    .slice(0, 32);
+}
+
 /**
  * Keys `computer_key` presses without the approval a typing tool needs: the
  * ones that move around or confirm and produce no text. Anything else (a
@@ -125,10 +186,7 @@ const NAVIGATION_KEYS = new Set(
 
 /** Whether a `computer_key` press is navigation only (see `NAVIGATION_KEYS`). */
 export function isNavigationKeypress(raw: string): boolean {
-  const keys = raw
-    .split(/\s+/)
-    .map((key) => key.trim().toLowerCase())
-    .filter(Boolean);
+  const keys = splitComputerKeys(raw).map((key) => key.toLowerCase());
   return keys.length > 0 && keys.every((key) => NAVIGATION_KEYS.has(key));
 }
 
@@ -168,38 +226,225 @@ export const ARBITRARY_CODE_RISK: WorkRiskLevel = 'sensitive';
 export const TAKEOVER_OVERLAP_TEXT =
   'The person took control of this computer while that was running, so its result was discarded. Look at the screen again before carrying on.';
 
+/** What an element's role is called in a sentence. */
+const ROLE_NOUNS: Record<string, string> = {
+  button: 'button',
+  link: 'link',
+  textbox: 'field',
+  searchbox: 'search field',
+  combobox: 'menu',
+  listbox: 'list',
+  option: 'option',
+  checkbox: 'checkbox',
+  radio: 'option',
+  switch: 'switch',
+  slider: 'slider',
+  tab: 'tab',
+  menuitem: 'menu item',
+  menuitemcheckbox: 'menu item',
+  menuitemradio: 'menu item',
+  heading: 'heading',
+  img: 'image',
+  image: 'image',
+  cell: 'cell',
+  gridcell: 'cell',
+  row: 'row',
+  dialog: 'dialog',
+  treeitem: 'item',
+  spinbutton: 'field',
+};
+
+/**
+ * The element as words: `the “Sign in” button`, `the “Email” field`, or null
+ * when the page gave nothing to name it by.
+ *
+ * The name is the page's own text and so untrusted: it is cut to 60
+ * characters, its quotes and control characters are removed, and it only
+ * ever appears inside quotation marks, never as the sentence around them.
+ */
+export function describeTargetWords(target: ComputerTarget | null | undefined): string | null {
+  if (!target) return null;
+  const noun = ROLE_NOUNS[String(target.role ?? '').toLowerCase()] ?? null;
+  const name = String(target.name ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/["\u201c\u201d\u00ab\u00bb]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const short = name.length > 60 ? `${name.slice(0, 57).trimEnd()}…` : name;
+  if (short && noun) return `the “${short}” ${noun}`;
+  if (short) return `“${short}”`;
+  if (noun) return `the ${noun}`;
+  return null;
+}
+
+const PRESS_WORDS: Record<'left' | 'right' | 'double', { verb: string; action: WorkScreenAction['action'] }> = {
+  left: { verb: 'Click', action: 'click' },
+  right: { verb: 'Right-click', action: 'right_click' },
+  double: { verb: 'Double-click', action: 'double_click' },
+};
+
+function buttonOf(input: Record<string, unknown>): 'left' | 'right' | 'double' {
+  const raw = String(input.button ?? 'left');
+  return raw === 'right' || raw === 'double' ? raw : 'left';
+}
+
+function sleepFor(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Stopped.'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error('Stopped.'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
+  const blockedText = async (): Promise<string | null> => (deps.blockedReason ? await deps.blockedReason() : null);
   const blocked = async (): Promise<ToolResult | null> => {
-    const reason = deps.blockedReason ? await deps.blockedReason() : null;
+    const reason = await blockedText();
     return reason ? { output: reason, isError: true } : null;
   };
+  const epoch = async (): Promise<number | null> => (deps.takeoverEpoch ? await deps.takeoverEpoch() : null);
+
+  /*
+   * The step record. Each screen action leaves the frame it returned here,
+   * keyed by the provider's call id; the session takes it once the call is
+   * over (`takeFrame`). The guard below drops it on every path that discards
+   * a result, so a frame captured as the person took over is never stored.
+   */
+  const pendingFrames = new Map<string, WorkToolFrame>();
+  const keepFrame = (ctx: ToolContext, shot: ComputerShotData, point?: { x: number; y: number }) => {
+    if (!ctx.callId) return;
+    pendingFrames.set(ctx.callId, {
+      mediaType: shot.mediaType,
+      data: shot.data,
+      width: shot.width,
+      height: shot.height,
+      ...(point ? { point } : {}),
+      ...(typeof shot.captureMs === 'number' ? { captureMs: shot.captureMs } : {}),
+      ...(typeof shot.settleMs === 'number' ? { settleMs: shot.settleMs } : {}),
+    });
+  };
+  const dropFrame = (ctx: ToolContext) => {
+    if (ctx.callId) pendingFrames.delete(ctx.callId);
+  };
+
+  /** Where the pointer last landed: where typing and keys most likely go. */
+  let lastPoint: { x: number; y: number } | null = null;
+
+  /**
+   * The element under a point, in words, or null. Never asked while the
+   * person has control (the page is theirs then), and never allowed to hold
+   * a call up: a slow page is described by its coordinates instead.
+   */
+  const targetAt = async (point: { x: number; y: number } | null | undefined): Promise<string | null> => {
+    if (!point || !deps.describeTarget) return null;
+    if (await blockedText()) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const target = await Promise.race([
+        deps.describeTarget(point.x, point.y),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), DESCRIBE_TIMEOUT_MS);
+        }),
+      ]);
+      return describeTargetWords(target);
+    } catch {
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  /**
+   * The last description per tool and input, so the result the model reads
+   * names the same element the person was shown, without asking twice.
+   */
+  const described = new Map<string, string | null>();
+  const describedKey = (tool: string, input: Record<string, unknown>) => `${tool}:${JSON.stringify(input)}`;
+  const remember = (tool: string, input: Record<string, unknown>, target: string | null) => {
+    if (described.size > 32) described.clear();
+    described.set(describedKey(tool, input), target);
+  };
+  const recalled = (tool: string, input: Record<string, unknown>): string | null =>
+    described.get(describedKey(tool, input)) ?? null;
+
   // Every tool: refuse before acting while blocked, and refuse after acting
   // if a takeover began mid-call, so what the screen showed at the moment the
   // person took over never reaches the model.
   // Part of each tool's own implementation, not a dispatch site: the session's
   // `executeToolCall` still gates every call before it reaches this execute.
-  const epoch = async (): Promise<number | null> => (deps.takeoverEpoch ? await deps.takeoverEpoch() : null);
   const guarded = (definition: WorkToolDefinition): WorkToolDefinition => ({
     ...definition,
     async execute(input, ctx) {
       const before = await blocked();
       if (before) return before;
       const epochBefore = await epoch();
-      const result = await definition.execute(input, ctx);
+      let result: ToolResult;
+      try {
+        result = await definition.execute(input, ctx);
+      } catch (error) {
+        dropFrame(ctx);
+        throw error;
+      }
       const after = await blocked();
-      if (after) return after;
+      if (after) {
+        dropFrame(ctx);
+        return after;
+      }
       const epochAfter = await epoch();
       if (epochBefore !== null && epochAfter !== null && epochBefore !== epochAfter) {
+        dropFrame(ctx);
         return { output: TAKEOVER_OVERLAP_TEXT, isError: true };
       }
+      if (result.isError) dropFrame(ctx);
       return result;
     },
+    takeFrame(callId) {
+      const frame = pendingFrames.get(callId) ?? null;
+      pendingFrames.delete(callId);
+      return frame;
+    },
   });
+
+  /**
+   * A fresh frame for an approval card, under the same rules as a screenshot
+   * the model takes: none while the person has control, and none if a
+   * takeover started while it was being captured.
+   */
+  const previewFrame = async (
+    _input: Record<string, unknown>,
+    screen: WorkScreenAction | null,
+  ): Promise<WorkToolFrame | null> => {
+    if (await blockedText()) return null;
+    const epochBefore = await epoch();
+    const shot = await deps.screenshot();
+    if (await blockedText()) return null;
+    const epochAfter = await epoch();
+    if (epochBefore !== null && epochAfter !== null && epochBefore !== epochAfter) return null;
+    return {
+      mediaType: shot.mediaType,
+      data: shot.data,
+      width: shot.width,
+      height: shot.height,
+      ...(screen?.point ? { point: screen.point } : {}),
+    };
+  };
 
   const withEpoch = (input: Record<string, unknown>) => ({
     ...input,
     screen: deps.screenEpoch(),
   });
+
+  const host = () => siteHostname(deps.currentUrl());
 
   const pixelActionFor = (defaultAction: string) => (): string =>
     deps.pageTakesPayment() ? 'work.browser.purchase' : defaultAction;
@@ -221,6 +466,8 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     trust: 'untrusted',
   });
 
+  const imageOf = (shot: ComputerShotData) => [{ mediaType: shot.mediaType, data: shot.data }];
+
   const screenshotTool: WorkToolDefinition = {
     kind: 'read',
     tier: 'visual',
@@ -234,7 +481,7 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     spec: {
       name: 'computer_screenshot',
       description:
-        "Take a 1280x800 screenshot of the agent's desktop. Every click, type, key and scroll already returns a fresh screenshot, so only call this when you need to look before acting.",
+        "Take a 1280x800 screenshot of the agent's desktop. Every click, type, key, scroll, drag and hover already returns a fresh screenshot once the screen has settled, so only call this when you need to look before acting.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -246,14 +493,24 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
         required: ['reason'],
       },
     },
-    summarize: () => boundSummary(`Look at ${siteHostname(deps.currentUrl())}`),
-    async execute(): Promise<ToolResult> {
+    summarize: () => boundSummary(`Look at ${host()}`),
+    async describeScreen(): Promise<WorkScreenDescription> {
+      return { screen: { action: 'screenshot' }, summary: boundSummary(`Look at ${host()}`) };
+    },
+    async execute(_input, ctx): Promise<ToolResult> {
       const shot = await deps.screenshot();
+      keepFrame(ctx, shot);
       return {
-        output: `Captured 1280x800 screenshot on ${siteHostname(deps.currentUrl())}.`,
-        images: [{ mediaType: shot.mediaType, data: shot.data }],
+        output: `Captured 1280x800 screenshot on ${host()}.`,
+        images: imageOf(shot),
       };
     },
+  };
+
+  const clickSummary = (input: Record<string, unknown>, target: string | null) => {
+    const words = PRESS_WORDS[buttonOf(input)];
+    if (target) return boundSummary(`${words.verb} ${target} on ${host()}`);
+    return boundSummary(`${words.verb} at (${clampX(input.x)}, ${clampY(input.y)}) on ${host()}`);
   };
 
   const clickTool: WorkToolDefinition = {
@@ -269,7 +526,7 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     spec: {
       name: 'computer_click',
       description:
-        'Click at pixel coordinates (x, y) on the 1280x800 desktop and return a fresh screenshot. Prefer the DOM `browser` tool for web page links and buttons whenever possible.',
+        'Click at pixel coordinates (x, y) on the 1280x800 desktop and return a fresh screenshot once the screen settles. Prefer the DOM `browser` tool for web page links and buttons whenever possible.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -284,23 +541,39 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
         required: ['x', 'y'],
       },
     },
-    summarize: (input) => {
-      const x = Math.round(Number(input.x ?? 0));
-      const y = Math.round(Number(input.y ?? 0));
-      return boundSummary(`Click at (${x}, ${y}) on ${siteHostname(deps.currentUrl())}`);
-    },
-    async execute(input): Promise<ToolResult> {
-      const x = Math.max(0, Math.min(1280, Math.round(Number(input.x ?? 0))));
-      const y = Math.max(0, Math.min(800, Math.round(Number(input.y ?? 0))));
-      const rawBtn = String(input.button ?? 'left');
-      const button: 'left' | 'right' | 'double' =
-        rawBtn === 'right' || rawBtn === 'double' ? rawBtn : 'left';
-      const shot = await deps.click({ x, y, button });
+    summarize: (input) => clickSummary(input, null),
+    async describeScreen(input): Promise<WorkScreenDescription> {
+      const point = { x: clampX(input.x), y: clampY(input.y) };
+      const target = await targetAt(point);
+      remember('computer_click', input, target);
       return {
-        output: `Clicked (${x}, ${y}) (${button}) on ${siteHostname(deps.currentUrl())}.`,
-        images: [{ mediaType: shot.mediaType, data: shot.data }],
+        screen: { action: PRESS_WORDS[buttonOf(input)].action, point, ...(target ? { target } : {}) },
+        summary: clickSummary(input, target),
       };
     },
+    previewFrame,
+    async execute(input, ctx): Promise<ToolResult> {
+      const x = clampX(input.x);
+      const y = clampY(input.y);
+      const button = buttonOf(input);
+      const target = recalled('computer_click', input);
+      const shot = await deps.click({ x, y, button });
+      lastPoint = { x, y };
+      keepFrame(ctx, shot, { x, y });
+      return {
+        output: target
+          ? `Clicked ${target} at (${x}, ${y}) (${button}) on ${host()}.`
+          : `Clicked (${x}, ${y}) (${button}) on ${host()}.`,
+        images: imageOf(shot),
+      };
+    },
+  };
+
+  const typeSummary = (input: Record<string, unknown>, target: string | null) => {
+    const count = String(input.text ?? '').length;
+    return boundSummary(
+      target ? `Type ${count} characters into ${target} on ${host()}` : `Type ${count} characters on ${host()}`,
+    );
   };
 
   const typeTool: WorkToolDefinition = {
@@ -318,7 +591,7 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     spec: {
       name: 'computer_type',
       description:
-        'Type text into the focused window on the desktop (max 2000 characters) and return a fresh screenshot.',
+        'Type text into the focused window on the desktop (max 2000 characters) and return a fresh screenshot once the screen settles.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -330,22 +603,36 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
         required: ['text'],
       },
     },
-    summarize: (input) => {
-      const raw = String(input.text ?? '');
-      return boundSummary(`Type ${raw.length} characters on ${siteHostname(deps.currentUrl())}`);
+    summarize: (input) => typeSummary(input, null),
+    async describeScreen(input): Promise<WorkScreenDescription> {
+      // Typing lands where the pointer last clicked; that is the point the
+      // approval marks and the element it names.
+      const point = lastPoint ?? undefined;
+      const target = await targetAt(point);
+      return {
+        screen: { action: 'type', ...(point ? { point } : {}), ...(target ? { target } : {}) },
+        summary: typeSummary(input, target),
+      };
     },
-    async execute(input): Promise<ToolResult> {
+    previewFrame,
+    async execute(input, ctx): Promise<ToolResult> {
       const text = String(input.text ?? '');
       if (!text) return { output: 'Text is required.', isError: true };
       if (text.length > 2000) {
         return { output: 'Text exceeds the 2000-character limit.', isError: true };
       }
       const shot = await deps.type(text);
+      keepFrame(ctx, shot, lastPoint ?? undefined);
       return {
-        output: `Typed ${text.length} characters on ${siteHostname(deps.currentUrl())}.`,
-        images: [{ mediaType: shot.mediaType, data: shot.data }],
+        output: `Typed ${text.length} characters on ${host()}.`,
+        images: imageOf(shot),
       };
     },
+  };
+
+  const keySummary = (input: Record<string, unknown>, target: string | null) => {
+    const keys = splitComputerKeys(String(input.keys ?? '')).join(' ').slice(0, 40);
+    return boundSummary(target ? `Press ${keys} in ${target} on ${host()}` : `Press ${keys} on ${host()}`);
   };
 
   const keyTool: WorkToolDefinition = {
@@ -368,27 +655,36 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     spec: {
       name: 'computer_key',
       description:
-        'Press a key or shortcut on the desktop (e.g. "Return", "Tab", "ctrl+l", "Escape") and return a fresh screenshot.',
+        'Press a key or shortcut on the desktop (e.g. "Return", "Tab", "ctrl+l", "Escape"), or several in order separated by spaces ("ctrl+l Return"), and return a fresh screenshot once the screen settles.',
       inputSchema: {
         type: 'object',
         properties: {
           keys: {
             type: 'string',
-            description: 'Key name or combination (e.g. "Return", "ctrl+l", "Tab").',
+            description: 'Key name or combination (e.g. "Return", "ctrl+l", "Tab"); several separated by spaces are pressed in order.',
           },
         },
         required: ['keys'],
       },
     },
-    summarize: (input) =>
-      boundSummary(`Press ${String(input.keys ?? '').slice(0, 40)} on ${siteHostname(deps.currentUrl())}`),
-    async execute(input): Promise<ToolResult> {
-      const keys = String(input.keys ?? '').trim();
+    summarize: (input) => keySummary(input, null),
+    async describeScreen(input): Promise<WorkScreenDescription> {
+      const point = lastPoint ?? undefined;
+      const target = await targetAt(point);
+      return {
+        screen: { action: 'key', ...(point ? { point } : {}), ...(target ? { target } : {}) },
+        summary: keySummary(input, target),
+      };
+    },
+    previewFrame,
+    async execute(input, ctx): Promise<ToolResult> {
+      const keys = splitComputerKeys(String(input.keys ?? '')).join(' ');
       if (!keys) return { output: 'keys is required.', isError: true };
       const shot = await deps.key(keys);
+      keepFrame(ctx, shot, lastPoint ?? undefined);
       return {
-        output: `Pressed ${keys} on ${siteHostname(deps.currentUrl())}.`,
-        images: [{ mediaType: shot.mediaType, data: shot.data }],
+        output: `Pressed ${keys} on ${host()}.`,
+        images: imageOf(shot),
       };
     },
   };
@@ -405,7 +701,7 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     signatureInput: withEpoch,
     spec: {
       name: 'computer_scroll',
-      description: 'Scroll the desktop at (x, y) up or down and return a fresh screenshot.',
+      description: 'Scroll the desktop at (x, y) up or down and return a fresh screenshot once the screen settles.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -425,18 +721,264 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
       },
     },
     summarize: (input) =>
-      boundSummary(
-        `Scroll ${String(input.direction ?? 'down')} on ${siteHostname(deps.currentUrl())}`,
-      ),
-    async execute(input): Promise<ToolResult> {
-      const x = Math.max(0, Math.min(1280, Math.round(Number(input.x ?? 640))));
-      const y = Math.max(0, Math.min(800, Math.round(Number(input.y ?? 400))));
+      boundSummary(`Scroll ${input.direction === 'up' ? 'up' : 'down'} on ${host()}`),
+    async describeScreen(input): Promise<WorkScreenDescription> {
+      return {
+        screen: { action: 'scroll', point: { x: clampX(input.x, 640), y: clampY(input.y, 400) } },
+        summary: boundSummary(`Scroll ${input.direction === 'up' ? 'up' : 'down'} on ${host()}`),
+      };
+    },
+    async execute(input, ctx): Promise<ToolResult> {
+      const x = clampX(input.x, 640);
+      const y = clampY(input.y, 400);
       const direction: 'up' | 'down' = input.direction === 'up' ? 'up' : 'down';
-      const amount = Math.max(1, Math.min(10, Math.round(Number(input.amount ?? 3))));
+      const amount = Math.max(1, Math.min(10, Math.round(Number(input.amount ?? 3)) || 3));
       const shot = await deps.scroll({ x, y, direction, amount });
+      lastPoint = { x, y };
+      keepFrame(ctx, shot, { x, y });
       return {
         output: `Scrolled ${direction} (${amount}) at (${x}, ${y}).`,
-        images: [{ mediaType: shot.mediaType, data: shot.data }],
+        images: imageOf(shot),
+      };
+    },
+  };
+
+  const dragPoints = (input: Record<string, unknown>) => ({
+    x1: clampX(input.fromX),
+    y1: clampY(input.fromY),
+    x2: clampX(input.toX),
+    y2: clampY(input.toY),
+  });
+
+  const dragSummary = (input: Record<string, unknown>, target: string | null) => {
+    const { x1, y1, x2, y2 } = dragPoints(input);
+    return boundSummary(
+      target
+        ? `Drag ${target} to (${x2}, ${y2}) on ${host()}`
+        : `Drag from (${x1}, ${y1}) to (${x2}, ${y2}) on ${host()}`,
+    );
+  };
+
+  /*
+   * A drag is a click for the risk ladder: the same `command` risk, the same
+   * escalation to a purchase on a page that takes payment. It can move a file
+   * into a folder or a slider to a value, which is as consequential as the
+   * click that would do the same.
+   */
+  const dragTool: WorkToolDefinition | null = deps.drag
+    ? {
+        kind: 'edit',
+        tier: 'visual',
+        intents: ['screen.drag'],
+        intentFor: () => 'screen.drag',
+        actionFor: pixelActionFor('work.computer.drag'),
+        riskFor: pixelRiskFor,
+        provenanceFor: () => pixelProvenance('work.computer.drag'),
+        isHealthy: () => deps.isHealthy(),
+        signatureInput: withEpoch,
+        spec: {
+          name: 'computer_drag',
+          description:
+            'Press at (fromX, fromY), move to (toX, toY) and release, on the 1280x800 desktop, and return a fresh screenshot once the screen settles. For sliders, reordering and moving things between lists.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              fromX: { type: 'number', description: 'Where to press, horizontally (0..1280).' },
+              fromY: { type: 'number', description: 'Where to press, vertically (0..800).' },
+              toX: { type: 'number', description: 'Where to release, horizontally (0..1280).' },
+              toY: { type: 'number', description: 'Where to release, vertically (0..800).' },
+            },
+            required: ['fromX', 'fromY', 'toX', 'toY'],
+          },
+        },
+        summarize: (input) => dragSummary(input, null),
+        async describeScreen(input): Promise<WorkScreenDescription> {
+          const { x1, y1 } = dragPoints(input);
+          const point = { x: x1, y: y1 };
+          const target = await targetAt(point);
+          remember('computer_drag', input, target);
+          return {
+            screen: { action: 'drag', point, ...(target ? { target } : {}) },
+            summary: dragSummary(input, target),
+          };
+        },
+        previewFrame,
+        async execute(input, ctx): Promise<ToolResult> {
+          const points = dragPoints(input);
+          const target = recalled('computer_drag', input);
+          const shot = await deps.drag!(points);
+          lastPoint = { x: points.x2, y: points.y2 };
+          keepFrame(ctx, shot, lastPoint);
+          return {
+            output: `Dragged ${target ? `${target} ` : ''}from (${points.x1}, ${points.y1}) to (${points.x2}, ${points.y2}) on ${host()}.`,
+            images: imageOf(shot),
+          };
+        },
+      }
+    : null;
+
+  const hoverSummary = (input: Record<string, unknown>, target: string | null) =>
+    boundSummary(
+      target
+        ? `Point at ${target} on ${host()}`
+        : `Point at (${clampX(input.x)}, ${clampY(input.y)}) on ${host()}`,
+    );
+
+  const hoverTool: WorkToolDefinition | null = deps.hover
+    ? {
+        kind: 'read',
+        tier: 'visual',
+        intents: ['screen.hover'],
+        intentFor: () => 'screen.hover',
+        actionFor: () => 'work.computer.hover',
+        // Moving the pointer presses nothing, like scrolling.
+        riskFor: () => 'safe',
+        provenanceFor: () => pixelProvenance('work.computer.hover'),
+        isHealthy: () => deps.isHealthy(),
+        signatureInput: withEpoch,
+        spec: {
+          name: 'computer_hover',
+          description:
+            'Move the pointer to (x, y) without clicking, wait briefly so hover menus and tooltips open, and return a fresh screenshot.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              x: { type: 'number', description: 'Horizontal coordinate (0..1280).' },
+              y: { type: 'number', description: 'Vertical coordinate (0..800).' },
+            },
+            required: ['x', 'y'],
+          },
+        },
+        summarize: (input) => hoverSummary(input, null),
+        async describeScreen(input): Promise<WorkScreenDescription> {
+          const point = { x: clampX(input.x), y: clampY(input.y) };
+          const target = await targetAt(point);
+          return {
+            screen: { action: 'hover', point, ...(target ? { target } : {}) },
+            summary: hoverSummary(input, target),
+          };
+        },
+        async execute(input, ctx): Promise<ToolResult> {
+          const x = clampX(input.x);
+          const y = clampY(input.y);
+          const shot = await deps.hover!({ x, y });
+          lastPoint = { x, y };
+          keepFrame(ctx, shot, { x, y });
+          return {
+            output: `Pointed at (${x}, ${y}) on ${host()}.`,
+            images: imageOf(shot),
+          };
+        },
+      }
+    : null;
+
+  const zoomRegion = (input: Record<string, unknown>) => {
+    const width = Math.max(16, Math.min(DESKTOP_WIDTH, Math.round(Number(input.width) || 320)));
+    const height = Math.max(16, Math.min(DESKTOP_HEIGHT, Math.round(Number(input.height) || 200)));
+    const x = Math.max(0, Math.min(DESKTOP_WIDTH - width, clampX(input.x)));
+    const y = Math.max(0, Math.min(DESKTOP_HEIGHT - height, clampY(input.y)));
+    return { x, y, width, height };
+  };
+
+  const zoomTool: WorkToolDefinition | null = deps.zoom
+    ? {
+        kind: 'read',
+        tier: 'visual',
+        intents: ['screen.zoom'],
+        intentFor: () => 'screen.zoom',
+        actionFor: () => 'work.computer.zoom',
+        riskFor: () => 'safe',
+        provenanceFor: () => pixelProvenance('work.computer.zoom'),
+        isHealthy: () => deps.isHealthy(),
+        signatureInput: withEpoch,
+        spec: {
+          name: 'computer_zoom',
+          description:
+            'Look closely at a region of the latest screenshot: (x, y) is its top-left corner, width and height its size, all in desktop pixels. The region comes back scaled up so small text is legible. Nothing on the screen changes.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              x: { type: 'number', description: 'Left edge (0..1280).' },
+              y: { type: 'number', description: 'Top edge (0..800).' },
+              width: { type: 'number', description: 'Width in pixels (16..1280, default 320).' },
+              height: { type: 'number', description: 'Height in pixels (16..800, default 200).' },
+            },
+            required: ['x', 'y', 'width', 'height'],
+          },
+        },
+        summarize: () => boundSummary(`Look closely at part of ${host()}`),
+        async describeScreen(input): Promise<WorkScreenDescription> {
+          const region = zoomRegion(input);
+          return {
+            screen: {
+              action: 'zoom',
+              point: { x: Math.round(region.x + region.width / 2), y: Math.round(region.y + region.height / 2) },
+            },
+            summary: boundSummary(`Look closely at part of ${host()}`),
+          };
+        },
+        async execute(input, ctx): Promise<ToolResult> {
+          const region = zoomRegion(input);
+          const shot = await deps.zoom!(region);
+          keepFrame(ctx, shot);
+          return {
+            output: `Zoomed into ${region.width}x${region.height} at (${region.x}, ${region.y}) on ${host()}, shown at ${shot.width}x${shot.height}.`,
+            images: imageOf(shot),
+          };
+        },
+      }
+    : null;
+
+  const waitSeconds = (input: Record<string, unknown>) => {
+    const raw = Number(input.seconds ?? 1);
+    const seconds = Number.isFinite(raw) ? raw : 1;
+    return Math.max(0.1, Math.min(COMPUTER_WAIT_MAX_SECONDS, seconds));
+  };
+  const secondsWords = (seconds: number) =>
+    `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} ${seconds === 1 ? 'second' : 'seconds'}`;
+
+  const waitTool: WorkToolDefinition = {
+    kind: 'read',
+    tier: 'visual',
+    intents: ['screen.wait'],
+    intentFor: () => 'screen.wait',
+    actionFor: () => 'work.computer.wait',
+    riskFor: () => 'safe',
+    provenanceFor: () => pixelProvenance('work.computer.wait'),
+    isHealthy: () => deps.isHealthy(),
+    signatureInput: withEpoch,
+    spec: {
+      name: 'computer_wait',
+      description: `Wait for a page or app to finish loading (up to ${COMPUTER_WAIT_MAX_SECONDS} seconds), then return a fresh screenshot. Use it instead of taking screenshots in a loop.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          seconds: {
+            type: 'number',
+            description: `How long to wait (0.1..${COMPUTER_WAIT_MAX_SECONDS}, default 1).`,
+          },
+        },
+        required: ['seconds'],
+      },
+    },
+    summarize: (input) => boundSummary(`Wait ${secondsWords(waitSeconds(input))} on ${host()}`),
+    async describeScreen(input): Promise<WorkScreenDescription> {
+      return {
+        screen: { action: 'wait' },
+        summary: boundSummary(`Wait ${secondsWords(waitSeconds(input))} on ${host()}`),
+      };
+    },
+    async execute(input, ctx): Promise<ToolResult> {
+      const seconds = waitSeconds(input);
+      await (deps.sleep ?? sleepFor)(Math.round(seconds * 1000), ctx.signal);
+      // The person may have taken over during the wait: look only if not.
+      const stopped = await blocked();
+      if (stopped) return stopped;
+      const shot = await deps.screenshot();
+      keepFrame(ctx, shot);
+      return {
+        output: `Waited ${secondsWords(seconds)} on ${host()}.`,
+        images: imageOf(shot),
       };
     },
   };
@@ -604,7 +1146,13 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     typeTool,
     keyTool,
     scrollTool,
+    dragTool,
+    hoverTool,
+    zoomTool,
+    waitTool,
     shellTool,
     filesTool,
-  ].map(guarded);
+  ]
+    .filter((tool): tool is WorkToolDefinition => tool !== null)
+    .map(guarded);
 }
