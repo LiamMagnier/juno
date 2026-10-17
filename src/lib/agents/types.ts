@@ -173,6 +173,17 @@ export interface ClientAgentActivity {
   tone: "neutral" | "attention" | "success" | "danger";
 }
 
+/** Who holds the computer, as `/api/agents/{id}/computer` tells the client asking. */
+export interface ClientAgentComputerTakeover {
+  active: boolean;
+  /** True when the client asking is the one in control. */
+  mine: boolean;
+  /** When control lapses unless the holder keeps it, ISO; null when nobody holds it. */
+  until: string | null;
+  /** The kind of device in control ("iphone", "mac", "web"…), never an id. */
+  holder?: "web" | "iphone" | "ipad" | "mac" | "app" | null;
+}
+
 export interface ClientAgentComputer {
   enabled: boolean;
   status: string;
@@ -180,10 +191,15 @@ export interface ClientAgentComputer {
   lastActiveAt: string | null;
   activeSeconds: number;
   hasPoster: boolean;
-  usingNow: { summary: string } | null;
+  /** What the agent is doing, and where it acted on the screen when the tool said. */
+  usingNow: { summary: string; point?: { x: number; y: number } } | null;
   error: string | null;
   diskMb?: number | null;
   diskQuotaMb?: number;
+  /** Absent from servers older than takeover state. */
+  takeover?: ClientAgentComputerTakeover;
+  /** Minutes an idle awake computer waits before it rests. */
+  restMinutes?: number;
 }
 
 export interface ClientAgentDetail {

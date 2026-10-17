@@ -1,0 +1,283 @@
+/*
+ * The agent's computer: the live viewer (computer-viewer.tsx), its overlay
+ * and picture-in-picture (agent-computer.tsx), and the full-bleed window the
+ * apps and "Open in a new window" use (/computer-view).
+ *
+ * Colours are tokens, not palette literals: the stage behind the remote
+ * desktop is a deep neutral in both themes (it is a screen, and a light frame
+ * around a dark desktop reads as a hole), the chrome around it is the page's
+ * own --background / --foreground / --border, control is the presence token
+ * (wave 1's global --presence, with the brand presence blue as the fallback
+ * until it lands), and "your turn" is the agent coral, the only coral on the
+ * screen. Motion is the global vocabulary (--dur-*, --ease-*, --loop-*);
+ * under reduced motion only opacity changes and the control edge holds still.
+ */
+
+.computer-viewer,
+.computer-pip,
+.computer-overlay {
+  --computer-stage: hsl(220 10% 6%);
+  --computer-stage-ink: hsl(220 7% 91%);
+  --computer-stage-muted: hsl(220 6% 64%);
+  --computer-presence: var(--presence, #2d49c9);
+  --computer-attention: hsl(var(--agent-coral, 15 62% 64%));
+}
+
+.dark .computer-viewer,
+.dark .computer-pip,
+.dark .computer-overlay {
+  --computer-stage: hsl(220 10% 4%);
+  --computer-presence: var(--presence, #97a6e6);
+}
+
+/* ── The stage ─────────────────────────────────────────────────────────── */
+
+.computer-viewer__stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--computer-stage);
+  color: var(--computer-stage-ink);
+  /* The remote is a canvas; touch gestures belong to it, not to the page. */
+  touch-action: none;
+}
+
+/*
+ * One layer per VNC connection. A new one (control after watch, a
+ * reconnect) is built underneath and fades in over the last frame of the old
+ * one, which leaves only once the new one is drawing: no black flash, and
+ * no remount of the viewer.
+ */
+.computer-viewer__layer {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-out-soft);
+}
+
+.computer-viewer__layer[data-state="incoming"],
+.computer-viewer__layer[data-state="outgoing"] {
+  opacity: 0;
+}
+
+.computer-viewer__layer[data-state="outgoing"] {
+  transition-duration: var(--dur-exit);
+  transition-timing-function: var(--ease-in);
+  pointer-events: none;
+}
+
+/* The last frame (or the poster) under a connecting or reconnecting state. */
+.computer-viewer__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 1;
+  transition:
+    opacity var(--dur-base) var(--ease-out-soft),
+    filter var(--dur-slow) var(--ease-out-soft);
+}
+
+.computer-viewer__frame[data-blur="true"] {
+  filter: blur(10px) saturate(0.8) brightness(0.7);
+}
+
+.computer-viewer__frame[data-hidden="true"] {
+  opacity: 0;
+}
+
+.computer-viewer__veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--computer-stage-ink);
+  background: color-mix(in srgb, var(--computer-stage) 55%, transparent);
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-out-soft);
+}
+
+.computer-viewer__veil[data-shown="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Swapping a live screen (watch to control): a small note over the last frame, no veil. */
+.computer-viewer__veil[data-variant="pill"] {
+  inset: auto 0 0.75rem 0;
+  flex-direction: row;
+  gap: 0.5rem;
+  margin-inline: auto;
+  width: max-content;
+  max-width: calc(100% - 1.5rem);
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--computer-stage) 78%, transparent);
+}
+
+.computer-viewer__veil-text {
+  color: var(--computer-stage-ink);
+}
+
+.computer-viewer__veil-detail {
+  color: var(--computer-stage-muted);
+}
+
+/*
+ * The control edge: 2px of presence around the screen while the person has
+ * it, faded in on the motion tokens and breathing slowly on the calm loop so
+ * "you are driving" stays visible at the edge of the eye. Static under
+ * reduced motion.
+ */
+.computer-viewer__edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 2px var(--computer-presence),
+    inset 0 0 18px -6px var(--computer-presence);
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out-soft);
+}
+
+.computer-viewer__edge[data-on="true"] {
+  opacity: 1;
+  animation: computer-edge-breathe var(--loop-calm, 4.8s) var(--ease-breathe, ease-in-out) infinite;
+}
+
+@keyframes computer-edge-breathe {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 2px var(--computer-presence),
+      inset 0 0 18px -6px var(--computer-presence);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px var(--computer-presence),
+      inset 0 0 26px -4px var(--computer-presence);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .computer-viewer__edge[data-on="true"] {
+    animation: none;
+  }
+  .computer-viewer__frame {
+    transition: opacity var(--dur-base) linear;
+  }
+}
+
+/* ── Chrome on the full-bleed window ───────────────────────────────────── */
+
+.computer-viewer[data-full-bleed="true"] {
+  background: var(--computer-stage);
+  color: var(--computer-stage-ink);
+}
+
+.computer-viewer__footer {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border-top: 1px solid hsl(var(--border));
+}
+
+.computer-viewer__status-control {
+  color: var(--computer-presence);
+}
+
+.computer-viewer__status-watch {
+  color: hsl(var(--muted-foreground));
+}
+
+.computer-viewer__chip {
+  color: inherit;
+}
+
+.computer-viewer__paste {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+}
+
+.computer-viewer__paste:focus-visible {
+  outline: 2px solid var(--computer-presence);
+  outline-offset: 1px;
+}
+
+/*
+ * The hidden field the soft keyboard types into. In the layout (iOS raises a
+ * keyboard only for a focusable field it can see), but one pixel, clear and
+ * out of the way. 16px text so iOS does not zoom the page on focus.
+ */
+.computer-viewer__keyproxy {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
+  caret-color: transparent;
+  pointer-events: none;
+}
+
+/* ── The overlay frame ─────────────────────────────────────────────────── */
+
+.computer-overlay__frame {
+  background: var(--computer-stage);
+  transition: box-shadow var(--dur-slow) var(--ease-out-soft);
+}
+
+/* ── The picture-in-picture ────────────────────────────────────────────── */
+
+.computer-pip__card {
+  background: var(--computer-stage);
+  transition:
+    box-shadow var(--dur-slow) var(--ease-out-soft),
+    translate var(--dur-base) var(--ease-out-soft);
+}
+
+/* The agent is waiting on the person to take over: the coral edge lifts it. */
+.computer-pip[data-attention="true"] .computer-pip__card {
+  box-shadow:
+    0 0 0 2px var(--computer-attention),
+    0 18px 50px -18px color-mix(in srgb, var(--computer-attention) 70%, transparent);
+}
+
+.computer-pip__turn {
+  background: var(--computer-attention);
+  color: hsl(220 10% 8%);
+}
+
+.computer-pip__turn:hover {
+  filter: brightness(1.05);
+}
+
+.computer-pip__turn:active {
+  filter: brightness(0.95);
+}
+
+/* Local view transition from the PiP frame to the overlay frame (agent-computer.tsx). */
+::view-transition-group(agent-computer-frame) {
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-out-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(agent-computer-frame) {
+    animation: none;
+  }
+  ::view-transition-old(agent-computer-frame),
+  ::view-transition-new(agent-computer-frame) {
+    animation-duration: var(--dur-base);
+    animation-timing-function: linear;
+  }
+}

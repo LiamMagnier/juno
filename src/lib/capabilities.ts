@@ -554,12 +554,16 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
     name: "Agent computers",
     summary: "Leases, exclusive takeover with an epoch fence and holder-only hand-back, secret-input redaction, agent-navigation site policy and teardown on account deletion; security acceptance still blocked on a real host.",
     status: "beta",
-    platforms: ["web", "macos"],
+    // iOS ships the same section (NativeAgentsScreen) with the full-screen
+    // viewer, touch keyboard forwarding and a hand back that survives the app
+    // going to the background; iPadOS has not been checked on a device.
+    platforms: ["web", "macos", "ios"],
     maturity: surfaces(
       blocked("src/lib/computer/store.ts", "Production security acceptance requires a real docker host: in-flight xdotool/shell cancellation and process freeze during takeover, Xvfb access control, egress proxy and DNS policy, VNC rotation on lapse, orphan reconciliation and volume quotas (docs/rework/program/SECURITY_PERMISSIONS.md §3)."),
       implemented("src/components/agents/computer-viewer.tsx"),
       implemented("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentComputerView.swift"),
-      planned("Native integration and acceptance have not been verified in this audit."),
+      implemented("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeComputerHandBack.swift"),
+      planned("iPadOS layout and acceptance have not been verified on a device."),
     ),
     production: { accepted: false, evidence: [], blockers: ["Real host takeover race, process freeze, network isolation and cleanup acceptance are pending."] },
   },

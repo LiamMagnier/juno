@@ -9,13 +9,21 @@ import {
   resolveComputerRelayUrl,
   stopStream,
 } from "./live-view";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { takeoverHeldRefusal, takeoverLapsedSentence } from "@/lib/agents/computer-handback";
 import {
   TAKEOVER_REFUSAL,
   takeoverActive,
   takeoverClosed,
+  takeoverHeldByOther,
   takeoverHolder,
+  takeoverHolderKind,
+  takeoverLapsed,
   takeoverOpened,
   takeoverReleasableBy,
+  takeoverView,
+  type TakeoverHolderKindName,
+  type TakeoverView,
 } from "./takeover";
 import {
   COMPUTER_PATH_REFUSED,
@@ -156,6 +164,14 @@ export interface ComputerStorePersistence {
     expected: { status: ComputerStatus; lastActiveAt: Date | null; lastViewedAt: Date | null },
     now: Date
   ): Promise<boolean>;
+  /**
+   * Clears a takeover that lapsed, only while it is still the lapsed window
+   * that was read (same `takeoverUntil`). The sweep and the fence can both see
+   * the same lapse; exactly one of them clears it and records it. Optional so
+   * a test's stand-in without it still works: the lapse is then left for the
+   * next holder to open over, as before.
+   */
+  clearLapsedTakeoverCas?(userId: string, agentId: string, until: Date, now: Date): Promise<boolean>;
 }
 
 /**
@@ -484,6 +500,15 @@ const prismaPersistence: ComputerStorePersistence = {
     });
     return updated.count > 0;
   },
+
+  async clearLapsedTakeoverCas(userId, agentId, until, now) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, takeoverUntil: { equals: until, lte: now } },
+      data: { takeoverUntil: null, takeoverStartedAt: null, takeoverBy: null },
+    });
+    return updated.count > 0;
+  },
 };
 
 let activePersistence: ComputerStorePersistence = prismaPersistence;
@@ -727,6 +752,20 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
       });
       return true;
     },
+    async clearLapsedTakeoverCas(userId, agentId, until, now) {
+      const existing = rows.get(agentId);
+      if (
+        !existing ||
+        existing.userId !== userId ||
+        !(existing.takeoverUntil instanceof Date) ||
+        existing.takeoverUntil.getTime() !== until.getTime() ||
+        existing.takeoverUntil.getTime() > now.getTime()
+      ) {
+        return false;
+      }
+      rows.set(agentId, { ...existing, takeoverUntil: null, takeoverStartedAt: null, takeoverBy: null, updatedAt: new Date() });
+      return true;
+    },
   };
 }
 
@@ -835,22 +874,106 @@ export interface AgentComputerApiPayload {
   lastActiveAt: string | null;
   activeSeconds: number;
   hasPoster: boolean;
-  usingNow: { summary: string } | null;
+  /**
+   * What the agent is doing on it: the latest tool's summary, and where on the
+   * screen it acted when the tool said (`tool_started.payload.screen.point`,
+   * in screen pixels).
+   */
+  usingNow: { summary: string; point?: { x: number; y: number } } | null;
   error: string | null;
   diskMb?: number | null;
   diskQuotaMb?: number;
+  /**
+   * Whether the person holds the computer, whether the client asking is the
+   * one that does, and until when. A client in control that reads
+   * `active: false` lost it (it lapsed, or another device took it).
+   */
+  takeover: TakeoverView;
+  /** How long an idle awake computer waits before it rests (`env.agentComputer.restMinutes`). */
+  restMinutes: number;
+}
+
+/**
+ * The device session of the request being served, when a caller did not say:
+ * the agent page's detail read goes through here without knowing about
+ * devices. Outside a request (a test, the runner) it is the web's.
+ */
+async function currentDeviceSessionIdQuietly(): Promise<string | null> {
+  try {
+    const { getCurrentDeviceSessionId } = await import("@/lib/session");
+    return await getCurrentDeviceSessionId();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What kind of device a holder is, for "Your iPhone has control right now".
+ * An app holder is looked up by its device session's registered platform;
+ * nothing about the device beyond its kind leaves the server.
+ */
+async function holderKindFor(holder: string | null | undefined): Promise<TakeoverHolderKindName | null> {
+  if (!holder) return null;
+  if (holder === "web" || !holder.startsWith("native:")) return takeoverHolderKind(holder);
+  if (activePersistence !== prismaPersistence) return "app";
+  try {
+    const { prisma } = await import("@/lib/db");
+    const session = await prisma.nativeDeviceSession.findUnique({
+      where: { id: holder.slice("native:".length) },
+      select: { platform: true },
+    });
+    return takeoverHolderKind(holder, session?.platform ?? null);
+  } catch {
+    return "app";
+  }
+}
+
+/** Refused: someone else holds the computer. The message names the kind of device that does. */
+export class TakeoverHeldError extends ComputerError {
+  constructor(message: string) {
+    super(message);
+    this.name = "TakeoverHeldError";
+  }
+}
+
+async function takeoverHeldError(row: AgentComputerRow): Promise<TakeoverHeldError> {
+  return new TakeoverHeldError(takeoverHeldRefusal(await holderKindFor(row.takeoverBy)));
+}
+
+/** A point from an event payload, when it is two finite numbers. */
+function screenPoint(value: unknown): { x: number; y: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { x, y } = value as { x?: unknown; y?: unknown };
+  return typeof x === "number" && typeof y === "number" && Number.isFinite(x) && Number.isFinite(y)
+    ? { x: Math.round(x), y: Math.round(y) }
+    : undefined;
+}
+
+/** `usingNow` from the latest `tool_started` payload (exported for tests). */
+export function usingNowFromToolPayload(payload: unknown): AgentComputerApiPayload["usingNow"] {
+  if (!payload || typeof payload !== "object") return null;
+  const { summary, screen } = payload as { summary?: unknown; screen?: { point?: unknown } | null };
+  if (typeof summary !== "string" || !summary.trim()) return null;
+  const point = screenPoint(screen && typeof screen === "object" ? screen.point : undefined);
+  return point ? { summary: summary.trim(), point } : { summary: summary.trim() };
 }
 
 export async function loadAgentComputerStatusPayload(
   userId: string,
-  agentId: string
+  agentId: string,
+  /** The asking client's device session (null for the web); read from the request when left out. */
+  deviceSessionId?: string | null
 ): Promise<AgentComputerApiPayload | null> {
   if (!(await isAgentComputerConfigured())) {
     return null;
   }
+  const viewer = takeoverHolder(deviceSessionId === undefined ? await currentDeviceSessionIdQuietly() : deviceSessionId);
+  const row = await activePersistence.findByAgent(userId, agentId);
+  const now = new Date();
+  const takeover = takeoverView(row, viewer, now, takeoverActive(row, now) ? await holderKindFor(row?.takeoverBy) : null);
   const state = await getPublicComputerState(userId, agentId);
   const poster = await getPosterBytes(userId, agentId);
-  let usingNow: { summary: string } | null = null;
+  let usingNow: AgentComputerApiPayload["usingNow"] = null;
 
   if (activePersistence === prismaPersistence) {
     try {
@@ -875,10 +998,7 @@ export async function loadAgentComputerStatusPayload(
           orderBy: { seq: "desc" },
           select: { payload: true },
         });
-        const payload = latestTool?.payload as { summary?: unknown } | null;
-        if (payload && typeof payload.summary === "string" && payload.summary.trim()) {
-          usingNow = { summary: payload.summary.trim() };
-        }
+        usingNow = usingNowFromToolPayload(latestTool?.payload ?? null);
       }
     } catch {
       // ignore
@@ -896,6 +1016,8 @@ export async function loadAgentComputerStatusPayload(
     error: state.lastError,
     diskMb: state.diskMb,
     diskQuotaMb: state.diskQuotaMb,
+    takeover,
+    restMinutes: env.agentComputer.restMinutes,
   };
 }
 
@@ -1293,6 +1415,33 @@ export async function resetComputer(
   }
 
   const existing = await activePersistence.findByAgent(userId, agentId);
+  const startedAt = new Date();
+  // Wiping the disk under a running task would pull the computer out from
+  // under its next action; the person stops the task first.
+  if (existing && computerLeaseLive(existing, startedAt)) {
+    throw new ComputerError(RESET_WHILE_LEASED);
+  }
+
+  // The awake time so far is billed before the container goes: the reset row
+  // starts with no open interval, so nothing would ever bill it afterwards.
+  let billedSeconds = 0;
+  if (existing?.lastResumedAt) {
+    const end = existing.billingStoppedAt ?? startedAt;
+    billedSeconds = Math.max(0, Math.floor((end.getTime() - existing.lastResumedAt.getTime()) / 1000));
+    if (billedSeconds > 0) {
+      // Pinned first, as sleep does, so a failed ledger write retried later
+      // neither charges the time since nor loses this interval.
+      await activePersistence.updateByAgent(userId, agentId, { billingStoppedAt: end });
+      await billComputerSeconds({
+        userId,
+        agentId,
+        seconds: billedSeconds,
+        runId: existing.leaseRunId,
+        since: existing.lastResumedAt,
+      });
+    }
+  }
+
   const oldHandle = decodeHandle(existing?.containerRef, agentId);
   await provider.destroy(oldHandle, { removeVolume: true });
   posterCache.delete(agentId);
@@ -1300,6 +1449,7 @@ export async function resetComputer(
   const cdpToken = randomBytes(24).toString("hex");
   const newHandle = await provider.create({ agentId, userId, cdpToken });
   const now = new Date();
+  const activeSeconds = (existing?.activeSeconds ?? 0) + billedSeconds;
 
   return activePersistence.upsertByAgent(
     userId,
@@ -1317,7 +1467,7 @@ export async function resetComputer(
       lastResumedAt: null,
       lastActiveAt: now,
       lastViewedAt: null,
-      activeSeconds: existing?.activeSeconds ?? 0,
+      activeSeconds,
       diskMb: 0,
       lastError: null,
     },
@@ -1330,11 +1480,23 @@ export async function resetComputer(
       leaseRunId: null,
       leaseExpiresAt: null,
       lastResumedAt: null,
+      billingStoppedAt: null,
       lastActiveAt: now,
+      activeSeconds,
       diskMb: 0,
       lastError: null,
+      // A takeover of a desktop that no longer exists is nobody's.
+      ...takeoverClosed(),
     }
   );
+}
+
+/** Said when Reset is pressed while a task holds the computer. */
+export const RESET_WHILE_LEASED = "A task is using it. Stop it first.";
+
+/** Whether a run holds the computer right now (a lease that has not expired). */
+export function computerLeaseLive(row: Pick<AgentComputerRow, "leaseRunId" | "leaseExpiresAt">, now: Date): boolean {
+  return Boolean(row.leaseRunId) && row.leaseExpiresAt instanceof Date && row.leaseExpiresAt.getTime() > now.getTime();
 }
 
 export async function disableComputer(
@@ -1554,7 +1716,41 @@ export async function computerBlockedReason(
   now = new Date(),
   runId?: string,
 ): Promise<string | null> {
-  return fenceRefusal(await activePersistence.findByAgent(userId, agentId), now, runId);
+  return fenceRefusal(await readFenceRow(userId, agentId, now), now, runId);
+}
+
+/** The row a fence reads, with a lapsed takeover recorded and cleared on the way. */
+async function readFenceRow(userId: string, agentId: string, now: Date): Promise<AgentComputerRow | null> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  if (row && takeoverLapsed(row, now)) await settleLapsedTakeover(row, now);
+  return row;
+}
+
+/**
+ * A lapse older than this is cleared without a line in the log: it is a row
+ * from before lapses were recorded, not something the person just lived
+ * through.
+ */
+const LAPSE_RECORD_WITHIN_MS = 60 * 60_000;
+
+/**
+ * A takeover that lapsed (its holder stopped extending it and never handed
+ * back) is cleared once and recorded as `takeover_lapsed` — "Alevr took the
+ * computer back" in the agent's log — so the person can see why the agent
+ * carried on. The sweep and the runner's fence both call this; the
+ * conditional clear makes sure only one of them records it. Returns whether
+ * this call cleared it.
+ */
+export async function settleLapsedTakeover(row: AgentComputerRow | null, now = new Date()): Promise<boolean> {
+  if (!row || !takeoverLapsed(row, now) || !(row.takeoverUntil instanceof Date)) return false;
+  const clear = activePersistence.clearLapsedTakeoverCas;
+  if (!clear) return false;
+  const until = row.takeoverUntil;
+  const cleared = await clear.call(activePersistence, row.userId, row.agentId, until, now).catch(() => false);
+  if (cleared && now.getTime() - until.getTime() <= LAPSE_RECORD_WITHIN_MS) {
+    await recordComputerEvent(row.userId, row.agentId, "takeover_lapsed", takeoverLapsedSentence(PRODUCT_NAME));
+  }
+  return cleared;
 }
 
 /**
@@ -1584,7 +1780,7 @@ export async function computerTakeoverFence(
   now = new Date(),
   runId?: string,
 ): Promise<{ reason: string | null; epoch: number }> {
-  const row = await activePersistence.findByAgent(userId, agentId);
+  const row = await readFenceRow(userId, agentId, now);
   return { reason: fenceRefusal(row, now, runId), epoch: row?.takeoverEpoch ?? 0 };
 }
 
@@ -1639,6 +1835,12 @@ export async function openComputerViewSession(
   const existing = await activePersistence.findByAgent(userId, agentId);
   if (!existing || (existing.status !== "awake" && existing.status !== "resting")) {
     throw new AsleepComputerError();
+  }
+  // Control is one client's at a time. Another device asking (or a link made
+  // for one) is told who has it rather than handed a password that would let
+  // two people type over each other.
+  if (mode === "control" && takeoverHeldByOther(existing, takeoverHolder(opts?.deviceSessionId ?? null), new Date())) {
+    throw await takeoverHeldError(existing);
   }
 
   if (opts?.handoff) {
@@ -1724,10 +1926,33 @@ export async function openComputerViewSession(
   };
 }
 
+/**
+ * The heartbeat route's budget, per person AND agent and per mode, per
+ * minute. It used to be one budget of 10 a minute for the person across every
+ * agent and device, so two agents working with an open overlay ran out, and a
+ * control session whose beats were refused lapsed while the person typed.
+ * Control beats get the larger budget: losing one hands the computer back.
+ */
+export const HEARTBEAT_LIMITS = { watch: 15, control: 40, windowSec: 60 } as const;
+
+export function heartbeatRateLimitKey(userId: string, agentId: string, mode: "watch" | "control"): string {
+  return `agents:computer-heartbeat:${userId}:${agentId}:${mode}`;
+}
+
 export async function heartbeatComputerViewSession(
   userId: string,
   agentId: string,
-  input: { mode: "watch" | "control"; ended?: boolean; deviceSessionId?: string | null }
+  input: {
+    mode: "watch" | "control";
+    ended?: boolean;
+    deviceSessionId?: string | null;
+    /**
+     * The beat came from a hidden tab or a backgrounded app. A control beat
+     * then holds the takeover for `TAKEOVER_HIDDEN_WINDOW_MS`, so a trip to a
+     * password manager or an authenticator does not hand the computer back.
+     */
+    hidden?: boolean;
+  }
 ): Promise<PublicAgentComputerState> {
   const existing = await activePersistence.findByAgent(userId, agentId);
   if (!existing) {
@@ -1735,26 +1960,35 @@ export async function heartbeatComputerViewSession(
   }
 
   const now = new Date();
+  const holder = takeoverHolder(input.deviceSessionId ?? null);
+  // Only the client that holds the takeover can keep it or hand it back.
+  // Another tab or device signed in to the same account cannot end someone's
+  // control session and let the agent resume while they are still typing, and
+  // it is told so (a 409 with who has it) instead of a quiet 200 that left it
+  // believing it was in control.
+  if (input.mode === "control" && takeoverHeldByOther(existing, holder, now)) {
+    throw await takeoverHeldError(existing);
+  }
   // A control heartbeat keeps the takeover; Hand back (`ended`) releases it
   // before anything else, so the agent can carry on even if rotating the
   // passwords below fails.
   // It only keeps one going: opening the control session starts a takeover,
   // so a heartbeat that was in flight when the person pressed Hand back (the
   // takeover is closed, `takeoverUntil` is null) must not open a new one and
-  // stop the agent again. A window that lapsed (a slow network) is still the
-  // same holder's, and is renewed.
-  const holder = takeoverHolder(input.deviceSessionId ?? null);
+  // stop the agent again. A window that lapsed (a slow network) and that the
+  // sweep or the fence has not cleared yet is still the same holder's, and is
+  // renewed; once cleared, the agent has carried on and the viewer reads
+  // `takeover.active: false`.
   const keepsItsTakeover = existing.takeoverUntil != null && (existing.takeoverBy ?? holder) === holder;
   if (input.mode === "control" && !input.ended && keepsItsTakeover) {
-    await activePersistence.updateByAgent(userId, agentId, takeoverOpened({ state: existing, by: holder, now }));
+    await activePersistence.updateByAgent(
+      userId,
+      agentId,
+      takeoverOpened({ state: existing, by: holder, now, hidden: input.hidden === true })
+    );
   }
-  // Only the client that holds the takeover can hand it back. Another tab or
-  // device signed in to the same account cannot end someone's control session
-  // and let the agent resume while they are still typing.
-  const releasable = takeoverReleasableBy(existing, takeoverHolder(input.deviceSessionId ?? null), now);
-  if (input.ended && input.mode === "control" && !releasable) {
-    await activePersistence.updateByAgent(userId, agentId, { lastViewedAt: now });
-    return getPublicComputerState(userId, agentId);
+  if (input.ended && input.mode === "control" && !takeoverReleasableBy(existing, holder, now)) {
+    throw await takeoverHeldError(existing);
   }
   if (input.ended && input.mode === "control") {
     await activePersistence.updateByAgent(userId, agentId, takeoverClosed());

@@ -192,15 +192,107 @@ export function computerAction(
   return call(`${base(id)}/computer`, { method: "POST", body: { action } }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
 }
 
+/** One entry in a folder on the agent's computer (`GET /api/agents/{id}/computer/files`). */
 export interface ClientAgentComputerFile {
   name: string;
+  /** Absolute, inside /home/agent: what a drill-in or a download asks for. */
+  path: string;
+  type: "file" | "directory";
   sizeBytes: number;
   modifiedAt: string;
 }
 
-export function fetchComputerFiles(id: string): Promise<AgentOutcome<ClientAgentComputerFile[]>> {
-  return call(`${base(id)}/computer/files`, {}, (d) =>
-    Array.isArray(d.files) ? (d.files as ClientAgentComputerFile[]) : []
+/** A folder as the route answers it: where it is, and what is in it. */
+export interface ClientAgentComputerFolder {
+  path: string;
+  entries: ClientAgentComputerFile[];
+}
+
+/** The agent's work folder, where Files opens. */
+export const COMPUTER_WORK_FOLDER = "/home/agent/work";
+
+function readComputerEntry(raw: unknown): ClientAgentComputerFile | null {
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as Record<string, unknown>;
+  if (typeof entry.name !== "string" || typeof entry.path !== "string") return null;
+  return {
+    name: entry.name,
+    path: entry.path,
+    type: entry.type === "directory" || entry.type === "dir" ? "directory" : "file",
+    sizeBytes: typeof entry.sizeBytes === "number" && Number.isFinite(entry.sizeBytes) ? entry.sizeBytes : 0,
+    modifiedAt: typeof entry.modifiedAt === "string" ? entry.modifiedAt : "",
+  };
+}
+
+/**
+ * A folder on the agent's computer. The route answers `{ path, entries }`
+ * (it used to be read as `files`, so every folder looked empty), and a
+ * sleeping computer answers 409 with its own sentence, which comes back as a
+ * failure to show rather than as an empty folder. Folders first, then names.
+ */
+export function fetchComputerFiles(id: string, path?: string): Promise<AgentOutcome<ClientAgentComputerFolder>> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  return call(`${base(id)}/computer/files${query}`, {}, (d) => {
+    const entries = (Array.isArray(d.entries) ? d.entries : [])
+      .map(readComputerEntry)
+      .filter((entry): entry is ClientAgentComputerFile => entry !== null)
+      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1));
+    return { path: typeof d.path === "string" && d.path ? d.path : path ?? COMPUTER_WORK_FOLDER, entries };
+  });
+}
+
+/** Where a file on the agent's computer downloads from. There is no per-name route. */
+export function computerFileDownloadUrl(id: string, path: string): string {
+  return `${base(id)}/computer/files?path=${encodeURIComponent(path)}&download=1`;
+}
+
+/**
+ * The folders between the work folder (or /home/agent) and `path`, for a
+ * breadcrumb: each one a label and the path it opens.
+ */
+export function computerFolderCrumbs(path: string): { label: string; path: string }[] {
+  const root = path === COMPUTER_WORK_FOLDER || path.startsWith(`${COMPUTER_WORK_FOLDER}/`) ? COMPUTER_WORK_FOLDER : "/home/agent";
+  const crumbs = [{ label: root === COMPUTER_WORK_FOLDER ? "work" : "home", path: root }];
+  const rest = path.slice(root.length).split("/").filter(Boolean);
+  let at = root;
+  for (const part of rest) {
+    at = `${at}/${part}`;
+    crumbs.push({ label: part, path: at });
+  }
+  return crumbs;
+}
+
+/** A heartbeat for an open viewer. A 409 (another device holds control) comes back with its sentence. */
+export function sendComputerHeartbeat(
+  id: string,
+  body: { mode: "watch" | "control"; ended?: boolean; hidden?: boolean }
+): Promise<AgentOutcome<ClientAgentComputer | null>> {
+  return call(`${base(id)}/computer/heartbeat`, { method: "POST", body }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
+}
+
+/**
+ * Hand back from a page that is going away (`pagehide`): a beacon survives
+ * the page being torn down where a fetch may not. Falls back to a keepalive
+ * fetch. Ends the control session only; it answers no question.
+ */
+export function endComputerControlOnLeave(id: string): void {
+  if (typeof window === "undefined") return;
+  const url = `${base(id)}/computer/heartbeat`;
+  const payload = JSON.stringify({ mode: "control", ended: true });
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      if (navigator.sendBeacon(url, new Blob([payload], { type: "application/json" }))) return;
+    }
+  } catch {
+    // fall through to the keepalive fetch
+  }
+  void fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true }).catch(() => {});
+}
+
+/** A one-time link to the computer for a new window (`/computer-view?c=…`). */
+export function openComputerHandoff(id: string, mode: "watch" | "control"): Promise<AgentOutcome<string>> {
+  return call(`${base(id)}/computer/view`, { method: "POST", body: { mode, handoff: true } }, (d) =>
+    typeof d.url === "string" ? d.url : ""
   );
 }
 

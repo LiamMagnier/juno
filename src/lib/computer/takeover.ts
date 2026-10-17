@@ -25,6 +25,22 @@
  */
 export const TAKEOVER_WINDOW_MS = 60_000;
 
+/**
+ * How long one control heartbeat from a hidden tab or a backgrounded app holds
+ * the takeover. Switching to a password manager, an authenticator or an email
+ * for a 2FA code hides the viewer, and an iPhone app may not run again until
+ * it is in front. Five minutes covers that round trip without leaving the
+ * agent stopped for long behind a tab that was simply abandoned: the window is
+ * bounded, every visible beat brings it back to `TAKEOVER_WINDOW_MS`, and an
+ * ended beat (Hand back, or the page going away) still releases at once.
+ */
+export const TAKEOVER_HIDDEN_WINDOW_MS = 5 * 60_000;
+
+/** The window one control heartbeat buys. */
+export function takeoverWindowMs(hidden: boolean | null | undefined): number {
+  return hidden ? TAKEOVER_HIDDEN_WINDOW_MS : TAKEOVER_WINDOW_MS;
+}
+
 /** What every refused tool call tells the model. */
 export const TAKEOVER_REFUSAL =
   "The person has taken control of this computer. Nothing was done. Wait for them to hand it back, then carry on from where the screen is.";
@@ -47,11 +63,13 @@ export function takeoverOpened(input: {
   state: TakeoverState | null | undefined;
   by: string;
   now: Date;
+  /** A beat from a hidden tab or a backgrounded app: the longer, bounded window. */
+  hidden?: boolean;
 }): Required<TakeoverState> {
   const continuing = takeoverActive(input.state, input.now);
   const epoch = input.state?.takeoverEpoch ?? 0;
   return {
-    takeoverUntil: new Date(input.now.getTime() + TAKEOVER_WINDOW_MS),
+    takeoverUntil: new Date(input.now.getTime() + takeoverWindowMs(input.hidden)),
     takeoverStartedAt: continuing && input.state?.takeoverStartedAt ? input.state.takeoverStartedAt : input.now,
     takeoverBy: continuing && input.state?.takeoverBy ? input.state.takeoverBy : input.by,
     // A new takeover moves the fence; extending one does not.
@@ -72,6 +90,83 @@ export function takeoverClosed(): Omit<Required<TakeoverState>, "takeoverEpoch">
 export function takeoverReleasableBy(state: TakeoverState | null | undefined, holder: string, now: Date): boolean {
   if (!takeoverActive(state, now)) return true;
   return !state?.takeoverBy || state.takeoverBy === holder;
+}
+
+/**
+ * Whether someone other than `holder` holds the computer right now. Asking for
+ * control, extending it or handing it back is refused then: two clients in
+ * control at once would type over each other, and a hand back from the wrong
+ * one would let the agent resume while the holder is still typing.
+ */
+export function takeoverHeldByOther(state: TakeoverState | null | undefined, holder: string, now: Date): boolean {
+  if (!takeoverActive(state, now)) return false;
+  return Boolean(state?.takeoverBy) && state?.takeoverBy !== holder;
+}
+
+/**
+ * A takeover window that was opened and then neither extended nor closed:
+ * the holder went away (a closed tab, a crashed app, a lost network) and the
+ * agent has the computer again. The sweep and the fence record it once
+ * (`takeover_lapsed`) and clear it.
+ */
+export function takeoverLapsed(state: TakeoverState | null | undefined, now: Date): boolean {
+  const until = state?.takeoverUntil;
+  return until instanceof Date && until.getTime() <= now.getTime();
+}
+
+/** The holder kinds a client can name (src/lib/agents/computer-handback.ts). */
+export type TakeoverHolderKindName = "web" | "iphone" | "ipad" | "mac" | "app";
+
+/**
+ * The kind of device a holder is, from its recorded holder and, for an app,
+ * the platform its device session registered with ("iOS", "iPadOS", "macOS").
+ */
+export function takeoverHolderKind(
+  holder: string | null | undefined,
+  platform?: string | null,
+): TakeoverHolderKindName | null {
+  if (!holder) return null;
+  if (holder === "web") return "web";
+  switch ((platform ?? "").trim().toLowerCase()) {
+    case "ios":
+    case "iphoneos":
+      return "iphone";
+    case "ipados":
+      return "ipad";
+    case "macos":
+    case "mac":
+      return "mac";
+    default:
+      return "app";
+  }
+}
+
+/** The takeover as a client sees it: whether it is on, whether it is this client's, and until when. */
+export interface TakeoverView {
+  active: boolean;
+  /** True when the viewer asking is the holder. */
+  mine: boolean;
+  /** When the window lapses unless it is extended, as ISO; null when nobody holds it. */
+  until: string | null;
+  /** What kind of device holds it, never an id; null when nobody does. */
+  holder: TakeoverHolderKindName | null;
+}
+
+export function takeoverView(
+  state: TakeoverState | null | undefined,
+  viewerHolder: string,
+  now: Date,
+  holderKind: TakeoverHolderKindName | null = null,
+): TakeoverView {
+  if (!takeoverActive(state, now)) return { active: false, mine: false, until: null, holder: null };
+  const by = state?.takeoverBy ?? null;
+  return {
+    active: true,
+    // A row written before holders were recorded is anybody's, as hand back treats it.
+    mine: !by || by === viewerHolder,
+    until: state?.takeoverUntil instanceof Date ? state.takeoverUntil.toISOString() : null,
+    holder: holderKind ?? takeoverHolderKind(by),
+  };
 }
 
 /** What a guard reads: the refusal and the takeover epoch, or just a refusal (older callers). */

@@ -6,7 +6,10 @@ import { findAgent, recordAgentEvent } from "@/lib/agents/store";
 import { getCurrentDeviceSessionId } from "@/lib/session";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import {
+  HEARTBEAT_LIMITS,
+  TakeoverHeldError,
   heartbeatComputerViewSession,
+  heartbeatRateLimitKey,
   loadAgentComputerStatusPayload,
 } from "@/lib/computer/store";
 
@@ -19,6 +22,8 @@ const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 const heartbeatBodySchema = z.object({
   mode: z.enum(["watch", "control"]).default("watch"),
   ended: z.boolean().optional(),
+  /** Sent from a hidden tab or a backgrounded app: a control beat holds the takeover longer. */
+  hidden: z.boolean().optional(),
 });
 
 export async function POST(req: Request, { params }: Params) {
@@ -26,10 +31,21 @@ export async function POST(req: Request, { params }: Params) {
   if (!user) return error;
   const { id } = await params;
 
+  const parsed = heartbeatBodySchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid_input", message: "Invalid heartbeat payload." },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
+  }
+  const { mode, ended, hidden } = parsed.data;
+
+  // Per person, agent and mode: a PiP and an overlay on two agents never
+  // share one budget, and control beats (which hold the takeover) get more.
   const limit = await rateLimit({
-    key: `agents:computer-heartbeat:${user.id}`,
-    limit: 10,
-    windowSec: 60,
+    key: heartbeatRateLimitKey(user.id, id, mode),
+    limit: HEARTBEAT_LIMITS[mode],
+    windowSec: HEARTBEAT_LIMITS.windowSec,
   });
   if (!limit.success) {
     return NextResponse.json(
@@ -53,22 +69,22 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  const parsed = heartbeatBodySchema.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "invalid_input", message: "Invalid heartbeat payload." },
-      { status: 400, headers: NO_STORE_HEADERS }
-    );
-  }
-
-  const { mode, ended } = parsed.data;
+  const deviceSessionId = await getCurrentDeviceSessionId();
   // A control heartbeat holds the takeover (the agent's computer tools stay
-  // refused); `ended` is Hand back, which releases it.
-  await heartbeatComputerViewSession(user.id, id, {
-    mode,
-    ended,
-    deviceSessionId: await getCurrentDeviceSessionId(),
-  });
+  // refused); `ended` is Hand back, which releases it. From a client that
+  // does not hold the takeover, either one is refused with who does.
+  try {
+    await heartbeatComputerViewSession(user.id, id, { mode, ended, hidden, deviceSessionId });
+  } catch (err) {
+    if (err instanceof TakeoverHeldError) {
+      const computer = await loadAgentComputerStatusPayload(user.id, id, deviceSessionId);
+      return NextResponse.json(
+        { error: "takeover_held", message: err.message, computer },
+        { status: 409, headers: NO_STORE_HEADERS }
+      );
+    }
+    throw err;
+  }
 
   if (ended && mode === "control") {
     await recordAgentEvent({
@@ -79,6 +95,6 @@ export async function POST(req: Request, { params }: Params) {
     });
   }
 
-  const computer = await loadAgentComputerStatusPayload(user.id, id);
+  const computer = await loadAgentComputerStatusPayload(user.id, id, deviceSessionId);
   return NextResponse.json({ computer }, { headers: NO_STORE_HEADERS });
 }

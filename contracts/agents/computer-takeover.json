@@ -1,0 +1,39 @@
+{
+  "$comment": "Take over and hand back on an agent's cloud computer, shared by the web (src/lib/agents/computer-handback.ts) and the apps (native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeComputerHandBack.swift). Both read or assert against this file; tests/agents-computer-handback.test.ts and NativeComputerHandBackTests.swift fail when either drifts. Placeholders: {agent} is the agent's name, {product} the product name, {rest} the rest-time phrase, {summary} what the agent is doing.",
+  "version": 1,
+  "takeoverPatterns": [
+    { "source": "\\b(?:take|taking|took) (?:over|control)\\b", "flags": "i" },
+    { "source": "\\btake-?over\\b", "flags": "i" },
+    { "source": "\\bhand(?:ing)? (?:it |control |the (?:computer|screen) )?back\\b", "flags": "i" },
+    { "source": "\\b(?:on|onto|into|use|using) (?:my|this|the) (?:computer|desktop|screen)\\b", "flags": "i" }
+  ],
+  "handBackAnswer": "Done. I've finished on your computer; continue.",
+  "statuses": ["asleep", "starting", "awake", "resting", "stopping", "error"],
+  "stateSentences": {
+    "asleep": "Asleep. It wakes when {agent} starts working.",
+    "starting": "Waking up",
+    "awake": "Idle. It rests after {rest} of quiet.",
+    "awakeUsing": "{summary}",
+    "resting": "Resting. It opens instantly.",
+    "stopping": "Going to sleep",
+    "error": "Couldn’t reach the computer."
+  },
+  "restPhrases": {
+    "underTwo": "a minute",
+    "many": "{n} minutes"
+  },
+  "takeoverSentences": {
+    "mine": "You have control. {agent} waits until you hand back.",
+    "web": "Your browser has control right now.",
+    "iphone": "Your iPhone has control right now.",
+    "ipad": "Your iPad has control right now.",
+    "mac": "Your Mac has control right now.",
+    "app": "Another device has control right now.",
+    "handBackThere": "Hand back there first.",
+    "lapsed": "{product} took the computer back.",
+    "handedBack": "Handed back",
+    "youHaveControl": "You have control",
+    "controlMayLapse": "Control may lapse, reconnecting"
+  },
+  "holderKinds": ["web", "iphone", "ipad", "mac", "app"]
+}

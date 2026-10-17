@@ -52,12 +52,22 @@ export default async function ComputerViewPage({
   const agent = await findAgent(grant.userId, grant.agentId);
   if (!agent) return <Expired />;
 
+  // Two kinds of window open this page. An app's web view has no session:
+  // its own sheet holds Hand back and sends the heartbeats, so the viewer is
+  // embedded and draws neither. A browser window opened from "Open in a new
+  // window" is signed in (it is the person's own browser, and the link was
+  // made by the web, not by an app): there is no sheet around it, so it draws
+  // Hand back and keeps its own control beats going.
+  const canHandBack = Boolean(viewer) && !grant.deviceSessionId;
+
   return (
     <ComputerViewer
       agentId={grant.agentId}
       agentName={agent.name}
       initialMode={grant.mode}
       handoffTicket={grant.ticket}
+      canHandBack={canHandBack}
+      embedded={!canHandBack}
       fullBleed
     />
   );

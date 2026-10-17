@@ -7,6 +7,7 @@ import { getCurrentDeviceSessionId } from "@/lib/session";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import {
   AsleepComputerError,
+  TakeoverHeldError,
   openComputerViewSession,
 } from "@/lib/computer/store";
 
@@ -102,7 +103,14 @@ export async function POST(req: Request, { params }: Params) {
     );
   } catch (err) {
     if (err instanceof AsleepComputerError) {
-      return NextResponse.json({ error: "asleep" }, { status: 409, headers: VIEW_HEADERS });
+      return NextResponse.json(
+        { error: "asleep", message: "The computer is asleep. Wake it first." },
+        { status: 409, headers: VIEW_HEADERS }
+      );
+    }
+    // Another device or browser holds control: say which, and hand out nothing.
+    if (err instanceof TakeoverHeldError) {
+      return NextResponse.json({ error: "takeover_held", message: err.message }, { status: 409, headers: VIEW_HEADERS });
     }
     return NextResponse.json(
       { error: "view_failed", message: "Unable to open computer viewer." },

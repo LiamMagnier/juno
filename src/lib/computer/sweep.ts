@@ -10,13 +10,18 @@ import {
   getComputerStorePersistence,
   overDiskQuota,
   restComputer,
+  settleLapsedTakeover,
   sleepComputer,
   type AgentComputerRow,
 } from "./store";
+import { takeoverActive, takeoverLapsed } from "./takeover";
 import { purgeComputerHandoffs } from "./handoff";
 
 /** How long a computer may sit in "starting" (create, start, token provisioning) before the sweep treats it as stuck. */
 const STARTING_GRACE_MS = 5 * 60_000;
+
+/** How long a stream may go without a viewer heartbeat before the sweep stops it. */
+const STREAM_IDLE_MS = 60_000;
 
 export interface SweepSummary {
   reconciledAfterReboot: string[];
@@ -26,6 +31,8 @@ export interface SweepSummary {
   expiredLeases: string[];
   /** Containers and volumes with no computer row, removed. */
   reapedOrphans: string[];
+  /** Takeovers whose holder went away without handing back: cleared and recorded as `takeover_lapsed`. */
+  lapsedTakeovers: string[];
 }
 
 /**
@@ -94,6 +101,7 @@ export async function sweepAgentComputers(opts?: {
     slept: [],
     expiredLeases: [],
     reapedOrphans: [],
+    lapsedTakeovers: [],
   };
 
   const provider = computerProvider();
@@ -111,6 +119,15 @@ export async function sweepAgentComputers(opts?: {
 
   for (const row of rows) {
     if (row.creationToken && row.creationExpiresAt && row.creationExpiresAt.getTime() > nowMs) continue;
+    // 0. A takeover nobody extended or handed back: the agent has the
+    // computer again, and the log says so ("Alevr took the computer back").
+    if (takeoverLapsed(row, now) && (await settleLapsedTakeover(row, now))) {
+      summary.lapsedTakeovers.push(row.agentId);
+    }
+    // While the person has control the computer is theirs: its stream stays
+    // up even between throttled heartbeats from a hidden tab, and it never
+    // rests or sleeps under their hands.
+    const held = takeoverActive(row, now);
     if (row.billingStoppedAt) {
       await sleepComputer(row.userId, row.agentId, { now });
       summary.slept.push(row.agentId);
@@ -159,11 +176,12 @@ export async function sweepAgentComputers(opts?: {
       }
     }
 
-    // 3. Stream idle shutoff after 60s without viewer heartbeat
+    // 3. Stream idle shutoff after 60s without viewer heartbeat, unless the
+    // person holds the computer (a hidden tab's beats can be minutes apart).
     let streamActive = row.streamOn;
-    if (row.streamOn) {
+    if (row.streamOn && !held) {
       const viewedMs = row.lastViewedAt?.getTime() ?? 0;
-      if (nowMs - viewedMs > 60_000) {
+      if (nowMs - viewedMs > STREAM_IDLE_MS) {
         await stopStream({ handle, provider }).catch(() => {});
         await persistence.updateByAgent(row.userId, row.agentId, {
           streamOn: false,
@@ -183,7 +201,7 @@ export async function sweepAgentComputers(opts?: {
       }
     }
 
-    if (hasActiveLease || streamActive) {
+    if (hasActiveLease || streamActive || held) {
       continue;
     }
 
@@ -204,7 +222,7 @@ export async function sweepAgentComputers(opts?: {
 
     const idleMs = nowMs - lastMeaningfulTimestamp(row);
 
-    // 5. Sleep after AGENT_COMPUTER_SLEEP_HOURS (default 24h)
+    // 5. Sleep after AGENT_COMPUTER_SLEEP_HOURS (default 0.5h, src/lib/env.ts)
     if (
       (row.status === "resting" || row.status === "awake") &&
       idleMs >= sleepThresholdMs
@@ -213,7 +231,7 @@ export async function sweepAgentComputers(opts?: {
       continue;
     }
 
-    // 6. Rest (pause) after AGENT_COMPUTER_REST_MINUTES (default 20m)
+    // 6. Rest (pause) after AGENT_COMPUTER_REST_MINUTES (default 3m, src/lib/env.ts)
     if (row.status === "awake" && idleMs >= restThresholdMs) {
       if (await restComputer(row.userId, row.agentId, { now, ifIdle })) summary.rested.push(row.agentId);
     }

@@ -4,7 +4,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { findAgent, recordAgentEvent } from "@/lib/agents/store";
 import { exchangeComputerHandoffTicket } from "@/lib/computer/handoff";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
-import { AsleepComputerError, openComputerViewSession } from "@/lib/computer/store";
+import { AsleepComputerError, TakeoverHeldError, openComputerViewSession } from "@/lib/computer/store";
 
 export const runtime = "nodejs";
 
@@ -72,6 +72,10 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof AsleepComputerError) {
       return NextResponse.json({ error: "asleep", message: "The computer is asleep. Wake it from the app." }, { status: 409, headers: HEADERS });
+    }
+    // Another device took control between the link being made and opened.
+    if (err instanceof TakeoverHeldError) {
+      return NextResponse.json({ error: "takeover_held", message: err.message }, { status: 409, headers: HEADERS });
     }
     return NextResponse.json({ error: "view_failed", message: "Unable to open the computer." }, { status: 409, headers: HEADERS });
   }
