@@ -28,6 +28,15 @@ struct Wave2SnapshotSupportTests {
         #expect(seen.opaqueGlass)
     }
 
+    @Test func xxlEnlargesTheRenderedSample() throws {
+        let regular = ImageRenderer(content: Wave2MatrixSampleBubble().fixedSize().wave2Snapshot(.light))
+        let enlarged = ImageRenderer(content: Wave2MatrixSampleBubble().fixedSize().wave2Snapshot(.xxl))
+        let regularSize = try #require(regular.nsImage).size
+        let enlargedSize = try #require(enlarged.nsImage).size
+        #expect(enlargedSize.width > regularSize.width * 1.1)
+        #expect(enlargedSize.height > regularSize.height)
+    }
+
     @Test func geometryExportWritesTheParityGateShape() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wave2-geometry-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -66,13 +75,20 @@ struct Wave2SupportSnapshotTests {
         let directory = try #require(Wave2Snapshot.directory)
         let sample = HStack {
             Spacer()
-            Text("The one bubble, in every variant")
-                .junoMatrixSampleBubble()
+            Wave2MatrixSampleBubble()
         }
         .padding(24)
         let urls = try await Wave2Snapshot.render(sample, name: "wave2-matrix-sample", width: 480, into: directory)
         #expect(urls.count == Wave2SnapshotVariant.allCases.count)
         for url in urls { #expect(FileManager.default.fileExists(atPath: url.path)) }
+    }
+}
+
+private struct Wave2MatrixSampleBubble: View {
+    var body: some View {
+        Text("The one bubble, in every variant")
+            .junoType(.body)
+            .junoMatrixSampleBubble()
     }
 }
 

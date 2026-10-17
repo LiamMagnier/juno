@@ -272,13 +272,13 @@ struct DesktopNavigationStateTests {
     /// which the Artifacts page takes once.
     @Test
     @MainActor
-    func aDesignRequestCarriesTheDesignsFilter() {
+    func aDesignRequestCarriesTheDesignsFilter() throws {
         let router = DesktopPageRouter()
         router.open(.design, opensNewMenu: true)
-        let request = try? #require(router.pending)
-        #expect(request?.destination == .artifacts)
-        #expect(request?.artifactsType == "DESIGN")
-        if let request { router.consume(request) }
+        let request = try #require(router.pending)
+        #expect(request.destination == .artifacts)
+        #expect(request.artifactsType == "DESIGN")
+        router.consume(request)
         #expect(router.pending == nil)
         let filter = router.takeArtifactsFilter()
         #expect(filter?.type == "DESIGN")

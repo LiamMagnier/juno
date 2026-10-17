@@ -258,7 +258,7 @@ test("checks the verified remote SHA even when local main is stale", () => {
     fakeGh(repo.bin, "green", remoteHead);
     const run = spawnSync("bash", [SCRIPT, "--wave1", repo.wave1], {
       cwd: repo.dir,
-      env: { PATH: `${repo.bin}:/usr/bin:/bin`, HOME: repo.dir, ...GIT_ENV },
+      env: { PATH: `${repo.bin}:/usr/bin:/bin`, HOME: repo.dir, NODE_ENV: "test", ...GIT_ENV },
       encoding: "utf8", timeout: 30_000,
     });
     assert.equal(run.status, 0, run.stdout + run.stderr);

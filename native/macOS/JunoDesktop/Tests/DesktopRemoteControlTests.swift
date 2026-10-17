@@ -88,6 +88,7 @@ struct DesktopPairingQRTests {
     }
 
     @Test
+    @MainActor
     func itStillReadsWithTheLogoPlateOverItsCentre() throws {
         let url = "https://alevr.com/pair?t=rcp1.eyJvIjoib2ZmZXIyIn0.c2lnbmF0dXJl"
         let code = try #require(DesktopPairingQR.image(for: url))
@@ -245,7 +246,7 @@ struct DesktopRemoteHostResponderTests {
             name: "Liam's MacBook Pro", sharedFolders: ["/Users/liam/app"], terminal: true,
             captures: [.preview, .simulator], appVersion: "1.10.6"
         ))
-        let bare = try await responder().info()
+        let bare = await responder().info()
         #expect(bare.captures.isEmpty)
     }
 
