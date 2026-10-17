@@ -30,6 +30,25 @@ final class ScreenControlModelTests: XCTestCase {
         return CodeSessionStore(directoryURL: base.appendingPathComponent("sessions"))
     }
 
+    func testPauseIntentCannotResumeAnAlreadyAutoPausedSession() async throws {
+        let service = makeService()
+        let id = "pause-intent"
+        try await service.activate(sessionID: id, title: "Pause regression")
+        let presence = ScreenPresenceCenter(service: service)
+        // Reader input can pause takeover before its Pause button handles the click.
+        await service.pause(sessionID: id)
+        await presence.setPaused(true, sessionID: id)?.value
+        let paused = await service.state(sessionID: id)
+        XCTAssertEqual(paused, .paused, "Pause must never toggle an automatic handoff back to running")
+        await presence.setPaused(false, sessionID: id)?.value
+        let resumed = await service.state(sessionID: id)
+        if case .running = resumed {} else { XCTFail("Resume must explicitly return control") }
+        await service.stopAll(reason: .stopButton)
+        await presence.setPaused(false, sessionID: id)?.value
+        let stopped = await service.isActive(sessionID: id)
+        XCTAssertFalse(stopped, "Resume cannot restart a stopped session")
+    }
+
     func testAnAppUntickedJustBeforeAllowIsNotGranted() async throws {
         let service = makeService()
         let coordinator = ComputerUseCoordinator(service: service, permissions: AllGranted())
