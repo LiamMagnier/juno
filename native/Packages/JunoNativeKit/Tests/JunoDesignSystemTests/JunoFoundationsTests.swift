@@ -35,18 +35,55 @@ final class JunoFoundationsTests: XCTestCase {
     }
 
     func testAToastGoesAfterItsDuration() async throws {
-        let center = JunoToastCenter()
-        center.post(JunoToast(title: "Saved.", duration: .milliseconds(50)))
+        let clock = ToastTimerProbe()
+        let center = JunoToastCenter(sleep: clock.sleep)
+        center.post(JunoToast(title: "Saved.", duration: .seconds(4)))
+        let timer = try XCTUnwrap(center.timer)
+        await clock.waitForRequests(1)
+        XCTAssertEqual(clock.durations, [.seconds(4)])
         XCTAssertNotNil(center.current)
-        try await Task.sleep(for: .milliseconds(400))
+        clock.finish(0)
+        await timer.value
         XCTAssertNil(center.current)
     }
 
-    func testAStandingToastStaysUntilDismissed() async throws {
+    func testTheDefaultTimerExpiresWithoutAnInjectedClock() async throws {
         let center = JunoToastCenter()
+        center.post(JunoToast(title: "Saved.", duration: .milliseconds(1)))
+        let timer = try XCTUnwrap(center.timer)
+        await timer.value
+        XCTAssertNil(center.current)
+    }
+
+    func testHoverPausesTheToastAndLeavingRestartsItsWholeDuration() async throws {
+        let clock = ToastTimerProbe()
+        let center = JunoToastCenter(sleep: clock.sleep)
+        center.post(JunoToast(title: "Saved.", duration: .seconds(4)))
+        let original = try XCTUnwrap(center.timer)
+        await clock.waitForRequests(1)
+        center.setHovering(true)
+        clock.finish(0)
+        await original.value
+        XCTAssertEqual(center.current?.title, "Saved.")
+        XCTAssertNil(center.timer)
+        center.setHovering(false)
+        let restarted = try XCTUnwrap(center.timer)
+        await clock.waitForRequests(2)
+        XCTAssertEqual(clock.durations, [.seconds(4), .seconds(4)])
+        clock.finish(1)
+        await restarted.value
+        XCTAssertNil(center.current)
+    }
+
+    func testAStandingToastStaysUntilDismissed() {
+        let clock = ToastTimerProbe()
+        let center = JunoToastCenter(sleep: clock.sleep)
         center.post(JunoToast(tone: .warning, title: "Changed on another device.", duration: nil))
-        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertNil(center.timer)
+        XCTAssertTrue(clock.durations.isEmpty)
         XCTAssertNotNil(center.current)
+        center.dismiss()
+        XCTAssertNil(center.current)
     }
 
     func testTheDefaultDurationIsTheWebsFourSeconds() {
@@ -55,14 +92,24 @@ final class JunoFoundationsTests: XCTestCase {
     }
 
     func testRepostingAnIDRestartsItsTimer() async throws {
-        let center = JunoToastCenter()
-        center.post(JunoToast(id: "status", title: "First", duration: .milliseconds(150)))
-        try await Task.sleep(for: .milliseconds(100))
-        center.post(JunoToast(id: "status", title: "Second", duration: .milliseconds(150)))
-        try await Task.sleep(for: .milliseconds(100))
-        // The first post's timer has passed its time, and must not take down
-        // the second.
+        let clock = ToastTimerProbe()
+        let center = JunoToastCenter(sleep: clock.sleep)
+        center.post(JunoToast(id: "status", title: "First", duration: .seconds(4)))
+        let first = try XCTUnwrap(center.timer)
+        await clock.waitForRequests(1)
+        center.post(JunoToast(id: "status", title: "Second", duration: .seconds(4)))
+        let second = try XCTUnwrap(center.timer)
+        await clock.waitForRequests(2)
+        XCTAssertTrue(first.isCancelled)
+        // Complete the obsolete timer even though it was cancelled. Await its
+        // actual completion: it must not dismiss the replacement with this ID.
+        clock.finish(0)
+        await first.value
         XCTAssertEqual(center.current?.title, "Second")
+        XCTAssertEqual(clock.durations, [.seconds(4), .seconds(4)])
+        clock.finish(1)
+        await second.value
+        XCTAssertNil(center.current)
     }
 
     func testAnEmptySelectionRaisesNoBar() {
@@ -132,4 +179,31 @@ final class JunoFoundationsTests: XCTestCase {
         XCTAssertEqual(JunoPageMeasure.wide.maxWidth, 1024)
         XCTAssertNil(JunoPageMeasure.full.maxWidth)
     }
+}
+
+
+/// Explicit timer completions avoid asserting inside a sub-second wall-clock
+/// window on a loaded CI runner. Cancelled waits deliberately still complete.
+@MainActor
+private final class ToastTimerProbe {
+    var durations: [Duration] = []
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+    private var observers: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    func sleep(_ duration: Duration) async {
+        await withCheckedContinuation { continuation in
+            durations.append(duration)
+            continuations.append(continuation)
+            let ready = observers.filter { $0.0 <= durations.count }
+            observers.removeAll { $0.0 <= durations.count }
+            for (_, observer) in ready { observer.resume() }
+        }
+    }
+
+    func waitForRequests(_ count: Int) async {
+        if durations.count >= count { return }
+        await withCheckedContinuation { observers.append((count, $0)) }
+    }
+
+    func finish(_ index: Int) { continuations[index].resume() }
 }
