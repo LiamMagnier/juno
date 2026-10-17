@@ -4,7 +4,7 @@ test.skip(process.env.ALEVR_QA_RUNNER !== "1", "Requires the isolated production
 for (const width of [1440, 390]) {
   test.describe(`connector stream at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 }, storageState: { cookies: [], origins: [] }, contextOptions: { reducedMotion: "reduce" } });
-    test("Slack requires a channel and saves it without losing resource filters", async ({ page }) => {
+    test("Slack requires a channel and saves it without losing resource filters", async ({ page }, testInfo) => {
       await page.goto("/dev/connector-triggers");
       const channel = page.getByLabel("Slack channel ID", { exact: true });
       await expect(channel).toBeVisible();
@@ -16,8 +16,9 @@ for (const width of [1440, 390]) {
       const saved = JSON.parse((await page.getByLabel("Saved trigger", { exact: true }).textContent())!);
       expect(saved[0].config.attributes).toEqual({ resourceId: "keep-filter", stream: "C123456" });
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await testInfo.attach("slack-channel", { body: await page.screenshot(), contentType: "image/png" });
     });
-    test("Calendar can select a stream or retain the primary-calendar default", async ({ page }) => {
+    test("Calendar can select a stream or retain the primary-calendar default", async ({ page }, testInfo) => {
       await page.goto("/dev/connector-triggers");
       await page.getByLabel("Connector", { exact: true }).fill("google-calendar");
       const calendar = page.getByLabel("Calendar ID (optional)", { exact: true });
@@ -27,6 +28,7 @@ for (const width of [1440, 390]) {
       await page.getByRole("button", { name: "Save trigger" }).click();
       let saved = JSON.parse((await page.getByLabel("Saved trigger", { exact: true }).textContent())!);
       expect(saved[0].config.attributes).toEqual({ resourceId: "keep-filter", stream: "team@example.com" });
+      await testInfo.attach("calendar-stream", { body: await page.screenshot(), contentType: "image/png" });
       await calendar.clear();
       await page.getByRole("button", { name: "Save trigger" }).click();
       saved = JSON.parse((await page.getByLabel("Saved trigger", { exact: true }).textContent())!);
