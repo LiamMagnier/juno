@@ -187,15 +187,16 @@ public actor WorkApprovalCoordinator {
         allowance: WorkAlwaysAllowance? = nil,
         unattended: WorkRisk.UnattendedPolicy? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
-        sleep: @escaping @Sendable (Duration) async throws -> Void = {
-            try await Task.sleep(for: $0)
-        }
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil
     ) {
         self.policy = policy
         self.allowance = allowance
         self.unattended = unattended
         self.now = now
-        self.sleep = sleep
+        self.sleep = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
     }
 
     // MARK: - Reading and changing the authority

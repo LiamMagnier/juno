@@ -367,9 +367,7 @@ public actor CodeRemoteSessionSync {
         isEnabled: @escaping @Sendable () async -> Bool = { true },
         debounce: Duration = .milliseconds(750),
         reconcileInterval: Duration = .seconds(60),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = {
-            try await Task.sleep(for: $0)
-        },
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
         jitter: @escaping @Sendable () -> Double = { Double.random(in: 0.5...1.5) },
         now: @escaping @Sendable () -> Date = { Date() },
         onStatus: (@Sendable (Status) -> Void)? = nil
@@ -382,7 +380,10 @@ public actor CodeRemoteSessionSync {
         self.isEnabled = isEnabled
         self.debounce = debounce
         self.reconcileInterval = reconcileInterval
-        self.sleep = sleep
+        self.sleep = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
         self.jitter = jitter
         self.now = now
         self.onStatus = onStatus

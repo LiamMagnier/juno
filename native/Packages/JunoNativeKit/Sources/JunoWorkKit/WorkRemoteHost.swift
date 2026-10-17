@@ -139,9 +139,7 @@ public actor WorkRemoteHost {
         executor: any WorkCommandExecuting,
         policyProvider: @escaping @Sendable () async -> WorkHostPolicy,
         now: @escaping @Sendable () -> Date = { Date() },
-        sleep: @escaping @Sendable (Duration) async throws -> Void = {
-            try await Task.sleep(for: $0)
-        },
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
         jitter: @escaping @Sendable () -> Double = { Double.random(in: 0.5...1.5) }
     ) {
         self.hostID = hostID
@@ -150,7 +148,10 @@ public actor WorkRemoteHost {
         self.executor = executor
         self.policyProvider = policyProvider
         self.now = now
-        self.sleep = sleep
+        self.sleep = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
         self.jitter = jitter
     }
 
