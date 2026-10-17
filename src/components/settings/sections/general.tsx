@@ -22,17 +22,6 @@ import { useUiPref, type ChatFont, type MotionPref, type TranscriptWidth } from 
 import { openSettings } from "@/components/settings/settings-sections";
 import { ChevronRight } from "@/components/ui/icons";
 
-/** The accents' names, for their swatches' accessible names (they used to announce the raw id). */
-const ACCENT_NAMES: { id: (typeof ACCENTS)[number]["id"]; label: string }[] = [
-  { id: "coral", label: "Graphite" },
-  { id: "ultramarine", label: "Ultramarine" },
-  { id: "juniper", label: "Juniper" },
-  { id: "teal", label: "Teal" },
-  { id: "violet", label: "Violet" },
-  { id: "amber", label: "Amber" },
-  { id: "sage", label: "Sage" },
-];
-
 /** The custom-colour swatch is the last option of the accent radiogroup, not a control beside it. */
 const CUSTOM_ACCENT = "__custom__";
 const ACCENT_OPTIONS: string[] = [...ACCENTS.map((a) => a.id), CUSTOM_ACCENT];
@@ -229,7 +218,7 @@ export function AppearanceSection() {
                     key={a.id}
                     selected={selected}
                     background={a.color}
-                    label={ACCENT_NAMES.find((n) => n.id === a.id)?.label ?? a.id}
+                    label={a.label}
                     onClick={() => setAccent(a.id)}
                     {...accentOption(i)}
                   >

@@ -532,9 +532,8 @@
     --stagger-tile: 45ms;
     --stagger-onboarding: 60ms;
     --stagger-max: 4;
-    /* RETIRED (D28): the favicon stagger is the row stagger. Kept as an alias
-       until its last use moves. */
-    --stagger-fav: var(--stagger-row);
+    /* RETIRED (D28): `--stagger-fav` is gone; the favicon stack uses
+       --stagger-row. The off-ladder lint rejects the old name. */
 
     /* ---- Springs (spec §4.4) -----------------------------------------------
        Each spring is defined ONCE, as framer `{ visualDuration, bounce }` —
@@ -564,10 +563,9 @@
     --spring-articulate: linear(0, 0.005, 0.02, 0.042, 0.071, 0.104, 0.141, 0.181, 0.222, 0.265, 0.308, 0.351, 0.394, 0.436, 0.477, 0.516, 0.554, 0.59, 0.625, 0.658, 0.688, 0.717, 0.744, 0.769, 0.793, 0.815, 0.835, 0.853, 0.87, 0.885, 0.899, 0.912, 0.924, 0.934, 0.944, 0.952, 0.96, 0.966, 0.972, 0.977, 0.982, 0.986, 0.99, 0.993, 0.995, 0.998, 0.999, 1.001, 1.002, 1.003, 1.004, 1.005, 1.005, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.005, 1.005, 1);
     --spring-articulate-dur: 285ms;
     /* @generated-springs:end */
-    /* RETIRED (D28): `--spring-pop` (2.8% overshoot) is the reward spring
-       (about 1.1%). Aliased until its uses move. */
-    --spring-pop: var(--spring-reward);
-    --spring-pop-dur: var(--spring-reward-dur);
+    /* RETIRED (D28): `--spring-pop` (2.8% overshoot) is gone; its one use
+       moved to --spring-reward (about 1.1%). The off-ladder lint rejects the
+       old name. */
 
     /* ---- Shell and gesture tokens (spec §3.12) -----------------------------
        Generated to TS (tokens.generated.ts → SHELL / GESTURE) and Swift.
@@ -4411,8 +4409,8 @@
   .run-fav { position: relative; display: grid; place-items: center; inline-size: 16px; block-size: 16px;
     border-radius: 999px; overflow: hidden; background: hsl(var(--secondary)); box-shadow: 0 0 0 1.5px hsl(var(--fav-ring, var(--background)));
     margin-inline-start: -4px;
-    transition: opacity var(--dur-base) var(--ease-out-soft), scale var(--spring-pop-dur) var(--spring-pop);
-    transition-delay: calc(min(var(--i, 0), 2) * var(--stagger-fav)); }
+    transition: opacity var(--dur-base) var(--ease-out-soft), scale var(--spring-reward-dur) var(--spring-reward);
+    transition-delay: calc(min(var(--i, 0), 2) * var(--stagger-row)); }
   .run-fav:first-child { margin-inline-start: 0; }
   @starting-style { .run-fav { opacity: 0; scale: var(--motion-scale-from, 0.6); } }
   .run-fav > img { inline-size: 100%; block-size: 100%; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
