@@ -1595,7 +1595,7 @@ struct DesktopConversationView: View {
     /// comes to the front (B4).
     @State private var systemPermissions = DesktopWorkSystemPermissions.current
 
-    var body: some View {
+    private var observedConversation: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
         // ``JunoDetailPage`` spells out: a `ScrollView` propagates its content's
         // ideal height rather than absorbing it, so a long transcript reports an
@@ -1747,12 +1747,13 @@ struct DesktopConversationView: View {
                     openResearch = nil
                 }
             }
+    }
+
+    var body: some View {
+        observedConversation
             .alert(
                 "Voice is unavailable",
-                isPresented: Binding(
-                    get: { voiceUnavailable != nil },
-                    set: { if !$0 { voiceUnavailable = nil } }
-                ),
+                isPresented: voiceUnavailablePresented,
                 presenting: voiceUnavailable
             ) { _ in
                 Button("OK") { voiceUnavailable = nil }
@@ -1787,6 +1788,13 @@ struct DesktopConversationView: View {
             } message: { reason in
                 Text(reason)
             }
+    }
+
+    private var voiceUnavailablePresented: Binding<Bool> {
+        Binding<Bool>(
+            get: { voiceUnavailable != nil },
+            set: { if !$0 { voiceUnavailable = nil } }
+        )
     }
 
     private var mediaFailurePresented: Binding<Bool> {
