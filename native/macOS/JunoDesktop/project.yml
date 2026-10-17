@@ -200,6 +200,14 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoDesktop.tests
+        # Release xcconfigs rename the app to its display name. XcodeGen's
+        # inferred host still uses the target name, which only works in Debug.
+        PRODUCT_NAME: $(TARGET_NAME)
+      configs:
+        Stable:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/$(JUNO_DISPLAY_NAME).app/Contents/MacOS/$(JUNO_DISPLAY_NAME)"
+        Next:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/$(JUNO_DISPLAY_NAME).app/Contents/MacOS/$(JUNO_DISPLAY_NAME)"
   JunoDesktopUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -217,6 +225,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoDesktop.uitests
+        PRODUCT_NAME: $(TARGET_NAME)
         TEST_TARGET_NAME: JunoDesktop
 schemes:
   JunoDesktop:

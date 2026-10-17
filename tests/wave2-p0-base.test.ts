@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,8 +86,13 @@ function makeRepo(): Repo {
 
 function runGate(repo: Repo, args: string[], opts: { gh?: CiMode | null } = { gh: "green" }) {
   if (opts.gh) fakeGh(repo.bin, opts.gh);
-  const pathDirs = opts.gh === null ? ["/usr/bin", "/bin"] : [repo.bin, "/usr/bin", "/bin"];
-  return spawnSync("bash", [SCRIPT, ...args], {
+  // Linux CI installs gh in /usr/bin. An isolated PATH must expose only
+  // the gate's required tools to exercise genuine CLI absence on every host.
+  if (opts.gh === null) {
+    for (const tool of ["git", "sed"]) symlinkSync(`/usr/bin/${tool}`, path.join(repo.bin, tool));
+  }
+  const pathDirs = opts.gh === null ? [repo.bin] : [repo.bin, "/usr/bin", "/bin"];
+  return spawnSync("/bin/bash", [SCRIPT, ...args], {
     cwd: repo.dir,
     env: { PATH: pathDirs.join(":"), HOME: repo.dir, ...GIT_ENV } as unknown as NodeJS.ProcessEnv,
     encoding: "utf8",
