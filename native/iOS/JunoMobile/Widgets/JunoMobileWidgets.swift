@@ -49,8 +49,8 @@ struct JunoMobileQuickActionsWidget: Widget {
       JunoMobileQuickActionsView(entry: entry)
     }
     .configurationDisplayName("Alevr quick actions")
-    .description("Start a Alevr chat, voice conversation, Code session, or dictation.")
-    .supportedFamilies([.systemSmall, .systemMedium])
+    .description("Start a new chat in Alevr. The larger size adds voice, Code and dictation.")
+    .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
   }
 }
 
@@ -66,36 +66,77 @@ struct QuickActionsProvider: TimelineProvider {
 
 struct QuickActionsEntry: TimelineEntry { let date: Date }
 
+/// The quick actions at each size. Where WidgetKit honours one destination
+/// (the small square, the Lock Screen) the whole widget is that destination
+/// and draws only it; the medium widget keeps its row of four links. See
+/// ``JunoMobileQuickAction``.
 struct JunoMobileQuickActionsView: View {
   let entry: QuickActionsEntry
   @Environment(\.widgetFamily) private var family
 
   var body: some View {
-    Group {
-      switch family {
-      case .systemMedium:
-        VStack(alignment: .leading, spacing: 8) {
-          mediumHeader
-          HStack(spacing: 8) {
-            action("Chat", icon: .compose, route: "chat")
-            action("Voice", icon: .audioLines, route: "voice")
-            action("Code", icon: .code, route: "code")
-            action("Dictate", icon: .mic, route: "dictate")
-          }
-        }
-      default:
-        // The small square carries the four actions alone: a header would
-        // crowd every tile below a comfortable thumb's reach.
-        VStack(spacing: 8) {
-          action("Chat", icon: .compose, route: "chat")
-          action("Voice", icon: .audioLines, route: "voice")
-          action("Code", icon: .code, route: "code")
-          action("Dictate", icon: .mic, route: "dictate")
+    switch family {
+    case .systemMedium:
+      medium
+        .containerBackground(for: .widget) { JunoWidgetTileBackground() }
+    case .accessoryCircular:
+      circular
+        .widgetURL(Self.single.url)
+        .containerBackground(for: .widget) { AccessoryWidgetBackground() }
+    case .accessoryRectangular:
+      rectangular
+        .widgetURL(Self.single.url)
+        .containerBackground(for: .widget) { Color.clear }
+    default:
+      small
+        .widgetURL(Self.single.url)
+        .containerBackground(for: .widget) { JunoWidgetTileBackground() }
+    }
+  }
+
+  /// The one action a single-destination size offers.
+  private static let single = JunoMobileQuickAction.actions(for: .single)[0]
+
+  // MARK: Home Screen
+
+  /// One tile, edge to edge: the mark at the top, the action set large at the
+  /// foot. Everything flexes, so nothing is cut off at any text size.
+  private var small: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      JunoIconView(.compose, size: 20)
+        .foregroundStyle(Color.junoAccent)
+        .frame(width: 40, height: 40)
+        .background(Color.junoSurface, in: Circle())
+        .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
+      Spacer(minLength: 8)
+      Text("New chat")
+        .font(JunoSerif.font(size: 22, relativeTo: .title3, face: .medium))
+        .foregroundStyle(Color.junoForeground)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+      Text("Ask Alevr anything")
+        .font(.caption)
+        .foregroundStyle(Color.junoMutedForeground)
+        .lineLimit(2)
+        .minimumScaleFactor(0.8)
+        .padding(.top, 2)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text("New chat in Alevr"))
+    .accessibilityAddTraits(.isLink)
+  }
+
+  private var medium: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      mediumHeader
+      HStack(spacing: 8) {
+        ForEach(JunoMobileQuickAction.actions(for: .row), id: \.self) { action in
+          tile(action)
         }
       }
     }
-    .padding(.vertical, family == .systemMedium ? 4 : 0)
-    .containerBackground(for: .widget) { JunoWidgetTileBackground() }
+    .padding(.vertical, 4)
   }
 
   private var mediumHeader: some View {
@@ -110,15 +151,63 @@ struct JunoMobileQuickActionsView: View {
     }
   }
 
-  private func action(_ title: LocalizedStringKey, icon: JunoIcon, route: String) -> some View {
-    Link(destination: JunoMobileWidgetRoute.url(path: route)) {
+  private func tile(_ action: JunoMobileQuickAction) -> some View {
+    Link(destination: action.url) {
       VStack(spacing: 5) {
-        JunoIconView(icon, size: 18)
+        JunoIconView(Self.icon(for: action), size: 18)
           .foregroundStyle(Color.junoAccent)
-        Text(title)
+        Text(Self.title(for: action))
           .font(.caption2.weight(.semibold))
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
       }
       .junoWidgetTile()
+    }
+  }
+
+  // MARK: Lock Screen
+
+  private var circular: some View {
+    JunoIconView(.compose, size: 22)
+      .accessibilityLabel(Text("New chat in Alevr"))
+  }
+
+  private var rectangular: some View {
+    VStack(alignment: .leading, spacing: 1) {
+      Label {
+        Text("New chat")
+          .font(.headline)
+          .lineLimit(1)
+      } icon: {
+        JunoIconView(.compose, size: 14)
+      }
+      Text("Ask Alevr anything")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text("New chat in Alevr"))
+  }
+
+  // MARK: Words and marks
+
+  private static func title(for action: JunoMobileQuickAction) -> LocalizedStringKey {
+    switch action {
+    case .chat: "Chat"
+    case .voice: "Voice"
+    case .code: "Code"
+    case .dictate: "Dictate"
+    }
+  }
+
+  private static func icon(for action: JunoMobileQuickAction) -> JunoIcon {
+    switch action {
+    case .chat: .compose
+    case .voice: .audioLines
+    case .code: .code
+    case .dictate: .mic
     }
   }
 }
@@ -258,8 +347,9 @@ private struct CodeApprovalActivityView: View {
 
 /// `openAppWhenRun` is required — a Lock Screen button has no background
 /// runtime to talk to the relay with, so the intent hands the decision to the
-/// app through the same deep link a tap on the card would produce, and the
-/// app's existing authenticated client sends it.
+/// app through the same deep link a tap on the card would produce. The app
+/// asks the owner to confirm (`JunoMobileApprovalGate`) before its
+/// authenticated client sends it.
 struct JunoMobileApprovalIntent: AppIntent {
   static let title: LocalizedStringResource = "Respond to Alevr Code approval"
   static let openAppWhenRun = true

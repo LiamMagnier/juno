@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { toast } from "sonner";
-import { ThinkingOrb } from "thinking-orbs";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,19 +19,72 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hand, Maximize2, MoreHorizontal, X } from "@/components/ui/icons";
+import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, X } from "@/components/ui/icons";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { useAgentDetail } from "@/components/agents/use-agents";
-import { announceAgentsChanged, computerAction, fetchComputerFiles, type ClientAgentComputerFile } from "@/components/agents/agents-transport";
-import { HAND_BACK_ANSWER, handBackQuestion, pinTakeover, type TakeoverPin } from "@/lib/agents/computer-handback";
-import type { ClientAgent, ClientAgentComputer } from "@/lib/agents/types";
+import {
+  COMPUTER_WORK_FOLDER,
+  announceAgentsChanged,
+  computerAction,
+  computerFileDownloadUrl,
+  computerHeartbeat,
+  fetchComputerFiles,
+  readComputerTakeover,
+  type ClientAgentComputerFolder,
+  type ClientAgentComputerLive,
+  type ClientComputerTakeover,
+} from "@/components/agents/agents-transport";
+import { COMPUTER_CHANNEL, type ComputerChannelMessage } from "@/components/agents/computer-viewer";
+import {
+  COMPUTER_STATE_COPY,
+  HAND_BACK_ANSWER,
+  computerStateSentence,
+  controlSentence,
+  handBackQuestion,
+  pinTakeover,
+  type TakeoverPin,
+} from "@/lib/agents/computer-handback";
+import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 
 const ComputerViewer = nextDynamic(
   () => import("@/components/agents/computer-viewer").then((m) => m.ComputerViewer),
   { ssr: false }
 );
+
+/*
+ * "Your turn · Take control" on the PiP opens the overlay already in control.
+ * The PiP and the overlay are mounted side by side by the chat, which only
+ * knows how to open the overlay; this is the note the PiP leaves for it.
+ */
+const controlRequests = new Set<string>();
+
+/** Asks the overlay that opens next for this agent to open in control. */
+export function requestComputerControl(agentId: string): void {
+  controlRequests.add(agentId);
+}
+
+/** Whether a control request was waiting for this agent; it is spent by reading it. */
+export function consumeComputerControlRequest(agentId: string): boolean {
+  return controlRequests.delete(agentId);
+}
+
+function broadcastHandBack(agentId: string): void {
+  try {
+    const channel = new BroadcastChannel(COMPUTER_CHANNEL);
+    channel.postMessage({ agentId, type: "handed-back" } satisfies ComputerChannelMessage);
+    channel.close();
+  } catch {
+    // No other window to tell.
+  }
+}
+
+/** Who holds control when it is not this overlay, as a sentence, or null. */
+function holderSentence(takeover: ClientComputerTakeover | null): string | null {
+  if (!takeover?.active) return null;
+  return takeover.holderKind === "app" ? COMPUTER_STATE_COPY.heldByApp : COMPUTER_STATE_COPY.heldByWeb;
+}
 
 /**
  * The agent's computer, full screen over its thread (docs/design/agents-rework/
@@ -52,43 +105,88 @@ export function AgentComputerOverlay({
 }) {
   const { detail, refresh } = useAgentDetail(agent.id, null);
   const work = useConversationWork(open ? agent.conversationId : null);
+  const workRef = React.useRef(work);
+  workRef.current = work;
   const [mode, setMode] = React.useState<"watch" | "control">(initialMode);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [confirmReset, setConfirmReset] = React.useState(false);
-  const [files, setFiles] = React.useState<ClientAgentComputerFile[] | null>(null);
+  const [confirmClose, setConfirmClose] = React.useState(false);
+  const [live, setLive] = React.useState<ClientAgentComputerLive | null>(null);
+  // Control is real once the control stream is up, not when it was asked for.
+  const [controlConnected, setControlConnected] = React.useState(false);
+  // "Open in a new window" moved control to a browser window this overlay opened.
+  const [controlInWindow, setControlInWindow] = React.useState(false);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  const [announcement, setAnnouncement] = React.useState("");
+
   const [filesOpen, setFilesOpen] = React.useState(false);
-  const openFiles = async () => {
-    setFilesOpen(true);
-    setFiles(null);
-    const outcome = await fetchComputerFiles(agent.id);
-    setFiles(outcome.kind === "ok" ? outcome.value : []);
+  const [folder, setFolder] = React.useState<ClientAgentComputerFolder | null>(null);
+  const [filesError, setFilesError] = React.useState<string | null>(null);
+  const [filesLoading, setFilesLoading] = React.useState(false);
+  const loadFolder = async (path?: string) => {
+    setFilesLoading(true);
+    setFilesError(null);
+    const outcome = await fetchComputerFiles(agent.id, path);
+    setFilesLoading(false);
+    if (outcome.kind === "ok") setFolder(outcome.value);
+    else setFilesError(outcome.message);
   };
-  const computer: ClientAgentComputer | null = detail?.computer ?? null;
+  const openFiles = () => {
+    setFilesOpen(true);
+    setFolder(null);
+    void loadFolder();
+  };
+
+  React.useEffect(() => {
+    if (detail?.computer) setLive(detail.computer as ClientAgentComputerLive);
+  }, [detail?.computer]);
+  const computer: ClientAgentComputerLive | null = live ?? (detail?.computer as ClientAgentComputerLive | undefined) ?? null;
   const status = computer?.status ?? "asleep";
+  const takeoverState = readComputerTakeover(computer);
   // The question this takeover is for, pinned when control is taken, so Hand
   // back answers that one and never whichever question happens to be first.
   const takeover = React.useRef<TakeoverPin | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
-    setMode(initialMode);
-    takeover.current = null;
-  }, [open, initialMode]);
+    // The PiP's "Your turn · Take control" opens straight into control.
+    const requested = consumeComputerControlRequest(agent.id);
+    takeover.current = requested ? pinTakeover(workRef.current.questions) : null;
+    setMode(requested ? "control" : initialMode);
+    setControlConnected(false);
+    setControlInWindow(false);
+    setNotice(null);
+  }, [open, initialMode, agent.id]);
+
+  const inControl = mode === "control" || controlInWindow;
+  const requestClose = React.useCallback(() => {
+    // One rule everywhere: closing while in control asks first, so the agent
+    // is never left blocked behind a view nobody is looking at.
+    if (inControl) setConfirmClose(true);
+    else onClose();
+  }, [inControl, onClose]);
 
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && mode !== "control") onClose();
+      if (e.key !== "Escape" || confirmClose || confirmReset || filesOpen) return;
+      requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, mode, onClose]);
+  }, [open, requestClose, confirmClose, confirmReset, filesOpen]);
 
   // A resting computer opens instantly; waking it is the point of opening the view.
   React.useEffect(() => {
     if (!open || status !== "resting") return;
     void computerAction(agent.id, "wake").then(() => refresh());
   }, [open, status, agent.id, refresh]);
+
+  const announce = (text: string) => {
+    // Cleared first so the same words twice in a row are announced twice.
+    setAnnouncement("");
+    window.setTimeout(() => setAnnouncement(text), 30);
+  };
 
   const run = async (action: "wake" | "reset") => {
     setBusy(action);
@@ -104,39 +202,132 @@ export function AgentComputerOverlay({
 
   const takeControl = () => {
     takeover.current = pinTakeover(work.questions);
+    setNotice(null);
+    setControlConnected(false);
     setMode("control");
   };
 
-  const handBack = async () => {
-    setBusy("handback");
-    await fetch(`/api/agents/${encodeURIComponent(agent.id)}/computer/heartbeat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "control", ended: true }),
-    }).catch(() => {});
-    // Only the question that asked for the computer, and nothing when it has
-    // gone: anything else is still the person's to answer in the composer.
+  /** Answers the pinned takeover question, and nothing when unsure. */
+  const answerPinned = async () => {
     const question = handBackQuestion(work.questions, takeover.current);
     takeover.current = null;
     if (question) await work.answer(question.id, HAND_BACK_ANSWER).catch(() => false);
-    setBusy(null);
+  };
+
+  // Hand back rotates the computer's VNC passwords, which drops the control
+  // stream. The viewer's reconnect then finds the takeover closed and reports
+  // control as lost; while this overlay is handing back that is its own doing,
+  // not "{agent} took the computer back", and must not drop the pinned question.
+  const handingBack = React.useRef(false);
+
+  const handBack = async (): Promise<boolean> => {
+    setBusy("handback");
+    handingBack.current = true;
+    const outcome = await computerHeartbeat(agent.id, "control", true);
+    if (outcome.kind === "failed" && outcome.status !== 409) {
+      handingBack.current = false;
+      setBusy(null);
+      toast.error(outcome.message);
+      return false;
+    }
+    broadcastHandBack(agent.id);
+    // Watching from here on, before the answer goes out: the viewer swaps to
+    // a watch stream instead of retrying control.
+    setControlConnected(false);
+    setControlInWindow(false);
     setMode("watch");
+    if (outcome.kind === "ok") {
+      if (outcome.value) setLive(outcome.value);
+      setNotice(null);
+      // Only the question that asked for the computer, and nothing when it has
+      // gone: anything else is still the person's to answer in the composer.
+      await answerPinned();
+      announce(COMPUTER_STATE_COPY.handedBack);
+    } else {
+      // Someone else holds control: this overlay had nothing to hand back.
+      takeover.current = null;
+      setNotice(outcome.message);
+      announce(outcome.message);
+    }
+    handingBack.current = false;
+    setBusy(null);
     announceAgentsChanged();
+    return true;
+  };
+
+  // A browser window this overlay opened handed back: the pinned question is
+  // answered here, where the conversation is.
+  React.useEffect(() => {
+    if (!open || !controlInWindow || typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(COMPUTER_CHANNEL);
+    channel.onmessage = (event: MessageEvent<ComputerChannelMessage>) => {
+      if (event.data?.agentId !== agent.id || event.data.type !== "handed-back") return;
+      const question = handBackQuestion(workRef.current.questions, takeover.current);
+      takeover.current = null;
+      if (question) void workRef.current.answer(question.id, HAND_BACK_ANSWER).catch(() => false);
+      setControlInWindow(false);
+      announce(COMPUTER_STATE_COPY.handedBack);
+      announceAgentsChanged();
+    };
+    return () => channel.close();
+  }, [open, controlInWindow, agent.id]);
+
+  const openInWindow = () => {
+    // The window opens now, inside the click: opened after the link comes
+    // back it is a popup Safari and Firefox block, and this view would drop
+    // to watching while control sat in a window that never appeared. A
+    // window opened with `noopener` cannot even say whether it opened.
+    const opened = window.open("about:blank", "_blank");
+    if (!opened) {
+      toast.error("Your browser blocked the new window. Allow pop-ups for this site, then try again.");
+      return;
+    }
+    try {
+      opened.opener = null;
+    } catch {
+      // Already detached.
+    }
+    void fetch(`/api/agents/${encodeURIComponent(agent.id)}/computer/view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, handoff: true }),
+    })
+      .then(async (r) => {
+        const data = (await r.json().catch(() => ({}))) as { url?: string; message?: string };
+        if (!r.ok || !data.url) throw new Error(data.message || "Couldn’t open a new window.");
+        const url = new URL(data.url, window.location.origin);
+        // The window has this browser's session: it shows Hand back itself.
+        url.searchParams.set("w", "1");
+        opened.location.replace(url.toString());
+        if (mode === "control") {
+          // Control moves to the window; this view watches. Nothing is handed
+          // back, and the pinned question waits for the window's Hand back.
+          setControlInWindow(true);
+          setControlConnected(false);
+          setMode("watch");
+        }
+      })
+      .catch((error: unknown) => {
+        try {
+          opened.close();
+        } catch {
+          // Already gone.
+        }
+        toast.error(error instanceof Error ? error.message : "Couldn’t open a new window.");
+      });
   };
 
   if (!open) return null;
 
   const usingNow = computer?.usingNow?.summary ?? null;
-  const caption =
-    mode === "control"
-      ? null
-      : status === "awake"
-        ? usingNow ?? "Idle. It rests after a few minutes."
-        : status === "waking" || status === "starting" || status === "resting"
-          ? "Waking up"
-          : status === "error"
-            ? "Couldn’t reach the computer."
-            : `Asleep. It wakes when ${agent.name} starts working.`;
+  const heldElsewhere = !inControl ? holderSentence(takeoverState) : null;
+  const caption = inControl
+    ? null
+    : status === "awake" && heldElsewhere
+      ? heldElsewhere
+      : computerStateSentence({ status, agentName: agent.name, restMinutes: computer?.restMinutes, usingNow, opened: true });
+  const waking = status === "starting" || status === "resting";
+  const posterUrl = computer?.hasPoster ? `/api/agents/${encodeURIComponent(agent.id)}/computer/poster` : null;
 
   return (
     <div
@@ -145,6 +336,9 @@ export function AgentComputerOverlay({
       aria-label={`${agent.name}’s computer`}
       className="fixed inset-0 z-modal flex flex-col bg-background/85 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in duration-base"
     >
+      <p role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
       <div className="flex shrink-0 items-center gap-3 px-5 py-4">
         <AgentPresence avatar={agent.avatar} state={agent.state} size={28} haloScale={1.8} />
         <div className="min-w-0 flex-1">
@@ -152,36 +346,19 @@ export function AgentComputerOverlay({
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="Computer options" className="text-muted-foreground">
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Computer options" className="text-muted-foreground coarse:size-11">
               <MoreHorizontal className="size-[1.125rem]" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {status === "awake" ? (
-              <DropdownMenuItem
-                onSelect={() => {
-                  void fetch(`/api/agents/${encodeURIComponent(agent.id)}/computer/view`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode, handoff: true }),
-                  })
-                    .then((r) => (r.ok ? r.json() : null))
-                    .then((data: { url?: string } | null) => {
-                      if (data?.url) window.open(data.url, "_blank", "noopener,noreferrer");
-                    })
-                    .catch(() => {});
-                }}
-              >
-                Open in a new window
-              </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem onSelect={() => void openFiles()}>Files</DropdownMenuItem>
+            {status === "awake" ? <DropdownMenuItem onSelect={openInWindow}>Open in a new window</DropdownMenuItem> : null}
+            <DropdownMenuItem onSelect={openFiles}>Files</DropdownMenuItem>
             <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setConfirmReset(true)}>
               Reset computer
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose} className="text-muted-foreground">
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Close" onClick={requestClose} className="text-muted-foreground coarse:size-11">
           <X className="size-[1.125rem]" aria-hidden="true" />
         </Button>
       </div>
@@ -190,17 +367,43 @@ export function AgentComputerOverlay({
         <div className="w-full max-w-[min(100%,calc((100dvh-11rem)*1.6))]">
           <div
             className={cn(
-              "overflow-hidden rounded-panel bg-neutral-950 shadow-[0_30px_80px_-20px_hsl(var(--foreground)/0.35)] ring-1",
-              mode === "control" ? "ring-2 ring-primary" : "ring-border/60"
+              "overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--foreground)/0.35)]",
+              // The ring is the one sign of who drives: it eases between
+              // watching and control on the motion tokens, and snaps when
+              // motion is reduced.
+              "transition-shadow duration-base ease-out-soft motion-reduce:transition-none",
+              mode === "control" ? "ring-2 ring-primary" : "ring-1 ring-border/60"
             )}
           >
             {status === "awake" ? (
+              // One viewer for watching and control: switching swaps the
+              // stream under the last frame instead of remounting it.
               <ComputerViewer
-                key={mode}
                 agentId={agent.id}
                 agentName={agent.name}
                 initialMode={mode}
+                mode={mode}
+                inputTools
+                posterUrl={posterUrl}
                 onModeChange={setMode}
+                onConnected={(connected) => {
+                  if (connected === "control") {
+                    setControlConnected(true);
+                    announce("You have control");
+                  } else {
+                    setControlConnected(false);
+                  }
+                }}
+                onComputer={(next) => {
+                  if (next) setLive(next);
+                }}
+                onControlLost={(message) => {
+                  if (handingBack.current) return;
+                  takeover.current = null;
+                  setControlConnected(false);
+                  setNotice(message);
+                  announce(message);
+                }}
               />
             ) : (
               <Poster agent={agent} computer={computer} status={status} />
@@ -211,29 +414,38 @@ export function AgentComputerOverlay({
             {mode === "control" ? (
               <p className="flex items-center gap-2 text-ui font-medium text-primary">
                 <Hand className="size-4 shrink-0" aria-hidden="true" />
-                You have control. {agent.name} waits until you hand back.
+                {controlConnected ? controlSentence(agent.name) : "Taking control…"}
+              </p>
+            ) : controlInWindow ? (
+              <p className="flex items-center gap-2 text-ui font-medium text-primary">
+                <Hand className="size-4 shrink-0" aria-hidden="true" />
+                You have control in another window.
               </p>
             ) : (
               <p className="flex min-w-0 items-center gap-2 text-ui text-muted-foreground">
-                {status === "waking" || status === "starting" || status === "resting" ? (
-                  <ThinkingOrb size={20} state="working" />
-                ) : null}
-                <span className="truncate">{caption}</span>
+                {waking ? <GalaxyMark phase="working" size={16} /> : null}
+                <span className="truncate">{notice ?? caption}</span>
               </p>
             )}
             <div className="flex items-center gap-2">
               {status === "awake" ? (
-                mode === "control" ? (
-                  <Button type="button" className="rounded-full px-5" loading={busy === "handback"} onClick={() => void handBack()}>
+                inControl ? (
+                  <Button type="button" className="rounded-full px-5 coarse:min-h-11" loading={busy === "handback"} onClick={() => void handBack()}>
                     Hand back
                   </Button>
                 ) : (
-                  <Button type="button" variant="outline" className="rounded-full px-5" onClick={takeControl}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-full px-5 coarse:min-h-11"
+                    disabled={takeoverState?.active === true && takeoverState.holderKind === "app"}
+                    onClick={takeControl}
+                  >
                     Take control
                   </Button>
                 )
-              ) : status === "error" || status === "asleep" || status === "sleeping" ? (
-                <Button type="button" variant="outline" className="rounded-full px-5" loading={busy === "wake"} onClick={() => void run("wake")}>
+              ) : status === "error" || status === "asleep" ? (
+                <Button type="button" variant="outline" className="rounded-full px-5 coarse:min-h-11" loading={busy === "wake"} onClick={() => void run("wake")}>
                   {status === "error" ? "Try again" : "Wake"}
                 </Button>
               ) : null}
@@ -246,28 +458,42 @@ export function AgentComputerOverlay({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Files on {agent.name}’s computer</DialogTitle>
-            <DialogDescription>What it saved in its work folder. Download anything you need.</DialogDescription>
+            <DialogDescription>What it saved in its work folder. Open a folder, or download anything you need.</DialogDescription>
           </DialogHeader>
-          {files === null ? (
-            <p role="status" className="py-4 text-ui text-muted-foreground">Loading…</p>
-          ) : files.length === 0 ? (
-            <p className="py-4 text-ui text-muted-foreground">Nothing saved yet.</p>
-          ) : (
-            <ul className="max-h-80 overflow-y-auto">
-              {files.map((file) => (
-                <li key={file.name}>
-                  <a
-                    href={`/api/agents/${encodeURIComponent(agent.id)}/computer/files/${encodeURIComponent(file.name)}`}
-                    download
-                    className="flex items-center gap-3 rounded-control px-2 py-2 text-body text-foreground hover:bg-accent"
-                  >
-                    <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                    <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{formatSize(file.sizeBytes)}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
+          <FilesBrowser
+            agentId={agent.id}
+            folder={folder}
+            loading={filesLoading}
+            error={filesError}
+            onOpenFolder={(path) => void loadFolder(path)}
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hand back to {agent.name}?</DialogTitle>
+            <DialogDescription>
+              You have control of {agent.name}’s computer. It waits until you hand back.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmClose(false)}>
+              Keep control
+            </Button>
+            <Button
+              type="button"
+              loading={busy === "handback"}
+              onClick={() => {
+                void handBack().then((done) => {
+                  setConfirmClose(false);
+                  if (done) onClose();
+                });
+              }}
+            >
+              Hand back
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
@@ -299,13 +525,97 @@ export function AgentComputerOverlay({
   );
 }
 
+/** The parent folder, never above the agent's home (the files route refuses anything outside it). */
+function parentFolder(path: string): string | null {
+  const trimmed = path.replace(/\/+$/, "");
+  if (trimmed === COMPUTER_WORK_FOLDER || trimmed === "/home/agent" || !trimmed.startsWith("/home/agent/")) return null;
+  return trimmed.slice(0, trimmed.lastIndexOf("/")) || null;
+}
+
+function FilesBrowser({
+  agentId,
+  folder,
+  loading,
+  error,
+  onOpenFolder,
+}: {
+  agentId: string;
+  folder: ClientAgentComputerFolder | null;
+  loading: boolean;
+  error: string | null;
+  onOpenFolder: (path: string) => void;
+}) {
+  const parent = folder ? parentFolder(folder.path) : null;
+  const where = folder ? folder.path.replace(/^\/home\/agent\/?/, "") || "home" : null;
+  return (
+    <div className="min-h-24">
+      {folder && parent ? (
+        <div className="mb-2 flex items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 coarse:min-h-11" onClick={() => onOpenFolder(parent)}>
+            <ChevronLeft className="size-4" aria-hidden="true" />
+            Back
+          </Button>
+          <span className="min-w-0 truncate text-caption text-muted-foreground" translate="no">
+            {where}
+          </span>
+        </div>
+      ) : null}
+      {loading ? (
+        <p role="status" className="py-4 text-ui text-muted-foreground">
+          Loading…
+        </p>
+      ) : error ? (
+        <div role="alert" className="flex flex-col items-start gap-2 py-4">
+          <p className="text-ui text-foreground">{error}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => onOpenFolder(folder?.path ?? COMPUTER_WORK_FOLDER)}>
+            Try again
+          </Button>
+        </div>
+      ) : !folder ? null : folder.entries.length === 0 ? (
+        <p className="py-4 text-ui text-muted-foreground">{parent ? "This folder is empty." : "Nothing saved yet."}</p>
+      ) : (
+        <ul className="max-h-80 overflow-y-auto">
+          {folder.entries.map((entry) => (
+            <li key={entry.path}>
+              {entry.type === "directory" ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenFolder(entry.path)}
+                  className="flex w-full items-center gap-3 rounded-control px-2 py-2 text-left text-body text-foreground hover:bg-accent coarse:min-h-11"
+                >
+                  <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate" translate="no">
+                    {entry.name}
+                  </span>
+                </button>
+              ) : (
+                <a
+                  href={computerFileDownloadUrl(agentId, entry.path)}
+                  download={entry.name}
+                  className="flex items-center gap-3 rounded-control px-2 py-2 text-body text-foreground hover:bg-accent coarse:min-h-11"
+                >
+                  <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate" translate="no">
+                    {entry.name}
+                  </span>
+                  <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{formatSize(entry.sizeBytes)}</span>
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Poster({
   agent,
   computer,
   status,
 }: {
   agent: ClientAgent;
-  computer: ClientAgentComputer | null;
+  computer: ClientAgentComputerLive | null;
   status: string;
 }) {
   return (
@@ -326,37 +636,84 @@ function Poster({
 }
 
 /**
- * The live picture-in-picture: while the agent is working on its computer, a small
- * view of the screen docks above the composer. Clicking it opens the full view.
+ * The live picture-in-picture: while the agent works on its computer, or waits
+ * for the person, a small view of the screen docks above the composer.
+ * Clicking it opens the full view. It stays mounted through approvals, so a
+ * run that asks to type five times opens one view session, not five; when the
+ * agent waits, it rises with the signal edge and offers Take control.
  */
 export function AgentComputerPip({ agent, onOpen }: { agent: ClientAgent; onOpen: () => void }) {
   const [dismissedFor, setDismissedFor] = React.useState<string | null>(null);
-  const active = agent.computer?.status === "awake" && agent.state === "working";
+  const [takeoverState, setTakeoverState] = React.useState<ClientComputerTakeover | null>(null);
+  const awake = agent.computer?.status === "awake";
+  const waiting = agent.state === "waiting";
+  const active = awake && (agent.state === "working" || waiting);
   const key = agent.task?.sessionId ?? "live";
   if (!active || dismissedFor === key) return null;
+  const holder = takeoverState?.active
+    ? takeoverState.holderKind === "app"
+      ? "Your app has control"
+      : "You have control"
+    : null;
   return (
     <div className="pointer-events-auto relative w-[17.5rem] motion-safe:animate-rise-in">
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label={`Open ${agent.name}’s computer`}
-        className="group block w-full overflow-hidden rounded-card bg-neutral-950 text-left shadow-[0_18px_50px_-18px_hsl(var(--foreground)/0.45)] ring-1 ring-border/60 transition-transform duration-base ease-out-soft hover:-translate-y-0.5 active:scale-[0.99] motion-reduce:transform-none"
+      <div
+        className={cn(
+          "overflow-hidden rounded-card bg-card",
+          "transition-[box-shadow,transform] duration-base ease-out-soft motion-reduce:transition-none",
+          waiting
+            ? "shadow-[0_24px_60px_-18px_hsl(var(--foreground)/0.55)] ring-2 ring-[hsl(var(--signal))] motion-safe:-translate-y-1"
+            : "shadow-[0_18px_50px_-18px_hsl(var(--foreground)/0.45)] ring-1 ring-border/60"
+        )}
       >
-        <div className="pointer-events-none">
-          <ComputerViewer agentId={agent.id} agentName={agent.name} initialMode="watch" />
-        </div>
-        <span className="flex items-center gap-2 bg-card px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">Using its computer</span>
-          <Maximize2 className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
-        </span>
-      </button>
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open ${agent.name}’s computer`}
+          className="group block w-full text-left"
+        >
+          <div className="pointer-events-none">
+            <ComputerViewer
+              agentId={agent.id}
+              agentName={agent.name}
+              initialMode="watch"
+              onComputer={(computer) => setTakeoverState(readComputerTakeover(computer))}
+            />
+          </div>
+          {waiting ? null : (
+            <span className="flex items-center gap-2 bg-card px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{holder ?? "Using its computer"}</span>
+              <Maximize2 className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
+            </span>
+          )}
+        </button>
+        {waiting ? (
+          holder ? (
+            <p className="bg-card px-3 py-2 text-caption text-muted-foreground">{holder}</p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                requestComputerControl(agent.id);
+                onOpen();
+              }}
+              className="flex w-full items-center justify-center gap-2 bg-card px-3 py-2 text-caption font-medium text-[hsl(var(--signal-ink))] transition-colors hover:bg-accent coarse:min-h-11"
+            >
+              <Hand className="size-3.5 shrink-0" aria-hidden="true" />
+              Your turn · Take control
+            </button>
+          )
+        ) : null}
+      </div>
       <button
         type="button"
         onClick={() => setDismissedFor(key)}
         aria-label="Hide"
-        className="absolute -right-2 -top-2 grid size-6 place-items-center rounded-full bg-card text-muted-foreground shadow-soft ring-1 ring-border/70 hover:text-foreground"
+        className="group/hide absolute -right-2 -top-2 grid size-6 place-items-center rounded-full coarse:-right-4 coarse:-top-4 coarse:size-11"
       >
-        <X className="size-3" aria-hidden="true" />
+        <span className="grid size-6 place-items-center rounded-full bg-card text-muted-foreground shadow-soft ring-1 ring-border/70 group-hover/hide:text-foreground">
+          <X className="size-3" aria-hidden="true" />
+        </span>
       </button>
     </div>
   );

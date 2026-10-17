@@ -13,9 +13,11 @@ import {
   planHistorySummary,
   planTokenTrim,
   renderHistorySummary,
+  storedSummaryHolds,
   type StoredHistorySummary,
   type WindowMessage,
 } from "@/lib/chat/history-compaction";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /*
  * The database half of context trimming. The rules are in history-compaction.ts;
@@ -77,9 +79,11 @@ async function storeSummary(input: {
 
 async function loadMessages(conversationId: string, skip: number, take: number) {
   if (take <= 0) return [];
+  // The shown branch, in the order the model's window reads it
+  // (src/lib/chat/branches.ts): a summary describes what the model is shown.
   const rows = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    where: { conversationId, ...ON_ACTIVE_PATH },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     skip,
     take,
     select: { id: true, role: true, content: true },
@@ -218,8 +222,19 @@ export async function compactHistoryWindow<T extends WindowMessage>(input: {
     const fresh = await Promise.race([update, timedOut]);
     if (timer) clearTimeout(timer);
     if (typeof fresh === "string") return { ...result, summaryBlock: renderHistorySummary(fresh, plan.toCount) };
-    // Timed out or failed: the stored summary is still true of what it covers.
-    return stored ? { ...result, summaryBlock: renderHistorySummary(stored.text, stored.coveredCount) } : result;
+    // Timed out or failed: the stored summary stands in while it is still a
+    // summary of the messages before this window (see storedSummaryHolds).
+    if (!stored) return result;
+    const at = stored.coveredCount - input.countStart;
+    const boundaryId =
+      at >= 0 && at < input.window.length
+        ? input.window[at].id
+        : stored.coveredCount <= start
+          ? (await loadMessages(input.conversationId, stored.coveredCount, 1))[0]?.id
+          : null;
+    return storedSummaryHolds(stored, start, boundaryId)
+      ? { ...result, summaryBlock: renderHistorySummary(stored.text, stored.coveredCount) }
+      : result;
   } catch (error) {
     console.error("[chat] history summary unavailable", {
       conversationId: input.conversationId,

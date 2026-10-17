@@ -122,11 +122,17 @@ struct JunoMobileComposer: View {
   /// dictation row: the composer listening, in place.
   @State private var dictation: JunoMobileDictationSession?
   private var dictating: Bool { dictation != nil }
-  /// Whether a very large draft has been opened back up for editing. Huge
-  /// pastes stay in `prompt` and are sent in full either way — this only
-  /// decides whether they are live in the text field. See
-  /// ``NativePromptLimits/composerInlineSoftCharacters``.
-  @State private var draftExpanded = false
+  /// The full-screen editor (`JunoMobilePromptEditor`): offered once the
+  /// field reaches its six-line cap, and where a very large draft is edited.
+  @State private var promptEditorOpen = false
+  /// Whether closing the editor hands the keyboard back to the field: after
+  /// Done, yes; after Send, no.
+  @State private var refocusAfterPromptEditor = false
+  /// The field's measured height and one line of its font, to tell when it
+  /// has reached its cap (`JunoMobilePromptEditorOffer`). The line is the
+  /// system font's at 17pt, scaled with Dynamic Type as the field's font is.
+  @State private var fieldHeight: CGFloat = 0
+  @ScaledMetric(relativeTo: .body) private var fieldLineHeight: CGFloat = 20.29
 
   private var selectedModel: NativeChatModelOption? {
     model.model(withID: selectedModelID)
@@ -265,9 +271,23 @@ struct JunoMobileComposer: View {
   /// Past this the draft leaves the text field entirely and shows as a card.
   /// A 40k-character paste in a `TextField(axis: .vertical)` re-measures the
   /// whole passage on every keystroke, on the main actor, and the composer
-  /// stops accepting input long before the reader gets to Send.
+  /// stops accepting input long before the reader gets to Send. "Edit" opens
+  /// it in the full-screen editor, whose `TextEditor` stays responsive.
   private var showsCollapsedDraft: Bool {
-    NativePromptLimits.isHugeDraft(prompt) && !draftExpanded
+    NativePromptLimits.isHugeDraft(prompt)
+  }
+
+  /// Whether the field shows its expand control.
+  private var offersPromptEditor: Bool {
+    voiceSession == nil
+      && !showsCollapsedDraft
+      && JunoMobilePromptEditorOffer.offers(prompt: prompt, fieldHeight: fieldHeight, lineHeight: fieldLineHeight)
+  }
+
+  private func openPromptEditor() {
+    composerFocused.wrappedValue = false
+    refocusAfterPromptEditor = false
+    promptEditorOpen = true
   }
 
   /// Attaching needs somewhere to put the file. Without an attachment model —
@@ -296,7 +316,6 @@ struct JunoMobileComposer: View {
     )
     prompt = ""
     contextTokens = []
-    draftExpanded = false
   }
 
   /// Send is blocked while any upload is still in flight. Sending a message
@@ -444,10 +463,15 @@ struct JunoMobileComposer: View {
                 fieldPrompt
               }
               .junoFont(size: 17, relativeTo: .body)
-              .lineLimit(1...6)
+              .lineLimit(1...JunoMobilePromptEditorOffer.composerLineCap)
               .textFieldStyle(.plain)
               .focused(composerFocused)
-              .padding(.horizontal, JunoSpace.regular)
+              // Measured without its padding: at the cap, the expand control
+              // appears (`JunoMobilePromptEditorOffer`).
+              .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fieldHeight = $0 }
+              .padding(.leading, JunoSpace.regular)
+              // Room for the expand control, which sits over the first line.
+              .padding(.trailing, offersPromptEditor ? 44 + JunoSpace.tight : JunoSpace.regular)
               .padding(.top, JunoSpace.comfy)
               .padding(.bottom, JunoSpace.tight)
               .accessibilityIdentifier("juno.mobile.chat-composer")
@@ -479,6 +503,16 @@ struct JunoMobileComposer: View {
                 guard let cursor = suggestionCursor else { return .ignored }
                 cursor.dismiss(query: cursor === mentionCursor ? NativeContextMention.query(in: prompt) : NativeSlashQuery.query(in: prompt))
                 return .handled
+              }
+              // Over the first line, outside the field's own element, so
+              // the field keeps its identifier and the control has its own.
+              .overlay(alignment: .topTrailing) {
+                if offersPromptEditor {
+                  JunoMobilePromptEditorButton(action: openPromptEditor)
+                    .padding(.top, max(0, JunoSpace.comfy + fieldLineHeight / 2 - 22))
+                    .padding(.trailing, JunoSpace.tight)
+                    .transition(.opacity)
+                }
               }
 
               if isLongDraft {
@@ -612,11 +646,29 @@ struct JunoMobileComposer: View {
       JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: attachments.count
     )
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showsCollapsedDraft)
-    // Once the draft is back under the inline ceiling, forget that it was
-    // ever expanded — otherwise the *next* huge paste would land straight
-    // in the text field, which is the state this card exists to avoid.
-    .onChange(of: prompt) { _, text in
-      if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
+    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: offersPromptEditor)
+    // The long-prompt editor, over everything: the same draft, attachments
+    // and tools, with Send; Done returns here with the keyboard up.
+    .fullScreenCover(isPresented: $promptEditorOpen, onDismiss: {
+      if refocusAfterPromptEditor { composerFocused.wrappedValue = true }
+    }) {
+      JunoMobilePromptEditor(
+        text: $prompt,
+        placeholder: Text(placeholder),
+        canSend: !sendDisabled,
+        send: {
+          refocusAfterPromptEditor = false
+          promptEditorOpen = false
+          send()
+        },
+        done: {
+          // A draft still too large for the field comes back as its card.
+          refocusAfterPromptEditor = !NativePromptLimits.isHugeDraft(prompt)
+          promptEditorOpen = false
+        }
+      ) {
+        promptEditorAccessories
+      }
     }
     .onChange(of: startDictation.wrappedValue, initial: true) { _, requested in
       guard requested, !dictating else { return }
@@ -858,6 +910,39 @@ struct JunoMobileComposer: View {
     return tokens
   }
 
+  /// What rides above the draft in the full-screen editor: the same
+  /// attachment chips and armed tools the card shows, live, so a file can
+  /// still be removed or retried and a tool disarmed from there.
+  @ViewBuilder
+  private var promptEditorAccessories: some View {
+    let showsAttachments = !attachments.isEmpty && attachmentModel != nil
+    let showsTokens = voiceSession == nil && !armedTokens.isEmpty
+    if showsAttachments || showsTokens {
+      VStack(alignment: .leading, spacing: JunoSpace.snug) {
+        if showsAttachments, let attachmentModel {
+          JunoMobileAttachmentChips(
+            attachments: attachments,
+            onRemove: { attachmentModel.remove($0) },
+            onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
+          )
+        }
+        if showsTokens {
+          ScrollView(.horizontal) {
+            HStack(spacing: JunoSpace.cozy) {
+              ForEach(armedTokens) { token in
+                JunoMobileComposerToken(icon: token.icon, title: token.title, remove: token.remove)
+              }
+            }
+          }
+          .scrollIndicators(.hidden)
+        }
+      }
+      .padding(.horizontal, JunoSpace.regular)
+      .padding(.vertical, JunoSpace.snug)
+      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: attachments.count)
+    }
+  }
+
   /// The quiet offer under a long draft: "That's a long one — attach it as a
   /// file to keep the chat tidy?" One line and one button, exactly as the web
   /// puts it, and it never touches the draft unless the button is tapped.
@@ -918,7 +1003,6 @@ struct JunoMobileComposer: View {
         Spacer(minLength: 0)
         Button {
           prompt = ""
-          draftExpanded = false
         } label: {
           JunoIconView(.close, size: 12)
             .foregroundStyle(Color.junoMutedForeground)
@@ -930,10 +1014,7 @@ struct JunoMobileComposer: View {
       }
 
       HStack(spacing: JunoSpace.snug) {
-        Button {
-          draftExpanded = true
-          composerFocused.wrappedValue = true
-        } label: {
+        Button(action: openPromptEditor) {
           capsuleLabel("Edit", icon: .pencil)
         }
         .buttonStyle(.plain)
@@ -1547,7 +1628,6 @@ struct JunoMobileComposer: View {
     sendHaptic.fire()
     onSent?(conversationID)
     prompt = ""
-    draftExpanded = false
     attachmentModel?.clear()
     // The title is generated from the first turn, exactly as the web does —
     // see NativeConversationModel.generateTitleIfNeeded.
@@ -1673,7 +1753,6 @@ struct JunoMobileComposer: View {
         return
       }
       prompt = ""
-      draftExpanded = false
       attachmentModel?.clear()
       if context?.hasPendingAttachments == true {
         voiceTurnError = String(localized: "composer.voice.context-pending")

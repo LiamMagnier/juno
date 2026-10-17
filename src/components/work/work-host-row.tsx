@@ -11,7 +11,6 @@ import {
 } from "@/components/work/shell/work-section";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
-import { PhaseOrb } from "@/components/effects/phase-orb";
 import { StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -79,7 +78,9 @@ export function WorkHostStatePill({
       ) : host.state === "stale" ? (
         <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
       ) : host.state === "online" ? (
-        <PhaseOrb state="working" className="-my-1.5 -ml-1" />
+        // Online is a state, not work: a still presence dot. A turning mark
+        // here moved for as long as the Mac was awake with nothing running.
+        <span className="size-1.5 shrink-0 rounded-full bg-presence" aria-hidden="true" />
       ) : null}
       {revoked ? "Revoked" : HOST_STATE_LABEL[host.state]}
     </span>

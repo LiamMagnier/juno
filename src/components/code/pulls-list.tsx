@@ -367,10 +367,8 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                           mark for "this leaves Juno", and the session banner's
                           own "View pull request" chip already draws it. Two
                           drawings of one idea, two screens apart. */}
-                      {/* The ink cross-fades on the wrapper: the glyph's own
-                          `transition` is its nudge (svg.icon[data-motion]),
-                          and it outranks a colour transition written on the
-                          svg, which is why this used to snap. */}
+                      {/* The ink cross-fades on the wrapper, which keeps the
+                          glyph's own transition list (icons.css) untouched. */}
                       <span className="inline-flex text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                         <ActionIcons.external className="size-3.5" aria-hidden="true" />
                       </span>

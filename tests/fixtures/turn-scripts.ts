@@ -507,7 +507,7 @@ const failures: TurnScript = {
     at(520, queued("jc_0_0", JSON.stringify({ url: "https://made-up.example.com/report" }), { url: "https://made-up.example.com/report", domain: "made-up.example.com" })),
     at(521, queued("jc_0_1", "{\"expression\": ")),
     at(522, queued("jc_0_2", JSON.stringify({ query: "trip notes" }), { query: "trip notes" })),
-    at(530, result(0, 0, "web_fetch", "jc_0_0", "Juno only opens links that appeared in this conversation.", {
+    at(530, result(0, 0, "web_fetch", "jc_0_0", "Alevr only opens links that appeared in this conversation.", {
       status: "failed",
       code: "url_not_in_prior_context",
     })),

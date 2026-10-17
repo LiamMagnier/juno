@@ -67,7 +67,7 @@ export async function resolveTurnTokens({
         ? rangesForStoredText(input.message, input.context)
         : input.context
       : input.regenerate && input.conversationId && !input.privateMode
-        ? await regenerateContextTokens(user.id, input.conversationId).catch(() => [])
+        ? await regenerateContextTokens(user.id, input.conversationId, input.regenerateMessageId).catch(() => [])
         : [];
   const contextPort = prismaContextPort({ userId: user.id, settings, conversationProvider: modelInfo.provider });
   const turnContext = await TurnContext.begin(

@@ -118,7 +118,7 @@ export function ArtifactReadView({
         <VersionStepper id={id} version={version} latest={latest} previous={previous} next={next} />
 
         <div className="flex-1" />
-        <ArtifactLifecycleActions id={id} title={title} version={version} latest={latest} />
+        <ArtifactLifecycleActions id={id} title={title} version={version} latest={latest} type={type} />
 
         {hasPreview && (
           <SegmentedControl

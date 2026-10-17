@@ -13,7 +13,7 @@
  * Read only is not offered (Plan covers it), but a thread that is already on
  * it still says so.
  */
-import type { InteractionMode, RuntimeMode } from "./contracts";
+import type { InteractionMode, ModelSelection, RuntimeMode } from "./contracts";
 
 export type ComposerMode = "ask" | "accept-edits" | "auto" | "plan" | "full" | "read-only";
 
@@ -109,14 +109,17 @@ export function projectModeKey(project: string | null | undefined): string | nul
 
 /**
  * A thread's starting pair: its own choice when it has one, else the
- * project's last, else Accept edits.
+ * project's last, else the account's default (Settings › Code, `code-prefs.ts`),
+ * else Accept edits.
  */
 export function initialModePair(
   own: { runtimeMode?: RuntimeMode; interactionMode?: InteractionMode },
   project: Partial<ProjectModeDefault> | null,
+  account: Partial<ProjectModeDefault> | null = null,
 ): ProjectModeDefault {
   if (own.runtimeMode) return { runtimeMode: own.runtimeMode, interactionMode: own.interactionMode ?? "default" };
-  return { runtimeMode: project?.runtimeMode ?? "auto-edit", interactionMode: project?.interactionMode ?? "default" };
+  if (project?.runtimeMode) return { runtimeMode: project.runtimeMode, interactionMode: project.interactionMode ?? "default" };
+  return { runtimeMode: account?.runtimeMode ?? "auto-edit", interactionMode: account?.interactionMode ?? "default" };
 }
 
 /** What applying a rung needs from a thread's actions. */
@@ -156,11 +159,17 @@ export function cloudPermissionMode(mode: ComposerMode): "plan" | "auto-edit" | 
   }
 }
 
-/** The landing's starting rung: the project's last, else the target's own default (cloud runs have always had Full access). */
-export function landingMode(target: "device" | "cloud", project: Partial<ProjectModeDefault> | null): ComposerMode {
+/**
+ * The landing's starting rung: the project's last, else the account's default
+ * for a Mac session (Settings › Code), else the target's own default (cloud
+ * runs have always had Full access, and the account default names a Mac's
+ * access ladder, so it does not reach them).
+ */
+export function landingMode(target: "device" | "cloud", project: Partial<ProjectModeDefault> | null, account: Partial<ProjectModeDefault> | null = null): ComposerMode {
   const fallback: ComposerMode = target === "cloud" ? "full" : "accept-edits";
-  if (!project?.runtimeMode) return fallback;
-  const mode = composerModeOf(project.runtimeMode, project.interactionMode ?? "default");
+  const source = project?.runtimeMode ? project : target === "device" && account?.runtimeMode ? account : null;
+  if (!source?.runtimeMode) return fallback;
+  const mode = composerModeOf(source.runtimeMode, source.interactionMode ?? "default");
   if (target === "cloud" && !cloudPermissionMode(mode)) return fallback;
   return mode;
 }
@@ -170,8 +179,21 @@ export function threadPrefsKey(conversationId: string): string {
   return `alevr.code.prefs.${conversationId}`;
 }
 
-/** The v2 route's prefs for a new thread, with the landing's mode in them. */
-export function seededThreadPrefs(existing: Record<string, unknown> | null, mode: ComposerMode): Record<string, unknown> {
+/**
+ * The v2 route's prefs for a new thread: the landing's mode AND its model
+ * (instance, model, effort, context tier). The route used to receive the mode
+ * only, so the first turn ran on whatever instance it found first.
+ */
+export function seededThreadPrefs(
+  existing: Record<string, unknown> | null,
+  mode: ComposerMode,
+  seed: { selection?: ModelSelection | null } = {},
+): Record<string, unknown> {
   const pair = applyComposerMode(mode, "auto-edit");
-  return { ...(existing ?? {}), runtimeMode: pair.runtimeMode, interactionMode: pair.interactionMode };
+  return {
+    ...(existing ?? {}),
+    runtimeMode: pair.runtimeMode,
+    interactionMode: pair.interactionMode,
+    ...(seed.selection?.model ? { selection: seed.selection } : {}),
+  };
 }

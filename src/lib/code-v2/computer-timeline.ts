@@ -133,13 +133,24 @@ export function buildComputerTimeline(
 /**
  * Screenshot refs the web can show directly: data URLs, https URLs and
  * same-origin paths. `alevr-shot://<session>/<file>` refs live on the Mac and
- * reach the web through the env server's screenshot route.
+ * have no URL here: they resolve to null (the stage keeps its alt text) unless
+ * the view passes `useMacScreenshots`, which fetches them over the env link
+ * (`computer.frame`) and hands back blob URLs.
  */
 export function defaultScreenshotResolver(ref: string): string | null {
-  if (ref.startsWith("data:image/") || ref.startsWith("https://") || ref.startsWith("/")) return ref;
-  const shot = /^alevr-shot:\/\/([^/]+)\/(.+)$/.exec(ref);
-  if (shot) return `/api/code/screenshots/${encodeURIComponent(shot[1])}/${encodeURIComponent(shot[2])}`;
+  if (ref.startsWith("data:image/") || ref.startsWith("https://") || isSameOriginPath(ref)) return ref;
   return null;
+}
+
+/**
+ * A path on this origin. `//host/x` is another origin, and so is `/\host/x`
+ * (browsers read a backslash as a slash) or `/<tab>/host` (they drop tabs
+ * and line breaks before parsing), so the second character after removing
+ * those must not be a slash of either kind.
+ */
+function isSameOriginPath(ref: string): boolean {
+  const cleaned = ref.replace(/[\t\n\r]/g, "");
+  return cleaned.startsWith("/") && cleaned[1] !== "/" && cleaned[1] !== "\\";
 }
 
 /**

@@ -130,6 +130,10 @@
           "note": "Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire)."
         },
         "/api/chat/follow-ups": "native",
+        "/api/conversations/[id]/task-mode": {
+          "status": "planned",
+          "note": "How often a task started from this chat asks (the web composer's hand chip, src/lib/chat/task-approval-mode.ts). The apps do not offer the choice yet, so their chats' tasks run as the saved mode or the default; request.taskApprovalMode in the chat wire is the same choice sent with a turn."
+        },
         "/api/chat/local-tools/[callId]": {
           "status": "native",
           "note": "The Mac answers a chat turn's local folder tool call here (NativeLocalFolderWire); the waiting turn reads it from an in-memory wait, so it needs a single backend instance."
@@ -183,12 +187,20 @@
         },
         "/api/messages/[id]": {
           "status": "planned",
-          "note": "Edit-and-resend of a sent question, keeping the old text as a version; the Mac's question editor does not call it."
+          "note": "Edit a sent question as a new branch, keeping the old wording and every answer after it; the apps branch locally (NativeBranchNavigator) and do not call it."
+        },
+        "/api/messages/[id]/branch": {
+          "status": "planned",
+          "note": "Switch the shown branch from the pager under an edited question or a regenerated answer; the apps read only the shown branch and keep their own local tree."
         },
         "/api/messages/[id]/feedback": "native",
         "/api/messages/[id]/versions": "native",
         "/api/share": "native",
         "/api/share/[id]": "native",
+        "/api/share/copy": {
+          "status": "web-only",
+          "note": "Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws."
+        },
         "/api/share/report": {
           "status": "web-only",
           "note": "Reporting a shared link happens on the shared page, which only the web draws."
@@ -331,7 +343,7 @@
         },
         "/api/artifacts/[id]/draft": {
           "status": "web-only",
-          "note": "Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
+          "note": "Seals or discards the web design editor's working copy (ArtifactDraft), and reads, autosaves and drops the web canvas's unsaved source edit (ArtifactCanvasDraft, G12). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
         },
         "/api/artifacts/[id]/duplicate": {
           "status": "native",
@@ -647,6 +659,10 @@
           "note": "A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58)."
         },
         "/api/work/runs/[id]/control": "native",
+        "/api/work/runs/[id]/frames/[callId]": {
+          "status": "planned",
+          "note": "One step's screenshot from a cloud computer run, owner only, for the web filmstrip and the marked approval card (src/lib/computer/frames.ts). The apps do not draw the filmstrip or the approval frame yet."
+        },
         "/api/work/sessions": "native",
         "/api/work/sessions/[id]": "native",
         "/api/work/sessions/[id]/answer": "native",
@@ -828,6 +844,10 @@
         "/api/research/[id]": "native",
         "/api/research/[id]/clarify": "native",
         "/api/research/[id]/control": "native",
+        "/api/research/[id]/export": {
+          "status": "planned",
+          "note": "A finished report as a Word document, from the Markdown the web's full-screen reader builds (G37). The apps' report reader has no Word export yet."
+        },
         "/api/research/[id]/plan": "native",
         "/api/research/[id]/steer": "native",
         "/api/research/citations": "native"
@@ -895,8 +915,8 @@
       "routes": {
         "/api/agent/[...path]": "native",
         "/api/agent/usage": {
-          "status": "planned",
-          "note": "Usage accounting for Juno Code's engine against the plan; the Swift engine does not report its turns here yet."
+          "status": "internal",
+          "note": "Turn settlement for agent-core reporter hosts only. The Swift engine needs no call here: every Code call on Alevr's keys goes through /api/agent/[...path], which admits each turn like a chat turn and counts it once its opening call is billed (src/lib/metering/code-turn-store.ts)."
         },
         "/api/code/cloud-runner": {
           "status": "planned",
@@ -980,6 +1000,14 @@
         "/api/code/routing/[conversationId]": {
           "status": "web-only",
           "note": "Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run."
+        },
+        "/api/code/prefs": {
+          "status": "planned",
+          "note": "The account's Code defaults (access, work log, team and budget) that web Settings edits without a session open. The Mac keeps its own defaults until it reads these."
+        },
+        "/api/code/feedback": {
+          "status": "planned",
+          "note": "Good / Bad response on answers in a Mac-hosted Code v2 session, keyed by turn (those answers have no Message row). The Mac's v2 thread has no answer feedback yet."
         },
         "/api/code/v2/link/[deviceId]": {
           "status": "native",

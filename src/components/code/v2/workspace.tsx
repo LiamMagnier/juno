@@ -27,11 +27,26 @@ import { openSettings as openAppSettings } from "@/components/settings/settings-
 import { Thread, ThreadSkeleton, type DockRequest } from "./thread";
 import type { WorkspaceModel, WorkspaceUiState } from "./types";
 import { cn } from "@/lib/utils";
+import { usePresence } from "@/lib/use-presence";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 import type { ByokClient } from "@/lib/code-v2/byok-client";
-import type { ProviderInstance } from "@/lib/code-v2/contracts";
+import type { ProviderInstance, TurnItem } from "@/lib/code-v2/contracts";
+import { toast as notify } from "sonner";
+import { InlineTitleInput } from "./session-actions";
+import { ConnectionsHint, NewAgentsBadge, newAgentIds } from "./workspace-notices";
+import type { MessageMatch } from "@/lib/code-v2/palette-search";
+import { usePaletteMessageSearch } from "./use-palette-search";
+import { lastPrompt } from "@/lib/code-v2/answer-actions";
+import { cachedCodePrefs, useCodePrefs } from "./use-code-prefs";
 
 const WIDTH_KEY = "alevr.code.dockWidth";
 const DETAIL_KEY = "alevr.code.detailLevel";
+const DENY_HINT_MAC_MESSAGE = "Esc does not deny. To deny, press Deny or ⌘⌫.";
+const DENY_HINT_PC_MESSAGE = "Esc does not deny. To deny, press Deny or Ctrl+Backspace.";
+const SPEAKER_YOU_LABEL = "You";
+const SPEAKER_ALEVR_LABEL = "Alevr";
+const IN_THIS_SESSION_LABEL = "In this session";
+const IN_OTHER_SESSIONS_LABEL = "In other sessions";
 
 function readStored<T>(key: string, parse: (s: string) => T | undefined): T | undefined {
   try {
@@ -75,24 +90,71 @@ export interface CodeWorkspaceProps {
   className?: string;
 }
 
-function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => void; onRun: (command: string) => void; threads: { id: string; title: string }[]; onOpenThread: (id: string) => void }) {
+/**
+ * A surface leaving (usePresence): `data-state="closed"` plays its exit in
+ * code-v2.css at about 0.65x the entrance on the accelerate curve, and the
+ * animation's end unmounts it.
+ */
+type ExitProps = { state: "open" | "closed"; onAnimationEnd: (event: React.AnimationEvent<Element>) => void };
+
+const exitOf = (p: ReturnType<typeof usePresence>): ExitProps => ({ state: p.closing ? "closed" : "open", onAnimationEnd: p.onAnimationEnd });
+
+/** Upper bounds for the exits in code-v2.css (0.65 x --dur-mid / --dur-wide); the animation's end normally unmounts first. */
+const EXIT_MID_MS = 160;
+const EXIT_WIDE_MS = 220;
+
+function Palette({
+  onClose,
+  onRun,
+  threads,
+  onOpenThread,
+  items,
+  openId,
+  onJumpTurn,
+  exit,
+}: {
+  onClose: () => void;
+  onRun: (command: string) => void;
+  threads: { id: string; title: string }[];
+  onOpenThread: (id: string) => void;
+  /** The open thread's items: its messages are searched too. */
+  items: readonly TurnItem[];
+  openId: string;
+  onJumpTurn: (turnId: string) => void;
+  exit: ExitProps;
+}) {
   const mac = useIsMac();
   const [q, setQ] = React.useState("");
   const [hi, setHi] = React.useState(0);
   const commands = DEFAULT_KEYBINDINGS;
-  const rows = [
+  const found = usePaletteMessageSearch({ query: q, items, threads, openId });
+  const messageRow = (m: MessageMatch, section: string) => ({
+    id: m.id,
+    section,
+    label: m.snippet,
+    key: "",
+    meta: m.threadTitle ?? (m.who === "you" ? SPEAKER_YOU_LABEL : m.who === "alevr" ? SPEAKER_ALEVR_LABEL : undefined),
+    run: () => (m.threadId ? onOpenThread(m.threadId) : m.turnId ? onJumpTurn(m.turnId) : undefined),
+  });
+  const rows: { id: string; section: string; label: string; key: string; meta?: string; run: () => void }[] = [
     ...threads.map((t) => ({ id: `t:${t.id}`, section: "Sessions", label: t.title, key: "", run: () => onOpenThread(t.id) })),
     { id: "pulls", section: "Go to", label: "Pull requests", key: "", run: () => window.location.assign("/code/pulls") },
     { id: "connections", section: "Go to", label: "Connections", key: "", run: () => onRun("connections.open") },
     ...commands.filter((b) => !b.command.startsWith("approval.") && !b.command.startsWith("hunk.") && b.command !== "palette.toggle" && b.command !== "composer.steer").map((b) => ({ id: b.command, section: "Commands", label: COMMAND_TITLES[b.command] ?? b.command, key: b.key, run: () => onRun(b.command) })),
   ].filter((r) => !q.trim() || r.label.toLowerCase().includes(q.trim().toLowerCase()));
+  // What was said comes right after the session titles: in this session, then in the others.
+  const titled = rows.filter((r) => r.section === "Sessions").length;
+  rows.splice(titled, 0, ...found.here.map((m) => messageRow(m, IN_THIS_SESSION_LABEL)), ...found.elsewhere.map((m) => messageRow(m, IN_OTHER_SESSIONS_LABEL)));
   return (
     <>
-      <div className="cv2-scrim" style={{ background: "transparent" }} onClick={onClose} aria-hidden />
+      <div className="cv2-scrim" style={{ background: "transparent" }} data-state={exit.state} onClick={onClose} aria-hidden />
       <div
         className="cv2-palette"
         role="dialog"
         aria-label="Command palette"
+        data-state={exit.state}
+        inert={exit.state === "closed"}
+        onAnimationEnd={exit.onAnimationEnd}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();
           else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -107,7 +169,7 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
       >
         <label className="cv2-pop-search">
           <Glyph name="search" size={16} />
-          <input autoFocus placeholder="Search sessions and commands" value={q} onChange={(e) => (setQ(e.target.value), setHi(0))} aria-label="Search" />
+          <input autoFocus placeholder="Search sessions, messages and commands" value={q} onChange={(e) => (setQ(e.target.value), setHi(0))} aria-label="Search" />
         </label>
         <div className="cv2-pop-body" role="listbox">
           {rows.map((r, i) => (
@@ -126,6 +188,7 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
                 }}
               >
                 <span className="cv2-grow cv2-trunc">{r.label}</span>
+                {r.meta && <span className="trail cv2-trunc" style={{ maxWidth: 140 }}>{r.meta}</span>}
                 {r.key && (
                   <span className="trail">
                     <Kbd k={r.key} mac={mac} />
@@ -134,19 +197,28 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
               </button>
             </React.Fragment>
           ))}
-          {rows.length === 0 && <div className="cv2-mute" style={{ padding: "10px 16px" }}>Nothing matches.</div>}
+          {rows.length === 0 && <div className="cv2-mute" style={{ padding: "10px 16px" }}>{found.searching ? "Searching messages…" : "Nothing matches."}</div>}
         </div>
       </div>
     </>
   );
 }
 
-function Shortcuts({ onClose }: { onClose: () => void }) {
+function Shortcuts({ onClose, exit }: { onClose: () => void; exit: ExitProps }) {
   const mac = useIsMac();
   return (
     <>
-      <div className="cv2-scrim" onClick={onClose} aria-hidden />
-      <div className="cv2-sheet narrow" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div className="cv2-scrim" data-state={exit.state} onClick={onClose} aria-hidden />
+      <div
+        className="cv2-sheet narrow"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+        data-state={exit.state}
+        inert={exit.state === "closed"}
+        onAnimationEnd={exit.onAnimationEnd}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+      >
         <div className="cv2-page">
           <div className="cv2-row">
             <h1 className="cv2-h1 cv2-grow">Keyboard</h1>
@@ -175,7 +247,19 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     return ui.dockOpen ? { ...s, open: true, tab: ui.dockTab ?? s.tab, expanded: !!ui.dockExpanded } : { ...s, tab: ui.dockTab ?? s.tab };
   });
   const [focus, setFocus] = React.useState<DockFocus>({});
-  const [detail, setDetail] = React.useState<DetailLevel>(() => ui.detailLevel ?? readStored(DETAIL_KEY, (s) => s as DetailLevel) ?? "summary");
+  // The work log's level: this device's choice, else the account's default (Settings › Code), else Summary.
+  const storedDetail = () => readStored(DETAIL_KEY, (s) => ((DETAIL_LEVELS as readonly string[]).includes(s) ? (s as DetailLevel) : undefined));
+  const [detail, setDetailState] = React.useState<DetailLevel>(() => ui.detailLevel ?? storedDetail() ?? cachedCodePrefs().detailLevel ?? "summary");
+  const detailChosen = React.useRef<boolean | null>(null);
+  detailChosen.current ??= !!ui.detailLevel || storedDetail() !== undefined;
+  const setDetail = React.useCallback((next: React.SetStateAction<DetailLevel>) => {
+    detailChosen.current = true;
+    setDetailState(next);
+  }, []);
+  const accountDetail = useCodePrefs().prefs.detailLevel;
+  React.useEffect(() => {
+    if (!detailChosen.current && accountDetail) setDetailState(accountDetail);
+  }, [accountDetail]);
   const [popover, setPopover] = React.useState<PopoverName>(popoverFromUi(ui.popover));
   const [palette, setPalette] = React.useState(ui.popover === "palette");
   const [headMenu, setHeadMenu] = React.useState<null | "session" | "more">(ui.popover === "session" ? "session" : ui.popover === "more" ? "more" : null);
@@ -187,14 +271,25 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const [approvalIndex, setApprovalIndex] = React.useState(0);
   const [composerFocus, setComposerFocus] = React.useState(false);
   const [hidden, setHidden] = React.useState(false);
-  const [toast, setToast] = React.useState<string | null>(null);
+  const [renaming, setRenaming] = React.useState(false);
+  // One toast system on this screen: the app's (sonner), not a second bottom-centre pill.
+  // A fixed id so a repeated status ("Press Esc again to stop") replaces itself instead of stacking.
+  const setToast = React.useCallback((message: string | null) => {
+    if (message) notify.message(message, { id: "code-workspace-status" });
+  }, []);
+  const palettePresence = usePresence(palette, EXIT_MID_MS);
+  const shortcutsPresence = usePresence(shortcuts, EXIT_WIDE_MS);
+  const dockPresence = usePresence(dock.open, EXIT_WIDE_MS);
   const composer = React.useRef<ComposerHandle>(null);
   const escArmed = React.useRef<number | null>(null);
   const headRef = React.useRef<HTMLDivElement>(null);
   const crumbRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => writeStored(WIDTH_KEY, String(dock.width)), [dock.width]);
-  React.useEffect(() => writeStored(DETAIL_KEY, detail), [detail]);
+  React.useEffect(() => {
+    // Only a choice is remembered: a default written back would hide a later change to the account's.
+    if (detailChosen.current) writeStored(DETAIL_KEY, detail);
+  }, [detail]);
   React.useEffect(() => dispatch({ type: "thread-changed", threadId: model.thread.id }), [model.thread.id]);
   // The dock reads the whole session (every change, command and file), so
   // opening it brings in the turns a paged thread has not loaded yet, as
@@ -208,32 +303,50 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     document.addEventListener("visibilitychange", on);
     return () => document.removeEventListener("visibilitychange", on);
   }, []);
+  // First run no longer opens Connections over the thread as the first prompt sends (Alevr's
+  // included models already work): the empty state offers it in one quiet line instead.
+  const [connectionsHint, setConnectionsHint] = React.useState(false);
   React.useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 5000);
-    return () => clearTimeout(t);
-  }, [toast]);
-  React.useEffect(() => {
-    if (!firstRun) return;
-    if (readStored("alevr.code.connectionsSeen", (s) => s === "1")) return;
-    setConnections(true);
+    setConnectionsHint(!!firstRun && !readStored("alevr.code.connectionsSeen", (s) => s === "1"));
   }, [firstRun]);
+  const dismissConnectionsHint = () => {
+    writeStored("alevr.code.connectionsSeen", "1");
+    setConnectionsHint(false);
+  };
 
   React.useEffect(() => {
     if (popover === "model" || popover === "catalog" || connections || settings === "connections") void onRefreshSubscriptions?.();
   }, [popover, connections, settings, onRefreshSubscriptions]);
 
-  const seenAgents = React.useRef(new Set<string>());
+  // A new subagent no longer takes over the panel (it interrupted whatever was open there):
+  // it raises a count on the panel button, cleared when the Agents tab is looked at.
+  const seenAgents = React.useRef<Set<string> | null>(null);
+  const [unseenAgents, setUnseenAgents] = React.useState<string[]>([]);
+  const agentsInView = dock.open && dock.tab === "agents";
   React.useEffect(() => {
+    seenAgents.current = null;
+    setUnseenAgents([]);
+  }, [model.thread.id]);
+  React.useEffect(() => {
+    // The first pass with items is history, not news. A Mac thread renders empty until its log
+    // arrives from the env server, so an empty pass is "not loaded yet", not "no agents".
+    if (!seenAgents.current && model.items.length === 0) return;
     const ids = model.items.filter((i) => i.kind === "subagent").map((i) => i.agentId);
-    if (ids.some((id) => !seenAgents.current.has(id))) dispatch({ type: "open", tab: "agents", threadId: model.thread.id });
+    const fresh = seenAgents.current ? newAgentIds(seenAgents.current, ids) : [];
     seenAgents.current = new Set(ids);
-  }, [model.thread.id, model.items]);
+    if (fresh.length && !agentsInView) setUnseenAgents((u) => [...new Set([...u, ...fresh])]);
+  }, [model.items, agentsInView]);
+  React.useEffect(() => {
+    if (agentsInView) setUnseenAgents([]);
+  }, [agentsInView]);
 
   const running = model.state === "running" || model.state === "waiting";
   const pending = pendingRequests(model.items);
   const turns = React.useMemo(() => groupTurns(model.items, { state: model.state }), [model.items, model.state]);
   const checkpoints = turns.filter((t) => t.checkpoint).map((t) => ({ turn: t, cp: t.checkpoint! }));
+  // A retryable failure's Retry sends the last prompt again (it was never wired: a dead end).
+  const lastUser = lastPrompt(turns);
+  const retryLast = lastUser && !running && model.actions.resend ? () => void model.actions.resend?.(lastUser) : undefined;
 
   const openDock = React.useCallback(
     (req: DockRequest) => {
@@ -249,8 +362,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     else openAppSettings("connections");
   };
   const rename = () => {
-    const next = window.prompt("Rename this session", model.thread.title);
-    if (next && next.trim()) model.actions.renameThread?.(next.trim());
+    if (model.actions.renameThread) setRenaming(true);
   };
 
   const run = React.useCallback(
@@ -370,6 +482,17 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
         changesFocus: dock.open && dock.tab === "changes",
         queueNotEmpty: model.queue.length > 0,
       };
+      // An Esc a dialog already used (a Radix dialog closing, a sheet, an inline rename) is not
+      // also a Stop or a request's hint: one press, one meaning.
+      if (e.key === "Escape" && (e.defaultPrevented || t?.closest?.('[role="dialog"]'))) return;
+      if (e.key === "Escape" && pending.length > 0 && popover === null && !palette && headMenu === null) {
+        // Esc never answers a request (one stray press used to deny it): it only leaves it.
+        const active = document.activeElement as HTMLElement | null;
+        if (active?.closest?.(".cv2-approve")) active.blur();
+        setToast(mac ? DENY_HINT_MAC_MESSAGE : DENY_HINT_PC_MESSAGE);
+        e.preventDefault();
+        return;
+      }
       if (e.key === "Escape" && running && pending.length === 0 && popover === null && !palette && !editable) {
         const r = escPress(escArmed.current, Date.now(), running);
         escArmed.current = r.armedAt;
@@ -390,7 +513,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [run, running, pending.length, popover, palette, headMenu, dock.open, dock.tab, model.queue.length, mac, model.actions]);
+  }, [run, running, pending.length, popover, palette, headMenu, dock.open, dock.tab, model.queue.length, mac, model.actions, setToast]);
 
   const empty = model.items.length === 0 && !model.starting && !loading;
   const composerNode = (
@@ -407,8 +530,13 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     />
   );
 
+  const a = model.actions;
   const sessionMenu: MenuEntry[] = [
-    ...(model.actions.renameThread ? [{ id: "rename", label: "Rename", icon: <Glyph name="rename" size={16} />, onSelect: rename }] : []),
+    ...(a.renameThread ? [{ id: "rename", label: "Rename", icon: <Glyph name="rename" size={16} />, onSelect: rename }] : []),
+    ...(a.pinThread
+      ? [{ id: "pin", label: model.thread.pinned ? "Unpin" : "Pin", icon: <Glyph name={model.thread.pinned ? "unpin" : "pin"} size={16} />, onSelect: () => a.pinThread?.(!model.thread.pinned) }]
+      : []),
+    ...(a.shareThread ? [{ id: "share", label: "Share…", icon: <Glyph name="share" size={16} />, onSelect: () => a.shareThread?.() }] : []),
     { id: "copy", label: "Copy reference", icon: <Glyph name="copy" size={16} />, onSelect: () => run("thread.copyReference") },
     ...(checkpoints.length && model.actions.rollback
       ? [
@@ -437,6 +565,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       trail: DETAIL_LEVEL_LABELS[detail].label,
       sub: { title: "Work log", entries: DETAIL_LEVELS.map((d) => ({ id: d, label: DETAIL_LEVEL_LABELS[d].label, l2: DETAIL_LEVEL_LABELS[d].description, checked: d === detail, onSelect: () => setDetail(d) })) },
     },
+    ...(a.archiveThread || a.deleteThread ? [{ kind: "sep" as const, id: "s2" }] : []),
+    ...(a.archiveThread ? [{ id: "archive", label: "Archive", icon: <Glyph name="archive" size={16} />, onSelect: () => a.archiveThread?.() }] : []),
+    ...(a.deleteThread ? [{ id: "delete", label: "Delete…", icon: <Glyph name="delete" size={16} />, danger: true, onSelect: () => a.deleteThread?.() }] : []),
   ];
   const moreMenu: MenuEntry[] = [
     ...(model.actions.commit ? [{ id: "commit", label: "Commit…", icon: <Glyph name="commit" size={16} />, onSelect: () => model.actions.commit?.() }] : []),
@@ -458,14 +589,14 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       lead: model.selection, onRouting: model.actions.setRouting, runtimeMode: model.runtimeMode,
       onRuntimeMode: model.actions.setRuntimeMode, detail, onDetail: setDetail,
     });
-  }, [connectionsProps, model.instances, model.routing, model.selection, model.actions.setRouting, model.actions.setRuntimeMode, model.runtimeMode, detail]);
+  }, [connectionsProps, model.instances, model.routing, model.selection, model.actions.setRouting, model.actions.setRuntimeMode, model.runtimeMode, detail, setDetail]);
   React.useEffect(() => {
     const owner = settingsOwner.current;
     return () => codeSettingsBridge.clear(owner);
   }, []);
   if (settings) {
     return (
-      <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-reduced-motion={ui.reducedMotion ? "true" : undefined}>
+      <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-motion={ui.reducedMotion ? "reduced" : undefined}>
         {sidebar && sideOpen && <SettingsSidebar pane={settings} onPane={setSettings} onBack={() => setSettings(null)} />}
         <main className="cv2-main" aria-label="Settings">
           <div className="cv2-left">
@@ -508,7 +639,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   return (
     <div
       className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)}
-      data-reduced-motion={ui.reducedMotion ? "true" : undefined}
+      data-motion={ui.reducedMotion ? "reduced" : undefined}
       data-hidden={hidden ? "true" : undefined}
       data-composer-focus={composerFocus ? "true" : undefined}
     >
@@ -530,10 +661,22 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             <span className="slash" aria-hidden>
               /
             </span>
-            <button type="button" className="title" aria-haspopup="menu" aria-expanded={headMenu === "session"} onClick={() => setHeadMenu(headMenu === "session" ? null : "session")} onDoubleClick={rename} title={model.thread.title}>
-              <span className="cv2-trunc">{empty ? "New session" : model.thread.title}</span>
-              <Glyph name="chevron-down" size={14} className="cv2-mute" />
-            </button>
+            {renaming ? (
+              <InlineTitleInput
+                className="cv2-title-edit"
+                initial={model.thread.title}
+                onCommit={(value) => {
+                  setRenaming(false);
+                  if (value.trim() && value.trim() !== model.thread.title) model.actions.renameThread?.(value.trim());
+                }}
+                onCancel={() => setRenaming(false)}
+              />
+            ) : (
+              <button type="button" className="title" aria-haspopup="menu" aria-expanded={headMenu === "session"} onClick={() => setHeadMenu(headMenu === "session" ? null : "session")} onDoubleClick={rename} title={model.thread.title}>
+                <span className="cv2-trunc">{empty ? "New session" : model.thread.title}</span>
+                <Glyph name="chevron-down" size={14} className="cv2-mute" />
+              </button>
+            )}
             <ComposerPopover open={headMenu === "session"} onClose={() => setHeadMenu(null)} width={260} align="left" offset={0} label="Session" anchorRef={crumbRef} down role="menu">
               <MenuList entries={sessionMenu} onClose={() => setHeadMenu(null)} label="Session" />
             </ComposerPopover>
@@ -542,8 +685,17 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
               <Glyph name="terminal" />
             </button>
-            <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab !== "terminal"} aria-label="Changes and panel" title={`Changes (${mac ? "⌘D" : "Ctrl D"})`} onClick={() => (dock.open && dock.tab !== "terminal" ? dispatch({ type: "close" }) : openDock({ tab: dock.tab === "terminal" ? "changes" : dock.tab }))}>
+            <button
+              type="button"
+              className="cv2-iconbtn cv2-badged"
+              aria-pressed={dock.open && dock.tab !== "terminal"}
+              aria-label="Changes and panel"
+              title={`Changes (${mac ? "⌘D" : "Ctrl D"})`}
+              // New agents waiting to be seen: this opens on them.
+              onClick={() => (unseenAgents.length ? openDock({ tab: "agents" }) : dock.open && dock.tab !== "terminal" ? dispatch({ type: "close" }) : openDock({ tab: dock.tab === "terminal" ? "changes" : dock.tab }))}
+            >
               <Glyph name="panel-right" />
+              <NewAgentsBadge count={unseenAgents.length} />
             </button>
             <button type="button" className="cv2-iconbtn" aria-label="More" aria-haspopup="menu" aria-expanded={headMenu === "more"} onClick={() => setHeadMenu(headMenu === "more" ? null : "more")}>
               <Glyph name="more" />
@@ -563,10 +715,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                 <h1>
                   {model.thread.repo ? (
                     <>
-                      What should we build in <span className="proj">{model.thread.repo}</span>?
+                      What will you build in <span className="proj">{model.thread.repo}</span>?
                     </>
                   ) : (
-                    "What should we build?"
+                    "What will you build?"
                   )}
                 </h1>
                 {model.pairingRequired && (
@@ -580,6 +732,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                   </div>
                 )}
                 <div className="cv2-col">{composerNode}</div>
+                {connectionsHint && (
+                  <div className="cv2-col">
+                    <ConnectionsHint onOpen={() => (dismissConnectionsHint(), setConnections(true))} onDismiss={dismissConnectionsHint} />
+                  </div>
+                )}
                 <div className="spacer-bottom" />
               </div>
             ) : (
@@ -597,6 +754,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                   onRollback={model.actions.rollback}
                   onApprovePlan={model.actions.approvePlan}
                   onUndoTurn={model.actions.rollback ? (turn) => turn.checkpoint && model.actions.rollback?.(turn.checkpoint.checkpointId) : undefined}
+                  onRetry={retryLast}
+                  onResend={model.actions.resend}
+                  onEditMessage={(text) => composer.current?.setDraft(text)}
+                  feedbackFor={model.actions.feedbackFor}
+                  onFeedback={model.actions.setFeedback}
                   starting={model.starting}
                   offline={model.offline}
                   pairingRequired={model.pairingRequired}
@@ -612,10 +774,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
           </div>
         </div>
         </div>
-          {dock.open && (
+          {dockPresence.mounted && (
             <>
-              <div className="cv2-scrim cv2-only-overlay" onClick={() => dispatch({ type: "close" })} aria-hidden />
+              <div className="cv2-scrim cv2-only-overlay" data-state={dockPresence.closing ? "closed" : "open"} onClick={() => dispatch({ type: "close" })} aria-hidden />
               <Dock
+                exit={exitOf(dockPresence)}
                 model={model}
                 dock={dock}
                 dispatch={dispatch}
@@ -629,15 +792,23 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             </>
           )}
       </main>
-      {palette && (
+      {palettePresence.mounted && (
         <Palette
+          exit={exitOf(palettePresence)}
           onClose={() => setPalette(false)}
           onRun={(c) => run(c)}
           threads={(model.threads ?? []).filter((t) => t.id !== model.thread.id).map((t) => ({ id: t.id, title: t.title }))}
           onOpenThread={(id) => model.actions.openThread?.(id)}
+          items={model.items}
+          openId={model.thread.id}
+          onJumpTurn={(turnId) =>
+            document
+              .querySelector<HTMLElement>(`[data-turn="${CSS.escape(turnId)}"]`)
+              ?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" })
+          }
         />
       )}
-      {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
+      {shortcutsPresence.mounted && <Shortcuts exit={exitOf(shortcutsPresence)} onClose={() => setShortcuts(false)} />}
       {connections && (
         <ConnectionsPanel
           sheet
@@ -658,11 +829,6 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             setConnections(false);
           }}
         />
-      )}
-      {toast && (
-        <div className="cv2-toast" role="status">
-          {toast}
-        </div>
       )}
     </div>
   );

@@ -5,7 +5,7 @@ import * as React from "react";
 import { FaviconStack } from "@/components/chat/run/favicon-stack";
 import { RunClock } from "@/components/chat/run/run-clock";
 import { RunFacts } from "@/components/chat/run/run-facts";
-import { RunGlyph } from "@/components/chat/run/run-glyph";
+import { RunGalaxy } from "@/components/chat/run/run-galaxy";
 import { RunLabel } from "@/components/chat/run/run-label";
 import { ChevronRight } from "@/components/ui/icons";
 import { Pressable } from "@/components/ui/pressable";
@@ -29,7 +29,7 @@ import type { PacedPhase, RunPhase, RunView } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
 
 /*
- * The run's one status line (SPEC §7.1, §7.5): glyph, label, facts, favicon
+ * The run's one status line (SPEC §7.1, §7.5): galaxy, label, facts, favicon
  * stack and clock while working; the summary and a chevron at rest. A press
  * toggles the inline timeline. It reads its paced phase from the phase store
  * under `renderKey`, so only the line re-renders when the phase changes.
@@ -52,7 +52,7 @@ export interface RunLineProps {
   onToggle(): void;
   /** id of the inline timeline; `aria-controls` is set only while it is mounted. */
   controlsId?: string;
-  /** Loop-arbiter id for the glyph and the shimmer. */
+  /** Loop-arbiter id for the galaxy: it turns only while this id owns the page's loop. */
   loopId: string;
   /**
    * How a finished run ended, for the first paint before its phase is
@@ -115,14 +115,13 @@ export function RunLine({ renderKey, view, streaming, expanded, onToggle, contro
         failed && "text-warning-foreground",
       )}
     >
-      <RunGlyph
+      <RunGalaxy
         phase={phase}
-        calm={paced.calm}
         loopId={loopId}
         className={cn("transition-opacity duration-base ease-out-soft", reveal === "none" && "opacity-0")}
       />
       <span className={cn("flex min-w-0 flex-1 items-baseline gap-2", reveal !== "label" && "invisible")}>
-        <RunLabel line={line} motionKey={motionKey} live={live} calm={paced.calm} loopId={loopId} className={cn(failed && "text-warning-foreground")} />
+        <RunLabel line={line} motionKey={motionKey} live={live} className={cn(failed && "text-warning-foreground")} />
         {caption ? (
           <span
             className={cn(

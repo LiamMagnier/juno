@@ -3,23 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Mic } from "@/components/ui/icons";
 
-import { Button } from "@/components/ui/button";
-import {
-  ComposerPrimaryAction,
-  ComposerShell,
-  composerChipClass,
-  composerFieldClass,
-  composerIconButtonClass,
-  useComposerAutosize,
-} from "@/components/ui/composer-shell";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { LibraryPicker } from "@/components/chat/library-picker";
-import { DictationSwap } from "@/components/ui/dictation-swap";
-import { ModelSelector } from "@/components/chat/model-selector";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+import "@/components/code/v2/code-v2.css";
 import {
   CodeEnvironmentChip,
   CodeTargetPicker,
@@ -27,47 +12,46 @@ import {
   type Target,
   type Workspace,
 } from "@/components/code/code-target-picker";
-import {
-  ComposerAddMenu,
-  ComposerAttachmentTray,
-  ComposerDropOverlay,
-  ComposerFileInputs,
-} from "@/components/code/code-composer-parts";
-import { useCodeVoice, useCodeVoiceCall, type CodeVoiceSend } from "@/components/code/code-voice";
-import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
-import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
+import { Composer, type ComposerHandle, type PopoverName } from "@/components/code/v2/composer";
+import { rememberComposerOrigin } from "@/components/code/v2/composer-travel";
+import type { DraftChannel, WorkspaceModel } from "@/components/code/v2/types";
+import { useEnvLink } from "@/components/code/v2/use-env-link";
+import { useDevicePresence } from "@/components/code/code-session-meta";
 import { useApp } from "@/components/app/app-provider";
-import { useUploads } from "@/hooks/use-uploads";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { openSettings } from "@/components/settings/settings-sections";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import {
   CLOUD_RUNTIME_APPROVALS,
-  COMPOSER_MODES,
   applyComposerMode,
-  availableComposerModes,
   cloudPermissionMode,
   composerModeInfo,
+  composerModeOf,
   landingMode,
   projectModeKey,
   seededThreadPrefs,
   threadPrefsKey,
   type ComposerMode,
 } from "@/lib/code-v2/composer-mode";
-import { Icon } from "@/components/ui/juno-icons";
-import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
-import { isAutoModelId } from "@/lib/auto-model";
-import { clampReasoningEffort, defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
+import { codeProviderModels } from "@/lib/code-v2/code-models";
+import { createByokClient, type ByokKeyRecord } from "@/lib/code-v2/byok-client";
+import { buildInstances, reconcileSelection } from "@/lib/code-v2/workspace-instances";
+import { MAC_ATTACHMENT_MAX_BYTES, attachmentsOnlyTitle } from "@/lib/code-v2/composer-attachments";
+import { codeDraftKey } from "@/lib/code-v2/thread-prefs";
+import type { ModelSelection, ProviderInstance, ProviderModel, RoleRouting } from "@/lib/code-v2/contracts";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
-import { LandingSkillsChip, seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
+import { seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
+import { useCodePrefs } from "@/components/code/v2/use-code-prefs";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
-import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const TARGET_KEY = "juno:code:new:target";
-const MODEL_KEY = "juno:code:model";
-const EFFORT_KEY = "juno:code:reasoning";
+/** The landing's model choice, in the v2 shape (instance, model, effort, tier). */
+const SELECTION_KEY = "alevr.code.landing.selection";
+/** What the landing stored before it shared the session's composer: an Alevr model id and an effort. */
+const LEGACY_MODEL_KEY = "juno:code:model";
+const LEGACY_EFFORT_KEY = "juno:code:reasoning";
 
 /**
  * What `GET /api/code/cloud-runner` says. `null` while unasked or in flight;
@@ -91,73 +75,18 @@ function writeStoredJson(key: string, value: unknown) {
   }
 }
 
-/**
- * THE MODE: how much this run may do without asking, the same five rungs as
- * every Code composer (Ask, Accept edits, Auto, Plan, Full access), each with
- * its one line. A real choice on both targets: a cloud run carries it as
- * `CodeTask.permissionMode` (Plan, Accept edits, Full access, which is all its
- * sandbox can enforce), and a run on a Mac starts its thread on it (the v2
- * route's per-thread prefs). The project remembers the last one chosen.
- */
-function ModeChip({
-  target,
-  mode,
-  onChange,
-  disabled,
-}: {
-  target: Target;
-  mode: ComposerMode;
-  onChange: (mode: ComposerMode) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const info = composerModeInfo(mode);
-  const modes = target === "cloud" ? availableComposerModes(CLOUD_RUNTIME_APPROVALS, true) : COMPOSER_MODES;
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={`Mode: ${info.label}. What this run may do without asking`}
-          data-mode={mode}
-          className={cn(composerChipClass, "max-w-full")}
-        >
-          <Icon name={info.glyph} size={14} />
-          <span className="min-w-0 truncate">{info.label}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" side="top" sideOffset={8} collisionPadding={12} className="w-80 p-1.5">
-        <div role="menu" aria-label="Mode">
-          {modes.map((m) => (
-            <button
-              key={m.mode}
-              type="button"
-              role="menuitemradio"
-              aria-checked={m.mode === mode}
-              onClick={() => {
-                onChange(m.mode);
-                setOpen(false);
-              }}
-              className="flex w-full items-start gap-2.5 rounded-xs px-2.5 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-            >
-              <Icon name={m.glyph} size={16} className="mt-0.5 shrink-0" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-ui text-foreground">{m.label}</span>
-                <span className="block text-caption leading-snug text-muted-foreground">{m.description}</span>
-              </span>
-              <Icon name="check" size={14} className={cn("mt-1 shrink-0", m.mode === mode ? "opacity-100" : "opacity-0")} />
-            </button>
-          ))}
-          {target === "cloud" && (
-            <p className="px-2.5 pb-1.5 pt-1 text-caption text-muted-foreground">
-              A cloud run works in a sandbox, so it offers Plan, Accept edits and Full access.
-            </p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
+/** The landing's stored selection, or the older Alevr model id and effort it replaced. */
+function storedSelection(): ModelSelection | null {
+  const stored = readStoredJson<ModelSelection>(SELECTION_KEY);
+  if (stored?.instanceId && stored.model) return stored;
+  try {
+    const model = localStorage.getItem(LEGACY_MODEL_KEY);
+    const effort = localStorage.getItem(LEGACY_EFFORT_KEY);
+    if (model) return { instanceId: "alevr", model, ...(effort ? { effort: effort as ModelSelection["effort"] } : {}) };
+  } catch {
+    /* storage blocked: the default model */
+  }
+  return null;
 }
 
 /**
@@ -181,41 +110,39 @@ const PREFILL_NOTES: Record<CodePrefillNote, string> = {
     "That link named an environment. Nothing here chooses one yet, so this run gets the default.",
 };
 
+const PICK_PROJECT_LABEL = "Pick a project to start";
+const PICK_REPOSITORY_LABEL = "Pick a repository to start";
+const STARTING_LABEL = "Starting…";
+const START_FAILED_MESSAGE = "Couldn’t start the session. Check your connection and try again.";
+
+/** What the composer hands its draft channel: how to read, replace and give back its words and files. */
+type DraftIo = Parameters<DraftChannel["attach"]>[0];
+
+const NOOP = () => undefined;
+
 /*
  * THE CODE COMPOSER — the whole of what `/code` is, under the greeting.
  *
- * It used to be page-local JSX inside `/code/new`: the field, the target
- * picker, the model chip, the effort control and both submit paths written
- * straight into a route, so nothing else in the product could mount them. That
- * mattered the moment Code stopped having a list page to land on
- * (docs/design/TWO_PRODUCTS.md §3) — the landing needs this box, and a route
- * cannot be rendered inside another route.
+ * ONE COMPOSER FROM LANDING TO SESSION (G58). This used to be its own box
+ * (the chat composer's shell and model menu) and the session drew another (the
+ * v2 composer), so the composer changed shape after the first send, and your
+ * Claude or ChatGPT subscription, your keys and Team only appeared once a
+ * session existed. The landing now mounts the session's `Composer` in its
+ * `landing` variant: the same field, `+` (files, photos, a screenshot, the
+ * library), the same model picker with every provider (pickers.tsx), Team,
+ * the mode, skills, dictation and voice. What only a landing has sits around
+ * it: the tray above (where it runs, which project) and one line under.
  *
- * THE SHAPE, and where each part of it comes from:
+ * THE FIRST TURN HONOURS ALL OF IT (G02). The model (instance, model, effort,
+ * context tier), the mode and the team are written as the new thread's
+ * prefs, the attachments ride the hand-off with the words, and a prompt that
+ * is only attachments is a prompt. A run on a Mac goes straight to
+ * /code/{id} (it used to hop through /chat/{id}); a cloud run carries its
+ * model, effort and mode on the task itself.
  *
- *   above     the two facts a run needs before it can start — which machine,
- *             which checkout — as chips on their own row, plus the staged
- *             attachments under them
- *   field     "Describe a task or ask a question"
- *   leading   `+` · dictate · voice · the permission chip
- *   trailing  the model chip, with thinking effort inside its popover
- *   action    send ⇄ busy — the one circle, and the run's status while it
- *             starts
- *
- * Effort is inside the model popover rather than beside it because FLAT_UI.md
- * §4 says so and because every other composer in the product already puts it
- * there; a row that shows every option at once reads as a settings panel and
- * the field above it stops being the point.
- *
- * WHAT IS NOT HERE. The seed-prompt chips are gone with the list page that
- * offered them — on a composer pinned to the bottom of the column there is no
- * room under the field for a second set of things to press, and the greeting
- * above it is the invitation. The footer caption that spelled out where a run
- * happens is gone too: the chips say it, and the permission chip says what it
- * means. ONE line survives under the field, and only when there is something
- * true to say: a cloud runner this server does not have, or — since a link can
- * open this composer with the task already written — a part of that link that
- * did not apply. Never both at once, and never a third.
+ * ONE line survives under the box, and only when there is something true to
+ * say: a cloud runner this server does not have, or a part of a link that did
+ * not apply; otherwise the chosen mode, in one sentence.
  */
 export function CodeComposer({
   className,
@@ -231,7 +158,30 @@ export function CodeComposer({
   prefill?: CodePrefill;
 }) {
   const router = useRouter();
-  const { settings, upsertConversation, removeConversation, features } = useApp();
+  const { upsertConversation, removeConversation, features } = useApp();
+  const composer = React.useRef<ComposerHandle>(null);
+  const stack = React.useRef<HTMLDivElement>(null);
+
+  /*
+   * The landing's draft is kept in this tab only (nothing to sync before a
+   * thread exists). The composer clears it as the send leaves, so a start that
+   * fails gives the words and files back through `restore` instead of losing them.
+   */
+  const draftIo = React.useRef<DraftIo | null>(null);
+  const landingDraft = React.useMemo<DraftChannel>(
+    () => ({
+      key: codeDraftKey(null),
+      attach: (io) => {
+        draftIo.current = io;
+        return () => {
+          if (draftIo.current === io) draftIo.current = null;
+        };
+      },
+      changed: NOOP,
+      cleared: NOOP,
+    }),
+    [],
+  );
 
   // —— Target (Device ⇄ Cloud) ——
   // A link naming a repository lands on Cloud whatever the saved preference is:
@@ -325,15 +275,8 @@ export function CodeComposer({
    * makes, rather than waiting for the hundred-repository list inside the
    * picker and hoping the named one is on it.
    *
-   * A failure is a sentence, not a silence. The reader did not write this link:
-   * if the repository cannot be opened they need to know that is why the chip
-   * still says "Pick a repository", and each refusal below names the thing they
-   * could do about it.
-   *
-   * It runs once. `appliedPrefill` is a ref rather than a dependency list
-   * because re-running would overwrite a repository the reader has since
-   * changed with the one the link named — the link is an opening position, not
-   * a setting.
+   * A failure is a sentence, not a silence, and it runs once: the link is an
+   * opening position, not a setting.
    */
   const [prefillProblem, setPrefillProblem] = React.useState<string | null>(null);
   const appliedPrefill = React.useRef(false);
@@ -367,11 +310,7 @@ export function CodeComposer({
         // Applied either way — a base ref is legitimately a tag or a commit,
         // which no branch list contains — but a ref that is not a branch is
         // said out loud, because the alternative is a run that fails at `git
-        // clone` for a typo nobody was shown. The list this is checked against
-        // is every branch the repository has: it was three pages with a
-        // `truncated` flag, and reading "isn’t a branch" about a branch that
-        // sat past the three hundredth is the failure that flag described
-        // rather than prevented.
+        // clone` for a typo nobody was shown.
         setBaseRef(ref);
         if (!data.branches?.includes(ref)) {
           setPrefillProblem(
@@ -387,96 +326,100 @@ export function CodeComposer({
     };
   }, [prefill]);
 
-  // —— Model ——
-  const [model, setModel] = React.useState<string>(() => {
-    try {
-      const saved = localStorage.getItem(MODEL_KEY);
-      if (saved) return saved;
-    } catch {}
-    return resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL;
-  });
-
-  const changeModel = React.useCallback((next: string) => {
-    setModel(next);
-    try {
-      localStorage.setItem(MODEL_KEY, next);
-    } catch {}
-  }, []);
-
-  const modelInfo = React.useMemo(() => resolveModel(model), [model]);
-
-  // —— Thinking effort (inside the model chip) ——
-  const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(() => {
-    try {
-      const saved = localStorage.getItem(EFFORT_KEY);
-      if (saved) return saved as ReasoningEffort;
-    } catch {}
-    return modelInfo ? defaultReasoning(modelInfo) : null;
-  });
-
-  const changeReasoning = React.useCallback((next: ReasoningEffort) => {
-    setReasoningEffort(next);
-    try {
-      if (next) localStorage.setItem(EFFORT_KEY, next);
-      else localStorage.removeItem(EFFORT_KEY);
-    } catch {}
-  }, []);
-
-  // —— Prompt & Uploads ——
-  // Filled from the first render rather than in an effect, so a prefilled link
-  // paints with its text in the field instead of painting empty and then
-  // filling — and so the autosize below measures the real content once.
-  const [prompt, setPrompt] = React.useState(prefill?.prompt ?? "");
-  const [dragging, setDragging] = React.useState(false);
-  const [plusOpen, setPlusOpen] = React.useState(false);
-  const [libraryOpen, setLibraryOpen] = React.useState(false);
-  const [dictating, setDictating] = React.useState(false);
-  const canAttach = features.storage;
-
-  const { supported: speechSupported } = useSpeechRecognition();
-  const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
-
-  // —— Submission & Status ——
-  const [submitting, setSubmitting] = React.useState(false);
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const imageInputRef = React.useRef<HTMLInputElement>(null);
-
-  // The shared composer growth: one line at rest, eight before it scrolls.
-  const autoresize = useComposerAutosize(textareaRef, prompt);
-
+  // —— Providers: Alevr's coding models, your keys, and the Mac's subscriptions ——
+  // The same rail the session offers (G58: Team, subscriptions and keys used to
+  // appear only once a session existed). A Mac run asks the chosen project's
+  // Mac for its runtimes; a cloud run offers Alevr's models, as its runner does.
+  const { presence } = useDevicePresence(
+    selectedWorkspace?.key ?? null,
+    selectedWorkspace?.name ?? null,
+    target === "device" && !!selectedWorkspace,
+  );
+  const mac = target === "device" && presence.device && presence.state === "online" ? { id: presence.device.id, online: true } : null;
+  const env = useEnvLink(mac, null);
+  const byok = React.useMemo(() => createByokClient(), []);
+  const [keys, setKeys] = React.useState<ByokKeyRecord[]>([]);
   React.useEffect(() => {
-    requestAnimationFrame(() => textareaRef.current?.focus());
+    byok.list().then(setKeys).catch(() => undefined);
+  }, [byok]);
+  const hasOpenRouter = keys.some((k) => k.provider === "openrouter" && !k.invalid);
+  const [openRouterModels, setOpenRouterModels] = React.useState<ProviderModel[]>([]);
+  React.useEffect(() => {
+    if (!hasOpenRouter) return;
+    byok.models("openrouter").then(setOpenRouterModels).catch(() => undefined);
+  }, [byok, hasOpenRouter]);
+  const alevrModels = React.useMemo(() => codeProviderModels(), []);
+  const instances = React.useMemo<ProviderInstance[]>(() => {
+    if (target === "cloud") {
+      // A cloud sandbox enforces Plan, Accept edits and Full access, and runs Alevr's models.
+      return buildInstances({ alevrModels }).map((i) => ({ ...i, capabilities: i.capabilities ? { ...i.capabilities, approvals: [...CLOUD_RUNTIME_APPROVALS] } : i.capabilities }));
+    }
+    return buildInstances({ alevrModels, deviceInstances: env.instances, byokKeys: keys, openRouterModels });
+  }, [target, alevrModels, env.instances, keys, openRouterModels]);
+
+  // —— The model: instance, model, effort and context tier, one selection ——
+  const [chosen, setChosen] = React.useState<ModelSelection | null>(null);
+  React.useEffect(() => setChosen((c) => c ?? storedSelection()), []);
+  const awaitingMac = !!mac && !env.probed;
+  const selection = reconcileSelection(instances, chosen, { awaitingDevice: awaitingMac });
+  const choose = React.useCallback((next: ModelSelection) => {
+    setChosen(next);
+    writeStoredJson(SELECTION_KEY, next);
   }, []);
 
-  const hasTarget = target === "device" ? !!selectedWorkspace : !!selectedRepo;
-  const hasPayload = prompt.trim().length > 0 || readyAttachments.length > 0;
-  const canSubmit = hasTarget && hasPayload && !submitting && !isUploading && !cloudBlocked;
-
-  const codeVoice = useCodeVoice({ disabled: submitting || dictating });
+  // —— Team (a Mac run; the session keeps it on the server) ——
+  const [routing, setRouting] = React.useState<RoleRouting>(() => ({ preset: "solo", orchestrator: selection }));
+  const effectiveRouting = React.useMemo<RoleRouting>(() => ({ ...routing, orchestrator: selection }), [routing, selection]);
 
   // —— Mode (per project, remembered) ——
   const modeProjectKey = projectModeKey(
     target === "device" ? (selectedWorkspace?.key ?? selectedWorkspace?.path ?? null) : (selectedRepo?.fullName ?? null),
   );
   const [mode, setMode] = React.useState<ComposerMode>(() => landingMode(target, null));
+  /** What a send reads: set at once by `/plan`, a render before the state lands. */
+  const modeRef = React.useRef(mode);
+  modeRef.current = mode;
+  // The account's default (Settings › Code) under the project's last; a pick made here wins until the target changes.
+  const { runtimeMode: accountRuntime, interactionMode: accountInteraction } = useCodePrefs().prefs;
+  const modeChosen = React.useRef(false);
   React.useEffect(() => {
-    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null));
+    modeChosen.current = false;
   }, [target, modeProjectKey]);
+  React.useEffect(() => {
+    if (modeChosen.current) return;
+    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null, accountRuntime ? { runtimeMode: accountRuntime, interactionMode: accountInteraction } : null));
+  }, [target, modeProjectKey, accountRuntime, accountInteraction]);
   const chooseMode = React.useCallback(
     (next: ComposerMode) => {
+      modeRef.current = next;
+      modeChosen.current = true;
       setMode(next);
       if (modeProjectKey) writeStoredJson(modeProjectKey, applyComposerMode(next, "auto-edit"));
     },
     [modeProjectKey],
   );
-  /** A new thread starts on the landing's mode (the v2 route reads these prefs). */
+  const pair = applyComposerMode(mode, "auto-edit");
+
+  /** A new thread starts on the landing's mode AND model (the v2 route reads these prefs). */
   const seedThreadMode = React.useCallback(
     (conversationId: string) => {
       const key = threadPrefsKey(conversationId);
-      writeStoredJson(key, seededThreadPrefs(readStoredJson(key), mode));
+      writeStoredJson(key, seededThreadPrefs(readStoredJson(key), modeRef.current, { selection }));
     },
-    [mode],
+    [selection],
+  );
+
+  // —— Submission ——
+  const [submitting, setSubmitting] = React.useState(false);
+  const hasTarget = target === "device" ? !!selectedWorkspace : !!selectedRepo;
+
+  /** Leaves for the new session, after noting where the box stood (it travels to the dock). */
+  const openSession = React.useCallback(
+    (conversationId: string) => {
+      rememberComposerOrigin(stack.current?.querySelector(".cv2-composer"));
+      router.push(`/code/${conversationId}`);
+    },
+    [router],
   );
 
   const startDevice = React.useCallback(
@@ -489,23 +432,31 @@ export function CodeComposer({
           codeWorkspaceName: w.name,
           codeWorkspacePath: w.path,
           codeWorkspaceKey: w.key ?? undefined,
-          model,
+          ...(selection.instanceId === "alevr" ? { model: selection.model } : {}),
         }),
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
       seedThreadMode(conversation.id);
+      if (routing.preset !== "solo") {
+        await fetch(`/api/code/routing/${conversation.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ routing: effectiveRouting }),
+        }).catch(() => undefined);
+      }
       setPendingCodePrompt(conversation.id, seedThreadSkills(landingSkills, conversation.id, text), attachments);
-      upsertConversation({ ...conversation, model });
-      router.push(`/chat/${conversation.id}`);
+      upsertConversation({ ...conversation, ...(selection.instanceId === "alevr" ? { model: selection.model } : {}) });
+      openSession(conversation.id);
       return true;
     },
-    [model, router, seedThreadMode, upsertConversation, landingSkills],
+    [effectiveRouting, landingSkills, openSession, routing.preset, seedThreadMode, selection, upsertConversation],
   );
 
   const startCloud = React.useCallback(
     async (repo: CloudRepo, text: string, ref: string | null, attachments: ClientAttachment[]): Promise<boolean> => {
       let conversation: ClientConversation | null = null;
+      const model = selection.model;
       if (!cloudConversationId.current) {
         const cRes = await fetch("/api/conversations", {
           method: "POST",
@@ -526,10 +477,10 @@ export function CodeComposer({
       // The thread keeps the landing's selection (its composer shows it); a
       // `/name` armed here is this first run's only.
       seedThreadSkills(landingSkills, conversationId, text);
+      seedThreadMode(conversationId);
       const cloudSkills = landingSkills.takeCloud();
-      const titleFallback =
-        text.slice(0, 60) ||
-        (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
+      const titleFallback = text.slice(0, 60) || attachmentsOnlyTitle(attachments.length);
+      const mode = modeRef.current;
 
       const tRes = await fetch("/api/code/tasks", {
         method: "POST",
@@ -542,9 +493,9 @@ export function CodeComposer({
           title: titleFallback,
           attachmentIds: attachmentIds.length ? attachmentIds : undefined,
           conversationId,
-          // This composer's model picker and thinking control, reaching the run.
+          // This composer's model and effort, reaching the run.
           model,
-          reasoningEffort: reasoningEffort ?? undefined,
+          reasoningEffort: selection.effort && selection.effort !== "none" ? selection.effort : undefined,
           // And its mode, as far as a cloud sandbox can enforce one.
           permissionMode: cloudPermissionMode(mode) ?? undefined,
           // And its skills: account ones by id, the repository's by name.
@@ -554,15 +505,9 @@ export function CodeComposer({
 
       if (tRes.ok) {
         if (conversation) {
-          upsertConversation({
-            ...conversation,
-            title: titleFallback.slice(0, 48),
-            titleSource: "manual",
-            model,
-          });
+          upsertConversation({ ...conversation, title: titleFallback.slice(0, 48), titleSource: "manual", model });
         }
-        clear();
-        router.push(`/chat/${conversationId}`);
+        openSession(conversationId);
         return true;
       }
 
@@ -570,12 +515,8 @@ export function CodeComposer({
       const err = payload.error;
       if (tRes.status === 503 && err === "cloud_runner_not_configured") {
         // The server says why, in a sentence written to be shown. Nothing was
-        // created server-side, so the conversation this composer made is an
-        // orphan.
-        setCloudReadiness({
-          ready: false,
-          message: payload.message ?? "Cloud runs aren’t enabled on this server yet.",
-        });
+        // created server-side, so the conversation this composer made is an orphan.
+        setCloudReadiness({ ready: false, message: payload.message ?? "Cloud runs aren’t enabled on this server yet." });
         discardOrphanCloudSession();
       } else if (tRes.status === 502 && err === "cloud_dispatch_failed") {
         /*
@@ -587,8 +528,8 @@ export function CodeComposer({
         toast.error(payload.message ?? "Couldn’t start the cloud run — this is usually temporary.");
         if (conversation) upsertConversation({ ...conversation, title: titleFallback.slice(0, 48), titleSource: "manual", model });
         cloudConversationId.current = null;
-        clear();
-        router.push(`/chat/${conversationId}`);
+        openSession(conversationId);
+        return true;
       } else if (tRes.status === 400 && err === "github_not_connected") {
         toast.error("Connect GitHub in Connections before starting a cloud run.");
         discardOrphanCloudSession();
@@ -596,11 +537,7 @@ export function CodeComposer({
         toast.error("One of the attached files is no longer available. Remove it and try again.");
         discardOrphanCloudSession();
       } else {
-        /*
-         * Anything else: say what the SERVER said, when it said something.
-         * The quota refusals arrive as prose in `error` — anything with a
-         * space in it is a sentence meant to be read, not a code.
-         */
+        // Anything else: say what the SERVER said, when it said something.
         const sentence =
           payload.message?.trim() ||
           (err && /\s/.test(err) ? err : "") ||
@@ -610,133 +547,32 @@ export function CodeComposer({
       }
       return false;
     },
-    [clear, discardOrphanCloudSession, landingSkills, mode, model, reasoningEffort, router, upsertConversation],
+    [discardOrphanCloudSession, landingSkills, openSession, seedThreadMode, selection, upsertConversation],
   );
 
+  /** The composer's send: words, attachments or both start the session. */
   const submit = React.useCallback(
-    async (overrideText?: string): Promise<boolean> => {
-      const text = (overrideText ?? prompt).trim();
-      const attachments = readyAttachments;
-      if ((!text && attachments.length === 0) || submitting || isUploading) return false;
+    async (rawText: string, attachments: ClientAttachment[] = []): Promise<boolean> => {
+      const text = rawText.trim();
+      if ((!text && attachments.length === 0) || submitting) return false;
       if (target === "device" ? !selectedWorkspace : !selectedRepo) return false;
       if (cloudBlocked) return false;
-
       setSubmitting(true);
+      let started = false;
       try {
-        if (target === "device" && selectedWorkspace) {
-          return await startDevice(selectedWorkspace, text, attachments);
-        }
-        if (target === "cloud" && selectedRepo) {
-          return await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
-        }
-        return false;
+        if (target === "device" && selectedWorkspace) started = await startDevice(selectedWorkspace, text, attachments);
+        else if (target === "cloud" && selectedRepo) started = await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
       } catch {
-        toast.error("Couldn’t start the session. Check your connection and try again.");
-        return false;
+        toast.error(START_FAILED_MESSAGE);
       } finally {
         setSubmitting(false);
       }
+      // Not started: the words and files go back where they were typed (the failure was already said).
+      if (!started) draftIo.current?.restore?.(rawText, attachments);
+      return started;
     },
-    [
-      prompt,
-      readyAttachments,
-      submitting,
-      isUploading,
-      target,
-      selectedWorkspace,
-      selectedRepo,
-      cloudBlocked,
-      baseRef,
-      startDevice,
-      startCloud,
-    ],
+    [submitting, target, selectedWorkspace, selectedRepo, cloudBlocked, baseRef, startDevice, startCloud],
   );
-
-  const closeDictation = React.useCallback(
-    (transcript: string, sendNow: boolean) => {
-      setDictating(false);
-      const merged = [prompt.trim(), transcript.trim()].filter(Boolean).join(" ");
-      if (!sendNow) {
-        setPrompt(merged);
-        requestAnimationFrame(() => {
-          autoresize();
-          textareaRef.current?.focus();
-        });
-        return;
-      }
-      if (!merged && readyAttachments.length === 0) {
-        setPrompt("");
-        requestAnimationFrame(() => textareaRef.current?.focus());
-        return;
-      }
-      if (!(target === "device" ? selectedWorkspace : selectedRepo) || cloudBlocked) {
-        setPrompt(merged);
-        requestAnimationFrame(() => {
-          autoresize();
-          textareaRef.current?.focus();
-        });
-        return;
-      }
-      void submit(merged);
-    },
-    [autoresize, cloudBlocked, prompt, readyAttachments.length, selectedRepo, selectedWorkspace, submit, target],
-  );
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      if (canSubmit) void submit();
-    }
-  };
-
-  const gateHint = !hasTarget
-    ? target === "device"
-      ? "Pick a project to start"
-      : "Pick a repository to start"
-    : null;
-
-  /*
-   * One line for everything the link asked for and did not get — the parser's
-   * refusals first, then whatever GitHub said about the repository it named.
-   * Joined into a single sentence stack rather than a list: two is already the
-   * unusual case, and a bulleted apology under a composer would be the prose
-   * that was taken out of this surface on purpose.
-   */
-  const prefillMessage = React.useMemo(() => {
-    const parts = (prefill?.notes ?? []).map((note) => PREFILL_NOTES[note]);
-    if (prefillProblem) parts.push(prefillProblem);
-    return parts.join(" ") || null;
-  }, [prefill, prefillProblem]);
-
-  const voiceBriefing = React.useMemo<CodeVoiceBriefingInput>(
-    () => ({
-      stage: "new",
-      target,
-      place: target === "device" ? (selectedWorkspace?.name ?? null) : (selectedRepo?.fullName ?? null),
-      baseRef: target === "cloud" ? ((baseRef.trim() || selectedRepo?.defaultBranch) ?? null) : null,
-      turns: [],
-      blocked: cloudBlocked?.message ?? gateHint,
-    }),
-    [baseRef, cloudBlocked, gateHint, selectedRepo, selectedWorkspace, target],
-  );
-
-  const voiceSend = React.useMemo<CodeVoiceSend>(
-    () => ({
-      intent: "start",
-      blockedReason: cloudBlocked
-        ? cloudBlocked.message
-        : gateHint
-          ? `${gateHint} — then these words can start it.`
-          : null,
-      sending: submitting,
-      endsCall: true,
-      onSend: (text: string) => submit([prompt.trim(), text.trim()].filter(Boolean).join(" ")),
-    }),
-    [cloudBlocked, gateHint, prompt, submit, submitting],
-  );
-
-  /** The call, inside this composer as Chat draws its own; the first sentence starts the session. */
-  const call = useCodeVoiceCall({ open: codeVoice.open, onClose: codeVoice.close, briefing: voiceBriefing, send: voiceSend });
 
   // A starting point under the landing seeds the field (code-starting-points):
   // the text lands with the caret at its end, and nothing is sent.
@@ -744,264 +580,149 @@ export function CodeComposer({
     const onSeed = (event: Event) => {
       const text = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null;
       if (!text || submitting) return;
-      setPrompt(text);
-      requestAnimationFrame(() => {
-        const field = textareaRef.current;
-        if (!field) return;
-        field.focus();
-        field.setSelectionRange(field.value.length, field.value.length);
-      });
+      composer.current?.setDraft(text);
     };
     window.addEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
     return () => window.removeEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
   }, [submitting]);
 
-  const effortOptions = React.useMemo(() => (modelInfo ? reasoningOptions(modelInfo) : []), [modelInfo]);
-  const isAuto = isAutoModelId(model);
-  // Effort lives inside the model chip's popover, as every composer mounts it.
-  const thinkingControl =
-    isAuto || !modelInfo || effortOptions.length < 2 ? null : (
-      // The panel, as Chat's composer mounts it: the rung named large with
-      // the model name under it, which opens the full catalogue.
-      <ReasoningSlider
-        variant="panel"
-        defaultValue={defaultReasoning(modelInfo)}
-        options={effortOptions}
-        value={clampReasoningEffort(modelInfo, reasoningEffort)}
-        onChange={changeReasoning}
-        disabled={submitting}
-      />
-    );
-  /** The effort in words, only when it is not the model's usual one (as Chat's chip). */
-  const effortLabel =
-    thinkingControl && modelInfo && reasoningEffort !== defaultReasoning(modelInfo)
-      ? effortOptions.find((option) => option.value === clampReasoningEffort(modelInfo, reasoningEffort))?.label
-      : undefined;
+  React.useEffect(() => {
+    requestAnimationFrame(() => composer.current?.focus());
+  }, []);
+
+  const [popover, setPopover] = React.useState<PopoverName>(null);
+  const gateHint = !hasTarget ? (target === "device" ? PICK_PROJECT_LABEL : PICK_REPOSITORY_LABEL) : null;
+
+  /*
+   * One line for everything the link asked for and did not get — the parser's
+   * refusals first, then whatever GitHub said about the repository it named.
+   */
+  const prefillMessage = React.useMemo(() => {
+    const parts = (prefill?.notes ?? []).map((note) => PREFILL_NOTES[note]);
+    if (prefillProblem) parts.push(prefillProblem);
+    return parts.join(" ") || null;
+  }, [prefill, prefillProblem]);
+
+  const landingModel: WorkspaceModel = {
+    thread: {
+      id: "new",
+      title: "New session",
+      repo: target === "device" ? (selectedWorkspace?.name ?? "") : (selectedRepo?.fullName ?? ""),
+      branch: target === "cloud" && selectedRepo ? baseRef.trim() || selectedRepo.defaultBranch : undefined,
+      cwd: target === "device" ? selectedWorkspace?.path : undefined,
+    },
+    items: [],
+    state: "idle",
+    queue: [],
+    instances,
+    selection,
+    routing: effectiveRouting,
+    runtimeMode: pair.runtimeMode,
+    interactionMode: pair.interactionMode,
+    // The voice briefing says where this runs.
+    device: target === "device" ? { id: presence.device?.id ?? "", name: presence.device?.name ?? "your Mac", online: presence.state === "online" } : null,
+    byokKeys: keys,
+    skills: landingSkills,
+    starting: submitting ? STARTING_LABEL : null,
+    draft: landingDraft,
+    canAttach: features.storage,
+    uploadConversationId: null,
+    // A Mac running the env server gets its files over the device link (4 MB each).
+    ...(target === "device" && env.ready ? { attachmentMaxBytes: MAC_ATTACHMENT_MAX_BYTES } : {}),
+    selectionPending: awaitingMac && !instances.some((i) => i.id === selection.instanceId),
+    actions: {
+      send: (text, attachments) => submit(text, attachments ?? []),
+      queue: NOOP,
+      steer: NOOP,
+      stop: NOOP,
+      respond: NOOP,
+      setSelection: choose,
+      setRouting,
+      setRuntimeMode: (runtimeMode) => chooseMode(composerModeOf(runtimeMode, pair.interactionMode)),
+      setInteractionMode: (interactionMode) => chooseMode(composerModeOf(pair.runtimeMode, interactionMode)),
+      setModes: (next) => chooseMode(composerModeOf(next.runtimeMode, next.interactionMode)),
+      editQueued: NOOP,
+      removeQueued: NOOP,
+      moveQueued: NOOP,
+      steerQueued: NOOP,
+      openConnections: () => openSettings("connections"),
+    },
+  };
+
+  /*
+   * NOTHING UNDER THE FIELD UNLESS IT IS TRUE AND NO CHIP SAYS IT: this server
+   * has no cloud runner (said quietly, with the way to your Mac), or the link
+   * that opened this composer asked for something that did not happen, or else
+   * the chosen mode in one sentence. Never two at once.
+   */
+  const under = cloudBlocked ? (
+    <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
+      <CodeIcons.cloud className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        {cloudBlocked.message}{" "}
+        <button
+          type="button"
+          onClick={() => switchTarget("device")}
+          className="rounded-xs font-medium text-foreground underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-primary motion-reduce:transition-none"
+        >
+          Run on your Mac instead
+        </button>
+        .
+      </span>
+    </p>
+  ) : prefillMessage ? (
+    <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
+      <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      <span>{prefillMessage}</span>
+    </p>
+  ) : (
+    <p aria-live="polite" className="mt-2.5 px-5 text-caption text-muted-foreground">
+      <span className="font-medium text-foreground/80">{composerModeInfo(mode).label}</span> {composerModeInfo(mode).description}
+    </p>
+  );
 
   return (
     <div className={cn("relative isolate w-full", className)}>
-
-      <DictationSwap active={dictating} onCancel={() => setDictating(false)} onClose={closeDictation}>
-        <div
-          onDragOver={(e) => {
-            if (!canAttach || submitting || dictating) return;
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            if (canAttach && !submitting && !dictating && e.dataTransfer.files.length) {
-              addFiles(e.dataTransfer.files);
-            }
-          }}
-          className="relative isolate w-full"
-        >
-          {/* The tray (owner, 2026-10-03): the chat home's shelf, turned to sit
-              ON the composer rather than under it, holding where this runs, the
-              project, and what it may do there. The field is shorter for it:
-              the box holds only what is typed and the row that sends it. */}
-          <div className="composer-tray composer-tray--top">
-            <div className="composer-tray__row">
-              <CodeEnvironmentChip target={target} onTargetChange={switchTarget} disabled={submitting} />
-              <CodeTargetPicker
-                target={target}
-                selectedWorkspace={selectedWorkspace}
-                onSelectWorkspace={setSelectedWorkspace}
-                selectedRepo={selectedRepo}
-                onSelectRepo={(r) => {
-                  setSelectedRepo(r);
-                  setBaseRef("");
-                  if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-                }}
-                baseRef={baseRef}
-                onBaseRefChange={setBaseRef}
-                disabled={submitting}
-              />
-              <span className="ml-auto flex min-w-0 gap-1">
-                <LandingSkillsChip skills={landingSkills} disabled={submitting} />
-                <ModeChip target={target} mode={mode} onChange={chooseMode} disabled={submitting} />
-              </span>
-            </div>
-          </div>
-          <VoiceComposerGlow call={call}>
-          <ComposerShell
-            className={cn("max-h-[600px]", call && "voice-glow-host", dragging && "border-primary/55 ring-2 ring-primary/20")}
-            dimmed={submitting}
-            above={canAttach ? <ComposerAttachmentTray uploads={uploads} onRemove={remove} /> : undefined}
-            field={
-              <textarea
-                ref={textareaRef}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={onKeyDown}
-                rows={1}
-                disabled={submitting}
-                // The placeholder is the accessible name, as it is on the chat
-                // composer. It used to carry `aria-label="Describe the task for
-                // this Juno Code session"` as well, which won — leaving a field
-                // whose visible words appeared nowhere in its accessible name,
-                // i.e. the WCAG 2.5.3 label-in-name failure the base-branch
-                // input in code-target-picker.tsx was already fixed for, and a
-                // field no voice user could address by the words inside it.
-                placeholder={call ? "Type while you talk\u2026" : "Describe a task or ask a question\u2026"}
-                className={composerFieldClass}
-              />
-            }
-            leading={
-              <>
-                {canAttach && (
-                  <ComposerAddMenu
-                    open={plusOpen}
-                    onOpenChange={setPlusOpen}
-                    disabled={submitting}
-                    onPickPhotos={() => imageInputRef.current?.click()}
-                    onPickFiles={() => fileInputRef.current?.click()}
-                    onPickLibrary={() => setLibraryOpen(true)}
-                  />
-                )}
-
-                {speechSupported && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setDictating(true)}
-                        disabled={submitting || dictating || codeVoice.open}
-                        aria-label="Dictate"
-                        aria-pressed={dictating}
-                        className={composerIconButtonClass}
-                      >
-                        <Mic className="size-4" aria-hidden="true" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Dictate</TooltipContent>
-                  </Tooltip>
-                )}
-
-                {call?.status}
-              </>
-            }
-            trailing={
-              call ? call.controls : <div className={cn("min-w-0", submitting && "pointer-events-none")}>
-                <ModelSelector
-                  value={model}
-                  onChange={changeModel}
-                  disabled={submitting}
-                  thinking={thinkingControl}
-                  effortLabel={effortLabel}
-                  inComposer
-                />
-              </div>
-            }
-            action={
-              call && !hasPayload ? call.end : !call && !hasPayload && !submitting && codeVoice.onOpenVoiceMode ? (
-                // Nothing to send: the slot is voice, as on Chat's composer.
-                <ComposerPrimaryAction face="voice" onClick={codeVoice.onOpenVoiceMode} aria-label={`Talk this through with ${PRODUCT_NAME}`} />
-              ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ComposerPrimaryAction
-                    face={submitting ? "busy" : "send"}
-                    onClick={() => void submit()}
-                    disabled={!canSubmit}
-                    aria-label={
-                      cloudBlocked
-                        ? cloudBlocked.message
-                        : !hasTarget
-                          ? (gateHint ?? "Select where to run first")
-                          : target === "cloud"
-                            ? "Start a cloud run"
-                            : "Start the session"
-                    }
-                  />
-                </TooltipTrigger>
-                <TooltipContent>{target === "cloud" ? "Start cloud run" : "Start session"}</TooltipContent>
-              </Tooltip>
-              )
-            }
+      {/* The tray (owner, 2026-10-03): where this runs and which project, as
+          chips on a shelf tucked under the composer's top edge. Everything
+          else is on the composer's own row, exactly as in the session. */}
+      <div className="composer-tray composer-tray--top">
+        <div className="composer-tray__row">
+          <CodeEnvironmentChip target={target} onTargetChange={switchTarget} disabled={submitting} />
+          <CodeTargetPicker
+            target={target}
+            selectedWorkspace={selectedWorkspace}
+            onSelectWorkspace={setSelectedWorkspace}
+            selectedRepo={selectedRepo}
+            onSelectRepo={(r) => {
+              setSelectedRepo(r);
+              setBaseRef("");
+              if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+            }}
+            baseRef={baseRef}
+            onBaseRefChange={setBaseRef}
+            disabled={submitting}
           />
-          </VoiceComposerGlow>
-
-          {dragging && <ComposerDropOverlay />}
-
-          <ComposerFileInputs imageInputRef={imageInputRef} fileInputRef={fileInputRef} onFiles={addFiles} />
-          {canAttach && (
-            <LibraryPicker
-              open={libraryOpen}
-              onOpenChange={setLibraryOpen}
-              onAttach={addAttachments}
-              existingCount={uploads.length}
-            />
-          )}
         </div>
-      </DictationSwap>
-
-      {/*
-        NOTHING UNDER THE FIELD UNLESS THE SERVER HAS NEWS.
-
-        Three paragraphs used to live here: a permanent sentence naming where
-        the run happens, a permanent one naming what it may do, and a gate hint
-        reading "Pick a project to start". The first two are the chips above and
-        the permission chip below. The third was the same words a third time —
-        the repository chip's own empty label IS "Pick a project", in muted ink,
-        directly above the field — and on a composer pinned to the bottom of the
-        page it also made the box hop up twenty pixels the moment you picked
-        one, which is a layout shift charged to the reader for reading a
-        sentence they had already read.
-
-        What is left is what no chip can say. One: this server has no cloud
-        runner — said quietly, in muted ink, rather than as an alert, because
-        the reader can still run on their Mac and the sentence names the way
-        there. Two, below it: this composer was opened from a link and part of
-        what the link asked for did not happen.
-      */}
-      {cloudBlocked && (
-        <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
-          <CodeIcons.cloud className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-          <span>
-            {cloudBlocked.message}{" "}
-            <button
-              type="button"
-              onClick={() => switchTarget("device")}
-              className="rounded-xs font-medium text-foreground underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-primary motion-reduce:transition-none"
-            >
-              Run on your Mac instead
-            </button>
-            .
-          </span>
-        </p>
-      )}
-      {/*
-        THE SECOND THING THAT CAN BE TRUE UNDER THE FIELD: this session was
-        opened from a link and part of what the link asked for did not happen.
-        Same quiet treatment as the note above — muted, centred, `role="status"`
-        — because it is news about the state of the composer rather than an
-        error in anything the reader did; `StatusIcons.info` rather than a
-        warning triangle for the same reason.
-
-        Only one of the two is ever drawn, and the cloud-runner note wins: a
-        server that cannot run this at all is the bigger fact, and two stacked
-        captions under a composer pinned to the bottom of the page is the prose
-        stack that was deliberately taken out of this surface.
-      */}
-      {/* The mode, explained in one line: what this run may do without
-          asking, as chosen on the tray's mode chip. Only when the server has
-          no other news for this line. */}
-      {!cloudBlocked && !prefillMessage && (
-        <p aria-live="polite" className="mt-2.5 px-5 text-caption text-muted-foreground">
-          <span className="font-medium text-foreground/80">{composerModeInfo(mode).label}</span> {composerModeInfo(mode).description}
-        </p>
-      )}
-      {!cloudBlocked && prefillMessage && (
-        <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
-          <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-          <span>{prefillMessage}</span>
-        </p>
-      )}
+      </div>
+      <div className="cv2 cv2-landing">
+        <Composer
+          ref={composer}
+          variant="landing"
+          model={landingModel}
+          popover={popover}
+          setPopover={setPopover}
+          approvalIndex={0}
+          setApprovalIndex={NOOP}
+          onOpenDock={NOOP}
+          tall
+          gate={cloudBlocked?.message ?? gateHint}
+          team={target === "device"}
+          initialDraft={prefill?.prompt ?? ""}
+          under={under}
+          stackRef={stack}
+        />
+      </div>
     </div>
   );
 }

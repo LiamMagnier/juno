@@ -1068,6 +1068,10 @@ export interface WorkScheduleInput {
   runKind?: "work" | "code";
   /** Required when `runKind` is `code`, refused otherwise. */
   code?: WorkCodeRoutineInput;
+  /** Create only: the chat proposal this routine comes from, so its card knows. */
+  proposalKey?: string;
+  /** Create only: the connected apps its task may use. Absent means all of them. */
+  connectorIds?: readonly string[];
 }
 
 /** A Code routine's repository and the shape each run executes in. */
@@ -1086,6 +1090,8 @@ function scheduleBody(input: WorkScheduleInput): Record<string, unknown> {
     ...(input.model === undefined ? {} : { model: input.model }),
     ...(input.runKind === undefined ? {} : { runKind: input.runKind }),
     ...(input.code === undefined ? {} : { code: input.code }),
+    ...(input.proposalKey === undefined ? {} : { proposalKey: input.proposalKey }),
+    ...(input.connectorIds === undefined ? {} : { connectorIds: [...input.connectorIds] }),
     name: input.name,
     instructions: input.instructions,
     timezone: input.timezone,
@@ -1648,6 +1654,58 @@ export function controlWorkRun(
   action: WorkControlAction
 ): Promise<WorkResult<ClientWorkRun>> {
   return post(`/api/work/runs/${runId}/control`, { action }, (data) => data.run as ClientWorkRun);
+}
+
+/** What the finished card's Retry, Run again and Continue send. */
+export interface WorkStartAgainInput {
+  /** `retry` after a failure, `manual` for Run again, `resume` for Continue. */
+  origin: "retry" | "manual" | "resume";
+  /** Continue: the attempt it picks up from, and the card's account of it. */
+  continueFromRunId?: string;
+  continuation?: string;
+  /** Sent only after the person said yes to the estimate the route quoted. */
+  confirmExpensive?: boolean;
+  /** One per press, so a retried request lands on the run it already made. */
+  idempotencyKey: string;
+}
+
+/**
+ * A new attempt at a task the card already shows, through the same dispatch
+ * a first start uses (plan, window, caps, the cost preflight).
+ */
+export function startWorkSessionRun(
+  sessionId: string,
+  input: WorkStartAgainInput
+): Promise<WorkResult<ClientWorkRun>> {
+  return post(
+    `/api/work/sessions/${encodeURIComponent(sessionId)}/runs`,
+    {
+      origin: input.origin,
+      idempotencyKey: input.idempotencyKey,
+      ...(input.continueFromRunId && input.continuation
+        ? { continueFromRunId: input.continueFromRunId, continuation: input.continuation }
+        : {}),
+      ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
+    },
+    (data) => data.run as ClientWorkRun
+  );
+}
+
+/** The routine a chat proposal card already scheduled, or null when it has not. */
+export function fetchScheduleForProposal(proposalKey: string): Promise<WorkResult<ClientWorkSchedule | null>> {
+  return get(
+    `/api/work/schedules?limit=1&proposalKey=${encodeURIComponent(proposalKey)}`,
+    (data) => list<ClientWorkSchedule>(data.schedules)[0] ?? null
+  );
+}
+
+/**
+ * Schedules a chat proposal with the body `routineScheduleBody` built from it
+ * (src/lib/work/routine-proposal.ts). A repeat press answers with the routine
+ * the first one made.
+ */
+export function scheduleRoutineProposal(body: Record<string, unknown>): Promise<WorkResult<ClientWorkSchedule>> {
+  return post("/api/work/schedules", body, (data) => data.schedule as ClientWorkSchedule);
 }
 
 export type WorkApprovalDecisionInput = "allowed" | "allowed_always" | "denied";

@@ -8,6 +8,7 @@
 @import "../components/chat/composer.css";
 @import "../components/chat/composer-media-params.css";
 @import "../components/chat/generation.css";
+@import "../components/canvas/live-blueprint.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -58,23 +59,20 @@
 /*
  * Juno design system
  * ------------------
- * Warm-paper light theme / warm-charcoal dark theme.
+ * Graphite neutrals on a near-white page (light) and a near-black one (dark),
+ * with presence ultramarine as the one live colour.
  * Accent is swappable at runtime via [data-accent] on <html> and drives
  * --primary + --ring. next-themes manages the `.dark` class on <html>.
  */
 
 @layer base {
   :root {
-    /* Warm neutrals: red is the highest channel and blue the lowest, on every
-       rung of the ramp. This is the brand, not a preference — a hue-240 grey
-       reads as stock shadcn, which is exactly what these tokens had drifted
-       back into. `JunoDesignSystemTests.testBrandNeutralsAreWarmInBothAppearances`
-       asserts r > b && g >= b over the whole ramp and is the gate that catches
-       the drift the next time, on both clients at once. */
-    /* Flat ground (docs/design/FLAT_UI.md §3.1). One warm plane: the page is
-       97%, a card sits two points above it as a fill with a hairline, and a
-       well sits on the page's own value. No shadow carries depth in-flow, so
-       the ground can sit close to white without starving a highlight. */
+    /* Graphite neutrals (hue 210-225, 3-9% saturation): the refoundation
+       retired the warm paper ramp these comments used to describe, and the
+       values below are what ships. The page sits at 99%, a card is pure white
+       on it, and a well sits on the page's own value. No shadow carries depth
+       in-flow (docs/design/FLAT_UI.md §3.1), so the ground can sit close to
+       white without starving a highlight. */
 
     /* Refoundation round 3: floating layers only, solid fallbacks below. */
     --faint-foreground: 217.500 3.704% 42.353%;
@@ -84,9 +82,8 @@
     --background: 240.000 20.000% 99.020%;
     --foreground: 216.000 9.091% 10.784%;
 
-    /* 98%, not a pure white. A literal #fff card floating on warm paper is the
-       one pairing that reads as somebody else's brand; a 2% step is the raised
-       rung, and the highlight in --shadow-raised is what carries the lift. */
+    /* Pure white, one step above the 99% page: the raised rung, with
+       --shadow-raised carrying the lift. */
     --card: 0.000 0.000% 100.000%;
     --card-foreground: 216.000 9.091% 10.784%;
 
@@ -98,6 +95,24 @@
     --primary: 216 9% 11%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 216 9% 11%;
+
+    /* Presence: the brand's one live colour (ultramarine, #2d49c9 / #97a6e6).
+       It marks what is working right now: the galaxy's accent stars, a live
+       ring, a recalculated cell settling, a selection being drawn. Never a
+       control fill (that is --primary) and never a status (those are the ink
+       ramps). `--presence` paints marks and fills, `--presence-ink` is the
+       same colour as text; they match today, as --primary and --primary-ink do
+       on most accents, and are split so text contrast can be tuned without
+       moving the marks. Both clear 4.5:1 on --background and --secondary in
+       both themes (tests/presence-token.test.ts). Projected to Swift and TS by
+       `npm run design:tokens`, so canvas code reads it from
+       tokens.generated.ts instead of typing the hex again. */
+    --presence: 229.231 63.415% 48.235%;
+    --presence-ink: 229.231 63.415% 48.235%;
+    /* The warmth the galaxy's core is mixed toward (12%, docs/design/GALAXY_SPEC.md):
+       #8a6a3e on paper, #f3d9b1 on charcoal. A canvas reads it from
+       tokens.generated.ts; it is never a surface or text colour. */
+    --galaxy-core: 34.737 38.000% 39.216%;
 
     --secondary: 210.000 6.667% 94.118%;
     /* The slider knob — a light disc in BOTH themes, which no existing token
@@ -275,9 +290,7 @@
 
        `--sidebar-selected-border` is no longer drawn by the row. It stays
        defined because the native clients read the token table
-       (scripts/generate-design-tokens.ts). The half-step of extra saturation
-       (22% on a 22% panel, and 6% on dark) is what keeps the fill warm paper
-       rather than grey shadow. */
+       (scripts/generate-design-tokens.ts). */
     --sidebar-hover: 210.000 4.545% 91.373%;
     --sidebar-selected: 220.000 5.455% 89.216%;
     --sidebar-selected-border: 216.000 5.618% 82.549%;
@@ -360,9 +373,8 @@
                           loop has no seam where it turns around. An ease-out loop
                           visibly pulses at the join, which is exactly what makes
                           a slow breath read as a flash. Already inlined verbatim
-                          in three tailwind keyframes (status-glow, gen-sweep,
-                          pulse-ring); this names it so the fourth does not have
-                          to guess. */
+                          in tailwind keyframes (pulse-ring); this names it so
+                          the next one does not have to guess. */
     --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
     --ease-out-strong: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -488,7 +500,9 @@
 
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
-       behind; warm ink from the same family as --shadow-* follows. */
+       behind. It is a near-black with a faint warm cast (hue 48, the same
+       family as --hairline); the shadows moved to graphite with the
+       refoundation and this did not, so tune it here if the two should meet. */
     --scrim: 48 12% 8% / 0.26;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
@@ -528,7 +542,7 @@
     --aura-band: clamp(17rem, 38vh, 36rem);
 
     /* Design-canvas selection chrome (design-canvas.tsx), mirrored in Tailwind
-       as canvas-{selection,handle,measure}. Deliberately OUTSIDE the warm
+       as canvas-{selection,handle,measure}. Deliberately OUTSIDE the product
        palette: canvas chrome must read as "not content" over artwork that may
        use any of the product's own accents, and the palette's one hole — blue —
        is what every editing canvas (Figma, Sketch, Illustrator) has trained as
@@ -554,7 +568,7 @@
 
   .dark {
     /*
-     * Warm charcoal, NOT true black (SOFT_UI.md §2.1).
+     * Graphite near-black, NOT true black (SOFT_UI.md §2.1).
      *
      * The previous ground was #000, chosen for OLED. It cost the product its
      * depth model: a dark shadow on a black page darkens nothing, and a light
@@ -562,15 +576,14 @@
      * lightness step and a 1px rim, which is a flat UI wearing a lit edge.
      * Soft UI needs a ground with room on BOTH sides — dark enough for the
      * `--neu-dark` shadow to sink below it and light enough for a top-edge
-     * highlight to read as light rather than as a glow. 9% is
-     * the value at which both work; the ladder above it steps in threes
-     * (card 12 · popover 14 · muted 15 · accent 18 · border 20), which is the
-     * same order the light theme stacks in, so nothing that was above another
-     * thing is now below it.
+     * highlight to read as light rather than as a glow. 10% is the ground;
+     * the ladder above it steps in twos (card 14 · popover 16 · accent 18),
+     * the same order the light theme stacks in, so nothing that was above
+     * another thing is now below it.
      *
-     * Hue 30 with 6-7% saturation: warm enough that the greys belong to the
-     * same paper family the light theme uses and the coral has something to
-     * sit on, low enough that nobody can name the colour.
+     * Hue 220-225 with 4-7% saturation: the same graphite family as the light
+     * theme, low enough that nobody can name the colour. (It was a warm hue-30
+     * charcoal before the refoundation; the values moved and this note had not.)
      */
 
     /* Refoundation round 3: floating layers only, solid fallbacks below. */
@@ -590,6 +603,10 @@
     --primary: 220 7% 91%;
     --primary-foreground: 216 9% 11%;
     --primary-ink: 220 7% 91%;
+
+    --presence: 228.608 61.240% 74.706%;
+    --presence-ink: 228.608 61.240% 74.706%;
+    --galaxy-core: 36.364 73.333% 82.353%;
 
     --secondary: 225.000 4.255% 18.431%;
     /* See --knob above: light in this theme too, deliberately. */
@@ -809,11 +826,16 @@
    * optical choice (regular, or the heavier cut at 12px and under) is made in
    * `icons.tsx` from the size the call site asks for.
    *
-   * `transform-box: fill-box` + a centred origin so the hover articulations
-   * below turn a glyph about its own middle rather than its box's corner.
-   * `translate` / `rotate` / `scale` are the INDIVIDUAL transform properties,
-   * not `transform`: a call site that flips a caret with `rotate-180` writes
-   * `transform`, and the two compose instead of the hover erasing the flip.
+   * `transform-box: fill-box` + a centred origin so a call site's own
+   * `rotate-180` or `rotate-45` turns a glyph about its middle rather than its
+   * box's corner.
+   *
+   * Hover articulation is not here. About 120 lines of `svg.icon[data-motion]`
+   * rules (and the `.juno-part` poses for the retired juno-glyphs.tsx marks)
+   * used to follow; the renderer stopped stamping `data-motion` when the V3
+   * family replaced the old set, so they matched nothing and only misled
+   * whoever tuned them. The family's motion lives in juno-icons/icons.css and
+   * plays on destinations only (G46).
    */
   svg.icon {
     flex-shrink: 0;
@@ -821,130 +843,6 @@
     transform-box: fill-box;
     transform-origin: center;
   }
-
-  /*
-   * Hover articulation — one small gesture per glyph, declared in icons.tsx as
-   * `data-motion` and played when the INTERACTIVE element around the glyph is
-   * hovered or keyboard-focused. The glyph never moves on its own and never
-   * moves inside a disabled control.
-   *
-   * Every entry says what the action does (IconMotion in icons.tsx): an arrow
-   * goes where it points, a plus turns, a gear turns, a pen is picked up, a
-   * copied sheet lifts, a star swells. Carets, spinners and status marks carry
-   * no articulation, so a disclosure never twitches before it is pressed.
-   *
-   * Travel is a PERCENTAGE of the glyph (12% ≈ 2px at 16px, 1.4px at 12px), so
-   * one rule reads the same at every size. The curve is --ease-out-back: a
-   * ~3% overrun, which is the difference between a glyph being moved and a
-   * glyph settling. Rotations get the slower rung so a half turn is seen as a
-   * turn rather than as a flicker. Release runs the same spring back.
-   */
-  /*
-   * The list carries colour, opacity and `transform` too. This rule outranks a
-   * `transition-*` utility written on the same svg (0,2,1 against 0,1,0), so
-   * without them an articulated glyph's ink snapped when its row lit up, and a
-   * call site's own `rotate-45` open state jumped instead of turning.
-   */
-  svg.icon[data-motion] {
-    transition:
-      translate var(--dur-base) var(--ease-out-back),
-      rotate var(--dur-slow) var(--ease-out-back),
-      scale var(--dur-base) var(--ease-out-back),
-      transform var(--dur-base) var(--ease-in-out),
-      color var(--dur-fast) var(--ease-out-soft),
-      opacity var(--dur-fast) var(--ease-out-soft);
-  }
-  svg.icon[data-motion="nudge-r"] { --icon-hover-t: 12% 0; }
-  svg.icon[data-motion="nudge-l"] { --icon-hover-t: -12% 0; }
-  svg.icon[data-motion="nudge-u"] { --icon-hover-t: 0 -12%; }
-  svg.icon[data-motion="nudge-d"] { --icon-hover-t: 0 12%; }
-  svg.icon[data-motion="nudge-ne"] { --icon-hover-t: 9% -9%; }
-  svg.icon[data-motion="lift"] { --icon-hover-t: 0 -9%; }
-  svg.icon[data-motion="turn"] { --icon-hover-r: 90deg; }
-  svg.icon[data-motion="spin"] { --icon-hover-r: 60deg; }
-  svg.icon[data-motion="cw"] { --icon-hover-r: 180deg; }
-  svg.icon[data-motion="ccw"] { --icon-hover-r: -180deg; }
-  svg.icon[data-motion="tilt"] { --icon-hover-r: -12deg; }
-  svg.icon[data-motion="pop"] { --icon-hover-s: 1.14; }
-
-  /*
-   * `parts` — Juno's own marks (juno-glyphs.tsx) move a PART of the drawing
-   * rather than the whole glyph, because they were drawn with the moving part
-   * separate: Chat's ball terminal pops out of the ring's gap (a message
-   * leaving), Code's spark turns a quarter and swells (a twinkle — the spark is
-   * four-fold, so it lands where it started), Design's circle slides back from
-   * the square in front of it (two layers parting), Library's leaning volume
-   * straightens and lifts (a book taken off the shelf). The trigger below sets
-   * `--icon-on: 1` on the svg; the parts inherit it, so one trigger rule serves
-   * both vocabularies and reduced motion leaves it at 0. Offsets are in the
-   * drawing's own 256-unit space: 16 units is 1px at 16px.
-   */
-  svg.icon .juno-part {
-    transform-box: fill-box;
-    transform-origin: center;
-    transition:
-      translate var(--dur-base) var(--ease-out-back),
-      rotate var(--dur-slow) var(--ease-out-back),
-      scale var(--dur-base) var(--ease-out-back);
-  }
-  svg.icon .juno-part--ball {
-    translate: calc(var(--icon-on, 0) * 10px) calc(var(--icon-on, 0) * -17px);
-    scale: calc(1 + var(--icon-on, 0) * 0.3);
-  }
-  svg.icon .juno-part--spark {
-    rotate: calc(var(--icon-on, 0) * 90deg);
-    scale: calc(1 + var(--icon-on, 0) * 0.14);
-  }
-  svg.icon .juno-part--disc {
-    translate: calc(var(--icon-on, 0) * 14px) calc(var(--icon-on, 0) * -14px);
-  }
-  /* Agents: the eyes glance up and to the right, towards the label, the way an
-     agent looks up when you walk over — never a blink, which held for the
-     length of a hover would read as a face that shut its eyes on you. */
-  svg.icon .juno-part--eyes {
-    translate: calc(var(--icon-on, 0) * 14px) calc(var(--icon-on, 0) * -10px);
-  }
-  /* Six of the volume's thirteen degrees of lean, about its own centre, and a
-     16-unit lift (1px at 16px). The turn runs on the base rung with the lift,
-     not the slow rung the spark's quarter turn needs: a few degrees that
-     trailed the lift would read as a second gesture. */
-  svg.icon .juno-part--volume {
-    translate: 0 calc(var(--icon-on, 0) * -16px);
-    rotate: calc(var(--icon-on, 0) * 6deg);
-    transition:
-      translate var(--dur-base) var(--ease-out-back),
-      rotate var(--dur-base) var(--ease-out-back);
-  }
-
-  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-    :is(
-        a,
-        button,
-        summary,
-        label,
-        [role="button"],
-        [role="link"],
-        [role="menuitem"],
-        [role="menuitemradio"],
-        [role="menuitemcheckbox"],
-        [role="option"],
-        [role="tab"],
-        [data-icon-trigger]
-      ):is(:hover, :focus-visible):not(:disabled, [aria-disabled="true"], [data-disabled])
-      svg.icon[data-motion],
-    /* Radix menus move focus to the highlighted row instead of hovering it. */
-    [data-highlighted] svg.icon[data-motion] {
-      translate: var(--icon-hover-t, none);
-      rotate: var(--icon-hover-r, none);
-      scale: var(--icon-hover-s, none);
-      --icon-on: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    svg.icon[data-motion],
-    svg.icon .juno-part { transition: none; }
-  }
-
 
   /* No film grain. Claude and ChatGPT ship clean paper; the fractal-noise
      overlay that used to sit here at 2% read as texture on a 5K display and
@@ -962,7 +860,7 @@
    * carried meaning.
    *
    *   Tier A  opacity, colour, background-color and anything carrying real state
-   *           (thinking-matrix, status-glow, gen-sweep, the stream tail) are NOT
+   *           (the galaxy's eased stop, the stream tail) are NOT
    *           touched. Removing feedback is not an accessibility win.
    *   Tier B  transforms collapse to identity via the two vars below, so an
    *           entrance keeps its fade and loses its travel. Long and overshooting
@@ -1124,10 +1022,10 @@
      remove). The confirm button in the dialog keeps the solid fill
      (`variant="destructive"`), so the two steps stay distinguishable.
 
-     The icon no longer swells here. It used to scale to 1.08 on top of the
-     glyph's own hover articulation (`svg.icon[data-motion]` above — a trash
-     can already lifts), which gave one glyph two gestures at once; a glyph
-     carries at most one (docs/design/ICONS_AND_MOTION.md §1.3). */
+     The icon no longer swells here. A destructive row is an action, not a
+     destination, so its glyph stays still under the pointer
+     (juno-icons/icons.css, "Hover articulation"); the colour carries the
+     warning (docs/design/ICONS_AND_MOTION.md §1.3). */
   .danger-hover.danger-hover:hover,
   .danger-hover.danger-hover:focus-visible,
   .danger-hover.danger-hover[data-highlighted] {
@@ -1321,39 +1219,6 @@
     .control-primary:active { transform: none; }
   }
 
-  /* ChatGPT-style thinking shimmer: the status sentence is painted with a
-     gradient that sweeps through it, so "Thinking…" reads as live without a
-     spinner beside it. The gradient is muted → foreground → muted, so at every
-     instant most of the line is at the muted ink and one band is lit. Text is
-     clipped to the background, which means colour must be transparent — the
-     reduced-motion fallback below restores a plain muted colour and drops the
-     background, so the line is static, legible text rather than a frozen
-     gradient. Never on prose: this is a status affordance, not a text style. */
-  .shimmer-text {
-    color: transparent;
-    background-image: linear-gradient(
-      90deg,
-      hsl(var(--muted-foreground)) 0%,
-      hsl(var(--muted-foreground)) 35%,
-      hsl(var(--foreground)) 50%,
-      hsl(var(--muted-foreground)) 65%,
-      hsl(var(--muted-foreground)) 100%
-    );
-    background-size: 250% 100%;
-    background-position: 100% 0;
-    -webkit-background-clip: text;
-    background-clip: text;
-    animation: shimmer-text 2.2s linear infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .shimmer-text {
-      color: hsl(var(--muted-foreground));
-      background-image: none;
-      -webkit-background-clip: border-box;
-      background-clip: border-box;
-    }
-  }
-
   /* Copy → check. Put it on the glyph that REPLACES the copy icon: it springs
      in from a small, slightly rotated start. Reads --motion-scale-from, so the
      reduced-motion tier keeps the fade and drops the pop. */
@@ -1361,14 +1226,10 @@
     animation: check-morph var(--dur-base) var(--ease-spring) both;
     transform-origin: center;
   }
-  /* Both keyframes live HERE, not only in tailwind.config.ts: Tailwind emits a
-     keyframe only when its `animate-*` utility is used somewhere, and the two
-     classes above reference them from plain CSS. The config declares the same
-     pair (identically) for `animate-shimmer-text` / `animate-check-morph`. */
-  @keyframes shimmer-text {
-    from { background-position: 100% 0; }
-    to { background-position: -100% 0; }
-  }
+  /* The keyframe lives HERE, not only in tailwind.config.ts: Tailwind emits a
+     keyframe only when its `animate-*` utility is used somewhere, and the class
+     above references it from plain CSS. The config declares the same one
+     (identically) for `animate-check-morph`. */
   @keyframes check-morph {
     from {
       opacity: 0;
@@ -1485,11 +1346,10 @@
    * the only place a sidebar glyph says something the label does not.
    *
    * The articulation is NOT the sidebar's. A destination's mark moves the way
-   * that glyph moves everywhere — the plus turns, the gear turns, the artifact
-   * stack lifts, Juno's own Chat, Code, Design and Library marks move a part
-   * of themselves — because the gesture is declared once on the glyph in
-   * icons.tsx and played by `svg.icon[data-motion]` above, in the sidebar as
-   * in a menu or a page.
+   * that glyph's drawing says it moves (juno-icons/drawings.ts), played by
+   * juno-icons/icons.css on controls marked `data-jicon-articulate` — the
+   * sidebar's destination rows, the product switch, an empty state's actions
+   * — and nowhere else: menus, lists and message actions stay still.
    * The sidebar only SILENCES the defaults that are wrong in a navigation
    * column (sidebar-motion-icon.tsx: the folder and projects marks, whose
    * gesture is the morph below, the panel toggle, the overflow dots and a
@@ -1664,6 +1524,9 @@
     --voice-glow-you: #bc5806;
     --voice-glow-you-light: #f69147;
     --voice-glow-you-core: #bc5806;
+    /* Hex, not hsl(var(--presence)): the WebGL renderer parses these as hex
+       (voice-glow-palette.ts). They equal --presence, which
+       tests/presence-token.test.ts holds them to. */
     --voice-glow-alevr: #2d49c9;
     --voice-glow-alevr-light: #6782f2;
     --voice-glow-alevr-core: #2d49c9;
@@ -2023,8 +1886,8 @@
    * nothing else was:
    *
    *   1. Every literal is now the token that already means that thing here, so
-   *      these blocks re-tint with [data-accent] and read correctly on warm
-   *      paper instead of on #fff. A hardcoded grey inside a themed app is a
+   *      these blocks re-tint with [data-accent] and read correctly on the
+   *      app's own paper (and on charcoal) instead of on #fff. A hardcoded grey inside a themed app is a
    *      component that is right in exactly one theme.
    *   2. `prefers-color-scheme` → `.dark`. next-themes puts that class on <html>
    *      and the OS preference is only its default; keyed on the media query,
@@ -2044,45 +1907,8 @@
    * library is not to redraw it.
    * ------------------------------------------------------------------------- */
 
-  /*
-   * THE SHINE. One valley of reduced alpha sweeps through the text, rather than a
-   * bright band travelling over it — which is why it reads as breathing rather
-   * than as a loading skeleton. Shared by the thinking label, the search label,
-   * the generation label and the active to-do.
-   *
-   * `--aicss-shine` is the colour the text settles at; the gradient derives its
-   * own valley from it, so a caller only ever names one colour.
-   */
-  .aicss-shine {
-    --aicss-shine: var(--muted-foreground);
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    background-image: linear-gradient(
-      90deg,
-      hsl(var(--aicss-shine)) 0%,
-      hsl(var(--aicss-shine)) 30%,
-      hsl(var(--aicss-shine) / .45) 45%,
-      hsl(var(--aicss-shine) / .45) 55%,
-      hsl(var(--aicss-shine)) 70%,
-      hsl(var(--aicss-shine)) 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    animation: aicss-shine 2.25s var(--ease-breathe) infinite;
-  }
-  /* Settled: the same node keeps its box and simply stops moving, so nothing
-     reflows at the moment a run completes. */
-  .aicss-shine[data-settled="true"] {
-    animation: none;
-    background-image: none;
-    color: hsl(var(--aicss-shine));
-    -webkit-text-fill-color: hsl(var(--aicss-shine));
-  }
-  @keyframes aicss-shine {
-    0%, 18% { background-position: 100% 0; }
-    82%, 100% { background-position: 0% 0; }
-  }
+  /* No shine. AIcss swept a valley of alpha through its live labels; here the
+     galaxy is the one working mark (GALAXY_SPEC.md) and live words stay still. */
 
   /* ---- Thinking State ---- */
   .aicss-thinking {
@@ -2190,7 +2016,7 @@
    * sizes are tuned against it — but exposed so a larger canvas can open it up.
    * ------------------------------------------------------------------------- */
   /* AIcss puts the lattice on #fafafa over #fff — a fill you can only just find,
-     which is the point: the canvas is a held space, not a card. Warm paper needs
+     which is the point: the canvas is a held space, not a card. The page's paper needs
      the full muted token to land in the same relationship, because --muted at
      .45 over a 97%-lightness background is genuinely invisible. No border, per
      the original: an outline would make it a frame around nothing. */
@@ -2290,11 +2116,6 @@
     /* 500 — the type scale defines 400/500/600 and nothing between. */
     font-weight: 500;
     white-space: nowrap;
-  }
-  .aicss-ws-label .aicss-shine {
-    --aicss-shine: var(--foreground);
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .aicss-ws-quote { overflow: hidden; text-overflow: ellipsis; }
   .aicss-ws-chevron {
@@ -2979,37 +2800,9 @@
   }
   .aicss-todo-icon[data-on="true"] { opacity: 1; }
   .aicss-todo-icon-strong { color: hsl(var(--foreground)); }
-  /* The active label crossfades from muted into a shining foreground copy of
-     itself, layered via data-label so the two states occupy one box and the row
-     cannot shift as a task starts. */
-  .aicss-todo-label { position: relative; color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms var(--ease-out-soft); }
-  .aicss-todo-label::before {
-    content: attr(data-label);
-    position: absolute;
-    inset: 0;
-    background-image: linear-gradient(
-      90deg,
-      hsl(var(--foreground)) 0%,
-      hsl(var(--foreground)) 30%,
-      hsl(var(--foreground) / .45) 45%,
-      hsl(var(--foreground) / .45) 55%,
-      hsl(var(--foreground)) 70%,
-      hsl(var(--foreground)) 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 360ms var(--ease-out-soft);
-  }
-  .aicss-todo-item[data-state="active"] .aicss-todo-label { color: transparent; }
-  .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
-    opacity: 1;
-    animation: aicss-shine 2.25s var(--ease-breathe) infinite;
-  }
+  /* The active label steps from muted to the first ink; no shine travels it. */
+  .aicss-todo-label { color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms var(--ease-out-soft); }
+  .aicss-todo-item[data-state="active"] .aicss-todo-label { color: hsl(var(--foreground)); }
   .aicss-todo-item[data-state="done"] .aicss-todo-label { color: hsl(var(--muted-foreground)); text-decoration: line-through; }
 
   /*
@@ -3019,13 +2812,6 @@
    * translating, the rows arrive already in place.
    */
   @media (prefers-reduced-motion: reduce) {
-    .aicss-shine,
-    .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
-      animation: none;
-      background-image: none;
-      color: hsl(var(--aicss-shine, var(--foreground)));
-      -webkit-text-fill-color: hsl(var(--aicss-shine, var(--foreground)));
-    }
     .aicss-tr,
     .aicss-tr-sentence,
     .aicss-ws-site,
@@ -3108,8 +2894,15 @@
    * and for the same reason. The reset still does its job (killing the UA's
    * 1em block margins) and this owns the rhythm, which was always the split
    * the two rules intended.
+   *
+   * Written `:where(:not(:first-child))`, not `* + *`: the same elements at the
+   * same (0,2,0), without a sibling combinator. A `+` or `~` whose left side has
+   * no class, id or attribute makes Chrome restyle every sibling after an
+   * inserted element, subtrees and all, on every insertion anywhere in the
+   * page: each row the transcript mounted restyled the whole page
+   * (scripts/postcss/sibling-invalidation.cjs).
    */
-  .prose-juno.prose-juno > * + * { margin-top: 0.85em; }
+  .prose-juno.prose-juno > :where(:not(:first-child)) { margin-top: 0.85em; }
   /* h3–h6, never h1/h2: the model's headings are demoted two levels before
      they reach the DOM (src/lib/markdown-headings.ts), because the turn
      markers ("Juno replied") are the page's h2s and the conversation title is
@@ -3127,7 +2920,13 @@
     text-wrap: balance;
   }
   .prose-juno.prose-juno > :is(h3, h4, h5, h6):not(:first-child) { margin-top: 1.6em; }
-  .prose-juno.prose-juno > :is(h3, h4, h5, h6) + * { margin-top: 0.45em; }
+  /* Keyed on the attribute markdown.tsx stamps on every heading it writes, one
+     selector per tag: a tag alone, or any :is() on the left of `+`, is the
+     unkeyed kind (see the rhythm rule above). Same elements, same (0,2,1). */
+  .prose-juno.prose-juno > h3:where([data-md-heading]) + *,
+  .prose-juno.prose-juno > h4:where([data-md-heading]) + *,
+  .prose-juno.prose-juno > h5:where([data-md-heading]) + *,
+  .prose-juno.prose-juno > h6:where([data-md-heading]) + * { margin-top: 0.45em; }
   /* Each heading a clear step above the 16px body (critique 1: the old h5 at
      17px read as bold body). `##` is the heading models reach for most, so it
      lands on 19px, the gallery thread's section heading; `###` keeps a whole
@@ -3248,7 +3047,7 @@
 
 @layer utilities {
   /*
-   * Loading skeleton — a warm well that BREATHES. It does not shimmer.
+   * Loading skeleton — a quiet well that BREATHES. It does not shimmer.
    *
    * It used to: a translucent band with a `--primary`-tinted peak, travelling
    * left to right on a 1.6s linear loop. Measured on a cold sidebar load, that
@@ -3667,7 +3466,7 @@
  * Sonner draws [data-close-button] from its OWN grey ramp: `background:
  * var(--normal-bg)` — #fff on light, #000 on dark — a `--gray4` edge, an 8px
  * radius, and a default `translate(-35%, -35%)` that hangs it off the toast's
- * top-left corner. On the warm flat toast that was the only cold, un-tokened
+ * top-left corner. On the flat, tokened toast that was the only un-tokened
  * object in the product, and it appeared on every one of the ~285 toasts the
  * app raises. It is now the same recipe as every other bare glyph affordance:
  * a tonal control on the toast's own ground, inside its edge, on the trailing
@@ -3782,7 +3581,7 @@
  * (0,3,0), sonner's `[data-button]` rule is (0,3,0) too, and sonner's sheet is
  * appended to <head> at runtime, so it won every tie. Every action shipped as
  * sonner's stock button — a near-black slab, 24px tall, 12px type, a 4px
- * corner — the one cold object on a warm toast.
+ * corner — the one un-tokened object on the toast.
  *
  * Measured, it is a neutral control now rather than the accent: the toast
  * already says what happened, and its button is an offer ("Undo"), not the
@@ -4016,12 +3815,11 @@
      [data-juno-chat-root] ancestor selector can tell an in-chat menu from any
      other. The choreography was deleted.
 
-     What replaced it is the small articulation set in `@layer base`
-     (`svg.icon[data-motion]`): one gesture per glyph, declared on the glyph
-     itself in icons.tsx, played on the highlighted row (`[data-highlighted]`)
-     the same way it plays on a hovered button. That is the rule this note
-     exists to keep: a gesture is stamped on the portalled content itself —
-     never selected through an ancestor the portal has left behind. */
+     Nothing replaced it: menu rows keep their glyphs still (G46, juno-icons/
+     icons.css articulates destinations only). The rule this note exists to
+     keep still holds for any future gesture: it is stamped on the portalled
+     content itself, never selected through an ancestor the portal has left
+     behind. */
 }
 /* A quiet document surface shared by research planning, progress and reports. */
 /*
@@ -4167,74 +3965,8 @@
  * are unlayered, at the end of this file, beside the other decorative loops.
  */
 @layer components {
-  /* ── Run glyph (Concept A) ───────────────────────────────────────────── */
-  .run-glyph {
-    --dot: 4px; --gap: 3px;
-    display: inline-grid; grid-template-columns: repeat(3, var(--dot)); gap: var(--gap);
-    direction: ltr;   /* an icon: under dir="rtl" the grid must not mirror, or the gather moves outward */
-    flex-shrink: 0; color: hsl(var(--foreground));
-    transition: color var(--dur-base) var(--ease-out-soft);
-  }
-  .run-glyph[data-size="sm"] { --dot: 3px; --gap: 2.5px; }
-  .run-glyph[data-swapping] { color: transparent; transition: color var(--dur-fast) var(--ease-in); }
-  .run-glyph > i {
-    position: relative; inline-size: var(--dot); block-size: var(--dot); border-radius: 999px;
-    background: hsl(var(--muted-foreground) / 0.25);
-    transition: translate var(--dur-slow) var(--ease-out-strong), scale var(--dur-slow) var(--ease-out-strong),
-      opacity var(--dur-base) var(--ease-out-soft), background-color var(--dur-base) var(--ease-out-soft);
-  }
-  .run-glyph > i::after {
-    content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: 0;
-    animation: var(--lit-name, none) var(--lit-period, var(--loop)) linear infinite;
-    animation-delay: calc(var(--loop-phase, 0ms) + var(--lit-delay, 0ms));
-  }
-  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i { --lit-name: run-lit; --lit-delay: calc(var(--s) * 266ms); }
-  .run-glyph[data-phase="searching"] > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--c) * 200ms); }
-  .run-glyph[data-phase="reading"]   > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--r) * 200ms); }
-  .run-glyph[data-phase="tool"]      > i { --lit-name: run-lit; --lit-period: var(--loop-beat); --lit-delay: calc(var(--s) * 150ms); }
-  .run-glyph[data-phase="tool"]      > i[data-centre]::after { animation: none; opacity: 0.6; }
-  .run-glyph[data-phase="writing"]   > i[data-r="2"] { --lit-name: run-lit-type; --lit-delay: calc(var(--c) * 200ms); }
-  .run-glyph[data-calm] > i { --lit-period: var(--loop-calm); }
-  .run-glyph[data-phase="waiting"] > i[data-centre] { background: hsl(var(--primary)); }
-  .run-glyph[data-phase="failed"]  > i[data-centre] { background: hsl(var(--warning)); }
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) {
-    opacity: 0; scale: 0.4;
-    translate: calc((1 - var(--c)) * 7px * var(--motion-shift, 1)) calc((1 - var(--r)) * 7px * var(--motion-shift, 1));
-  }
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
-    scale: 1.5; background: hsl(var(--muted-foreground) / 0.45);
-  }
-  .run-glyph[data-offscreen] > i::after,
-  .run-glyph[data-offscreen] { animation-play-state: paused; }
-  /* Not the loop owner (§7.9.1): the phase's static signature, exactly as under reduced motion. */
-  .run-glyph[data-loop="off"] > i::after { animation: none; }
-  .run-glyph[data-loop="off"]:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
-  .run-glyph[data-loop="off"][data-phase="searching"] > i[data-c="1"]::after,
-  .run-glyph[data-loop="off"][data-phase="reading"]   > i[data-r="1"]::after,
-  .run-glyph[data-loop="off"][data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
-  .run-glyph[data-loop="off"][data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
-  /* paused (Research): resting grid only */
-  .run-glyph[data-phase="paused"] > i::after { animation: none; opacity: 0; }
-  @keyframes run-lit      { 0% { opacity: 0 } 6% { opacity: 1 } 30% { opacity: .3 } 42%, 100% { opacity: 0 } }
-  @keyframes run-lit-bar  { 0% { opacity: 0 } 8% { opacity: 1 } 28% { opacity: .25 } 40%, 100% { opacity: 0 } }
-  @keyframes run-lit-type { 0% { opacity: 0 } 4% { opacity: 1 } 60% { opacity: .7 } 80%, 100% { opacity: 0 } }
-
-  /* ── Compositor-only shimmer for the live label ─────────────────────── */
-  .run-sweep { position: relative; display: inline-block; max-inline-size: 100%; overflow: hidden; contain: paint; vertical-align: bottom; }
-  .run-sweep__text { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: hsl(var(--muted-foreground)); }
-  .run-sweep__window {
-    position: absolute; inset: 0; pointer-events: none; user-select: none;
-    -webkit-mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
-            mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
-    animation: run-sweep-window var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms);
-  }
-  .run-sweep__text--hi { color: hsl(var(--foreground)); animation: run-sweep-counter var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms); }
-  .run-sweep:dir(rtl) :is(.run-sweep__window, .run-sweep__text--hi) { animation-direction: reverse; }
-  .run-sweep:is([data-settled="true"], [data-calm], [data-loop="off"]) .run-sweep__window { display: none; }
-  .run-sweep[data-loop="off"] .run-sweep__text--hi { animation: none; }
-  .run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }
-  @keyframes run-sweep-window  { 0% { transform: translateX(-65%); } 75%, 100% { transform: translateX(65%); } }
-  @keyframes run-sweep-counter { 0% { transform: translateX(65%); } 75%, 100% { transform: translateX(-65%); } }
+  /* The working mark is the galaxy (run-galaxy.tsx, GALAXY_SPEC.md), drawn on
+     a canvas: it has no rules here. The live label does not shimmer. */
 
   /* ── Phase-label swap (mount-only entrance) ─────────────────────────── */
   .run-label { display: grid; min-inline-size: 0; }
@@ -4326,8 +4058,10 @@
   /* On the ladder: the exit rung and the soft decelerate, where this had a raw
      180ms and the `ease-out` keyword — the only bare keyword easing left. */
   .research-enter, .research-tab-body { animation: research-arrive var(--dur-exit) var(--ease-out-soft) both; }
-  @keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
+/* Outside the media block, so the in-app "Full" twin of the rule above
+   (postcss/motion-preference.cjs) can name it on a device that reduces. */
+@keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 /* Printing a document that lives in a dialog (the research report reader).
    The dialog unpins itself with `print:` utilities, but it is portalled to
    <body>, so its siblings are the whole app shell and no class on the dialog
@@ -4352,7 +4086,7 @@
  * BEFORE specificity: an unlayered rule beats every layered one, and among
  * layers the later wins regardless of how the selectors compare. Every loop
  * named here is declared in `components` or `utilities` — `.skeleton` in
- * utilities, `.shimmer-text` and `.aicss-shine` in components, the
+ * utilities, the shimmers it once named in components, the
  * `animate-*` utilities in utilities — so `base` lost to all of them, every
  * time. The guard read as careful and was decorative: someone who asked their
  * operating system to stop non-essential motion got the shimmer, the skeletons
@@ -4366,8 +4100,6 @@
  */
 @media (prefers-reduced-motion: reduce) {
   .skeleton,
-  .shimmer-text,
-  .aicss-shine,
   [class*="animate-icon-breathe"],
   [class*="animate-gen-"],
   [class*="animate-ultra-"] {
@@ -4530,22 +4262,7 @@
  * loops it is meant to stop.
  */
 @media (prefers-reduced-motion: reduce) {
-  .run-sweep__window { display: none; }
-  .run-glyph > i::after { animation: none; }
-  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
-  .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
-  .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
-  .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
-  .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
   /* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
-  .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
-                [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
-    animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
-  .run-glyph > i { transition-duration: var(--dur-fast); }
-  /* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
-    scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
   .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
     animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
   .run-step, .run-fav { transition-delay: 0ms !important; }
@@ -4555,14 +4272,55 @@
 }
 @keyframes run-breathe-opacity { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (forced-colors: active) {
-  .run-sweep__window { display: none; }
-  .run-glyph > i { forced-color-adjust: none; background: GrayText; }
-  .run-glyph > i::after { background: CanvasText; }
-  .run-glyph[data-phase="waiting"] > i[data-centre] { background: Highlight; }
-  .run-glyph[data-phase="failed"]  > i[data-centre] { background: Mark; }
   /* box-shadow is removed in forced colours: draw the rings with outline. */
   .run-marker::before { box-shadow: none; outline: 1.5px solid CanvasText; outline-offset: -1.5px; }
   .run-marker[data-state="waiting"]::before { outline-color: Highlight; }
+}
+
+/*
+ * ——— View transitions (lib/view-transition.ts) ———
+ *
+ * Two moves use the browser's same-document view transition, and only while
+ * one is running (html[data-vt]):
+ *
+ *   thread  a list row opening its chat. The page (PageTransition's
+ *           `.app-page`) leaves at about 0.65x the entrance on the accelerate
+ *           curve and the new one fades in with a 6px rise; the rest of the
+ *           shell (the sidebar's selection moving) only crossfades.
+ *   canvas  an artifact going docked ⇄ fullscreen. The panel's box morphs
+ *           between the two (it is named `canvas-panel` by script, and not at
+ *           all under reduced motion), its snapshots drawn at their own size
+ *           and clipped by the moving box so nothing stretches.
+ *
+ * Every offset is multiplied by --motion-shift, so under reduced motion each
+ * one is a plain crossfade: the audit's fallback, never a cut.
+ */
+html[data-vt]::view-transition-old(root),
+html[data-vt]::view-transition-new(root) {
+  animation-duration: var(--dur-fast);
+}
+html[data-vt="thread"] .app-page { view-transition-name: app-page; }
+html[data-vt="thread"]::view-transition-group(app-page) { animation-duration: var(--dur-base); }
+html[data-vt="thread"]::view-transition-old(app-page) {
+  animation: vt-page-out calc(var(--dur-base) * 0.65) var(--ease-in) both;
+}
+html[data-vt="thread"]::view-transition-new(app-page) {
+  animation: vt-page-in var(--dur-base) var(--ease-out-soft) both;
+}
+@keyframes vt-page-out { to { opacity: 0; } }
+@keyframes vt-page-in { from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); } }
+html[data-vt="canvas"]::view-transition-group(canvas-panel) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-out-strong);
+  overflow: clip;
+}
+html[data-vt="canvas"]::view-transition-old(canvas-panel),
+html[data-vt="canvas"]::view-transition-new(canvas-panel) {
+  width: 100%;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+  animation-duration: var(--dur-base);
 }
 
 /*
@@ -4587,58 +4345,18 @@
   html[data-code-wrap="true"] .prose-juno pre,
   html[data-code-wrap="true"] .prose-juno pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-  /* Reduced motion chosen in the app, for readers whose OS setting is off. */
-  html[data-motion="reduced"] *,
-  html[data-motion="reduced"] *::before,
-  html[data-motion="reduced"] *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+  /* Motion (data-motion="reduced" | "full") has no rules here. Every
+     `@media (prefers-reduced-motion: …)` block in the product is compiled into
+     its in-app twin by postcss/motion-preference.cjs, so "Reduced" in the app
+     runs exactly the OS tiers (fades and state colour stay, travel and loops
+     go) and "Full" lifts them on a device that asks for less. The blanket
+     `* { animation-duration: 0.01ms !important }` clamp that lived here, and
+     the hand-kept `[data-motion="reduce"]` gallery copy of the run UI's rules
+     below it, are both generated now. */
 }
 
 @layer utilities {
   /* The transcript and composer column: one width, set by the reader. */
   .transcript-column { max-width: var(--transcript-max); }
 }
-
-/*
- * The same rules for the dev galleries' "Simulate reduced motion" toggle,
- * which sets data-motion="reduce" on the gallery root: the browser pane cannot
- * emulate the media query. The two copies must stay identical but for the
- * prefix, and the root overrides must match the reduced `:root` block in the
- * base layer (tests/run-css-reduced.test.ts).
- */
-[data-motion="reduce"] {
-  --motion-shift: 0;
-  --motion-scale-from: 1;
-  --ease-out-strong: var(--ease-out-soft);
-  --ease-out-expo: var(--ease-out-soft);
-  --ease-spring: var(--ease-out-soft);
-  --ease-drawer: var(--ease-out-soft);
-  --dur-slow: var(--dur-base);
-}
-[data-motion="reduce"] .run-sweep__window { display: none; }
-[data-motion="reduce"] .run-glyph > i::after { animation: none; }
-[data-motion="reduce"] .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
-[data-motion="reduce"] .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
-[data-motion="reduce"] .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
-[data-motion="reduce"] .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
-[data-motion="reduce"] .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
-/* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
-[data-motion="reduce"] .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
-              [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
-  animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
-[data-motion="reduce"] .run-glyph > i { transition-duration: var(--dur-fast); }
-/* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
-[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
-[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
-  scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
-[data-motion="reduce"] .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
-  animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
-[data-motion="reduce"] .run-step, [data-motion="reduce"] .run-fav { transition-delay: 0ms !important; }
-[data-motion="reduce"] .run-peek__list { transition: none; }
-/* Instant collapse, but the content still fades (motion audit: "instant + content fade"). */
-[data-motion="reduce"] .run-collapse { transition: none; }
 

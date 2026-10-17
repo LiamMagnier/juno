@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { useUiPref } from "@/lib/ui-prefs";
+import { framerReducedMotion } from "@/lib/motion-preference";
 import { Menu, MessageSquarePlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -17,6 +18,7 @@ import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopupLazy } from "@/components/app/announcement-popup-lazy";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useEdgeSwipeOpen } from "@/components/ui/sheet-gesture";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { duration, transition } from "@/lib/motion";
@@ -380,15 +382,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    * covers the case where the breakpoint was already crossed before this
    * listener attached.
    */
+  const [phone, setPhone] = React.useState(false);
   React.useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
     const sync = () => {
+      setPhone(!mq.matches);
       if (mq.matches) setSidebarOpen(false);
     };
     mq.addEventListener("change", sync);
     sync();
     return () => mq.removeEventListener("change", sync);
   }, [setSidebarOpen]);
+
+  // A pull from the left edge brings the drawer in under the finger (G54).
+  const sidebarOpenRef = React.useRef(sidebarOpen);
+  sidebarOpenRef.current = sidebarOpen;
+  useEdgeSwipeOpen({
+    enabled: phone,
+    canStart: () => !sidebarOpenRef.current,
+    edge: "left",
+    // The drawer's own width: w-[280px] max-w-[85vw] (ui/sheet.tsx).
+    width: () => Math.min(280, window.innerWidth * 0.85),
+    onOpen: () => setSidebarOpen(true),
+    onCancel: () => setSidebarOpen(false),
+  });
 
   const toggleCollapse = React.useCallback(() => {
     // In the band the control opens and closes an overlay, which is not a
@@ -474,7 +491,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
      * Keep the app's Reduced choice here as well: a nested "user" provider
      * otherwise overrides the root provider's "always" choice.
      */
-    <MotionConfig reducedMotion={motionPreference === "reduced" ? "always" : "user"}>
+    <MotionConfig reducedMotion={framerReducedMotion(motionPreference)}>
       <div className="juno-frame relative flex h-dvh overflow-hidden">
         {/* Bypass Blocks (SC 2.4.1, Level A). */}
         <a
@@ -626,7 +643,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             `--sidebar-accent` keeps its own re-basing for the same reason it
             always had one: the product switch's track draws with it directly. */}
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetContent className={DRAWER_CLASS} title="Conversations">
+          <SheetContent className={DRAWER_CLASS} title="Conversations" edgeSwipe>
             <AppSidebar product={product} />
           </SheetContent>
         </Sheet>

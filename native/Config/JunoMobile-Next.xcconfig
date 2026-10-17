@@ -10,5 +10,7 @@ TARGETED_DEVICE_FAMILY = 1,2
 SUPPORTS_MACCATALYST = NO
 ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
 
-// The app target signs with this file (project.yml reads the variable).
+// The app target signs with this file (project.yml reads the variable). It
+// carries `aps-environment`, whose value JunoMobile-Push.xcconfig sets.
 JUNO_MOBILE_ENTITLEMENTS = Resources/JunoMobile.entitlements
+#include "JunoMobile-Push.xcconfig"

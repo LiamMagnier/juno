@@ -14,7 +14,7 @@ import { describeCapability, type WorkCapability, type WorkDegradation, type Wor
 import type { StatusTone } from "@/lib/conversation-status";
 import { humanize } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
@@ -237,7 +237,7 @@ const PILL_SHAPE = "inline-flex shrink-0 items-center gap-1.5 font-mono text-mic
 function StatusMark({ tone }: { tone: StatusTone }) {
   if (tone === "attention") return <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />;
   if (tone === "bad") return <StatusIcons.error className="size-3 shrink-0" aria-hidden="true" />;
-  if (tone === "live") return <PhaseOrb state="working" className="-my-1.5 -ml-1" />;
+  if (tone === "live") return <GalaxyMark phase="working" size={14} />;
   return null;
 }
 

@@ -274,7 +274,7 @@ routeTest("an app the person told Juno not to ask about again says so, and only 
     const { body } = await get("?kinds=app");
     const byId = new Map(body.items.map((item) => [item.id, item.approval as { changes: string; sends: string; summary: string }]));
     assert.equal(byId.get("github")!.changes, "allow", "an unrevoked grant of the account's own");
-    assert.match(byId.get("github")!.summary, /except the ones you've told Juno not to ask about again/);
+    assert.match(byId.get("github")!.summary, /except the ones you've told Alevr not to ask about again/);
     assert.equal(byId.get("github")!.sends, "ask", "and still every send asks");
     assert.equal(byId.get("figma")!.changes, "ask", "a revoked grant is no grant");
     assert.equal(byId.get("composio:slack")!.changes, "ask", "another account's grant is not this account's");

@@ -63,7 +63,8 @@ test("only computer_action items become frames, in thread order, updates keep th
   assert.equal(a2.caption, "Clicked the “Export…” button in Pages.");
   assert.equal(a2.live, false);
   assert.deepEqual(a2.point, { x: 0.5, y: 1 }, "points are clamped into the frame");
-  assert.equal(a2.src, "/api/code/screenshots/s%201/a2.jpg");
+  // A Mac frame has no URL on the web until useMacScreenshots fetches it (never the nonexistent /api/code/screenshots).
+  assert.equal(a2.src, null);
   assert.equal(frames[0].src, "data:image/png;base64,AAA");
   assert.equal(frames[2].verb, "Keys");
 });
@@ -144,6 +145,11 @@ test("the resolver only passes URLs the web can load", () => {
   assert.equal(defaultScreenshotResolver("file:///Users/x/a.png"), null);
   assert.equal(defaultScreenshotResolver("javascript:alert(1)"), null);
   assert.equal(defaultScreenshotResolver("/api/x.png"), "/api/x.png");
+  assert.equal(defaultScreenshotResolver("//evil.example/x.png"), null, "protocol-relative is another origin");
+  assert.equal(defaultScreenshotResolver("/\\evil.example/x.png"), null, "browsers read /\\host as //host");
+  assert.equal(defaultScreenshotResolver("/\t/evil.example/x.png"), null, "a stripped tab or newline can make //host too");
+  assert.equal(defaultScreenshotResolver("alevr-shot://claude:t7/toolu_1.jpg"), null);
+  assert.ok(!String(defaultScreenshotResolver("alevr-shot://s/a.jpg")).startsWith("/api/code/screenshots"));
 });
 
 test("the component renders the newest step, its ring and the strip, with no status pills", () => {
@@ -170,4 +176,23 @@ test("the component renders the newest step, its ring and the strip, with no sta
   const folded = renderToStaticMarkup(React.createElement(ComputerTimeline, { items, defaultCollapsed: true }));
   assert.doesNotMatch(folded, /<img/);
   assert.match(folded, /aria-expanded="false"/);
+});
+
+test("ready-made frames render without items, with no stylesheet per instance and the ring outside the scaled box", () => {
+  const frames = buildComputerTimeline([
+    step("1", { action: "screenshot", screenshotRef: "/1.png" }),
+    step("2", { status: "completed", summary: "Clicked “Save”.", screenshotRef: "/2.png", point: { x: 0.1, y: 0.2 } }),
+  ]);
+  const html = renderToStaticMarkup(
+    React.createElement(ComputerTimeline, { frames, frameSize: { width: 1280, height: 800 }, unavailableLabel: "Screenshot is on your Mac" }),
+  );
+  assert.match(html, /2 steps/);
+  assert.match(html, /Clicked “Save”\./);
+  assert.match(html, /aspect-ratio:1280 \/ 800/);
+  assert.doesNotMatch(html, /<style/, "no stylesheet injected per timeline");
+  // The wrapper carries the position and the centring translate; the inner
+  // ring is the one that animates its scale, so the two never fight.
+  assert.match(html, /class="pointer-events-none absolute -translate-x-1\/2 -translate-y-1\/2" style="left:10\.00%;top:20\.00%"/);
+  assert.match(html, /motion-safe:zoom-in-150/);
+  assert.doesNotMatch(html, /animate-\[ct-/, "the old inline keyframes are gone");
 });

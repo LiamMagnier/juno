@@ -22,14 +22,14 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-350 routes: 226 native, 53 planned, 56 web only, 15 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+357 routes: 226 native, 58 planned, 57 web only, 16 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 3 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
@@ -38,13 +38,13 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 4 |
 | [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
-| [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
+| [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
-| [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
+| [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 14 | 6 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 15 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -127,6 +127,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/chat/cancel` | POST | Native | JunoChatKit |  |
 | `/api/chat/clarify` | POST | Planned |  | Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire). |
 | `/api/chat/follow-ups` | POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/task-mode` | GET, PATCH | Planned |  | How often a task started from this chat asks (the web composer's hand chip, src/lib/chat/task-approval-mode.ts). The apps do not offer the choice yet, so their chats' tasks run as the saved mode or the default; request.taskApprovalMode in the chat wire is the same choice sent with a turn. |
 | `/api/chat/local-tools/[callId]` | POST | Native | JunoChatKit | The Mac answers a chat turn's local folder tool call here (NativeLocalFolderWire); the waiting turn reads it from an in-memory wait, so it needs a single backend instance. |
 | `/api/mentions` | GET | Native | JunoChatKit | The composer's @ lookup for typed context tokens (agents, files, projects, apps with their connection and approval state, skills, chats, artifacts). Both apps' composers call it and send the chosen tokens as request.context. |
 | `/api/chat/receipt` | GET | Planned |  | Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire). |
@@ -152,11 +153,13 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/conversations/[id]/tasks` | GET | Planned |  | Every task a conversation draws (all live ones plus the newest finished one), for several tasks per conversation. The apps still follow the newest task through /api/work/sessions?conversationId=, which is unchanged. |
 | `/api/folders` | GET, POST | Web only |  | The apps create and rename folders through sync (/api/v1/mutations). |
 | `/api/folders/[id]` | PATCH, DELETE | Web only |  | As /api/folders. |
-| `/api/messages/[id]` | PATCH | Planned |  | Edit-and-resend of a sent question, keeping the old text as a version; the Mac's question editor does not call it. |
+| `/api/messages/[id]` | PATCH | Planned |  | Edit a sent question as a new branch, keeping the old wording and every answer after it; the apps branch locally (NativeBranchNavigator) and do not call it. |
+| `/api/messages/[id]/branch` | POST | Planned |  | Switch the shown branch from the pager under an edited question or a regenerated answer; the apps read only the shown branch and keep their own local tree. |
 | `/api/messages/[id]/feedback` | POST | Native | JunoChatKit |  |
 | `/api/messages/[id]/versions` | GET | Native | JunoChatKit |  |
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/share/[id]` | DELETE | Native | JunoChatKit |  |
+| `/api/share/copy` | POST | Web only |  | Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws. |
 | `/api/share/report` | POST | Web only |  | Reporting a shared link happens on the shared page, which only the web draws. |
 
 <a id="search"></a>
@@ -234,7 +237,7 @@ Design is a type of artifact (register #73).
 | `/api/artifacts` | GET | Native | JunoChatKit | The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list. |
 | `/api/artifacts/[id]` | GET, POST, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/download` | GET | Native | JunoChatKit | Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter). |
-| `/api/artifacts/[id]/draft` | POST | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
+| `/api/artifacts/[id]/draft` | GET, POST, PUT, DELETE | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft), and reads, autosaves and drops the web canvas's unsaved source edit (ArtifactCanvasDraft, G12). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
 | `/api/artifacts/[id]/duplicate` | POST | Native | JunoChatKit | Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history. |
 | `/api/artifacts/[id]/export` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/poster` | GET | Native | JunoChatKit |  |
@@ -379,6 +382,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/work/artifacts/[id]/download` | GET | Native | JunoWorkKit |  |
 | `/api/work/artifacts/[id]/preview` | GET | Web only |  | A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58). |
 | `/api/work/runs/[id]/control` | POST | Native | JunoWorkKit |  |
+| `/api/work/runs/[id]/frames/[callId]` | GET | Planned |  | One step's screenshot from a cloud computer run, owner only, for the web filmstrip and the marked approval card (src/lib/computer/frames.ts). The apps do not draw the filmstrip or the approval frame yet. |
 | `/api/work/sessions` | GET, POST | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]/answer` | POST | Native | JunoWorkKit |  |
@@ -480,6 +484,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/research/[id]` | GET | Native | JunoChatKit |  |
 | `/api/research/[id]/clarify` | POST | Native | JunoChatKit |  |
 | `/api/research/[id]/control` | POST | Native | JunoChatKit |  |
+| `/api/research/[id]/export` | POST | Planned |  | A finished report as a Word document, from the Markdown the web's full-screen reader builds (G37). The apps' report reader has no Word export yet. |
 | `/api/research/[id]/plan` | POST | Native | JunoChatKit |  |
 | `/api/research/[id]/steer` | POST | Native | JunoChatKit |  |
 | `/api/research/citations` | GET | Native | JunoChatKit |  |
@@ -517,7 +522,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/agent/[...path]` | POST | Native | JunoCodeBridge |  |
-| `/api/agent/usage` | POST | Planned |  | Usage accounting for Juno Code's engine against the plan; the Swift engine does not report its turns here yet. |
+| `/api/agent/usage` | POST | Internal |  | Turn settlement for agent-core reporter hosts only. The Swift engine needs no call here: every Code call on Alevr's keys goes through /api/agent/[...path], which admits each turn like a chat turn and counts it once its opening call is billed (src/lib/metering/code-turn-store.ts). |
 | `/api/code/cloud-runner` | GET | Planned |  | Whether a cloud run could start, asked when the Cloud target is chosen. |
 | `/api/code/devices` | GET, POST | Native | JunoCodeKit |  |
 | `/api/code/devices/[deviceId]/commands` | GET, POST | Native | JunoCodeKit |  |
@@ -550,6 +555,8 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/workspaces` | GET, PUT | Planned |  | The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet. |
 | `/api/v1/code/devices/[deviceId]` | DELETE | Native | JunoCodeKit |  |
 | `/api/code/routing/[conversationId]` | GET, PUT | Web only |  | Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run. |
+| `/api/code/prefs` | GET, PATCH | Planned |  | The account's Code defaults (access, work log, team and budget) that web Settings edits without a session open. The Mac keeps its own defaults until it reads these. |
+| `/api/code/feedback` | GET, PUT | Planned |  | Good / Bad response on answers in a Mac-hosted Code v2 session, keyed by turn (those answers have no Message row). The Mac's v2 thread has no answer feedback yet. |
 | `/api/code/v2/link/[deviceId]` | POST | Native | JunoCodeRemote, JunoMobile | The controller side of the Code v2 device link: the web and the iPhone's remote (JunoCodeRemote) drive the env server on a paired Mac through it. Needs a live remote-control pair (docs/code-v2/REMOTE-CONTROL.md). |
 | `/api/code/pairing` | POST | Native | JunoCodeKit | A Mac's pairing offer for its "Control this Mac remotely" sheet: a QR token (phone) or a URL plus code (browser). |
 | `/api/code/pairing/offers/[offerId]` | GET | Native | JunoCodeKit | The Mac's sheet polls its offer: pending, approved, denied or expired. |

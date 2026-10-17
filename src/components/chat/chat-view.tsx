@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ContinueOnMenu } from "@/components/chat/continue-on-menu";
-import { EyeOff, GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
+import { EyeOff, GitFork, GripVertical } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
@@ -20,6 +21,7 @@ import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
+import { HomeStarters } from "@/components/chat/home-starters";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
@@ -78,7 +80,8 @@ import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-vo
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
-import { stripMemoryTags } from "@/lib/message-content";
+import { parseStreamingArtifact, stripMemoryTags } from "@/lib/message-content";
+import type { LiveArtifactSource } from "@/components/canvas/canvas-panel";
 import { speechForReply } from "@/lib/chat/tool-run-speech";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
@@ -86,16 +89,23 @@ import { voicePhaseOf } from "@/lib/voice-phase";
 import { cn } from "@/lib/utils";
 import { liveArtifacts } from "@/lib/artifact-card-state";
 import { replaceArtifactById } from "@/lib/chat-client-state";
-import { serializeQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
+import { serializeQuote, type AnswerQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
+import { AnswerSelectionBar } from "@/components/chat/answer-selection-bar";
 import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
-import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ConversationHistory, ReasoningEffort, TitleSource } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, ClientMemoryWrite, ClientMessage, ClientConversation, ConversationHistory, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
 import { announceReplyFinished } from "@/lib/ui-prefs";
 import { cachedJson } from "@/lib/client-cache";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
+import { prefersReducedMotion } from "@/lib/motion-preference";
+import { TaskModeChip } from "@/components/chat/task-mode-chip";
+import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { useConversationTaskMode } from "@/hooks/use-conversation-task-mode";
+import type { ChatTaskMode } from "@/lib/chat/task-approval-mode";
+import { OPEN_ARTIFACT_EVENT, type OpenArtifactDetail } from "@/lib/artifact-events";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -144,6 +154,8 @@ function isApplePlatform() {
  * an inline custom property, and a property with no value is not a narrow panel,
  * it is a full-bleed one. */
 const CANVAS_SSR_WIDTH = 560;
+/** How often the canvas's live blueprint is handed the rewritten source. */
+const LIVE_SOURCE_INTERVAL_MS = 200;
 
 const THOUGHT_WIDTH_KEY = "juno:thought-width";
 
@@ -310,8 +322,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
   // Entrance animation, armed on mount and disarmed by the first drag.
   const [animateDock, setAnimateDock] = React.useState(true);
-  const [memoryFlash, setMemoryFlash] = React.useState(false);
-  const [memoryLeaving, setMemoryLeaving] = React.useState(false);
+  // "Memory updated" (G20): one notice at a time, keyed so a newer update
+  // replaces an older one with its own timer (memory-updated-notice.tsx).
+  const [memoryNotice, setMemoryNotice] = React.useState<{ key: number; write: ClientMemoryWrite | null } | null>(null);
+  const dismissMemoryNotice = React.useCallback(() => setMemoryNotice(null), []);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [voiceSaving, setVoiceSaving] = React.useState(false);
   const [voiceSaveError, setVoiceSaveError] = React.useState<string | null>(null);
@@ -451,6 +465,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setActiveConversationId(conversationId);
   }, [conversationId, setActiveConversationId]);
 
+  // The composer's task mode reaches the request through a getter: the hook
+  // that holds it follows the conversation id this chat learns from useChat.
+  const taskModeRef = React.useRef<ChatTaskMode | null>(null);
+  const readTaskMode = React.useCallback(() => taskModeRef.current, []);
+
   const chat = useChat({
     conversationId,
     initialMessages,
@@ -464,6 +483,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     ultraFast,
     proMode,
     connectors: enabledConnectors,
+    taskApprovalMode: readTaskMode,
     privateMode,
     onQuota: setQuota,
     onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
@@ -532,15 +552,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       adoptWorkRef.current(session);
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
     },
-    onMemoryUpdated: () => {
-      setMemoryFlash(true);
-      setMemoryLeaving(false);
-      // Fade the pill out (title-out, 180ms) before unmounting it.
-      setTimeout(() => setMemoryLeaving(true), 3800);
-      setTimeout(() => {
-        setMemoryFlash(false);
-        setMemoryLeaving(false);
-      }, 4000);
+    onMemoryUpdated: (write) => {
+      setMemoryNotice((previous) => ({ key: (previous?.key ?? 0) + 1, write }));
     },
   });
   // A paged conversation (lib/chat/history-page.ts): how much of it is here,
@@ -572,6 +585,28 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const currentConversationId =
     conversationId ??
     (activeConversationId && activeConversationId === ownedConversationIdRef.current ? activeConversationId : createdIdRef.current);
+
+  // How often a task this chat starts stops to ask (G15). Offered where a
+  // turn can start a task at all: a saved chat on a plan with agents.
+  const tasksPossible = !privateMode && PLANS[quota.plan].agents;
+  const taskMode = useConversationTaskMode(currentConversationId, tasksPossible);
+  React.useEffect(() => {
+    taskModeRef.current = tasksPossible ? taskMode.chosen : null;
+  }, [taskMode.chosen, tasksPossible]);
+  // Memoised like the composer's other props: the composer is `React.memo`, and
+  // a fresh element on every streamed token would re-render it for each one.
+  const taskModeControl = React.useMemo(
+    () =>
+      tasksPossible ? (
+        <TaskModeChip
+          chosen={taskMode.chosen}
+          effective={taskMode.effective}
+          narrowedBy={taskMode.narrowedBy}
+          onChange={taskMode.change}
+        />
+      ) : undefined,
+    [tasksPossible, taskMode.chosen, taskMode.effective, taskMode.narrowedBy, taskMode.change],
+  );
 
   // A room: who answers each message, and the bounded follow-up turns the
   // server planned. Null in every other chat (nothing is fetched for them).
@@ -1082,6 +1117,33 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     [openableArtifacts, openArtifactId]
   );
 
+  /*
+   * The open artifact's new source while the streaming reply rewrites it, for
+   * the canvas's live blueprint. Read from the reply's tail at most every
+   * LIVE_SOURCE_INTERVAL_MS, so a token does not re-render the canvas.
+   */
+  const lastMessage = chat.messages[chat.messages.length - 1];
+  const replyText = lastMessage?.role === "ASSISTANT" && lastMessage.streaming ? lastMessage.content : null;
+  const openIdentifier = openArtifact?.identifier ?? null;
+  const [canvasLiveSource, setCanvasLiveSource] = React.useState<LiveArtifactSource | null>(null);
+  const liveSourceReadAt = React.useRef(0);
+  React.useEffect(() => {
+    const read = () => {
+      liveSourceReadAt.current = performance.now();
+      const open = replyText && openIdentifier ? parseStreamingArtifact(replyText) : null;
+      setCanvasLiveSource(
+        open && open.identifier === openIdentifier ? { content: open.content, type: open.type, language: open.language ?? null } : null
+      );
+    };
+    const wait = replyText ? liveSourceReadAt.current + LIVE_SOURCE_INTERVAL_MS - performance.now() : 0;
+    if (wait <= 0) {
+      read();
+      return;
+    }
+    const timer = window.setTimeout(read, wait);
+    return () => window.clearTimeout(timer);
+  }, [replyText, openIdentifier]);
+
   // Every file in the transcript, once each, in the order it arrived — the
   // viewer's switcher, and where the open file is looked up.
   const conversationFiles = React.useMemo(() => {
@@ -1202,6 +1264,22 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       setClosingDocument(null);
     }
   }, []);
+
+  // "Open in canvas" from a surface inside this chat that does not hold the
+  // canvas itself (the research reader): src/lib/artifact-events.ts.
+  React.useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<OpenArtifactDetail>).detail;
+      // currentConversationId, not the route's: a chat begun at /chat has a
+      // null route id but is this chat all the same.
+      if (!detail || (detail.conversationId && detail.conversationId !== currentConversationId)) return;
+      if (!openableArtifactsRef.current.some((x) => x.identifier === detail.identifier)) return;
+      openArtifactByIdentifier(detail.identifier);
+      detail.opened = true;
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, open);
+    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, open);
+  }, [currentConversationId, openArtifactByIdentifier]);
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {
@@ -1562,6 +1640,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const handoffArmedAtRef = React.useRef(0);
   const handoffFromTopRef = React.useRef<number | null>(null);
   const emptyComposerRef = React.useRef<HTMLDivElement>(null);
+  /** The home starters are on screen, so the field behind the composer calms (G34). */
+  const [startersShown, setStartersShown] = React.useState(false);
   const dockComposerRef = React.useRef<HTMLDivElement>(null);
   if (hasMessages !== handoffSeen) {
     // Render-phase adjustment (the documented React pattern), so the exit beat
@@ -1574,7 +1654,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // append for ~3.5s before the transcript exists.
       Date.now() - handoffArmedAtRef.current < 8000 &&
       typeof window !== "undefined" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      !prefersReducedMotion()
     ) {
       setHandoff("leaving");
     }
@@ -1835,6 +1915,21 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // which must stay stable while this identity changes with the chat hook.
   const sendFromComposerRef = React.useRef(sendFromComposer);
   sendFromComposerRef.current = sendFromComposer;
+  // A passage selected in an answer (answer-selection-bar.tsx): Ask makes it
+  // the composer's quote chip, Quote writes it into the draft, Explain sends.
+  const answerSelection = React.useMemo(
+    () => ({
+      onAsk: (quote: AnswerQuote) => {
+        setComposerQuote(quote);
+        window.dispatchEvent(new CustomEvent("juno:composer-focus"));
+      },
+      onQuote: (markdown: string) =>
+        window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: { text: markdown, append: true } })),
+      onExplain: (quote: AnswerQuote) =>
+        void sendFromComposerRef.current(serializeQuote(quote, "Explain this passage in plain terms."), []),
+    }),
+    [],
+  );
   // A Live UI view's prompt button sends through the same path as a follow-up
   // suggestion. Stable, so a view does not re-render on every chat change.
   const liveUIHost = React.useMemo(
@@ -2006,7 +2101,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           voiceSaving ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
         )}
       >
-        {voiceSaving ? <Loader2 className="size-4 animate-spin" /> : <StatusIcons.error className="size-4" />}
+        {voiceSaving ? <GalaxyMark phase="working" size={16} /> : <StatusIcons.error className="size-4" />}
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>
@@ -2079,6 +2174,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       model={model}
       onModelChange={setModel}
       onSend={onComposerSend}
+      taskModeControl={taskModeControl}
       modeControl={researchSteering?.accepting ? (
         <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
       ) : undefined}
@@ -2390,23 +2486,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           </div>
         )}
 
-        {memoryFlash && (
-          <div className="flex justify-center pt-2">
-            <span
-              role="status"
-              className={cn(
-                // Same reason as the project pill: this is a floating status
-                // token wearing `shadow-glass`, so it belongs on the floating
-                // rung rather than on 80% of a fill that is itself near black.
-                // Words only (owner directive, 2026-09-26): this was a
-                // floating pill with a pulsing coral dot for an event that
-                // has already happened. It fades in and out as plain text.
-                "inline-flex items-center",
-                memoryLeaving ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]" : "motion-safe:animate-rise-in"
-              )}
-            >
-              <span className="font-mono text-label text-muted-foreground">Memory updated</span>
-            </span>
+        {memoryNotice && (
+          <div className="flex justify-center px-4 pt-2">
+            {/* Names what was saved and offers View, Edit and Undo; owns its
+                own timer, so a second update never inherits the first's. */}
+            <MemoryUpdatedNotice key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
           </div>
         )}
 
@@ -2578,6 +2662,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 onOpenArtifact={openArtifactByIdentifier}
                 onArtifactChanged={handleArtifactChanged}
                 onRegenerate={chat.regenerate}
+                onRegenerateAt={privateMode ? undefined : chat.regenerateAt}
+                onSelectBranch={privateMode ? undefined : chat.selectBranch}
                 onContinue={chat.continueResponse}
                 onEdit={chat.editAndResend}
                 onResend={chat.resendUnsent}
@@ -2603,6 +2689,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               />
               </LiveUIHostProvider>
               </AgentThreadContext.Provider>
+              <AnswerSelectionBar
+                scopeRef={layoutRef}
+                activeQuote={composerQuote}
+                canSend={!chat.isBusy && !voiceSaving && !voiceSaveError && !voiceTurnSending}
+                {...answerSelection}
+              />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and gutter as the composer's root
                 // (composer.tsx) — otherwise these sit inside the composer's
@@ -2696,15 +2788,26 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     ref={emptyComposerRef}
                     className="chat-home__composer relative isolate w-full"
                   >
-                    {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} /> : null}
+                    {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} calm={startersShown} /> : null}
                     {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
                     {composer}
                   </div>
                   {/* The third track balances the first, so the composer sits
                       at the panel's centre. What the suggestions offered (a
-                      project, an app) is the composer's tray now. */}
-                  <div className="chat-home__suggest" />
+                      project, an app) is the composer's tray now; this track
+                      holds the starter chips (G34, home-starters.tsx). */}
+                  <div className="chat-home__suggest">
+                    {!agent ? (
+                      <HomeStarters
+                        composerRef={emptyComposerRef}
+                        // A voice call owns the composer: a starter would seed
+                        // text, or swap in an image model, under a live call.
+                        hidden={Boolean(privateMode || chat.pendingClarification || voiceOpen || handoff === "leaving")}
+                        onShownChange={setStartersShown}
+                      />
+                    ) : null}
+                  </div>
               </div>
             </div>
           )}
@@ -2839,6 +2942,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             onQuote={handleQuote}
             shareable={!privateMode}
+            liveSource={openArtifact ? canvasLiveSource : null}
           />
         </div>
       )}

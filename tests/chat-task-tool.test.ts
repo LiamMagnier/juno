@@ -447,13 +447,15 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
-  // The task tool, handoff tool, agent config tools, setup change and the room
-  // tools ride one list, each only when its own gate opened (a tool that did
-  // not is null and filtered out); an empty list is no native tools at all.
+  // The task tool, the routine proposal tool, handoff tool, agent config
+  // tools, setup change and the room tools ride one list, each only when its
+  // own gate opened (a tool that did not is null and filtered out); an empty
+  // list is no native tools at all.
   assert.match(
     route,
-    /const nativeTools = \[\s*taskTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\.\.\.crossTools,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
+    /const nativeTools = \[\s*taskTool,\s*routineTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\.\.\.crossTools,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
   );
+  assert.match(route, /const routineTool =\s*routineToolOn && userMessageId\s*\? createProposeRoutineTool\(\{/);
   assert.match(route, /const taskTool =\s*taskToolOn && !agentContext\?\.paused && userMessageId\s*\? createStartTaskTool\(\{/);
   assert.match(route, /const createRoomTool =\s*agentConfigToolsOn && userMessageId\s*\? createCreateRoomTool\(\{/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
@@ -508,7 +510,10 @@ test("the Work routes stay thin wrappers over the shared dispatch", () => {
   const runs = read("../src/app/api/work/sessions/[id]/runs/route.ts");
   // The missing session still answers before a malformed body does.
   assert.ok(runs.indexOf('{ error: "Not found" }') < runs.indexOf('{ error: "Invalid input" }'));
-  assert.match(runs, /startWorkRunForUser\(user, session, parsed\.data\)/);
+  // Everything but a Continue's two fields goes to the shared dispatch as it
+  // came; those two are the route's own (an instruction in the new attempt's log).
+  assert.match(runs, /const \{ continueFromRunId, continuation, \.\.\.runBody \} = parsed\.data;/);
+  assert.match(runs, /startWorkRunForUser\(user, session, runBody\)/);
   // The preflight-only door is the tool's alone.
   assert.doesNotMatch(runs, /preflightOnly/);
 });

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons";
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
@@ -320,8 +321,11 @@ export function CodeRunStack({
   isCloud,
   steering,
 }: CodeRunStackProps) {
+  // No MotionConfig of its own: the app's root provider carries the reader's
+  // Motion choice (System, Reduced, Full), and a nested reducedMotion="user"
+  // would answer to the OS alone and override it.
   return (
-    <MotionConfig reducedMotion="user">
+    <>
       {/* ALWAYS MOUNTED. A live region inserted at the same moment its text
           appears is frequently never announced at all (chat/approval-card makes
           the same argument), and the approval card's own sr-only span did
@@ -375,7 +379,7 @@ export function CodeRunStack({
           ) : steering.phase === "failed" ? (
             <StatusIcons.error className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           ) : (
-            <Loader2 className="mt-px size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+            <GalaxyMark phase="working" size={14} className="mt-px" />
           )}
           <span className="min-w-0 flex-1">
             <span>{steeringCopy(steering)}</span>
@@ -416,7 +420,7 @@ export function CodeRunStack({
           </motion.div>
         )}
       </AnimatePresence>
-    </MotionConfig>
+    </>
   );
 }
 

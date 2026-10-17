@@ -4,8 +4,9 @@
  * The thread (TARGET §5, §6): the conversation is the interface.
  *
  * Portions adapted from T3 Code, Copyright (c) 2026 T3 Tools Inc., MIT License
- * (the settled-turn fold "Worked for 3m 43s", WorkLog row geometry with a
- * shine on the live row, the changed-files summary after the answer).
+ * (the settled-turn fold "Worked for 3m 43s", WorkLog row geometry, the
+ * changed-files summary after the answer). The live row carries the galaxy,
+ * Alevr's one working mark, where T3 swept a shine through its verb.
  *
  * - A user message is a right-aligned bubble; hovering it shows its time and
  *   "Revert to here" (checkpoints live here and in the header menu, never as
@@ -29,19 +30,24 @@ import type {
   SubagentItem,
   TodoListItem,
   TurnItem,
+  UserMessageItem,
 } from "@/lib/code-v2/contracts";
+import { editPlan, retryPlan, retryTitle, type EditPlan, type RetryPlan } from "@/lib/code-v2/answer-actions";
+import { AnswerActions, type AnswerFeedback } from "./answer-actions";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { splitPath } from "@/lib/code-v2/diff";
 import { TEAM_PHASE_VALUES } from "@/lib/code-v2/contracts";
 import { TEAM_PHASE_LABELS } from "@/lib/code-v2/team";
 import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
-import { Glyph, useNow } from "./primitives";
+import { Glyph, LiveMark, useNow } from "./primitives";
 import type { PagedHistory } from "./types";
 import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { cn } from "@/lib/utils";
+import { useLatched } from "@/lib/use-presence";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 export interface DockRequest {
   tab: DockTab;
@@ -66,10 +72,17 @@ export interface ThreadProps {
   selectedAgentId?: string | null;
   onSelectAgent?: (agentId: string) => void;
   onOpenDock?: (req: DockRequest) => void;
-  onRollback?: (checkpointId: string) => void;
+  /** Resolves false when the files could not be restored. */
+  onRollback?: (checkpointId: string) => void | Promise<boolean | void>;
   onApprovePlan?: (itemId: string, approve: boolean) => void;
   onUndoTurn?: (turn: Turn) => void;
   onRetry?: () => void;
+  /** Answer actions (lib/code-v2/answer-actions.ts): send a turn's prompt again. */
+  onResend?: (message: UserMessageItem) => void | Promise<unknown>;
+  /** Put text in the composer to edit and send (Edit and resend). */
+  onEditMessage?: (text: string) => void;
+  feedbackFor?: (turnId: string) => AnswerFeedback;
+  onFeedback?: (turnId: string, value: AnswerFeedback) => void;
   /** Shown before the first event of a starting session. */
   starting?: string | null;
   offline?: boolean;
@@ -199,9 +212,10 @@ export function LogRow({ line, forceOpen, onOpenDock }: { line: LogLine; forceOp
   const clickable = !!line.expand || !!line.open;
   const content = (
     <>
-      <span className={cn("verb", line.live && "cv2-shine")}>{line.verb}</span>
+      <span className={cn("verb", line.live && "cv2-live")}>{line.verb}</span>
       {line.body !== undefined && <span className="obj">{line.body}</span>}
       {line.counts && <Counts adds={line.counts.adds} dels={line.counts.dels} />}
+      {line.live && <LiveMark />}
       {line.expand && <Glyph name="chevron-right" size={12} className="chev" />}
       {line.time && <span className="t">{line.time}</span>}
     </>
@@ -229,8 +243,9 @@ function ReadsRow({ items, forceOpen, onOpenDock }: { items: Extract<TurnItem, {
   return (
     <>
       <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen((v) => !v)}>
-        <span className={cn("verb", live && "cv2-shine")}>{live ? "Reading" : "Read"}</span>
+        <span className={cn("verb", live && "cv2-live")}>{live ? "Reading" : "Read"}</span>
         <span className="obj">{items.length} files</span>
+        {live && <LiveMark />}
         <Glyph name="chevron-right" size={12} className="chev" />
       </button>
       {shown && (
@@ -293,7 +308,8 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
   return (
     <div role="group" aria-label={teamHead(items)}>
       <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen(!shown)}>
-        <span className={cn("verb", live && "cv2-shine")}>{teamHead(items)}</span>
+        <span className={cn("verb", live && "cv2-live")}>{teamHead(items)}</span>
+        {live && <LiveMark />}
         <Glyph name="chevron-right" size={12} className="chev" />
         {elapsed > 0 && <span className="t">{formatDuration(elapsed)}</span>}
       </button>
@@ -315,7 +331,7 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
               }}
             >
               <span className="who">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
-              <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")}>{step.text}</span>
+              <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-live")}>{step.text}</span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
             </button>
             </React.Fragment>
@@ -336,8 +352,9 @@ function ComputerLine({ items, props }: { items: ComputerActionItem[]; props: Th
   return (
     <>
       <button type="button" className="cv2-wl" onClick={() => props.onOpenDock?.({ tab: "screen", target: last.id })}>
-        <span className={cn("verb", live && "cv2-shine")}>{live ? `Using ${app ?? "the computer"}` : `Used ${app ?? "the computer"}`}</span>
+        <span className={cn("verb", live && "cv2-live")}>{live ? `Using ${app ?? "the computer"}` : `Used ${app ?? "the computer"}`}</span>
         <span className="obj">{last.summary ?? last.target ?? `${items.length} steps`}</span>
+        {live && <LiveMark />}
       </button>
       {src && (
         <button type="button" className="cv2-thumb" aria-label="Open the screen" onClick={() => props.onOpenDock?.({ tab: "screen", target: last.id })}>
@@ -515,8 +532,8 @@ export function Receipt({ turn, onOpenDock, onUndo }: { turn: Turn; onOpenDock?:
 
 // ── Turns ───────────────────────────────────────────────────────────────────
 
-function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => void; files: number; turns: number } }) {
-  const [confirm, setConfirm] = React.useState(false);
+function UserBubble({ turn, revert, edit }: { turn: Turn; revert?: { onConfirm: () => void; files: number; turns: number }; edit?: { plan: EditPlan; onConfirm: () => void } }) {
+  const [confirm, setConfirm] = React.useState<false | "revert" | "edit">(false);
   const u = turn.user!;
   return (
     <div className="cv2-you-wrap" data-turn-start>
@@ -525,7 +542,7 @@ function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => 
           <div className="files">
             {u.attachments.map((a, i) => (
               <span key={i} className="file">
-                <Glyph name="document" size={12} />
+                <Glyph name={a.mediaType?.startsWith("image/") ? "image" : "document"} size={12} />
                 {a.name}
               </span>
             ))}
@@ -534,7 +551,7 @@ function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => 
         {u.text}
       </div>
       <div className="cv2-you-meta" data-on={confirm ? "true" : undefined}>
-        {confirm && revert ? (
+        {confirm === "revert" && revert ? (
           <>
             <span className="cv2-fg">
               Revert {revert.files} {revert.files === 1 ? "file" : "files"} and {revert.turns} {revert.turns === 1 ? "turn" : "turns"}?
@@ -546,11 +563,29 @@ function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => 
               Cancel
             </button>
           </>
+        ) : confirm === "edit" && edit ? (
+          <>
+            <span className="cv2-fg">
+              Revert {edit.plan.files} {edit.plan.files === 1 ? "file" : "files"} and {edit.plan.turns} {edit.plan.turns === 1 ? "turn" : "turns"}, then edit?
+            </span>
+            <button type="button" onClick={() => (setConfirm(false), edit.onConfirm())}>
+              Edit
+            </button>
+            <button type="button" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+          </>
         ) : (
           <>
             <span className="cv2-tnum">{clock(u.createdAt)}</span>
+            {edit && (
+              // Nothing to undo: straight into the composer. Otherwise the same confirm as Revert.
+              <button type="button" onClick={() => (edit.plan.rollbackTo ? setConfirm("edit") : edit.onConfirm())}>
+                Edit and resend
+              </button>
+            )}
             {revert && (
-              <button type="button" onClick={() => setConfirm(true)}>
+              <button type="button" onClick={() => setConfirm("revert")}>
                 Revert to here
               </button>
             )}
@@ -568,6 +603,9 @@ function TurnView({
   onToggle,
   now,
   revert,
+  edit,
+  retry,
+  latest,
 }: {
   turn: Turn;
   props: ThreadProps;
@@ -575,15 +613,24 @@ function TurnView({
   onToggle: (open: boolean) => void;
   now: number;
   revert?: { onConfirm: () => void; files: number; turns: number };
+  edit?: { plan: EditPlan; onConfirm: () => void };
+  retry?: { plan: RetryPlan; onConfirm: () => void };
+  latest: boolean;
 }) {
   const vis = turnVisibility(turn, props.detailLevel, unfolded);
   const steps = stepItems(turn);
   const open = vis.steps;
   const visibleSteps = open ? steps : steps.filter((i) => i.kind === "plan" && i.awaitingApproval);
   const live = turn.status === "running" || turn.status === "waiting";
+  // The fold's steps mount on its first opening and then stay, so closing it
+  // collapses the rows it shows instead of emptying the box first and
+  // animating a blank (a fold that only animated one way). Only the fold's own
+  // opening counts: the steps a live turn showed outside any fold do not keep
+  // every settled turn of the session carrying a hidden copy of its rows.
+  const foldMounted = useLatched(vis.header && open);
   return (
     <section data-turn={turn.id} aria-label={`Turn ${turn.ordinal + 1}`} className="cv2-turn">
-      {turn.user && <UserBubble turn={turn} revert={revert} />}
+      {turn.user && <UserBubble turn={turn} revert={revert} edit={edit} />}
       {vis.header && steps.length > 0 && (
         <button type="button" className="cv2-foldh" aria-expanded={open} onClick={() => onToggle(!open)}>
           <span className="cv2-tnum">{turnHeader(turn, now)}</span>
@@ -593,13 +640,16 @@ function TurnView({
         </button>
       )}
       {live && steps.length === 0 && (
-        <div className="cv2-wl">
-          <span className="verb cv2-shine">Working</span>
+        <div className="cv2-wl" role="status">
+          <LiveMark className="lead" />
+          <span className="verb cv2-live">Working</span>
         </div>
       )}
       {vis.header ? (
         <div className={cn("cv2-fold", open && "open")}>
-          <div className="cv2-fold-inner">{open && <Steps turn={turn} items={steps} detail={vis.detail} props={props} now={now} />}</div>
+          <div className="cv2-fold-inner" inert={!open}>
+            {foldMounted && <Steps turn={turn} items={steps} detail={vis.detail} props={props} now={now} />}
+          </div>
         </div>
       ) : (
         visibleSteps.length > 0 && <Steps turn={turn} items={visibleSteps} detail={vis.detail} props={props} now={now} />
@@ -608,6 +658,16 @@ function TurnView({
         <div className="cv2-prose">
           <Markdown content={turn.answer.text} streaming={turn.answer.streaming} />
         </div>
+      )}
+      {!live && turn.answer && !turn.answer.streaming && (
+        <AnswerActions
+          text={turn.answer.text}
+          latest={latest}
+          feedback={props.feedbackFor?.(turn.id) ?? null}
+          onFeedback={props.onFeedback ? (value) => props.onFeedback?.(turn.id, value) : undefined}
+          onRetry={retry?.onConfirm}
+          retryTitle={retry ? retryTitle(retry.plan) : undefined}
+        />
       )}
       {!live && <Receipt turn={turn} onOpenDock={props.onOpenDock} onUndo={props.onUndoTurn ? () => props.onUndoTurn?.(turn) : undefined} />}
     </section>
@@ -718,7 +778,7 @@ export function Thread(props: ThreadProps) {
 
   const jump = (id: string) => {
     const el = scrollRef.current?.querySelector<HTMLElement>(`[data-turn="${CSS.escape(id)}"]`);
-    el?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
 
   // Reverting to the start of turn i rolls back to the checkpoint the turn before it left.
@@ -737,6 +797,40 @@ export function Thread(props: ThreadProps) {
     [turns, props],
   );
 
+  // Edit and resend / Retry: roll back first where the plan says so, then send or prefill.
+  const busy = live || state === "limited";
+  const canRollback = !!props.onRollback;
+  const answerPlans = React.useMemo(
+    () =>
+      turns.map((_, i) => {
+        const e = props.onEditMessage ? editPlan(turns, i, { busy, canRollback }) : null;
+        const r = props.onResend ? retryPlan(turns, i, { busy, canRollback }) : null;
+        // False when the host could not restore the files (it says why): nothing is sent then.
+        const rollback = async (to?: string) => (to ? (await props.onRollback?.(to)) !== false : true);
+        return {
+          edit: e
+            ? {
+                plan: e,
+                onConfirm: () =>
+                  void rollback(e.rollbackTo)
+                    .then((ok) => ok && props.onEditMessage?.(e.text))
+                    .catch(() => undefined),
+              }
+            : undefined,
+          retry: r
+            ? {
+                plan: r,
+                onConfirm: () =>
+                  void rollback(r.rollbackTo)
+                    .then((ok) => ok && props.onResend?.(r.message))
+                    .catch(() => undefined),
+              }
+            : undefined,
+        };
+      }),
+    [turns, props, busy, canRollback],
+  );
+
   return (
     <div
       className="cv2-scroll"
@@ -748,14 +842,27 @@ export function Thread(props: ThreadProps) {
       data-history-older={history ? String(history.hasOlder) : undefined}
     >
       <div className="cv2-col">
+        {turns.map((turn, i) => (
+          <TurnView
+            key={turn.id}
+            turn={turn}
+            props={props}
+            now={now}
+            unfolded={unfolded[turn.id]}
+            onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))}
+            revert={reverts[i]}
+            edit={answerPlans[i].edit}
+            retry={answerPlans[i].retry}
+            latest={i === turns.length - 1}
+          />
+        ))}
+        {/* Under the turn it is starting (the landing's first prompt shows as that turn at once). */}
         {props.starting && (
-          <div className="cv2-wl">
-            <span className="verb cv2-shine">{props.starting}</span>
+          <div className="cv2-wl" role="status">
+            <LiveMark className="lead" />
+            <span className="verb cv2-live">{props.starting}</span>
           </div>
         )}
-        {turns.map((turn, i) => (
-          <TurnView key={turn.id} turn={turn} props={props} now={now} unfolded={unfolded[turn.id]} onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))} revert={reverts[i]} />
-        ))}
         {props.offline && live && <div className="cv2-notice" style={{ marginTop: 16 }}>Paused while offline</div>}
         {props.pairingRequired && (
           <div className="cv2-notice" role="status" style={{ marginTop: 16 }}>

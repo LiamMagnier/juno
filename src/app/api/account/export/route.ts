@@ -11,6 +11,7 @@ import { getUserPlan } from "@/lib/usage";
 import { isStorageAvailable } from "@/lib/env";
 import { getObjectBytes } from "@/lib/storage";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,15 @@ function csvField(value: string | null | undefined): string {
  * `?format=csv` returns the message history as a CSV instead. `?format=juno`
  * stamps the JSON as the open, versioned Juno interchange format so it can be
  * uploaded back through /api/import.
+ *
+ * Branches (src/lib/chat/branches.ts): the JSON and the package are the
+ * whole account, so they carry every branch — the earlier wordings and
+ * answers an edit or regenerate kept, which are the person's data as much as
+ * the shown thread — with `parentId`, `branchGroupId`, `onActivePath` and
+ * `branchSelected` on each message, which is enough for /api/import to
+ * rebuild the tree. The CSV, a spreadsheet of what each chat reads, has the
+ * shown branch only. `?branches=all` or `?branches=shown` picks either way
+ * for any format.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -56,6 +66,8 @@ export async function GET(req: Request) {
   const requestedFormat = new URL(req.url).searchParams.get("format");
   const format = requestedFormat === "csv" ? "csv" : requestedFormat === "juno" ? "juno" : "json";
   const isJuno = format === "juno";
+  const requestedBranches = new URL(req.url).searchParams.get("branches");
+  const allBranches = requestedBranches === "all" || (requestedBranches !== "shown" && format !== "csv");
   const date = new Date().toISOString().slice(0, 10);
 
   const [account, plan, settings, conversations, rawMessages, memories, memorySummary, projects, attachments, spendTotals, spendByKind, projectMemorySummaries] =
@@ -112,7 +124,7 @@ export async function GET(req: Request) {
         },
       }),
       prisma.message.findMany({
-        where: { conversation: { userId: user.id } },
+        where: { conversation: { userId: user.id }, ...(allBranches ? {} : ON_ACTIVE_PATH) },
         orderBy: { createdAt: "asc" },
         take: MAX_MESSAGE_ROWS + 1,
         select: {
@@ -125,12 +137,18 @@ export async function GET(req: Request) {
           reasoningParts: true,
           model: true,
           feedback: true,
+          feedbackReason: true,
+          feedbackNote: true,
           promptTokens: true,
           completionTokens: true,
           costMicroUsd: true,
           sources: true,
           activity: true,
           createdAt: true,
+          parentId: true,
+          branchGroupId: true,
+          onActivePath: true,
+          branchSelected: true,
           attachments: { select: { id: true } },
         },
       }),
@@ -266,6 +284,8 @@ export async function GET(req: Request) {
       // in pages under the same budget as the history: each can be a whole
       // document, and there is one per artifact or more.
       draft: { select: { baseVersion: true, updatedAt: true } },
+      // The canvas's unsaved source edit (G12), body paged in below.
+      canvasDrafts: { where: { userId: user.id }, select: { baseVersion: true, updatedAt: true } },
       publications: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -354,6 +374,28 @@ export async function GET(req: Request) {
       draftCursor = page[page.length - 1].artifactId;
     }
   }
+  const canvasDraftBodies = new Map<string, string>();
+  if (!artifactVersionsTruncated) {
+    let canvasCursor: string | null = null;
+    canvasDrafts: for (;;) {
+      const page: Array<{ artifactId: string; content: string }> = await prisma.artifactCanvasDraft.findMany({
+        where: { userId: user.id, ...(canvasCursor ? { artifactId: { gt: canvasCursor } } : {}) },
+        orderBy: { artifactId: "asc" },
+        take: ARTIFACT_VERSION_PAGE,
+        select: { artifactId: true, content: true },
+      });
+      for (const row of page) {
+        if (exportedVersionChars + row.content.length > MAX_ARTIFACT_VERSION_CHARS) {
+          artifactVersionsTruncated = true;
+          break canvasDrafts;
+        }
+        exportedVersionChars += row.content.length;
+        canvasDraftBodies.set(row.artifactId, row.content);
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      canvasCursor = page[page.length - 1].artifactId;
+    }
+  }
   if (!artifactVersionsTruncated) {
     let suggestionCursor: string | null = null;
     suggestions: for (;;) {
@@ -390,11 +432,13 @@ export async function GET(req: Request) {
     // the point is to hand the person their own data, not a copy of the
     // ciphertext they have no key for.
     activity: decryptJsonField(m.activity),
+    // The note left with a thumbs-down is sealed like the body; same reason.
+    feedbackNote: decryptMessageTextSafe(m.feedbackNote),
   }));
 
   if (format === "csv") {
     const titleById = new Map(conversations.map((c) => [c.id, c.title]));
-    const lines = ["conversation,role,model,content,createdAt"];
+    const lines = [allBranches ? "conversation,role,model,content,createdAt,id,parentId,branchGroupId,onActivePath" : "conversation,role,model,content,createdAt"];
     for (const m of messages) {
       lines.push(
         [
@@ -403,13 +447,14 @@ export async function GET(req: Request) {
           csvField(m.model),
           csvField(m.content),
           csvField(m.createdAt.toISOString()),
+          ...(allBranches ? [csvField(m.id), csvField(m.parentId), csvField(m.branchGroupId), csvField(String(m.onActivePath))] : []),
         ].join(",")
       );
     }
     return new NextResponse(lines.join("\r\n") + "\r\n", {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="juno-export-${date}.csv"`,
+        "Content-Disposition": `attachment; filename="alevr-export-${date}.csv"`,
       },
     });
   }
@@ -456,6 +501,8 @@ export async function GET(req: Request) {
       reasoningParts: m.reasoningParts,
       model: m.model,
       feedback: m.feedback,
+      feedbackReason: m.feedbackReason,
+      feedbackNote: m.feedbackNote,
       promptTokens: m.promptTokens,
       completionTokens: m.completionTokens,
       costMicroUsd: m.costMicroUsd,
@@ -464,6 +511,11 @@ export async function GET(req: Request) {
       attachmentIds: m.attachments.map((attachment) => stableAttachmentId.get(attachment.id) ?? attachment.id),
       attachmentSourceIds: m.attachments.map((attachment) => stableAttachmentId.get(attachment.id) ?? attachment.id),
       createdAt: m.createdAt,
+      // `parentId` and `branchGroupId` name other rows by their `id` here, and
+      // /api/import rebuilds the tree from them (restoreImportedBranches).
+      ...(allBranches
+        ? { parentId: m.parentId, branchGroupId: m.branchGroupId, onActivePath: m.onActivePath, branchSelected: m.branchSelected }
+        : {}),
     };
     const list = byConversation.get(m.conversationId);
     if (list) list.push(row);
@@ -599,6 +651,9 @@ export async function GET(req: Request) {
       })),
     },
     messagesTruncated: truncated,
+    // Which messages are here: every branch, each message carrying its place
+    // in the tree, or (with ?branches=shown) each conversation's shown branch.
+    messageBranches: allBranches ? "all" : "shown",
     ...(truncated
       ? { truncationNote: `Message export is capped at ${MAX_MESSAGE_ROWS.toLocaleString("en-US")} rows; older messages are included first.` }
       : {}),
@@ -609,7 +664,7 @@ export async function GET(req: Request) {
             truncationNote: `Artifact history, drafts and suggestions are capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions and ${MAX_ARTIFACT_VERSION_CHARS.toLocaleString("en-US")} characters; the rest stays in your account.`,
           }
         : {}),
-      items: artifactRows.map(({ draft, publications, shares, proposals, ...artifact }) => ({
+      items: artifactRows.map(({ draft, canvasDrafts, publications, shares, proposals, ...artifact }) => ({
         ...artifact,
         conversationId: artifact.conversationId ? stableConversationId.get(artifact.conversationId) ?? artifact.conversationId : null,
         messageId: artifact.messageId ? stableMessageId.get(artifact.messageId) ?? artifact.messageId : null,
@@ -617,6 +672,7 @@ export async function GET(req: Request) {
         versions: versionsByArtifact.get(artifact.id) ?? [],
         // A body left out by the budget is null; the truncation note says so.
         draft: draft ? { ...draft, content: draftBodies.get(artifact.id) ?? null } : null,
+        unsavedEdit: canvasDrafts[0] ? { ...canvasDrafts[0], content: canvasDraftBodies.get(artifact.id) ?? null } : null,
         publications,
         shareLinks: shares,
         suggestions: proposals.map((proposal) => ({ ...proposal, payload: suggestionBodies.get(proposal.id) ?? null })),
@@ -646,12 +702,12 @@ export async function GET(req: Request) {
   };
 
   if (isJuno && junoZip) {
-    junoZip.file("juno-export.json", JSON.stringify(payload, null, 2));
+    junoZip.file("alevr-export.json", JSON.stringify(payload, null, 2));
     const archive = await junoZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
     return new NextResponse(new Uint8Array(archive), {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="juno-export-${date}.zip"`,
+        "Content-Disposition": `attachment; filename="alevr-export-${date}.zip"`,
       },
     });
   }
@@ -659,7 +715,7 @@ export async function GET(req: Request) {
   return new NextResponse(JSON.stringify(payload, null, 2), {
     headers: {
       "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="juno-export-${date}.json"`,
+      "Content-Disposition": `attachment; filename="alevr-export-${date}.json"`,
     },
   });
 }

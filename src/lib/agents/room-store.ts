@@ -28,6 +28,7 @@ import {
   type RoomTurnReason,
 } from "@/lib/agents/rooms";
 import type { ClientRoom, ClientRoomDetail, ClientRoomTurn } from "@/lib/agents/room-types";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export interface RoomMembersRead {
   conversationId: string;
@@ -257,7 +258,7 @@ export async function prepareRoomTurn(input: {
 
   if (input.roomTurnAgentId) {
     const lastUser = await prisma.message.findFirst({
-      where: { conversationId: input.conversationId, role: "USER", conversation: { userId: input.userId } },
+      where: { conversationId: input.conversationId, role: "USER", conversation: { userId: input.userId }, ...ON_ACTIVE_PATH },
       orderBy: { createdAt: "desc" },
       select: { id: true },
     });
@@ -297,7 +298,7 @@ export async function prepareRoomTurn(input: {
 
   if (input.regenerate) {
     const last = await prisma.message.findFirst({
-      where: { conversationId: input.conversationId, conversation: { userId: input.userId } },
+      where: { conversationId: input.conversationId, conversation: { userId: input.userId }, ...ON_ACTIVE_PATH },
       orderBy: { createdAt: "desc" },
       select: { id: true, role: true, content: true },
     });
@@ -513,7 +514,7 @@ export async function loadRoomDetail(userId: string, conversationId: string, now
     messageId: row.messageId,
   }));
   const lastUser = await prisma.message.findFirst({
-    where: { conversationId, role: "USER", conversation: { userId } },
+    where: { conversationId, role: "USER", conversation: { userId }, ...ON_ACTIVE_PATH },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });

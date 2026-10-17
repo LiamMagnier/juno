@@ -213,7 +213,7 @@
 .alv-agent-state[data-attention] { color: var(--alv-attention); }
 .alv-ledger { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 64px auto 0; max-width: 1000px; border-top: 1px solid var(--alv-line); }
 .alv-ledger > div { padding: 28px 28px 0 0; }
-.alv-ledger > div + div { padding-left: 28px; border-left: 1px solid var(--alv-hair); }
+.alv-ledger > div:not(:first-child) { padding-left: 28px; border-left: 1px solid var(--alv-hair); }
 .alv-ledger dt { font-size: 15px; font-weight: 500; }
 .alv-ledger dd { margin-top: 6px; }
 
@@ -376,7 +376,7 @@
   .alv-agent-name { font-size: 18px; }
   .alv-agent-state { font-size: 12px; line-height: 16px; }
   .alv-ledger { grid-template-columns: minmax(0, 1fr); }
-  .alv-ledger > div, .alv-ledger > div + div { padding: 24px 0 0; border-left: 0; }
+  .alv-ledger > div, .alv-ledger > div:not(:first-child) { padding: 24px 0 0; border-left: 0; }
   .alv-code { padding-bottom: 96px; }
   .alv-slab { border-radius: 20px; padding: 56px 20px 0; margin: 0 -8px; }
   .alv-slab-points { grid-template-columns: minmax(0, 1fr); gap: 20px; }

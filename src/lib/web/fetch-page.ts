@@ -109,6 +109,7 @@ const SNIPPET_CHARS = 300;
 
 /** Chat's honest identity (DECISIONS §4c): it names Juno and says a person asked. */
 export function chatUserAgent(appUrl: string = env.appUrl): string {
+  // eslint-disable-next-line brand/no-codename -- a User-Agent product token keeps its stable spelling (brand/names.ts)
   return `Mozilla/5.0 (compatible; Juno/1.0; +${appUrl}) user-initiated fetch`;
 }
 

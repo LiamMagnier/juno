@@ -1,14 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import { Loader2 } from "@/components/ui/icons";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { checksLabel, type ChecksReport } from "@/lib/code-checks";
 import { transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -197,11 +196,11 @@ export function CodeSessionBanner({
   const shownActivity = activity ?? lastActivity.current;
 
   return (
-    // `reducedMotion="user"` rather than a `useReducedMotion()` at each site:
-    // the framer motion in this header is a chip swap and a row entrance, and
-    // both should degrade to the opacity-only Tier B that globals.css applies
-    // to the CSS keyframes beside them.
-    <MotionConfig reducedMotion="user">
+    // No MotionConfig here: the app's root provider already maps the reader's
+    // Motion choice onto framer (the chip swap and row entrance degrade to the
+    // opacity-only tier, as the CSS keyframes beside them do). A nested
+    // reducedMotion="user" read the OS alone and overrode Settings › Motion.
+    <>
       <header
         // `bg-background` flat: the translucency bought nothing — this row is
         // `shrink-0` in a flex column, so nothing scrolls beneath it, and on a
@@ -219,7 +218,7 @@ export function CodeSessionBanner({
           {/* Where it runs, as a quiet glyph (CODE_SYSTEM.md: no badges around state). */}
           <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
             {resolving ? (
-              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+              <GalaxyMark phase="working" size={16} />
             ) : isCloud ? (
               <CodeIcons.cloud className="size-4" aria-hidden="true" />
             ) : (
@@ -435,13 +434,13 @@ export function CodeSessionBanner({
               animate={{ opacity: activity ? 1 : 0 }}
               transition={transition.fast}
             >
-              {activity && <PhaseOrb state="working" className="-my-1" />}
+              {activity && <GalaxyMark phase="working" size={14} eventKey={shownActivity ?? undefined} />}
               <span className="min-w-0 truncate font-mono">{shownActivity}</span>
             </motion.p>
           </div>
         </div>
       </header>
-    </MotionConfig>
+    </>
   );
 }
 

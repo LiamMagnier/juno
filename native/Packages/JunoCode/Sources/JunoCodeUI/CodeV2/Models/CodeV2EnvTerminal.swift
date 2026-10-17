@@ -30,6 +30,11 @@ public final class CodeV2EnvTerminal {
     @ObservationIgnored private weak var hub: EnvServerHub?
     @ObservationIgnored private let connect: (() async throws -> EnvServerConnection)?
     @ObservationIgnored private var listener: Task<Void, Never>?
+    /// Events that reached a terminal following its own connection while it
+    /// was opening, before the open's reply named its id. The shell's first
+    /// prompt can overtake that reply; it is replayed once the id is known,
+    /// and anything for another terminal is dropped then.
+    @ObservationIgnored private var eventsWhileOpening: [CodeV2.ServerEvent] = []
 
     init(hub: EnvServerHub, cwd: String) {
         self.hub = hub
@@ -79,7 +84,11 @@ public final class CodeV2EnvTerminal {
             terminalId = id
             hub?.register(self, as: id)
             phase = .running
+            let early = eventsWhileOpening
+            eventsWhileOpening = []
+            for event in early { receive(event) }
         } catch {
+            eventsWhileOpening = []
             phase = .failed(CodeV2EnvSession.describe(error))
         }
     }
@@ -142,6 +151,10 @@ public final class CodeV2EnvTerminal {
 
     /// The hub's (or a test's) delivery of one global terminal event.
     public func receive(_ event: CodeV2.ServerEvent) {
+        if phase == .opening, terminalId == nil {
+            eventsWhileOpening.append(event)
+            return
+        }
         switch event {
         case let .terminalOutput(id, data) where id == terminalId:
             screen.feed(data)

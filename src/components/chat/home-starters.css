@@ -1,0 +1,103 @@
+/*
+ * The home's starters (home-starters.tsx, G34). Under the composer's tray on a
+ * desktop, centred; above the composer on a phone, as one row that scrolls
+ * sideways so the thumb's composer never moves.
+ *
+ * Hidden is opacity, never display: the row keeps its box while the person
+ * types, so the composer and the greeting do not shift under the caret.
+ */
+
+.home-starters {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* Clear of the tray tucked under the composer (composer.css, ~22px). */
+  padding-top: 30px;
+  opacity: 0;
+  transition: opacity var(--dur-exit) var(--ease-in);
+}
+.home-starters[data-shown] {
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-out-soft);
+}
+
+.home-starters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+/* The prompts: a short editorial list on hairlines, not a second set of cards. */
+.home-starters__prompts {
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+}
+/* :not(:first-child), not `li + li`: a sibling combinator restyles the whole list on every insert. */
+.home-starters__prompts > li:not(:first-child) {
+  border-top: 1px solid hsl(var(--border) / 0.7);
+}
+.home-starters__prompt {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+  /* The ui rung (tailwind text-ui), the same voice as the chips above. */
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+  transition:
+    color var(--dur-fast) var(--ease-out-soft),
+    background-color var(--dur-fast) var(--ease-out-soft);
+}
+@media (hover: hover) {
+  .home-starters__prompt:hover {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--accent));
+  }
+}
+.home-starters__prompt:active {
+  background-color: hsl(var(--accent));
+}
+@media (pointer: coarse) {
+  .home-starters__chip {
+    min-height: 44px;
+  }
+  .home-starters__prompt {
+    min-height: 48px;
+    padding-block: 14px;
+  }
+}
+
+/* Phone (composer.css's breakpoint): the row sits above the composer, so it
+   reads bottom-up: prompts first, then the chips the thumb just tapped. */
+@media (max-width: 760px) {
+  .home-starters {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding-top: 0;
+    padding-bottom: 12px;
+    gap: 10px;
+  }
+  .home-starters__chips {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    /* Let the first and last chips scroll to the gutter's edge, not under it. */
+    margin-inline: calc(-1 * var(--page-gutter, 1rem));
+    padding-inline: var(--page-gutter, 1rem);
+    scroll-padding-inline: var(--page-gutter, 1rem);
+    scroll-snap-type: x proximity;
+  }
+  .home-starters__chip {
+    scroll-snap-align: start;
+  }
+  .home-starters__prompts {
+    width: 100%;
+  }
+}

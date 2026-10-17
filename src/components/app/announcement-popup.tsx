@@ -9,6 +9,7 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Construction } from "@/components/home/construction";
 import type { ClientAnnouncement } from "@/lib/announcements";
 import { PROVIDERS } from "@/lib/providers";
+import { useReducedMotion } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
 import "./announcement.css";
 
@@ -24,16 +25,8 @@ export type AnnouncementView = Pick<
  * reduced-motion block cannot reach, so the video needs it as a value.
  */
 export function useReducedMotionPref(): boolean {
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (!mq) return;
-    const sync = () => setReduced(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-  return reduced;
+  // Hydrates as `false` (server snapshot) and then follows the OS and the in-app choice.
+  return useReducedMotion();
 }
 
 /**

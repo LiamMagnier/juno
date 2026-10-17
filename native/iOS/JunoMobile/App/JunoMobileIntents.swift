@@ -116,7 +116,10 @@ final class JunoMobileLaunchRequests {
   /// plus the three pages a notification opens — an agent, a chat, a Work
   /// task — which only navigate. Parsing nothing else — including the OAuth
   /// callback that shares the scheme — keeps a malicious link from creating a
-  /// Code command or deciding an approval that was never shown. No link ever
+  /// Code command. The one route that carries a decision, `code/approval`,
+  /// only produces a request: the root view opens the session and passes the
+  /// decision through ``JunoMobileApprovalGate``, which sends nothing until
+  /// the owner confirms with Face ID, Touch ID or the passcode. No link ever
   /// decides a Work approval: that is a card the person reads first.
   static func request(for url: URL) -> Request? {
     guard url.scheme == JunoMobileWidgetRoute.scheme, url.host == JunoMobileWidgetRoute.host

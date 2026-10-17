@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion, type Transition } from "framer-motion";
+import { AnimatePresence, motion, type Transition } from "framer-motion";
 
 import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * Continuous disclosure — docs/design/ICONS_AND_MOTION.md §2.2, rule 6.

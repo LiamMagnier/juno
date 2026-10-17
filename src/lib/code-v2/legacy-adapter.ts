@@ -33,7 +33,7 @@ export interface LegacyMessage {
   reasoning?: string | null;
   createdAt: string;
   model?: string | null;
-  attachments?: { id: string; name?: string; filename?: string; mimeType?: string; mediaType?: string }[];
+  attachments?: { id: string; name?: string; fileName?: string; filename?: string; mimeType?: string; mediaType?: string }[];
   activity?: LegacyActivityRow[];
   pending?: boolean;
   streaming?: boolean;
@@ -281,7 +281,7 @@ export function legacyToItems(input: LegacySessionInput): LegacySessionOutput {
         text: m.content,
         createdAt: m.createdAt,
         delivery: "send",
-        attachments: (m.attachments ?? []).map((a) => ({ name: a.name ?? a.filename ?? "attachment", mediaType: a.mediaType ?? a.mimeType ?? "application/octet-stream", ref: a.id })),
+        attachments: (m.attachments ?? []).map((a) => ({ name: a.name ?? a.fileName ?? a.filename ?? "attachment", mediaType: a.mediaType ?? a.mimeType ?? "application/octet-stream", ref: a.id })),
       });
       return;
     }

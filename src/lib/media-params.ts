@@ -880,7 +880,7 @@ function minimaxH3(modelId: string, fast: boolean): MediaCapabilities {
       "https://platform.minimax.io/docs/api-reference/video-generation-v2-query",
     ],
     unverified: [
-      "image / reference input: the V2 API takes first/last frames and reference image, video and audio in `content`; Juno sends the text prompt only.",
+      "image / reference input: the V2 API takes first/last frames and reference image, video and audio in `content`; Alevr sends the text prompt only.",
       ...(fast ? ["extra.prompt_expansion_mode (disabled | balanced | quality): documented for H3 Max, left at its `balanced` default."] : []),
     ],
   };

@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { toast } from "sonner";
-import { Loader2 } from "@/components/ui/icons";
+
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
@@ -237,7 +238,7 @@ export function ImportProgress({ phase, onRetry }: { phase: ImportPhase; onRetry
           </div>
         ) : phase.name === "importing" ? (
           <p key="importing" className="flex items-center gap-2 text-ui text-muted-foreground">
-            <Loader2 className="size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
+            <GalaxyMark phase="working" size={16} />
             Rebuilding your chats with their original titles and dates.
           </p>
         ) : phase.name === "done" ? (

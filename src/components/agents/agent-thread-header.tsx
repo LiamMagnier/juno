@@ -35,6 +35,7 @@ import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand/names";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 export { threadAgentState } from "@/components/agents/thread-agent-state";
 
@@ -68,7 +69,7 @@ export function AgentThreadHeader({
   React.useEffect(() => {
     const face = faceRef.current;
     if (!listening || !levelRef || !face) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     let raf = 0;
     const tick = () => {
       face.style.setProperty("--level", levelRef.current.toFixed(3));

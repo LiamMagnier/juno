@@ -21,17 +21,17 @@ public enum FloorReason: Hashable, Codable, Sendable {
     public var explanation: String {
         switch self {
         case let .consequentialControl(word):
-            "This looks like a “\(word)” control, so Juno always asks, even in Full access."
+            "This looks like a “\(word)” control, so \(ScreenControlBrand.productName) always asks, even in Full access."
         case .sendsMessage:
-            "Return here sends what was typed, so Juno always asks, even in Full access."
+            "Return here sends what was typed, so \(ScreenControlBrand.productName) always asks, even in Full access."
         case .financeApp:
-            "This is a finance app, so Juno always asks."
+            "This is a finance app, so \(ScreenControlBrand.productName) always asks."
         case .credentialText:
-            "This text looks like a password or key. Juno asks before typing it anywhere."
+            "This text looks like a password or key. \(ScreenControlBrand.productName) asks before typing it anywhere."
         case .systemSettings:
-            "System Settings decides what your Mac and its apps may do, so Juno always asks before changing anything there, even in Full access."
+            "System Settings decides what your Mac and its apps may do, so \(ScreenControlBrand.productName) always asks before changing anything there, even in Full access."
         case .pressAfterTab:
-            "This text moves to another control with Tab and then presses it, so Juno always asks, even in Full access."
+            "This text moves to another control with Tab and then presses it, so \(ScreenControlBrand.productName) always asks, even in Full access."
         }
     }
 }

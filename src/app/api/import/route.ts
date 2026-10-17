@@ -26,6 +26,8 @@ import {
   HistoryImportError,
 } from "@/lib/history-import";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { writeRestoredBranches } from "@/lib/chat/branches";
+import { restoreImportedBranches } from "@/lib/chat/branch-model";
 
 export const runtime = "nodejs";
 // Vercel-only directive (`next start` ignores it) — a big export can take a while.
@@ -673,6 +675,9 @@ export async function POST(req: Request) {
               : {}),
             ...(message.model ? { model: message.model } : {}),
             ...(message.feedback ? { feedback: message.feedback } : {}),
+            ...(message.feedbackReason ? { feedbackReason: message.feedbackReason } : {}),
+            // Sealed like the body, as the feedback route seals it.
+            ...(message.feedbackNote ? { feedbackNote: encryptMessageText(message.feedbackNote) } : {}),
             ...(message.promptTokens != null ? { promptTokens: message.promptTokens } : {}),
             ...(message.completionTokens != null ? { completionTokens: message.completionTokens } : {}),
             ...(message.costMicroUsd != null ? { costMicroUsd: message.costMicroUsd } : {}),
@@ -699,6 +704,26 @@ export async function POST(req: Request) {
         if (!sourceAttachmentToMessageId.has(attachmentId)) sourceAttachmentToMessageId.set(attachmentId, targetId);
       }
     });
+    // A Juno export made with every branch (`/api/account/export?branches=all`)
+    // carries each message's place in the tree: written back so the import
+    // reads as the chat did, one branch shown and the rest on its pagers. A
+    // linear export, or a tree that does not hold together, stays linear.
+    const branches = restoreImportedBranches(
+      convo.messages.flatMap((message, messageIndex) => {
+        const id = createdMessages[messageIndex]?.id;
+        if (!id) return [];
+        return [{
+          id,
+          createdAt: message.createdAt,
+          sourceId: message.exportId ?? message.sourceId,
+          parentSourceId: message.parentSourceId,
+          branchGroupSourceId: message.branchGroupSourceId,
+          onActivePath: message.onActivePath,
+          branchSelected: message.branchSelected,
+        }];
+      }),
+    );
+    if (branches) await writeRestoredBranches(tx, created.id, branches);
     if (convo.sourceId) sourceIdToConversationId.set(convo.sourceId, created.id);
     if (importKey) existingConversationByImportKey.set(importKey, created.id);
     imported += 1;

@@ -51,6 +51,7 @@ import { WORK_NOTIFY_POLICIES } from "@/lib/work/notifications";
 import { WORK_SCHEDULE_RUN_KINDS, codeRoutineInputSchema } from "@/lib/work/code-routine";
 import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { pollErrorForClient, type ClientScheduleHealth } from "@/lib/work/schedule-health";
 
 // ---------------------------------------------------------------------------
 // Wall clock in a zone
@@ -1230,6 +1231,9 @@ export interface WorkTriggerRow {
   lastEventKey: string | null;
   lastFiredAt: Date | null;
   dedupeWindowSec: number;
+  /** The poller's last read of an event trigger's source, and why it failed. */
+  lastPolledAt?: Date | null;
+  lastPollError?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1242,6 +1246,14 @@ export interface ClientWorkTrigger {
   enabled: boolean;
   lastFiredAt: string | null;
   dedupeWindowSec: number;
+  /**
+   * When the poller last read this trigger's source, and why the last read
+   * failed (null once a read succeeds). Without these a trigger broken by an
+   * expired password looked exactly like one that worked. Absent from writers
+   * that predate them.
+   */
+  lastPolledAt?: string | null;
+  lastPollError?: string | null;
 }
 
 export interface ClientWorkSchedule {
@@ -1291,6 +1303,12 @@ export interface ClientWorkSchedule {
   createdAt: string;
   updatedAt: string;
   triggers: ClientWorkTrigger[];
+  /**
+   * Whether it is working: its trigger, its last runs, a run waiting on the
+   * person (src/lib/work/schedule-health.ts). Set by the list and detail
+   * routes; absent from writers that did not read the runs.
+   */
+  health?: ClientScheduleHealth | null;
 }
 
 /**
@@ -1348,6 +1366,8 @@ export function serializeSchedule(
       enabled: trigger.enabled,
       lastFiredAt: trigger.lastFiredAt?.toISOString() ?? null,
       dedupeWindowSec: trigger.dedupeWindowSec,
+      ...(trigger.lastPolledAt !== undefined ? { lastPolledAt: trigger.lastPolledAt?.toISOString() ?? null } : {}),
+      ...(trigger.lastPollError !== undefined ? { lastPollError: pollErrorForClient(trigger.lastPollError) } : {}),
     })),
   };
 }
@@ -2085,10 +2105,24 @@ export const createScheduleSchema = z.object({
   // Required rather than defaulted, for the reason `createSessionSchema` gives:
   // `automatic` is what lets scheduled work silently move off the user's Mac.
   target: z.enum(WORK_TARGETS),
-  hostId: idSchema.optional(),
+  // Nullable as well as optional: the editor sends `hostId: null` for a
+  // routine pinned to no Mac (the same body serves PATCH, where null means
+  // "unpin"), and refusing that null made every create from the web editor
+  // answer "Invalid input".
+  hostId: idSchema.nullable().optional(),
   enabled: z.boolean().default(true),
   triggers: z.array(triggerInputSchema).min(1).max(MAX_TRIGGERS),
   budget: budgetSchema.optional(),
+  /**
+   * The chat proposal this routine is scheduled from (`propose_routine`). A
+   * repeat create with the same key answers with the routine the first made.
+   */
+  proposalKey: z.string().trim().min(8).max(MAX_ID_CHARS).optional(),
+  /**
+   * The connected apps the routine's task may use. Absent: every app the
+   * account has connected, as before. Present (even empty): exactly these.
+   */
+  connectorIds: z.array(idSchema).max(32).optional(),
   // The three unattended policies are all ways of NOT acting; there is no
   // fourth. See `WORK_UNATTENDED_POLICIES`.
   unattendedPolicy: z.enum(WORK_UNATTENDED_POLICIES).default("pause_for_approval"),
@@ -2155,6 +2189,8 @@ export const SCHEDULE_RUN_LIST_MAX_LIMIT = 100;
 export interface ScheduleListQuery {
   enabled?: boolean;
   sessionId?: string;
+  /** The routine a chat proposal card scheduled, if it did. */
+  proposalKey?: string;
   limit: number;
 }
 
@@ -2188,11 +2224,17 @@ export function parseScheduleListQuery(params: URLSearchParams): ScheduleListQue
     return { ok: false, parameter: "sessionId" };
   }
 
+  const proposalKey = params.get("proposalKey");
+  if (proposalKey !== null && (proposalKey.length < 8 || proposalKey.length > MAX_ID_CHARS)) {
+    return { ok: false, parameter: "proposalKey" };
+  }
+
   return {
     ok: true,
     query: {
       ...(enabled !== undefined ? { enabled } : {}),
       ...(sessionId !== null ? { sessionId } : {}),
+      ...(proposalKey !== null ? { proposalKey } : {}),
       limit: limitParam(params.get("limit"), SCHEDULE_LIST_DEFAULT_LIMIT, SCHEDULE_LIST_MAX_LIMIT),
     },
   };

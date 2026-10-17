@@ -17,7 +17,7 @@
  *   PATCH  /api/conversations/{id}          → {conversation}
  *   DELETE /api/conversations/{id}          → {ok: true}
  *   POST   /api/conversations/{id}/fork     → {conversation}
- *   PATCH  /api/messages/{id}               → {ok, version}
+ *   PATCH  /api/messages/{id}               → {ok, message, replacedId}
  *   POST   /api/chat                        → text/event-stream
  *   POST   /api/chat/cancel                 → {ok, cancelled}
  *   GET    /api/v1/models                   → {models: [...], manifestVersion}
@@ -478,9 +478,10 @@ export class ChatService {
    * Rewrite a user message and re-run from there.
    *
    * Two calls, in this order and not the other: `PATCH /api/messages/{id}`
-   * snapshots the previous wording as a `MessageVersion` **and deletes every
-   * message after it**, then the regenerate runs against the truncated thread.
-   * Starting the generation first would answer the old text.
+   * writes the new wording as a sibling of the old one and makes it the shown
+   * branch (the old wording keeps every message after it, off the shown path),
+   * then the regenerate answers the shown leaf, the new wording. Starting the
+   * generation first would answer the old text.
    */
   async editMessage(
     request: ChatInvokeRequest<'chat:edit-message'>,

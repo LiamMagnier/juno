@@ -4,8 +4,19 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 0c2a652ea76b32d1
+// tokens-digest: 33e427aa477c9c66
 //
+
+/** The accent ids, in the order the web lists them (src/lib/accents.ts). */
+export const ACCENT_IDS = ["coral", "ultramarine", "juniper", "teal", "violet", "amber", "sage"] as const;
+
+/** Colours for code that paints without the stylesheet (canvas, OS chrome, OG images), as sRGB hex per theme. */
+export const SCRIPT_COLOR = {
+  background: { light: "#fcfcfd", dark: "#18191b" },
+  presence: { light: "#2d49c9", dark: "#97a6e6" },
+  presenceInk: { light: "#2d49c9", dark: "#97a6e6" },
+  galaxyCore: { light: "#8a6a3e", dark: "#f3d9b1" },
+} as const;
 
 /** `--dur-*` in milliseconds. */
 export const DURATION = {

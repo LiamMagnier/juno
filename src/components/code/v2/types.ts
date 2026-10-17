@@ -13,6 +13,7 @@ import type {
   SessionState,
   SessionUsage,
   TurnItem,
+  UserMessageItem,
 } from "@/lib/code-v2/contracts";
 import type { QueueRow } from "@/lib/code-v2/composer";
 import type { DockTab } from "@/lib/code-v2/dock";
@@ -20,6 +21,7 @@ import type { DiffFile, HunkDecision } from "@/lib/code-v2/diff";
 import type { DetailLevel } from "@/lib/code-v2/turns";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
 import type { ByokKeyRecord } from "@/lib/code-v2/byok-client";
+import type { ClientAttachment } from "@/types/chat";
 import type { CodeSkillsState } from "./use-code-skills";
 import type { LoadOlderRequest } from "@/lib/chat/history-client";
 
@@ -33,6 +35,25 @@ export interface PagedHistory {
   loading: boolean;
   /** Resolves to null when nothing could be read. */
   loadOlder(request?: LoadOlderRequest): Promise<unknown>;
+}
+
+/**
+ * A thread's draft beyond the composer's own state: kept in this tab (a reload
+ * or a trip to another thread finds it) and synced to the reader's other
+ * devices through the thread-sync row, the way Chat drafts are.
+ */
+export interface DraftChannel {
+  /** This tab's storage key for the draft (lib/chat/context-draft), or null to keep none. */
+  key: string | null;
+  /**
+   * The composer says how to read and replace its text, and how to take back
+   * a message whose send failed (words and files); returns the detach.
+   */
+  attach(io: { read(): { text: string; editing: boolean }; apply(text: string): void; restore?(text: string, attachments: ClientAttachment[]): void }): () => void;
+  /** Every edit (debounced by the channel). */
+  changed(text: string): void;
+  /** A send: the draft is empty everywhere. */
+  cleared(): void;
 }
 
 export interface TerminalSession {
@@ -60,12 +81,15 @@ export interface WorkspaceThread {
   repo: string;
   branch?: string;
   cwd?: string;
+  /** Pinned in the sidebar (session menu says Unpin). */
+  pinned?: boolean;
 }
 
 export interface WorkspaceActions {
-  send(text: string): void | Promise<unknown>;
-  queue(text: string): void;
-  steer(text: string): void | Promise<unknown>;
+  /** `attachments`: finished uploads from the composer's row (Chat's pipeline). */
+  send(text: string, attachments?: ClientAttachment[]): void | Promise<unknown>;
+  queue(text: string, attachments?: ClientAttachment[]): void;
+  steer(text: string, attachments?: ClientAttachment[]): void | Promise<unknown>;
   stop(): void;
   respond(requestId: string, decision: ApprovalDecision, answers?: Record<string, string[]>): void | Promise<unknown>;
   setSelection(selection: ModelSelection): void;
@@ -78,8 +102,17 @@ export interface WorkspaceActions {
   removeQueued(id: string): void;
   moveQueued(id: string, to: number): void;
   steerQueued(id: string): void;
-  compact?(): void;
-  rollback?(checkpointId: string): void;
+  /** `/compact [instructions]` and "Compact and switch": the engine summarises the oldest turns. */
+  compact?(instructions?: string): void;
+  /** `/clear`: a fresh thread in the same project (`draft` becomes its draft), without spending a turn. */
+  clearThread?(draft?: string): void;
+  /** Resolves once the host answered, false when it could not restore the files (Edit and Retry wait for it). */
+  rollback?(checkpointId: string): void | Promise<boolean | void>;
+  /** Sends a turn's opening message again, with its attachments where the host can (Retry). */
+  resend?(message: UserMessageItem): void | Promise<unknown>;
+  /** The verdict on a turn's answer, and setting it (null clears). */
+  feedbackFor?(turnId: string): "UP" | "DOWN" | null;
+  setFeedback?(turnId: string, value: "UP" | "DOWN" | null): void;
   /**
    * A hunk decision. `file` is the parsed file the hunk belongs to (the host
    * builds the patch from it). Resolving `false` means the host could not
@@ -103,6 +136,11 @@ export interface WorkspaceActions {
   closeTerminal?(terminalId: string): void;
   openTerminal?(command?: string): void;
   renameThread?(title: string): void;
+  /** Session menu (lib: session-actions.tsx): pin, share a read-only link, archive with Undo, delete after a confirm. */
+  pinThread?(pinned: boolean): void;
+  shareThread?(): void;
+  archiveThread?(): void;
+  deleteThread?(): void;
 }
 
 export interface WorkspaceModel {
@@ -145,6 +183,21 @@ export interface WorkspaceModel {
   child?: { label: string; model: string; parentTitle: string } | null;
   /** skills lane: the Skills chip and `/name` (absent: no Skills chip). */
   skills?: CodeSkillsState;
+  /** Where the draft is kept and synced (absent: the composer's state only). */
+  draft?: DraftChannel;
+  /** Attachments can be uploaded (the deployment has storage). Absent: off. */
+  canAttach?: boolean;
+  /** The conversation uploads are filed under (null on the landing, before one exists). */
+  uploadConversationId?: string | null;
+  /** The largest file a turn here can carry (a Mac thread: what the device link fits). */
+  attachmentMaxBytes?: number;
+  /**
+   * The chosen model belongs to a Mac whose provider list has not arrived yet
+   * (a subscription picked on the landing). The composer stays writable and
+   * shows the choice, and Send waits for the list instead of reading as
+   * "Connect".
+   */
+  selectionPending?: boolean;
   actions: WorkspaceActions;
 }
 

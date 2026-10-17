@@ -14,14 +14,14 @@
   border-radius: 28px;
   aspect-ratio: 16 / 9;
   background:
-    radial-gradient(46% 34% at var(--haze-x, 50%) var(--haze-y, 46%), rgb(45 73 201 / 0.07), transparent 72%),
+    radial-gradient(46% 34% at var(--haze-x, 50%) var(--haze-y, 46%), hsl(var(--presence) / 0.07), transparent 72%),
     radial-gradient(120% 95% at 50% 42%, #fbfbfc 0%, #f2f3f5 64%, #eceef1 100%);
   outline: 1px solid hsl(var(--foreground) / 0.06);
   transition: --haze-x 900ms var(--alv-ease), --haze-y 900ms var(--alv-ease);
 }
 .dark .plans-stage {
   background:
-    radial-gradient(42% 32% at var(--haze-x, 50%) var(--haze-y, 46%), rgb(151 166 230 / 0.15), transparent 70%),
+    radial-gradient(42% 32% at var(--haze-x, 50%) var(--haze-y, 46%), hsl(var(--presence) / 0.15), transparent 70%),
     radial-gradient(120% 90% at 50% 40%, #16181d 0%, #0d0e11 62%, #08090b 100%);
   outline-color: rgb(255 255 255 / 0.06);
 }
@@ -117,9 +117,9 @@
   opacity: 1;
   background: var(--alv-presence);
   transform: scale(1.35);
-  box-shadow: 0 0 0 5px rgb(45 73 201 / 0.14), 0 0 18px 4px rgb(45 73 201 / 0.35);
+  box-shadow: 0 0 0 5px hsl(var(--presence) / 0.14), 0 0 18px 4px hsl(var(--presence) / 0.35);
 }
-.dark .plans-node[aria-checked="true"] .plans-node-point { box-shadow: 0 0 0 5px rgb(151 166 230 / 0.16), 0 0 22px 6px rgb(151 166 230 / 0.45); }
+.dark .plans-node[aria-checked="true"] .plans-node-point { box-shadow: 0 0 0 5px hsl(var(--presence) / 0.16), 0 0 22px 6px hsl(var(--presence) / 0.45); }
 .plans-node[aria-checked="true"] .plans-node-name { font-size: 27px; }
 .plans-node-you { font-family: var(--font-mono), monospace; font-size: 10.5px; line-height: 14px; letter-spacing: 0.02em; color: var(--alv-sub); }
 
@@ -138,8 +138,7 @@
 /* The comparison's dots: included, not included, and how much. */
 .plans-dot { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: hsl(var(--foreground) / 0.85); }
 .plans-dot[data-off] { width: 4px; height: 4px; background: hsl(var(--foreground) / 0.18); }
-.plans-dot[data-new] { background: #2d49c9; }
-.dark .plans-dot[data-new] { background: #97a6e6; }
+.plans-dot[data-new] { background: hsl(var(--presence)); }
 .plans-usage { display: inline-flex; gap: 2.5px; align-items: center; }
 .plans-usage > i { width: 4px; height: 4px; border-radius: 99px; background: hsl(var(--foreground) / 0.16); }
 .plans-usage > i[data-on] { background: hsl(var(--foreground) / 0.82); }

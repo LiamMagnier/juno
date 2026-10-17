@@ -292,7 +292,7 @@ export interface SpendLedger {
  * pass. A null ceiling (the cap disabled) admits everything.
  *
  * The real implementation performs this as ONE conditional SQL UPDATE, exactly
- * as `reserveCodeMessage` does for message counts: a read followed by a write
+ * as `consumeMessage` does for message counts: a read followed by a write
  * would let both callers observe the same under-ceiling total.
  */
 export function applyHold(

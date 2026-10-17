@@ -7,7 +7,6 @@ import { announceResearchStarted } from "@/components/research/research-discover
 import { createFrameSequencer } from "@/lib/chat/stream-replay";
 import {
   applyTurnArtifacts,
-  detachArtifactsFromMessages,
   serverTranscriptRevision,
   settleClientMessage,
 } from "@/lib/chat-client-state";
@@ -20,11 +19,13 @@ import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
 import { COMPLETE_HISTORY, prependOlder, reconcileNewestPage, reconciledHistory } from "@/lib/chat/history-merge";
 import { createOlderHistoryLoader, type LoadOlderRequest } from "@/lib/chat/history-client";
+import { replaceBranchTail } from "@/lib/chat/branch-model";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import { rangesForStoredText, type ContextToken } from "@/lib/chat/context-tokens";
 import { sketchGuideForGeneration } from "@/lib/sketch/sketch-core";
 import type { ClientWorkSession } from "@/lib/work/serializers";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import {
   formatPreflightClarificationVisibleMessage,
   isPreflightClarificationResult,
@@ -39,7 +40,7 @@ import type {
   ClientArtifact,
   ClientAttachment,
   ClientMessage,
-  ClientMessageVersion,
+  ClientMemoryWrite,
   ClientQuota,
   ConversationHistory,
   GenerateEditPayload,
@@ -47,6 +48,7 @@ import type {
   ReasoningEffort,
   TitleSource,
 } from "@/types/chat";
+import { memoryWriteOf } from "@/lib/chat/memory-receipts";
 
 /**
  * Add an activity event, or update the one already holding its id WHERE IT IS.
@@ -210,6 +212,13 @@ function recoveryDelayMs(attempt: number): number {
 
 /** Newest messages the dropped-stream recovery poll reads; the turn it waits on is the latest. */
 const RECOVERY_PAGE_MESSAGES = 40;
+/** The newest page read back after a branch moved under the transcript (FIRST_PAGE_MESSAGES on the server). */
+const FIRST_PAGE_LIMIT = 60;
+
+/** Toast copy, named so the i18n catalog picks it up (scripts/generate-i18n-catalog.mjs). */
+const branchSwitchFailedMessage = "Couldn’t switch to that version.";
+const regenerateFailedMessage = "Couldn’t regenerate that answer.";
+const unsentAfterMessage = "Resend or copy your unsent message first.";
 
 export type { LoadOlderRequest } from "@/lib/chat/history-client";
 
@@ -237,11 +246,18 @@ interface UseChatOptions {
    *  models that support it. */
   proMode?: boolean;
   connectors?: string[];
+  /**
+   * The composer's mode for tasks this chat starts
+   * (src/lib/chat/task-approval-mode.ts), read at send time. A getter because
+   * the chat view learns a new chat's id only after this hook has run.
+   */
+  taskApprovalMode?: () => "conservative" | "balanced" | "permissive" | null;
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
   onQuota?: (quota: ClientQuota) => void;
-  onMemoryUpdated?: () => void;
+  /** The turn wrote to memory; `write` names what, when the turn could (src/lib/chat/memory-receipts.ts). */
+  onMemoryUpdated?: (write: ClientMemoryWrite | null) => void;
   /**
    * The model handed this turn to a background task (`start_task`), and the
    * server has already created it and dispatched its first run. The caller
@@ -257,6 +273,8 @@ interface UseChatOptions {
 }
 
 export function useChat(opts: UseChatOptions) {
+  // Read at send time; held apart so calling it is not a call on `opts`.
+  const readTaskApprovalMode = opts.taskApprovalMode;
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
   const historyRef = React.useRef(history);
@@ -312,9 +330,10 @@ export function useChat(opts: UseChatOptions) {
   }, [messages]);
   // Server message ids removed from local state, mapped to the createdAt we
   // last saw. Regenerate pops the stale assistant answer locally, but the
-  // server keeps that row and OVERWRITES it in place (bumping createdAt) once
-  // the new answer lands — so drop recovery must not mistake the untouched row for a
-  // fresh answer, yet must recognize it once its createdAt is bumped.
+  // server keeps that row on the shown branch until the new answer lands as
+  // its sibling (src/lib/chat/branches.ts) — so drop recovery must not mistake
+  // the untouched row for a fresh answer. (A server from before branches
+  // overwrote the row in place, bumping createdAt, which still reads as new.)
   const locallyRemovedRef = React.useRef<Map<string, string>>(new Map());
   // Older pages: the request and its one-at-a-time rule are shared with the
   // Code surfaces (lib/chat/history-client.ts); landing is this hook's.
@@ -433,8 +452,8 @@ export function useChat(opts: UseChatOptions) {
       if (!convoId) return;
       // The recovered answer is whichever ASSISTANT message we have never seen.
       // Locally-removed ids count as seen while their createdAt is unchanged:
-      // on regenerate the stale answer still exists server-side, and only gets
-      // overwritten in place (createdAt bumped) once the new answer lands.
+      // on regenerate the stale answer stays shown server-side until the new
+      // answer lands beside it, under an id of its own.
       const knownIds = new Set(messagesRef.current.map((m) => m.id));
       const removedAt = new Map(locallyRemovedRef.current);
       // Terminal stamps must write content too: an empty bubble renders its
@@ -755,8 +774,9 @@ export function useChat(opts: UseChatOptions) {
             }
             case "done": {
               sawTerminal = true;
-              // A regenerated answer arrives under its original id (the server
-              // overwrites the row in place) — it is no longer "removed".
+              // A regenerated answer arrives under an id of its own (a sibling of
+              // the answer it replaces); a server from before branches reused the
+              // original id, which is then no longer "removed".
               locallyRemovedRef.current.delete(chunk.message.id);
               if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
               if (stopFallbackRef.current != null) {
@@ -775,7 +795,7 @@ export function useChat(opts: UseChatOptions) {
               );
               setArtifacts((prev) => applyTurnArtifacts(prev, chunk.artifacts, chunk.message.id));
               opts.onQuota?.(chunk.quota);
-              if (chunk.memoryUpdated) opts.onMemoryUpdated?.();
+              if (chunk.memoryUpdated) opts.onMemoryUpdated?.(memoryWriteOf(chunk.message.activity));
               opts.onDone?.(chunk.message, {
                 finishReason: chunk.finishReason ?? chunk.message.finishReason,
                 title: chunk.title,
@@ -1445,6 +1465,10 @@ export function useChat(opts: UseChatOptions) {
           // panel under the reply), so the route may offer `start_task`. Never
           // in private mode: that path writes no rows for a task to hang from.
           workHandoff: opts.privateMode ? undefined : true,
+          // How often a task the model starts here stops to ask. Rides every
+          // send so a new chat keeps the mode picked before it existed; the
+          // server saves it on the conversation.
+          taskApprovalMode: opts.privateMode ? undefined : readTaskApprovalMode?.() ?? undefined,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
@@ -1487,6 +1511,7 @@ export function useChat(opts: UseChatOptions) {
       opts.connectors,
       opts.projectId,
       opts.privateMode,
+      readTaskApprovalMode,
       messages,
     ]
   );
@@ -1748,7 +1773,34 @@ export function useChat(opts: UseChatOptions) {
     setStatus("idle");
   }, []);
 
-  const regenerate = React.useCallback(async (options?: RegenerateOptions) => {
+  /**
+   * The newest page read again and folded in, for when the transcript held
+   * here and the server's shown branch may disagree: a branch longer than one
+   * switch answer, or a regenerate of an earlier answer that failed partway.
+   * Rows older than the page that the reader scrolled back through are kept
+   * (history-merge.ts), so the reader keeps their place above.
+   */
+  const reloadNewestPage = React.useCallback(async (convoId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/conversations/${convoId}?limit=${FIRST_PAGE_LIMIT}`);
+      if (!res.ok) return false;
+      const payload = (await res.json()) as { messages?: ClientMessage[]; history?: ConversationHistory; artifacts?: ClientArtifact[] };
+      if (convoIdRef.current !== convoId || !Array.isArray(payload.messages)) return false;
+      const pageHistory = payload.history ?? COMPLETE_HISTORY;
+      const renderKeys = new Map(messagesRef.current.map((message) => [message.id, message.renderKey]));
+      const page = payload.messages.map((message) => ({ ...message, renderKey: renderKeys.get(message.id) }));
+      const { messages: merged, keptOlder } = reconcileNewestPage<ChatMessage>(messagesRef.current, page, pageHistory);
+      messagesRef.current = merged;
+      setMessages(merged);
+      setHistory((held) => reconciledHistory(held, pageHistory, keptOlder));
+      if (Array.isArray(payload.artifacts)) setArtifacts(payload.artifacts);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const regenerate = React.useCallback(async (options?: RegenerateOptions, messageId?: string) => {
     if (status !== "idle" && status !== "error") return;
     /*
      * A dropped turn is reconnected to, never regenerated.
@@ -1768,6 +1820,64 @@ export function useChat(opts: UseChatOptions) {
     // untouched, so "try this once with Claude" does not silently become the
     // model for every turn after.
     const modelForRun = options?.modelId ?? opts.model;
+    /*
+     * An earlier answer: a new branch at that turn (src/lib/chat/branches.ts).
+     * The answer and everything after it give way to the new one on screen
+     * now; on the server nothing moves until the new answer is written, when
+     * the old one becomes its sibling, kept with its whole continuation.
+     */
+    const held = messagesRef.current;
+    const at = messageId ? held.findIndex((m) => m.id === messageId) : -1;
+    if (messageId && at !== -1 && at < held.length - 1 && convoIdRef.current && !opts.privateMode && !messageId.startsWith("temp-")) {
+      // A turn the server never received lives only here: the new branch
+      // would take it off the screen for good.
+      if (held.slice(at + 1).some((m) => m.unsent)) {
+        toast.error(unsentAfterMessage);
+        return;
+      }
+      const convoId = convoIdRef.current;
+      const assistantTempId = tempId();
+      for (const removed of held.slice(at)) locallyRemovedRef.current.set(removed.id, removed.createdAt);
+      const placeholder: ChatMessage = {
+        id: assistantTempId,
+        // The row it replaces keeps its place on screen.
+        renderKey: held[at].renderKey ?? held[at].id,
+        role: "ASSISTANT",
+        content: "",
+        createdAt: new Date().toISOString(),
+        attachments: [],
+        activity: [],
+        streaming: true,
+      };
+      const next = [...held.slice(0, at), placeholder];
+      messagesRef.current = next;
+      setMessages(next);
+      await runGeneration(
+        {
+          conversationId: convoId,
+          regenerate: true,
+          regenerateMessageId: messageId,
+          regenerateInstruction: options?.instruction,
+          model: modelForRun,
+          voiceMode: opts.voiceMode,
+          reasoningEffort: opts.reasoningEffort,
+          fastMode: opts.fastMode,
+          ultraFast: opts.ultraFast || undefined,
+          proMode: opts.proMode,
+          connectors: opts.connectors,
+        },
+        assistantTempId
+      );
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const settled = messagesRef.current.find((m) => m.id === assistantTempId);
+      if (settled?.error && convoIdRef.current === convoId) {
+        // Whatever the server kept — the old branch untouched, or a partial
+        // answer as its new sibling — is what the transcript shows again.
+        toast.error(settled.errorMessage || regenerateFailedMessage);
+        await reloadNewestPage(convoId);
+      }
+      return;
+    }
     const trailingUser = messagesRef.current.filter((m) => m.role === "USER").at(-1);
     // A turn the server never saw cannot be regenerated, only re-sent — the
     // `{ regenerate: true }` body carries no message text, so "Try again" on a
@@ -1791,9 +1901,8 @@ export function useChat(opts: UseChatOptions) {
     }
     // Drop the trailing assistant message locally and add a fresh placeholder.
     // Remember the dropped ids (with the createdAt we saw): the server keeps
-    // the stale row — preserving its content as a MessageVersion and updating
-    // it in place — so drop recovery must not mistake the untouched row for a
-    // fresh answer, yet must recognize it once its createdAt is bumped.
+    // the stale row shown until the new answer is written as its sibling, so
+    // drop recovery must not mistake the untouched row for a fresh answer.
     const assistantTempId = tempId();
     setMessages((prev) => {
       const copy = [...prev];
@@ -1822,7 +1931,13 @@ export function useChat(opts: UseChatOptions) {
       },
       assistantTempId
     );
-  }, [status, runGeneration, startGeneration, resendUnsent, reconnect, opts.model, opts.voiceMode, opts.reasoningEffort, opts.fastMode, opts.ultraFast, opts.proMode, opts.connectors]);
+  }, [status, runGeneration, startGeneration, resendUnsent, reconnect, reloadNewestPage, opts.model, opts.privateMode, opts.voiceMode, opts.reasoningEffort, opts.fastMode, opts.ultraFast, opts.proMode, opts.connectors]);
+
+  /** Regenerate one particular answer: the newest, or an earlier one as a new branch. */
+  const regenerateAt = React.useCallback(
+    (messageId: string, options?: RegenerateOptions) => regenerate(options, messageId),
+    [regenerate]
+  );
 
   /**
    * A room's follow-up turn (src/lib/agents/rooms.ts): the next planned or
@@ -1899,6 +2014,53 @@ export function useChat(opts: UseChatOptions) {
     return !refused;
   }, [status, runGeneration, opts.privateMode, opts.voiceMode, opts.reasoningEffort, opts.connectors]);
 
+  /**
+   * Show another branch of the thread: the "‹ 2/3 ›" pager under an edited
+   * question or a regenerated answer (src/lib/chat/branches.ts).
+   *
+   * The rows above the switched turn stay exactly as they are. The turn and
+   * everything after it give way to the other branch, and the first new row
+   * takes over the old one's render key, so the turn the reader pressed stays
+   * where it is on screen while its continuation changes below it.
+   */
+  const selectBranch = React.useCallback(async (messageId: string): Promise<boolean> => {
+    if (status !== "idle" && status !== "error") return false;
+    const convoId = convoIdRef.current;
+    if (!convoId || opts.privateMode) return false;
+    // A turn the server never received lives only here, below whatever it
+    // followed: switching the continuation above it would drop it for good.
+    if (messagesRef.current.some((m) => m.unsent)) {
+      toast.error(unsentAfterMessage);
+      return false;
+    }
+    const res = await fetch(`/api/messages/${messageId}/branch`, { method: "POST" }).catch(() => null);
+    const data = (res ? await res.json().catch(() => ({})) : {}) as { replacedId?: string; messages?: ClientMessage[] | null; error?: string };
+    if (!res?.ok) {
+      toast.error(data.error ?? branchSwitchFailedMessage);
+      return false;
+    }
+    if (convoIdRef.current !== convoId) return false;
+    if (data.replacedId && Array.isArray(data.messages)) {
+      const replaced = messagesRef.current.find((m) => m.id === data.replacedId);
+      const path: ChatMessage[] = data.messages.map((m, i) => (i === 0 && replaced ? { ...m, renderKey: replaced.renderKey ?? replaced.id } : m));
+      const next = replaceBranchTail<ChatMessage>(messagesRef.current, data.replacedId, path);
+      if (next) {
+        messagesRef.current = next;
+        setMessages(next);
+        return true;
+      }
+    }
+    // Longer than one answer carries, or the switched turn is not loaded.
+    await reloadNewestPage(convoId);
+    return true;
+  }, [status, opts.privateMode, reloadNewestPage]);
+
+  /**
+   * Edit a question: a new branch, never a truncation. The server writes the
+   * new wording as a sibling of the original and keeps the original with
+   * every answer after it, which the pager under the question returns to.
+   * Then the new wording is answered.
+   */
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
       if (status !== "idle" && status !== "error") return;
@@ -1907,35 +2069,27 @@ export function useChat(opts: UseChatOptions) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: newContent }),
       });
+      const data = (await res.json().catch(() => ({}))) as { message?: ClientMessage | null; replacedId?: string; error?: string };
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         toast.error(data.error ?? "Could not edit the message.");
         return;
       }
-      // The server snapshotted the pre-edit wording as a MessageVersion; append
-      // its metadata locally so the "‹ 2/3 ›" pager grows without a refetch.
-      const data = (await res.json().catch(() => ({}))) as { version?: ClientMessageVersion };
-      // The server deleted every message after the edited one and kept their
-      // artifacts, detached. Mirror that before truncating locally.
-      const editedIdx = messagesRef.current.findIndex((m) => m.id === messageId);
-      if (editedIdx !== -1) {
-        const dropped = new Set(messagesRef.current.slice(editedIdx + 1).map((m) => m.id));
-        setArtifacts((prev) => detachArtifactsFromMessages(prev, dropped));
-      }
-      // Truncate locally to the edited message, update its content.
+      // The edited bubble keeps the original's render key: it is the same turn
+      // on screen, now reading the new wording, with its pager showing the
+      // branch it started.
       const assistantTempId = tempId();
+      const placeholder: ChatMessage = { id: assistantTempId, renderKey: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true };
       setMessages((prev) => {
+        const original = prev.find((m) => m.id === messageId);
+        if (data.message && original) {
+          const next = replaceBranchTail<ChatMessage>(prev, data.replacedId ?? messageId, [{ ...data.message, renderKey: original.renderKey ?? original.id }]);
+          if (next) return [...next, placeholder];
+        }
+        // A server from before branches answers with no row: it edited in
+        // place and removed what followed, so mirror that.
         const idx = prev.findIndex((m) => m.id === messageId);
         if (idx === -1) return prev;
-        const kept = prev.slice(0, idx + 1).map((m) =>
-          m.id === messageId
-            ? { ...m, content: newContent, versions: data.version ? [...(m.versions ?? []), data.version] : m.versions }
-            : m
-        );
-        return [
-          ...kept,
-          { id: assistantTempId, renderKey: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
-        ];
+        return [...prev.slice(0, idx), { ...prev[idx], content: newContent }, placeholder];
       });
       await runGeneration(
         {
@@ -2056,7 +2210,13 @@ export function useChat(opts: UseChatOptions) {
     };
   }, [opts.privateMode]);
 
-  const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
+  const setFeedback = React.useCallback((
+    messageId: string,
+    feedback: "UP" | "DOWN" | null,
+    // Why it was rated down (the reason picker). Only sent with DOWN; the
+    // server keeps an earlier reason when a later request omits it.
+    detail?: FeedbackDetail,
+  ) => {
     // Optimistic, but honest: capture the previous value while applying the
     // new one, and roll back with a toast if the API doesn't accept it.
     let previous: "UP" | "DOWN" | null = null;
@@ -2074,7 +2234,7 @@ export function useChat(opts: UseChatOptions) {
     fetch(`/api/messages/${messageId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ feedback }),
+      body: JSON.stringify(feedback === "DOWN" && detail ? { feedback, ...detail } : { feedback }),
     })
       .then((res) => {
         if (!res.ok) rollback();
@@ -2119,6 +2279,8 @@ export function useChat(opts: UseChatOptions) {
     cancelPendingClarification,
     continueResponse,
     regenerate,
+    regenerateAt,
+    selectBranch,
     continueRoomTurn,
     continueCrossReply,
     /** True while the last turn dropped but can still be picked up from its

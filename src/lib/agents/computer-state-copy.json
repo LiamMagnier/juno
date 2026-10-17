@@ -1,0 +1,24 @@
+{
+  "$comment": "The sentences an agent's computer says about itself, read by the web (src/components/agents/agent-computer.tsx) and checked against the apps (NativeAgentComputerSentence in NativeAgentComputerView.swift, NativeAgentComputerHandBackTests.swift). {agent}, {minutes} and {summary} are filled in; everything else is said as written.",
+  "asleep": "Asleep. It wakes when {agent} starts working.",
+  "starting": "Waking up",
+  "resting": "Resting. Opens instantly.",
+  "stopping": "Going to sleep",
+  "idle": {
+    "one": "Idle. It rests after {minutes} minute.",
+    "other": "Idle. It rests after {minutes} minutes."
+  },
+  "idleUnknown": "Idle. It rests after a few minutes.",
+  "using": "{agent} is using it: {summary}",
+  "error": "Couldn’t reach the computer.",
+  "controlHere": {
+    "web": "You have control. {agent} waits until you hand back.",
+    "ios": "Your iPhone has control. {agent} waits until you hand back.",
+    "macos": "Your Mac has control. {agent} waits until you hand back."
+  },
+  "heldByApp": "Your app has control. Hand back there first.",
+  "heldByOtherDevice": "Another of your devices has control. Hand back there first.",
+  "heldByWeb": "A browser has control right now.",
+  "takenBack": "{agent} took the computer back.",
+  "handedBack": "Handed back"
+}

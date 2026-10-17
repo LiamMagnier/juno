@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
+import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { SettingsPaneHeader } from "@/components/settings/setting-row";
 import { settingsSection, type SettingsSectionId } from "@/components/settings/settings-sections";
 import { settingsPanelId, settingsTabId } from "@/components/settings/settings-rail";
@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 // The serif and mono of the editorial kit (ed-h2, ed-h3, ed-annot, ed-stagger)
 // that the settings primitives are set in.
 import "@/components/app/editorial.css";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   general: GeneralSection,

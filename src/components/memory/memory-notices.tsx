@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, MessagesSquare, PauseCircle } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { MessagesSquare, PauseCircle } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
@@ -105,7 +106,7 @@ export function BackfillNotice({
   return (
     <Collapse open={running || offer} innerClassName="pb-4">
       {running ? (
-        <Notice live icon={<Loader2 className="size-4 animate-spin" aria-hidden="true" />}>
+        <Notice live icon={<GalaxyMark phase="working" size={16} />}>
           <span className="font-medium">Reading your past chats.</span>{" "}
           <span className="text-muted-foreground">{`You can leave this page; ${PRODUCT_NAME} picks up where it left off.`}</span>
           <Progress value={pct} aria-label="Past chats read" className="mt-2.5 h-1.5 max-w-xs" />

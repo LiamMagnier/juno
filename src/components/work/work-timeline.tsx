@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { useLatched } from "@/lib/use-presence";
 import {
   Ban,
   ChevronRight,
   CircleDashed,
   Layers,
   Link2,
-  Loader2,
   MessageSquare,
   Minus,
   PauseCircle,
@@ -180,7 +181,7 @@ export function derivePlan(events: readonly ClientWorkEvent[]): PlanStep[] {
    *
    * Without this the plan advanced only on `step_started` / `step_finished`, so
    * a run that died mid-step left that step `active` for ever — and `active`
-   * renders a `Loader2` with `animate-spin`. That is the spinner in the bug
+   * rendered a turning mark (a spinner then, the galaxy now). That is the bug
    * report that started this work: a task that failed against a rate limit
    * fourteen seconds in, sitting under a red Failed pill, with "Understand what
    * is being asked" turning next to it indefinitely.
@@ -300,10 +301,7 @@ export function WorkCurrentAction({ action }: { action: CurrentAction | null }) 
     // under `--card`, so the one box on the page that means "this is happening
     // right now" was dimmer than the inert cards around it.
     <div className="flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/10 px-3.5 py-2.5">
-      <Loader2
-        className="mt-0.5 size-3.5 shrink-0 text-primary motion-safe:animate-spin"
-        aria-hidden="true"
-      />
+      <GalaxyMark phase="working" size={14} className="mt-0.5 text-primary" />
       <div className="min-w-0 flex-1">
         {/* Announced politely rather than assertively: this line changes several
             times a minute, and a screen reader that interrupts on each one makes
@@ -893,14 +891,14 @@ function useFeedEntrance(id: string, arrivals: WorkArrivals) {
 /**
  * The mark on the feed's rail beside a row or a fold.
  *
- * One glyph per row, and while the row is live that glyph is the one spinner
- * rather than the row's own mark set turning — a wrench spinning on its axis
+ * One glyph per row, and while the row is live that glyph is the galaxy
+ * (GALAXY_SPEC.md) rather than the row's own mark set turning — a wrench spinning on its axis
  * read as a broken icon, not as work in progress. When the call reports back
- * the spinner and the outcome share the slot and CROSS-FADE, so the tick (or
- * the cross) settles into the place the spinner was instead of replacing it in
+ * the galaxy and the outcome share the slot and CROSS-FADE, so the tick (or
+ * the cross) settles into the place the galaxy was instead of replacing it in
  * a frame; the rail is the one place a reader watches a step finish. Under
- * reduced motion the scale collapses and the fade keeps its timing, and the
- * global rule stops the spin.
+ * reduced motion the scale collapses, the fade keeps its timing and the
+ * galaxy draws one still frame.
  */
 function FeedMarker({
   icon: Icon,
@@ -914,14 +912,20 @@ function FeedMarker({
 }) {
   const layer = "[grid-area:1/1] size-3 transition-[opacity,transform] duration-fast ease-out-soft";
   const hidden = "scale-75 opacity-0 motion-reduce:scale-100";
+  // Mounted only once this row has run while on screen: a feed that loads a
+  // finished task must not carry one canvas (and its observers and entrance
+  // frames) per settled row under the outcome glyph.
+  const galaxy = useLatched(running);
   return (
     <span
       className="absolute -left-[21px] top-1 grid size-3.5 place-items-center rounded-full bg-background"
       aria-hidden="true"
     >
-      <Loader2
-        className={cn(layer, "text-primary", running ? "motion-safe:animate-spin" : hidden)}
-      />
+      {/* The galaxy while the call runs (the one working mark); it stops and
+          steps back as the outcome fades in over it. */}
+      {galaxy && (
+        <GalaxyMark phase={running ? "working" : "finished"} size={12} className={cn(layer, "text-primary", !running && hidden)} />
+      )}
       <Icon className={cn(layer, tone, running && hidden)} />
     </span>
   );

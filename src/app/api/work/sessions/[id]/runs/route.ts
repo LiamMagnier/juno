@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { serializeRun } from "@/lib/work/serializers";
 import { startWorkRunForUser } from "@/lib/work/dispatch";
+import { appendEvents } from "@/lib/work/store";
+import { WORK_STEERING_EVENT_KIND, workSteeringPayload } from "@/lib/work/domain";
+import { canContinueFrom, continuationInstruction } from "@/lib/work/continuation";
 import { parseSessionRunListQuery, startRunSchema } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
@@ -84,6 +87,52 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = startRunSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const result = await startWorkRunForUser(user, session, parsed.data);
+  // A Continue names the attempt it picks up from. Checked before anything is
+  // started, so a stale card (another attempt has run since, or the one it
+  // names finished cleanly) costs nothing.
+  const { continueFromRunId, continuation, ...runBody } = parsed.data;
+  if ((continueFromRunId === undefined) !== (continuation === undefined)) {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+  if (continueFromRunId) {
+    const previous = await prisma.workRun.findFirst({
+      where: { id: continueFromRunId, userId: user.id, sessionId: session.id },
+      select: { status: true, terminalReason: true },
+    });
+    if (!previous || !canContinueFrom(previous)) {
+      return NextResponse.json(
+        {
+          error: "not_continuable",
+          message: "That attempt can’t be continued from. Start it again instead.",
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  const result = await startWorkRunForUser(user, session, runBody);
+  if (continueFromRunId && continuation && result.run && result.status < 300) {
+    // In the new attempt's own log, as an instruction: the cloud runner reads
+    // unconsumed instructions before its turns, and the key makes a replayed
+    // request append it once.
+    await appendEvents({
+      runId: result.run.id,
+      userId: user.id,
+      events: [
+        {
+          kind: WORK_STEERING_EVENT_KIND,
+          payload: { ...workSteeringPayload(continuationInstruction(continuation), "web") },
+          key: `continue:${result.run.id}`,
+        },
+      ],
+    }).catch((error: unknown) => {
+      // The attempt is started either way; without the brief it is a Retry,
+      // which is still what the person asked for in spirit.
+      console.error("[work] could not record the continuation brief", {
+        runId: result.run?.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   return NextResponse.json(result.body, { status: result.status });
 }

@@ -10,8 +10,8 @@
   --alv-sub: hsl(var(--muted-foreground));
   --alv-line: hsl(var(--foreground) / .12);
   --alv-hair: hsl(var(--foreground) / .07);
-  --alv-presence: #2d49c9;
-  --alv-presence-soft: rgb(45 73 201 / .1);
+  --alv-presence: hsl(var(--presence));
+  --alv-presence-soft: hsl(var(--presence) / .1);
   --alv-frame: #f3f4f5;
   --alv-panel: #fcfcfd;
   --alv-surface: #ffffff;
@@ -33,8 +33,7 @@
 .dark .alv {
   --alv-line: hsl(var(--foreground) / .14);
   --alv-hair: hsl(var(--foreground) / .08);
-  --alv-presence: #97a6e6;
-  --alv-presence-soft: rgb(151 166 230 / .12);
+  --alv-presence-soft: hsl(var(--presence) / .12);
   --alv-frame: #111213;
   --alv-panel: #18191b;
   --alv-surface: #222326;

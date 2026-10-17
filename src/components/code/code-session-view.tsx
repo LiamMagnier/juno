@@ -38,7 +38,7 @@ import { useCodeAutoFix } from "@/components/code/use-code-auto-fix";
 import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-session-meta";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { useComposerAutosize } from "@/components/ui/composer-shell";
 import { useCodeActivityContents } from "@/components/code/code-activity";
 import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-code-session";
@@ -272,7 +272,8 @@ export function CodeSessionView({ conversation, initialMessages, initialHistory,
     conversation.id,
   );
   const canAttach = features.storage;
-  const { supported: speechSupported } = useSpeechRecognition();
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
 
   // The shared composer growth: one line at rest, eight before it scrolls.
   const autoresize = useComposerAutosize(textareaRef, draft);

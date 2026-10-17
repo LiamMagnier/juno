@@ -27,7 +27,7 @@ import * as React from "react";
 import { AicssCodeBlock } from "@/components/aicss/code-block";
 import { ToolRunFiles } from "@/components/chat/tool-run-files";
 import { ReceiptGlyph, ToolReceiptRow } from "@/components/chat/tool-receipt";
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import {
   activeRunId,
@@ -54,12 +54,10 @@ export { ToolRunAnnouncer, ToolRunFiles, ToolRunOutputs } from "@/components/cha
 /**
  * The live mark beside the one active run row.
  *
- * Same contract as the Continuum `ThinkingMark` (rf/brand-assets,
- * `src/components/brand/thinking-mark.tsx`): a truthful `phase` and an
- * `eventKey` that changes with each real batch of activity. Until that mark
- * reaches the trunk this draws the house orb for `working` and nothing for the
- * still phases (the row's own glyph says waiting, error or stopped), which is
- * the same rule the mark follows: still unless real work is happening.
+ * The galaxy (GALAXY_SPEC.md), the one working mark: a truthful `phase` and
+ * an `eventKey` that changes with each real batch of activity. It draws for
+ * `working` and nothing for the still phases (the row's own glyph says
+ * waiting, error or stopped): still unless real work is happening.
  * Decorative: the row's words carry the state.
  */
 export function RunMark({
@@ -72,7 +70,7 @@ export function RunMark({
   if (phase !== "working") return null;
   return (
     <span data-run-mark data-phase={phase} data-event={eventKey} aria-hidden="true" className="contents">
-      <PhaseOrb state="working" className="-my-0.5 -ml-0.5" />
+      <GalaxyMark phase="working" size={16} eventKey={eventKey} />
     </span>
   );
 }

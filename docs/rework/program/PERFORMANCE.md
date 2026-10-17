@@ -374,7 +374,78 @@ The fixture repeats itself and compresses 46:1. Expect about 3:1 on real convers
 ### Still open
 
 - **Find still fetches the rest only once the reader types.** Starting the fetch when find opens would hide most of the remaining remote time. It would also download the conversation for readers who open find and close it. Not done.
-- **Every child inserted into the transcript restyles the whole mounted transcript** (about 2,500 elements, 10–15 ms at CPU ×2). The trace attributes it to Chrome's sibling and nth invalidation set ("invalidates subtree"). Disabling the sibling, `:has()` and structural rules through the CSSOM did not change the count, so the source is not yet identified. It costs every scroll tick that mounts a row, as before paging.
+- ~~**Every child inserted into the transcript restyles the whole mounted transcript.**~~ Found and fixed: see "Row insertion restyle" below.
+
+## Row insertion restyle (2026-10-16)
+
+**Symptom.** Every element inserted into the transcript restyled the whole page. Scrolling back mounts rows above the reader, so every scroll tick that mounted a row paid for it.
+
+**Cause: two kinds of rule together.**
+- Chrome keys sibling invalidation on a class, id or attribute in the compound left of `+` or `~`. A rule whose left compound has none goes into one *universal* sibling set. The app had 52 such selectors:
+  - 35 from Tailwind 3's `space-y-*` and `divide-*` (`.space-y-4 > :not([hidden]) ~ :not([hidden])`).
+  - `.prose-juno > * + *` and `.prose-juno > :is(h3, h4, h5, h6) + *`.
+  - `.ed-list > * + *` and `:hover + *`.
+  - `div + div`, `p + p` and `li + li` rules on public pages, in Code's split diff and in research.
+- On an insertion into a parent marked as having sibling-affected children, Chrome applies the universal set to every sibling after the new element, and for these rules to their subtrees too. It does this whether or not the rule could match there.
+- The marking was everywhere. A rule ending in `+ *` (`[&+*]:shadow-…` in `library-home.tsx`, the heading rhythm rule) is tried on every element, and each try marks the parent.
+- The two together are what cost. In a 40-row static page, `.a + *` alone or `.y > * ~ *` alone restyles 1 element per insertion. Both together restyle all 602.
+- The earlier CSSOM experiment probably missed this for two reasons: Chrome keeps the marks on elements after their rules are gone, and one universal rule left anywhere is enough.
+
+**Change.** No rule changed what it matches, and nothing looks different.
+- **Tailwind's `space-*` and `divide-*`.** A PostCSS step after Tailwind (`scripts/postcss/sibling-invalidation.cjs`, in `postcss.config.mjs`) rewrites `X > :not([hidden]) ~ :not([hidden])` to `X > :nth-child(n + 2 of :not([hidden]))`. Both mean the second and later children that are not `[hidden]`, at the same specificity. `:nth-child(of S)` needs Chrome 111, Firefox 113 or Safari 9. The production minifier (cssnano-simple) keeps it.
+- **Prose rhythm.**
+  - `.prose-juno > * + *` is now `> :where(:not(:first-child))`: the same elements at the same (0,2,0).
+  - The "close under a heading" rules are keyed on a `data-md-heading` attribute, with one selector per tag. `markdown.tsx` now stamps it on every heading it writes (`rehypeMarkHeadings`). The rules match the same elements at the same specificity: (0,2,1), or (0,3,1) in research.
+  - `research.css` sets the list-paragraph gap as a `margin-bottom` on `p:has(+ p)`, not a `margin-top` on `p + p`. The margins collapse, so the gap is the same 0.5em.
+- **Editorial lists.** `.ed-list > * + *::before` is now `> :where(:not(:first-child))::before`. The hover rule is keyed on an `ed-row` class. Every `.ed-list` row now carries it: artifacts, compare, skills and routines.
+- **Public pages, Code and the summary panel.** The `div + div`, `p + p` and `li + li` rules are now `:not(:first-child)`. Each sits in a grid or list whose children all have that tag. The summary panel's `[&>section+section]` is now `[&>section:not(:first-child)]`.
+
+**Guards.**
+- `tests/sibling-invalidation-guard.test.ts` runs every stylesheet under `src/` through the real PostCSS pipeline. Tailwind scans the components, so arbitrary variants count. The KaTeX and xterm sheets are checked too. The test fails on any universal sibling rule and names it.
+- The classifier was checked against Chrome on the static page:
+  - Keyed rules restyle 1 element: `h4:where([data-md-heading]) + *`, `:where(.ed-row):hover + *`.
+  - Universal rules restyle all 602: `* + *`, `* ~ *`, `:hover + *`, `:is(h3, h4) + *`, `:is(h3, h4).md + *`.
+  - `div + div` restyles every row.
+- The last test in `e2e/transcript-history.spec.ts` measures the cost in Chrome on the real route.
+  - It inserts five rows above the transcript and requires fewer than 50 elements restyled per insertion. It passes on this build.
+  - On that page, adding back one `.space-y-4 > :not([hidden]) ~ :not([hidden])` rule takes the count from 1 to 2,793.
+
+### Results
+
+`scripts/perf/trace-row-insert-restyle.mjs` ran against `next dev`, the `perf-long-2000` fixture and Chrome stable headless at 1440×900. Each side ran three times, plus twice at CPU ×4. The page held 2,389 elements, 1,089 of them in the transcript.
+
+| | Before | After |
+|---|---|---|
+| **One element inserted above the rows** (20 times, forced style each): elements restyled per insert | 3,219 (whole page, pseudo-elements included) | **1** |
+| Same: style time for the 20, and long tasks | 225–259 ms, one task of 244–252 ms | **0.8–1.2 ms, none** |
+| Same at CPU ×4 | 1,038–1,118 ms | **2.8–5.5 ms** |
+| **Scroll back 40 × 600 px** (57–116 rows mounted, pages landing): element styles resolved | 51,800–56,800 | **7,050–7,070** |
+| Same: `UpdateLayoutTree` elements and time | 19,700–19,800, 83–98 ms | **740–760, 24–26 ms** |
+| Same: most styles resolved inside one Layout (`<main>` is a size container) | 4,925–4,934 | **1,094** |
+| Same: long tasks (count, total, longest) | 6–7, 727–827 ms, 161–177 ms | **5, 570–619 ms, 135–150 ms** |
+| Same at CPU ×4: `UpdateLayoutTree` time | 397–427 ms | **182–186 ms** |
+| Same at CPU ×4: long tasks (count, total, longest) | 8, 4,051–4,291 ms, 762–837 ms | **8, 3,621–3,697 ms, 725–740 ms** |
+
+- Restyle work during scroll-back fell about sevenfold.
+- Long tasks fell less, by 10–25%. React's development build and layout now take most of each landing. A production build should show a larger share.
+- Styles resolved per Layout now follow the rows that landed (1,094, 307, 129 and 856 per landing), not the size of the transcript.
+
+### Verified
+
+- **Appearance.** A static page was rendered with the old CSS and the new, in standards mode. It held a markdown reply in the chat and research styles: headings h3–h6, list items with several paragraphs, a table, a rule and a quote. It also held an `.ed-list` and `space-y`/`divide-y` containers with `[hidden]` children.
+  - No box moved: 86 elements, same position and size.
+  - The only computed differences are three research list paragraphs. Their 0.5em gap moved from one paragraph's top margin to the previous one's bottom margin.
+  - Hovering an `.ed-list` row hides the same two hairlines before and after.
+- **Tests.**
+  - `tests/sibling-invalidation-guard.test.ts`: 4/4. Run against the old CSS, its classifier flags all 52 selectors.
+  - The markdown, citation, research and page tests that touch the changed files: `markdown-headings`, `markdown-citation-glue`, `markdown-currency`, `transcript-markdown`, `research-citations`, `research-table-claims`, `research-v2-surface`, `page-ux-once`, `skills-library-ui` and `web-exfil`. All pass, 102/102 including the guard.
+  - The new e2e test passes 1/1 on the development server.
+  - `design:tokens:check` is clean.
+
+### Still open
+
+- No production-build numbers (`next build && next start`). Both sides ran on the development server.
+- The `[&+*]:shadow-…` divider in `library-home.tsx` still marks every parent in the page. It costs nothing on its own. The guards keep out the universal rules it would multiply.
 
 ## Paged history on the Code surfaces (2026-10-15)
 
@@ -420,7 +491,7 @@ Native contracts are unchanged: `GET /api/conversations/[id]` without parameters
 
 1. Make the `/chat/[id]` cold path never show a fallback: guarantee a FULL prefetch before click, or remove that segment's `loading.tsx` and give pending feedback on the clicked row (`useLinkStatus`).
 2. Take zod out of the shell by moving the agent request schemas to a server-only module. Lazy-load voice (`use-realtime-voice`/`voice-glow`) and the Code session hook from the sidebar.
-3. ~~Page the conversation payload~~ (done, "Paged history" above). ~~Follow-ups: compress route-handler JSON, cut the per-page long task~~ (done, "Paged history follow-up"). Next: the whole-transcript restyle on row insertion.
+3. ~~Page the conversation payload~~ (done, "Paged history" above). ~~Follow-ups: compress route-handler JSON, cut the per-page long task~~ (done, "Paged history follow-up"). ~~Next: the whole-transcript restyle on row insertion~~ (done, "Row insertion restyle").
 4. Re-run `scripts/perf/measure-navigation.mjs` against the hosted deployment with a test account, and record the result in `src/lib/capabilities.ts`.
 
 ## References

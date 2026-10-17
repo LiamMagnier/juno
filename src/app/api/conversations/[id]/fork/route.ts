@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeConversation } from "@/lib/serializers";
 import { truncate } from "@/lib/utils";
+import { pathIdsTo } from "@/lib/chat/branches";
+import { OLDEST_FIRST } from "@/lib/chat/history-page";
 
 const schema = z.object({ atMessageId: z.string().cuid() });
 
@@ -18,8 +20,11 @@ const schema = z.object({ atMessageId: z.string().cuid() });
  * - Message ciphertext is copied VERBATIM: message-crypto is row-independent
  *   (AES-GCM, random IV per row, no id/conversation binding), so re-encryption
  *   is unnecessary. Verified against src/lib/message-crypto.ts.
- * - MessageVersion history is NOT copied — a branch snapshots the current
- *   state of the thread, not its edit/regenerate history.
+ * - Only the path that leads to the message is copied: its ancestors, by the
+ *   branch tree (src/lib/chat/branches.ts). Hidden branches — earlier
+ *   wordings and answers an edit or regenerate kept — and MessageVersion
+ *   history are NOT copied: a new chat snapshots one line of the thread, not
+ *   its alternatives, and starts with no pager to step through.
  * - Attachments and artifacts are NOT copied: attachment rows own storage-
  *   object lifecycles scoped to their conversation, so duplicating them would
  *   let deleting one thread break the other; artifacts stay with the canvas
@@ -36,15 +41,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const anchor = await prisma.message.findFirst({
-    where: { id: parsed.data.atMessageId, conversationId: conversation.id },
-    select: { id: true, createdAt: true },
-  });
-  if (!anchor) return NextResponse.json({ error: "Message not found in this conversation." }, { status: 404 });
+  const path = await pathIdsTo(prisma, conversation.id, parsed.data.atMessageId);
+  if (!path) return NextResponse.json({ error: "Message not found in this conversation." }, { status: 404 });
 
   const source = await prisma.message.findMany({
-    where: { conversationId: conversation.id, createdAt: { lte: anchor.createdAt } },
-    orderBy: { createdAt: "asc" },
+    where: { conversationId: conversation.id, id: { in: path } },
+    orderBy: OLDEST_FIRST,
   });
 
   // Conversation + copied messages land atomically — never a half-built branch.
@@ -71,6 +73,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           reasoning: m.reasoning,
           model: m.model,
           feedback: m.feedback,
+          // The rating travels with its reason, or a branch would hold a
+          // thumbs-down that no longer says why.
+          feedbackReason: m.feedbackReason,
+          feedbackNote: m.feedbackNote, // ciphertext copied verbatim, like content
           promptTokens: m.promptTokens,
           completionTokens: m.completionTokens,
           // Carried with the token counts, not dropped. A fork is a copy of

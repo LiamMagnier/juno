@@ -11,6 +11,7 @@ import {
   historyTokenBudget,
   parseHistorySummary,
   planHistorySummary,
+  storedSummaryHolds,
   planTokenTrim,
   renderHistorySummary,
   type WindowMessage,
@@ -141,4 +142,13 @@ test("the rendered summary is deterministic in its inputs, so the cached prefix 
   assert.equal(a, b);
   assert.match(a, /16 earliest messages/);
   assert.match(a, /did not write it/);
+});
+
+test("summary fallback: a stored summary stands in only while it still describes the messages before the window", () => {
+  const stored = { text: "- earlier", coveredCount: 16, untilMessageId: "m16" };
+  assert.equal(storedSummaryHolds(stored, 24, "m16"), true, "behind the window, same boundary: still true of what it covers");
+  assert.equal(storedSummaryHolds(stored, 12, "m16"), false, "covers more than lies outside the window (an earlier answer regenerated)");
+  assert.equal(storedSummaryHolds(stored, 24, "m16-edited"), false, "another branch now comes first (an edit or a branch switch)");
+  assert.equal(storedSummaryHolds(stored, 24, undefined), false, "the boundary message is gone");
+  assert.equal(storedSummaryHolds({ ...stored, text: "  " }, 24, "m16"), false);
 });

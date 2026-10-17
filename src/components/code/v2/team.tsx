@@ -12,7 +12,7 @@
  * CodeV2TeamChip.swift / CodeV2TeamEditor.swift.
  */
 import * as React from "react";
-import type { ModelSelection, ProviderInstance, RoleRouting } from "@/lib/code-v2/contracts";
+import type { ModelSelection, ProviderInstance, RolePreset, RoleRouting } from "@/lib/code-v2/contracts";
 import { estimateRunUsd, formatBudget, parseBudget, CANDIDATES_MAX, CANDIDATES_MIN } from "@/lib/code-v2/orchestrate";
 import {
   BUILDERS_MAX,
@@ -36,7 +36,9 @@ import {
   type TeamScope,
   type TeamStorage,
 } from "@/lib/code-v2/team";
-import { withCount } from "@/lib/code-v2/orchestrate";
+import { withCount, withPreset } from "@/lib/code-v2/orchestrate";
+import { teamFromDefault } from "@/lib/code-v2/code-prefs";
+import { useCodePrefs } from "./use-code-prefs";
 import { formatUsd } from "@/lib/code-v2/tier-view";
 import { EFFORT_LABELS, effectiveEffort, findInstance, modelLabel, ratesFor, shortLabel } from "./model-info";
 import { ComposerPopover, Glyph, ModelMark, Segmented } from "./primitives";
@@ -52,21 +54,36 @@ function storage(): TeamStorage | null {
   }
 }
 
+/** A preset as the team editor builds it (Plan → Build → Verify gets its builders and cap). */
+function buildPreset(routing: RoleRouting, preset: RolePreset): RoleRouting {
+  return (TEAM_PRESETS as readonly string[]).includes(preset) ? withTeamPreset(routing, preset as TeamPreset) : withPreset(routing, preset);
+}
+
 /**
  * Keeps the project's default team: a new thread starts from the last team
- * set in the same project, and every change is remembered for the next one.
- * The thread's own team is stored with the thread on the server.
+ * set in the same project, else from the account's default team (Settings ›
+ * Code, `code-prefs.ts`), and every change is remembered for the project's
+ * next thread. The thread's own team is stored with the thread on the server.
  */
 export function useTeamDefault(routing: RoleRouting, lead: ModelSelection, scope: TeamScope, fresh: boolean, setRouting: (r: RoleRouting) => void) {
   const seeded = React.useRef(false);
+  const { prefs: account, loaded: accountLoaded } = useCodePrefs();
   React.useEffect(() => {
-    if (seeded.current || !fresh || routing.preset !== "solo" || !scope.project) return;
-    seeded.current = true;
+    if (seeded.current || !fresh || routing.preset !== "solo") return;
     const store = storage();
-    const stored = store ? adoptTeam(loadTeam(store, { project: scope.project }), lead) : null;
-    if (stored && stored.preset !== "solo") setRouting(stored);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per thread
-  }, [scope.project, scope.session]);
+    const stored = store && scope.project ? adoptTeam(loadTeam(store, { project: scope.project }), lead) : null;
+    if (stored) {
+      seeded.current = true;
+      if (stored.preset !== "solo") setRouting(stored);
+      return;
+    }
+    const fromAccount = teamFromDefault(account.team, lead, buildPreset);
+    if (fromAccount) {
+      seeded.current = true;
+      setRouting(fromAccount);
+    } else if (accountLoaded) seeded.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per thread, after the account's defaults arrive
+  }, [scope.project, scope.session, accountLoaded, account.team?.preset, account.team?.maxUsd]);
   const save = React.useCallback(
     (next: RoleRouting) => {
       const store = storage();

@@ -139,6 +139,23 @@ final class ComputerUseToolsTests: XCTestCase {
 
     // MARK: Batches and frames
 
+    func testOversizedBatchesAndInvalidIntegersNeverReachTheScreen() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let tool = ComputerBatchTool(computer: screen, permissions: permissions, budget: .anthropicStandard)
+        let result = try await tool.execute(
+            input: ["actions": .array(Array(repeating: ["action": "screenshot"], count: 21))], context: context()
+        )
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.content.contains("at most 20"))
+        XCTAssertTrue(screen.preparedActions.isEmpty)
+        XCTAssertTrue(screen.performed.isEmpty)
+        for value in [Double(Int.max), 1e100, 1.5] {
+            XCTAssertThrowsError(try ScreenActionInput.action(from: ["action": "key", "text": "return", "repeat": .number(value)]))
+            XCTAssertThrowsError(try ScreenActionInput.action(from: ["action": "scroll", "scroll_amount": .number(value)]))
+        }
+    }
+
     func testABatchStopsAtTheFirstFailureWithTheExactText() async throws {
         let screen = FakeScreen()
         screen.failOn[.type] = .tierTooLow("Terminal is granted for clicks only; typing, keys, right-click and drags were not sent.")
@@ -411,7 +428,7 @@ final class ComputerUseToolsTests: XCTestCase {
         )
     }
 
-    func testGrantRequestsAlwaysAskEvenInFullAccess() async throws {
+    func testFullAccessGrantsAppsWithoutAnotherApproval() async throws {
         let screen = FakeScreen()
         let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
         let asked = await autoApprove(permissions)
@@ -419,9 +436,66 @@ final class ComputerUseToolsTests: XCTestCase {
         let result = try await tool.execute(input: ["action": "request", "apps": ["com.apple.TextEdit"], "reason": "fill the form"], context: context())
         XCTAssertFalse(result.isError)
         XCTAssertTrue(result.content.contains("TextEdit (com.apple.TextEdit): full control"))
+        XCTAssertTrue(asked.requests.isEmpty)
+    }
+
+    func testFullAccessOpensAnAppWithoutASeparateGrantToolCall() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let asked = await autoApprove(permissions)
+        let tool = PortableComputerTool(computer: screen, permissions: permissions, budget: .portableNormalized, seesImages: true)
+        let result = try await tool.execute(input: ["action": "open_app", "app": "com.apple.TextEdit"], context: context())
+        XCTAssertFalse(result.isError, result.content)
+        XCTAssertTrue(asked.requests.isEmpty)
+        XCTAssertTrue(screen.published.values.contains { if case .grants = $0 { true } else { false } }, "the app still receives a real, capped service grant")
+        XCTAssertEqual(result.images.count, 1, "open already returns the app view")
+    }
+
+    func testPortableSequenceKeepsFlatCoordinatesAndReturnsOnlyTheFinalFrame() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let frames = PortableFrameMemory()
+        let tool = ComputerBatchTool(computer: screen, permissions: permissions, budget: .portableNormalized, portableFrames: frames)
+        let result = try await tool.execute(input: ["actions": [
+            ["action": "click", "x": 500, "y": 250],
+            ["action": "type", "text": "a project"],
+            ["action": "key", "text": "return"],
+        ]], context: context())
+        XCTAssertFalse(result.isError, result.content)
+        XCTAssertEqual(tool.name, "computer_sequence")
+        XCTAssertEqual(screen.performed, [.leftClick, .type, .key])
+        XCTAssertEqual(screen.preparedActions.first?.coordinate, [500, 250])
+        XCTAssertEqual(screen.attachedFrame, [false, false, true])
+        XCTAssertEqual(result.images.count, 1)
+        let remembered = await frames.size(sessionID: sessionID.value)
+        XCTAssertEqual(remembered, FakeScreen.frame.size)
+    }
+
+    func testPortableSequenceStopsAfterUncertainInputAndInspectsTheResult() async throws {
+        let screen = FakeScreen()
+        screen.failOn[.type] = .driverFailed("Typing was not confirmed; it was not repeated.")
+        let tool = ComputerBatchTool(computer: screen, permissions: PermissionCoordinator(sessionID: sessionID, mode: .fullAccess), budget: .portableNormalized, portableFrames: PortableFrameMemory())
+        let result = try await tool.execute(input: ["actions": [
+            ["action": "click", "x": 500, "y": 250],
+            ["action": "type", "text": "a project"],
+            ["action": "key", "text": "return"],
+        ]], context: context())
+        XCTAssertTrue(result.isError)
+        XCTAssertEqual(screen.performed, [.leftClick], "Return never follows failed typing")
+        XCTAssertEqual(screen.settledCalls, 1)
+        XCTAssertEqual(result.images.count, 1)
+    }
+
+    func testSupervisedAppGrantsStillShowTheExactApp() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        let asked = await autoApprove(permissions)
+        let tool = ComputerAppsTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "request", "apps": ["com.apple.TextEdit"]], context: context())
+        XCTAssertFalse(result.isError)
         let request = try XCTUnwrap(asked.requests.first)
         XCTAssertEqual(request.toolName, "computer_apps")
-        XCTAssertEqual(request.summary, "Let Juno use com.apple.TextEdit (full control) for this session")
+        XCTAssertEqual(request.summary, "Let Alevr use com.apple.TextEdit (full control) for this session")
         guard case .grants? = screen.published[request.actionDigest] else { return XCTFail("no grant sheet") }
     }
 
@@ -538,7 +612,7 @@ final class ComputerUseToolsTests: XCTestCase {
     func testEveryOtherLabGetsThePortableToolInItsOwnConvention() async throws {
         for model in ["google:gemini-3.8-flash", "qwen:qwen3.8-max", "flash", "deepseek:deepseek-v4", "xai:grok-5"] {
             let names = await ScreenToolProvider().tools(for: try await providerContext(modelID: model)).map(\.name)
-            XCTAssertEqual(names, ["computer_use", "computer_apps", "computer_display"], model)
+            XCTAssertEqual(names, ["computer_use", "computer_apps", "computer_sequence", "computer_display"], model)
             XCTAssertEqual(ComputerUseRoutes.wire(forModelID: model), .portable, model)
         }
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "google:gemini-3.8-flash"), .portableNormalized)

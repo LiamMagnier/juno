@@ -6,14 +6,18 @@
  * narrow), menus with submenu panes, the segmented control, keycaps.
  */
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Icon } from "@/components/ui/juno-icons";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { instanceMark, modelLab } from "@/lib/code-v2/providers-view";
 import type { ProviderInstance } from "@/lib/code-v2/contracts";
 import { formatKey } from "@/lib/code-v2/keymap";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
+import { usePresence } from "@/lib/use-presence";
+import { useMergedRef, useSwipeDismiss } from "@/components/ui/sheet-gesture";
 
 export function Glyph({ name, size = 16, className, spin, title }: { name: string; size?: number; className?: string; spin?: boolean; title?: string }) {
   return (
@@ -23,9 +27,23 @@ export function Glyph({ name, size = 16, className, spin, title }: { name: strin
   );
 }
 
-/** Spinner glyph: the icon set's loader turning (static under reduced motion). */
+/**
+ * Spinner glyph: the icon set's loader turning (static under reduced motion).
+ * Only inside the button that was just pressed; work that is running anywhere
+ * else shows the galaxy (LiveMark).
+ */
 export function Spinner({ size = 16, className }: { size?: number; className?: string }) {
   return <Glyph name="loading" size={size} spin className={className} />;
+}
+
+/**
+ * The working mark beside a live row: the galaxy (docs/design/GALAXY_SPEC.md),
+ * the same one Chat and Work draw, turning only while the work is real. It
+ * replaced the T3-style shine that swept the live verb: the verb now sits
+ * still in the first ink and the galaxy is the one moving thing.
+ */
+export function LiveMark({ size = 14, className }: { size?: number; className?: string }) {
+  return <GalaxyMark phase="working" size={size} className={cn("cv2-mark", className)} />;
 }
 
 export function InstanceMark({ instance, size = 16, className }: { instance: Pick<ProviderInstance, "id" | "kind" | "acpCommand">; size?: number; className?: string }) {
@@ -113,44 +131,37 @@ export function ComposerPopover({
   role?: "dialog" | "menu";
 }) {
   const ref = useDismiss(open, onClose, anchorRef);
-  const drag = React.useRef<{ y: number; t: number } | null>(null);
-  const [dy, setDy] = React.useState(0);
-  if (!open) return null;
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (window.innerWidth > 760) return;
-    drag.current = { y: e.clientY, t: performance.now() };
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const d = e.clientY - drag.current.y;
-    setDy(d > 0 ? d : d * 0.3);
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const d = e.clientY - drag.current.y;
-    const v = d / Math.max(1, performance.now() - drag.current.t);
-    drag.current = null;
-    const h = ref.current?.offsetHeight ?? 400;
-    if (v > 0.6 || d > h * 0.3) onClose();
-    setDy(0);
-  };
+  // It stays mounted for its exit (0.65 x the entrance, accelerating), so a
+  // menu leaves the way it arrived instead of vanishing.
+  const presence = usePresence(open, 240);
+  // Below 761 px a downward throw dismisses it: the shared sheet gesture
+  // (ui/sheet-gesture.ts) that every web dialog uses on a phone. A throw marks
+  // the panel data-gesture="gone", which turns the exit animation off (the
+  // finger already moved it away); presence's fallback then unmounts it.
+  const scrimRef = React.useRef<HTMLDivElement>(null);
+  const swipeRef = useSwipeDismiss({ axis: "y", sign: 1, enabled: () => window.innerWidth <= 760, scrimRef, onDismiss: onClose });
+  const panelRef = useMergedRef<HTMLDivElement>(ref, swipeRef);
+  if (!presence.mounted) return null;
+  const state = presence.closing ? "closed" : "open";
   return (
     <>
-      <div className="cv2-pop-scrim" onClick={onClose} aria-hidden />
+      <div ref={scrimRef} data-swipe-scrim="" className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
       <div
-        ref={ref}
+        ref={panelRef}
+        data-swipe-panel=""
         role={role}
         aria-label={label}
+        data-state={state}
+        inert={presence.closing}
+        onAnimationEnd={presence.onAnimationEnd}
         className={cn("cv2-pop", down && "down", className)}
         style={{
           width,
           ...(align === "right" ? { right: offset } : { left: offset }),
           ["--cv2-origin" as string]: align === "right" ? "bottom right" : "bottom left",
-          ...(dy ? { transform: `translateY(${dy}px)`, transition: "none" } : {}),
         }}
       >
-        <div className="cv2-pop-grab" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+        <div className="cv2-pop-grab" data-sheet-handle="" />
         {children}
       </div>
     </>
@@ -226,6 +237,8 @@ export type MenuEntry =
       onSelect?: () => void;
       /** Keep the menu open after selecting (toggles). */
       keepOpen?: boolean;
+      /** Destructive (Delete): drawn in the destructive ink. */
+      danger?: boolean;
     };
 
 type MenuItemEntry = Exclude<MenuEntry, { kind: "sep" } | { kind: "section" }>;
@@ -290,7 +303,7 @@ export function MenuList({ entries, onClose, label, initialPath = [] }: { entrie
             aria-checked={e.checked}
             aria-disabled={e.disabled || undefined}
             aria-haspopup={e.sub ? "menu" : undefined}
-            className={cn("cv2-mi", e.l2 && "two")}
+            className={cn("cv2-mi", e.l2 && "two", e.danger && "danger")}
             data-active={i === hi}
             onMouseEnter={() => setHi(i)}
             onClick={() => run(e)}

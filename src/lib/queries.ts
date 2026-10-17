@@ -5,6 +5,7 @@ import type { ClientArtifact, ClientConversation, ClientMessage, ConversationHis
 import {
   FIRST_PAGE_MESSAGES, NEWEST_FIRST, OLDEST_FIRST, readHistoryPage, type HistoryCursor, type PageRequest,
 } from "@/lib/chat/history-page";
+import { ON_ACTIVE_PATH, withBranchPositions } from "@/lib/chat/branches";
 
 /**
  * Attachment columns needed to build a ClientAttachment — deliberately without
@@ -109,15 +110,28 @@ const MESSAGE_CLIENT_INCLUDE = {
   versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
 };
 
-/** readHistoryPage's reads, scoped to one conversation the caller has already checked. */
+/**
+ * readHistoryPage's reads, scoped to one conversation the caller has already
+ * checked, and to its shown branch (src/lib/chat/branches.ts): an edited
+ * question's earlier answers and a regenerated answer's earlier versions are
+ * reached through the pager, never interleaved into the transcript. A
+ * deep link to a message on a hidden branch locates nothing and opens the
+ * newest page, as a deleted message would.
+ */
 function messagePageReader(conversationId: string) {
   return {
     newestFirst: (where: object, take: number | undefined) =>
-      prisma.message.findMany({ where: { conversationId, ...where }, orderBy: NEWEST_FIRST, take, include: MESSAGE_CLIENT_INCLUDE }),
+      prisma.message.findMany({ where: { conversationId, ...ON_ACTIVE_PATH, ...where }, orderBy: NEWEST_FIRST, take, include: MESSAGE_CLIENT_INCLUDE }),
     locate: (messageId: string): Promise<HistoryCursor | null> =>
-      prisma.message.findFirst({ where: { id: messageId, conversationId }, select: { id: true, createdAt: true } }),
-    count: (where: object) => prisma.message.count({ where: { conversationId, ...where } }),
+      prisma.message.findFirst({ where: { id: messageId, conversationId, ...ON_ACTIVE_PATH }, select: { id: true, createdAt: true } }),
+    count: (where: object) => prisma.message.count({ where: { conversationId, ...ON_ACTIVE_PATH, ...where } }),
   };
+}
+
+/** Rows as the client receives them: decrypted, with their pager positions. */
+async function serializeRows<T extends Parameters<typeof serializeMessage>[0]>(conversationId: string, rows: readonly T[]): Promise<ClientMessage[]> {
+  const positioned = await withBranchPositions(prisma, conversationId, rows);
+  return Promise.all(positioned.map((row) => serializeMessage(row)));
 }
 
 function readArtifacts(userId: string, conversationId: string) {
@@ -151,13 +165,13 @@ export async function getConversationThread(
   const [messages, artifacts] = await Promise.all([
     // `use-chat` used to poll this read every 12s for up to an hour to recover
     // a dropped stream; it now asks for the newest page (`?limit=`) instead.
-    prisma.message.findMany({ where: { conversationId }, orderBy: OLDEST_FIRST, include: MESSAGE_CLIENT_INCLUDE }),
+    prisma.message.findMany({ where: { conversationId, ...ON_ACTIVE_PATH }, orderBy: OLDEST_FIRST, include: MESSAGE_CLIENT_INCLUDE }),
     readArtifacts(userId, conversationId),
   ]);
 
   return {
     conversation: serializeConversation(conversation),
-    messages: await Promise.all(messages.map(serializeMessage)),
+    messages: await serializeRows(conversationId, messages),
     artifacts: artifacts.map(serializeArtifact),
   };
 }
@@ -190,7 +204,7 @@ export async function getConversationThreadPage(
 
   return {
     conversation: serializeConversation(conversation),
-    messages: await Promise.all(page.rows.map(serializeMessage)),
+    messages: await serializeRows(conversationId, page.rows),
     artifacts: artifacts.map(serializeArtifact),
     history: page.history,
   };
@@ -212,5 +226,26 @@ export async function getConversationHistory(
   });
   if (!owned) return null;
   const page = await readHistoryPage(messagePageReader(conversationId), request);
-  return { messages: await Promise.all(page.rows.map(serializeMessage)), history: page.history };
+  return { messages: await serializeRows(conversationId, page.rows), history: page.history };
+}
+
+/**
+ * The shown rows from one message to the leaf, for the client after a branch
+ * switch. Null when there are more than `max` of them: the client then reads
+ * the newest page instead of being sent a whole branch.
+ */
+export async function getBranchPath(conversationId: string, ids: readonly string[], max: number): Promise<ClientMessage[] | null> {
+  if (ids.length > max) return null;
+  const rows = await prisma.message.findMany({
+    where: { conversationId, id: { in: [...ids] } },
+    orderBy: OLDEST_FIRST,
+    include: MESSAGE_CLIENT_INCLUDE,
+  });
+  return serializeRows(conversationId, rows);
+}
+
+/** One row as the client receives it, read with the transcript's include. */
+export async function getClientMessage(conversationId: string, messageId: string): Promise<ClientMessage | null> {
+  const row = await prisma.message.findFirst({ where: { id: messageId, conversationId }, include: MESSAGE_CLIENT_INCLUDE });
+  return row ? (await serializeRows(conversationId, [row]))[0] : null;
 }

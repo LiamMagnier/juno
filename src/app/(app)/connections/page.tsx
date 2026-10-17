@@ -22,6 +22,7 @@ import { useApp } from "@/components/app/app-provider";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { AppPageHeader } from "@/components/app/app-page";
 import { customizeHeaderClass } from "@/components/customize/customize-section";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -128,7 +129,7 @@ export default function ConnectionsPage() {
     setJustConnected(null);
     setLandedId(justConnected);
     requestAnimationFrame(() => {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const reduce = prefersReducedMotion();
       document.getElementById(tileAnchor(justConnected))?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
     });
     const clear = setTimeout(() => setLandedId(null), 2600);

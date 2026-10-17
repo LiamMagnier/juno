@@ -24,7 +24,7 @@ export interface SemanticChartProps {
   compact?: boolean;
 }
 
-const PALETTE = ["var(--sx-ink, hsl(var(--foreground) / 0.82))", "var(--sx-presence)", "hsl(var(--muted-foreground))", "var(--sx-attention)", "hsl(var(--foreground) / 0.4)"];
+const PALETTE = ["var(--sx-ink, hsl(var(--foreground) / 0.82))", "hsl(var(--presence))", "hsl(var(--muted-foreground))", "var(--sx-attention)", "hsl(var(--foreground) / 0.4)"];
 
 function niceMax(value: number): number {
   if (value <= 0) return 1;

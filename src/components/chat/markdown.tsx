@@ -548,9 +548,31 @@ function remarkCitations(sourceCount: number) {
   };
 }
 
+/**
+ * An HTML comment is a note in the source, never words on the page. Nothing
+ * here renders raw HTML, so a comment used to print verbatim: a saved
+ * research report's `<!-- …section=… -->` markers showed as text in the
+ * canvas preview and on its public page. Only a node that is nothing but
+ * whole comments goes; one still open (mid-stream) stays text until it closes.
+ */
+function isOnlyComments(value: string | undefined): boolean {
+  return !!value && value.includes("<!--") && value.replace(/<!--[\s\S]*?-->/g, "").trim() === "";
+}
+
+function remarkDropComments() {
+  const walk = (node: MdNode) => {
+    if (!node.children) return;
+    node.children = node.children.filter((child) => !(child.type === "html" && isOnlyComments(child.value)));
+    for (const child of node.children) walk(child);
+  };
+  return function transformer(tree: MdNode) {
+    walk(tree);
+  };
+}
+
 // `remarkRestoreCurrency` gives back the dollars `protectCurrency` hid from
 // remark-math (see markdown-currency.ts): prices are prose, not formulas.
-const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkRestoreCurrency, remarkFenceFilename] satisfies Options["remarkPlugins"];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkRestoreCurrency, remarkFenceFilename, remarkDropComments] satisfies Options["remarkPlugins"];
 /*
  * `rehypeHighlight` and `rehypeKatex` are NOT here.
  *
@@ -681,6 +703,28 @@ function rehypeSourceOffsets(base: number) {
     return function transformer(tree: HastNode) {
       walk(tree);
     };
+  };
+}
+
+/**
+ * Every heading this renderer writes carries `data-md-heading` (h1–h6 here,
+ * h3–h6 once DEMOTED_HEADINGS has renamed them). The prose rhythm's "close
+ * under a heading" rules key on it (globals.css, research.css): a `+` rule
+ * whose left side is only a tag makes Chrome restyle every sibling after an
+ * inserted element, subtrees and all, on every insertion anywhere in the page,
+ * every transcript row included (scripts/postcss/sibling-invalidation.cjs).
+ */
+export const MD_HEADING_ATTR = "data-md-heading";
+const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+export function rehypeMarkHeadings() {
+  const walk = (node: HastNode) => {
+    if (node.type === "element" && node.tagName && HEADING_TAGS.has(node.tagName)) {
+      node.properties = { ...node.properties, [MD_HEADING_ATTR]: "" };
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  return function transformer(tree: HastNode) {
+    walk(tree);
   };
 }
 
@@ -869,7 +913,7 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
   // touches nodes carrying a parse position, and everything those two plugins
   // invent has none. It stays LAST for that reason.
   const rehypePlugins = React.useMemo<Options["rehypePlugins"]>(
-    () => [...contentPlugins, rehypeSourceOffsets(offset)],
+    () => [...contentPlugins, rehypeMarkHeadings, rehypeSourceOffsets(offset)],
     [contentPlugins, offset],
   );
   const components = React.useMemo<Components>(

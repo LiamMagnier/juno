@@ -3,6 +3,7 @@
 import * as React from "react";
 import { User, ArrowUp, ChevronDown, FileText, JunoCode, JunoLibrary, JunoOrbit, Mic, PanelRight, Plus, Search, Share2, SquarePen, Telescope } from "@/components/ui/icons";
 import { GalaxyMark, type ThinkingPhase } from "@/components/brand/galaxy-mark";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The hero's product window: the Alevr desktop layout (frame, sidebar, inset
@@ -47,7 +48,7 @@ function useScript(play: boolean) {
   const [run, setRun] = React.useState(0);
   React.useEffect(() => {
     if (!play) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (prefersReducedMotion()) {
       setStage(END);
       return;
     }

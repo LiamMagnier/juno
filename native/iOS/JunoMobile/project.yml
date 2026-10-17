@@ -1,8 +1,20 @@
 name: JunoMobile
 options:
   createIntermediateGroups: true
+  # The same floor as IPHONEOS_DEPLOYMENT_TARGET in native/Config/JunoMobile-*.xcconfig
+  # and the `.iOS(...)` platform in the Swift packages this app links. It sat at
+  # 18.0 here while everything else required 26, which nothing noticed:
+  # `npm run native:entitlements:check` now fails when any of them drift.
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
+  # Every generate re-checks what a regenerate has dropped before: the push
+  # entitlement, the signing variable below and the deployment floor. It only
+  # reads files, and it is skipped (with a warning) on a machine without Node.
+  postGenCommand: >-
+    if command -v node >/dev/null 2>&1;
+    then node ../../../scripts/check-native-app-config.mjs;
+    else echo "warning: Node not found; skipping the iOS signing config check" >&2;
+    fi
   developmentLanguage: en
   knownRegions:
     - en
@@ -87,6 +99,13 @@ targets:
         # why the path itself cannot live here. It also keeps xcodegen from
         # recognising the file: given the literal path, it rewrote the
         # entitlements on every generate and silently dropped push.
+        #
+        # So there is deliberately no `entitlements:` block on this target.
+        # XcodeGen writes that block's `properties` over the file on every
+        # generate AND forces CODE_SIGN_ENTITLEMENTS to the literal path, which
+        # would undo both halves of this. The file carries `aps-environment` =
+        # $(JUNO_APS_ENVIRONMENT) (native/Config/JunoMobile-Push.xcconfig), and
+        # the postGenCommand above fails a generate that loses it.
         CODE_SIGN_ENTITLEMENTS: $(JUNO_MOBILE_ENTITLEMENTS)
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Resources/Info.plist
@@ -101,6 +120,17 @@ targets:
       # The website's icon set (generated symbols), so widgets and Live
       # Activities draw the same marks as the app instead of SF Symbols.
       - path: Resources/Assets.xcassets
+        buildPhase: resources
+      # The app's string catalog, so the widget's words are translated with
+      # the app's instead of shipping in English only.
+      - path: Resources/Localizable.xcstrings
+        buildPhase: resources
+      # The small widget's "New chat" is set in the display serif. JunoSerif
+      # checks for the regular face before using any of them, so both ship
+      # (Widgets/Info.plist registers them); without them it is New York.
+      - path: Resources/Fonts/Newsreader24pt-Regular.ttf
+        buildPhase: resources
+      - path: Resources/Fonts/Newsreader24pt-Medium.ttf
         buildPhase: resources
     configFiles:
       Debug: ../../Config/JunoMobile-Debug.xcconfig

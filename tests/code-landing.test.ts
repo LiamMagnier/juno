@@ -147,35 +147,32 @@ test("/code/new is a redirect rather than a second composer", () => {
 
 /* ─────────────────────── The composer's row, as specified ───────────────── */
 
-test("the composer's tray holds where it runs, the project and the permission; the model stays below", () => {
-  // The tray sits on the composer (owner, 2026-10-03): the three context chips
-  // moved out of the box into a shelf drawn before the shell, which keeps only
-  // what is typed and the row that sends it.
+test("the composer's tray holds where it runs and the project; the row is the session's own", () => {
+  // The tray sits on the composer (owner, 2026-10-03): where it runs and which
+  // project, on a shelf drawn before the box. The box is the SESSION's
+  // composer in its landing variant (G58): one composer from landing to
+  // session, so the row (+, model, team, mode, skills) is the one a session has.
   const composer = read(COMPOSER);
   const tray = composer.indexOf('className="composer-tray composer-tray--top"');
-  const shell = composer.indexOf("<ComposerShell", tray);
-  assert.ok(tray > 0 && shell > tray, "the tray is drawn before the shell");
-  const traySlot = composer.slice(tray, shell);
+  const box = composer.indexOf("<Composer", tray);
+  assert.ok(tray > 0 && box > tray, "the tray is drawn before the composer");
+  const traySlot = composer.slice(tray, box);
   assert.match(traySlot, /<CodeEnvironmentChip/, "the environment chip is in the tray");
   assert.match(traySlot, /<CodeTargetPicker/, "the repository chip is in the tray");
-  assert.match(traySlot, /<ModeChip/, "the mode is in the tray");
-  const field = composer.indexOf("field={", shell);
-  const leading = composer.indexOf("leading={", shell);
-  const trailing = composer.indexOf("trailing={", shell);
-  assert.ok(field > shell && leading > field && trailing > leading, "the shell's slots are in order");
-  const leadingSlot = composer.slice(leading, trailing);
-  assert.match(leadingSlot, /<ComposerAddMenu/, "`+` is on the left of the controls row");
-  assert.ok(!/<ModeChip/.test(leadingSlot), "the mode chip is not drawn twice");
-  assert.match(composer.slice(trailing), /<ModelSelector/, "the model chip is on the right");
+  assert.ok(!/ModelSelector|ModeChip/.test(composer), "the landing no longer draws its own model or mode chip");
+  assert.match(composer.slice(box), /variant="landing"/, "the session's composer, landing variant");
+  const v2 = read("src/components/code/v2/composer.tsx");
+  // The model chip opens the session's picker (every provider, Team, keys).
+  assert.match(v2, /<ModelPicker\b/);
+  assert.match(v2, /aria-label=\{`Mode: \$\{modeInfo\.label\}`\}/, "the mode is on the row, as in a session");
 });
 
 test("thinking effort stays inside the model popover", () => {
-  const composer = read(COMPOSER);
-  // FLAT_UI.md §4: the controls row is three objects, and effort is a segmented
-  // control under the model list inside the picker — never a chip of its own.
-  assert.match(composer, /thinking=\{thinkingControl\}/, "effort is passed into the model selector");
-  const trailing = composer.slice(composer.indexOf("trailing={"));
-  assert.ok(!/<ReasoningSlider/.test(trailing), "effort must not be mounted on the controls row");
+  // FLAT_UI.md §4: effort is chosen inside the model picker (its effort stage),
+  // never as a chip of its own on the row.
+  const v2 = read("src/components/code/v2/composer.tsx");
+  assert.match(v2, /initialView=\{popover === "context" \? "context" : popover === "catalog" \? "models" : "effort"\}/, "the model chip opens on effort");
+  assert.ok(!/<ReasoningSlider/.test(read(COMPOSER)), "effort must not be mounted on the landing's row");
 });
 
 /* ──────────────────── One home for the permission sentences ─────────────── */
@@ -203,11 +200,14 @@ test("the mode chip is a real choice: the five rungs, carried by the run it star
   // composer. It decides something on both targets: a cloud run carries it as
   // `CodeTask.permissionMode` (which the runner-context route resolves), and a
   // run on a Mac starts its thread on it through the v2 route's prefs.
+  // The mode is the session composer's own control (G58): the rungs the
+  // instance can honour, each with its line. A cloud run's instance carries
+  // what its sandbox enforces, so the same control offers only those.
   const composer = read(COMPOSER);
-  const chip = composer.slice(composer.indexOf("function ModeChip"), composer.indexOf("* WHAT A LINK ASKED FOR"));
-  assert.match(chip, /COMPOSER_MODES/, "a Mac run offers all five rungs");
-  assert.match(chip, /availableComposerModes\(CLOUD_RUNTIME_APPROVALS/, "a cloud run offers what its sandbox enforces");
-  assert.match(chip, /m\.description/, "each rung says what it does");
+  const v2 = read("src/components/code/v2/composer.tsx");
+  assert.match(v2, /availableComposerModes\(caps\?\.approvals, caps\?\.planMode \?\? true\)/, "the rungs the instance can honour");
+  assert.match(v2, /l2: m\.description/, "each rung says what it does");
+  assert.match(composer, /approvals: \[\.\.\.CLOUD_RUNTIME_APPROVALS\]/, "a cloud run offers what its sandbox enforces");
   assert.match(composer, /permissionMode: cloudPermissionMode\(mode\)/, "the cloud task carries the choice");
   assert.match(composer, /seedThreadMode\(conversation\.id\)/, "a Mac thread starts on the choice");
 });

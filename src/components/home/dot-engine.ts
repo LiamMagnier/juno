@@ -19,8 +19,12 @@
  */
 
 import { applyBackingStore, backingStore, watchCanvas } from "@/lib/canvas/canvas-lifecycle";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 
 export type Rgb = readonly [number, number, number];
+
+const PRESENCE_RGB: Rgb = [1, 3, 5].map((i) => parseInt(SCRIPT_COLOR.presence.light.slice(i, i + 2), 16)) as unknown as Rgb;
 
 export interface Palette {
   ink: Rgb;
@@ -267,7 +271,7 @@ const instances = new Set<DotCanvas>();
 let raf = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let installed = false;
-let reduceQuery: MediaQueryList | null = null;
+let unsubscribeReduced: (() => void) | null = null;
 let schemeQuery: MediaQueryList | null = null;
 let themeObserver: MutationObserver | null = null;
 let parallaxUsers = 0;
@@ -279,9 +283,8 @@ const client = { x: -1e4, y: -1e4, at: 0 };
 type Stats = { frames: number; renders: number; ms: number; instances: number; active: number };
 const stats: Stats = { frames: 0, renders: 0, ms: 0, instances: 0, active: 0 };
 
-export function prefersReducedMotion() {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
+/** The OS and the in-app Motion choice (lib/motion-preference.ts). */
+export { prefersReducedMotion };
 
 let timerAt = 0;
 function schedule(delay: number) {
@@ -373,8 +376,7 @@ function setup() {
   if (installed) return;
   installed = true;
   document.addEventListener("visibilitychange", onVisibility);
-  reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-  reduceQuery.addEventListener("change", onTheme);
+  unsubscribeReduced = subscribeReducedMotion(onTheme);
   schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
   schemeQuery.addEventListener("change", onTheme);
   themeObserver = new MutationObserver(onTheme);
@@ -388,8 +390,8 @@ function teardown() {
   themeObserver?.disconnect();
   themeObserver = null;
   document.removeEventListener("visibilitychange", onVisibility);
-  reduceQuery?.removeEventListener("change", onTheme);
-  reduceQuery = null;
+  unsubscribeReduced?.();
+  unsubscribeReduced = null;
   schemeQuery?.removeEventListener("change", onTheme);
   schemeQuery = null;
 }
@@ -434,7 +436,8 @@ export class DotCanvas {
   private dirty = true;
   private visible = false;
   private still = false;
-  private palette: Palette = { ink: [26, 28, 30], presence: [45, 73, 201], sub: [107, 109, 113], strength: 0.8, glow: 0.3, floor: 0.35, size: 1, axis: 1, font: "monospace" };
+  // Until the first read of the element's colours (readPalette): presence from the token projection.
+  private palette: Palette = { ink: [26, 28, 30], presence: PRESENCE_RGB, sub: [107, 109, 113], strength: 0.8, glow: 0.3, floor: 0.35, size: 1, axis: 1, font: "monospace" };
   private geo = { x: 0.5, y: 0.5, span: 0, zoom: 1 };
   private glowSprite: HTMLCanvasElement | null = null;
   private eased = { x: 0, y: 0 };

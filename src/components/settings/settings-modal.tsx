@@ -78,6 +78,9 @@ export function SettingsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
+        // Settings owns the whole phone screen already (max-md below), so it
+        // is not a bottom sheet there.
+        sheet={false}
         aria-describedby={undefined}
         onOpenAutoFocus={(event) => {
           const tab = document.getElementById(settingsTabId(section));

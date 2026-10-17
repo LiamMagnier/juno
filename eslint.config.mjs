@@ -4,6 +4,8 @@ import { FlatCompat } from "@eslint/eslintrc";
 
 import designSystem from "./eslint-rules/design-system.mjs";
 import noArbitraryText from "./eslint-rules/no-arbitrary-text.js";
+import noRawReducedMotion from "./eslint-rules/no-raw-reduced-motion.mjs";
+import noCodename from "./eslint-rules/no-codename.js";
 import noRawTextSize from "./eslint-rules/no-raw-text-size.js";
 
 const compat = new FlatCompat({
@@ -112,10 +114,14 @@ const config = [
           ...designSystem.rules,
           "no-arbitrary-text": noArbitraryText,
           "no-raw-text-size": noRawTextSize,
+          "no-raw-reduced-motion": noRawReducedMotion,
         },
       },
     },
     rules: {
+      // One answer to "is motion reduced?" for script, the one the stylesheet
+      // gives too (lib/motion-preference.ts, postcss/motion-preference.cjs).
+      "design-system/no-raw-reduced-motion": "error",
       "design-system/no-arbitrary-radius": [
         "error",
         {
@@ -167,6 +173,26 @@ const config = [
     // The icon set itself is the one module allowed to reach the glyph library.
     files: ["src/components/ui/icons.tsx"],
     rules: { "no-restricted-imports": "off" },
+  },
+  {
+    // The module that combines the inputs, and the dev galleries, which
+    // simulate the preference on purpose.
+    files: ["src/lib/motion-preference.ts", "src/app/dev/**/*.{ts,tsx}"],
+    rules: { "design-system/no-raw-reduced-motion": "off" },
+  },
+  {
+    /*
+     * The product is Alevr in every sentence a person reads (G44). "Juno" is
+     * the codename and stays in identifiers, storage keys, routes and the
+     * User-Agent; the rule (eslint-rules/no-codename.js) looks only at prose:
+     * string literals, template text and JSX text. The dev galleries 404 in
+     * production and keep their historical fixtures; the three scripts are
+     * the runners whose errors and pull requests users read.
+     */
+    files: ["src/**/*.{ts,tsx}", "scripts/work-runner.ts", "scripts/work-trigger-poller.ts", "scripts/cloud-code-runner.mjs"],
+    ignores: ["src/app/dev/**"],
+    plugins: { brand: { rules: { "no-codename": noCodename } } },
+    rules: { "brand/no-codename": "error" },
   },
   {
     /*

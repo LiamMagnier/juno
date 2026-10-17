@@ -569,6 +569,17 @@ export function readMemoryReceipt(raw: unknown): ClientMemoryReceipt[] | undefin
   return receipt.length ? receipt : undefined;
 }
 
+/** The "Memory updated" row's payload, read as tolerantly as the receipt above. */
+export function readMemoryWrite(raw: unknown): NonNullable<ClientActivityEvent["memoryWrite"]> | undefined {
+  if (!isRecord(raw)) return undefined;
+  const saved = readMemoryReceipt(raw.saved) ?? [];
+  const forgotten = Array.isArray(raw.forgotten)
+    ? raw.forgotten.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  if (saved.length === 0 && forgotten.length === 0) return undefined;
+  return { saved, ...(forgotten.length ? { forgotten } : {}) };
+}
+
 type ArtifactVerification = NonNullable<ClientActivityEvent["artifactVerification"]>;
 type ArtifactProblem = ArtifactVerification["problems"][number];
 
@@ -652,6 +663,7 @@ export function serializeActivity(decrypted: unknown): ClientActivityEvent[] | u
 
     // What the rework adds (SPEC §2.4), each read by its own tolerant reader.
     const memoryReceipt = readMemoryReceipt(record.memoryReceipt);
+    const memoryWrite = readMemoryWrite(record.memoryWrite);
     const artifactVerification = readArtifactVerification(record.artifactVerification);
     const seq = readInteger(record.seq, 1);
     const round = readInteger(record.round, 0);
@@ -671,6 +683,7 @@ export function serializeActivity(decrypted: unknown): ClientActivityEvent[] | u
         createdAt,
         ...(tool ? { tool } : {}),
         ...(memoryReceipt ? { memoryReceipt } : {}),
+        ...(memoryWrite ? { memoryWrite } : {}),
         ...(artifactVerification ? { artifactVerification } : {}),
         ...(patch ? { patch } : {}),
         ...(exitCode !== undefined ? { exitCode } : {}),

@@ -1725,6 +1725,13 @@ public enum CodeV2 {
         case projectRemove = "project.remove"
         // access lane: the composer's access picker, applied to the thread at once (mid-turn included).
         case sessionSetMode = "session.setMode"
+        // queue lane: the queued messages, changed on the env server's own queue (Steer now is one step there).
+        case queueRemove = "queue.remove"
+        case queueEdit = "queue.edit"
+        case queueMove = "queue.move"
+        case queuePromote = "queue.promote"
+        // computer lane: one stored frame of the screen-control timeline, from the Mac's shots folder.
+        case computerFrame = "computer.frame"
     }
 
     // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)

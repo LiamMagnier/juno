@@ -25,6 +25,7 @@ import {
   type CrossProduct,
   type SendRefusal,
 } from "./policy";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /*
  * Conversations messaging each other: the backend hub (policy.ts has the rules).
@@ -722,7 +723,7 @@ export async function readCrossConversation(
     if (!chat) return { ok: false, message: "No conversation of the user's has that id." };
     const [rows, cross] = await Promise.all([
       prisma.message.findMany({
-        where: { conversationId: chat.id, conversation: { userId }, role: { in: ["USER", "ASSISTANT"] } },
+        where: { conversationId: chat.id, conversation: { userId }, role: { in: ["USER", "ASSISTANT"] }, ...ON_ACTIVE_PATH },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: count,
         select: { role: true, content: true, createdAt: true },

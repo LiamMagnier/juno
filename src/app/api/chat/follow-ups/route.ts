@@ -7,6 +7,7 @@ import { isOwnerEmail } from "@/lib/owner";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { accountBackgroundProvider, loadBackgroundProviderPolicy, runUtilityPrompt } from "@/lib/memory";
 import { getModel } from "@/lib/models";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
   // point degrades to no pills at all, never an error surfaced in the UI.
   try {
     const recent = await prisma.message.findMany({
-      where: { conversationId: conversation.id, role: { in: ["USER", "ASSISTANT"] } },
+      where: { conversationId: conversation.id, role: { in: ["USER", "ASSISTANT"] }, ...ON_ACTIVE_PATH },
       orderBy: { createdAt: "desc" },
       take: CONTEXT_MESSAGES,
       select: { role: true, content: true },

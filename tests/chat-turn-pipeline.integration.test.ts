@@ -35,7 +35,8 @@ const DB_URL = process.env.CHAT_TURN_TEST_DATABASE_URL;
 if (!DB_URL) {
   test("chat turn pipeline suite is skipped without CHAT_TURN_TEST_DATABASE_URL", { skip: true }, () => {});
 } else {
-  assert.match(DB_URL, /^postgresql:\/\/[^@]+@127\.0\.0\.1:\d+\/juno_route_test$/, "only an explicit local disposable database");
+  // A suffix (juno_route_test_<name>) lets parallel runs keep one disposable database each.
+  assert.match(DB_URL, /^postgresql:\/\/[^@]+@127\.0\.0\.1:\d+\/juno_route_test(?:_[a-z0-9]+)?$/, "only an explicit local disposable database");
   process.env.DATABASE_URL = DB_URL;
   process.env.DIRECT_URL = DB_URL;
   process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -46,7 +47,7 @@ if (!DB_URL) {
   let signedIn: { id: string; email: string; name: string } | null = null;
   mock.module("@/lib/session", { namedExports: { getCurrentUser: async () => signedIn } });
 
-  type Script = (opts: { signal?: AbortSignal; system: string }) => AsyncGenerator<Record<string, unknown>>;
+  type Script = (opts: { signal?: AbortSignal; system: string; history?: Array<{ role: string; content: string }> }) => AsyncGenerator<Record<string, unknown>>;
   let script: Script;
   let streamCalls = 0;
   const afterQueue: Array<() => unknown> = [];
@@ -304,7 +305,12 @@ if (!DB_URL) {
     );
   });
 
-  test("a regenerate keeps the previous answer as a version", async () => {
+  // ── Branches (G03, G50): src/lib/chat/branches.ts ─────────────────────────
+
+  const threadOrder = [{ createdAt: "asc" as const }, { id: "asc" as const }];
+  type DoneFrame = Frame & { message: { id: string; content: string; branch?: { index: number; siblingIds: string[] } } };
+
+  test("a regenerate keeps the previous answer whole, as a sibling the pager returns to", async () => {
     await seedUser();
     script = () => answer("First answer.");
     const first = await chat({ message: "Tell me something." });
@@ -312,9 +318,87 @@ if (!DB_URL) {
     script = () => answer("Second answer.");
     const second = await chat({ conversationId, regenerate: true });
     assert.equal(second.status, 200);
-    const assistant = await prisma.message.findMany({ where: { conversationId, role: "ASSISTANT" } });
-    assert.equal(assistant.length, 1, "the reply row is superseded in place");
-    assert.equal(await prisma.messageVersion.count({ where: { messageId: assistant[0].id } }), 1);
+    const assistant = await prisma.message.findMany({ where: { conversationId, role: "ASSISTANT" }, orderBy: threadOrder });
+    assert.equal(assistant.length, 2, "the previous answer is a row of its own, never overwritten");
+    assert.deepEqual(assistant.map((m) => m.onActivePath), [false, true]);
+    assert.equal(assistant[0].activity !== null, true, "and keeps its activity, which a version never could");
+    const done = second.frames.at(-1) as DoneFrame;
+    assert.equal(done.message.id, assistant[1].id);
+    assert.deepEqual(done.message.branch, { index: 1, siblingIds: assistant.map((m) => m.id) });
+    assert.equal(await prisma.messageVersion.count({ where: { messageId: { in: assistant.map((m) => m.id) } } }), 0);
+  });
+
+  test("regenerating an earlier answer reads the thread as it stood and branches at that turn", async () => {
+    await seedUser();
+    script = () => answer("Lisbon is lovely in May.");
+    const first = await chat({ message: "Where should I go in May?" });
+    const conversationId = first.frames[0].conversationId as string;
+    script = () => answer("Book the tram early.");
+    await chat({ conversationId, message: "Any tips?" });
+    const [u1, a1, u2, a2] = await prisma.message.findMany({ where: { conversationId }, orderBy: threadOrder });
+    let seen: string[] = [];
+    script = (opts) => {
+      seen = (opts.history ?? []).map((m) => `${m.role}:${m.content}`);
+      return answer("Porto, for the food.");
+    };
+    const regenerated = await chat({ conversationId, regenerate: true, regenerateMessageId: a1.id });
+    assert.equal(regenerated.status, 200, regenerated.text);
+    assert.deepEqual(seen, ["USER:Where should I go in May?"], "nothing from the answer being replaced onward");
+    const shown = await prisma.message.findMany({ where: { conversationId, onActivePath: true }, orderBy: threadOrder });
+    assert.equal(shown.length, 2);
+    assert.equal(shown[0].id, u1.id);
+    assert.equal(shown[1].parentId, u1.id);
+    assert.equal(shown[1].branchGroupId, a1.id);
+    const hidden = await prisma.message.findMany({ where: { id: { in: [a1.id, u2.id, a2.id] } } });
+    assert.ok(hidden.every((m) => !m.onActivePath), "the old answer and what followed it are kept, off the path");
+    assert.equal(await prisma.message.count({ where: { conversationId } }), 5);
+    const done = regenerated.frames.at(-1) as DoneFrame;
+    assert.deepEqual(done.message.branch?.siblingIds, [a1.id, shown[1].id]);
+
+    // A regenerate of an answer that is no longer shown is refused before anything is charged.
+    const calls = streamCalls;
+    const refused = await chat({ conversationId, regenerate: true, regenerateMessageId: a2.id });
+    assert.equal(refused.status, 409);
+    assert.equal(streamCalls, calls);
+    // And the next turn continues the branch that is shown.
+    script = (opts) => {
+      seen = (opts.history ?? []).map((m) => `${m.role}:${m.content}`);
+      return answer("Try the francesinha.");
+    };
+    await chat({ conversationId, message: "What should I eat?" });
+    assert.deepEqual(seen, ["USER:Where should I go in May?", "ASSISTANT:Porto, for the food.", "USER:What should I eat?"]);
+  });
+
+  test("an edited question is answered on its own branch, and the old one keeps its answers", async () => {
+    await seedUser();
+    script = () => answer("Paris.");
+    const first = await chat({ message: "Capital of France?" });
+    const conversationId = first.frames[0].conversationId as string;
+    script = () => answer("About two million.");
+    await chat({ conversationId, message: "Population?" });
+    const [, , u2, a2] = await prisma.message.findMany({ where: { conversationId }, orderBy: threadOrder });
+    const route = await import("@/app/api/messages/[id]/route");
+    const res = await route.PATCH(
+      new Request(`http://juno.test/api/messages/${u2.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Area?" }) }),
+      { params: Promise.resolve({ id: u2.id }) }
+    );
+    assert.equal(res.status, 200);
+    const { message: edited } = (await res.json()) as { message: { id: string } };
+    let seen: string[] = [];
+    script = (opts) => {
+      seen = (opts.history ?? []).map((m) => `${m.role}:${m.content}`);
+      return answer("About 105 square kilometres.");
+    };
+    const answered = await chat({ conversationId, regenerate: true });
+    assert.equal(answered.status, 200);
+    assert.deepEqual(seen, ["USER:Capital of France?", "ASSISTANT:Paris.", "USER:Area?"]);
+    const shown = await prisma.message.findMany({ where: { conversationId, onActivePath: true }, orderBy: threadOrder });
+    assert.equal(shown.length, 4);
+    assert.equal(shown[2].id, edited.id);
+    assert.equal(shown[3].parentId, edited.id, "the answer records the question it answers");
+    const old = await prisma.message.findMany({ where: { id: { in: [u2.id, a2.id] } } });
+    assert.ok(old.every((m) => !m.onActivePath));
+    assert.equal(await prisma.message.count({ where: { conversationId } }), 6, "nothing deleted");
   });
 
   test("a private turn stores nothing and still settles its spend hold", async () => {

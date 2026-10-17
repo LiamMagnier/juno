@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+
 import type JSZip from "jszip";
 
 import { Button } from "@/components/ui/button";
@@ -956,7 +957,7 @@ function PreviewWait({ label }: { label: string }) {
       role="status"
       className="flex h-full min-h-24 items-center justify-center gap-1.5 font-mono text-micro text-muted-foreground"
     >
-      <Loader2 className="size-3 animate-spin" aria-hidden="true" /> {label}
+      <GalaxyMark phase="working" size={12} /> {label}
     </p>
   );
 }

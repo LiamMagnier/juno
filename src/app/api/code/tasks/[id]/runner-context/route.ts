@@ -26,6 +26,7 @@ import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-ap
 import { catalogEntryMatchesModel } from "@/lib/models";
 import { loadModelCapabilityMap } from "@/lib/model-capability";
 import { AGENT_PROTOCOL_ACCEPTED } from "@/lib/code-task-wire";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export const runtime = "nodejs";
 
@@ -261,6 +262,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         conversationId: task.conversationId,
         role: { in: ["USER", "ASSISTANT"] },
         createdAt: { lt: task.createdAt },
+        ...ON_ACTIVE_PATH,
       },
       orderBy: { createdAt: "asc" },
       select: { role: true, content: true },

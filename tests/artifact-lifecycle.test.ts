@@ -39,22 +39,21 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 test("no route deletes an artifact because a message went away", () => {
   const edit = read("src/app/api/messages/[id]/route.ts");
-  assert.doesNotMatch(edit, /artifact\.delete/, "an edit leaves artifacts to the SetNull foreign key");
+  assert.doesNotMatch(edit, /artifact\.delete/, "an edit leaves artifacts with the answers that made them");
+  assert.doesNotMatch(edit, /message\.deleteMany/, "an edit is a branch, never a truncation");
   const chat = chatTurnSource();
   assert.doesNotMatch(chat, /artifact\.delete/);
-  // The regenerate overwrites the answer in place, so no foreign key fires:
-  // it lets go of the answer's artifacts explicitly, in the same transaction.
-  const start = chat.indexOf('if (mode === "supersede" && stale)');
-  assert.ok(start > 0, "the supersede branch is where this test expects it");
-  const supersede = chat.slice(start, chat.indexOf("prisma.message.update", start));
-  assert.match(supersede, /prisma\.\$transaction\(\[[\s\S]*detachArtifactsFromMessage\(stale\.id, user\.id\)/);
+  // A regenerate adds a sibling of the answer (src/lib/chat/branches.ts): the
+  // old answer is never overwritten, so its artifacts stay pinned to it, on
+  // the branch the pager returns to.
+  assert.match(chat, /forkMessage\(/, "the regenerate writes a sibling");
+  assert.doesNotMatch(chat, /prisma\.message\.update\(\{\s*where: \{ id: stale/, "the answer being replaced is not overwritten");
 });
 
-test("a detached artifact is let go of, never deleted, and claimed by the next emission", () => {
+test("an artifact is never deleted with its message, and a re-emission claims it once its message is not shown", () => {
   const store = read("src/lib/artifacts-store.ts");
-  const detach = store.slice(store.indexOf("export function detachArtifactsFromMessage"));
-  assert.match(detach.slice(0, 220), /artifact\.updateMany\(\{ where: \{ messageId, userId \}, data: \{ messageId: null \} \}\)/);
-  assert.match(store, /\.\.\.\(existing\.messageId \? \{\} : \{ message: \{ connect: \{ id: messageId \} \} \}\)/);
+  assert.match(store, /\.\.\.\(existing\.messageId && existing\.message\?\.onActivePath !== false \? \{\} : \{ message: \{ connect: \{ id: messageId \} \} \}\)/);
+  assert.doesNotMatch(store, /artifact\.deleteMany\(\{ where: \{ messageId/);
 });
 
 const DB_URL = process.env.ARTIFACT_TEST_DATABASE_URL;
@@ -242,9 +241,12 @@ if (!DB_URL) {
     );
     assert.equal(edited.status, 200);
 
-    // The truncation still happens: only the edited message is left.
-    const left = await prisma.message.findMany({ where: { conversationId: conversation.id } });
-    assert.deepEqual(left.map((m) => m.id), [firstAsk.id]);
+    // A branch, not a truncation: every message stays, and only the new
+    // wording is shown (src/lib/chat/branches.ts).
+    const { message: editedAsk } = (await edited.json()) as { message: { id: string } };
+    assert.equal(await prisma.message.count({ where: { conversationId: conversation.id } }), 5, "nothing deleted");
+    const shown = await prisma.message.findMany({ where: { conversationId: conversation.id, onActivePath: true } });
+    assert.deepEqual(shown.map((m) => m.id), [editedAsk.id]);
 
     // Nothing the answers made is gone, and nothing changed identity.
     const planAfter = await artifactRow(plan.id);
@@ -259,12 +261,12 @@ if (!DB_URL) {
       "every version survives, the hand edit included"
     );
     assert.equal(planAfter.currentVersion, 3);
-    assert.equal(planAfter.messageId, null, "detached from the answer that was edited away");
+    assert.equal(planAfter.messageId, firstAnswer.id, "still the answer that made it, on the branch the edit set aside");
     assert.equal(planAfter.shares.length, 1);
 
     const checklistAfter = await artifactRow(checklist.id);
     assert.ok(checklistAfter, "an artifact made by a later answer survives too");
-    assert.equal(checklistAfter.messageId, null);
+    assert.equal(checklistAfter.messageId, secondAnswer.id);
 
     // The public link still resolves, to what was shared.
     const snapshot = await publicSnapshot(token);
@@ -274,15 +276,16 @@ if (!DB_URL) {
     // A reload shows both, and the open canvas can still save.
     const thread = await (await import("@/lib/queries")).getConversationThread(user.id, conversation.id);
     assert.deepEqual(thread?.artifacts.map((a) => [a.id, a.messageId]), [
-      [plan.id, null],
-      [checklist.id, null],
+      [plan.id, firstAnswer.id],
+      [checklist.id, secondAnswer.id],
     ]);
     const artifactRoute = await import("@/app/api/artifacts/[id]/route");
     const saved = await artifactRoute.POST(request("POST", { content: "# Plan v4", baseVersion: 3 }), params(plan.id));
     assert.equal(saved.status, 200, "saving the open artifact after the edit is not a 404");
 
     // The answer to the edited message re-emits the identifier: it appends to
-    // the same row and claims it, rather than starting over at v1.
+    // the same row and claims it (the answer that made it is no longer shown),
+    // rather than starting over at v1.
     const done = await regenerate(conversation.id, artifactTag("launch-plan", "Launch plan", "# Bakery plan"));
     const reemitted = done.artifacts.find((a) => a.identifier === "launch-plan");
     assert.equal(reemitted?.id, plan.id, "the same artifact, not a new one");
@@ -317,13 +320,17 @@ if (!DB_URL) {
     // Try again: the new answer re-emits the plan and drops the checklist.
     const done = await regenerate(conversation.id, artifactTag("launch-plan", "Launch plan", "# Plan, take two"));
 
-    assert.equal(done.message.id, answer.id, "the answer is overwritten in place");
-    assert.equal(await prisma.messageVersion.count({ where: { messageId: answer.id } }), 1, "the old answer is kept");
+    // The new answer is a sibling (src/lib/chat/branches.ts); the old one is
+    // kept whole, off the shown path.
+    assert.notEqual(done.message.id, answer.id, "a new row, never the old answer overwritten");
+    const old = await prisma.message.findUnique({ where: { id: answer.id } });
+    assert.equal(old?.onActivePath, false, "the old answer is kept, one step back on the pager");
 
-    // The re-emitted identifier appends to the same row: same id, next version.
+    // The re-emitted identifier appends to the same row: same id, next
+    // version, claimed by the answer now shown.
     assert.deepEqual(
       done.artifacts.map((a) => [a.identifier, a.id, a.currentVersion, a.messageId]),
-      [["launch-plan", plan.id, 3, answer.id]]
+      [["launch-plan", plan.id, 3, done.message.id]]
     );
     const planAfter = await artifactRow(plan.id);
     assert.deepEqual(
@@ -337,10 +344,10 @@ if (!DB_URL) {
     assert.equal(planAfter?.shares.length, 1);
     assert.equal((await publicSnapshot(planToken))?.content, "# Plan, edited by hand");
 
-    // The artifact the new answer no longer emits stays, detached.
+    // The artifact the new answer no longer emits stays with the old answer.
     const checklistAfter = await artifactRow(checklist.id);
     assert.ok(checklistAfter, "the dropped artifact is not deleted");
-    assert.equal(checklistAfter.messageId, null, "detached from the regenerated answer");
+    assert.equal(checklistAfter.messageId, answer.id, "still the answer that made it, on its own branch");
     assert.deepEqual(checklistAfter.versions.map((v) => v.content), ["- [ ] ship", "- [x] ship"]);
     assert.equal((await publicSnapshot(checklistToken))?.content, "- [x] ship", "its public link still resolves");
 
@@ -352,8 +359,8 @@ if (!DB_URL) {
     assert.deepEqual(
       again.artifacts.map((a) => [a.identifier, a.id, a.currentVersion, a.messageId]),
       [
-        ["launch-plan", plan.id, 4, answer.id],
-        ["checklist", checklist.id, 3, answer.id],
+        ["launch-plan", plan.id, 4, again.message.id],
+        ["checklist", checklist.id, 3, again.message.id],
       ]
     );
   });

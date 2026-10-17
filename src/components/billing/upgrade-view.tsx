@@ -20,6 +20,7 @@ import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
 import { capabilitiesLost, capabilityChanges } from "@/lib/billing/plan-capabilities";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 type BillingInterval = PriceInterval;
 
@@ -261,7 +262,7 @@ export function UpgradeView({
           type="button"
           onClick={() =>
             document.getElementById("plans-compare")?.scrollIntoView({
-              behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+              behavior: prefersReducedMotion() ? "auto" : "smooth",
               block: "start",
             })
           }

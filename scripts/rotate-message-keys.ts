@@ -15,7 +15,7 @@
  * that rewrites them has finished.
  *
  * It covers every column sealed with the message keyring, not only the message
- * body: `Message.content` / `Message.reasoning` AND the columns added by
+ * body: `Message.content` / `Message.reasoning` / `Message.feedbackNote` AND the columns added by
  * src/lib/field-crypto.ts — `Message.activity`, `MemorySummary.content`,
  * `ProjectMemorySummary.content` and `ScheduledTask.prompt`. That is the whole
  * reason field-crypto delegates to this keyring instead of owning one: a
@@ -321,6 +321,22 @@ async function main(): Promise<void> {
       return rows.map((r) => ({ id: r.id, value: r.prompt }));
     },
     write: (id, value) => prismaUnguarded.scheduledTask.update({ where: { id }, data: { prompt: value } }),
+  });
+  // The note a reader leaves with a thumbs-down (feedback route). Born sealed,
+  // and rare, so the pass reads only the rows that have one rather than
+  // walking the whole message table a second time.
+  await rotateTextColumn("Message.feedbackNote", tally, {
+    page: async (cursor) => {
+      const rows = await prismaUnguarded.message.findMany({
+        take: BATCH,
+        where: { feedbackNote: { not: null } },
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: "asc" },
+        select: { id: true, feedbackNote: true },
+      });
+      return rows.flatMap((r) => (r.feedbackNote ? [{ id: r.id, value: r.feedbackNote }] : []));
+    },
+    write: (id, value) => prismaUnguarded.message.update({ where: { id }, data: { feedbackNote: value } }),
   });
   // What each agent knows (docs/design/AGENTS.md). Born sealed like the
   // project summaries — every write in src/lib/agents/ goes through

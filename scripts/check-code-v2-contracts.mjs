@@ -495,6 +495,13 @@ function buildSchema() {
   params["project.remove"] = obj({ cwd: nonEmpty });
   // access lane
   params["session.setMode"] = obj({ ...sid, runtimeMode: ref("RuntimeMode") }, { interactionMode: ref("InteractionMode") });
+  // queue lane
+  params["queue.remove"] = obj({ ...sid, queuedId: nonEmpty });
+  params["queue.edit"] = obj({ ...sid, queuedId: nonEmpty, text: str });
+  params["queue.move"] = obj({ ...sid, queuedId: nonEmpty, to: int });
+  params["queue.promote"] = obj({ ...sid, queuedId: nonEmpty });
+  // computer lane
+  params["computer.frame"] = obj({ ref: nonEmpty });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),

@@ -165,7 +165,7 @@ export function sessionIdForKey(user: WorkDispatchUser, key: string): string {
  * can, which is the one outcome a reader who switched everything off did not
  * ask for.
  */
-async function writeSessionConnectors(
+export async function writeSessionConnectors(
   // The signed-in user rather than their id, so every clause below reads
   // `userId: user.id`. That is the shape tests/work-security.test.ts follows
   // through this file, and a helper that took a bare string would put these

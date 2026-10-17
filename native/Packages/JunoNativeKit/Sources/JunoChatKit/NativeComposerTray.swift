@@ -474,14 +474,15 @@ struct NativeTrayChoiceMenu<Glyph: View>: View {
         let current = control.value ?? .auto
         let items = choices.map { choice in
             let chosen = choice.value == current
-            let pick = { if !chosen { pick(choice.value) } }
+            // Not named `pick`: that would shadow the function it calls (Xcode 26 rejects it).
+            let choose = { if !chosen { pick(choice.value) } }
             if control.key == "aspect" {
                 return NativeTrayPickerItem(
                     id: choice.value.description,
                     title: words(choice),
                     subtitle: note(choice),
                     accessory: .check(chosen),
-                    action: pick
+                    action: choose
                 ) {
                     NativeTrayAspectGlyph(value: choice.value)
                         .frame(width: NativeTrayPickerMetrics.tile, height: NativeTrayPickerMetrics.tile)
@@ -496,7 +497,7 @@ struct NativeTrayChoiceMenu<Glyph: View>: View {
                 title: words(choice),
                 subtitle: note(choice),
                 accessory: .check(chosen),
-                action: pick
+                action: choose
             )
         }
         return NativeTrayPicker(

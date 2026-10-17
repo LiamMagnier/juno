@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
 import type { ClientMessage, ClientQuota } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 
 /**
  * Side-by-side model comparison — the aggregator's signature move. One prompt,
@@ -185,7 +186,8 @@ export function CompareView() {
   const submit = () => runAll(prompt);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // Return on an on-screen keyboard breaks the line; the button sends (G35).
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !touchReturnBreaksLine(e)) {
       e.preventDefault();
       submit();
     }
@@ -385,7 +387,7 @@ export function CompareView() {
             <p className="ed-annot mb-1.5">Try one</p>
             <ul className="ed-list -mx-3 max-w-2xl">
               {SAMPLE_PROMPTS.map((sample, i) => (
-                <li key={sample}>
+                <li key={sample} className="ed-row">
                   <button
                     type="button"
                     onClick={() => {

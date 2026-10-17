@@ -105,12 +105,14 @@ model User {
   codeRemoteSessions          CodeRemoteSession[]
   codeSessionCommands         CodeSessionCommand[]
   codeRemoteSessionEvents     CodeRemoteSessionEvent[]
+  codeTurnFeedback            CodeTurnFeedback[]
   apiSpend                    ApiSpend[]
   batchJobs                   BatchJob[]
   moderationFlags             ModerationFlag[]
   shares                      Share[]
   artifacts                   Artifact[]
   artifactDrafts              ArtifactDraft[]
+  artifactCanvasDrafts        ArtifactCanvasDraft[]
   artifactPublications        ArtifactPublication[]
   scheduledTasks              ScheduledTask[]
   voiceTranscriptSessions     VoiceTranscriptSession[]
@@ -600,6 +602,11 @@ model Settings {
   // verified_no_training | exclude_prc | eu_us_only (src/lib/router/data-policy.ts).
   // Every value already excludes training and unverified terms; this only narrows.
   autoDataBoundary           String   @default("verified_no_training")
+  /// The account's Code defaults (src/lib/code-v2/code-prefs.ts): what a new
+  /// session starts with (access, work-log detail, team preset and budget).
+  /// Validated JSON, read and written only through /api/code/prefs; a session's
+  /// own choices still win over these.
+  codePrefs                  Json?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
@@ -693,6 +700,12 @@ model Conversation {
   // This conversation's own "Let conversations message each other" toggle:
   // "on", "off", or NULL to follow the account setting for its kind.
   crossMessages     String?
+  // How often a task started from this chat stops to ask: one of the Work
+  // approval modes ("conservative" | "balanced" | "permissive", the wire
+  // values in src/lib/work/domain.ts), or NULL for the default. Chosen from
+  // the chat composer; a project's or an agent's stricter mode still wins at
+  // dispatch (src/lib/chat/task-approval-mode.ts).
+  taskApprovalMode  String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
@@ -716,6 +729,7 @@ model Conversation {
   shares                  Share[]
   voiceTranscriptSessions VoiceTranscriptSession[]
   toolRuns                ToolRun[]
+  codeTurnFeedback        CodeTurnFeedback[]
 
   @@unique([userId, clientRequestId])
   @@index([userId, lastMessageAt])
@@ -897,6 +911,12 @@ model Message {
   reasoningParts   Json? // [encrypted part, …] — discrete reasoning summary parts
   model            String?
   feedback         Feedback? // thumbs up/down on assistant messages
+  // Why a thumbs-down was given (src/lib/feedback-reasons.ts ids), and the
+  // reader's optional note, sealed with the message keyring like `content`.
+  // Both are cleared whenever `feedback` stops being DOWN. Nullable and
+  // additive: every message rated before the picker simply has no reason.
+  feedbackReason   String?
+  feedbackNote     String?   @db.Text
   promptTokens     Int?
   completionTokens Int?
   // The prompt-cache split of `promptTokens`, as the PROVIDER reported it.
@@ -932,6 +952,30 @@ model Message {
   // every turn the reader routed by hand, and for every turn written before
   // Auto Router 2.0. Cleared (not kept) when a regenerate supersedes the row.
   routing          Json?
+  // Branches (src/lib/chat/branches.ts, rules in branch-model.ts). Editing a
+  // question or regenerating an answer adds a SIBLING row and keeps the old
+  // one with everything that followed it, so a thread is a tree:
+  //
+  //  - parentId: the message this one follows (a plain pointer, like
+  //    forkedFromId). Writers that do not know about branches leave it NULL
+  //    and the row follows the previous message on the active path; a branch
+  //    operation writes those pointers down before it moves anything, so a
+  //    row that leaves the active path always records where it sat.
+  //  - branchGroupId: shared by the alternatives at one point of the thread
+  //    (the first one's id). NULL for a message that has never had one.
+  //  - branchSelected: the alternative chosen in its group. Kept while the
+  //    branch around it is not shown, so returning to a branch restores the
+  //    choices made inside it.
+  //  - onActivePath: the denormalised "shown" bit. Every transcript reader
+  //    (paging, the model's history, search, sharing, export, memory, native
+  //    sync) filters on it, so the rest of the product sees one linear thread.
+  //
+  // Additive: constant defaults are metadata-only in PostgreSQL 11+, and every
+  // existing row is a linear, shown, never-branched message.
+  parentId         String?
+  branchGroupId    String?
+  branchSelected   Boolean   @default(true)
+  onActivePath     Boolean   @default(true)
   createdAt        DateTime  @default(now())
 
   conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -1190,6 +1234,11 @@ model MemoryEntry {
   expiresAt       DateTime?
   lastUsedAt      DateTime?
   lastVerifiedAt  DateTime?
+  // When the person last said this fact was not relevant to an answer it was
+  // used in ("Not relevant" under the answer). For a while after, it has to be
+  // about the message to be used at all and ranks below facts that are equally
+  // about it (selectMemoriesForContext); Forget is the permanent version.
+  notRelevantAt   DateTime?
   // When the person SAID it — the source message's time — as opposed to
   // createdAt, when Juno wrote it down. Minutes apart for a fact learned in
   // the chat it came from; months apart for one learned by re-reading history.
@@ -1434,6 +1483,7 @@ model Artifact {
   versions     ArtifactVersion[]
   shares       Share[]
   draft        ArtifactDraft?
+  canvasDrafts ArtifactCanvasDraft[]
   proposals    ArtifactProposal[]
   publications ArtifactPublication[]
 
@@ -1490,6 +1540,33 @@ model ArtifactDraft {
 
   @@index([userId])
   @@index([updatedAt])
+}
+
+/// An unsaved edit to an artifact's source in the canvas (G12).
+///
+/// Not a version and never sealed into one by anybody but the person: the
+/// canvas autosaves the Code tab here as they type, offers it back when the
+/// artifact reopens (on this device or another), and drops it when they save
+/// it as a version or discard it. Separate from ArtifactDraft on purpose: that
+/// row is the design editor's working copy, which every other write and the
+/// idle sweeper seal into a version, and an unsaved code edit must not become
+/// a version behind the person's back. Never change-captured, synced, shared
+/// or published; drafts untouched for CANVAS_DRAFT_RETENTION_DAYS are dropped
+/// (src/lib/artifact-canvas-draft.ts).
+model ArtifactCanvasDraft {
+  artifactId  String
+  userId      String
+  /// The version the edit started from: a save checks it against the head.
+  baseVersion Int
+  content     String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([artifactId, userId])
+  @@index([userId, updatedAt])
 }
 
 /// Juno's work that is not (yet) a version: a model re-emit held back because
@@ -2414,6 +2491,12 @@ model Share {
   artifactId     String?
   title          String    @default("") // denormalized for lists + OG cards
   snapshotAt     DateTime  @default(now())
+  /// The last message of the branch that was shown when the snapshot was
+  /// taken. The public page renders that message's ancestors, so editing or
+  /// switching branches after sharing never changes what the link shows.
+  /// NULL on links made before branches: they read the shown path up to
+  /// snapshotAt, and the first branch operation in their chat pins them.
+  leafMessageId  String?
   views          Int       @default(0)
   revokedAt      DateTime?
   /// Removed by Juno (admin takedown), as distinct from revoked by its owner.
@@ -2423,6 +2506,11 @@ model Share {
   takenDownAt    DateTime?
   takenDownBy    String?
   takedownReason String?   @db.Text
+  /// A snapshot the owner's client sent with the link, for a Code session whose
+  /// transcript lives on the owner's Mac rather than in Message rows: only the
+  /// person's messages and the final answers, secrets redacted on the server,
+  /// encrypted at rest (encryptJsonField). Null for every ordinary chat link.
+  transcript     Json?
   createdAt      DateTime  @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2433,6 +2521,27 @@ model Share {
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([artifactId])
+}
+
+/// Thumbs up or down on an answer in a Code session whose transcript lives on
+/// the user's Mac (no Message row to carry `feedback`). `turnKey` is the env
+/// server's turn id; no content is stored.
+model CodeTurnFeedback {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String
+  turnKey        String
+  feedback       Feedback
+  /// The model that wrote the answer, when the client knew it.
+  model          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, turnKey])
+  @@index([userId, createdAt])
 }
 
 /// A visitor's report of a public share link (the Report link on /share/[token]).
@@ -3870,6 +3979,13 @@ model WorkSchedule {
   /// The ScheduledTask this was migrated from, when it was.
   legacyScheduledTaskId String? @unique
 
+  /// The chat proposal this routine was scheduled from (`propose_routine`,
+  /// src/lib/work/routine-proposal.ts). Unique per account, so a second press of
+  /// the card's Schedule, or one after a reload, lands on the routine the first
+  /// press made instead of creating another. Null for routines made in the
+  /// editor, and Postgres lets any number of rows share a null.
+  proposalKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3887,6 +4003,7 @@ model WorkSchedule {
   @@index([enabled, nextRunAt])
   @@index([userId, createdAt])
   @@index([hostId, enabled])
+  @@unique([userId, proposalKey])
 }
 
 /// One firing condition attached to a schedule.
@@ -5160,6 +5277,10 @@ model RoutingOutcome {
   userEdited        Boolean  @default(false)
   /// UP | DOWN, mirrored from Message.feedback.
   feedback          String?
+  /// The thumbs-down reason id (src/lib/feedback-reasons.ts), mirrored from
+  /// Message.feedbackReason. The category only: the reader's note is content
+  /// and never reaches this table.
+  feedbackReason    String?
   costMicroUsd      Int?
   /// The router's expected total for the pick, to measure calibration.
   expectedMicroUsd  Int?

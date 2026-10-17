@@ -139,6 +139,44 @@ const VERBS: Record<string, ActionVerb> = {
     bodyAs: "prose",
   },
 
+  // ---- An agent's cloud computer (runner/agent-core/src/work/computer-tools.ts). ----
+  //
+  // Typing and the shell ask every time, so these are the cards a person sees
+  // most; a generic "Go ahead" over a sentence with a character count is how
+  // that turns into pressing without reading. The body is the text that will
+  // be typed or the command that will run, exactly, above the fold; the card
+  // also draws the screen with the spot marked (approval-frame.tsx).
+  "work.computer.type": {
+    verb: "Type",
+    bodyKeys: ["text"],
+    targetKeys: null,
+    bodyAs: "prose",
+  },
+  "work.computer.shell": {
+    verb: "Run",
+    bodyKeys: ["command"],
+    targetKeys: null,
+    bodyAs: "command",
+  },
+  "work.computer.click": {
+    verb: "Click",
+    bodyKeys: null,
+    targetKeys: null,
+    bodyAs: "prose",
+  },
+  "work.computer.key": {
+    verb: "Press",
+    bodyKeys: ["keys"],
+    targetKeys: null,
+    bodyAs: "command",
+  },
+  "work.computer.drag": {
+    verb: "Drag",
+    bodyKeys: null,
+    targetKeys: null,
+    bodyAs: "prose",
+  },
+
   // ---- The executor's own tool names, as they arrive on an approval. ----
   apply_changes: {
     verb: "Make the changes",

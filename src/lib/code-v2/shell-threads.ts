@@ -45,6 +45,8 @@ export function shellThreads(
   conversations: readonly ShellConversation[],
   runStates: ReadonlyMap<string, ThreadState>,
   live: ReadonlyMap<string, LiveThreadState>,
+  /** Sessions done with by their pull request (`settledByPullRequest`): listed under Settled. */
+  settled: ReadonlySet<string> = new Set(),
 ): ThreadSummary[] {
   const out: ThreadSummary[] = [];
   for (const c of conversations) {
@@ -58,7 +60,38 @@ export function shellThreads(
       updatedAt: c.lastMessageAt ?? c.updatedAt ?? c.createdAt ?? new Date(0).toISOString(),
       ...(c.pinned ? { pinned: true } : {}),
       ...(l?.waitingFor ? { waitingFor: l.waitingFor } : {}),
+      ...(settled.has(c.id) ? { settled: true } : {}),
     });
+  }
+  return out;
+}
+
+/** How long after a run's last update a message still counts as that run's own. */
+const SAME_RUN_SLACK_MS = 60_000;
+
+/**
+ * Sessions whose newest run's pull request has merged or closed, and that
+ * have not moved since: they fold under Settled by themselves (Claude Code
+ * Desktop does the same when a PR merges). `prDone` is `prSettled` from
+ * lib/code-runs.ts with the open-PR list bound, which already refuses to
+ * guess when GitHub's page was full or a run is still going. A message after
+ * the run finished (a later turn on the Mac, which has no run behind it)
+ * keeps the session in view: the pull request no longer describes it.
+ * Running, waiting and pinned sessions stay in view whatever this says
+ * (`isSettled`).
+ */
+export function settledByPullRequest<R extends { updatedAt: string }>(
+  conversations: readonly ShellConversation[],
+  newest: ReadonlyMap<string, R>,
+  prDone: (run: R) => boolean,
+): Set<string> {
+  const out = new Set<string>();
+  for (const c of conversations) {
+    const run = newest.get(c.id);
+    if (!run || !prDone(run)) continue;
+    const last = c.lastMessageAt ? Date.parse(c.lastMessageAt) : 0;
+    if (last > Date.parse(run.updatedAt) + SAME_RUN_SLACK_MS) continue;
+    out.add(c.id);
   }
   return out;
 }

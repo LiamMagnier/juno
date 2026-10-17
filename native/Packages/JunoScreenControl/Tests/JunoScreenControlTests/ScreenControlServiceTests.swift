@@ -5,6 +5,125 @@ import XCTest
 /// The service end to end against fakes: every check before an action, the
 /// frame binding, the stop and the take-over pause.
 final class ScreenControlServiceTests: XCTestCase {
+    private final class EncodingCount: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        var count: Int { lock.withLock { value } }
+        func encode(_ image: CGImage) -> EncodedFrame? {
+            lock.withLock { value += 1 }
+            return CaptureScaler.encode(image)
+        }
+    }
+
+    func testOnlyDeliveredFramesAreEncodedWhileFreshnessChecksStillCapture() async throws {
+        let encodings = EncodingCount()
+        let fixture = ScreenFixture(encode: { encodings.encode($0) })
+        try await fixture.start()
+        _ = try await fixture.service.open(sessionID: "s1", app: "TextEdit")
+        XCTAssertEqual(fixture.capture.windowCaptures, 2, "opening still verifies two stable observations")
+        XCTAssertEqual(encodings.count, 1, "only the final image is encoded")
+        let prepared = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .leftClick, coordinate: [100, 100]))
+        let beforeEncoding = encodings.count
+        let beforeCapture = fixture.capture.windowCaptures
+        let result = try await fixture.service.perform(sessionID: "s1", prepared: prepared, toolCallID: "click", attachFrame: true)
+        XCTAssertNotNil(result.frame)
+        XCTAssertEqual(fixture.capture.windowCaptures - beforeCapture, 3, "the pre-input freshness check and two after-input observations stay intact")
+        XCTAssertEqual(encodings.count - beforeEncoding, 1, "validation and intermediate observations do not encode discarded images")
+    }
+
+    func testAccessibilityBeforeFirstScreenshotCapturesAndReusesFrame() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        fixture.accessibility.snapshots[101] = AXSnapshot(
+            bundleID: "com.apple.TextEdit", appName: "TextEdit", windowTitle: "Untitled",
+            elements: [AXElementInfo(
+                id: "e1", role: "AXButton", title: "Save",
+                frame: ScreenFixture.saveButton, pressable: true
+            )]
+        )
+
+        let text = try await fixture.service.accessibility(
+            sessionID: "s1", app: "TextEdit", query: nil, filter: .interactive, depth: 4
+        )
+        XCTAssertTrue(text.contains("[e1] button \"Save\""))
+        XCTAssertTrue(text.contains("(1400,1040 160×60)"), "controls use captured frame coordinates")
+        XCTAssertEqual(fixture.capture.windowCaptures, 1)
+
+        _ = try await fixture.service.accessibility(
+            sessionID: "s1", app: "TextEdit", query: "Save", filter: .interactive, depth: 4
+        )
+        XCTAssertEqual(fixture.capture.windowCaptures, 1, "the existing frame is reused")
+        let prepared = try await fixture.service.prepare(
+            sessionID: "s1", action: ScreenAction(kind: .leftClick, element: "e1")
+        )
+        XCTAssertEqual(prepared.point, ScreenFixture.saveButton.center)
+        XCTAssertFalse(prepared.frameHash.isEmpty)
+    }
+
+    func testAccessibilityStillReturnsControlsWhenScreenshotIsUnavailable() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        fixture.accessibility.snapshots[101] = AXSnapshot(
+            bundleID: "com.apple.TextEdit", appName: "TextEdit", windowTitle: nil,
+            elements: [AXElementInfo(id: "e1", role: "AXButton", title: "Save", frame: ScreenFixture.saveButton)]
+        )
+        fixture.environment.windowsByPID[101] = []
+
+        let text = try await fixture.service.accessibility(
+            sessionID: "s1", app: nil, query: nil, filter: .interactive, depth: 4
+        )
+        XCTAssertTrue(text.contains("[e1] button \"Save\" enabled"))
+        XCTAssertEqual(fixture.capture.windowCaptures, 0)
+    }
+
+    func testAccessibilityDoesNotSwallowStopDuringFirstCapture() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        fixture.accessibility.snapshots[101] = AXSnapshot(
+            bundleID: "com.apple.TextEdit", appName: "TextEdit", windowTitle: nil, elements: []
+        )
+        fixture.capture.beforeCapture = {
+            await fixture.service.stopAll(reason: .stopButton)
+        }
+
+        do {
+            _ = try await fixture.service.accessibility(
+                sessionID: "s1", app: nil, query: nil, filter: .interactive, depth: 4
+            )
+            XCTFail("the stopped call returned controls")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .stoppedByReader)
+        }
+        let running = await fixture.service.isActive(sessionID: "s1")
+        XCTAssertFalse(running)
+    }
+
+    func testAccessibilityDoesNotRestoreFrameAfterDeactivationDuringCapture() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        fixture.accessibility.snapshots[101] = AXSnapshot(
+            bundleID: "com.apple.TextEdit", appName: "TextEdit", windowTitle: nil, elements: []
+        )
+        fixture.capture.beforeCapture = {
+            await fixture.service.deactivate(sessionID: "s1")
+        }
+
+        do {
+            _ = try await fixture.service.accessibility(
+                sessionID: "s1", app: nil, query: nil, filter: .interactive, depth: 4
+            )
+            XCTFail("the deactivated call returned controls")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .stoppedByReader)
+        }
+        fixture.capture.beforeCapture = nil
+        try await fixture.start()
+        _ = try await fixture.service.accessibility(
+            sessionID: "s1", app: nil, query: nil, filter: .interactive, depth: 4
+        )
+        XCTAssertEqual(fixture.capture.windowCaptures, 2, "the restarted session needs a fresh frame")
+    }
+
     func testNothingRunsUntilTheReaderStartsIt() async throws {
         let fixture = ScreenFixture()
         do {
@@ -12,7 +131,7 @@ final class ScreenControlServiceTests: XCTestCase {
             XCTFail()
         } catch let error as ScreenControlError {
             XCTAssertEqual(error, .notRunning)
-            XCTAssertTrue(error.errorDescription!.contains("choose Let Juno Use Apps"))
+            XCTAssertTrue(error.errorDescription!.contains("choose Let Alevr Use Apps"))
         }
     }
 
@@ -225,6 +344,23 @@ final class ScreenControlServiceTests: XCTestCase {
         XCTAssertEqual(fixture.accessibility.setTexts.first?.1, false, "insert, never an overwrite without mode replace")
     }
 
+    func testPartialTypingFailsWithoutReplayingTheInput() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        fixture.accessibility.focused[101] = fixture.accessibility.regions[2].1
+        fixture.accessibility.acceptedTextLimit = 4
+        let prepared = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .type, text: "Quarterly report"))
+        do {
+            _ = try await fixture.service.perform(sessionID: "s1", prepared: prepared, toolCallID: nil, attachFrame: false)
+            XCTFail("partial input was reported as successful")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .typedTextMismatch(expected: 16, found: 4))
+        }
+        XCTAssertEqual(fixture.accessibility.setTexts.count, 1)
+        let events = await fixture.sink.events
+        XCTAssertTrue(events.isEmpty, "do not retry an action that may already have changed the app")
+    }
+
     func testClipboardChordsNeedTheClipboardGrant() async throws {
         let fixture = ScreenFixture()
         try await fixture.start()
@@ -386,7 +522,7 @@ final class ScreenControlServiceTests: XCTestCase {
         let proposal = try await fixture.service.proposeGrants(
             sessionID: "s1", apps: ["TextEdit", "Mail"], reason: "fill the form", clipboardRead: true, clipboardWrite: true
         )
-        XCTAssertEqual(proposal.summary, "Let Juno use TextEdit (full control) and Mail (full control) for this session")
+        XCTAssertEqual(proposal.summary, "Let Alevr use TextEdit (full control) and Mail (full control) for this session")
         var offers = proposal.offers
         offers[1].include = false
         offers[0].clipboardRead = false

@@ -785,7 +785,7 @@ if (!DB_URL || !canMockModules) {
     assert.equal(reread.status, 200);
   });
 
-  test("regenerating an answer retires its waiting suggestion and holds the new re-emit under the same message", async () => {
+  test("regenerating an answer retires the old answer's waiting suggestion and holds the new re-emit under the new branch", async () => {
     const user = await signUp("regenerate");
     const { persistArtifacts } = await import("@/lib/artifacts-store");
     const { conversation, messages } = await conversationWith(user.id, [
@@ -798,15 +798,17 @@ if (!DB_URL || !canMockModules) {
     await saveByHand(plan.id, 1, "# Plan, edited by hand");
     const first = await chat({ conversationId: conversation.id, message: "Tighten it." }, artifactTag("launch-plan", "Launch plan", "# Take one"));
     const second = await chat({ conversationId: conversation.id, regenerate: true }, artifactTag("launch-plan", "Launch plan", "# Take two"));
-    assert.equal(second.message.id, first.message.id, "the answer is overwritten in place");
+    // A regenerate is a sibling branch (G50): the first answer is kept, hidden.
+    assert.notEqual(second.message.id, first.message.id, "the old answer is kept on its own branch");
 
     const [old, fresh] = await proposalsOf(plan.id);
-    assert.equal(old.status, "STALE");
+    assert.equal(old.status, "STALE", "a reply leaving the shown path retires its waiting suggestion");
     assert.equal(old.messageId, first.message.id);
     assert.equal(fresh.status, "PENDING");
-    assert.equal(fresh.messageId, first.message.id);
+    assert.equal(fresh.messageId, second.message.id);
     assert.deepEqual(fresh.payload, { content: "# Take two", title: "Launch plan", language: null });
-    assert.match(await savedText(first.message.id), new RegExp(`suggestion="${fresh.id}"></juno:artifact>$`));
+    assert.match(await savedText(second.message.id), new RegExp(`suggestion="${fresh.id}"></juno:artifact>$`));
+    assert.match(await savedText(first.message.id), /suggestion="/, "the first answer keeps its own body");
     await assertCurrentIsNewest(plan.id);
   });
 

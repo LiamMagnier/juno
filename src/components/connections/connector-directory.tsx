@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, KeyRound, Loader2, Plug, Plus, Search } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { ChevronRight, KeyRound, Plug, Plus, Search } from "@/components/ui/icons";
 import { AppDetailSheet } from "@/components/connections/app-detail-sheet";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * ONE directory for every tool Juno can connect to.
@@ -290,7 +292,7 @@ function ConnectorTile({
             </Tooltip>
           ) : unavailable ? null : item.connecting ? (
             <span className="inline-flex shrink-0 items-center gap-1.5 text-ui text-muted-foreground">
-              <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
+              <GalaxyMark phase="working" size={14} />
               Connecting
             </span>
           ) : (

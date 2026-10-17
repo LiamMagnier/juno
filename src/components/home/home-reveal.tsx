@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /*
  * The homepage's one scroll reveal (owner, 2026-10-08: "make the animation of
@@ -46,7 +47,7 @@ function partsOf(section: Element): HTMLElement[] {
 
 export function HomeReveal() {
   React.useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     if (typeof IntersectionObserver === "undefined") return;
     const main = document.querySelector(".alv main");
     if (!main) return;

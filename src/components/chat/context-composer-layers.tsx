@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { AtSign, CornerDownLeft, ArrowDown, ArrowUp } from "@/components/ui/icons";
 import { AGENT_NOUN, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import type { ContextToken, ContextTokenKind } from "@/lib/chat/context-tokens";
@@ -11,6 +11,7 @@ import type { MentionItem } from "@/lib/mentions/types";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { ContextTokenMark, contextKindWord, type ContextMarkSource } from "./context-token-mark";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * THE TWO LAYERS THE CONTEXT FIELD OPENS: the @ palette (INTERACTION_SPEC C7)

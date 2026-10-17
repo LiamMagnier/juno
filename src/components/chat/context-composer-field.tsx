@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, useReducedMotion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { MAX_CONTEXT_TOKENS, contextTokenKey, type ContextToken } from "@/lib/chat/context-tokens";
 import {
   CONTEXT_CLIPBOARD_TYPE,
@@ -31,8 +31,9 @@ import {
 } from "./context-editor-dom";
 import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type PaletteStatus } from "./context-composer-layers";
 import { ContextTokenMark } from "./context-token-mark";
-import { uiPref } from "@/lib/ui-prefs";
+import { plainReturnSends, useEnterKeyHint } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * THE COMPOSER'S FIELD: a contenteditable sentence with context tokens in it
@@ -155,6 +156,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
 ) {
   const reduce = useReducedMotion() ?? false;
   const rootRef = React.useRef<HTMLDivElement>(null);
+  const enterKeyHint = useEnterKeyHint();
   const composing = React.useRef(false);
   const lastReported = React.useRef<string | null>(null);
   const tokensRef = React.useRef<ContextToken[]>([]);
@@ -716,15 +718,16 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
       publish();
       return;
     }
-    // Settings › Keyboard: "Send with ⌘ Enter". A plain Enter is offered to
-    // the composer first (an open command palette still claims it), and if
+    // Settings › Keyboard: "Send with ⌘ Enter", and Return on an on-screen
+    // keyboard (G35, lib/touch-keyboard.ts). A plain Enter is offered to the
+    // composer first (an open command palette still claims it), and if
     // nothing took it, it is a new line.
     if (
       event.key === "Enter" &&
       !event.metaKey &&
       !event.ctrlKey &&
       !event.nativeEvent.isComposing &&
-      uiPref("sendKey") === "mod-enter"
+      !plainReturnSends(event)
     ) {
       onKeyDown?.(event as unknown as React.KeyboardEvent<HTMLTextAreaElement>);
       if (event.defaultPrevented) return;
@@ -769,6 +772,9 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
         // palette and names the row the arrows are on. No aria-multiline (a
         // combobox does not take it); Shift+Enter breaks a line, Enter sends.
         role="combobox"
+        // A return arrow on an on-screen keyboard, where Return breaks the
+        // line; "send" where it sends (G35).
+        enterKeyHint={enterKeyHint}
         aria-label={label}
         aria-autocomplete="list"
         aria-haspopup="listbox"

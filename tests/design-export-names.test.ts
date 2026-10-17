@@ -101,7 +101,7 @@ test("the ASCII fallback keeps what it can and never goes empty", () => {
   assert.equal(fallback("Café.svg"), "Cafe.svg", "an accent is folded rather than dropped");
   assert.equal(fallback("登录.pdf"), "design.pdf");
   assert.equal(fallback("Sign in.html"), "Sign in.html");
-  assert.equal(fallback("sign-in.juno.design.json"), "sign-in.juno.design.json");
+  assert.equal(fallback("sign-in.alevr.design.json"), "sign-in.alevr.design.json");
   // A name that reaches the helper raw (the JSON export's identifier) is
   // cleaned by it too, not trusted to have been cleaned upstream.
   assert.equal(fallback('evil"; filename="x.exe.json'), "evil ; filename= x.exe.json");

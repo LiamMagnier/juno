@@ -21,7 +21,8 @@ Phosphor's 256-unit grid at designed weights.
 
 - Take an icon as a prop with `icon: IconComponent` (from the same module).
 - Five glyphs are Juno's own drawings rather than Phosphor's (§1.4). They
-  come through the same module; never import `juno-glyphs.tsx` directly.
+  come through the same module (`juno-icons/` draws them on the web;
+  `juno-glyph-paths.ts` keeps their geometry for the native pipeline).
 - The shared registries in `src/lib/app-icons.ts` (`AppIcons`, `CodeIcons`,
   `ComposerIcons`, `StatusIcons`, `ActionIcons`, `DesignIcons`,
   `SettingsIcons`) still come first. One concept, one drawing.
@@ -57,65 +58,50 @@ Phosphor's 256-unit grid at designed weights.
   `text-*` keeps it.
 
 ### 1.3 Hover articulation
-Each glyph carries at most one hover gesture (`data-motion`), declared in
-`icons.tsx` and played by `globals.css` when the interactive element around it
-(`a`, `button`, `[role=menuitem|option|tab|button|link]`, `summary`, `label`,
-or anything marked `data-icon-trigger`) is hovered, keyboard-focused or
-highlighted by a Radix menu. It never plays inside a disabled control and
-never under `prefers-reduced-motion`.
+**Destinations only (G46, 2026-10-15).** Each drawing in the V3 family
+(`src/components/ui/juno-icons/drawings.ts`) carries at most one hover pose
+next to its geometry (`hover: { r, x, y, s, anim }`), and
+`src/components/ui/juno-icons/icons.css` plays it only on a control that says
+"this is a place you can go":
 
-| Motion | Meaning | Glyphs |
-|---|---|---|
-| `nudge-r/l/u/d/ne` | the action goes where the arrow points | arrows, send, external link, sign out, upload/download |
-| `turn` | make one more / dismiss | plus, x |
-| `spin` | configuration, appearance | settings gear, sun |
-| `cw` / `ccw` | run again, go back | refresh, repeat, rotate-ccw |
-| `tilt` | a tool picked up | search, pencils, pin, mic, link, key, wrench, thumbs |
-| `lift` | an object picked up | copy, trash, archive, folder, stacks |
-| `pop` | a mark you set | star, sparkle, bookmark, play, zap |
-| `parts` | one part of a Juno mark moves, not the whole glyph | JunoChat, JunoCode, JunoDesign, JunoLibrary |
+| Opt-in | Where |
+|---|---|
+| `data-jicon-articulate` on the control | sidebar destination rows (`NavRow moves`), the product switch's tabs |
+| `data-jicon-articulate="within"` on a region | its links and buttons: an empty state's actions |
+| `.jicon-hover` | the icon gallery's spelling of the first |
 
-Carets, spinners and status marks carry none. If a gesture is wrong in context
-(for example an arrow that is a label rather than an action), pass
-`motion="none"`. On a custom clickable container that is not a
-button or link, add `data-icon-trigger` so its icon plays.
+Menus, lists, the composer and message actions carry none of these and stay
+still under the pointer, as ChatGPT's and Claude's do: a pointer crossing a
+menu or a recents list no longer sets a dozen glyphs twitching with no state
+change behind them. Their glyphs still change state when the state does (a
+tick drawing in, a star filling, a plus turning to an x while its menu is
+open). The gesture plays under a fine pointer only, never on keyboard focus
+alone, never inside a disabled control and never under reduced motion;
+`.jicon-quiet` still silences everything inside it. Every duration and curve
+in `icons.css` is a `--dur-*` / `--ease-*` token, so the reduced-motion
+overrides reach the icons too.
 
-`parts` is the one articulation that does not move the whole glyph. Juno's
-marks are drawn with their moving part as a separate element
-(`juno-part juno-part--ball`, `--spark`, `--disc`, `--volume`), and the same
-trigger rule that plays the other gestures sets `--icon-on: 1` on the svg,
-which the part reads: Chat's ball terminal pops out of the ring's gap (a
-message leaving), Code's spark turns a quarter and swells (it is four-fold, so
-it lands where it started), Design's circle slides back from the square in
-front of it (two layers parting), Library's leaning volume straightens six
-degrees and lifts a pixel (a book taken off the shelf). Offsets are in the
-drawing's own 256-unit space. Under reduced motion `--icon-on` stays 0 and
-nothing moves. A new Juno mark that articulates gets a `juno-part--*` class
-and one rule beside the others in the `svg.icon` section of `globals.css`. A
-moving part never carries an SVG `transform` attribute: the part's CSS
-`rotate` and `transform-origin` would re-pivot it, so a lean or a turn is baked
-into the path coordinates (`volumePath` in `juno-glyphs.tsx`).
+Retired: the per-glyph `data-motion` vocabulary (`nudge`, `turn`, `tilt`,
+`lift`, `pop`, `parts`) and its ~120 lines of `svg.icon[data-motion]` rules in
+`globals.css` and the Mac editor's stylesheet. The renderer stopped stamping
+`data-motion` when the V3 family replaced the Phosphor set, so they matched
+nothing; they and the `juno-glyphs.tsx` renderer whose `.juno-part` poses
+they drove were deleted. The `motion` prop on a glyph is accepted and ignored.
 
-A glyph that turns to show a state (a plus rotating to an x while its menu is
-open) passes `motion="none"`, so the hover turn does not add to the open
-rotation. The Code and Work composers' `+` buttons are the example.
-
-**The sidebar.** Gestures belong to the glyph, not to the place it is drawn.
-A sidebar destination moves the way its glyph moves everywhere (the plus
-turns, the gear turns, the artifact stack lifts, the Juno marks move their part), and
-`SidebarMotionIcon` (`src/components/app/sidebar-motion-icon.tsx`) never
-assigns a gesture. It only silences a default that is wrong in a navigation
-column: the folder and projects marks (their gesture is the closed-to-open
-folder cross-fade, the one morph the sidebar owns), the panel toggle (its
-effect is the whole column moving), the overflow dots (they open a menu, they
-are not a place) and a conversation (a document, not a destination). A new
-destination gets its gesture from `icons.tsx` or not at all.
+**The sidebar.** `SidebarMotionIcon` (`src/components/app/sidebar-motion-icon.tsx`)
+never assigns a gesture. It only silences a default that is wrong in a
+navigation column: the folder and projects marks (their gesture is the
+closed-to-open folder cross-fade, the one morph the sidebar owns), the panel
+toggle, the overflow dots and a conversation (a document, not a destination).
+A new destination row opts in with `moves`; an action row (Search,
+Notifications) does not.
 
 ### 1.4 Juno's own marks
 `JunoChat`, `JunoCode`, `JunoDesign`, `JunoLibrary` and `Send` are drawn for
-Juno in `src/components/ui/juno-glyphs.tsx` and exported through `icons.tsx`
-like every other glyph, so they get the optical weight choice, aria and hover
-articulation from `glyph()`. They are the places the product is known by and
+Juno (on the web by the V3 family in `src/components/ui/juno-icons/`, for the
+native SF Symbol pipeline from `src/components/ui/juno-glyph-paths.ts`) and
+exported through `icons.tsx` like every other glyph, so they get the optical
+weight choice, aria and any hover pose from `glyph()`. They are the places the product is known by and
 its one verb, the marks a reader sees on every screen. Chat, Code, Design and
 Send carry the two motifs of the Juno logo (`public/juno-mark.png`): the
 **open ring** that stops short with a **ball terminal** beside the gap, and
@@ -246,7 +232,7 @@ Use these rather than building them again.
   an optional spinner key that turns while shown and pauses where it stands
   as it fades out. Both are `aria-hidden` (the control owns the name and says
   the state in it), hook-free and server-safe, and put the transition on a
-  wrapper so the glyph's own articulation still plays. The Mac design
+  wrapper so the glyph's own transition list is left alone. The Mac design
   editor's stylesheet is built from a separate Tailwind scan
   (`scripts/build-design-editor.mjs`) that lists this file; keep it listed if
   the file moves.

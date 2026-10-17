@@ -224,6 +224,32 @@ public final class CodeV2EnvSession {
         }
     }
 
+    /// Takes a queued message out of the env server's queue (Remove, and Edit
+    /// taking it back into the composer). Returns false when it had already
+    /// left the queue, so Edit does not send it a second time.
+    @discardableResult
+    public func removeQueued(_ queuedId: String) async -> Bool {
+        guard let hub else { return false }
+        do {
+            let connection = try await hub.ready()
+            let removed = try await connection.queueRemove(sessionId: sessionId, queuedId: queuedId)
+            lastError = nil
+            return removed
+        } catch {
+            lastError = Self.describe(error)
+            return false
+        }
+    }
+
+    /// Steer now, as one step on the env server: the message joins the running
+    /// turn, or runs next when the runtime cannot steer. Never steered and
+    /// left queued.
+    public func promoteQueued(_ queuedId: String) async {
+        await perform { connection in
+            _ = try await connection.queuePromote(sessionId: self.sessionId, queuedId: queuedId)
+        }
+    }
+
     public func interrupt() async {
         await perform { connection in
             try await connection.turnInterrupt(sessionId: self.sessionId, turnId: self.snapshot.activeTurnId)

@@ -17,6 +17,12 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * relearn the same fact from the chat it came from, which is exactly what used
  * to make "I deleted that" feel like a lie. Forget retires the row AND writes a
  * suppression, which blocks the statement from ever being extracted again.
+ *
+ * "Not relevant" is the third, and the lightest: the fact stays true and
+ * stays remembered, but an answer used it where it did not belong. It marks
+ * the row (`notRelevantAt`) and ranking stops letting it ride along with
+ * messages that are not about it for a while (NOT_RELEVANT_DAYS in
+ * memory-lifecycle.ts). `notRelevant: false` takes the mark back.
  */
 
 /**
@@ -53,6 +59,22 @@ const schema = z
     projectId: z.string().min(1).nullish(),
     /** Retire this memory and never learn it again. */
     forget: z.literal(true).optional(),
+    /**
+     * With `forget`: this is a chat's Undo on a fact its turn just saved, so
+     * whatever that fact replaced is believed again. Undo puts memory back
+     * the way it was before the turn; a plain Forget on the memory page does
+     * not, because forgetting "lives in Madrid" is not a claim that the
+     * person still lives in Lisbon.
+     */
+    undo: z.literal(true).optional(),
+    /**
+     * An answer used this fact where it did not belong (true), or that was a
+     * mistake (false). On its own: it is a signal about ranking, not an edit.
+     */
+    notRelevant: z.boolean().optional(),
+  })
+  .refine((body) => body.notRelevant === undefined || Object.keys(body).length === 1, {
+    message: "Not relevant is sent on its own",
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 
@@ -68,10 +90,35 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const body = parsed.data;
 
+  if (body.notRelevant !== undefined) {
+    // A block-list row is never context, and a retired fact is not used, so
+    // neither has a ranking to lower.
+    if (existing.kind !== "FACT" || existing.status !== "active") {
+      return NextResponse.json({ error: "Only a memory in use can be marked." }, { status: 409 });
+    }
+    // Not `lastVerifiedAt`: that is "the person said it again", which is the
+    // one thing that lifts the mark early.
+    const notRelevantAt = body.notRelevant ? new Date() : null;
+    await prisma.memoryEntry.updateMany({ where: { id, userId: user.id }, data: { notRelevantAt } });
+    return NextResponse.json({ ok: true, notRelevantAt: notRelevantAt?.toISOString() ?? null });
+  }
+
   if (body.forget) {
+    // Already forgotten and still on the block-list: say so rather than
+    // writing a second suppression. A chat's Undo can be pressed again after a
+    // reload (its receipt is the turn's historical record), and each press
+    // used to add another block-list row and bench the summary again.
+    if (existing.status === "suppressed") {
+      const normalized = existing.normalized ?? factFields(existing.content, { source: "MANUAL" }).normalized;
+      const blocked = await prisma.memoryEntry.findFirst({
+        where: { userId: user.id, kind: "SUPPRESSION", normalized },
+        select: { id: true },
+      });
+      if (blocked) return NextResponse.json({ ok: true, status: "suppressed", restored: 0 });
+    }
     const now = new Date();
-    await prisma.$transaction([
-      prisma.memoryEntry.updateMany({
+    const restored = await prisma.$transaction(async (tx) => {
+      await tx.memoryEntry.updateMany({
         where: { id, userId: user.id },
         data: {
           status: "suppressed",
@@ -82,10 +129,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           embedding: [],
           embeddingModel: null,
         },
-      }),
+      });
       // The block-list entry is what survives a re-extraction of the original
       // chat. Without it, forgetting only lasts until the next backfill.
-      prisma.memoryEntry.create({
+      await tx.memoryEntry.create({
         data: {
           userId: user.id,
           content: existing.content,
@@ -97,12 +144,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           normalized: existing.normalized ?? factFields(existing.content, { source: "MANUAL", now }).normalized,
           lastVerifiedAt: now,
         },
-      }),
-    ]);
+      });
+      // Only while this fact is still the one believed. An Undo pressed on an
+      // old receipt after something newer replaced it ("lives in Berlin" after
+      // "lives in Madrid") must not bring back what it replaced ("Lisbon")
+      // beside the newer fact: that would be two answers to one question.
+      if (!body.undo || existing.status !== "active") return 0;
+      // Undo: the rows this fact superseded (`supersede` in memory.ts marks
+      // them "superseded" and points them here) are believed again. A row
+      // something else has since replaced points elsewhere and stays as it is.
+      const { count } = await tx.memoryEntry.updateMany({
+        where: { userId: user.id, kind: "FACT", status: "superseded", supersededById: id },
+        data: { status: "active", supersededById: null, reason: null, lastVerifiedAt: now },
+      });
+      return count;
+    });
     // The row's own scope, and the account's: a forget is account-wide, so the
     // suppression it writes benches the account summary too until rebuilt.
     refreshSummariesLater(user.id, [null, existing.projectId]);
-    return NextResponse.json({ ok: true, status: "suppressed" });
+    return NextResponse.json({ ok: true, status: "suppressed", restored });
   }
 
   // Same ownership check as creation: a projectId is a claim until verified.

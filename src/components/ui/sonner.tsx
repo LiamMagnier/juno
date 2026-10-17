@@ -1,9 +1,10 @@
 "use client";
 
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
-import { CheckCircle2, Loader2 } from "@/components/ui/icons";
+import { CheckCircle2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 
 /**
@@ -59,7 +60,7 @@ const TOAST_ICONS: NonNullable<ToasterProps["icons"]> = {
   error: <StatusIcons.error className="size-4 text-destructive-ink" />,
   warning: <StatusIcons.warning className="size-4 text-warning-foreground" />,
   info: <StatusIcons.info className="size-4 text-muted-foreground" />,
-  loading: <Loader2 className="size-4 animate-spin text-muted-foreground" />,
+  loading: <GalaxyMark phase="working" size={16} className="text-muted-foreground" />,
   close: <ActionIcons.dismiss className="size-3.5" />,
 };
 

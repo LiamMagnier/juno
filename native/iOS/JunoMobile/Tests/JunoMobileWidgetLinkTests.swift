@@ -16,6 +16,23 @@ final class JunoMobileWidgetLinkTests: XCTestCase {
     XCTAssertEqual(JunoMobileLaunchRequests.request(for: JunoMobileWidgetRoute.url(path: "dictate")), .dictate)
   }
 
+  func testASingleDestinationWidgetOffersOneActionThatParses() {
+    // WidgetKit follows only the widget URL in systemSmall and on the Lock
+    // Screen; four links there were three dead tiles and a clipped square.
+    let single = JunoMobileQuickAction.actions(for: .single)
+    XCTAssertEqual(single, [.chat])
+    XCTAssertEqual(JunoMobileLaunchRequests.request(for: single[0].url), .newChat)
+  }
+
+  func testTheMediumRowOffersEveryActionAndEachParses() {
+    let row = JunoMobileQuickAction.actions(for: .row)
+    XCTAssertEqual(row, [.chat, .voice, .code, .dictate])
+    XCTAssertEqual(
+      row.map { JunoMobileLaunchRequests.request(for: $0.url) },
+      [.newChat, .voice, .code, .dictate]
+    )
+  }
+
   func testSessionRouteCarriesBothIDs() {
     let url = JunoMobileWidgetRoute.url(path: "code/session/device-7/session-9")
     XCTAssertEqual(

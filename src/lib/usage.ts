@@ -170,63 +170,22 @@ export async function consumeMessage(
   return { allowed: true, quota: { plan, used, limit, remaining: Math.max(0, limit - used) } };
 }
 
-export interface CodeUsageReservationResult {
-  allowed: boolean;
-  reservationId: string | null;
-  quota: QuotaStatus;
-}
-
 /**
- * Reserve one Code turn and create the opaque, single-use accounting handle in
- * the same transaction as the quota increment. The generic chat flow keeps its
- * existing counter contract; Code uses this stricter variant because its
- * desktop/runner clients report completion in a later request.
+ * Open the single-use handle a Code reporter host settles its turn with.
+ *
+ * It no longer moves the month's message counter. Every Code call on Alevr's
+ * keys goes through the provider proxy, and the proxy counts the turn when its
+ * opening call is billed (src/lib/metering/code-turn-store.ts); a host that
+ * also counted here would put each of its turns on the counter twice. The
+ * handle still exists because `record` and `refund` are idempotent on it: a
+ * replayed or fabricated settle call is refused rather than repeated.
  */
-export async function reserveCodeMessage(
-  userId: string,
-  plan: Plan,
-): Promise<CodeUsageReservationResult> {
-  const period = currentPeriod();
-  const limit = PLANS[plan].monthlyMessages;
-  return prisma.$transaction(async (tx) => {
-    await tx.usage.upsert({
-      where: { userId_period: { userId, period } },
-      create: { userId, period, messageCount: 0 },
-      update: {},
-    });
-
-    let used: number;
-    if (limit == null) {
-      const updated = await tx.usage.update({
-        where: { userId_period: { userId, period } },
-        data: { messageCount: { increment: 1 } },
-      });
-      used = updated.messageCount;
-    } else {
-      const updated = await tx.usage.updateMany({
-        where: { userId, period, messageCount: { lt: limit } },
-        data: { messageCount: { increment: 1 } },
-      });
-      const row = await tx.usage.findUnique({ where: { userId_period: { userId, period } } });
-      used = row?.messageCount ?? limit;
-      if (updated.count === 0) {
-        return {
-          allowed: false,
-          reservationId: null,
-          quota: { plan, used, limit, remaining: 0 },
-        };
-      }
-    }
-
-    const reservation = await tx.codeUsageReservation.create({
-      data: { userId, period },
-    });
-    return {
-      allowed: true,
-      reservationId: reservation.id,
-      quota: { plan, used, limit, remaining: limit == null ? null : Math.max(0, limit - used) },
-    };
+export async function openCodeUsageReservation(userId: string): Promise<string> {
+  const reservation = await prisma.codeUsageReservation.create({
+    data: { userId, period: currentPeriod() },
+    select: { id: true },
   });
+  return reservation.id;
 }
 
 export type CodeUsageReservationAction = "recorded" | "refunded";
@@ -253,13 +212,9 @@ export async function resolveCodeUsageReservation(
       data: { state: action, resolvedAt: new Date() },
     });
     if (updated.count === 0) return "conflict";
-
-    if (action === "refunded") {
-      await tx.usage.updateMany({
-        where: { userId, period: existing.period, messageCount: { gt: 0 } },
-        data: { messageCount: { decrement: 1 } },
-      });
-    }
+    // A refund gives nothing back: the handle never counted the turn (see
+    // `openCodeUsageReservation`), and a turn whose opening call was never
+    // billed was never counted by the proxy either.
     return "resolved";
   });
 }

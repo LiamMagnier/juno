@@ -15,7 +15,7 @@ import { FaviconStack, type FaviconStackProps } from "@/components/chat/run/favi
 import { RunAnnouncer, type RunAnnouncerProps } from "@/components/chat/run/run-announcer";
 import { RunBlock, type RunBlockProps } from "@/components/chat/run/run-block";
 import { RunClock, type RunClockProps } from "@/components/chat/run/run-clock";
-import { RunGlyph, type RunGlyphProps } from "@/components/chat/run/run-glyph";
+import { RunGalaxy, type RunGalaxyProps } from "@/components/chat/run/run-galaxy";
 import { RunLabel, type RunLabelProps } from "@/components/chat/run/run-label";
 import { RunLine, type RunLineProps } from "@/components/chat/run/run-line";
 import { GuideModeSwitch } from "@/components/research/guide-mode-switch";
@@ -141,7 +141,7 @@ export type ContractTypes = [
   RunView,
   PhraseLine,
   RunBlockProps,
-  RunGlyphProps,
+  RunGalaxyProps,
   RunLabelProps,
   RunLineProps,
   FaviconStackProps,
@@ -206,7 +206,7 @@ const EXPORTS: Record<string, Record<string, unknown>> = {
     usePhaseLock,
     publishResearchPhase,
     RunBlock,
-    RunGlyph,
+    RunGalaxy,
     RunLabel,
     RunLine,
     FaviconStack,
@@ -452,7 +452,7 @@ test("round budgets by effort, voice unchanged", () => {
   assert.equal(roundBudgetFor("xhigh", false), 24);
   assert.equal(roundBudgetFor("max", false), 24);
   assert.equal(roundBudgetFor("max", true), 7);
-  assert.match(FINAL_ROUND_NOTE, /^\[Juno: this is the last step\. Do not call tools\./);
+  assert.match(FINAL_ROUND_NOTE, /^\[Alevr: this is the last step\. Do not call tools\./);
 });
 
 // ── The estimate line (SPEC §9.2) ─────────────────────────────────────────────
@@ -511,11 +511,9 @@ test("the most recently set title override wins, and clearing it hands back to t
 
 // ── The rest of what WS0 owns alone ───────────────────────────────────────────
 
-test("thinking-matrix no longer animates a shadow (SPEC §7.9, Tailwind)", () => {
+test("the 3x3 thinking matrix is gone: the galaxy is the one working mark (GALAXY_SPEC.md)", () => {
   const tailwind = read("tailwind.config.ts");
-  const matrix = tailwind.slice(tailwind.indexOf('"thinking-matrix": {'), tailwind.indexOf('"thinking-pulse": {'));
-  assert.ok(matrix.length > 0, "the thinking-matrix keyframes moved");
-  assert.doesNotMatch(matrix, /boxShadow/);
+  assert.doesNotMatch(tailwind, /"thinking-matrix"|"thinking-pulse"|"shimmer-text"/);
 });
 
 test("one turn script per /dev/run fixture, in order", () => {

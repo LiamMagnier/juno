@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+
 import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
@@ -58,9 +59,9 @@ export function IndexStatus({
       // aria-live: the row is already on screen when indexing finishes, so the
       // change has to be announced rather than merely rendered.
       <span className={cn(shared, "text-muted-foreground", className)} aria-live="polite">
-        <Loader2
-          className="size-3 shrink-0 motion-safe:animate-spin motion-reduce:animate-none"
-          aria-hidden="true"
+        <GalaxyMark
+          phase="working"
+          size={12}
         />
         <span className="truncate">Indexing for search…</span>
       </span>

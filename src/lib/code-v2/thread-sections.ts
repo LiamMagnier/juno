@@ -127,9 +127,14 @@ export interface WorkList {
 }
 
 const STATE_RANK: Record<ThreadState, number> = { waiting: 0, running: 1, limited: 2, error: 2, idle: 3 };
+/** A pinned session sits above every one that is not working or waiting (those still come first: they are news). */
+const PINNED_RANK = 1.5;
+const rankOf = (t: ThreadSummary) => (t.pinned && t.state !== "waiting" && t.state !== "running" ? PINNED_RANK : STATE_RANK[t.state]);
 
 export function isSettled(t: ThreadSummary, now = Date.now()): boolean {
   if (t.state === "waiting" || t.state === "running") return false;
+  // Pinned is a promise to keep it in view: it never folds under Settled by age.
+  if (t.pinned) return false;
   if (t.settled !== undefined) return t.settled;
   return now - Date.parse(t.updatedAt) > SETTLE_AFTER_MS;
 }
@@ -140,7 +145,7 @@ export function workList(threads: readonly ThreadSummary[], opts: { project?: st
   const pool = opts.project ? threads.filter((t) => t.project === opts.project) : [...threads];
   const active = pool
     .filter((t) => !isSettled(t, now))
-    .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || byRecent(a, b));
+    .sort((a, b) => rankOf(a) - rankOf(b) || byRecent(a, b));
   const settled = pool.filter((t) => isSettled(t, now)).sort(byRecent);
   return { active, settled };
 }

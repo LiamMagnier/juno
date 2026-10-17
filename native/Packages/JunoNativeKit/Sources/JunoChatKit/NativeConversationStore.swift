@@ -3748,10 +3748,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// Nothing is overwritten and nothing is deleted. The original message keeps
     /// its id, its content and its whole subtree of replies; the new wording is
     /// recorded as its *sibling*, and the pager under the message is what takes
-    /// the reader back. This is the difference from the website's edit, which
-    /// PATCHes the row in place and keeps only the previous text as a
-    /// `MessageVersion` — there, the answers that followed the old wording are
-    /// gone from the transcript for good.
+    /// the reader back. The website's edit branches on the server instead
+    /// (`PATCH /api/messages/{id}` writes a sibling and moves the shown path);
+    /// this app keeps its tree locally and sends the new wording as a new turn,
+    /// and reads only the server's shown branch.
     ///
     /// - Returns: false when the edit could not be started, with
     ///   ``chatErrorDescription`` explaining why.

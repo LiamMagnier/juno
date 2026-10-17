@@ -85,7 +85,12 @@ test("the composer seed arms research for one send, and only where research is a
   const composer = readFileSync("src/components/chat/composer.tsx", "utf8");
   const seed = composer.slice(composer.indexOf("const researchSeedAllowed"), composer.indexOf('window.removeEventListener("juno:composer-seed"'));
   assert.match(seed, /planAllowsResearch && researchAvailable/);
-  assert.match(seed, /if \(armResearch && researchSeedAllowedRef\.current\) setResearch\(true\)/);
+  // A home starter (G34) may switch an image model back to one that writes in
+  // the same seed; research is then allowed on the plan and outside private
+  // mode, exactly what `researchAvailable` says of a chat model.
+  assert.match(seed, /researchPlan: planAllowsResearch && !privateMode/);
+  assert.match(seed, /nowWrites = current\.researchPlan;/);
+  assert.match(seed, /if \(armResearch && \(researchSeedAllowedRef\.current \|\| nowWrites\)\) setResearch\(true\)/);
   const recap = readFileSync("src/components/research/research-recap.tsx", "utf8");
   assert.match(recap, /new CustomEvent\("juno:composer-seed", \{ detail: \{ text, research: true \} \}\)/);
 });

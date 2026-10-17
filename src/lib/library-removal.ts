@@ -3,11 +3,9 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import {
   removeFromLibraryWith,
-  settleLibraryRemovalsWith,
   type LibraryRemoval,
   type LibraryRemovalStore,
   type LibraryUseRow,
-  type SentAttachmentRow,
 } from "@/lib/library-removal-policy";
 
 export { libraryUse, planLibraryRemoval, type LibraryRemoval, type LibraryUse } from "@/lib/library-removal-policy";
@@ -124,40 +122,4 @@ function transactionStore(tx: LibraryTransaction): LibraryRemovalStore {
  */
 export function removeFromLibrary(userId: string, id: string): Promise<LibraryRemoval | null> {
   return prisma.$transaction((tx) => removeFromLibraryWith(transactionStore(tx), userId, id));
-}
-
-/**
- * Before an edit deletes the messages after `editedMessageId`, finish the
- * Library delete of every file sent with them that the reader had taken out of
- * the Library and that nothing will use once they are gone (see
- * `orphanedByMessageDelete`). Run it inside the transaction that deletes the
- * messages, before the delete: the rows are locked here, so a Library removal
- * racing the edit either lands first and is seen, or waits and then finds the
- * row with no message and deletes it itself.
- *
- * The rows are the ones the edit's `deleteMany` takes, stated the same way:
- * every message in the edited message's conversation created after it.
- */
-export function settleLibraryRemovalsBeforeTruncation(
-  tx: LibraryTransaction,
-  userId: string,
-  editedMessageId: string,
-): Promise<string[]> {
-  return settleLibraryRemovalsWith({
-    async lockSentAttachments() {
-      return tx.$queryRaw<SentAttachmentRow[]>`
-        SELECT a."id", a."projectId", a."libraryRemovedAt"
-          FROM "Attachment" a
-          JOIN "Message" later ON later."id" = a."messageId"
-          JOIN "Message" edited ON edited."id" = ${editedMessageId}
-         WHERE later."conversationId" = edited."conversationId"
-           AND later."createdAt" > edited."createdAt"
-           AND a."userId" = ${userId}
-           AND a."deletedAt" IS NULL
-           FOR UPDATE OF a`;
-    },
-    async tombstone(id) {
-      await tombstoneAttachment(tx, userId, { id });
-    },
-  });
 }

@@ -107,6 +107,51 @@ export function takeoverHolder(deviceSessionId: string | null | undefined): stri
   return deviceSessionId ? `native:${deviceSessionId}` : "web";
 }
 
+/** Which kind of client holds a takeover: a browser, or one of the apps. */
+export type TakeoverHolderKind = "web" | "app";
+
+export function takeoverHolderKind(by: string | null | undefined): TakeoverHolderKind {
+  return typeof by === "string" && by.startsWith("native:") ? "app" : "web";
+}
+
+/**
+ * The takeover as every client may see it: whether someone holds control, on
+ * what kind of client, and until when the window runs without a heartbeat.
+ * Never the device session id: that is the holder's own business.
+ */
+export interface PublicTakeover {
+  active: boolean;
+  holderKind: TakeoverHolderKind | null;
+  until: string | null;
+}
+
+export function publicTakeover(state: TakeoverState | null | undefined, now: Date): PublicTakeover {
+  if (!takeoverActive(state, now)) return { active: false, holderKind: null, until: null };
+  return {
+    active: true,
+    holderKind: takeoverHolderKind(state?.takeoverBy),
+    until: state?.takeoverUntil instanceof Date ? state.takeoverUntil.toISOString() : null,
+  };
+}
+
+/** Said to a client that asks for control, or tries to hand back, while another one holds it. */
+export const TAKEOVER_HELD_BY_APP =
+  "Your app has control of this computer right now. Hand back there first.";
+export const TAKEOVER_HELD_BY_WEB =
+  "A browser has control of this computer right now. Hand back there first.";
+
+/**
+ * Why `holder` may not take control or hand it back, or null when it may.
+ * Only a live takeover recorded against another client refuses; a lapsed
+ * window, or a row written before holders were recorded, does not.
+ */
+export function takeoverConflict(state: TakeoverState | null | undefined, holder: string, now: Date): string | null {
+  if (!takeoverActive(state, now)) return null;
+  const by = state?.takeoverBy;
+  if (!by || by === holder) return null;
+  return takeoverHolderKind(by) === "app" ? TAKEOVER_HELD_BY_APP : TAKEOVER_HELD_BY_WEB;
+}
+
 /** The subset of the Work browser a takeover has to stop (src/lib/work/browser.ts). */
 interface GuardableBrowser {
   open(url: string): Promise<{ ok: boolean; message?: string }>;
