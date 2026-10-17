@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import JunoMobile
 
@@ -20,6 +21,15 @@ final class JunoMobileVoiceInterruptionTests: XCTestCase {
   /// app was suspended must not mute a live call.
   func testABeganThatWasSuspendedIsIgnored() {
     XCTAssertEqual(action(began: true, suspended: true), .ignore)
+  }
+
+  /// Suspension is read from the interruption's reason, where iOS 14.5 moved
+  /// the retired `wasSuspended` flag; any other reason, or none, is a real one.
+  func testOnlyTheAppWasSuspendedReasonCountsAsSuspended() {
+    XCTAssertTrue(JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: 1))
+    XCTAssertFalse(JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: AVAudioSession.InterruptionReason.default.rawValue))
+    XCTAssertFalse(JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: AVAudioSession.InterruptionReason.builtInMicMuted.rawValue))
+    XCTAssertFalse(JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: nil))
   }
 
   func testASecondBeganIsIgnored() {

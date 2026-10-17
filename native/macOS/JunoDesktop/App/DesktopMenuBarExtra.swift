@@ -143,7 +143,16 @@ struct DesktopMenuBarExtraLabel: View {
     @State private var registry = DesktopWorkbenchRegistry.shared
     @State private var signals = DesktopNeedsYouSignals.shared
 
-    @MainActor private static let mark: NSImage = {
+    @MainActor private static let mark: NSImage = renderMark()
+
+    /// Draws the mark once, on the main actor.
+    ///
+    /// A named main-actor function rather than an immediately-applied closure.
+    /// The closure was not isolated to the main actor, so the view it built,
+    /// whose `View` conformance may be main-actor isolated, crossed into
+    /// `ImageRenderer`'s main-actor initialiser from outside it (Swift 6.4's
+    /// `#IsolatedConformances` error).
+    @MainActor private static func renderMark() -> NSImage {
         let renderer = ImageRenderer(
             content: JunoContinuumShape(drawing: 16)
                 .fill(Color.black)
@@ -154,7 +163,7 @@ struct DesktopMenuBarExtraLabel: View {
         image.size = NSSize(width: 16, height: 16)
         image.isTemplate = true
         return image
-    }()
+    }
 
     var body: some View {
         let waiting = registry.activeSessions.filter(\.status.needsApproval).count

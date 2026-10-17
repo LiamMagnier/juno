@@ -177,6 +177,7 @@ public enum ComputerUseToolName {
     /// wire swaps it for the native `computer_toolset_20260801`.
     public static let computer = "computer"
     public static let batch = "computer_batch"
+    public static let sequence = "computer_sequence"
     public static let apps = "computer_apps"
     public static let accessibility = "computer_ax"
     public static let menu = "computer_menu"
@@ -195,12 +196,12 @@ public enum ComputerUseToolName {
     ]
 
     /// Every screen tool, legacy names included.
-    public static let all: Set<String> = Set([computer, batch, apps, accessibility, menu, display, simulator, portable])
+    public static let all: Set<String> = Set([computer, batch, sequence, apps, accessibility, menu, display, simulator, portable])
         .union(legacy)
 
     /// The tools that can act on the reader's Mac. No project settings file
     /// and no hook may let one run without asking; only the reader can.
-    public static let input: Set<String> = Set([computer, batch, apps, menu, display, simulator, portable])
+    public static let input: Set<String> = Set([computer, batch, sequence, apps, menu, display, simulator, portable])
         .union(legacy.subtracting(["computer_screenshot"]))
 
     /// Tools whose approvals never offer "Always allow": grants are per app
@@ -213,7 +214,7 @@ public enum ComputerUseToolName {
     /// to stop what it allowed. On the Mac too, only from the card itself: a
     /// notification banner or a Runs row shows the same sentence a phone
     /// does. Declining from anywhere stays open.
-    public static let allowedOnlyAtTheMac: Set<String> = Set([computer, batch, apps, menu, display, portable])
+    public static let allowedOnlyAtTheMac: Set<String> = Set([computer, batch, sequence, apps, menu, display, portable])
         .union(legacy.subtracting(["computer_screenshot"]))
 
     /// What a phone is told when it tries to allow one of those.

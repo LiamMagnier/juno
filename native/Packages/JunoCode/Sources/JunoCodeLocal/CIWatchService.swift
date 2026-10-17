@@ -183,12 +183,13 @@ public actor CIWatchService {
 
     public init(
         reader: any CIChecksReading,
-        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
-            try await Task.sleep(for: .seconds(seconds))
-        }
+        sleep: (@Sendable (TimeInterval) async throws -> Void)? = nil
     ) {
         self.reader = reader
-        self.sleep = sleep
+        self.sleep = sleep ?? { seconds in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: .seconds(seconds)))
+        }
     }
 
     /// Whether a watch is running.

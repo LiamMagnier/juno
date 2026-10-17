@@ -38,11 +38,17 @@ final class DesktopScreenPresence {
     private var installed = false
     private var wasActive = false
     private var lastApp: String?
+    private var activationObserver: NSObjectProtocol?
 
     func install() {
         guard !installed else { return }
         installed = true
         ScreenPresenceCenter.shared.start()
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.render(ScreenPresenceCenter.shared) }
+        }
         observe()
     }
 
@@ -62,7 +68,7 @@ final class DesktopScreenPresence {
         let active = center.isActive
         let reduce = reduceMotion
 
-        if active, let text = center.caption {
+        if active, ComputerActionOverlayModel.shared.mark == nil, let text = center.caption {
             // The display holding the driven window; in takeover, the driven
             // display; else the main one.
             showCaption(text, near: center.targetWindowFrame ?? center.displayFrame, reduceMotion: reduce)
@@ -80,7 +86,10 @@ final class DesktopScreenPresence {
             glow.hide(reduceMotion: reduce)
         }
 
-        if active, !center.isTakeover, let window = center.targetWindowFrame {
+        if active, !center.isTakeover,
+           NSWorkspace.shared.frontmostApplication?.localizedName == center.appName,
+           let window = center.targetWindowFrame
+        {
             outline.update(DesktopScreenWindowOutline(personHasControl: center.isPaused))
             outline.place(ScreenPresenceCenter.Layout.outlineFrame(around: window))
             outline.show(reduceMotion: reduce)

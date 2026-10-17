@@ -168,7 +168,7 @@ final class StudioSnapshotTests: XCTestCase {
     }
 
     func testRenderNativeAgentSummary() async throws {
-        let controller = SessionController(previewFixture: CodePreviewData.fixture(for: .transcript))
+        let controller = SessionController(previewFixture: CodePreviewData.fixture(for: .streaming))
         XCTAssertFalse(controller.delegatedAgents.isEmpty)
         for dark in [false, true] {
             try await render(

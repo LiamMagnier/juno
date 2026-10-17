@@ -149,9 +149,7 @@ public actor CodeRemoteHost {
         relay: any CodeRemoteRelaying,
         executor: any CodeRemoteCommandExecuting,
         ledger: CodeRemoteCommandLedger = CodeRemoteCommandLedger(),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = {
-            try await Task.sleep(for: $0)
-        },
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
         jitter: @escaping @Sendable () -> Double = { Double.random(in: 0.5...1.5) }
     ) {
         self.deviceID = deviceID
@@ -159,7 +157,10 @@ public actor CodeRemoteHost {
         self.relay = relay
         self.executor = executor
         self.ledger = ledger
-        self.sleep = sleep
+        self.sleep = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
         self.jitter = jitter
     }
 

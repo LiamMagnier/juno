@@ -28,6 +28,7 @@ public actor ScreenControlService: ScreenControlling {
         /// The least time between the end of one input action and the start
         /// of the next. Screenshots and zoom are exempt (CU-06).
         public var minimumInputGap: TimeInterval
+        public var encode: @Sendable (CGImage) -> EncodedFrame?
 
         public init(
             capture: any ScreenCapturing,
@@ -37,15 +38,13 @@ public actor ScreenControlService: ScreenControlling {
             layout: @escaping @Sendable () async -> KeyboardLayout = { KeyboardLayout.usANSI },
             stopTap: (any EmergencyStopTapping)? = nil,
             now: @escaping @Sendable () -> Date = { Date() },
-            pause: @escaping @Sendable (Duration) async throws -> Void = { duration in
-                let clock = ContinuousClock()
-                try await clock.sleep(until: clock.now.advanced(by: duration))
-            },
+            pause: (@Sendable (Duration) async throws -> Void)? = nil,
             looksLikeCredential: @escaping @Sendable (String) -> Bool = CredentialHeuristics.looksLikeCredential,
             pointerLocation: @escaping @Sendable () async -> ScreenPoint? = { nil },
             settleTimeout: TimeInterval = 0.5,
             settleInterval: Duration = .milliseconds(120),
-            minimumInputGap: TimeInterval = 0.25
+            minimumInputGap: TimeInterval = 0.25,
+            encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) }
         ) {
             self.capture = capture
             self.environment = environment
@@ -54,12 +53,16 @@ public actor ScreenControlService: ScreenControlling {
             self.layout = layout
             self.stopTap = stopTap
             self.now = now
-            self.pause = pause
+            self.pause = pause ?? { duration in
+                let clock = ContinuousClock()
+                try await clock.sleep(until: clock.now.advanced(by: duration))
+            }
             self.looksLikeCredential = looksLikeCredential
             self.pointerLocation = pointerLocation
             self.settleTimeout = settleTimeout
             self.settleInterval = settleInterval
             self.minimumInputGap = minimumInputGap
+            self.encode = encode
         }
     }
 
@@ -102,6 +105,18 @@ public actor ScreenControlService: ScreenControlling {
     }
 
     // MARK: - Session state
+
+    /// Capture and compare pixels before paying to encode a model image.
+    private struct FramePixels {
+        let image: CGImage
+        let geometry: FrameGeometry
+        let bundleID: String
+        let appName: String
+        let pid: Int32
+        let windowTitle: String?
+        let fingerprint: [UInt8]
+        let capturedAt: Date
+    }
 
     struct Frame: @unchecked Sendable {
         let image: CGImage
@@ -857,6 +872,23 @@ public actor ScreenControlService: ScreenControlling {
     // MARK: - Capture
 
     private func captureFrame(_ sessionID: String, generation: UInt64) async throws -> Frame {
+        let pixels = try await capturePixels(sessionID, generation: generation)
+        return try encodeFrame(pixels)
+    }
+
+    private func encodeFrame(_ pixels: FramePixels) throws -> Frame {
+        guard let encoded = deps.encode(pixels.image) else {
+            throw ScreenControlError.driverFailed("The screen image could not be prepared.")
+        }
+        return Frame(
+            image: pixels.image, encoded: encoded, geometry: pixels.geometry,
+            bundleID: pixels.bundleID, appName: pixels.appName, pid: pixels.pid,
+            windowTitle: pixels.windowTitle, hash: Self.sha256(encoded.data),
+            fingerprint: pixels.fingerprint, capturedAt: pixels.capturedAt
+        )
+    }
+
+    private func capturePixels(_ sessionID: String, generation: UInt64) async throws -> FramePixels {
         guard let session = sessions[sessionID] else { throw ScreenControlError.notRunning }
         let own = deps.environment.ownProcess
         let captured: CapturedImage
@@ -887,9 +919,9 @@ public actor ScreenControlService: ScreenControlling {
         }
         try checkpoint(sessionID, generation)
         let budget = sessions[sessionID]?.budget ?? .anthropicStandard
-        guard let scaled = CaptureScaler.frame(of: captured.image, budget: budget),
-              let encoded = CaptureScaler.encode(scaled.image)
-        else { throw ScreenControlError.driverFailed("The screen image could not be prepared.") }
+        guard let scaled = CaptureScaler.frame(of: captured.image, budget: budget) else {
+            throw ScreenControlError.driverFailed("The screen image could not be prepared.")
+        }
         let geometry = FrameGeometry(
             origin: captured.origin,
             pointWidth: captured.pointWidth,
@@ -900,15 +932,13 @@ public actor ScreenControlService: ScreenControlling {
             displayID: captured.displayID,
             coordinates: budget.coordinates
         )
-        return Frame(
+        return FramePixels(
             image: scaled.image,
-            encoded: encoded,
             geometry: geometry,
             bundleID: bundleID,
             appName: appName,
             pid: pid,
             windowTitle: captured.windowTitle,
-            hash: Self.sha256(encoded.data),
             fingerprint: Self.fingerprint(scaled.image),
             capturedAt: deps.now()
         )
@@ -933,16 +963,16 @@ public actor ScreenControlService: ScreenControlling {
     /// Two identical consecutive captures, or the timeout: the frame after
     /// the UI has settled (CU-06).
     private func settledCapture(_ sessionID: String, generation: UInt64) async throws -> Frame {
-        var previous = try await captureFrame(sessionID, generation: generation)
+        var previous = try await capturePixels(sessionID, generation: generation)
         let deadline = deps.now().addingTimeInterval(deps.settleTimeout)
         while deps.now() < deadline {
             try await deps.pause(deps.settleInterval)
             try checkpoint(sessionID, generation)
-            let next = try await captureFrame(sessionID, generation: generation)
-            if next.fingerprint == previous.fingerprint { return next }
+            let next = try await capturePixels(sessionID, generation: generation)
+            if next.fingerprint == previous.fingerprint { return try encodeFrame(next) }
             previous = next
         }
-        return previous
+        return try encodeFrame(previous)
     }
 
     static func sha256(_ data: Data) -> String {
@@ -1496,7 +1526,9 @@ public actor ScreenControlService: ScreenControlling {
         if let pending = sessions[sessionID]?.pendingFrames[prepared.id],
            sessions[sessionID]?.mode == .background, prepared.point != nil
         {
-            let fresh = try await captureFrame(sessionID, generation: generation)
+            // Validation only consumes pixels. Encoding here used to discard
+            // an entire PNG/JPEG before every click.
+            let fresh = try await capturePixels(sessionID, generation: generation)
             guard fresh.geometry.globalBounds == pending.geometry.globalBounds,
                   FrameComparison.difference(
                       pending.image, fresh.image,

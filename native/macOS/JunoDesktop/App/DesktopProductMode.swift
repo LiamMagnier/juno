@@ -108,10 +108,12 @@ struct DesktopProductSwitch: View {
 
 extension View {
     /// `.tabs` where it exists, `.segmented` where it does not.
+    ///
+    /// `.tabs` only exists in the 27 SDK (Swift 6.4); the Xcode 26 toolchain
+    /// CI builds with cannot see it at all, so the compiler check comes before
+    /// the runtime one, as in `junoAccessibility`.
     @ViewBuilder
     func junoProductPickerStyle() -> some View {
-        // A runtime availability check cannot name a type absent from the
-        // Xcode 26 SDK used by CI and supported macOS 26 builds.
         #if compiler(>=6.4)
         if #available(macOS 27, *) {
             pickerStyle(.tabs)

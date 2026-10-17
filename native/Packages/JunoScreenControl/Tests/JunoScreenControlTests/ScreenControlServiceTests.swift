@@ -5,6 +5,32 @@ import XCTest
 /// The service end to end against fakes: every check before an action, the
 /// frame binding, the stop and the take-over pause.
 final class ScreenControlServiceTests: XCTestCase {
+    private final class EncodingCount: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        var count: Int { lock.withLock { value } }
+        func encode(_ image: CGImage) -> EncodedFrame? {
+            lock.withLock { value += 1 }
+            return CaptureScaler.encode(image)
+        }
+    }
+
+    func testOnlyDeliveredFramesAreEncodedWhileFreshnessChecksStillCapture() async throws {
+        let encodings = EncodingCount()
+        let fixture = ScreenFixture(encode: { encodings.encode($0) })
+        try await fixture.start()
+        _ = try await fixture.service.open(sessionID: "s1", app: "TextEdit")
+        XCTAssertEqual(fixture.capture.windowCaptures, 2, "opening still verifies two stable observations")
+        XCTAssertEqual(encodings.count, 1, "only the final image is encoded")
+        let prepared = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .leftClick, coordinate: [100, 100]))
+        let beforeEncoding = encodings.count
+        let beforeCapture = fixture.capture.windowCaptures
+        let result = try await fixture.service.perform(sessionID: "s1", prepared: prepared, toolCallID: "click", attachFrame: true)
+        XCTAssertNotNil(result.frame)
+        XCTAssertEqual(fixture.capture.windowCaptures - beforeCapture, 3, "the pre-input freshness check and two after-input observations stay intact")
+        XCTAssertEqual(encodings.count - beforeEncoding, 1, "validation and intermediate observations do not encode discarded images")
+    }
+
     func testAccessibilityBeforeFirstScreenshotCapturesAndReusesFrame() async throws {
         let fixture = ScreenFixture()
         try await fixture.start()

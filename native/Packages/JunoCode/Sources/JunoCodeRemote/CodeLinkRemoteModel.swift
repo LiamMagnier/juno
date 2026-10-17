@@ -155,12 +155,15 @@ public final class CodeLinkRemoteModel {
 
     public init(
         sender: (any NativeAuthenticatedRequestSending)?,
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         memory: UserDefaults? = nil
     ) {
         self.sender = sender
-        self.sleep = sleep
+        self.sleep = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
         self.now = now
         self.memory = CodeLinkMemory(defaults: memory)
     }

@@ -226,7 +226,7 @@ struct ScreenFixture {
     static let saveButton = ScreenRect(x: 900, y: 620, width: 80, height: 30)
     static let nameField = ScreenRect(x: 300, y: 200, width: 300, height: 24)
 
-    init(layout: KeyboardLayout = .usANSI) {
+    init(layout: KeyboardLayout = .usANSI, encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) }) {
         environment.apps = [Self.textEdit, Self.terminal, Self.safari, Self.mail, Self.juno]
         environment.front = Self.juno
         for app in [Self.textEdit, Self.terminal, Self.safari, Self.mail] {
@@ -263,7 +263,8 @@ struct ScreenFixture {
                 pointerLocation: { ScreenPoint(x: 400, y: 300) },
                 settleTimeout: 0.5,
                 settleInterval: .milliseconds(1),
-                minimumInputGap: 0
+                minimumInputGap: 0,
+                encode: encode
             ),
             lock: ScreenControlLock(now: { clock.now })
         )

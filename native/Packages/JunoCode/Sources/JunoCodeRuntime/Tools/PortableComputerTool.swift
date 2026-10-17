@@ -178,7 +178,7 @@ public struct PortableComputerTool: CodeTool {
         let looking = seesImages
             ? "Start with screenshot (or open_app), then act; every action returns the screen after it settles. "
             : "You cannot see screenshots: screenshot and every action answer with the window's controls in words. Work with ax_find and ax_press. "
-        return "Use an app on the reader's Mac that the reader granted (ask with computer_apps request). " + looking
+        return "Use an app on the reader's Mac. Full access grants app access automatically when opening it; supervised modes ask with computer_apps request. " + looking
             + "Prefer ax_find then ax_press with an element id over clicking coordinates: it hits the exact control. "
             + coordinates + " "
             + "Clicks, typing and keys ask the reader unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. "
@@ -282,6 +282,7 @@ public struct PortableComputerTool: CodeTool {
         case let .openApp(app):
             let started = await runner.recorder?.began(sessionID: sessionID, callID: context.toolCallID, action: .openApp, app: app)
             do {
+                try await runner.ensureAppAccess(app, context: context)
                 await computer.setImageBudget(sessionID: sessionID, budget: runner.budget)
                 try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
                 let result = try await computer.open(sessionID: sessionID, app: app)
