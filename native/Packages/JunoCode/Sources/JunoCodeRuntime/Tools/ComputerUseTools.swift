@@ -240,8 +240,8 @@ struct ScreenActionRunner: Sendable {
         let needle = app.lowercased()
         let grants = await computer.grants(sessionID: context.sessionID.value)
         guard !grants.contains(where: { $0.bundleID.lowercased() == needle || $0.displayName.lowercased() == needle }) else { return }
-        let appConsent = ComputerAppsTool(computer: computer, permissions: permissions, budget: budget)
-        let result = try await appConsent.requestGrants(apps: [app], context: context)
+        let tool = ComputerAppsTool(computer: computer, permissions: permissions, budget: budget)
+        let result = try await tool.request(apps: [app], input: ["action": "request", "apps": [.string(app)]], context: context)
         if result.isError { throw ScreenToolDenial(reason: result.content) }
     }
 
@@ -732,13 +732,7 @@ public struct ComputerAppsTool: CodeTool {
             case "list":
                 return ToolResult(content: await list(sessionID: sessionID))
             case "request":
-                return try await requestGrants(
-                    apps: apps,
-                    reason: input["reason"]?.stringValue,
-                    clipboardRead: input["clipboard_read"]?.boolValue ?? false,
-                    clipboardWrite: input["clipboard_write"]?.boolValue ?? false,
-                    context: context
-                )
+                return try await request(apps: apps, input: input, context: context)
             case "open":
                 guard let app = apps.first else { return ToolResult(content: "Name the app to open in apps.", isError: true) }
                 try await ScreenActionRunner(computer: computer, permissions: permissions, budget: budget)
@@ -770,24 +764,15 @@ public struct ComputerAppsTool: CodeTool {
         return lines.joined(separator: "\n")
     }
 
-    /// Shared app-consent operation. Both explicit requests and Full Access
-    /// bootstrap use this capped proposal and permission check; bootstrap does
-    /// not dispatch a second tool or request clipboard access.
-    func requestGrants(
-        apps: [String],
-        reason: String? = nil,
-        clipboardRead: Bool = false,
-        clipboardWrite: Bool = false,
-        context: ToolContext
-    ) async throws -> ToolResult {
+    fileprivate func request(apps: [String], input: JSONValue, context: ToolContext) async throws -> ToolResult {
         guard !apps.isEmpty else { return ToolResult(content: "Name the apps to request in apps.", isError: true) }
         let sessionID = context.sessionID.value
         let proposal = try await computer.proposeGrants(
             sessionID: sessionID,
             apps: apps,
-            reason: reason,
-            clipboardRead: clipboardRead,
-            clipboardWrite: clipboardWrite
+            reason: input["reason"]?.stringValue,
+            clipboardRead: input["clipboard_read"]?.boolValue ?? false,
+            clipboardWrite: input["clipboard_write"]?.boolValue ?? false
         )
         guard proposal.hasOffer else {
             return ToolResult(
