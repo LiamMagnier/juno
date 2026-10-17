@@ -226,9 +226,12 @@ test('a hook FIFO is rejected without blocking the configuration reader', { skip
   try {
     fs.unlinkSync(f.file);
     execFileSync('mkfifo', [f.file]);
-    const source = new URL('../hooks.ts', import.meta.url).href;
+    // CI runs compiled JavaScript without tsx installed in this package.
+    const compiled = import.meta.url.endsWith('.js');
+    const source = new URL(compiled ? '../hooks.js' : '../hooks.ts', import.meta.url).href;
+    const loader = compiled ? [] : ['--import', import.meta.resolve('tsx')];
     const code = `import { readProjectHooks } from ${JSON.stringify(source)}; try { readProjectHooks(${JSON.stringify(f.cwd)}); process.exit(2); } catch (e) { if (!/regular file/.test(String(e))) throw e; }`;
-    const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], { encoding: 'utf8', timeout: 5000 });
+    const child = spawnSync(process.execPath, [...loader, '--input-type=module', '-e', code], { encoding: 'utf8', timeout: 5000 });
     assert.equal(child.error, undefined, 'the reader must never wait on a repository FIFO');
     assert.equal(child.status, 0, child.stderr);
   } finally { f.cleanup(); }
