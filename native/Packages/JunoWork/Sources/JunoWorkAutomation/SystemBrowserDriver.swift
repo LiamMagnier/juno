@@ -216,7 +216,7 @@ public struct SystemBrowserDriver: BrowserDriving {
             return .failure(
                 AutomationRefusal(
                     .driverUnavailable,
-                    "Neither Safari nor Chrome is open, and those are the browsers Juno can drive."
+                    "Neither Safari nor Chrome is open, and those are the browsers \(AutomationBrand.productName) can drive."
                 )
             )
         }
@@ -246,7 +246,7 @@ public struct SystemBrowserDriver: BrowserDriving {
                 return .failure(
                     AutomationRefusal(
                         .notConsidered,
-                        "More than one browser is open and none is in front, so Juno did not guess which one you meant."
+                        "More than one browser is open and none is in front, so \(AutomationBrand.productName) did not guess which one you meant."
                     )
                 )
             }
@@ -323,12 +323,12 @@ public struct SystemBrowserDriver: BrowserDriving {
         case errAEEventNotPermitted:
             return AutomationRefusal(
                 .driverUnavailable,
-                "macOS is not letting Juno control \(browser.applicationName). Turn Juno on for it in System Settings → Privacy & Security → Automation."
+                "macOS is not letting \(AutomationBrand.productName) control \(browser.applicationName). Turn \(AutomationBrand.productName) on for it in System Settings → Privacy & Security → Automation."
             )
         case errAEEventWouldRequireUserConsent:
             return AutomationRefusal(
                 .driverUnavailable,
-                "macOS has not yet asked whether Juno may control \(browser.applicationName). It will ask the first time you run this from the Mac."
+                "macOS has not yet asked whether \(AutomationBrand.productName) may control \(browser.applicationName). It will ask the first time you run this from the Mac."
             )
         case procNotFound:
             return AutomationRefusal(
@@ -338,7 +338,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         default:
             return AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not reach \(browser.applicationName) on this Mac."
+                "\(AutomationBrand.productName) could not reach \(browser.applicationName) on this Mac."
             )
         }
     }
@@ -358,7 +358,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         guard let script = NSAppleScript(source: source) else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not build the instruction it was going to send the browser."
+                "\(AutomationBrand.productName) could not build the instruction it was going to send the browser."
             )
         }
         var error: NSDictionary?
@@ -384,7 +384,7 @@ public struct SystemBrowserDriver: BrowserDriving {
             // what to switch on.
             throw AutomationRefusal(
                 .driverUnavailable,
-                "\(browser.applicationName) will not let Juno run anything in a page until you turn on \(browser.javaScriptConsentHint)."
+                "\(browser.applicationName) will not let \(AutomationBrand.productName) run anything in a page until you turn on \(browser.javaScriptConsentHint)."
             )
         }
     }
@@ -398,12 +398,12 @@ public struct SystemBrowserDriver: BrowserDriving {
         case errAEEventNotPermitted:
             return AutomationRefusal(
                 .driverUnavailable,
-                "macOS refused to let Juno control the browser. Turn Juno on for it in System Settings → Privacy & Security → Automation."
+                "macOS refused to let \(AutomationBrand.productName) control the browser. Turn \(AutomationBrand.productName) on for it in System Settings → Privacy & Security → Automation."
             )
         case errAENoSuchObject:
             return AutomationRefusal(
                 .driverUnavailable,
-                "There is no page open in the browser for Juno to act on."
+                "There is no page open in the browser for \(AutomationBrand.productName) to act on."
             )
         case procNotFound:
             return AutomationRefusal(.driverUnavailable, "The browser is no longer running.")
@@ -413,7 +413,7 @@ public struct SystemBrowserDriver: BrowserDriving {
             // anything else, and `evaluate` reads it for exactly that.
             return AutomationRefusal(
                 .driverUnavailable,
-                message.isEmpty ? "The browser did not do what Juno asked." : message
+                message.isEmpty ? "The browser did not do what \(AutomationBrand.productName) asked." : message
             )
         }
     }
@@ -546,22 +546,22 @@ public struct SystemBrowserDriver: BrowserDriving {
         case "missing":
             throw AutomationRefusal(
                 .focusMoved,
-                "The page changed before Juno could act, so the control it was told about is no longer there."
+                "The page changed before \(AutomationBrand.productName) could act, so the control it was told about is no longer there."
             )
         case "secure":
             throw AutomationRefusal(
                 .sensitiveSurface,
-                "That field is for a password, and Juno does not fill those in."
+                "That field is for a password, and \(AutomationBrand.productName) does not fill those in."
             )
         case "notafield":
             throw AutomationRefusal(
                 .intentNotServed,
-                "That is not something Juno can type into."
+                "That is not something \(AutomationBrand.productName) can type into."
             )
         default:
             throw AutomationRefusal(
                 .driverUnavailable,
-                "The browser did not say whether it acted on that control, so Juno treated it as a failure."
+                "The browser did not say whether it acted on that control, so \(AutomationBrand.productName) treated it as a failure."
             )
         }
     }
@@ -581,7 +581,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         guard !normalized.isEmpty, !normalized.hasPrefix(".") else {
             throw AutomationRefusal(
                 .malformedIdentifier,
-                "Juno could not tell which site that was."
+                "\(AutomationBrand.productName) could not tell which site that was."
             )
         }
         var tail = path.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -597,7 +597,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         else {
             throw AutomationRefusal(
                 .malformedIdentifier,
-                "That address does not point at the site Juno was allowed to use, so it did not open it."
+                "That address does not point at the site \(AutomationBrand.productName) was allowed to use, so it did not open it."
             )
         }
         return candidate
@@ -609,7 +609,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         else {
             throw AutomationRefusal(
                 .malformedIdentifier,
-                "Juno could not tell which site the browser is showing."
+                "\(AutomationBrand.productName) could not tell which site the browser is showing."
             )
         }
         return AutomationPermission.normalizeHost(host)
@@ -619,7 +619,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         guard elementID.hasPrefix("e"), let index = Int(elementID.dropFirst()), index >= 0 else {
             throw AutomationRefusal(
                 .malformedIdentifier,
-                "Juno could not tell which control on the page that was."
+                "\(AutomationBrand.productName) could not tell which control on the page that was."
             )
         }
         return index
@@ -631,7 +631,7 @@ public struct SystemBrowserDriver: BrowserDriving {
         else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "The browser did not describe the page in a way Juno could read."
+                "The browser did not describe the page in a way \(AutomationBrand.productName) could read."
             )
         }
         let entries = (root["fields"] as? [[String: Any]]) ?? []

@@ -161,7 +161,7 @@ public actor VisualPacer {
         if let lastActionAt, date.timeIntervalSince(lastActionAt) < interval {
             throw AutomationRefusal(
                 .tooFast,
-                "Juno is being asked to click faster than it is allowed to."
+                "\(AutomationBrand.productName) is being asked to click faster than it is allowed to."
             )
         }
         lastActionAt = date
@@ -222,10 +222,10 @@ public struct VisualControl: AutomationControl, WorkTool {
             // Screen control without capture is an agent clicking blind. Better
             // to declare the tier unhealthy and let the lattice route elsewhere
             // than to let it guess where the button was.
-            return .unavailable(reason: "Juno is not allowed to see this Mac's screen.")
+            return .unavailable(reason: "\(AutomationBrand.productName) is not allowed to see this Mac's screen.")
         }
         guard await driver.isAvailable() else {
-            return .unavailable(reason: "Juno cannot reach this Mac's screen right now.")
+            return .unavailable(reason: "\(AutomationBrand.productName) cannot reach this Mac's screen right now.")
         }
         return .healthy
     }
@@ -332,7 +332,7 @@ public struct VisualControl: AutomationControl, WorkTool {
         guard let frontmost else {
             throw AutomationRefusal(
                 .notConsidered,
-                "Juno could not tell which app was in front, so it did nothing."
+                "\(AutomationBrand.productName) could not tell which app was in front, so it did nothing."
             )
         }
         guard AutomationPermission.normalizeIdentifier(frontmost)
@@ -340,7 +340,7 @@ public struct VisualControl: AutomationControl, WorkTool {
         else {
             throw AutomationRefusal(
                 .focusMoved,
-                "A different app came to the front, so Juno stopped rather than act on the wrong one."
+                "A different app came to the front, so \(AutomationBrand.productName) stopped rather than act on the wrong one."
             )
         }
         if let refusal = gate.permission.permits(app: frontmost).refusal { throw refusal }
@@ -361,7 +361,7 @@ public struct VisualControl: AutomationControl, WorkTool {
             )
         case .enterText:
             guard let text = request.text else {
-                throw AutomationRefusal(.intentNotServed, "Juno had nothing to type.")
+                throw AutomationRefusal(.intentNotServed, "\(AutomationBrand.productName) had nothing to type.")
             }
             try await driver.type(text)
             try await gate.checkpoint(token)
@@ -371,7 +371,7 @@ public struct VisualControl: AutomationControl, WorkTool {
             guard let x = request.x, let y = request.y else {
                 throw AutomationRefusal(
                     .intentNotServed,
-                    "Juno needed a position on screen and did not have one."
+                    "\(AutomationBrand.productName) needed a position on screen and did not have one."
                 )
             }
             let point = AutomationPoint(x: Double(x), y: Double(y))
@@ -426,7 +426,7 @@ public struct VisualControl: AutomationControl, WorkTool {
             // this whole file is arranged to prevent.
             throw AutomationRefusal(
                 .sensitiveSurface,
-                "Juno could not cover up what was on screen, so it threw the picture away."
+                "\(AutomationBrand.productName) could not cover up what was on screen, so it threw the picture away."
             )
         }
         await gate.audit.record(

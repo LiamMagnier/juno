@@ -157,7 +157,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
             return .unavailable(reason: "Browser control is switched off on this Mac.")
         }
         guard await driver.isAvailable() else {
-            return .unavailable(reason: "No browser Juno can drive is running.")
+            return .unavailable(reason: "No browser \(AutomationBrand.productName) can drive is running.")
         }
         return .healthy
     }
@@ -232,7 +232,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
             throw await gate.refuse(refusal, holding: token)
         } catch {
             throw await gate.refuse(
-                AutomationRefusal(.driverUnavailable, "The browser did not do what Juno asked."),
+                AutomationRefusal(.driverUnavailable, "The browser did not do what \(AutomationBrand.productName) asked."),
                 holding: token
             )
         }
@@ -253,7 +253,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
         else {
             throw AutomationRefusal(
                 .focusMoved,
-                "The page changed to a different site before Juno could act, so it stopped."
+                "The page changed to a different site before \(AutomationBrand.productName) could act, so it stopped."
             )
         }
 
@@ -277,7 +277,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
             guard let elementID = request.element, let text = request.text else {
                 throw AutomationRefusal(
                     .intentNotServed,
-                    "Juno needed a field and some text and did not have both."
+                    "\(AutomationBrand.productName) needed a field and some text and did not have both."
                 )
             }
             try await refuseIfSensitive(elementID: elementID, token: token)
@@ -289,7 +289,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
             guard let elementID = request.element else {
                 throw AutomationRefusal(
                     .intentNotServed,
-                    "Juno needed to know which control to press."
+                    "\(AutomationBrand.productName) needed to know which control to press."
                 )
             }
             try await driver.activate(elementID: elementID)
@@ -298,7 +298,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
         case .captureScreen, .changeSecuritySetting:
             throw AutomationRefusal(
                 .intentNotServed,
-                "The browser cannot do that, and Juno will not fall back to something coarser for it."
+                "The browser cannot do that, and \(AutomationBrand.productName) will not fall back to something coarser for it."
             )
         }
     }
@@ -317,7 +317,7 @@ public struct BrowserControl: AutomationControl, WorkTool {
         if let surface = SensitiveSurfaceDetector.classify(field) {
             throw AutomationRefusal(
                 .sensitiveSurface,
-                "That field is for \(surface.kind.phrase), and Juno does not fill those in."
+                "That field is for \(surface.kind.phrase), and \(AutomationBrand.productName) does not fill those in."
             )
         }
     }
@@ -380,7 +380,7 @@ public enum AutomationApproval {
             guard receipt.authorizes(digest: digest, at: date) else {
                 return AutomationRefusal(
                     .approvalStale,
-                    "What Juno was about to do no longer matches what you approved, so it stopped."
+                    "What \(AutomationBrand.productName) was about to do no longer matches what you approved, so it stopped."
                 )
             }
             return nil
@@ -392,7 +392,7 @@ public enum AutomationApproval {
             // second attempt to ask.
             return AutomationRefusal(
                 .approvalMissing,
-                "Juno will not do that without asking you first."
+                "\(AutomationBrand.productName) will not do that without asking you first."
             )
         }
     }

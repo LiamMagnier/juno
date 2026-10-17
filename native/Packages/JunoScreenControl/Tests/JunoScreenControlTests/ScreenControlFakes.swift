@@ -123,8 +123,11 @@ final class FakeEnvironment: ScreenEnvironment, @unchecked Sendable {
     }
 }
 
-final class FakeAccessibility: AccessibilityInspecting, @unchecked Sendable {
+final class FakeAccessibility: AccessibilityInspecting, BrowserPageReading, @unchecked Sendable {
     private let lock = NSLock()
+    /// What each browser's front window shows: its web area's URL and title.
+    var pages: [Int32: BrowserPageContext] = [:]
+    func browserPage(pid: Int32) async -> BrowserPageContext? { lock.withLock { pages[pid] } }
     /// Regions of the screen and what is there.
     var regions: [(ScreenRect, ScreenTarget)] = []
     var focused: [Int32: ScreenTarget] = [:]
@@ -209,6 +212,8 @@ struct ScreenFixture {
     let sink = RecordingEventSink()
     let tap = FakeStopTap()
     let clock = TestClock()
+    /// The HID idle reading: seconds since `hid.lastEvent`.
+    let hid = FakeHID()
     /// Runs inside every pause the service or driver takes, so a test can
     /// press Esc in the middle of an action.
     let pauseHook = PauseHook()
@@ -244,6 +249,8 @@ struct ScreenFixture {
         ]
         let clock = self.clock
         let hook = self.pauseHook
+        let hid = self.hid
+        hid.lastEvent = clock.now
         service = ScreenControlService(
             dependencies: .init(
                 capture: capture,
@@ -261,7 +268,8 @@ struct ScreenFixture {
                 pointerLocation: { ScreenPoint(x: 400, y: 300) },
                 settleTimeout: 0.5,
                 settleInterval: .milliseconds(1),
-                minimumInputGap: 0
+                minimumInputGap: 0,
+                readerIdleTime: { hid.idle(now: clock.now) }
             ),
             lock: ScreenControlLock(now: { clock.now })
         )
@@ -281,6 +289,20 @@ struct ScreenFixture {
     func framePoint(_ point: ScreenPoint, scale: Double) -> [Double] {
         [(point.x - Self.windowFrame.x) * 2 * scale, (point.y - Self.windowFrame.y) * 2 * scale]
     }
+}
+
+/// The HID system's "seconds since the last input event", as a test sets it.
+final class FakeHID: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last = Date.distantPast
+    /// When the last keyboard, mouse or trackpad event happened, whoever
+    /// caused it.
+    var lastEvent: Date {
+        get { lock.withLock { last } }
+        set { lock.withLock { last = newValue } }
+    }
+
+    func idle(now: Date) -> TimeInterval { max(0, now.timeIntervalSince(lastEvent)) }
 }
 
 final class TestClock: @unchecked Sendable {

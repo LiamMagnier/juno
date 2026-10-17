@@ -1,8 +1,16 @@
 import Foundation
 
 /// What the on-screen action overlay draws (Code v2 SPEC §3.12): where the
-/// next input lands and what it is, the moment it is sent, for every session,
-/// Work task and connected agent alike — the service posts it, not the tools.
+/// next input lands and what it is, the moment it is sent.
+///
+/// Two posters, one overlay. ``ScreenControlService`` posts for every Code
+/// session and connected agent, from the action it prepared, not from what a
+/// tool claims. Work does not drive the screen through the service yet: its
+/// visual and app-control tiers (`VisualControl`, `AccessibilityControl` in
+/// JunoWorkAutomation) post their own acting and settled cues to
+/// ``ComputerActionFeed/shared``, labelled with the Work tool's summary, so a
+/// Work step draws the same ring and line as a Code step. Routing Work
+/// through the service, and so through one poster, is still to come.
 public struct ComputerActionCue: Hashable, Sendable {
     public enum Phase: Hashable, Sendable {
         /// About to send: the ring goes to `point`, the label reads the action.

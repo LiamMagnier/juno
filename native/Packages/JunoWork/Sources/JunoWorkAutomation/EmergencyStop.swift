@@ -3,6 +3,24 @@ import Foundation
 import JunoScreenControl
 #endif
 
+// MARK: - The name in every sentence
+
+/// The product's name in Work's automation sentences: the lock refusal, the
+/// stop, the indicator's phrase and every refusal a person reads.
+///
+/// On the Mac it is screen control's own ``ScreenControlBrand``, so Code and
+/// Work can never disagree about what the product is called. The phone builds
+/// this module without screen control and spells the same word.
+/// `BrandStringTests` in JunoScreenControl fails when the codename reappears
+/// in a string literal anywhere in this module.
+enum AutomationBrand {
+    #if canImport(JunoScreenControl)
+    static let productName = ScreenControlBrand.productName
+    #else
+    static let productName = "Alevr"
+    #endif
+}
+
 // MARK: - What is running
 
 /// What automation is doing right now, in the words the indicator uses.
@@ -49,7 +67,7 @@ public struct AutomationActiveUse: Hashable, Sendable {
     /// The sentence beside the indicator. Identifiers only — the subject is a
     /// bundle identifier or a domain, never anything read off the screen.
     public var phrase: String {
-        "Juno is using \(activity.tier.label.lowercased()) on \(activity.subject.auditIdentifier)."
+        "\(AutomationBrand.productName) is using \(activity.tier.label.lowercased()) on \(activity.subject.auditIdentifier)."
     }
 }
 
@@ -137,13 +155,13 @@ public actor EmergencyStop {
         guard !stopped else {
             throw AutomationRefusal(
                 .emergencyStopped,
-                stopReason ?? "Juno's control of this Mac is stopped."
+                stopReason ?? "\(AutomationBrand.productName)'s control of this Mac is stopped."
             )
         }
         if let active {
             throw AutomationRefusal(
                 .tooFast,
-                "Juno is already doing something on this Mac (\(active.activity.tier.label.lowercased()))."
+                "\(AutomationBrand.productName) is already doing something on this Mac (\(active.activity.tier.label.lowercased()))."
             )
         }
         let use = AutomationActiveUse(
@@ -167,7 +185,7 @@ public actor EmergencyStop {
             // A stop that landed during the claim wins.
             guard !stopped, generation == startGeneration, active?.runID == runID else {
                 await sharedScreen.release(runID: runID)
-                throw AutomationRefusal(.emergencyStopped, stopReason ?? "Juno's control of this Mac is stopped.")
+                throw AutomationRefusal(.emergencyStopped, stopReason ?? "\(AutomationBrand.productName)'s control of this Mac is stopped.")
             }
         }
         notify()
@@ -184,13 +202,13 @@ public actor EmergencyStop {
         guard !stopped else {
             throw AutomationRefusal(
                 .emergencyStopped,
-                stopReason ?? "Juno's control of this Mac is stopped."
+                stopReason ?? "\(AutomationBrand.productName)'s control of this Mac is stopped."
             )
         }
         guard token.generation == generation, active?.runID == token.runID else {
             throw AutomationRefusal(
                 .emergencyStopped,
-                "Juno's control of this Mac was interrupted, so it stopped rather than carry on."
+                "\(AutomationBrand.productName)'s control of this Mac was interrupted, so it stopped rather than carry on."
             )
         }
     }
@@ -230,7 +248,7 @@ public actor EmergencyStop {
     /// Safe to call when nothing is running and safe to call twice. A stop that
     /// could fail is a stop somebody has to check the result of while their
     /// screen is being typed into.
-    public func stop(reason: String = "You stopped Juno.") {
+    public func stop(reason: String = "You stopped \(AutomationBrand.productName).") {
         halt(reason: reason)
         // One stop for the whole app: Juno Code's screen control stops too.
         if let sharedScreen {
@@ -280,7 +298,7 @@ public actor EmergencyStop {
         guard afterHumanGesture else {
             throw AutomationRefusal(
                 .emergencyStopped,
-                "Only you can let Juno start controlling this Mac again."
+                "Only you can let \(AutomationBrand.productName) start controlling this Mac again."
             )
         }
         stopped = false
@@ -328,7 +346,7 @@ public struct SharedScreenControl: Sendable {
         do {
             _ = try await lock.claim(ScreenControlHolder(id: "work:\(runID)", kind: .workTask, title: title))
         } catch let ScreenControlError.lockHeld(holder) {
-            throw AutomationRefusal(.tooFast, "\(holder). Juno does one thing on this Mac at a time.")
+            throw AutomationRefusal(.tooFast, "\(holder). \(AutomationBrand.productName) does one thing on this Mac at a time.")
         }
         #endif
     }

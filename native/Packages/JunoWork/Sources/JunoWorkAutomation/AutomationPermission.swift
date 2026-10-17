@@ -378,7 +378,7 @@ public struct AutomationPermission: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .automationDisabled,
-                    "Juno is not allowed to control anything on this Mac."
+                    "\(AutomationBrand.productName) is not allowed to control anything on this Mac."
                 )
             )
         }
@@ -393,7 +393,7 @@ public struct AutomationPermission: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .tierDisabled,
-                    "\(tier.label) is switched off for Juno on this Mac."
+                    "\(tier.label) is switched off for \(AutomationBrand.productName) on this Mac."
                 )
             )
         }
@@ -413,26 +413,26 @@ public struct AutomationPermission: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .automationDisabled,
-                    "Juno is not allowed to control anything on this Mac."
+                    "\(AutomationBrand.productName) is not allowed to control anything on this Mac."
                 )
             )
         }
         let target = Self.normalizeIdentifier(bundleIdentifier)
         guard !target.isEmpty else {
             return .refused(
-                AutomationRefusal(.malformedIdentifier, "Juno could not tell which app that was.")
+                AutomationRefusal(.malformedIdentifier, "\(AutomationBrand.productName) could not tell which app that was.")
             )
         }
         if Self.normalized(blockedApps).contains(target) {
             return .refused(
-                AutomationRefusal(.appBlocked, "You told Juno never to control that app.")
+                AutomationRefusal(.appBlocked, "You told \(AutomationBrand.productName) never to control that app.")
             )
         }
         if let category = Self.restrictedCategory(forApp: target) {
             return .refused(
                 AutomationRefusal(
                     .restrictedCategory,
-                    "Juno never drives anything to do with \(category.phrase), even when it is on the allowed list.",
+                    "\(AutomationBrand.productName) never drives anything to do with \(category.phrase), even when it is on the allowed list.",
                     category: category
                 )
             )
@@ -441,7 +441,7 @@ public struct AutomationPermission: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .notConsidered,
-                    "You have not allowed Juno to control that app."
+                    "You have not allowed \(AutomationBrand.productName) to control that app."
                 )
             )
         }
@@ -462,33 +462,33 @@ public struct AutomationPermission: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .automationDisabled,
-                    "Juno is not allowed to control anything on this Mac."
+                    "\(AutomationBrand.productName) is not allowed to control anything on this Mac."
                 )
             )
         }
         let target = Self.normalizeHost(host)
         guard !target.isEmpty else {
             return .refused(
-                AutomationRefusal(.malformedIdentifier, "Juno could not tell which site that was.")
+                AutomationRefusal(.malformedIdentifier, "\(AutomationBrand.productName) could not tell which site that was.")
             )
         }
         if Self.matches(host: target, anyOf: blockedDomains) {
             return .refused(
-                AutomationRefusal(.domainBlocked, "You told Juno never to use that site.")
+                AutomationRefusal(.domainBlocked, "You told \(AutomationBrand.productName) never to use that site.")
             )
         }
         if let category = Self.restrictedCategory(forHost: target) {
             return .refused(
                 AutomationRefusal(
                     .restrictedCategory,
-                    "Juno never drives anything to do with \(category.phrase), even when it is on the allowed list.",
+                    "\(AutomationBrand.productName) never drives anything to do with \(category.phrase), even when it is on the allowed list.",
                     category: category
                 )
             )
         }
         guard Self.matches(host: target, anyOf: allowedDomains) else {
             return .refused(
-                AutomationRefusal(.notConsidered, "You have not allowed Juno to use that site.")
+                AutomationRefusal(.notConsidered, "You have not allowed \(AutomationBrand.productName) to use that site.")
             )
         }
         return .allowed
@@ -684,7 +684,7 @@ public struct AutomationControlLattice: Sendable {
             return .refused(
                 AutomationRefusal(
                     .intentNotServed,
-                    "Juno has no working way to do that on this Mac."
+                    "\(AutomationBrand.productName) has no working way to do that on this Mac."
                 )
             )
         }
@@ -693,7 +693,7 @@ public struct AutomationControlLattice: Sendable {
             return .refused(
                 AutomationRefusal(
                     .higherTierAvailable,
-                    "Juno used \(best.label) for that instead of \(tier.label)."
+                    "\(AutomationBrand.productName) used \(best.label) for that instead of \(tier.label)."
                 )
             )
         }
@@ -780,7 +780,7 @@ public struct AutomationGate: Sendable {
         guard declaredIntents.contains(intent) else {
             let refusal = AutomationRefusal(
                 .intentNotServed,
-                "Juno will not do that with \(tier.label.lowercased()) on this Mac."
+                "\(AutomationBrand.productName) will not do that with \(tier.label.lowercased()) on this Mac."
             )
             throw await refuse(refusal, runID: runID, tier: tier, intent: intent, subject: subject)
         }
@@ -797,7 +797,7 @@ public struct AutomationGate: Sendable {
             let best = candidates.min() ?? tier
             let refusal = AutomationRefusal(
                 .higherTierAvailable,
-                "Juno can do that with \(best.label), which needs far less access than \(tier.label)."
+                "\(AutomationBrand.productName) can do that with \(best.label), which needs far less access than \(tier.label)."
             )
             throw await refuse(
                 refusal,
@@ -922,7 +922,7 @@ public struct AutomationGate: Sendable {
             return .refused(
                 AutomationRefusal(
                     .notConsidered,
-                    "Juno will not act on a whole screen without knowing which app is in front."
+                    "\(AutomationBrand.productName) will not act on a whole screen without knowing which app is in front."
                 )
             )
         }
@@ -949,7 +949,7 @@ public struct AutomationRequest: Hashable, Sendable {
     public let y: Int?
 
     public static let schema = WorkToolSchema([
-        .init("intent", .string, "What to do, from Juno's automation vocabulary.", required: true),
+        .init("intent", .string, "What to do, from \(AutomationBrand.productName)'s automation vocabulary.", required: true),
         .init("target", .string, "The site's domain, or the app's bundle identifier.", required: true),
         .init("element", .string, "The control to act on, as returned by an earlier inspect."),
         .init("text", .string, "Text to enter."),
@@ -969,7 +969,7 @@ public struct AutomationRequest: Hashable, Sendable {
         else {
             let known = AutomationIntent.allCases.map(\.rawValue).sorted().joined(separator: ", ")
             return .failure(
-                .invalidInput(message: "Juno does not have that intent. It knows: \(known).")
+                .invalidInput(message: "\(AutomationBrand.productName) does not have that intent. It knows: \(known).")
             )
         }
         guard let target = input["target"]?.stringValue,
@@ -1010,7 +1010,7 @@ public struct AutomationRequest: Hashable, Sendable {
         }
         guard declaredIntents.contains(request.intent) else {
             return .denied(
-                reason: "Juno will not do that with \(tier.label.lowercased()) on this Mac."
+                reason: "\(AutomationBrand.productName) will not do that with \(tier.label.lowercased()) on this Mac."
             )
         }
         if request.intent == .enterText {
@@ -1024,7 +1024,7 @@ public struct AutomationRequest: Hashable, Sendable {
             let found = SensitiveSurfaceDetector.scan(text)
             if let first = found.first {
                 return .denied(
-                    reason: "That looks like \(first.kind.phrase), and Juno does not type those for you."
+                    reason: "That looks like \(first.kind.phrase), and \(AutomationBrand.productName) does not type those for you."
                 )
             }
         }
@@ -1066,14 +1066,14 @@ public struct AutomationRequest: Hashable, Sendable {
         case .enterText:
             return "Type \(text?.count ?? 0) characters into a field on \(where_)."
         case .activateControl: return "Press a control on \(where_)."
-        case .sendMessage: return "Send a message from \(where_). Juno cannot take this back."
-        case .publish: return "Publish something on \(where_). Juno cannot take this back."
-        case .purchase: return "Buy something on \(where_). Juno cannot take this back."
-        case .deleteItem: return "Delete something on \(where_). Juno cannot take this back."
+        case .sendMessage: return "Send a message from \(where_). \(AutomationBrand.productName) cannot take this back."
+        case .publish: return "Publish something on \(where_). \(AutomationBrand.productName) cannot take this back."
+        case .purchase: return "Buy something on \(where_). \(AutomationBrand.productName) cannot take this back."
+        case .deleteItem: return "Delete something on \(where_). \(AutomationBrand.productName) cannot take this back."
         case .changeAccountSetting:
-            return "Change an account setting on \(where_). Juno cannot take this back."
+            return "Change an account setting on \(where_). \(AutomationBrand.productName) cannot take this back."
         case .changeSecuritySetting:
-            return "Change a security setting on \(where_). Juno cannot take this back."
+            return "Change a security setting on \(where_). \(AutomationBrand.productName) cannot take this back."
         }
     }
 }

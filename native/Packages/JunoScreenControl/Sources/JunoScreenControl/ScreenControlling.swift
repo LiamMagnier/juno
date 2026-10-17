@@ -102,12 +102,24 @@ public struct ScreenActionResult: Hashable, Sendable {
     public var frame: EncodedFrame?
     /// Anything else the model should know: a clamped wait, a zoom note.
     public var notes: [String]
+    /// What a `replace` typed over: the field's previous text (at most
+    /// ``ScreenControlService/replacedTextLimit`` characters), so it can be
+    /// put back. Nil when the field was empty, was a password field (never
+    /// typed into), or held something that looks like a secret.
+    public var replacedText: String?
 
-    public init(summary: String, frameHeader: String? = nil, frame: EncodedFrame? = nil, notes: [String] = []) {
+    public init(
+        summary: String,
+        frameHeader: String? = nil,
+        frame: EncodedFrame? = nil,
+        notes: [String] = [],
+        replacedText: String? = nil
+    ) {
         self.summary = summary
         self.frameHeader = frameHeader
         self.frame = frame
         self.notes = notes
+        self.replacedText = replacedText
     }
 
     /// The text the model reads, header and framing included.
@@ -186,11 +198,22 @@ public struct ScreenActivity: Sendable, Identifiable {
     }
 }
 
+/// Why screen control is paused.
+public enum ScreenPauseReason: Hashable, Sendable {
+    /// The reader pressed Take over, or moved the pointer in takeover.
+    case readerTookOver
+    /// The reader was away from a sensitive page for longer than
+    /// ``SensitiveContextPolicy/idleLimit`` (the leaders' "watch mode").
+    case readerAway(SensitiveContextKind)
+}
+
 /// Everything the presence surfaces need, in one value.
 public struct ScreenPresenceState: Hashable, Sendable {
     public var holder: ScreenControlHolder?
     public var mode: ScreenControlMode
     public var paused: Bool
+    /// Why, when paused.
+    public var pauseReason: ScreenPauseReason?
     /// The target window's frame, for the outline glow, when known.
     public var targetWindowFrame: ScreenRect?
     public var displayFrame: ScreenRect?
@@ -199,23 +222,34 @@ public struct ScreenPresenceState: Hashable, Sendable {
         holder: ScreenControlHolder? = nil,
         mode: ScreenControlMode = .background,
         paused: Bool = false,
+        pauseReason: ScreenPauseReason? = nil,
         targetWindowFrame: ScreenRect? = nil,
         displayFrame: ScreenRect? = nil
     ) {
         self.holder = holder
         self.mode = mode
         self.paused = paused
+        self.pauseReason = paused ? (pauseReason ?? .readerTookOver) : nil
         self.targetWindowFrame = targetWindowFrame
         self.displayFrame = displayFrame
     }
 
     public static let idle = ScreenPresenceState()
 
-    /// "Juno is using TextEdit · Esc to stop".
+    /// "Alevr is using TextEdit · Esc to stop". The one place the way out is
+    /// said: the action overlay's label repeats it only when a step failed.
     public var caption: String? {
         guard let holder else { return nil }
-        let app = holder.appName.map { "Juno is using \($0)" } ?? "Juno is using apps"
-        return paused ? "You took over · Juno is waiting" : app + " · Esc to stop"
+        let product = ScreenControlBrand.productName
+        switch pauseReason {
+        case .readerAway:
+            return "You were away, so \(product) paused · Resume when you're back"
+        case .readerTookOver:
+            return "You took over · \(product) is waiting"
+        case nil:
+            let app = holder.appName.map { "\(product) is using \($0)" } ?? "\(product) is using apps"
+            return app + " · Esc to stop"
+        }
     }
 }
 

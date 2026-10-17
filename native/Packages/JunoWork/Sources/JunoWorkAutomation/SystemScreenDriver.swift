@@ -114,7 +114,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
             // image is the one with the password in it.
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno cannot tell what is on screen without macOS Accessibility permission, so it did not take a picture of it."
+                "\(AutomationBrand.productName) cannot tell what is on screen without macOS Accessibility permission, so it did not take a picture of it."
             )
         }
         guard let application = frontmostApplication() else { return [] }
@@ -129,7 +129,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         guard screenRecordingAuthorized() else {
             throw AutomationRefusal(
                 .screenshotNotPermitted,
-                "Juno does not have macOS Screen Recording permission, so it cannot see this Mac's screen. Grant it in System Settings → Privacy & Security → Screen Recording."
+                "\(AutomationBrand.productName) does not have macOS Screen Recording permission, so it cannot see this Mac's screen. Grant it in System Settings → Privacy & Security → Screen Recording."
             )
         }
         let content: SCShareableContent
@@ -145,14 +145,14 @@ public struct SystemScreenDriver: VisualScreenDriving {
             // almost always is beats reporting "the screen did not respond".
             throw AutomationRefusal(
                 .screenshotNotPermitted,
-                "macOS would not let Juno see this Mac's screen. Check System Settings → Privacy & Security → Screen Recording."
+                "macOS would not let \(AutomationBrand.productName) see this Mac's screen. Check System Settings → Privacy & Security → Screen Recording."
             )
         }
         guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
         else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not find this Mac's main display."
+                "\(AutomationBrand.productName) could not find this Mac's main display."
             )
         }
         let configuration = SCStreamConfiguration()
@@ -176,7 +176,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         } catch {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "This Mac's screen did not give Juno a picture."
+                "This Mac's screen did not give \(AutomationBrand.productName) a picture."
             )
         }
         return try Self.encode(image)
@@ -199,7 +199,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not send keystrokes to this Mac."
+                "\(AutomationBrand.productName) could not send keystrokes to this Mac."
             )
         }
         let units = Array(text.utf16)
@@ -217,7 +217,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         guard accessibilityAuthorized() else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno does not have macOS Accessibility permission, so it cannot click or type on this Mac. Grant it in System Settings → Privacy & Security → Accessibility."
+                "\(AutomationBrand.productName) does not have macOS Accessibility permission, so it cannot click or type on this Mac. Grant it in System Settings → Privacy & Security → Accessibility."
             )
         }
     }
@@ -233,7 +233,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         ) else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not send a click to this Mac."
+                "\(AutomationBrand.productName) could not send a click to this Mac."
             )
         }
         event.post(tap: .cghidEventTap)
@@ -245,7 +245,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not send keystrokes to this Mac."
+                "\(AutomationBrand.productName) could not send keystrokes to this Mac."
             )
         }
         units.withUnsafeBufferPointer { buffer in
@@ -278,7 +278,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         ) else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not store the picture it took of the screen."
+                "\(AutomationBrand.productName) could not store the picture it took of the screen."
             )
         }
         CGImageDestinationAddImage(
@@ -292,7 +292,7 @@ public struct SystemScreenDriver: VisualScreenDriving {
         guard CGImageDestinationFinalize(destination) else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno could not store the picture it took of the screen."
+                "\(AutomationBrand.productName) could not store the picture it took of the screen."
             )
         }
         return output as Data

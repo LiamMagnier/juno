@@ -11,6 +11,10 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
     case stoppedByReader
     /// The reader took over the Mac. Wait for Resume.
     case readerTookOver
+    /// The reader was away from a sensitive page (banking, health, a vault…)
+    /// for longer than ``SensitiveContextPolicy/idleLimit``: screen control
+    /// paused until they press Resume. The kind's phrase: "a banking site".
+    case readerAway(String)
     /// Another session or task holds the screen.
     case lockHeld(holder: String)
     /// Another conversation owns this app right now.
@@ -44,11 +48,13 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notRunning:
-            "Screen control is not running in this session. Ask the reader to choose Let Juno Use Apps in the session's More menu."
+            "Screen control is not running in this session. Ask the reader to choose Let \(ScreenControlBrand.productName) Use Apps in the session's More menu."
         case .stoppedByReader:
             "The reader stopped screen control. Do not retry; say what you still need."
         case .readerTookOver:
             "The reader took over the Mac. Wait until they press Resume, then take a new screenshot."
+        case let .readerAway(place):
+            "The reader has been away for more than two minutes while \(place) was open, so screen control paused. Wait until they press Resume, then take a new screenshot."
         case let .lockHeld(holder):
             "\(holder). It must finish before anything else can use apps; wait for it, or ask the reader to stop it."
         case let .appBusy(app, holder):
@@ -60,11 +66,11 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
         case let .tierTooLow(sentence):
             sentence
         case let .appRefused(app, reason):
-            "Juno never controls \(app): \(reason). Ask the reader to do this part."
+            "\(ScreenControlBrand.productName) never controls \(app): \(reason). Ask the reader to do this part."
         case .junoWindow:
-            "That point is on one of Juno's own windows, which screen control never touches."
+            "That point is on one of \(ScreenControlBrand.productName)'s own windows, which screen control never touches."
         case .secureField:
-            "That is a password field. Juno never types credentials; ask the reader to enter it."
+            "That is a password field. \(ScreenControlBrand.productName) never types credentials; ask the reader to enter it."
         case let .systemPromptInFront(app):
             "A system or password prompt (\(app)) is in front. Stop and ask the reader to answer it."
         case .screenChanged:
@@ -86,7 +92,7 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
         case let .unsupported(message):
             message
         case let .permissionMissing(grant):
-            "macOS has not given Juno \(grant). Ask the reader to allow it in System Settings › Privacy & Security."
+            "macOS has not given \(ScreenControlBrand.productName) \(grant). Ask the reader to allow it in System Settings › Privacy & Security."
         case let .driverFailed(message):
             "The action could not be sent: \(message)"
         case .notExecuted:

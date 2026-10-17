@@ -241,7 +241,7 @@ public struct ScreenshotPolicy: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .screenshotNotPermitted,
-                    "Juno is not allowed to take pictures of this Mac's screen."
+                    "\(AutomationBrand.productName) is not allowed to take pictures of this Mac's screen."
                 )
             )
         }
@@ -251,7 +251,7 @@ public struct ScreenshotPolicy: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .sensitiveSurface,
-                    "There is something on screen Juno could not cover up, so it did not take the picture."
+                    "There is something on screen \(AutomationBrand.productName) could not cover up, so it did not take the picture."
                 )
             )
         }
@@ -305,7 +305,7 @@ public struct ScreenshotPolicy: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .sensitiveSurface,
-                    "What was on screen is too sensitive to send anywhere, so Juno kept it here."
+                    "What was on screen is too sensitive to send anywhere, so \(AutomationBrand.productName) kept it here."
                 )
             )
         }
@@ -313,7 +313,7 @@ public struct ScreenshotPolicy: Hashable, Sendable {
             return .refused(
                 AutomationRefusal(
                     .screenshotExpired,
-                    "That picture of the screen is older than Juno keeps them for."
+                    "That picture of the screen is older than \(AutomationBrand.productName) keeps them for."
                 )
             )
         }

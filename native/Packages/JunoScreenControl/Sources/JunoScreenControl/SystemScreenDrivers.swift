@@ -33,8 +33,26 @@ extension ScreenControlService.Dependencies {
             pointerLocation: {
                 guard let location = CGEvent(source: nil)?.location else { return nil }
                 return ScreenPoint(x: location.x, y: location.y)
-            }
+            },
+            readerIdleTime: { SystemReaderIdle.seconds() }
         )
+    }
+}
+
+/// Seconds since the last keyboard, mouse or trackpad event, as the HID
+/// system sees it (`kCGAnyInputEventType` on the HID system state).
+///
+/// Events screen control posts to a process in background mode go straight
+/// to that app and should not reach this table; one posted to the HID tap in
+/// takeover may. The service does not rely on either: `ReaderActivityTracker`
+/// discounts any event inside a stretch where screen control was sending.
+enum SystemReaderIdle {
+    static func seconds() -> TimeInterval? {
+        // `kCGAnyInputEventType` is `~0`, which Swift's `CGEventType` spells
+        // as its last case.
+        guard let any = CGEventType(rawValue: UInt32.max) else { return nil }
+        let seconds = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: any)
+        return seconds.isFinite && seconds >= 0 ? seconds : nil
     }
 }
 
@@ -286,7 +304,7 @@ public struct SystemScreenCapture: ScreenCapturing {
 
 // MARK: - Accessibility
 
-public final class SystemAccessibility: AccessibilityInspecting, @unchecked Sendable {
+public final class SystemAccessibility: AccessibilityInspecting, BrowserPageReading, @unchecked Sendable {
     private let lock = NSLock()
     /// The elements behind the ids of each app's last snapshot.
     private var references: [Int32: [String: AXUIElement]] = [:]
@@ -328,7 +346,7 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         return names
     }
 
-    private func info(_ element: AXUIElement, id: String, depth: Int) -> AXElementInfo {
+    private func info(_ element: AXUIElement, id: String, depth: Int, hidden: Bool = false) -> AXElementInfo {
         let role = string(element, kAXRoleAttribute) ?? "AXUnknown"
         let subrole = string(element, kAXSubroleAttribute)
         let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField"
@@ -348,7 +366,8 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
             enabled: bool(element, kAXEnabledAttribute) ?? true,
             focused: bool(element, kAXFocusedAttribute) ?? false,
             depth: depth,
-            pressable: actions(element).contains(kAXPressAction)
+            pressable: actions(element).contains(kAXPressAction),
+            hidden: hidden || bool(element, "AXHidden") == true
         )
     }
 
@@ -451,9 +470,14 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
             let (element, depth) = queue.removeFirst()
             counter += 1
             let id = "e\(counter)"
-            elements.append(info(element, id: id, depth: depth))
+            let described = info(element, id: id, depth: depth)
+            elements.append(described)
             refs[id] = element
-            guard depth < maxDepth, let children = attribute(element, kAXChildrenAttribute) as? [AnyObject] else { continue }
+            // Nothing inside a hidden element is on screen either: its
+            // subtree is the easiest place to park text for an agent.
+            guard !described.hidden, depth < maxDepth,
+                  let children = attribute(element, kAXChildrenAttribute) as? [AnyObject]
+            else { continue }
             for child in children where CFGetTypeID(child) == AXUIElementGetTypeID() {
                 // swiftlint:disable:next force_cast
                 queue.append((child as! AXUIElement, depth + 1))
@@ -465,8 +489,39 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
             bundleID: running?.bundleIdentifier ?? "",
             appName: running?.localizedName ?? "",
             windowTitle: string(window, kAXTitleAttribute),
-            elements: elements
+            elements: elements,
+            windowFrame: frame(window)
         )
+    }
+
+    /// The focused window's web area `AXURL` and its title, for the
+    /// sensitive-context floor. Bounded: the web area sits a few levels under
+    /// the window in every browser that exposes one.
+    public func browserPage(pid: Int32) async -> BrowserPageContext? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 1)
+        guard let windowValue = attribute(app, kAXFocusedWindowAttribute) ?? attribute(app, kAXMainWindowAttribute),
+              CFGetTypeID(windowValue) == AXUIElementGetTypeID()
+        else { return nil }
+        // swiftlint:disable:next force_cast
+        let window = windowValue as! AXUIElement
+        var url: String?
+        var queue: [(AXUIElement, Int)] = [(window, 0)]
+        var visited = 0
+        while !queue.isEmpty, visited < 400, url == nil {
+            let (element, depth) = queue.removeFirst()
+            visited += 1
+            if string(element, kAXRoleAttribute) == "AXWebArea", let raw = attribute(element, kAXURLAttribute) {
+                url = (raw as? NSURL)?.absoluteString ?? (raw as? String)
+                if url != nil { break }
+            }
+            guard depth < 12, let children = attribute(element, kAXChildrenAttribute) as? [AnyObject] else { continue }
+            for child in children where CFGetTypeID(child) == AXUIElementGetTypeID() {
+                // swiftlint:disable:next force_cast
+                queue.append((child as! AXUIElement, depth + 1))
+            }
+        }
+        return BrowserPageContext(url: url, windowTitle: string(window, kAXTitleAttribute))
     }
 
     private func reference(_ id: String?, pid: Int32) -> AXUIElement? {
@@ -533,7 +588,7 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 2)
         guard let bar = attribute(app, kAXMenuBarAttribute), CFGetTypeID(bar) == AXUIElementGetTypeID() else {
-            throw ScreenControlError.unsupported("The app has no menu bar Juno can read.")
+            throw ScreenControlError.unsupported("The app has no menu bar \(ScreenControlBrand.productName) can read.")
         }
         // swiftlint:disable:next force_cast
         var container = bar as! AXUIElement

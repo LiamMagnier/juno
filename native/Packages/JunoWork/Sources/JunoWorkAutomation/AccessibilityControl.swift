@@ -177,7 +177,7 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
         guard status == .success else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "That control did not respond when Juno pressed it."
+                "That control did not respond when \(AutomationBrand.productName) pressed it."
             )
         }
     }
@@ -196,7 +196,7 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
         if isSecure(element) {
             throw AutomationRefusal(
                 .sensitiveSurface,
-                "That field is for a password, and Juno does not fill those in."
+                "That field is for a password, and \(AutomationBrand.productName) does not fill those in."
             )
         }
         let status = AXUIElementSetAttributeValue(
@@ -207,7 +207,7 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
         guard status == .success else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "That field did not accept what Juno typed."
+                "That field did not accept what \(AutomationBrand.productName) typed."
             )
         }
     }
@@ -276,14 +276,14 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
             guard let index = Int(component) else {
                 throw AutomationRefusal(
                     .malformedIdentifier,
-                    "Juno could not tell which control that was."
+                    "\(AutomationBrand.productName) could not tell which control that was."
                 )
             }
             let kids = children(of: element)
             guard index >= 0, index < kids.count else {
                 throw AutomationRefusal(
                     .focusMoved,
-                    "The window changed before Juno could act, so it stopped."
+                    "The window changed before \(AutomationBrand.productName) could act, so it stopped."
                 )
             }
             element = kids[index]
@@ -295,7 +295,7 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
         guard AXIsProcessTrusted() else {
             throw AutomationRefusal(
                 .driverUnavailable,
-                "Juno does not have permission to control apps on this Mac."
+                "\(AutomationBrand.productName) does not have permission to control apps on this Mac."
             )
         }
         guard let pid = processIdentifier(for: bundleIdentifier) else {
@@ -345,7 +345,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             return .unavailable(reason: "App control is switched off on this Mac.")
         }
         guard await driver.isTrusted() else {
-            return .unavailable(reason: "Juno does not have macOS Accessibility permission.")
+            return .unavailable(reason: "\(AutomationBrand.productName) does not have macOS Accessibility permission.")
         }
         return .healthy
     }
@@ -423,7 +423,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             throw await gate.refuse(refusal, holding: token)
         } catch {
             throw await gate.refuse(
-                AutomationRefusal(.driverUnavailable, "That app did not do what Juno asked."),
+                AutomationRefusal(.driverUnavailable, "That app did not do what \(AutomationBrand.productName) asked."),
                 holding: token
             )
         }
@@ -449,7 +449,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             guard let elementID = request.element, let text = request.text else {
                 throw AutomationRefusal(
                     .intentNotServed,
-                    "Juno needed a field and some text and did not have both."
+                    "\(AutomationBrand.productName) needed a field and some text and did not have both."
                 )
             }
             // Typing goes to whatever has focus, so the app in front has to be
@@ -465,7 +465,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             guard let elementID = request.element else {
                 throw AutomationRefusal(
                     .intentNotServed,
-                    "Juno needed to know which control to press."
+                    "\(AutomationBrand.productName) needed to know which control to press."
                 )
             }
             try await driver.press(elementID: elementID, inApp: request.target)
@@ -474,7 +474,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
         case .navigate, .captureScreen, .changeSecuritySetting:
             throw AutomationRefusal(
                 .intentNotServed,
-                "App control cannot do that, and Juno will not fall back to something coarser for it."
+                "App control cannot do that, and \(AutomationBrand.productName) will not fall back to something coarser for it."
             )
         }
     }
@@ -485,7 +485,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
         guard let frontmost else {
             throw AutomationRefusal(
                 .notConsidered,
-                "Juno could not tell which app was in front, so it did not type anything."
+                "\(AutomationBrand.productName) could not tell which app was in front, so it did not type anything."
             )
         }
         guard AutomationPermission.normalizeIdentifier(frontmost)
@@ -493,7 +493,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
         else {
             throw AutomationRefusal(
                 .focusMoved,
-                "A different app came to the front before Juno could type, so it stopped."
+                "A different app came to the front before \(AutomationBrand.productName) could type, so it stopped."
             )
         }
     }

@@ -12,7 +12,7 @@ final class ScreenControlServiceTests: XCTestCase {
             XCTFail()
         } catch let error as ScreenControlError {
             XCTAssertEqual(error, .notRunning)
-            XCTAssertTrue(error.errorDescription!.contains("choose Let Juno Use Apps"))
+            XCTAssertTrue(error.errorDescription!.contains("choose Let Alevr Use Apps"))
         }
     }
 
@@ -386,7 +386,7 @@ final class ScreenControlServiceTests: XCTestCase {
         let proposal = try await fixture.service.proposeGrants(
             sessionID: "s1", apps: ["TextEdit", "Mail"], reason: "fill the form", clipboardRead: true, clipboardWrite: true
         )
-        XCTAssertEqual(proposal.summary, "Let Juno use TextEdit (full control) and Mail (full control) for this session")
+        XCTAssertEqual(proposal.summary, "Let Alevr use TextEdit (full control) and Mail (full control) for this session")
         var offers = proposal.offers
         offers[1].include = false
         offers[0].clipboardRead = false

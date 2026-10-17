@@ -28,6 +28,11 @@ public actor ScreenControlService: ScreenControlling {
         /// The least time between the end of one input action and the start
         /// of the next. Screenshots and zoom are exempt (CU-06).
         public var minimumInputGap: TimeInterval
+        /// Seconds since the last keyboard, mouse or trackpad event at the HID
+        /// level, for the sensitive-context pause; nil when unknown, which
+        /// never pauses. Screen control's own input is taken out by
+        /// ``ReaderActivityTracker``, whatever this reading includes.
+        public var readerIdleTime: @Sendable () async -> TimeInterval?
 
         public init(
             capture: any ScreenCapturing,
@@ -42,7 +47,8 @@ public actor ScreenControlService: ScreenControlling {
             pointerLocation: @escaping @Sendable () async -> ScreenPoint? = { nil },
             settleTimeout: TimeInterval = 0.5,
             settleInterval: Duration = .milliseconds(120),
-            minimumInputGap: TimeInterval = 0.25
+            minimumInputGap: TimeInterval = 0.25,
+            readerIdleTime: @escaping @Sendable () async -> TimeInterval? = { nil }
         ) {
             self.capture = capture
             self.environment = environment
@@ -57,6 +63,7 @@ public actor ScreenControlService: ScreenControlling {
             self.settleTimeout = settleTimeout
             self.settleInterval = settleInterval
             self.minimumInputGap = minimumInputGap
+            self.readerIdleTime = readerIdleTime
         }
     }
 
@@ -85,6 +92,11 @@ public actor ScreenControlService: ScreenControlling {
     /// the reader taking the Mac back.
     private var answeringCard: [String: Date] = [:]
     static let answerGrace: TimeInterval = 1.5
+    /// When the reader last touched the Mac themselves, for the
+    /// sensitive-context pause (``SensitiveContextPolicy/idleLimit``).
+    private var readerActivity: ReaderActivityTracker
+    /// What accessibility listings left out or marked, since launch.
+    private var listingTotals = AXListingDiagnostics()
 
     public init(
         dependencies: Dependencies,
@@ -96,6 +108,7 @@ public actor ScreenControlService: ScreenControlling {
         self.lock = lock
         self.feed = feed
         self.preferences = preferences
+        self.readerActivity = ReaderActivityTracker(lastReaderActivity: dependencies.now())
     }
 
     // MARK: - Session state
@@ -149,7 +162,13 @@ public actor ScreenControlService: ScreenControlling {
         var typedSinceCommit: Set<String> = []
         /// Told once, to the next call: why it stopped.
         var stopNotice: ScreenControlStopReason?
-        var paused = false
+        var paused = false {
+            didSet { if !paused { pauseReason = nil } }
+        }
+        /// Why, while paused.
+        var pauseReason: ScreenPauseReason?
+        /// What the last accessibility listing left out or marked.
+        var listing: AXListingDiagnostics?
         var lastInputEnd: Date?
         var inFlight: UUID?
         /// A left button `left_mouse_down` pressed and nothing has released:
@@ -173,6 +192,8 @@ public actor ScreenControlService: ScreenControlling {
         session.stopNotice = nil
         session.paused = false
         sessions[sessionID] = session
+        // Starting screen control is the reader's own gesture.
+        readerActivity.readerActed(at: deps.now())
         startTapIfNeeded()
         await publishPresence()
     }
@@ -280,11 +301,13 @@ public actor ScreenControlService: ScreenControlling {
         tapRunning = false
     }
 
-    /// The reader's Resume after taking over.
+    /// The reader's Resume after taking over, or after a pause for being
+    /// away from a sensitive page. A click: the reader is here.
     public func resume(sessionID: String) async {
         guard sessions[sessionID]?.isRunning == true else { return }
         sessions[sessionID]?.paused = false
         sessions[sessionID]?.frame = nil
+        readerActivity.readerActed(at: deps.now())
         await publishPresence()
     }
 
@@ -292,8 +315,15 @@ public actor ScreenControlService: ScreenControlling {
     public func pause(sessionID: String) async {
         guard sessions[sessionID]?.isRunning == true else { return }
         sessions[sessionID]?.paused = true
+        sessions[sessionID]?.pauseReason = .readerTookOver
         sessions[sessionID]?.generation &+= 1
         await publishPresence()
+    }
+
+    /// Why a session is paused, for the tools' sentence.
+    private func pausedError(_ sessionID: String) -> ScreenControlError {
+        if case let .readerAway(kind) = sessions[sessionID]?.pauseReason { return .readerAway(kind.phrase) }
+        return .readerTookOver
     }
 
     public func setPreferences(_ preferences: ScreenControlPreferences) {
@@ -413,6 +443,7 @@ public actor ScreenControlService: ScreenControlling {
             if let until = answeringCard[id], now < until { continue }
             if sessions[id]?.paused == false {
                 sessions[id]?.paused = true
+                sessions[id]?.pauseReason = .readerTookOver
                 sessions[id]?.generation &+= 1
                 changed = true
             }
@@ -469,6 +500,7 @@ public actor ScreenControlService: ScreenControlling {
             holder: holder,
             mode: session.mode,
             paused: session.paused,
+            pauseReason: session.pauseReason,
             targetWindowFrame: windowFrame,
             displayFrame: displayFrame
         )
@@ -507,7 +539,7 @@ public actor ScreenControlService: ScreenControlling {
             sessions[sessionID]?.claim = nil
             throw ScreenControlError.stoppedByReader
         }
-        if sessions[sessionID]?.paused == true { throw ScreenControlError.readerTookOver }
+        if sessions[sessionID]?.paused == true { throw pausedError(sessionID) }
         await lock.touch(sessionID)
         return sessions[sessionID]?.generation ?? 0
     }
@@ -520,7 +552,7 @@ public actor ScreenControlService: ScreenControlling {
             sessions[sessionID]?.stopNotice = nil
             throw ScreenControlError.stoppedByReader
         }
-        if session.paused { throw ScreenControlError.readerTookOver }
+        if session.paused { throw pausedError(sessionID) }
         guard session.isRunning, session.generation == generation else {
             throw ScreenControlError.stoppedByReader
         }
@@ -917,11 +949,11 @@ public actor ScreenControlService: ScreenControlling {
         return bytes
     }
 
-    private func result(summary: String, frame: Frame?, notes: [String] = []) -> ScreenActionResult {
-        guard let frame else { return ScreenActionResult(summary: summary, notes: notes) }
+    private func result(summary: String, frame: Frame?, notes: [String] = [], replacedText: String? = nil) -> ScreenActionResult {
+        guard let frame else { return ScreenActionResult(summary: summary, notes: notes, replacedText: replacedText) }
         let header = frame.geometry.header(app: frame.bundleID.isEmpty ? nil : frame.bundleID, window: frame.windowTitle)
             + "\n" + Self.untrustedLine
-        return ScreenActionResult(summary: summary, frameHeader: header, frame: frame.encoded, notes: notes)
+        return ScreenActionResult(summary: summary, frameHeader: header, frame: frame.encoded, notes: notes, replacedText: replacedText)
     }
 
     // MARK: - Prepare
@@ -945,6 +977,13 @@ public actor ScreenControlService: ScreenControlling {
             throw ScreenControlError.tierTooLow(refusal)
         }
         if action.kind.isObservation {
+            // Looking at a banking page while the reader is away is what the
+            // pause is for, so it applies before a screenshot too.
+            if let context = await sensitiveContext(of: target, sessionID: sessionID) {
+                try checkpoint(sessionID, generation)
+                try await enforceReaderPresent(sessionID, in: context)
+            }
+            try checkpoint(sessionID, generation)
             let summaryTarget = ScreenTargetSummary(bundleID: target.bundleID, appName: target.name)
             return PreparedScreenAction(
                 sessionID: sessionID, action: action, target: summaryTarget,
@@ -973,7 +1012,7 @@ public actor ScreenControlService: ScreenControlling {
                 // the model to click into its app first.
                 if ownsFront, !action.kind.takesPoint {
                     throw ScreenControlError.invalidInput(
-                        "Juno's own window has the keyboard. Click in the app you mean to type into first, then send the keys."
+                        "\(ScreenControlBrand.productName)'s own window has the keyboard. Click in the app you mean to type into first, then send the keys."
                     )
                 }
                 if !ownsFront, !action.kind.takesPoint, front.bundleID.lowercased() != target.bundleID.lowercased() {
@@ -1018,7 +1057,7 @@ public actor ScreenControlService: ScreenControlling {
                 // window, is not something the reader can see on the card or
                 // the model in its frame: the hit-test would read another
                 // element than the one pressed.
-                guard !element.frame.isEmpty, frame.geometry.globalBounds.contains(element.frame.center) else {
+                guard !element.hidden, !element.frame.isEmpty, frame.geometry.globalBounds.contains(element.frame.center) else {
                     throw ScreenControlError.invalidInput(
                         "Element \(elementID) is not visible in the latest screenshot. Scroll it into view, or take a new screenshot and snapshot."
                     )
@@ -1139,7 +1178,7 @@ public actor ScreenControlService: ScreenControlling {
             ? (hit?.pressTexts ?? []) + elementTexts
             // Return also presses the window's default button.
             : (focus?.floorTexts ?? []) + elementTexts + (hit == focus ? [] : (hit?.pressTexts ?? []))
-        let floor = ConsequentialActionFloor.evaluate(
+        var floor = ConsequentialActionFloor.evaluate(
             action: action,
             category: floorApp.category,
             targetTexts: targetTexts,
@@ -1147,6 +1186,19 @@ public actor ScreenControlService: ScreenControlling {
             bundleID: floorApp.bundleID,
             looksLikeCredential: deps.looksLikeCredential
         )
+        // A bank, a brokerage, a health portal, a vault, a mail being
+        // written: in a browser showing one, every click and keystroke asks,
+        // even in Full access, and nothing happens while the reader is away.
+        // A more specific reason (a "Send" control, a password) keeps its
+        // own sentence.
+        if SensitiveContextPolicy.applies(to: action.kind),
+           let context = await sensitiveContext(of: floorApp, sessionID: sessionID)
+        {
+            try checkpoint(sessionID, generation)
+            try await enforceReaderPresent(sessionID, in: context)
+            if floor == nil { floor = .sensitiveSite(context.kind) }
+        }
+        try checkpoint(sessionID, generation)
         let frameForCard = freshFrame ?? sessions[sessionID]?.frame
         let prepared = PreparedScreenAction(
             sessionID: sessionID,
@@ -1176,6 +1228,62 @@ public actor ScreenControlService: ScreenControlling {
 
     /// At most this many frames wait for an approval in one session.
     static let maximumPendingFrames = 4
+
+    // MARK: - Sensitive places
+
+    /// The sensitive context a browser is in (``SensitiveContextPolicy``), or
+    /// nil: not a browser, or an ordinary page.
+    ///
+    /// Read from what Accessibility reports: the focused window's web area
+    /// `AXURL`, then the window's title; when the inspector cannot read pages
+    /// at all, the title of the window the last frame captured.
+    private func sensitiveContext(of app: Target, sessionID: String) async -> SensitiveContext? {
+        guard app.category == .browser else { return nil }
+        var page = await (deps.accessibility as? any BrowserPageReading)?.browserPage(pid: app.pid)
+        let knowsNothing = (page?.url ?? "").isEmpty && (page?.windowTitle ?? "").isEmpty
+        if knowsNothing, let frame = sessions[sessionID]?.frame, frame.bundleID.lowercased() == app.bundleID.lowercased() {
+            page = BrowserPageContext(url: nil, windowTitle: frame.windowTitle)
+        }
+        return page.flatMap(SensitiveContextPolicy.classify)
+    }
+
+    /// The leaders' watch mode: in a sensitive place, screen control does
+    /// nothing while the reader is away. Past ``SensitiveContextPolicy/idleLimit``
+    /// without their own keyboard, mouse or trackpad input (screen control's
+    /// input never counts), the session pauses until they press Resume.
+    private func enforceReaderPresent(_ sessionID: String, in context: SensitiveContext) async throws {
+        guard let hidIdle = await deps.readerIdleTime() else { return }
+        let idle = readerActivity.idleSeconds(hidIdle: hidIdle, now: deps.now())
+        guard idle > SensitiveContextPolicy.idleLimit, sessions[sessionID]?.isRunning == true else { return }
+        sessions[sessionID]?.paused = true
+        sessions[sessionID]?.pauseReason = .readerAway(context.kind)
+        sessions[sessionID]?.generation &+= 1
+        await publishPresence()
+        throw ScreenControlError.readerAway(context.kind.phrase)
+    }
+
+    /// Screen control is about to send input: events from now until
+    /// ``endAgentInput(_:)`` are its own, never the reader's.
+    private func beginAgentInput() -> UUID {
+        let id = UUID()
+        readerActivity.beginAgentInput(id, at: deps.now())
+        return id
+    }
+
+    private func endAgentInput(_ id: UUID) {
+        readerActivity.endAgentInput(id, at: deps.now())
+    }
+
+    /// What the last accessibility listing in a session left out or marked
+    /// (hidden, empty and offscreen elements; instruction-like text).
+    public func listingDiagnostics(sessionID: String) -> AXListingDiagnostics? {
+        sessions[sessionID]?.listing
+    }
+
+    /// The same, summed over every listing since launch.
+    public func listingDiagnosticsTotal() -> AXListingDiagnostics {
+        listingTotals
+    }
 
     /// Clicks and releases that press a control.
     static func isPress(_ kind: ScreenActionKind) -> Bool {
@@ -1486,83 +1594,95 @@ public actor ScreenControlService: ScreenControlling {
         try checkpoint(sessionID, generation)
 
         var notes: [String] = []
+        var replacedText: String?
         let bundleKey = (actedBundle.isEmpty ? target.bundleID : actedBundle).lowercased()
-        switch action.kind {
-        case .leftClick, .doubleClick, .tripleClick, .rightClick, .middleClick:
-            guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
-            let modifiers = action.heldModifiers
-            var pressed = false
-            if mode == .background, modifiers.isEmpty {
-                // Accessibility first: the reader's pointer stays where it is.
-                if action.kind == .leftClick {
-                    pressed = try await deps.accessibility.press(at: point, elementID: action.element, pid: target.pid)
-                } else if action.kind == .rightClick {
-                    pressed = try await deps.accessibility.showMenu(at: point, elementID: action.element, pid: target.pid)
+        // From here until the events are sent, any input macOS sees is ours:
+        // the reader's presence on a sensitive page never counts it.
+        let inputID = beginAgentInput()
+        do {
+            switch action.kind {
+            case .leftClick, .doubleClick, .tripleClick, .rightClick, .middleClick:
+                guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
+                let modifiers = action.heldModifiers
+                var pressed = false
+                if mode == .background, modifiers.isEmpty {
+                    // Accessibility first: the reader's pointer stays where it is.
+                    if action.kind == .leftClick {
+                        pressed = try await deps.accessibility.press(at: point, elementID: action.element, pid: target.pid)
+                    } else if action.kind == .rightClick {
+                        pressed = try await deps.accessibility.showMenu(at: point, elementID: action.element, pid: target.pid)
+                    }
+                    try checkpoint(sessionID, generation)
                 }
-                try checkpoint(sessionID, generation)
-            }
-            if !pressed {
-                let (button, count): (MouseButton, Int) = switch action.kind {
-                case .rightClick: (.right, 1)
-                case .middleClick: (.middle, 1)
-                case .doubleClick: (.left, 2)
-                case .tripleClick: (.left, 3)
-                default: (.left, 1)
+                if !pressed {
+                    let (button, count): (MouseButton, Int) = switch action.kind {
+                    case .rightClick: (.right, 1)
+                    case .middleClick: (.middle, 1)
+                    case .doubleClick: (.left, 2)
+                    case .tripleClick: (.left, 3)
+                    default: (.left, 1)
+                    }
+                    try await driver.click(at: point, button: button, count: count, modifiers: modifiers, target: eventTarget)
+                    if button == .left { sessions[sessionID]?.heldButton = nil }
                 }
-                try await driver.click(at: point, button: button, count: count, modifiers: modifiers, target: eventTarget)
-                if button == .left { sessions[sessionID]?.heldButton = nil }
+            case .mouseMove:
+                guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
+                try await driver.move(to: point, target: eventTarget)
+            case .leftMouseDown:
+                guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
+                // Recorded first: if the stop lands while the event is posted,
+                // the release still follows.
+                sessions[sessionID]?.heldButton = (point, eventTarget)
+                try await driver.mouseDown(at: point, target: eventTarget)
+            case .leftMouseUp:
+                guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
+                try await driver.mouseUp(at: point, target: eventTarget)
+                sessions[sessionID]?.heldButton = nil
+            case .leftClickDrag:
+                guard let start = prepared.startPoint, let end = prepared.point else { throw ScreenControlError.noFrameYet }
+                try await driver.drag(from: start, to: end, target: eventTarget)
+                sessions[sessionID]?.heldButton = nil
+            case .scroll:
+                guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
+                try await driver.scroll(
+                    at: point,
+                    direction: action.scrollDirection ?? .down,
+                    amount: action.scrollAmount ?? 3,
+                    modifiers: action.heldModifiers,
+                    target: eventTarget
+                )
+            case .type:
+                let text = action.text ?? ""
+                let typed = try await type(text, action: action, pid: keyPID, driver: driver, eventTarget: eventTarget, mode: mode)
+                notes += typed.notes
+                replacedText = typed.replaced
+                sessions[sessionID]?.typedSinceCommit.insert(bundleKey)
+            case .key:
+                let chord = action.text ?? ""
+                try await driver.key(chord, repeatCount: action.repeatCount ?? 1, target: eventTarget)
+                if ConsequentialActionFloor.commits(chord) { sessions[sessionID]?.typedSinceCommit.remove(bundleKey) }
+            case .holdKey:
+                let requested = action.duration ?? 1
+                try await driver.hold(action.text ?? "", seconds: requested, target: eventTarget)
+                if requested > ScreenAction.maximumDurationSeconds { notes.append("Held keys are capped at 30 s; held for 30 s.") }
+            default:
+                break
             }
-        case .mouseMove:
-            guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
-            try await driver.move(to: point, target: eventTarget)
-        case .leftMouseDown:
-            guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
-            // Recorded first: if the stop lands while the event is posted,
-            // the release still follows.
-            sessions[sessionID]?.heldButton = (point, eventTarget)
-            try await driver.mouseDown(at: point, target: eventTarget)
-        case .leftMouseUp:
-            guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
-            try await driver.mouseUp(at: point, target: eventTarget)
-            sessions[sessionID]?.heldButton = nil
-        case .leftClickDrag:
-            guard let start = prepared.startPoint, let end = prepared.point else { throw ScreenControlError.noFrameYet }
-            try await driver.drag(from: start, to: end, target: eventTarget)
-            sessions[sessionID]?.heldButton = nil
-        case .scroll:
-            guard let point = prepared.point else { throw ScreenControlError.noFrameYet }
-            try await driver.scroll(
-                at: point,
-                direction: action.scrollDirection ?? .down,
-                amount: action.scrollAmount ?? 3,
-                modifiers: action.heldModifiers,
-                target: eventTarget
-            )
-        case .type:
-            let text = action.text ?? ""
-            notes += try await type(text, action: action, pid: keyPID, driver: driver, eventTarget: eventTarget, mode: mode)
-            sessions[sessionID]?.typedSinceCommit.insert(bundleKey)
-        case .key:
-            let chord = action.text ?? ""
-            try await driver.key(chord, repeatCount: action.repeatCount ?? 1, target: eventTarget)
-            if ConsequentialActionFloor.commits(chord) { sessions[sessionID]?.typedSinceCommit.remove(bundleKey) }
-        case .holdKey:
-            let requested = action.duration ?? 1
-            try await driver.hold(action.text ?? "", seconds: requested, target: eventTarget)
-            if requested > ScreenAction.maximumDurationSeconds { notes.append("Held keys are capped at 30 s; held for 30 s.") }
-        default:
-            break
+        } catch {
+            endAgentInput(inputID)
+            throw error
         }
+        endAgentInput(inputID)
         try checkpoint(sessionID, generation)
         sessions[sessionID]?.lastInputEnd = deps.now()
         sessions[sessionID]?.grants.touch(now: deps.now())
         sessions[sessionID]?.snapshot = nil
 
         let summary = Self.pastTense(prepared)
-        guard attachFrame else { return ScreenActionResult(summary: summary, notes: notes) }
+        guard attachFrame else { return ScreenActionResult(summary: summary, notes: notes, replacedText: replacedText) }
         let frame = try await settledCapture(sessionID, generation: generation)
         sessions[sessionID]?.frame = frame
-        return result(summary: summary, frame: frame, notes: notes)
+        return result(summary: summary, frame: frame, notes: notes, replacedText: replacedText)
     }
 
     /// The longest sleep between two stop checks in a wait.
@@ -1595,12 +1715,14 @@ public actor ScreenControlService: ScreenControlling {
         var keyPID = target.pid
         var keyCategory = target.category
         var keyBundle = target.bundleID
+        /// In takeover, the process under the point a click lands on.
+        var landingPID: Int32?
         if mode == .takeover {
             if action.kind == .key || action.kind == .holdKey, let chord = action.text,
                ConsequentialActionFloor.switchesApps(chord)
             {
                 throw ScreenControlError.tierTooLow(
-                    "Juno does not switch apps with a shortcut while it drives your screen. Click the app's window instead."
+                    "\(ScreenControlBrand.productName) does not switch apps with a shortcut while it drives your screen. Click the app's window instead."
                 )
             }
             if var front = await deps.environment.frontmostApp() {
@@ -1640,6 +1762,7 @@ public actor ScreenControlService: ScreenControlling {
                         throw ScreenControlError.junoWindow
                     }
                     if hit.category == .refused { throw ScreenControlError.systemPromptInFront(app: hit.appName) }
+                    landingPID = hit.pid
                     if hit.bundleID.lowercased() != prepared.target.bundleID.lowercased() {
                         throw ScreenControlError.screenChanged
                     }
@@ -1681,11 +1804,31 @@ public actor ScreenControlService: ScreenControlling {
         default:
             break
         }
+        // The browser moved on to a bank, a vault or a mail being written
+        // after the card (or the Full access pass) was decided: that click or
+        // keystroke was never asked about.
+        if prepared.floor == nil, SensitiveContextPolicy.applies(to: action.kind) {
+            let landing = action.kind.takesPoint
+                ? Target(bundleID: prepared.target.bundleID.isEmpty ? target.bundleID : prepared.target.bundleID,
+                         name: prepared.target.appName, pid: landingPID ?? target.pid)
+                : Target(bundleID: keyBundle, name: prepared.target.appName, pid: keyPID)
+            if let context = await sensitiveContext(of: landing, sessionID: sessionID) {
+                try checkpoint(sessionID, generation)
+                try await enforceReaderPresent(sessionID, in: context)
+                throw ScreenControlError.screenChanged
+            }
+            try checkpoint(sessionID, generation)
+        }
         return keyPID
     }
 
     /// Typing: Accessibility first in background mode, with the overwrite
     /// guard; key events otherwise; then the read-back (CU-03).
+    ///
+    /// A `replace` over a field that held text returns that text, so it can
+    /// be put back, as the leaders' background tools do. A password field
+    /// never gets here (prepare and the landing check refuse it, and its value
+    /// is never read), and text that looks like a secret is not repeated.
     private func type(
         _ text: String,
         action: ScreenAction,
@@ -1693,21 +1836,49 @@ public actor ScreenControlService: ScreenControlling {
         driver: InputDriver,
         eventTarget: EventTarget,
         mode: ScreenControlMode
-    ) async throws -> [String] {
+    ) async throws -> (notes: [String], replaced: String?) {
         let before = await deps.accessibility.value(elementID: action.element, pid: pid)
+        let replace = action.mode == .replace
+        let overwritten = replace ? Self.replacedNote(before: before, typed: text, looksLikeCredential: deps.looksLikeCredential) : nil
+        func finish(_ readBack: [String]) -> (notes: [String], replaced: String?) {
+            (readBack + [overwritten?.note].compactMap { $0 }, overwritten?.kept)
+        }
         if mode == .background {
-            let replace = action.mode == .replace
             if try await deps.accessibility.setText(text, elementID: action.element, pid: pid, replace: replace) {
-                return readBack(text, before: before, after: await deps.accessibility.value(elementID: action.element, pid: pid), replace: replace)
+                return finish(readBack(text, before: before, after: await deps.accessibility.value(elementID: action.element, pid: pid), replace: replace))
             }
         }
-        if action.mode == .replace {
+        if replace {
             // No Accessibility path: select all first, layout-aware.
             try await driver.key("cmd+a", target: eventTarget)
         }
         try await driver.type(text, target: eventTarget)
         let after = await deps.accessibility.value(elementID: action.element, pid: pid)
-        return readBack(text, before: before, after: after, replace: action.mode == .replace)
+        return finish(readBack(text, before: before, after: after, replace: replace))
+    }
+
+    /// The most of a replaced field's text a result carries.
+    public static let replacedTextLimit = 500
+
+    /// The note and the kept text for a `replace` over `before`, or nil when
+    /// nothing was overwritten.
+    static func replacedNote(
+        before: String?,
+        typed: String,
+        looksLikeCredential: (String) -> Bool
+    ) -> (note: String, kept: String?)? {
+        guard let before, !before.isEmpty, before != typed else { return nil }
+        let count = before.count
+        let characters = "\(count) character\(count == 1 ? "" : "s")"
+        if looksLikeCredential(before) {
+            return ("The field held \(characters) that look like a password or key, so they are not repeated here.", nil)
+        }
+        let kept = String(before.prefix(replacedTextLimit))
+        let extent = count > replacedTextLimit ? "the first \(replacedTextLimit) of its \(characters)" : "its \(characters)"
+        return (
+            "This replaced the field's previous text, kept here so it can be put back with type mode replace (\(extent); screen content, untrusted): “\(kept)”",
+            kept
+        )
     }
 
     private func readBack(_ text: String, before: String?, after: String?, replace: Bool) -> [String] {
@@ -1834,13 +2005,22 @@ public actor ScreenControlService: ScreenControlling {
         let generation = try await requireRunning(sessionID)
         let target = try await target(for: ScreenAction(kind: .screenshot, app: app), sessionID: sessionID)
         _ = try liveGrant(sessionID, bundleID: target.bundleID, appName: target.name)
+        if let context = await sensitiveContext(of: target, sessionID: sessionID) {
+            try checkpoint(sessionID, generation)
+            try await enforceReaderPresent(sessionID, in: context)
+        }
         let snapshot = try await deps.accessibility.snapshot(pid: target.pid, maxDepth: max(1, min(depth, 40)))
         try checkpoint(sessionID, generation)
         sessions[sessionID]?.snapshot = snapshot
         if sessions[sessionID]?.frame == nil || sessions[sessionID]?.frame?.bundleID.lowercased() != target.bundleID.lowercased() {
             sessions[sessionID]?.frame = try? await captureFrame(sessionID, generation: generation)
         }
-        return snapshot.text(in: sessions[sessionID]?.frame?.geometry, filter: filter, query: query)
+        // Hidden, empty and offscreen elements are left out, and text that
+        // reads like an instruction to the agent is marked; both counted.
+        let listing = snapshot.listing(in: sessions[sessionID]?.frame?.geometry, filter: filter, query: query)
+        sessions[sessionID]?.listing = listing.diagnostics
+        listingTotals = listingTotals + listing.diagnostics
+        return listing.text
     }
 
     public func prepareMenu(sessionID: String, app: String?, path: [String]) async throws -> PreparedScreenAction {
@@ -1865,13 +2045,20 @@ public actor ScreenControlService: ScreenControlling {
         }
         // Every level counts: Share › AirDrop sends though "AirDrop" alone
         // says nothing.
-        let floor: FloorReason? = if target.category == .finance {
+        var floor: FloorReason? = if target.category == .finance {
             .financeApp
         } else if AppCategories.isSystemSettings(target.bundleID) {
             .systemSettings
         } else {
             ConsequentialActionFloor.matchingWord(in: path.reversed()).map(FloorReason.consequentialControl)
         }
+        // Edit › Paste into a bank's page is a keystroke there.
+        if let context = await sensitiveContext(of: target, sessionID: sessionID) {
+            try checkpoint(sessionID, generation)
+            try await enforceReaderPresent(sessionID, in: context)
+            if floor == nil { floor = .sensitiveSite(context.kind) }
+        }
+        try checkpoint(sessionID, generation)
         let frame = sessions[sessionID]?.frame
         return PreparedScreenAction(
             sessionID: sessionID,
@@ -1908,7 +2095,21 @@ public actor ScreenControlService: ScreenControlling {
             throw ScreenControlError.systemPromptInFront(app: front.name)
         }
         try checkpoint(sessionID, generation)
-        let pressed = try await deps.accessibility.pressMenu(pid: target.pid, path: path)
+        if prepared.floor == nil, let context = await sensitiveContext(of: target, sessionID: sessionID) {
+            // The page became a sensitive one after the menu was decided.
+            try checkpoint(sessionID, generation)
+            try await enforceReaderPresent(sessionID, in: context)
+            throw ScreenControlError.screenChanged
+        }
+        let inputID = beginAgentInput()
+        let pressed: [String]
+        do {
+            pressed = try await deps.accessibility.pressMenu(pid: target.pid, path: path)
+        } catch {
+            endAgentInput(inputID)
+            throw error
+        }
+        endAgentInput(inputID)
         try checkpoint(sessionID, generation)
         sessions[sessionID]?.lastInputEnd = deps.now()
         sessions[sessionID]?.grants.touch(now: deps.now())
@@ -1948,7 +2149,7 @@ public actor ScreenControlService: ScreenControlling {
         sessions[sessionID]?.frame = nil
         startTapIfNeeded()
         await publishPresence()
-        return "Juno now has the whole of \(display.name). Every app you act on must still be granted; Juno's own windows are never in the frame. Take a screenshot to see the display."
+        return "\(ScreenControlBrand.productName) now has the whole of \(display.name). Every app you act on must still be granted; \(ScreenControlBrand.productName)'s own windows are never in the frame. Take a screenshot to see the display."
     }
 
     public func endTakeover(sessionID: String) async -> String {
