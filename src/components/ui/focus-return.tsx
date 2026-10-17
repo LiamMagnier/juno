@@ -33,39 +33,6 @@ export function resolveFocusReturnTarget(active: Element | null, doc: Document =
   return node && typeof (node as HTMLElement).focus === "function" ? (node as HTMLElement) : null;
 }
 
-type FocusReturn = { element: HTMLElement; caret: Range | null };
-
-/**
- * The caret inside a contenteditable opener (the composer). Focusing an
- * editable host whose selection has moved elsewhere puts the caret at its
- * START, so a reader who pressed ⌘K mid-draft, then Escape, kept typing at
- * the front of their sentence. Text inputs keep their own selection; only the
- * editable host needs this.
- */
-function captureCaret(element: HTMLElement): Range | null {
-  if (!element.isContentEditable) return null;
-  const selection = element.ownerDocument.getSelection();
-  if (!selection || selection.rangeCount === 0) return null;
-  const range = selection.getRangeAt(0);
-  return element.contains(range.startContainer) && element.contains(range.endContainer) ? range.cloneRange() : null;
-}
-
-/** Focus the opener and, for an editable host, put its caret back (or at the end, never the start). */
-function restoreFocus({ element, caret }: FocusReturn) {
-  element.focus({ preventScroll: true });
-  if (!element.isContentEditable) return;
-  const selection = element.ownerDocument.getSelection();
-  if (!selection) return;
-  let range = caret;
-  if (!range || !element.contains(range.startContainer) || !element.contains(range.endContainer)) {
-    range = element.ownerDocument.createRange();
-    range.selectNodeContents(element);
-    range.collapse(false);
-  }
-  selection.removeAllRanges();
-  selection.addRange(range);
-}
-
 /**
  * Captures the opener while the dialog's content RENDERS — before the commit
  * that mounts it, which is also the commit that unmounts a menu the dialog was
@@ -74,11 +41,9 @@ function restoreFocus({ element, caret }: FocusReturn) {
  * open; the initializer is idempotent, so a StrictMode double render is
  * harmless.
  */
-function FocusReturnCapture({ target }: { target: React.MutableRefObject<FocusReturn | null> }) {
+function FocusReturnCapture({ target }: { target: React.MutableRefObject<HTMLElement | null> }) {
   React.useState(() => {
-    if (typeof document === "undefined") return null;
-    const element = resolveFocusReturnTarget(document.activeElement);
-    target.current = element ? { element, caret: captureCaret(element) } : null;
+    if (typeof document !== "undefined") target.current = resolveFocusReturnTarget(document.activeElement);
     return null;
   });
   return null;
@@ -95,7 +60,7 @@ function FocusReturnCapture({ target }: { target: React.MutableRefObject<FocusRe
  * of its own once the palette has gone) keeps full control.
  */
 export function useDialogFocusReturn(onCloseAutoFocus?: (event: Event) => void) {
-  const target = React.useRef<FocusReturn | null>(null);
+  const target = React.useRef<HTMLElement | null>(null);
   const handleCloseAutoFocus = React.useCallback(
     (event: Event) => {
       onCloseAutoFocus?.(event);
@@ -105,7 +70,7 @@ export function useDialogFocusReturn(onCloseAutoFocus?: (event: Event) => void) 
       queueMicrotask(() => {
         const active = document.activeElement;
         if (active && active !== document.body && active !== document.documentElement) return;
-        if (opener.element.isConnected) restoreFocus(opener);
+        if (opener.isConnected) opener.focus({ preventScroll: true });
       });
     },
     [onCloseAutoFocus]
