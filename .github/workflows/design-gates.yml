@@ -79,7 +79,7 @@ jobs:
         ports:
           - 55439:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -90,7 +90,13 @@ jobs:
           node-version: 24
           cache: npm
       - name: Install dependencies
-        run: npm ci
+        # Next typechecks imported runner sources and the Work driver too.
+        # Match the main build's complete package setup on a clean checkout.
+        run: |
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
       - name: Wave-2 suites on a production build
