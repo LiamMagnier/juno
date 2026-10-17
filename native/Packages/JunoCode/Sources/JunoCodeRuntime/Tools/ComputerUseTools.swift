@@ -241,7 +241,7 @@ struct ScreenActionRunner: Sendable {
         let grants = await computer.grants(sessionID: context.sessionID.value)
         guard !grants.contains(where: { $0.bundleID.lowercased() == needle || $0.displayName.lowercased() == needle }) else { return }
         let tool = ComputerAppsTool(computer: computer, permissions: permissions, budget: budget)
-        let result = try await tool.execute(input: ["action": "request", "apps": [.string(app)]], context: context)
+        let result = try await tool.request(apps: [app], input: ["action": "request", "apps": [.string(app)]], context: context)
         if result.isError { throw ScreenToolDenial(reason: result.content) }
     }
 
@@ -764,7 +764,7 @@ public struct ComputerAppsTool: CodeTool {
         return lines.joined(separator: "\n")
     }
 
-    private func request(apps: [String], input: JSONValue, context: ToolContext) async throws -> ToolResult {
+    fileprivate func request(apps: [String], input: JSONValue, context: ToolContext) async throws -> ToolResult {
         guard !apps.isEmpty else { return ToolResult(content: "Name the apps to request in apps.", isError: true) }
         let sessionID = context.sessionID.value
         let proposal = try await computer.proposeGrants(
