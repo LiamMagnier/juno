@@ -221,10 +221,10 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         screenID: String, mode: CodeV2.RuntimeMode
     ) async -> (response: CodeV2.ComputerBridgeResponse, busy: Bool) {
         do {
-            try await ready(request, screenID: screenID)
+            try await ready(request, screenID: screenID, mode: mode)
             let budget: ImageBudget = args.coordinateSpace == .normalized1000 ? .portableNormalized : .portable
             await service.setImageBudget(sessionID: screenID, budget: budget)
-            if let app = args.app { try await ensureGranted(app: app, screenID: screenID, title: request.title) }
+            if let app = args.app { try await ensureGranted(app: app, screenID: screenID, title: request.title, mode: mode) }
 
             let call = PortableComputerCall(
                 action: args.action.rawValue, app: args.app, x: args.x, y: args.y, toX: args.toX, toY: args.toY,
@@ -262,7 +262,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     }
 
     /// macOS grants, the reader's switch, and this session's screen control.
-    private func ready(_ request: CodeV2.ComputerBridgeRequest, screenID: String) async throws {
+    private func ready(_ request: CodeV2.ComputerBridgeRequest, screenID: String, mode: CodeV2.RuntimeMode) async throws {
         let grants = permissions()
         guard grants.isReady else {
             await approver.permissionsMissing(grants, sessionID: request.sessionId)
@@ -291,8 +291,10 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         let title = request.title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "a connected agent"
         // Asked once per turn: a call that waits for a busy app does not ask again.
         if !allowedSessions.contains(screenID) {
-            guard await approver.allowAgent(sessionID: request.sessionId, title: title) else {
-                throw Refusal(text: "The reader did not let this agent use apps.", endsTurn: true)
+            if mode != .full {
+                guard await approver.allowAgent(sessionID: request.sessionId, title: title) else {
+                    throw Refusal(text: "The reader did not let this agent use apps.", endsTurn: true)
+                }
             }
             allowedSessions.insert(screenID)
         }
@@ -303,7 +305,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     }
 
     /// An app named in the call that is not granted yet gets a grant card.
-    private func ensureGranted(app: String, screenID: String, title: String?) async throws {
+    private func ensureGranted(app: String, screenID: String, title: String?, mode: CodeV2.RuntimeMode) async throws {
         let listings = await service.listApps(sessionID: screenID)
         let lowered = app.lowercased()
         let listing = listings.first { $0.bundleID.lowercased() == lowered || $0.name.lowercased() == lowered }
@@ -315,9 +317,11 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         guard proposal.hasOffer else {
             throw Refusal(text: (["Nothing here can be granted:"] + proposal.offers.map(\.line)).joined(separator: " "), status: .failed)
         }
-        // Grants always ask, Full access included.
-        guard await approver.approve(.grants(proposal), summary: proposal.summary, sessionID: screenID) else {
-            throw Refusal(text: "The reader did not grant \(app).")
+        // Full Access is standing app consent; the service still enforces caps.
+        if mode != .full {
+            guard await approver.approve(.grants(proposal), summary: proposal.summary, sessionID: screenID) else {
+                throw Refusal(text: "The reader did not grant \(app).")
+            }
         }
         let granted = try await service.applyGrants(sessionID: screenID, proposalID: proposal.id)
         guard !granted.isEmpty else { throw Refusal(text: "The reader allowed none of these apps.") }

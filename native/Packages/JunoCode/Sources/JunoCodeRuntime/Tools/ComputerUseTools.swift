@@ -233,6 +233,18 @@ struct ScreenActionRunner: Sendable {
     /// Records each step as a `computer_action` item (Code v2 SPEC §3.12).
     var recorder: ComputerActionRecorder? = nil
 
+    /// Full Access is the reader's standing consent to use ordinary apps.
+    /// Grant at the service's existing app cap, without an extra model turn.
+    func ensureAppAccess(_ app: String?, context: ToolContext) async throws {
+        guard let app, await permissions.permissionMode == .fullAccess else { return }
+        let needle = app.lowercased()
+        let grants = await computer.grants(sessionID: context.sessionID.value)
+        guard !grants.contains(where: { $0.bundleID.lowercased() == needle || $0.displayName.lowercased() == needle }) else { return }
+        let tool = ComputerAppsTool(computer: computer, permissions: permissions, budget: budget)
+        let result = try await tool.execute(input: ["action": "request", "apps": [.string(app)]], context: context)
+        if result.isError { throw ScreenToolDenial(reason: result.content) }
+    }
+
     /// Runs one action with its own approval. Throws `ScreenControlError`
     /// or `ScreenToolDenial`.
     ///
@@ -255,6 +267,7 @@ struct ScreenActionRunner: Sendable {
         let started = await recorder?.began(sessionID: sessionID, callID: callID, action: kind, app: action.app)
         var prepared: PreparedScreenAction?
         do {
+            try await ensureAppAccess(action.app, context: context)
             await computer.setImageBudget(sessionID: sessionID, budget: budget)
             try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
             let ready = try await computer.prepare(sessionID: sessionID, action: action)
@@ -698,6 +711,8 @@ public struct ComputerAppsTool: CodeTool {
                 return try await request(apps: apps, input: input, context: context)
             case "open":
                 guard let app = apps.first else { return ToolResult(content: "Name the app to open in apps.", isError: true) }
+                try await ScreenActionRunner(computer: computer, permissions: permissions, budget: budget)
+                    .ensureAppAccess(app, context: context)
                 await computer.setImageBudget(sessionID: sessionID, budget: budget)
                 try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
                 let result = try await computer.open(sessionID: sessionID, app: app)
@@ -741,8 +756,8 @@ public struct ComputerAppsTool: CodeTool {
                 isError: true
             )
         }
-        // Grants always ask, Full access included: they are the reader's
-        // consent for each app, and nothing else may give it.
+        // Full Access already supplies app consent. Supervised modes still
+        // show the exact app and its cap; protected apps remain service-denied.
         let digest = Digests.sha256Hex(JSONValue.object([
             "tool": .string(name), "proposal": .string(proposal.id), "session": .string(sessionID),
         ]).canonicalJSONString())
@@ -750,9 +765,9 @@ public struct ComputerAppsTool: CodeTool {
         let outcome = await permissions.authorize(
             toolName: name,
             actionDigest: digest,
-            risk: .destructive,
+            risk: .critical,
             summary: proposal.summary,
-            approvalPolicy: .alwaysRequiresApproval,
+            approvalPolicy: .asksUnlessFullAccess,
             subject: nil
         )
         await computer.clearApprovalDetail(digest: digest)

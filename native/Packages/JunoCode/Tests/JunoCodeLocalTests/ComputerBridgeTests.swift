@@ -146,6 +146,23 @@ final class ComputerBridgeTests: XCTestCase {
 
     // MARK: Calls
 
+    func testFullAccessStartsAndGrantsAnAppWithoutApprovalCards() async throws {
+        let approver = Approver()
+        approver.allowAgents = false
+        approver.approveCards = false
+        let service = makeTestScreenService()
+        let bridge = executor(approver: approver, service: service)
+        let first = await bridge.handle(call("c1", .init(action: .screenshot, app: "com.apple.TextEdit"), mode: .full))
+        XCTAssertTrue(first.ok, first.text)
+        let next = await bridge.handle(call("c2", .init(action: .click, x: 10, y: 10), mode: .full))
+        XCTAssertTrue(next.ok, next.text)
+        XCTAssertTrue(approver.agentAsks.isEmpty)
+        XCTAssertTrue(approver.cards.isEmpty)
+        await service.stopAll(reason: .stopButton)
+        let stopped = await bridge.handle(call("c3", .init(action: .click, x: 10, y: 10), mode: .full))
+        XCTAssertFalse(stopped.ok, "Full Access cannot undo Stop")
+    }
+
     func testAScreenshotGrantsTheAppOnceAndComesBackAsAnItemWithItsPicture() async throws {
         let approver = Approver()
         let service = makeTestScreenService()

@@ -428,7 +428,7 @@ final class ComputerUseToolsTests: XCTestCase {
         )
     }
 
-    func testGrantRequestsAlwaysAskEvenInFullAccess() async throws {
+    func testFullAccessGrantsAppsWithoutAnotherApproval() async throws {
         let screen = FakeScreen()
         let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
         let asked = await autoApprove(permissions)
@@ -436,6 +436,16 @@ final class ComputerUseToolsTests: XCTestCase {
         let result = try await tool.execute(input: ["action": "request", "apps": ["com.apple.TextEdit"], "reason": "fill the form"], context: context())
         XCTAssertFalse(result.isError)
         XCTAssertTrue(result.content.contains("TextEdit (com.apple.TextEdit): full control"))
+        XCTAssertTrue(asked.requests.isEmpty)
+    }
+
+    func testSupervisedAppGrantsStillShowTheExactApp() async throws {
+        let screen = FakeScreen()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        let asked = await autoApprove(permissions)
+        let tool = ComputerAppsTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "request", "apps": ["com.apple.TextEdit"]], context: context())
+        XCTAssertFalse(result.isError)
         let request = try XCTUnwrap(asked.requests.first)
         XCTAssertEqual(request.toolName, "computer_apps")
         XCTAssertEqual(request.summary, "Let Alevr use com.apple.TextEdit (full control) for this session")

@@ -282,6 +282,7 @@ public struct PortableComputerTool: CodeTool {
         case let .openApp(app):
             let started = await runner.recorder?.began(sessionID: sessionID, callID: context.toolCallID, action: .openApp, app: app)
             do {
+                try await runner.ensureAppAccess(app, context: context)
                 await computer.setImageBudget(sessionID: sessionID, budget: runner.budget)
                 try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
                 let result = try await computer.open(sessionID: sessionID, app: app)
