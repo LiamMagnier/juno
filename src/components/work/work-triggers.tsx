@@ -30,6 +30,7 @@ import type { WorkTriggerDraft } from "@/components/work/work-transport";
 import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ConnectorEventStreamField } from "@/components/connections/connector-event-stream";
 
 /*
  * What starts a schedule, in a form.
@@ -1268,18 +1269,24 @@ function TriggerConfigFields({
           <TextField
             label="Connector"
             value={stringAt(config, "connector")}
-            placeholder="github"
-            hint="Required. A connector-event trigger with no connector is refused when you save."
+            placeholder="gmail"
+            hint="Use gmail, google-calendar, google-drive, outlook, microsoft-365 or slack."
             disabled={disabled}
             onChange={(connector) => set({ connector })}
           />
           <TextField
             label="Events"
             value={listAt(config, "events")}
-            placeholder="issue.opened, pull_request.merged"
-            hint="Empty means every event that connector sends."
+            placeholder="message_received"
+            hint="Leave blank for every supported event. Examples: message_received, event_changed, file_changed."
             disabled={disabled}
             onChange={(raw) => setList("events", raw)}
+          />
+          <ConnectorEventStreamField
+            connector={stringAt(config, "connector")}
+            attributes={config.attributes}
+            disabled={disabled}
+            onChange={(attributes) => set({ attributes })}
           />
         </div>
       );
