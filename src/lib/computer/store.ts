@@ -1793,14 +1793,7 @@ export async function openComputerViewSession(
   // Control is exclusive: from here until Hand back (or a lapsed window) the
   // agent's computer tools refuse.
   if (mode === "control") {
-    const holder = takeoverHolder(opts?.deviceSessionId ?? null);
-    await holdComputerTakeover(userId, agentId, holder, now);
-    // Waking the computer and starting the stream take a while. Another
-    // client that took control meanwhile keeps it (extending a live takeover
-    // never changes its holder), and this one gets its sentence, not the
-    // control password.
-    const conflict = takeoverConflict(await activePersistence.findByAgent(userId, agentId), holder, new Date());
-    if (conflict) throw new TakeoverHeldElsewhereError(conflict);
+    await holdComputerTakeover(userId, agentId, takeoverHolder(opts?.deviceSessionId ?? null), now);
   }
 
   return {

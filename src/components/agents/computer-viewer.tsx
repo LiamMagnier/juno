@@ -124,81 +124,6 @@ export function typeIntoRemote(rfb: { sendKey(keysym: number, code: string | nul
   return sent;
 }
 
-/**
- * What one input event on the soft keyboard's proxy sends to the computer: a
- * key, some text, or nothing. Call it only outside a composition.
- *
- * Composed text (Chinese, Japanese, Korean, and the iOS keyboards that mark
- * text) is typed once, on compositionend. WebKit (Safari, and the web view in
- * the iOS app) fires compositionend first and then one more input event for
- * the same text, no longer composing; typing that too would send every word
- * twice. `justCommitted` is the text compositionend typed in this task.
- */
-export function proxyInputAction(
-  input: { inputType: string; data: string | null },
-  value: string,
-  justCommitted: string | null
-): { keysym: number } | { text: string } | null {
-  switch (input.inputType) {
-    case "insertCompositionText":
-    case "deleteCompositionText":
-    case "insertFromComposition":
-      return null;
-    case "deleteContentBackward":
-      return { keysym: 0xff08 };
-    case "insertLineBreak":
-    case "insertParagraph":
-      return { keysym: 0xff0d };
-  }
-  const text = input.data ?? value;
-  if (!text) return null;
-  if (justCommitted !== null && text === justCommitted) return null;
-  return { text };
-}
-
-/** noVNC's `GH_INITSTATE` (core/input/gesturehandler.js): every gesture still possible. */
-const NOVNC_GESTURE_INIT_STATE = 127;
-
-/**
- * Makes noVNC forget a touch that a pinch took over (`rfb._gestures`, the
- * GestureHandler of the pinned noVNC 1.7.0; private, so read defensively).
- *
- * The pinch zooms the picture here, so noVNC sees the first finger land and
- * nothing after it. Left alone it waits out its long press, holds the right
- * mouse button down on the computer, and ignores every touch after that, so
- * control by touch is gone until the stream reopens. Forgetting the finger
- * before any gesture was recognised sends nothing to the computer.
- *
- * Returns false, and leaves noVNC as it was, when a drag or a long press has
- * already reached the computer (the pinch must not cut it off with a button
- * still down) or when the handler is not the shape this was written for.
- */
-export function forgetPendingGesture(gestures: unknown): boolean {
-  if (!gestures || typeof gestures !== "object") return false;
-  const g = gestures as Record<string, unknown>;
-  const detected = g._hasDetectedGesture;
-  const stopLongpress = g._stopLongpressTimeout;
-  const stopTwoTouch = g._stopTwoTouchTimeout;
-  if (
-    !Array.isArray(g._tracked) ||
-    !Array.isArray(g._ignored) ||
-    typeof g._state !== "number" ||
-    typeof detected !== "function" ||
-    typeof stopLongpress !== "function" ||
-    typeof stopTwoTouch !== "function"
-  ) {
-    return false;
-  }
-  if (detected.call(gestures) === true) return false;
-  stopLongpress.call(gestures);
-  stopTwoTouch.call(gestures);
-  g._tracked = [];
-  g._ignored = [];
-  g._state = NOVNC_GESTURE_INIT_STATE;
-  g._waitingRelease = false;
-  return true;
-}
-
 /** Tells the app around this page (iOS and macOS WKWebView) what the stream did. */
 function postToApp(message: { type: "connected" | "disconnected"; mode: ViewerMode }): void {
   try {
@@ -287,8 +212,6 @@ export function ComputerViewer({
   const attemptsRef = useRef(0);
   const reconnectTimer = useRef<number | null>(null);
   const composingRef = useRef(false);
-  /** Text a composition just typed, until the input event WebKit sends after it. */
-  const committedRef = useRef<string | null>(null);
   const credentialsRef = useRef<{ relayUrl: string; token: string; password: string; mode: ViewerMode } | null>(
     initialRelayUrl && initialToken && initialPassword
       ? { relayUrl: initialRelayUrl, token: initialToken, password: initialPassword, mode: initialMode }
@@ -750,16 +673,11 @@ export function ComputerViewer({
     const native = event.nativeEvent as InputEvent;
     const input = event.currentTarget;
     if (composingRef.current || native.isComposing) return;
-    const action = proxyInputAction(
-      { inputType: native.inputType ?? "", data: native.data ?? null },
-      input.value,
-      committedRef.current
-    );
-    committedRef.current = null;
     const rfb = rfbForInput();
-    if (rfb && action) {
-      if ("keysym" in action) rfb.sendKey(action.keysym, null);
-      else typeIntoRemote(rfb, action.text);
+    if (rfb) {
+      if (native.inputType === "deleteContentBackward") rfb.sendKey(0xff08, null);
+      else if (native.inputType === "insertLineBreak" || native.inputType === "insertParagraph") rfb.sendKey(0xff0d, null);
+      else typeIntoRemote(rfb, native.data ?? input.value);
     }
     input.value = "";
   };
@@ -768,11 +686,6 @@ export function ComputerViewer({
     composingRef.current = false;
     const rfb = rfbForInput();
     if (rfb && event.data) typeIntoRemote(rfb, event.data);
-    // WebKit's input event for the same text follows in this task; it was typed here.
-    committedRef.current = event.data || null;
-    window.setTimeout(() => {
-      committedRef.current = null;
-    }, 0);
     event.currentTarget.value = "";
   };
 
@@ -821,12 +734,6 @@ export function ComputerViewer({
     });
     const onStart = (event: TouchEvent) => {
       if (event.touches.length >= 2) {
-        // noVNC saw the first finger land; the rest of the pinch is ours.
-        const rfb = rfbRef.current as unknown as { _gestures?: unknown } | null;
-        const released = forgetPendingGesture(rfb?._gestures);
-        // In control, a drag or long press that already reached the computer
-        // is finished there instead (watching, nothing reaches it anyway).
-        if (!released && rfb && modeRef.current === "control") return;
         const a = local(event.touches[0]);
         const b = local(event.touches[1]);
         const { z, x, y } = zoomRef.current;

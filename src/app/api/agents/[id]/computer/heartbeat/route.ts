@@ -27,18 +27,10 @@ const WATCH_BEATS_PER_MINUTE = 10;
 /**
  * Control beats have their own, wider ceiling per person and agent. They hold
  * the takeover, so watch beats for other agents can never starve them into a
- * 429 that lets the agent resume while the person is still typing.
+ * 429 that lets the agent resume while the person is still typing. A Hand
+ * back (`ended`) is never limited at all.
  */
 const CONTROL_BEATS_PER_MINUTE = 60;
-/**
- * Hand back (`ended`) has a ceiling of its own, shared with no other beat, so
- * nothing else can ever block it. It is still a ceiling: every Hand back
- * rotates the computer's VNC passwords (a process restart on the host) and
- * writes to the agent's timeline, which a loop must not be able to do without
- * end. One Hand back is two or three requests (the overlay, a window's
- * beacon), far below it.
- */
-const HAND_BACKS_PER_MINUTE = 20;
 
 export async function POST(req: Request, { params }: Params) {
   const { user, error } = await requireUser();
@@ -55,18 +47,18 @@ export async function POST(req: Request, { params }: Params) {
   }
   const { mode, ended } = parsed.data;
 
-  const limit = await rateLimit(
-    mode === "control" && ended
-      ? { key: `agents:computer-hand-back:${user.id}:${id}`, limit: HAND_BACKS_PER_MINUTE, windowSec: 60 }
-      : mode === "control"
+  if (!(mode === "control" && ended)) {
+    const limit = await rateLimit(
+      mode === "control"
         ? { key: `agents:computer-heartbeat-control:${user.id}:${id}`, limit: CONTROL_BEATS_PER_MINUTE, windowSec: 60 }
         : { key: `agents:computer-heartbeat:${user.id}:${id}`, limit: WATCH_BEATS_PER_MINUTE, windowSec: 60 }
-  );
-  if (!limit.success) {
-    return NextResponse.json(
-      { error: "rate_limited", message: "Too many heartbeats." },
-      { status: 429, headers: NO_STORE_HEADERS }
     );
+    if (!limit.success) {
+      return NextResponse.json(
+        { error: "rate_limited", message: "Too many heartbeats." },
+        { status: 429, headers: NO_STORE_HEADERS }
+      );
+    }
   }
 
   const agent = await findAgent(user.id, id);

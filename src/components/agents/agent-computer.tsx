@@ -214,31 +214,17 @@ export function AgentComputerOverlay({
     if (question) await work.answer(question.id, HAND_BACK_ANSWER).catch(() => false);
   };
 
-  // Hand back rotates the computer's VNC passwords, which drops the control
-  // stream. The viewer's reconnect then finds the takeover closed and reports
-  // control as lost; while this overlay is handing back that is its own doing,
-  // not "{agent} took the computer back", and must not drop the pinned question.
-  const handingBack = React.useRef(false);
-
   const handBack = async (): Promise<boolean> => {
     setBusy("handback");
-    handingBack.current = true;
     const outcome = await computerHeartbeat(agent.id, "control", true);
     if (outcome.kind === "failed" && outcome.status !== 409) {
-      handingBack.current = false;
       setBusy(null);
       toast.error(outcome.message);
       return false;
     }
     broadcastHandBack(agent.id);
-    // Watching from here on, before the answer goes out: the viewer swaps to
-    // a watch stream instead of retrying control.
-    setControlConnected(false);
-    setControlInWindow(false);
-    setMode("watch");
     if (outcome.kind === "ok") {
       if (outcome.value) setLive(outcome.value);
-      setNotice(null);
       // Only the question that asked for the computer, and nothing when it has
       // gone: anything else is still the person's to answer in the composer.
       await answerPinned();
@@ -249,8 +235,10 @@ export function AgentComputerOverlay({
       setNotice(outcome.message);
       announce(outcome.message);
     }
-    handingBack.current = false;
     setBusy(null);
+    setControlConnected(false);
+    setControlInWindow(false);
+    setMode("watch");
     announceAgentsChanged();
     return true;
   };
@@ -273,20 +261,6 @@ export function AgentComputerOverlay({
   }, [open, controlInWindow, agent.id]);
 
   const openInWindow = () => {
-    // The window opens now, inside the click: opened after the link comes
-    // back it is a popup Safari and Firefox block, and this view would drop
-    // to watching while control sat in a window that never appeared. A
-    // window opened with `noopener` cannot even say whether it opened.
-    const opened = window.open("about:blank", "_blank");
-    if (!opened) {
-      toast.error("Your browser blocked the new window. Allow pop-ups for this site, then try again.");
-      return;
-    }
-    try {
-      opened.opener = null;
-    } catch {
-      // Already detached.
-    }
     void fetch(`/api/agents/${encodeURIComponent(agent.id)}/computer/view`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -298,7 +272,7 @@ export function AgentComputerOverlay({
         const url = new URL(data.url, window.location.origin);
         // The window has this browser's session: it shows Hand back itself.
         url.searchParams.set("w", "1");
-        opened.location.replace(url.toString());
+        window.open(url.toString(), "_blank", "noopener,noreferrer");
         if (mode === "control") {
           // Control moves to the window; this view watches. Nothing is handed
           // back, and the pinned question waits for the window's Hand back.
@@ -307,14 +281,7 @@ export function AgentComputerOverlay({
           setMode("watch");
         }
       })
-      .catch((error: unknown) => {
-        try {
-          opened.close();
-        } catch {
-          // Already gone.
-        }
-        toast.error(error instanceof Error ? error.message : "Couldn’t open a new window.");
-      });
+      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Couldn’t open a new window."));
   };
 
   if (!open) return null;
@@ -398,7 +365,6 @@ export function AgentComputerOverlay({
                   if (next) setLive(next);
                 }}
                 onControlLost={(message) => {
-                  if (handingBack.current) return;
                   takeover.current = null;
                   setControlConnected(false);
                   setNotice(message);
