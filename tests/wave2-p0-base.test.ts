@@ -30,7 +30,7 @@ const GIT_ENV = {
 type CiMode = "green" | "red" | "vercel-red" | "pending" | "status-pending" | "empty" | "error";
 
 /** A fake GitHub CLI that answers the three `gh api` calls the gate makes. */
-function fakeGh(binDir: string, mode: CiMode) {
+function fakeGh(binDir: string, mode: CiMode, head = "main") {
   const checks: Record<CiMode, string> = {
     green: "test\\tcompleted\\tsuccess\\nmacOS app\\tcompleted\\tskipped\\nAnalyze\\tcompleted\\tneutral",
     red: "test\\tcompleted\\tsuccess\\niOS app\\tcompleted\\tfailure",
@@ -46,7 +46,7 @@ if [ "${mode}" = error ]; then echo "gh: authentication required" >&2; exit 1; f
 case "$*" in
   *check-runs*) printf '${checks[mode]}\\n' ;;
   *"/status"*) echo "${status}" ;;
-  *) git rev-parse main ;;
+  *) git rev-parse ${head} ;;
 esac
 `;
   writeFileSync(path.join(binDir, "gh"), script);
@@ -243,5 +243,25 @@ test("the owner-excluded Vercel check cannot block an otherwise green Actions ba
     const run = runGate(repo, ["--wave1", repo.wave1], { gh: "vercel-red" });
     assert.equal(run.status, 0, run.stdout + run.stderr);
     assert.match(run.stdout, /main CI is green/);
+  } finally { repo.cleanup(); }
+});
+
+
+test("checks the verified remote SHA even when local main is stale", () => {
+  const repo = makeRepo();
+  try {
+    git(repo.dir, "checkout", "-q", "-b", "package");
+    writeFileSync(path.join(repo.dir, "remote-main.txt"), "remote main\n");
+    git(repo.dir, "add", ".");
+    git(repo.dir, "commit", "-q", "-m", "remote main advanced");
+    const remoteHead = git(repo.dir, "rev-parse", "HEAD");
+    fakeGh(repo.bin, "green", remoteHead);
+    const run = spawnSync("bash", [SCRIPT, "--wave1", repo.wave1], {
+      cwd: repo.dir,
+      env: { PATH: `${repo.bin}:/usr/bin:/bin`, HOME: repo.dir, ...GIT_ENV },
+      encoding: "utf8", timeout: 30_000,
+    });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, new RegExp(`main CI is green for main at ${remoteHead.slice(0, 9)}`));
   } finally { repo.cleanup(); }
 });

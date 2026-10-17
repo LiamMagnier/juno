@@ -105,7 +105,9 @@ else
       bad+=("combined commit status: $combined_state")
     fi
     label="$MAIN_BRANCH${CI_SHA:+ at ${CI_SHA:0:9}}"
-    if [ -n "${CI_SHA:-}" ] && [ -n "${MERGE_BASE:-}" ] && [ "$CI_SHA" != "$MERGE_BASE" ]; then
+    # The shared checkout may keep a stale local main while this worktree has
+    # already merged the current remote head. Compare against the checked SHA.
+    if [ -z "${CI_SHA:-}" ] || ! git merge-base --is-ancestor "$CI_SHA" HEAD 2>/dev/null; then
       fail "HEAD does not include $MAIN_BRANCH at ${CI_SHA:0:9}; update the base before building wave 2"
     fi
     if [ "$total" -eq 0 ]; then
