@@ -270,10 +270,15 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<WorkflowRunR
   child.stderr.on('data', (chunk: Buffer) => {
     if (stderr.length < 8_000) stderr += chunk.toString('utf8');
   });
+  // A budget/Stop can kill the guest while parallel children are replying.
+  // Guard late replies and handle in-flight writes whose pipe closes later.
+  child.stdin.on('error', () => halt('error'));
   const send = (message: unknown) => {
-    if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`);
+    if (runAbort.signal.aborted || child.killed || child.stdin.destroyed || !child.stdin.writable) return;
+    child.stdin.write(`${JSON.stringify(message)}\n`);
   };
   runAbort.signal.addEventListener('abort', () => child.kill('SIGKILL'), { once: true });
+  if (runAbort.signal.aborted) child.kill('SIGKILL');
 
   const acquire = async () => {
     if (active < limits.maxConcurrentAgents) {
