@@ -333,7 +333,8 @@ struct ComputerUsePreviewView: View {
     }
 
     private var statusBar: some View {
-        HStack(spacing: JunoSpace.cozy) {
+        let paused = isPaused
+        return HStack(spacing: JunoSpace.cozy) {
             AgentCursorGlyph()
                 .frame(width: 13, height: 18)
                 .frame(width: 28, height: 28)
@@ -356,9 +357,10 @@ struct ComputerUsePreviewView: View {
                     model.isPreviewExpanded.toggle()
                 }
                 .accessibilityValue(model.isPreviewExpanded ? "Expanded" : "Collapsed")
-                control(isPaused ? "Resume" : "Pause", label: isPaused ? "Resume computer use" : "Pause computer use") {
-                    presence.togglePause(sessionID: model.sessionID)
+                control(paused ? "Resume" : "Pause", label: paused ? "Resume computer use" : "Pause computer use") {
+                    presence.setPaused(!paused, sessionID: model.sessionID)
                 }
+                .id(paused)
                 control("Stop", label: "Stop computer use · Esc") { presence.stop() }
             }
         }
