@@ -227,6 +227,33 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoDesktop.uitests
         PRODUCT_NAME: $(TARGET_NAME)
         TEST_TARGET_NAME: JunoDesktop
+  JunoDesktopWave2Tests:
+    # Release QA compiles the measured suites without the legacy Debug-only
+    # preview fixtures. The host app keeps its shipping optimization settings.
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/Performance
+      - path: Tests/Snapshots/Support
+      - path: Tests/Wave2
+        optional: true
+      - path: Tests/Snapshots/TranscriptSnapshotRenderer.swift
+    dependencies:
+      - target: JunoDesktop
+    configFiles:
+      Debug: ../../Config/JunoDesktop-Debug.xcconfig
+      Stable: ../../Config/JunoDesktop-Stable.xcconfig
+      Next: ../../Config/JunoDesktop-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoDesktop.wave2tests
+        PRODUCT_NAME: $(TARGET_NAME)
+      configs:
+        Stable:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/$(JUNO_DISPLAY_NAME).app/Contents/MacOS/$(JUNO_DISPLAY_NAME)"
+        Next:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/$(JUNO_DISPLAY_NAME).app/Contents/MacOS/$(JUNO_DISPLAY_NAME)"
 schemes:
   JunoDesktop:
     build:
@@ -259,3 +286,12 @@ schemes:
       config: Next
     archive:
       config: Next
+  JunoDesktop-Wave2:
+    build:
+      targets:
+        JunoDesktop: all
+        JunoDesktopWave2Tests: [test]
+    test:
+      config: Stable
+      targets:
+        - JunoDesktopWave2Tests

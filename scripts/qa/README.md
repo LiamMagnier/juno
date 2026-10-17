@@ -188,3 +188,5 @@ down any simulator booted during the run. Helpers:
 
 New files under `Tests/` reach the Xcode projects through XcodeGen
 (`native/Scripts/generate-projects.sh`), which CI runs before every build.
+
+Native Release runs use the dedicated `JunoDesktop-Wave2` and `JunoMobile-Wave2` schemes. Their test bundles include `Tests/Performance`, `Tests/Snapshots/Support` and `Tests/Wave2`; the host apps keep their Stable optimization settings. Legacy preview-driven snapshots remain in the general Debug test bundle because their fixtures are intentionally absent from shipping builds.

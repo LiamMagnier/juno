@@ -7,6 +7,9 @@
 # refuses to run on a developer machine unless ALEVR_ALLOW_LOCAL_NATIVE=1, and
 # then only inside the machine's heavy-command slot if you wrap it yourself.
 #
+# Dedicated Wave2 schemes compile these suites in Release without the legacy
+# Debug-only preview fixture clients in the general app test bundle.
+#
 # Which tests run: every XCTestCase class or Swift Testing suite whose name
 # ends in PerformanceTests (perf) or SnapshotTests (snapshots), found under
 # Tests/Performance, Tests/Snapshots/Support and Tests/Wave2 of each app (the
@@ -132,7 +135,7 @@ run_app() {
 }
 
 if [ "$PLATFORM" = macos ] || [ "$PLATFORM" = all ]; then
-  run_app macos native/macOS/JunoDesktop/JunoDesktop.xcodeproj JunoDesktop JunoDesktopTests native/macOS/JunoDesktop 'platform=macOS'
+  run_app macos native/macOS/JunoDesktop/JunoDesktop.xcodeproj JunoDesktop-Wave2 JunoDesktopWave2Tests native/macOS/JunoDesktop 'platform=macOS'
 fi
 
 if [ "$PLATFORM" = ios ] || [ "$PLATFORM" = all ]; then
@@ -152,7 +155,7 @@ for runtime in sorted(data, reverse=True):
     log "Booting simulator $DEVICE for the iOS suites."
     xcrun simctl boot "$DEVICE"
   fi
-  run_app ios native/iOS/JunoMobile/JunoMobile.xcodeproj JunoMobile JunoMobileTests native/iOS/JunoMobile "platform=iOS Simulator,id=$DEVICE"
+  run_app ios native/iOS/JunoMobile/JunoMobile.xcodeproj JunoMobile-Wave2 JunoMobileWave2Tests native/iOS/JunoMobile "platform=iOS Simulator,id=$DEVICE"
 fi
 
 log "Reports in $REPORT_DIR"

@@ -132,8 +132,8 @@ test("with ALEVR_ALLOW_LOCAL_NATIVE=1 it boots a simulator for iOS and shuts it 
     assert.doesNotMatch(log, /simctl shutdown SIM-ALREADY/, "a simulator that was already booted is left alone");
     const build = log.split("\n").find((line) => line.startsWith("xcodebuild")) ?? "";
     assert.match(build, /-configuration Stable/);
-    assert.match(build, /-only-testing:JunoMobileTests\/Wave2SamplePerformanceTests/);
-    assert.match(build, /-only-testing:JunoMobileTests\/Wave2PerformanceSupportTests/, "the clock and report regressions run alongside the sample");
+    assert.match(build, /-only-testing:JunoMobileWave2Tests\/Wave2SamplePerformanceTests/);
+    assert.match(build, /-only-testing:JunoMobileWave2Tests\/Wave2PerformanceSupportTests/, "the clock and report regressions run alongside the sample");
     assert.match(build, /ENABLE_TESTABILITY=YES/);
     assert.equal(readFileSync(sim.state, "utf8").trim(), "SIM-ALREADY");
   } finally {
@@ -148,7 +148,7 @@ test("a simulator xcodebuild boots on its own is shut down too", () => {
     assert.equal(run.status, 0, run.stderr);
     const log = readFileSync(sim.log, "utf8");
     assert.match(log, /xcodebuild test -project native\/macOS\/JunoDesktop\/JunoDesktop\.xcodeproj/);
-    assert.match(log, /-only-testing:JunoDesktopTests\/Wave2SamplePerformanceTests/);
+    assert.match(log, /-only-testing:JunoDesktopWave2Tests\/Wave2SamplePerformanceTests/);
     assert.match(log, /xcrun simctl shutdown SIM-BY-XCODEBUILD/);
     assert.equal(readFileSync(sim.state, "utf8").trim(), "");
   } finally {
@@ -162,9 +162,9 @@ test("the snapshot suite picks up the wave-2 support snapshot suites by name", (
     const run = runNative(sim, ["--platform", "macos", "--suite", "snapshots"], { CI: "true" });
     assert.equal(run.status, 0, run.stderr);
     const build = readFileSync(sim.log, "utf8").split("\n").find((line) => line.startsWith("xcodebuild")) ?? "";
-    assert.match(build, /-only-testing:JunoDesktopTests\/Wave2SupportSnapshotTests/);
-    assert.match(build, /-only-testing:JunoDesktopTests\/Wave2SnapshotSupportTests/);
-    assert.match(build, /-only-testing:JunoDesktopTests\/Wave2TextScaleTests/);
+    assert.match(build, /-only-testing:JunoDesktopWave2Tests\/Wave2SupportSnapshotTests/);
+    assert.match(build, /-only-testing:JunoDesktopWave2Tests\/Wave2SnapshotSupportTests/);
+    assert.match(build, /-only-testing:JunoDesktopWave2Tests\/Wave2TextScaleTests/);
     assert.doesNotMatch(build, /Wave2SamplePerformanceTests/);
   } finally {
     sim.cleanup();
