@@ -90,7 +90,7 @@ const ComposerClarificationPopover = nextDynamic(
   { ssr: false },
 );
 import { resolveModel, type ModelInfo } from "@/lib/models";
-import { isAutoModelId } from "@/lib/auto-model";
+import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import {
   reasoningOptions,
   defaultReasoning,
@@ -103,7 +103,7 @@ import { alevrToolsUsable } from "@/lib/search/alevr/policy";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
@@ -145,7 +145,7 @@ import type {
   GenerationStatus,
   ReasoningEffort,
 } from "@/types/chat";
-import { uiPref } from "@/lib/ui-prefs";
+import { plainReturnSends } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
 
 /**
@@ -174,6 +174,12 @@ interface ComposerProps {
   onStop: () => void;
   /** An explicit destination choice; shown in both ordinary and steering mode. */
   modeControl?: React.ReactNode;
+  /**
+   * How often a task started from this chat asks (task-mode-chip.tsx), drawn
+   * just before the model chip. The caller decides whether this chat can start
+   * tasks at all; absent, the row is as it was.
+   */
+  taskModeControl?: React.ReactNode;
   /**
    * A durable run is going on this conversation, and this composer steers it.
    *
@@ -511,6 +517,7 @@ function ComposerImpl({
   onStop,
   steering,
   modeControl,
+  taskModeControl,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -744,7 +751,7 @@ function ComposerImpl({
     : quote
       ? quote.mode === "modify"
         ? "Describe the change…"
-        : quote.source === "document"
+        : quote.source !== "artifact"
           ? quote.kind === "area"
             ? "Ask about this area…"
             : "Ask about this passage…"
@@ -1050,7 +1057,8 @@ function ComposerImpl({
     excess.forEach((id) => onToggleConnector(id));
   }, [connectorsEnabled, onToggleConnector, voiceActive]);
 
-  const { supported: speechSupported } = useSpeechRecognition();
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
   const [dictating, setDictatingInner] = React.useState(false);
   const setDictating = React.useCallback(
     (d: boolean | ((prev: boolean) => boolean)) => {
@@ -1104,6 +1112,12 @@ function ComposerImpl({
   const researchSeedAllowed = planAllowsResearch && researchAvailable;
   const researchSeedAllowedRef = React.useRef(researchSeedAllowed);
   researchSeedAllowedRef.current = researchSeedAllowed;
+  // A home starter may also name the model it needs (G34, home-starters.tsx):
+  // "Create image" an image model this account can use, the others a model
+  // that writes (an image model left selected would answer "Plan my week"
+  // with a picture). Only a model in this account's list is taken.
+  const seedModelRef = React.useRef({ models, modality, changeModel, defaultModel: settings.defaultModel, researchPlan: planAllowsResearch && !privateMode });
+  seedModelRef.current = { models, modality, changeModel, defaultModel: settings.defaultModel, researchPlan: planAllowsResearch && !privateMode };
   React.useEffect(() => {
     const seed = (event: Event) => {
       const detail = event instanceof CustomEvent ? (event.detail as unknown) : null;
@@ -1115,7 +1129,30 @@ function ComposerImpl({
             : "";
       const armResearch = !!detail && typeof detail === "object" && (detail as { research?: unknown }).research === true;
       if (!value && !armResearch) return;
-      if (armResearch && researchSeedAllowedRef.current) setResearch(true);
+      let nowWrites = false;
+      if (detail && typeof detail === "object") {
+        const { model: wanted, modality: wantedModality } = detail as { model?: unknown; modality?: unknown };
+        const current = seedModelRef.current;
+        if (typeof wanted === "string" && current.models.some((m) => m.id === wanted)) {
+          current.changeModel(wanted as ModelId);
+        } else if (wantedModality === "chat" && current.modality !== "chat") {
+          const fallback = resolveModel(current.defaultModel);
+          current.changeModel(fallback && fallback.modality === "chat" ? fallback.id : AUTO_MODEL_ID);
+          // Research is allowed on the model just chosen, not the image model it replaced.
+          nowWrites = current.researchPlan;
+        }
+      }
+      if (armResearch && (researchSeedAllowedRef.current || nowWrites)) setResearch(true);
+      // `{ text, append: true }` (a quoted passage) goes after what is already
+      // written instead of replacing it, through the field's draft so any
+      // tokens in it keep their data.
+      const field = textareaRef.current;
+      if (detail && typeof detail === "object" && (detail as { append?: unknown }).append === true && field) {
+        const current = field.getDraft();
+        const lead = current.text.trimEnd() ? `${current.text.trimEnd()}\n\n` : "";
+        field.setDraft({ text: `${lead}${value}`, tokens: tokensForText(lead, current.tokens) }, { focus: true });
+        return;
+      }
       setText(value);
       requestAnimationFrame(() => {
         const field = textareaRef.current;
@@ -1985,9 +2022,10 @@ function ComposerImpl({
       return;
     }
     if (enterIntent(enterKeyOf(e)) === "send") {
-      // "Send with ⌘ Enter" (Settings › Keyboard): a plain Enter is a new
-      // line, which the field inserts when this leaves the event alone.
-      if (uiPref("sendKey") === "mod-enter" && !e.metaKey && !e.ctrlKey) return;
+      // "Send with ⌘ Enter" (Settings › Keyboard), and Return on an on-screen
+      // keyboard (G35, lib/touch-keyboard.ts): a plain Enter is a new line,
+      // which the field inserts when this leaves the event alone.
+      if (!plainReturnSends(e)) return;
       e.preventDefault();
       void submit(e.currentTarget.value);
     }
@@ -3281,6 +3319,9 @@ function ComposerImpl({
           }
           trailing={
             voiceCall ? voiceCall.controls : <>
+              {taskModeControl && modality === "chat" && !steerMode && (
+                <div className={cn("shrink-0", controlsLocked && "pointer-events-none")}>{taskModeControl}</div>
+              )}
               {/* The model chip — and, inside its popover, the thinking effort
                   for that model (`thinkingControl`). One chip for one decision. */}
               <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>

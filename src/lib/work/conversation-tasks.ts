@@ -144,6 +144,64 @@ export function composerTaskId(
 /** The statuses in which a task has stopped to wait on the person. */
 export const CONVERSATION_WAITING_STATUSES = ["waiting_input", "waiting_approval"] as const;
 
+// ---------------------------------------------------------------------------
+// How often a conversation asks whether it has tasks
+// ---------------------------------------------------------------------------
+
+/**
+ * The quick rate, while a task is live or the answer just changed. The model's
+ * own task needs no poll at all — the chat stream's `work` frame shows it — so
+ * this is for the ones started elsewhere: a phone, a routine firing.
+ */
+export const DISCOVERY_FAST_MS = 4_000;
+/** The slowest a visible, idle conversation asks. */
+export const DISCOVERY_MAX_MS = 30_000;
+
+/**
+ * The wait before the next discovery read.
+ *
+ * Every open conversation used to ask every four seconds for ever, including
+ * the ones that never had a task and the ones in a tab nobody was looking at.
+ * Now: four seconds while something is live or just changed; otherwise the
+ * wait doubles from eight seconds to thirty and stays there. A failed read
+ * backs off the same way. Hidden tabs do not ask at all (the hook stops the
+ * loop on `visibilitychange` and asks once on the way back), which is not
+ * decided here because it is not a delay.
+ */
+export function nextDiscoveryDelay(input: {
+  previousMs: number | null;
+  changed: boolean;
+  anyLive: boolean;
+}): number {
+  if (input.changed || input.anyLive) return DISCOVERY_FAST_MS;
+  const previous = input.previousMs ?? DISCOVERY_FAST_MS;
+  return Math.min(DISCOVERY_MAX_MS, Math.max(DISCOVERY_FAST_MS * 2, previous * 2));
+}
+
+/**
+ * Whether a card that has finished following its task must open the stream
+ * again: the row discovery just handed it says the task moved on after the
+ * stream's last word.
+ *
+ * The stream ends on its `done` frame, and the follower used to resubscribe
+ * only when the session id changed. A routine re-firing in the same session,
+ * or a Retry, is the same session with a new attempt, so the card kept the old
+ * run's plan and events under a header showing the new status. Live again, or
+ * touched since the stream closed, is a new attempt (or at least news): the
+ * stream's first frame re-bases on whichever run is current.
+ */
+export function shouldResubscribe(input: {
+  streamEnded: boolean;
+  /** The session as the stream last described it. */
+  followed: { id: string; status: string; updatedAt: string } | null;
+  /** The row discovery just found. */
+  discovered: { id: string; status: string; updatedAt: string };
+}): boolean {
+  if (!input.streamEnded || !input.followed || input.followed.id !== input.discovered.id) return false;
+  if (!isTerminalStatus(input.discovered.status)) return true;
+  return Date.parse(input.discovered.updatedAt) > Date.parse(input.followed.updatedAt);
+}
+
 /**
  * A conversation's own listing for a client that follows ONE task: the apps
  * that shipped before several tasks per conversation, which ask

@@ -56,10 +56,22 @@ export function projectStreamUnion(root: string, typeName = "StreamChunk"): Stre
   const defs: Record<string, JsonSchema> = {};
   const inProgress = new Set<string>();
 
+  // The sort key must not depend on where the checkout lives: a worktree whose
+  // node_modules is a symlink resolves the same declarations under another
+  // absolute path, which used to flip the order of union members (and fail
+  // native:wire:check on CI). Key on the path from node_modules/ for packages
+  // and the repo-relative path for the project's own files.
+  const portablePath = (fileName: string): string => {
+    const normalized = fileName.replace(/\\/g, "/");
+    const packageAt = normalized.lastIndexOf("/node_modules/");
+    if (packageAt >= 0) return normalized.slice(packageAt + 1);
+    const rootPrefix = `${root.replace(/\\/g, "/").replace(/\/$/, "")}/`;
+    return normalized.startsWith(rootPrefix) ? normalized.slice(rootPrefix.length) : normalized;
+  };
   const position = (type: ts.Type): string => {
     const declaration = type.symbol?.declarations?.[0] ?? type.aliasSymbol?.declarations?.[0];
     if (!declaration) return "~";
-    const where = declaration.getSourceFile().fileName;
+    const where = portablePath(declaration.getSourceFile().fileName);
     return `${where}:${String(declaration.getStart()).padStart(9, "0")}`;
   };
 

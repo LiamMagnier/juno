@@ -1,14 +1,17 @@
 import "server-only";
 import { randomBytes } from "crypto";
 import { cache } from "react";
-import type { Share, ShareKind } from "@prisma/client";
+import type { Prisma, Share, ShareKind } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
+import { decryptJsonField, encryptJsonField } from "@/lib/field-crypto";
+import type { SharedTranscriptEntry } from "@/lib/share-transcript";
 import { shareUrl } from "@/lib/share-url";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
 import { artifactLineageTakenDown } from "@/lib/artifact-takedown";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ON_ACTIVE_PATH, pathIdsTo, shownLeafId } from "@/lib/chat/branches";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -82,6 +85,31 @@ export class ShareTakenDownError extends Error {
 }
 
 /**
+ * A transcript sent with a link for anything but a Code session. Only a Code
+ * session can run on the owner's Mac, where the server has no copy of what was
+ * said; every other conversation's link is built from its own Message rows, and
+ * a client must not be able to put words on a page the server can vouch for.
+ */
+export class ShareTranscriptRefusedError extends Error {
+  constructor() {
+    super("Only a Code session’s link can carry its transcript.");
+    this.name = "ShareTranscriptRefusedError";
+  }
+}
+
+/**
+ * A Code session with nothing on the server to show and no transcript sent:
+ * one that runs on the owner's Mac, shared from somewhere it is not open (its
+ * sidebar row). A link made now would publish an empty page.
+ */
+export class ShareNeedsTranscriptError extends Error {
+  constructor() {
+    super("Open this session to share it. Its transcript is on your Mac.");
+    this.name = "ShareNeedsTranscriptError";
+  }
+}
+
+/**
  * Refuses a target that has a link Juno took down and has not restored — a
  * share, or for an artifact a publication of it, or a link to an artifact it
  * was duplicated from (src/lib/artifact-takedown.ts).
@@ -105,20 +133,41 @@ async function assertNotTakenDown(where: { userId: string; conversationId?: stri
  * exist or belongs to someone else — callers map that to 404. Throws
  * ShareTakenDownError when a link to the target was taken down.
  */
-export async function createShare(userId: string, kind: ShareKind, targetId: string): Promise<Share | null> {
+export async function createShare(
+  userId: string,
+  kind: ShareKind,
+  targetId: string,
+  options: { transcript?: SharedTranscriptEntry[] } = {},
+): Promise<Share | null> {
   if (kind === "CHAT") {
     const conversation = await prisma.conversation.findFirst({
       where: { id: targetId, userId },
-      select: { id: true, title: true },
+      select: { id: true, title: true, kind: true },
     });
     if (!conversation) return null;
+    if (options.transcript && conversation.kind !== "code") throw new ShareTranscriptRefusedError();
     await assertNotTakenDown({ userId, conversationId: targetId });
+
+    // A client-supplied transcript (a Code session whose transcript lives on
+    // the Mac), already sanitized and redacted by the route. Sealed at rest.
+    const sealed = options.transcript ? encryptJsonField(options.transcript) : null;
+    const transcript = sealed ? ({ enc: sealed.enc } satisfies Prisma.InputJsonObject) : undefined;
 
     const existing = await prisma.share.findFirst({
       where: { userId, kind, conversationId: targetId, revokedAt: null },
       orderBy: { createdAt: "desc" },
     });
-    if (existing) return existing;
+    if (existing) {
+      // Re-sharing with a transcript refreshes what the same link shows: the
+      // link stays the one people already have, and its snapshot is now.
+      if (!transcript) return existing;
+      return prisma.share.update({ where: { id: existing.id, userId }, data: { transcript, snapshotAt: new Date(), title: conversation.title } });
+    }
+
+    if (!transcript && conversation.kind === "code") {
+      const said = await prisma.message.count({ where: { conversationId: targetId, role: { in: ["USER", "ASSISTANT"] } } });
+      if (said === 0) throw new ShareNeedsTranscriptError();
+    }
 
     return prisma.share.create({
       data: {
@@ -128,6 +177,10 @@ export async function createShare(userId: string, kind: ShareKind, targetId: str
         conversationId: targetId,
         title: conversation.title,
         snapshotAt: new Date(),
+        // The branch being read now (src/lib/chat/branches.ts): an edit or a
+        // branch switch after sharing never changes what the link shows.
+        leafMessageId: await shownLeafId(prisma, targetId),
+        ...(transcript ? { transcript } : {}),
       },
     });
   }
@@ -274,6 +327,11 @@ export interface SharedChatSnapshot {
   sharedAt: string;
   messages: SharedChatMessage[];
   artifacts: SharedArtifactRef[];
+  /**
+   * The transcript came from the owner's device with the link (a Code session
+   * that ran on their Mac), not from the server's own copy. The page says so.
+   */
+  fromDevice?: boolean;
 }
 
 /**
@@ -284,12 +342,38 @@ export interface SharedChatSnapshot {
 export async function getSharedChatSnapshot(share: Share): Promise<SharedChatSnapshot | null> {
   if (share.kind !== "CHAT" || !share.conversationId) return null;
 
+  // A link made with a transcript (a Mac-hosted Code session) shows exactly
+  // that transcript: it was redacted when it was stored, and the Message rows,
+  // if any, are not what the owner looked at when they shared.
+  const supplied = sharedTranscriptOf(share);
+  if (supplied) {
+    return {
+      title: share.title,
+      sharedAt: share.snapshotAt.toISOString(),
+      messages: supplied.map((entry, i) => ({
+        id: `${share.id}-${i}`,
+        role: entry.role === "user" ? ("USER" as const) : ("ASSISTANT" as const),
+        content: entry.content,
+        model: null,
+        createdAt: share.snapshotAt.toISOString(),
+      })),
+      artifacts: [],
+      fromDevice: true,
+    };
+  }
+
+  // The branch the link was made on: the shared leaf's ancestors. A link
+  // made before branches (no leaf) reads the shown branch; the first branch
+  // operation in its chat pins it to the leaf it showed. A pinned leaf that
+  // was deleted since falls back the same way.
+  const path = share.leafMessageId ? await pathIdsTo(prisma, share.conversationId, share.leafMessageId) : null;
   const [messages, artifacts] = await Promise.all([
     prisma.message.findMany({
       where: {
         conversationId: share.conversationId,
         createdAt: { lte: share.snapshotAt },
         role: { in: ["USER", "ASSISTANT"] },
+        ...(path ? { id: { in: path } } : ON_ACTIVE_PATH),
       },
       orderBy: { createdAt: "asc" },
       // `activity` IS DELIBERATELY ABSENT, and must stay absent. It carries the
@@ -327,6 +411,17 @@ export async function getSharedChatSnapshot(share: Share): Promise<SharedChatSna
       .filter((m) => m.content.trim().length > 0),
     artifacts: artifacts.map((a) => ({ identifier: a.identifier, title: a.title, type: a.type as ArtifactType })),
   };
+}
+
+/** The stored client transcript of a share, or null (an ordinary chat link, or one that cannot be read). */
+export function sharedTranscriptOf(share: Pick<Share, "transcript">): SharedTranscriptEntry[] | null {
+  if (share.transcript == null) return null;
+  const value = decryptJsonField(share.transcript);
+  if (!Array.isArray(value)) return null;
+  const entries = value.filter(
+    (e): e is SharedTranscriptEntry => !!e && typeof e === "object" && ((e as SharedTranscriptEntry).role === "user" || (e as SharedTranscriptEntry).role === "assistant") && typeof (e as SharedTranscriptEntry).content === "string",
+  );
+  return entries.length ? entries : null;
 }
 
 export interface SharedArtifactSnapshot {

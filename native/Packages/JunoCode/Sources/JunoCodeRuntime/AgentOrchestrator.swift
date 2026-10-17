@@ -121,7 +121,7 @@ public actor AgentOrchestrator {
             maximumRetainedImages: Int = 20,
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
-            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            retrySleep: (@Sendable (Duration) async throws -> Void)? = nil,
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
             repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,
@@ -145,7 +145,15 @@ public actor AgentOrchestrator {
             self.maximumRetainedImages = max(1, maximumRetainedImages)
             self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
             self.retryPolicy = retryPolicy
-            self.retrySleep = retrySleep
+            // Keep the async closure in this module. A closure literal in a
+            // public default argument is emitted again in client modules;
+            // Xcode 26 can link mismatched async frames and abort on Stop.
+            // https://github.com/swiftlang/swift/issues/92017
+            self.retrySleep = retrySleep ?? { duration in
+                let (seconds, attoseconds) = duration.components
+                let whole = UInt64(clamping: min(seconds, 18_000_000_000))
+                try await Task.sleep(nanoseconds: whole * 1_000_000_000 + UInt64(clamping: attoseconds / 1_000_000_000))
+            }
             self.retryJitter = retryJitter
             self.autonomy = autonomy
         }
@@ -1357,8 +1365,6 @@ public actor AgentOrchestrator {
                             do {
                                 try await configuration.retrySleep(delay)
                             } catch {
-                                // Stopped while waiting: the top of the loop
-                                // ends the run as stopped.
                                 break
                             }
                             if Task.isCancelled { break }

@@ -58,6 +58,7 @@ import { claudeSetup } from "./presets.js";
 import { fullAccessGuardReason } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
 import { vendorEnv } from "./vendor-env.js";
+import { claudeContent } from "./attachments.js";
 import { capabilityGuidance } from "../mcp/capability-hints.js";
 import type {
   McpEndpoint,
@@ -468,7 +469,8 @@ class ClaudeSession implements ProviderSession {
   #push(input: UserInput, turn: ClaudeTurn, priority: "now" | "next"): void {
     const uuid = randomUUID();
     turn.awaiting.add(uuid);
-    const content: Array<Record<string, unknown>> = [{ type: "text", text: input.text }];
+    // The words, the pictures as image blocks and other files as paths (attachments.ts).
+    const content: Array<Record<string, unknown>> = claudeContent(input);
     this.#prompts!.push({
       type: "user",
       message: { role: "user", content: content as never },

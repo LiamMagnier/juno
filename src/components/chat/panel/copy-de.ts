@@ -12,6 +12,8 @@
  * into every other language.
  */
 
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 export const PANEL_COPY_DE: Readonly<Record<string, string>> = {
   "Close panel": "Bereich schließen",
   "Back to chat": "Zurück zum Chat",
@@ -35,7 +37,7 @@ export const PANEL_COPY_DE: Readonly<Record<string, string>> = {
   "Stopped after": "Gestoppt nach",
   "Couldn’t finish": "Konnte nicht abschließen",
   "No steps yet": "Noch keine Schritte",
-  "Steps appear here as Juno works.": "Schritte erscheinen hier, während Juno arbeitet.",
+  [`Steps appear here as ${PRODUCT_NAME} works.`]: `Schritte erscheinen hier, während ${PRODUCT_NAME} arbeitet.`,
   "Said while working": "Während der Arbeit gesagt",
   Arguments: "Argumente",
   Result: "Ergebnis",
@@ -78,22 +80,22 @@ export const PANEL_COPY_DE: Readonly<Record<string, string>> = {
   "Estimated cost": "Geschätzte Kosten",
   "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it.":
     "Das Modell hat diese Argumente aus gelesenen Inhalten geschrieben: einer Webseite, einer Datei oder der Ausgabe einer anderen Verbindung. Solche Inhalte können Text enthalten, der beeinflussen soll, was gesendet wird. Prüfe, ob die Werte unten deinen Absichten entsprechen, bevor du es erlaubst.",
-  "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.":
-    "Dieser Chat enthält Inhalte, die Juno von außerhalb gelesen hat, etwa eine Webseite, eine Datei oder eine verbundene App. Prüfe, ob der Auftrag unten deiner Anfrage entspricht, bevor du ihn startest.",
+  [`This chat includes content ${PRODUCT_NAME} read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.`]:
+    `Dieser Chat enthält Inhalte, die ${PRODUCT_NAME} von außerhalb gelesen hat, etwa eine Webseite, eine Datei oder eine verbundene App. Prüfe, ob der Auftrag unten deiner Anfrage entspricht, bevor du ihn startest.`,
   "Reads only": "Nur lesend",
   "Reversible change": "Umkehrbare Änderung",
-  "Leaves Juno": "Verlässt Juno",
+  [`Leaves ${PRODUCT_NAME}`]: `Verlässt ${PRODUCT_NAME}`,
   "Cannot be undone": "Nicht rückgängig zu machen",
   Unverified: "Nicht überprüft",
-  "This reads. Nothing outside Juno changes.": "Das liest nur. Außerhalb von Juno ändert sich nichts.",
+  [`This reads. Nothing outside ${PRODUCT_NAME} changes.`]: `Das liest nur. Außerhalb von ${PRODUCT_NAME} ändert sich nichts.`,
   "This changes something that can be put back, like a label, a folder or a draft.":
     "Das ändert etwas, das sich zurücksetzen lässt, etwa ein Label, einen Ordner oder einen Entwurf.",
-  "This sends something to another service. Once it lands there, Juno cannot take it back.":
-    "Das sendet etwas an einen anderen Dienst. Ist es dort angekommen, kann Juno es nicht zurückholen.",
+  [`This sends something to another service. Once it lands there, ${PRODUCT_NAME} cannot take it back.`]:
+    `Das sendet etwas an einen anderen Dienst. Ist es dort angekommen, kann ${PRODUCT_NAME} es nicht zurückholen.`,
   "This deletes, pays for, or touches something private. Nothing here can undo it afterwards.":
     "Das löscht, bezahlt oder berührt etwas Privates. Nichts hier kann es danach rückgängig machen.",
-  "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer.":
-    "Juno konnte nicht prüfen, ob das nur liest, und behandelt es daher als Änderung, die Juno verlässt. Lies die Argumente unten, bevor du antwortest.",
+  [`${PRODUCT_NAME} could not verify that this only reads, so it is treated as a change that leaves ${PRODUCT_NAME}. Read the arguments below before you answer.`]:
+    `${PRODUCT_NAME} konnte nicht prüfen, ob das nur liest, und behandelt es daher als Änderung, die ${PRODUCT_NAME} verlässt. Lies die Argumente unten, bevor du antwortest.`,
   Cited: "Zitiert",
   "Also read": "Außerdem gelesen",
   Found: "Gefunden",
@@ -118,7 +120,7 @@ export const PANEL_COPY_DE: Readonly<Record<string, string>> = {
   Forget: "Vergessen",
   "Open source chat": "Ursprungschat öffnen",
   "Manage all": "Alle verwalten",
-  "Forgotten. Juno won’t learn this again.": "Vergessen. Juno lernt das nicht erneut.",
+  [`Forgotten. ${PRODUCT_NAME} won’t learn this again.`]: `Vergessen. ${PRODUCT_NAME} lernt das nicht erneut.`,
   "Couldn’t forget that. Nothing was changed.": "Das konnte nicht vergessen werden. Nichts wurde geändert.",
   Undo: "Rückgängig",
   Instant: "Sofort",

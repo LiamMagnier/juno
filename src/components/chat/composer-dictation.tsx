@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check, MicOff } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { serverDictationAvailable } from "@/hooks/use-dictation-support";
 import { useOptionalApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
 import { composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
@@ -42,6 +43,11 @@ import { encodeWav, type PcmTake } from "@/lib/wav";
  *    speech and must never be the text that ships.
  * If the server route is unconfigured, slow or fails, the preview stands in
  * rather than the words being lost.
+ *
+ * A browser without Web Speech (Firefox) dictates through the server alone
+ * (G36, hooks/use-dictation-support.ts): the server's re-cuts of the take so
+ * far are the live text, and when the final cut fails with nothing to stand
+ * in, the recording is kept and ✓ tries it again instead of closing empty.
  */
 
 /** Matches `duration-exit` on the motion ladder; see EXIT_CLASS below. */
@@ -195,11 +201,19 @@ export function ComposerDictation({
   const [transcribing, setTranscribing] = React.useState(false);
   /** The recognizer stopped coming back. The preview is dead; the recording is not. */
   const [recognitionLost, setRecognitionLost] = React.useState(false);
+  /**
+   * The server could not transcribe a take and there is no browser preview to
+   * stand in (a browser without Web Speech, G36). The recording is kept, so ✓
+   * tries again rather than the words vanishing into an empty draft.
+   */
+  const [failedTake, setFailedTake] = React.useState<{ blob: Blob; done: (text: string) => void } | null>(null);
 
   // Optional: a gallery may mount a composer outside the app shell, and the
   // browser recognizer is the fallback there.
   const app = useOptionalApp();
-  const serverStt = (app?.features.serverStt ?? false) && !stage;
+  // Configured AND on this plan: /api/voice/stt refuses a plan without voice,
+  // and a take sent there only to be refused waits out the timeout for nothing.
+  const serverStt = serverDictationAvailable(app) && !stage;
 
   const phaseRef = React.useRef<Phase>("active");
   /** Set the moment a cancel is accepted, including one that interrupts an
@@ -414,6 +428,7 @@ export function ComposerDictation({
 
       if (phase === "cancelling") {
         setTranscribing(false);
+        setFailedTake(null);
         void stopRecorder();
         close("");
         return;
@@ -428,11 +443,30 @@ export function ComposerDictation({
         abortRef.current = controller;
         const accurate = await transcribeBlob(blob, controller.signal);
         if (cancelledRef.current) return;
+        setTranscribing(false);
+        // Nothing to fall back on: keep the recording and say so (G36).
+        if (accurate === null && !previewText) return setFailedTake({ blob, done: (text) => close(text) });
         close(accurate ?? previewText);
       })();
     },
     [serverStt, speech, stopRecorder]
   );
+
+  /** ✓ (or Return) after a failed transcription: the same recording, once more. */
+  const retryTake = React.useCallback(() => {
+    const take = failedTake;
+    if (!take) return;
+    setFailedTake(null);
+    setTranscribing(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    void transcribeBlob(take.blob, controller.signal).then((text) => {
+      if (cancelledRef.current) return;
+      setTranscribing(false);
+      if (text === null) setFailedTake(take);
+      else take.done(text);
+    });
+  }, [failedTake]);
 
   const cancel = React.useCallback(() => finish("cancelling", () => onCancel()), [finish, onCancel]);
   const stop = React.useCallback(() => finish("stopping", onStop), [finish, onStop]);
@@ -449,20 +483,23 @@ export function ComposerDictation({
       e.preventDefault();
       if (action === "cancel") return cancel();
       if (failed) return;
+      if (failedTake) return retryTake();
       // Send only with something to send (native: `if hasWords`). With server transcription on, the
       // preview may legitimately be empty and the words still arrive.
       if (transcriptRef.current || serverStt) send();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cancel, send, serverStt, failed]);
+  }, [cancel, send, serverStt, failed, failedTake, retryTake]);
 
-  const listening = phaseRef.current === "active" && !closing && !failed && !isTranscribing;
+  const listening = phaseRef.current === "active" && !closing && !failed && !isTranscribing && !failedTake;
 
   /** Said to assistive technology only: the row itself carries no status word. */
   const status = micError
     ? "Microphone blocked"
-    : isTranscribing
+    : failedTake
+      ? "Couldn’t transcribe that. Press Done to try again."
+      : isTranscribing
       ? "Transcribing"
       : recognitionLost
         ? serverStt
@@ -485,14 +522,14 @@ export function ComposerDictation({
     <JunoVoiceGlow
       level={readLevel}
       processing={isTranscribing}
-      paused={closing || failed}
+      paused={closing || failed || !!failedTake}
       tone={isTranscribing ? "thinking" : "you"}
       className="w-full rounded-composer"
     >
       <div
         role="group"
         aria-label="Dictation"
-        data-dictation={isTranscribing ? "transcribing" : failed ? "failed" : "listening"}
+        data-dictation={isTranscribing ? "transcribing" : failed || failedTake ? "failed" : "listening"}
         className={cn(
           // The composer's own surface and radius: dictation is not a
           // different object arriving over the composer, it is the composer
@@ -514,11 +551,15 @@ export function ComposerDictation({
         >
           {noTranscription ? (
             <p className="text-muted-foreground">
-              This browser cannot transcribe speech. Type instead, or use a Chromium browser.
+              This browser can’t turn speech into text here. Type instead.
             </p>
           ) : micError ? (
             <p className="text-muted-foreground">
               {`${PRODUCT_NAME} needs the microphone to dictate. Allow it in your browser, then try again.`}
+            </p>
+          ) : failedTake ? (
+            <p className="text-muted-foreground">
+              Couldn’t turn that into text. Your recording is kept: press ✓ to try again, or ✕ to discard it.
             </p>
           ) : (
             <p className="whitespace-pre-wrap text-foreground">
@@ -546,7 +587,7 @@ export function ComposerDictation({
           micBlocked={micError}
           doneDisabled={failed || isTranscribing}
           onCancel={cancel}
-          onDone={stop}
+          onDone={failedTake ? retryTake : stop}
         />
 
         <span role="status" aria-live="polite" className="sr-only">

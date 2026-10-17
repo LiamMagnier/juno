@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
-import type { CodeRun } from "@/lib/code-runs";
+import { isTerminalRunStatus, type CodeRun } from "@/lib/code-runs";
 import { deviceOffersWorkspace, type DeviceRow } from "@/components/code/device-presence";
 
 /*
@@ -74,10 +74,12 @@ export interface CodeRunsData {
  * Who is asking, and it changes both requests this hook makes.
  *
  * The run list wants every run, because its rows ARE runs. The sidebar wants
- * one row per Code session, because its rows are conversations — and a
- * conversation row never decays out of the panel when its pull request merges,
- * so the pull-request read that exists solely to decay a settled run out of the
- * list would be a third poll answering a question the sidebar does not ask.
+ * one row per Code session, because its rows are conversations. A session row
+ * folds under Settled once its newest run's pull request merges or closes
+ * (`settledByPullRequest`), so the sidebar reads the open pull requests too,
+ * but only once one of its sessions has a finished run with a pull request:
+ * an account that never opened one never asks GitHub. Like the run list, it
+ * asks once per visit (mount and tab focus), never on the poll.
  * `perConversation` is therefore one switch for one caller shape rather than
  * two loose flags that can be set in a combination nothing means.
  */
@@ -101,6 +103,8 @@ export function useCodeRuns({ enabled = true, perConversation = false }: CodeRun
   React.useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    // The sidebar asks GitHub only once one of its sessions has a finished run with a pull request.
+    let pullsWanted = !perConversation;
     const controller = new AbortController();
 
     const load = async () => {
@@ -123,6 +127,10 @@ export function useCodeRuns({ enabled = true, perConversation = false }: CodeRun
         if (cancelled) return;
         setRuns(tasks);
         setState("ready");
+        if (!pullsWanted && tasks.some((t) => t.prUrl && isTerminalRunStatus(t.status))) {
+          pullsWanted = true;
+          void loadPulls();
+        }
         if (devicesRes.ok) {
           setDevices(((await devicesRes.json()) as DevicesPayload).devices ?? []);
         }
@@ -166,7 +174,7 @@ export function useCodeRuns({ enabled = true, perConversation = false }: CodeRun
     };
 
     void load();
-    if (!perConversation) void loadPulls();
+    if (pullsWanted) void loadPulls();
 
     /*
      * Visibility-gated polling, the same rule `useDevicePresence` keeps. A
@@ -181,7 +189,7 @@ export function useCodeRuns({ enabled = true, perConversation = false }: CodeRun
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         void load();
-        if (!perConversation) void loadPulls();
+        if (pullsWanted) void loadPulls();
       }
     };
     document.addEventListener("visibilitychange", onVisible);

@@ -58,7 +58,7 @@ test("the feed check accepts the github.com link or a signed release-host URL fo
   const row = {
     platform: "macos",
     label: "macOS",
-    url: "https://github.com/LiamMagnier/juno/releases/download/v1.6.0/Juno-1.6.0.dmg",
+    url: "https://github.com/LiamMagnier/juno/releases/download/v1.6.0/Alevr-1.6.0.dmg",
     urlExpiresAt: null,
     version: "1.6.0",
     size: 23_958_367,
@@ -88,10 +88,10 @@ test("the feed check accepts the github.com link or a signed release-host URL fo
 
   // Everything that was refused before is still refused.
   for (const wrong of [
-    { url: "https://evil.example.com/Juno-1.6.0.dmg" },
+    { url: "https://evil.example.com/Alevr-1.6.0.dmg" },
     { url: "http://release-assets.githubusercontent.com/x" },
     { url: "https://release-assets.githubusercontent.com.evil.example/x" },
-    { url: "https://github.com/LiamMagnier/juno/releases/download/v1.5.4/Juno-1.5.4.dmg" },
+    { url: "https://github.com/LiamMagnier/juno/releases/download/v1.5.4/Alevr-1.5.4.dmg" },
     { url: null },
     { version: "1.5.4" },
     { sha256: "cd".repeat(32) },

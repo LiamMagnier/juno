@@ -220,7 +220,7 @@ struct StudioToolLine: View {
                 }
                 Text(parts.verb)
                     .studioType(.textMedium)
-                    .foregroundStyle(record.status == .failed ? Studio.Ink.danger : Studio.Ink.secondary)
+                    .foregroundStyle(record.isPresentedAsFailure ? Studio.Ink.danger : Studio.Ink.secondary)
                 if !parts.object.isEmpty {
                     objectLabel
                 }
@@ -236,13 +236,13 @@ struct StudioToolLine: View {
             if record.status == .failed || record.status == .denied,
                let result = record.resultSummary, !result.isEmpty
             {
-                Text(result)
+                Text(record.isStaleScreenRecovery ? ComputerStepPresentation.refreshMessage : result)
                     .studioType(.small)
-                    .foregroundStyle(record.status == .failed ? Studio.Ink.danger : Studio.Ink.secondary)
+                    .foregroundStyle(record.isPresentedAsFailure ? Studio.Ink.danger : Studio.Ink.secondary)
                     .lineLimit(3)
                     .padding(.leading, 22)
             }
-            if showsOutput || (record.status == .failed && hasOutput) {
+            if showsOutput || (record.isPresentedAsFailure && hasOutput) {
                 StudioOutputWell(
                     lines: record.outputLines,
                     command: isCommand ? parts.object : nil,
@@ -290,7 +290,11 @@ struct StudioToolLine: View {
         case .succeeded:
             JunoIconView(.check, size: 11).foregroundStyle(Studio.Ink.tertiary)
         case .failed:
-            JunoIconView(.close, size: 11).foregroundStyle(Studio.Ink.danger)
+            if record.isStaleScreenRecovery {
+                JunoIconView(.refresh, size: 11).foregroundStyle(Studio.Ink.secondary)
+            } else {
+                JunoIconView(.close, size: 11).foregroundStyle(Studio.Ink.danger)
+            }
         case .denied, .cancelled:
             JunoIconView(.circleSlash, size: 11).foregroundStyle(Studio.Ink.tertiary)
         }

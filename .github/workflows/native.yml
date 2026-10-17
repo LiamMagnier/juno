@@ -203,6 +203,34 @@ jobs:
         run: npm run native:design:check
 
   # ---------------------------------------------------------------------------
+  # The apps' signing configuration: the iPhone's push entitlement, how it is
+  # signed, and one deployment floor per app.
+  #
+  # Commit 615d3a5b0 regenerated the iPhone project and left its entitlements
+  # an empty dict. Every build stayed green, because an app without
+  # `aps-environment` still compiles, signs and installs; it just never gets
+  # a push token, so agent, Work, research and Code approval pushes all died.
+  # project.yml and the .pbxproj also sat at iOS 18 while the xcconfigs and
+  # the packages required 26. This fails on either, naming the rule.
+  #
+  # Linux and `node:*` only, so it runs on every push. Generating the iPhone
+  # project runs the same script (project.yml's postGenCommand).
+  # ---------------------------------------------------------------------------
+  signing-config:
+    name: Entitlements and deployment targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Push entitlement, signing and deployment targets hold
+        run: npm run native:entitlements:check
+
+  # ---------------------------------------------------------------------------
   # What the web changed that nobody weighed for native
   # (MACOS_LIQUID_GLASS_REDESIGN.md §A4.4, §A4.5 and §A4.9).
   #
@@ -266,8 +294,9 @@ jobs:
     runs-on: macos-26
     # JunoNativeKit can finish compiling and then leave xctest parked forever on
     # a hosted runner. The package runner below bounds that state and retries it
-    # once with a clean scratch path; this outer limit remains the final fuse.
-    timeout-minutes: 22
+    # once in a fresh process. Build and test have separate bounded deadlines;
+    # this outer limit remains the final fuse.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -290,12 +319,30 @@ jobs:
           sudo xcode-select -s "$newest/Contents/Developer"
           xcodebuild -version
 
+      - name: Verify the Swift test runner
+        run: python3 scripts/test-swift-package-runner.py
+
       - name: Test ${{ matrix.package }}
         run: >-
           python3 scripts/run-swift-package-tests.py
           --package "${{ matrix.package }}"
           --timeout-seconds 480
           --attempts 2
+
+      # Keep native abort reports: the Swift test runner can report only SIGABRT
+      # while stdout still contains buffered successful tests. The faulting
+      # thread in the .ips file is the evidence needed to diagnose that crash.
+      - name: Preserve Swift crash reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-crash-reports-${{ matrix.package }}
+          path: |
+            ~/Library/Logs/DiagnosticReports/*xctest*.ips
+            ~/Library/Logs/DiagnosticReports/*Juno*.ips
+            ~/Library/Logs/DiagnosticReports/*swift*.ips
+          if-no-files-found: warn
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # The macOS app. Unsigned: this job verifies that the app compiles, not that it
@@ -363,6 +410,27 @@ jobs:
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      # A Stable build must carry the env server bundle: JunoDesktop's "Env
+      # server bundle" phase fails it without one, on purpose, so a release
+      # can never ship the app without its sidecar. The bundle is gitignored,
+      # so it is built here the way release-macos.sh builds it: esbuild from
+      # the root install, agent-core bundled from source, the env server's own
+      # dependencies. Without it the phase finds no installed toolchain to
+      # bundle with and fails the Stable build before any Swift compiles.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Bundle the env server
+        run: |
+          set -euo pipefail
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+          npm run env-server:bundle:mac
+          test -s native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
 
       - name: Build JunoDesktop (Stable, strict)
         run: |

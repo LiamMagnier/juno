@@ -307,6 +307,7 @@ final class JunoAgentFaceTests: XCTestCase {
         XCTAssertEqual(JunoAgentFaceRig.pose(asleep, now: 0.09, reduceMotion: false).lids, 1)
     }
 
+    @MainActor
     func testTheHaloCarriesTheState() {
         XCTAssertEqual(JunoAgentState.allCases.map { JunoAgentHalo.opacity($0) }, [0.55, 0.8, 1, 1, 0.55, 0.55, 0.25, 0.55])
         XCTAssertEqual(JunoAgentState.allCases.filter { JunoAgentHalo.turns($0) }, [.thinking])

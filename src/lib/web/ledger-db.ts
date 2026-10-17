@@ -5,6 +5,7 @@ import { Role } from "@prisma/client";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { prisma } from "@/lib/prisma";
 import type { LedgerHistoryPort, LedgerHistoryRow, LedgerHistorySource } from "@/lib/web/provenance";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /**
  * The two bounded history queries behind the provenance ledger (SPEC §6.2.1),
@@ -34,7 +35,7 @@ export function ledgerHistoryForUser(userId: string): LedgerHistoryPort {
   return {
     async userTexts(conversationId, limit) {
       const rows = await prisma.message.findMany({
-        where: { conversationId, role: Role.USER, conversation: { userId } },
+        where: { conversationId, role: Role.USER, conversation: { userId }, ...ON_ACTIVE_PATH },
         orderBy: { createdAt: "desc" },
         take: limit,
         select: { content: true },
@@ -43,7 +44,7 @@ export function ledgerHistoryForUser(userId: string): LedgerHistoryPort {
     },
     async assistantSources(conversationId, limit) {
       const rows = await prisma.message.findMany({
-        where: { conversationId, role: Role.ASSISTANT, conversation: { userId } },
+        where: { conversationId, role: Role.ASSISTANT, conversation: { userId }, ...ON_ACTIVE_PATH },
         orderBy: { createdAt: "desc" },
         take: limit,
         select: { model: true, sources: true },

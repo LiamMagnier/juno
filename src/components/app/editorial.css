@@ -7,13 +7,11 @@
 .ed {
   --ed-line: hsl(var(--foreground) / 0.12);
   --ed-hair: hsl(var(--foreground) / 0.07);
-  --ed-presence: #2d49c9;
   --ed-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dark .ed {
   --ed-line: hsl(var(--foreground) / 0.14);
   --ed-hair: hsl(var(--foreground) / 0.08);
-  --ed-presence: #97a6e6;
 }
 
 .ed-display {
@@ -63,8 +61,7 @@
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
-.ed-presence { color: var(--ed-presence, #2d49c9); }
-.dark .ed-presence { color: var(--ed-presence, #97a6e6); }
+.ed-presence { color: hsl(var(--presence-ink)); }
 .ed-rule { border-color: var(--ed-hair); }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -91,9 +88,9 @@
 .rw-hour { stroke: var(--ed-hair); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
 .rw-now { stroke: hsl(var(--foreground)); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .rw-point { fill: hsl(var(--foreground)); }
-.rw-live { fill: var(--ed-presence); }
-.rw-ring { fill: none; stroke: var(--ed-presence); stroke-width: 1; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; }
-.rw-trajectory { fill: none; stroke: var(--ed-presence); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rw-live { fill: hsl(var(--presence)); }
+.rw-ring { fill: none; stroke: hsl(var(--presence)); stroke-width: 1; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; }
+.rw-trajectory { fill: none; stroke: hsl(var(--presence)); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .rw-label { fill: hsl(var(--foreground)); font-size: 13px; font-weight: 500; }
 @media (prefers-reduced-motion: no-preference) {
   .rw-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ed-draw 1600ms var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; animation-delay: calc(var(--i, 0) * 70ms + 120ms); }
@@ -203,7 +200,15 @@
   letter-spacing: -0.01em;
 }
 .ed-list > * { position: relative; }
-.ed-list > * + *::before {
+/* No `* + *` or `:hover + *`: a sibling combinator whose left side has no
+   class, id or attribute makes Chrome restyle every sibling after an inserted
+   element, subtrees and all, on every insertion anywhere in the page, every
+   transcript row included (scripts/postcss/sibling-invalidation.cjs).
+   `:where(:not(:first-child))` is the same rows at the same specificity; the
+   hover rule is keyed on `ed-row`, which every row of these lists carries. A
+   row without it keeps its hairline under the hovered row above it, and
+   nothing else changes. */
+.ed-list > :where(:not(:first-child))::before {
   content: "";
   position: absolute;
   inset: 0 12px auto;
@@ -211,9 +216,9 @@
   transition: opacity 160ms var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1));
   pointer-events: none;
 }
-.dark .ed-list > * + *::before { border-top-color: hsl(var(--foreground) / 0.08); }
+.dark .ed-list > :where(:not(:first-child))::before { border-top-color: hsl(var(--foreground) / 0.08); }
 .ed-list > :hover::before,
-.ed-list > :hover + *::before { opacity: 0; }
+.ed-list > :where(.ed-row):hover + *::before { opacity: 0; }
 
 /* A Customize section's title (customize-section.tsx): the tile-name rung. */
 .customize-title {

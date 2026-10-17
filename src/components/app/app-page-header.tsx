@@ -72,6 +72,12 @@ import { PageBackdrop } from "@/components/app/page-backdrop";
  *    name it is a line of type spent on nothing.
  *
  * What is left is a page that opens with its name. That is the whole of it.
+ *
+ * ON A PHONE IT IS COMPACT (G54). Under the page's 40rem step a three-line
+ * lede and a 28px tail pushed the first project, the first file, below the
+ * fold at 390px. There the lede keeps to its one line (the docblock's own
+ * rule for it; the full sentence stays in the DOM for a screen reader) and
+ * the header gives the page body 20px, not 28. Wider, nothing changes.
  */
 export function AppPageHeader({
   eyebrow,
@@ -109,7 +115,7 @@ export function AppPageHeader({
     // Full --border: this rule separates the header from the page body, so it
     // carries layout. The alpha came from a light-theme habit and now compounds
     // with a token that already dropped five points for the black ground.
-    <header className={cn("mb-7 @[40rem]/page:mb-8", backdrop && "relative isolate", className)}>
+    <header className={cn("mb-5 @[40rem]/page:mb-8", backdrop && "relative isolate", className)}>
       {backdrop && <PageBackdrop />}
       {/* The whole row is conditional now, and so is each half of it. A page
           with neither a parent nor a section opens on its name — no leading
@@ -147,7 +153,7 @@ export function AppPageHeader({
             row wider than that line (Admin's four tabs) scrolls inside its own track. */}
         {actions && <div className="ed-rise flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}
       </div>
-      {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
+      {lede && <p className="ed-rise mt-2 line-clamp-1 max-w-prose text-pretty text-body text-muted-foreground @[40rem]/page:line-clamp-none" style={{ ["--i" as string]: 1 }}>{lede}</p>}
     </header>
   );
 }
@@ -233,10 +239,12 @@ export function AppPageHeaderSkeleton({
             // they are 21 + 6 (space-y-1.5) + 21 — a visible gap between the
             // bars, and the arithmetic still lands on the paragraph's height.
             // The second bar is short, the way a last line of prose is.
+            // On a phone the real lede keeps to one line (see AppPageHeader),
+            // so the two-line placeholder is one 24px bar there.
             (ledeLines > 1 ? (
               <div className="mt-2 max-w-prose space-y-1.5">
-                <Skeleton className="h-[21px] w-full rounded-xs" />
-                <Skeleton className="h-[21px] w-2/3 rounded-xs" />
+                <Skeleton className="h-6 w-full rounded-xs @[40rem]/page:h-[21px]" />
+                <Skeleton className="hidden h-[21px] w-2/3 rounded-xs @[40rem]/page:block" />
               </div>
             ) : (
               <Skeleton className="mt-2 h-6 w-full max-w-prose rounded-xs" />

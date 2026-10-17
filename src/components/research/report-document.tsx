@@ -32,6 +32,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, Circle, CircleDashed, CircleS
 import { Phrase, usePhrase } from "@/lib/i18n-phrase";
 import type { PhraseLine, PhraseSpec } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
+import { reducedMotionAt } from "@/lib/motion-preference";
 import type { ClientSource } from "@/types/chat";
 
 /*
@@ -86,7 +87,7 @@ export function sectionAnchor(prefix: string, id: string): string {
 export function jumpToSection(anchor: string): void {
   const el = document.getElementById(anchor);
   if (!el) return;
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches || !!el.closest('[data-motion="reduce"]');
+  const reduced = reducedMotionAt(el);
   el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
 }
 

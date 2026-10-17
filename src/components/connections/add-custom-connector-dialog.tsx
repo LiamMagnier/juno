@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, KeyRound, ShieldCheck, SlidersHorizontal } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -21,6 +21,7 @@ import {
 import { staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 type Ready = Extract<ProbeResponse, { ok: true }>;
 
@@ -178,12 +179,13 @@ function AddCustomConnectorFlow({ onSaved }: { onSaved: () => void }) {
             </Button>
           </form>
 
-          {/* One line of motion while a stranger's server answers: the address
-              itself, shimmering, so the wait names what it is waiting on. */}
+          {/* While a stranger's server answers, the line names what the wait is
+              for. It stays still: the spinner in Check, the button just
+              pressed, is the one thing moving. */}
           <div aria-live="polite" className="min-h-0">
             {checking ? (
               <p className="mt-3 truncate text-caption text-muted-foreground motion-safe:animate-fade-in">
-                <span className="shimmer-text">Looking for a server at {hostOf(address)}…</span>
+                Looking for a server at {hostOf(address)}…
               </p>
             ) : refusal !== null ? (
               <WorkStateNote tone="error" className="mt-3 motion-safe:animate-rise-in">

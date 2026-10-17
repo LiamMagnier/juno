@@ -19,6 +19,7 @@ import type {
   ClientAttachment,
   ClientConversation,
   ClientMessage,
+  ClientMessageBranch,
   ClientSource,
 } from "@/types/chat";
 import type { ArtifactType } from "@/lib/message-content";
@@ -30,6 +31,7 @@ import { estimateCostUsd } from "@/lib/pricing";
 import { coerceChatOrigin } from "@/lib/chat-origin";
 import { readToolDetail } from "@/lib/chat/tool-detail";
 import { readContextReceipt } from "@/lib/chat/context-tokens";
+import { readRoutineProposal } from "@/lib/work/routine-proposal";
 import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
 // import { serializeActivity } from "@/lib/chat/run-record";
 
@@ -115,6 +117,10 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
     // The context-token receipt: parsed against its schema, so a row that does
     // not match is dropped here rather than handed to a renderer that trusts it.
     const contextReceipt = readContextReceipt(record.contextReceipt);
+    // A routine the model drafted (`propose_routine`). Read field by field for
+    // the reason above: without this line the card streams live and is gone
+    // after a reload, and with it a row that does not match is dropped.
+    const routineProposal = readRoutineProposal(record.routineProposal);
 
     return [
       {
@@ -130,6 +136,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
         ...(toolStatus ? { toolStatus } : {}),
         ...(agentChange ? { agentChange } : {}),
         ...(contextReceipt ? { contextReceipt } : {}),
+        ...(routineProposal ? { routineProposal } : {}),
       },
     ];
   });
@@ -227,7 +234,12 @@ export async function serializeAttachment(att: AttachmentForClient): Promise<Cli
 type MessageVersionMeta = Pick<MessageVersion, "id" | "model" | "createdAt">;
 
 export async function serializeMessage(
-  msg: Message & { attachments: AttachmentForClient[]; versions?: MessageVersionMeta[] }
+  msg: Message & {
+    attachments: AttachmentForClient[];
+    versions?: MessageVersionMeta[];
+    /** Its place among its alternatives, when the reader computed it (src/lib/chat/branches.ts). */
+    branch?: ClientMessageBranch | null;
+  }
 ): Promise<ClientMessage> {
   // Prefer the exact cost written at generation time (includes cache writes +
   // tool fees). Recomputing from token counts alone systematically under-bills
@@ -272,6 +284,8 @@ export async function serializeMessage(
     versions: msg.versions?.length
       ? msg.versions.map((v) => ({ id: v.id, model: v.model, createdAt: v.createdAt.toISOString() }))
       : undefined,
+    // The "‹ 2/3 ›" pager across branches. Absent for a message with no alternatives.
+    branch: msg.branch ?? undefined,
   };
 }
 

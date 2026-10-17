@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { toast } from "sonner";
 import { CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -21,6 +22,7 @@ import type { ClientAnnouncement } from "@/lib/announcements";
 import { AnnouncementCard } from "@/components/app/announcement-popup";
 import { ANNOUNCEMENT_ACCEPT, ANNOUNCEMENT_MAX_BYTES } from "@/lib/announcement-media";
 import { staggerDelay } from "@/lib/motion";
+import { useReducedMotion as useSharedReducedMotion } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
 
 /**
@@ -33,23 +35,12 @@ import { cn } from "@/lib/utils";
  * agree, then corrects on mount.
  *
  * Deliberately not framer-motion's `useReducedMotion`: that one (12.x) reads
- * the preference once during the first render (null on the server, so the
+ * the OS preference once during the first render (null on the server, so the
  * `autoPlay`/`controls` attributes could disagree at hydration), never updates
- * when the setting changes while the page is open, and logs a dev warning
- * whenever the preference is on. This one does neither of the first two.
+ * when the setting changes while the page is open, and ignores the in-app
+ * Motion choice. lib/motion-preference.ts's does none of those.
  */
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (!mq) return;
-    setReduced(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
+const useReducedMotion = useSharedReducedMotion;
 
 type Draft = {
   title: string;
@@ -392,7 +383,7 @@ function MediaDropzone({
         />
         {uploading ? (
           <>
-            <Loader2 className="size-5 text-muted-foreground motion-safe:animate-spin" aria-hidden />
+            <GalaxyMark phase="working" size={20} className="text-muted-foreground" />
             {/* A real bar, not a number that changes in place: a percentage on
                 its own gives no sense of how much is left, and the same upload
                 already draws one in import-history. */}

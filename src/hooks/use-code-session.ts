@@ -1,10 +1,12 @@
 "use client";
 
 import type { CloudSkillRef } from "@/lib/code-v2/cloud-skills";
+import type { CodePermissionMode } from "@/lib/code-environments";
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { ClientAttachment, ClientMessage, ConversationHistory } from "@/types/chat";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import { COMPLETE_HISTORY, prependOlder } from "@/lib/chat/history-merge";
 import { createOlderHistoryLoader, type LoadOlderRequest } from "@/lib/chat/history-client";
 import { canSteerRun } from "@/lib/code-steer-policy";
@@ -768,7 +770,13 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
        * catalog. Optional, so a caller that has no preference still gets that
        * fallback rather than a failure.
        */
-      choice: { model?: string | null; reasoningEffort?: string | null; skills?: CloudSkillRef[] } = {},
+      choice: {
+        model?: string | null;
+        reasoningEffort?: string | null;
+        skills?: CloudSkillRef[];
+        /** A cloud run's mode (the composer's, e.g. `/plan`); absent inherits the last task's. */
+        permissionMode?: CodePermissionMode | null;
+      } = {},
     ): Promise<{ accepted: boolean }> => {
       if (statusRef.current !== "idle") return { accepted: false };
       const trimmed = text.trim();
@@ -806,6 +814,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 reasoningEffort: choice.reasoningEffort || undefined,
                 // Skills lane: absent keeps the conversation's last choice.
                 skills: choice.skills,
+                permissionMode: choice.permissionMode || undefined,
               }
             : {
                 deviceId: target.deviceId,
@@ -1128,7 +1137,13 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     [activeTask],
   );
 
-  const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
+  const setFeedback = React.useCallback((
+    messageId: string,
+    feedback: "UP" | "DOWN" | null,
+    // The reason picker's answer (message-feedback.tsx), sent only with DOWN,
+    // exactly as the chat's own setFeedback sends it.
+    detail?: FeedbackDetail,
+  ) => {
     // A live bubble is a client-side id with no row behind it — POSTing would
     // 404. The view hides feedback for these, so reaching here means a race
     // (the run settled mid-click); drop it rather than fake success.
@@ -1150,7 +1165,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     fetch(`/api/messages/${messageId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ feedback }),
+      body: JSON.stringify(feedback === "DOWN" && detail ? { feedback, ...detail } : { feedback }),
     })
       .then((res) => {
         if (!res.ok) rollback();

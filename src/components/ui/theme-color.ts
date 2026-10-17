@@ -1,3 +1,5 @@
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+
 /**
  * `--background`, as the two hex values the OS needs.
  *
@@ -8,11 +10,12 @@
  * stylesheet at all). Three copies had drifted into three different pairs.
  * This is the one copy.
  *
- * Converted from globals.css by hand: light `48 24% 97.2%` and dark
- * `30 5% 11.5%` (docs/design/FLAT_UI.md §3.1). When the ground moves there,
- * move it here in the same change.
+ * It used to be converted from globals.css by hand, and its comment still
+ * quoted the warm ground the graphite retune replaced. It now comes from the
+ * token projection (`npm run design:tokens`), so a move of `--background`
+ * reaches the OS chrome in the same change.
  */
 export const THEME_COLOR = {
-  light: "#fcfcfd",
-  dark: "#18191b",
+  light: SCRIPT_COLOR.background.light,
+  dark: SCRIPT_COLOR.background.dark,
 } as const;

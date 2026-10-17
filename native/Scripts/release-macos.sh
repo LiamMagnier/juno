@@ -232,7 +232,7 @@ ADHOC
   ⚠  DEVELOPMENT-SIGNED STABLE RELEASE
 
      This explicitly requested stable release is signed for development
-     so existing development-signed Juno installs can update. It is not
+     so existing development-signed Alevr installs can update. It is not
      notarized and is not suitable for distribution to a fresh Mac; use
      --publish with Developer ID and notarization for a public production build.
 
@@ -543,7 +543,7 @@ bash scripts/release-gates.sh "$APP"
 # staple the image too.
 if [ "$NOTARIZE" = 1 ]; then
   step "Notarize the app (this takes a few minutes)"
-  APP_ZIP="$BUILD_DIR/Juno-$VERSION.app.zip"
+  APP_ZIP="$BUILD_DIR/Alevr-$VERSION.app.zip"
   rm -f "$APP_ZIP"
   # `ditto -c -k --keepParent` is the only archiver whose output notarytool
   # accepts for a bundle; a plain `zip` loses the symlinks inside a .app.
@@ -571,7 +571,7 @@ if [ "$NOTARIZE" = 1 ]; then
 fi
 
 step "Disk image"
-DMG="$BUILD_DIR/Juno-$VERSION.dmg"
+DMG="$BUILD_DIR/Alevr-$VERSION.dmg"
 rm -f "$DMG"
 STAGE="$BUILD_DIR/dmg"
 rm -rf "$STAGE" && mkdir -p "$STAGE"
@@ -579,7 +579,7 @@ rm -rf "$STAGE" && mkdir -p "$STAGE"
 # extended attributes have to survive the copy.
 ditto "$APP" "$STAGE/$(basename "$APP")"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "Juno $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -volname "Alevr $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 if [ "$IDENTITY" != "-" ]; then
   codesign --sign "$IDENTITY" --timestamp "$DMG"
   codesign --verify --strict --verbose=2 "$DMG"
@@ -631,7 +631,7 @@ fi
 step "Release symbols and checksums"
 DSYM_SOURCE="$(find "$BUILD_DIR/archive.xcarchive/dSYMs" -maxdepth 1 -type d -name '*.app.dSYM' -print -quit)"
 [ -n "$DSYM_SOURCE" ] && [ -d "$DSYM_SOURCE" ] || die "The archive contains no app dSYM. Refusing to publish without symbols."
-DSYM="$BUILD_DIR/Juno-$VERSION.dSYM.zip"
+DSYM="$BUILD_DIR/Alevr-$VERSION.dSYM.zip"
 rm -f "$DSYM"
 ditto -c -k --sequesterRsrc --keepParent "$DSYM_SOURCE" "$DSYM"
 CHECKSUMS="$BUILD_DIR/SHA256SUMS.txt"
@@ -718,11 +718,11 @@ SIZE="$(stat -f%z "$DMG")"
 # `/api/downloads` reads to decide whether a build is safe to offer — before it
 # existed, nothing published distinguished a notarized release from a
 # development-signed one, and the download menu offered both.
-MANIFEST="$BUILD_DIR/Juno-$VERSION.release.json"
+MANIFEST="$BUILD_DIR/Alevr-$VERSION.release.json"
 cat > "$MANIFEST" <<MANIFEST_JSON
 {
   "schema_version": 2,
-  "product": "Juno",
+  "product": "Alevr",
   "platform": "macos",
   "channel": "stable",
   "version": "$VERSION",
@@ -771,16 +771,16 @@ step "Publish v$VERSION to $REPO"
 if [ "$PRODUCTION_PUBLISH" = 1 ]; then
   [ "$NOTARIZE" = 1 ] || die "A public production release must be Developer ID signed and notarized."
 fi
-TITLE="Juno for Mac $VERSION"
+TITLE="Alevr for Mac $VERSION"
 if [ "$DEVELOPMENT_PUBLISH" = 1 ]; then
   RELEASE_NOTES="$(cat <<NOTES
 Source commit \`$(git rev-parse HEAD)\`
 DMG SHA-256 \`$SHA\` · $SIZE bytes
 Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
 
-**This build is not notarized.** macOS Gatekeeper may refuse to open it after download. It updates existing Juno installs that are themselves development-signed by this team; on any other Mac, build from source or use a Developer ID-signed production release.
+**This build is not notarized.** macOS Gatekeeper may refuse to open it after download. It updates existing Alevr installs that are themselves development-signed by this team; on any other Mac, build from source or use a Developer ID-signed production release.
 
-Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
+Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Alevr → Install Update and Relaunch.
 NOTES
 )"
 else
@@ -789,7 +789,7 @@ Source commit \`$(git rev-parse HEAD)\`
 DMG SHA-256 \`$SHA\` · $SIZE bytes
 Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
 
-Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
+Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Alevr → Install Update and Relaunch.
 NOTES
 )"
 fi
@@ -887,7 +887,7 @@ for attempt in $(seq 1 18); do
             and .size == $size
             and .notarized == $notarized
             and (
-              .url == ("https://github.com/LiamMagnier/juno/releases/download/v" + $version + "/Juno-" + $version + ".dmg")
+              .url == ("https://github.com/LiamMagnier/juno/releases/download/v" + $version + "/Alevr-" + $version + ".dmg")
               or ((.url // "") | test("^https://(release-assets|objects)[.]githubusercontent[.]com/"))
             )
           )
@@ -899,7 +899,7 @@ for attempt in $(seq 1 18); do
       --output "$FEED_ASSET" "$FEED_ASSET_URL" 2>/dev/null \
     && [ "$(shasum -a 256 "$FEED_ASSET" | awk '{print $1}')" = "$SHA" ]; then
     rm -f "$FEED_ASSET"
-    printf '\n  Published and discoverable. The live updater feed serves Juno %s.\n\n' "$VERSION"
+    printf '\n  Published and discoverable. The live updater feed serves Alevr %s.\n\n' "$VERSION"
     exit 0
   fi
   rm -f "$FEED_ASSET"

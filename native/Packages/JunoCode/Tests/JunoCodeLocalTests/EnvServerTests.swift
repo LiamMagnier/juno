@@ -645,6 +645,41 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(refused.error?.code, .badRequest)
     }
 
+    /// The web's Screen pane reads a stored frame of a shared session's
+    /// timeline; a frame of a session outside the shared folders, or a ref
+    /// that is not a frame, never reaches the env server.
+    func testLinkRelaysAComputerFrameOnlyForASharedSession() async {
+        let forwarded = ForwardLog()
+        let link = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            forward: { type, _ in
+                forwarded.append(type)
+                if type == .sessionList {
+                    return .object(["sessions": .array([
+                        .object(["id": .string("claude:t7"), "cwd": .string("/Users/maya/code/shop/web")]),
+                        .object(["id": .string("s-private"), "cwd": .string("/Users/maya/Documents")]),
+                    ])])
+                }
+                return .object(["mime": .string("image/jpeg"), "data": .string("AAAA"), "bytes": .number(3)])
+            }
+        )
+        XCTAssertTrue(EnvServerDeviceLink.remoteCommands.contains(.computerFrame))
+        func frame(_ ref: String) async -> CodeV2.ServerResponse {
+            await link.run(.init(id: "1", type: "computer.frame", params: .object(["ref": .string(ref)])))
+        }
+        let shared = await frame("alevr-shot://claude:t7/toolu_1.jpg")
+        XCTAssertEqual(shared.ok, true)
+        XCTAssertEqual(forwarded.driven.filter { $0 == .computerFrame }.count, 1)
+
+        let privateFrame = await frame("alevr-shot://s-private/toolu_2.jpg")
+        XCTAssertEqual(privateFrame.error?.code, .badRequest)
+        let notAFrame = await frame("/Users/maya/Documents/secret.jpg")
+        XCTAssertEqual(notAFrame.error?.code, .badRequest)
+        let traversal = await frame("alevr-shot://../toolu_1.jpg")
+        XCTAssertEqual(traversal.error?.code, .badRequest)
+        XCTAssertEqual(forwarded.driven.filter { $0 == .computerFrame }.count, 1, "only the shared session's frame was forwarded")
+    }
+
     /// The first event after a quiet spell leaves at once; while a push is on
     /// the wire everything batches into the next one; never two pushes at once.
     func testChannelPushesAtOnceKeepsOnePushInFlightAndBatchesTheRest() async throws {
@@ -768,6 +803,13 @@ extension EnvServerTests {
         try await CodeV2HunkApplier().apply(.accept, hunk: files[0].hunks[0], path: "index.html", in: dir)
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "<h1>Hi</h1>\n<p>Portfolio</p>\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path))
+    }
+
+    func testRepositoryDetectionStopsAtADirectoryURLForTheFilesystemRoot() {
+        XCTAssertEqual(
+            CodeV2HunkApplier.isInsideRepository(URL(fileURLWithPath: "/", isDirectory: true)),
+            FileManager.default.fileExists(atPath: "/.git")
+        )
     }
 }
 

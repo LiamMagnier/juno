@@ -400,10 +400,12 @@ struct CodeV2ApprovalTakeover: View {
             }
             Spacer(minLength: 0)
             if options.contains(.decline) {
+                // Denial is an explicit act: ⌘⌫, never a stray Esc (Esc only
+                // leaves the takeover; the run keeps waiting for an answer).
                 Button("Deny") { respond(.decline) }
                     .buttonStyle(.borderless)
-                    .keyboardShortcut(.cancelAction)
-                    .help("Deny (Esc)")
+                    .keyboardShortcut(.delete, modifiers: .command)
+                    .help("Deny (⌘⌫)")
                     .contentShape(.rect)
             }
             if request.action == .fileChange, let showDiff {

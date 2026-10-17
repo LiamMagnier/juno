@@ -184,7 +184,7 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   assert.match(html, /Changed 3 files/);
 });
 
-test("the composer at rest shows +, the model trigger, the Team chip, the mode, the options menu, the mic and send", () => {
+test("the composer at rest shows +, the model trigger, the Team chip, the mode, the options menu and send; the mic once dictation is known", () => {
   const f = fixture("model-picker");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model }, ui: {} }));
   const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
@@ -192,7 +192,10 @@ test("the composer at rest shows +, the model trigger, the Team chip, the mode, 
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
   assert.match(foot, /aria-label="Mode: Accept edits"/);
   assert.match(foot, /aria-label="More options"/);
-  assert.match(foot, /aria-label="Dictate"/);
+  // The mic waits for the shared dictation check (G36), which runs after
+  // hydration so the server and first client render agree; dictation-support.test.ts
+  // pins that the v2 composer draws it from that check.
+  assert.doesNotMatch(foot, /aria-label="Dictate"/, "no mic before this browser's dictation support is known");
   // Team lane: the Team chip is always there; Solo shows nothing extra.
   assert.match(foot, /aria-label="Team"/);
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);

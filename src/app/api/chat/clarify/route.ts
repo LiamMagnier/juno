@@ -9,6 +9,7 @@ import { noPreflightClarification, quickPreflightSkip } from "@/lib/preflight-cl
 import { triagePreflightClarification, type TriageContextMessage } from "@/lib/preflight-triage";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     let recentMessages: TriageContextMessage[] = [];
     if (input.conversationId && !input.privateMode) {
       const rows = await prisma.message.findMany({
-        where: { conversationId: input.conversationId, conversation: { userId: user.id } },
+        where: { conversationId: input.conversationId, conversation: { userId: user.id }, ...ON_ACTIVE_PATH },
         orderBy: { createdAt: "desc" },
         take: 6,
         select: { role: true, content: true },

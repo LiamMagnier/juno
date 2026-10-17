@@ -93,6 +93,11 @@ final class PortableComputerTests: XCTestCase {
 
     func testRefusalsAreSentencesTheModelCanActOn() {
         let cases: [(String, String)] = [
+            (#"{"action":"scroll","direction":"down","amount":1e100}"#, "whole number"),
+            (#"{"action":"scroll","direction":"down","amount":"Infinity"}"#, "whole number"),
+            (#"{"action":"scroll","direction":"down","amount":"NaN"}"#, "whole number"),
+            (#"{"action":"scroll","direction":"down","amount":1.5}"#, "whole number"),
+            (#"{"action":"scroll","direction":"down","amount":9223372036854775808}"#, "whole number"),
             (#"{"action":"teleport"}"#, "action must be one of"),
             (#"{"action":"click"}"#, "needs x and y, or an element"),
             (#"{"action":"click","x":4}"#, "both x and y"),

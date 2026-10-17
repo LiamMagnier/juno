@@ -334,10 +334,15 @@ final class ModelRetryTests: XCTestCase {
             reasoningEffort: .xhigh
         )
         try await orchestrator.submit(prompt: "Hello")
+        var enteredBackoff = false
         for _ in 0..<200 {
-            if await errors().contains(where: { $0.message.contains("Retrying in 30 s") }) { break }
+            if await errors().contains(where: { $0.message.contains("Retrying in 30 s") }) {
+                enteredBackoff = true
+                break
+            }
             try await Task.sleep(for: .milliseconds(5))
         }
+        XCTAssertTrue(enteredBackoff, "Stop must exercise the retry backoff, not an earlier request")
         let started = ContinuousClock.now
         await orchestrator.stop()
         XCTAssertLessThan(ContinuousClock.now - started, .seconds(5))

@@ -35,6 +35,8 @@ import type { TurnContext } from "@/lib/chat/context-resolution";
 import { cloneLibraryAttachments } from "@/lib/library-attach";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { recordRoomPlan, type RoomTurnSetup } from "@/lib/agents/room-store";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { NEWEST_FIRST, olderThan } from "@/lib/chat/history-page";
 import type { TurnAccount } from "./account";
 import { refuse, usageWindowRefusal } from "./admission";
 import type { TurnUser } from "./types";
@@ -178,6 +180,8 @@ export async function acceptTurn({
   }
   let userMessageId: string | null = null;
   let staleAssistantId: string | null = null;
+  /** The message a reply that replaces nothing follows (persist writes it as the parent). */
+  let answersMessageId: string | null = null;
   /**
    * Library files a token named, as they landed on the user message: which
    * sources made it (for the receipt) and the attachment rows they became
@@ -300,6 +304,7 @@ export async function acceptTurn({
               titleSource: "default",
               projectId: newConversationProjectId,
               activeConnectors: connectorSelection ?? [],
+              ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
             },
           });
         }
@@ -418,6 +423,7 @@ export async function acceptTurn({
         titleSource: "default",
         projectId: newConversationProjectId,
         activeConnectors: connectorSelection ?? [],
+        ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
       },
     });
   } else if (
@@ -432,15 +438,46 @@ export async function acceptTurn({
     });
     conversation = { ...conversation, activeConnectors: connectorSelection };
   }
+  // The composer's task mode (src/lib/chat/task-approval-mode.ts), saved the
+  // way the connectors are: a chat keeps the mode it was last sent with, on
+  // every device. A request that names none leaves the saved one alone.
+  if (input.taskApprovalMode && conversation.taskApprovalMode !== input.taskApprovalMode) {
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
+      data: { taskApprovalMode: input.taskApprovalMode },
+    });
+    conversation = { ...conversation, taskApprovalMode: input.taskApprovalMode };
+  }
 
   if (input.regenerate) {
-    // Identify the trailing assistant message to replace — but DON'T delete it yet.
-    // We only delete it once the new answer streams successfully, so a failed
-    // generation never destroys the user's previous good answer.
-    const last = await prisma.message.findFirst({
-      where: { conversationId: conversation.id },
-      orderBy: { createdAt: "desc" },
-    });
+    // Identify the answer to replace — but touch nothing yet. The new answer
+    // becomes its sibling only once it is written (persist.ts), so a failed
+    // generation leaves the previous answer exactly where it was. Without a
+    // `regenerateMessageId` that is the newest message of the shown branch;
+    // with one, any answer on it (src/lib/chat/branches.ts).
+    let last;
+    if (input.regenerateMessageId && roomSetup) {
+      // A room plans who answers from its newest message; an earlier answer
+      // there was planned against a conversation that has moved on.
+      return NextResponse.json({ error: "In a room, only the newest answer can be regenerated." }, { status: 409 });
+    }
+    if (input.regenerateMessageId) {
+      last = await prisma.message.findFirst({
+        where: { id: input.regenerateMessageId, conversationId: conversation.id, role: "ASSISTANT" },
+      });
+      if (!last) return NextResponse.json({ error: "That answer was not found in this chat." }, { status: 404 });
+      if (!last.onActivePath) {
+        return NextResponse.json(
+          { error: "That answer is no longer in the branch you are viewing. Reload the chat and try again.", code: "branch_moved" },
+          { status: 409 }
+        );
+      }
+    } else {
+      last = await prisma.message.findFirst({
+        where: { conversationId: conversation.id, ...ON_ACTIVE_PATH },
+        orderBy: NEWEST_FIRST,
+      });
+    }
     // A room's follow-up turn answers the same message as a NEW reply: the
     // answer before it is another member's and must stay.
     // A reply to another conversation's message is a new reply too: the answer
@@ -453,6 +490,10 @@ export async function acceptTurn({
       if (!input.privateMode && !deterministicSmokeProviderEnabled) {
         await markRoutingSignal(last.id, { regenerated: true, switchedModel: !!last.model && last.model !== answeringModelId });
       }
+    } else {
+      // Nothing is replaced: the new reply follows the newest shown message
+      // (an edited question waiting for its answer, a room's last reply).
+      answersMessageId = last?.id ?? null;
     }
     // The native clients append the user turn first and then regenerate, so
     // their file tokens arrive here: cloned onto the turn being answered,
@@ -464,9 +505,16 @@ export async function acceptTurn({
     // attachment ceiling, counting what it already carries: a regenerate is
     // not a way to add files to a message past it.
     if (turnContext.libraryFiles.length > 0) {
+      // The question being answered: the newest shown one before the answer
+      // being replaced, when there is one.
       const target = await prisma.message.findFirst({
-        where: { conversationId: conversation.id, role: "USER" },
-        orderBy: { createdAt: "desc" },
+        where: {
+          conversationId: conversation.id,
+          role: "USER",
+          ...ON_ACTIVE_PATH,
+          ...(staleAssistantId && last ? olderThan(last) : {}),
+        },
+        orderBy: NEWEST_FIRST,
         select: { id: true },
       });
       if (target) {
@@ -496,7 +544,7 @@ export async function acceptTurn({
       }
 
       const previousUser = await prisma.message.findFirst({
-        where: { conversationId: conversation.id, role: "USER", createdAt: { lt: assistantMessage.createdAt } },
+        where: { conversationId: conversation.id, role: "USER", ...ON_ACTIVE_PATH, createdAt: { lt: assistantMessage.createdAt } },
         orderBy: { createdAt: "desc" },
         select: { content: true },
       });
@@ -655,7 +703,7 @@ export async function acceptTurn({
         userMessageId ??
         (
           await prisma.message.findFirst({
-            where: { conversationId: conversation.id, role: "USER" },
+            where: { conversationId: conversation.id, role: "USER", ...ON_ACTIVE_PATH },
             orderBy: { createdAt: "desc" },
             select: { id: true },
           })
@@ -680,6 +728,7 @@ export async function acceptTurn({
     conversation,
     userMessageId,
     staleAssistantId,
+    answersMessageId: userMessageId ?? answersMessageId,
     artifactEditTarget,
     contextAttachmentIds,
     clarificationModelContent,

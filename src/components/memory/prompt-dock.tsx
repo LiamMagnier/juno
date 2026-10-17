@@ -1,18 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Undo2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerPrimaryAction, useComposerAutosize } from "@/components/ui/composer-shell";
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { OperationDiff } from "@/components/memory/operation-diff";
 import type { MemoryEditRecord } from "@/components/memory/memory-model";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * The one way to change memory in words, and the place its answer lands.
@@ -214,7 +215,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
               role="status"
               className="pointer-events-none absolute inset-0 flex items-center gap-2 text-ui text-muted-foreground motion-safe:animate-fade-in"
             >
-              <ThinkingDots />
+              <GalaxyMark phase="working" size={16} />
               <span>Drafting the change…</span>
             </span>
           )}

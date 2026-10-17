@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { EyeOff, Folder, FolderLock, MessageSquare, MessagesSquare, ShieldAlert } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { relativeTime, shortDate } from "@/components/memory/memory-time";
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * One remembered fact: a line of text, one muted line about it, and a menu.
@@ -64,6 +65,8 @@ interface EntryRowProps {
    * one revealed by its section's "Show all". Everything else is simply there.
    */
   enter?: boolean;
+  /** Arrive with the sentence open for editing: the page was linked to edit this fact. */
+  startEditing?: boolean;
   /** Projects for the "Move to" menu; null until loaded. */
   projects: ProjectOptions;
   /** Ask for the project list, the first time a menu opens. */
@@ -79,13 +82,14 @@ export function EntryRow({
   showProject,
   highlighted = false,
   enter = false,
+  startEditing = false,
   projects,
   onWantProjects,
   onEdit,
   onRemove,
   onMove,
 }: EntryRowProps) {
-  const [editing, setEditing] = React.useState(false);
+  const [editing, setEditing] = React.useState(startEditing);
   const reduceMotion = useReducedMotion() ?? false;
   const menuButtonRef = React.useRef<HTMLButtonElement>(null);
   const retired = isRetired(memory);
@@ -114,6 +118,7 @@ export function EntryRow({
       // the list's border: the row itself bleeds 12px either side so its hover
       // fill has room around the text, and a border would bleed with it.
       className="relative grid grid-rows-[1fr]"
+      data-memory-id={memory.id}
     >
       {/* The clip lives on the track's only item and the padding one level in:
           padding cannot shrink below itself, so a padded item would stop the

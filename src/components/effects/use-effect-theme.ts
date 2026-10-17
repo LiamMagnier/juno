@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { useTheme } from "next-themes";
-import { useReducedMotion } from "framer-motion";
+
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The theme the Libraries.dev effects are tuned for, as the app resolves it.
@@ -21,9 +22,9 @@ export function useEffectTheme(): "light" | "dark" | null {
   return resolvedTheme === "dark" ? "dark" : "light";
 }
 
-/** `prefers-reduced-motion`, as a plain boolean (framer's hook, live). */
+/** Reduced motion (the OS and the in-app choice), as a plain boolean, live. */
 export function usePrefersReducedMotion(): boolean {
-  return useReducedMotion() ?? false;
+  return useReducedMotion();
 }
 
 /**

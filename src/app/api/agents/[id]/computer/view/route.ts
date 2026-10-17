@@ -7,6 +7,7 @@ import { getCurrentDeviceSessionId } from "@/lib/session";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import {
   AsleepComputerError,
+  TakeoverHeldElsewhereError,
   openComputerViewSession,
 } from "@/lib/computer/store";
 
@@ -29,8 +30,10 @@ export async function POST(req: Request, { params }: Params) {
   if (!user) return error;
   const { id } = await params;
 
+  // Per agent: a person watching two agents' computers (a PiP each, an
+  // overlay, the apps) must not run one shared budget dry.
   const limit = await rateLimit({
-    key: `agents:computer-view:${user.id}`,
+    key: `agents:computer-view:${user.id}:${id}`,
     limit: 60,
     windowSec: 3600,
   });
@@ -102,7 +105,14 @@ export async function POST(req: Request, { params }: Params) {
     );
   } catch (err) {
     if (err instanceof AsleepComputerError) {
-      return NextResponse.json({ error: "asleep" }, { status: 409, headers: VIEW_HEADERS });
+      return NextResponse.json(
+        { error: "asleep", message: "The computer is asleep. Wake it first." },
+        { status: 409, headers: VIEW_HEADERS }
+      );
+    }
+    if (err instanceof TakeoverHeldElsewhereError) {
+      // A sentence and nothing else: no relay token, no password, no link.
+      return NextResponse.json({ error: "held_elsewhere", message: err.message }, { status: 409, headers: VIEW_HEADERS });
     }
     return NextResponse.json(
       { error: "view_failed", message: "Unable to open computer viewer." },

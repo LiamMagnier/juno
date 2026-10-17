@@ -411,7 +411,7 @@ test("an empty live run says steps are coming; no message renders nothing", () =
     withPanelContext({ ...ports, buildRunView: () => empty }, [liveMessage], React.createElement(ActivityPanel, { renderKey: "tmp-9", onClose: () => {}, coversChat: () => false }))
   );
   assert.match(html, /No steps yet/);
-  assert.match(html, /Steps appear here as Juno works\./);
+  assert.match(html, /Steps appear here as Alevr works\./);
   assert.equal(panel(liveMessage, { renderKey: "someone-else" }), "");
 });
 

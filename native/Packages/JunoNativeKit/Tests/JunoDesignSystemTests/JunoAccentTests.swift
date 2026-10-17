@@ -82,7 +82,7 @@ final class JunoAccentTests: XCTestCase {
 
     func testResolvesEveryAccentTheWebPublishes() {
         // The exact strings the server stores, per `settings.accent`.
-        for raw in ["coral", "juniper", "teal", "violet", "amber", "sage"] {
+        for raw in ["coral", "ultramarine", "juniper", "teal", "violet", "amber", "sage"] {
             XCTAssertEqual(JunoAccent(setting: raw).rawValue, raw)
         }
     }
@@ -90,7 +90,7 @@ final class JunoAccentTests: XCTestCase {
     /// An accent this client has not shipped must fall back rather than blank the
     /// UI — the web can add one before the app ships support for it.
     func testUnknownAndMissingAccentsFallBackToCoral() {
-        XCTAssertEqual(JunoAccent(setting: "ultramarine"), .coral)
+        XCTAssertEqual(JunoAccent(setting: "magenta"), .coral)
         XCTAssertEqual(JunoAccent(setting: ""), .coral)
         XCTAssertEqual(JunoAccent(setting: nil), .coral)
     }

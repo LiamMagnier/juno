@@ -26,7 +26,13 @@
  *
  * When in doubt it answers nothing: the person can still reply in the
  * composer, and a wrong canned answer cannot be taken back.
+ *
+ * The same rules run in the apps (`NativeComputerHandBack`, in
+ * NativeAgentsModel.swift); both test suites read the wording cases from
+ * tests/fixtures/computer-handback-cases.json.
  */
+
+import COPY from "./computer-state-copy.json";
 
 /** What Hand back tells the run. */
 export const HAND_BACK_ANSWER = "Done. I've finished on your computer; continue.";
@@ -91,4 +97,64 @@ export function handBackQuestion<Q extends HandBackCandidate>(
   const before = new Set(pin?.openAtStart ?? []);
   const asked = questions.filter((question) => !before.has(question.id) && isTakeoverQuestion(question));
   return asked.length === 1 ? asked[0] : null;
+}
+
+/*
+ * The sentences an agent's computer says about itself, from one table the
+ * apps are checked against (src/lib/agents/computer-state-copy.json), so
+ * "Idle. It rests after 3 minutes." reads the same on every screen and the
+ * rest time is the server's, not a number typed into a view.
+ */
+
+export const COMPUTER_STATE_COPY = COPY;
+
+function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? String(values[key]) : match));
+}
+
+/** "Idle. It rests after 3 minutes.", or the unknown-time sentence when the server did not say. */
+export function idleSentence(restMinutes: number | null | undefined): string {
+  if (typeof restMinutes !== "number" || !Number.isFinite(restMinutes) || restMinutes <= 0) return COPY.idleUnknown;
+  const minutes = Math.max(1, Math.round(restMinutes));
+  return fill(minutes === 1 ? COPY.idle.one : COPY.idle.other, { minutes });
+}
+
+/**
+ * The state sentence for a computer the person is looking at. `opened` is the
+ * overlay, where a resting computer is being woken by the opening itself.
+ * Only the statuses the server sends (`ComputerStatus`) have a sentence; an
+ * unknown one reads as asleep.
+ */
+export function computerStateSentence(input: {
+  status: string;
+  agentName: string;
+  restMinutes?: number | null;
+  usingNow?: string | null;
+  opened?: boolean;
+}): string {
+  const agent = input.agentName;
+  switch (input.status) {
+    case "awake":
+      return input.usingNow ? fill(COPY.using, { agent, summary: input.usingNow }) : idleSentence(input.restMinutes);
+    case "starting":
+      return COPY.starting;
+    case "resting":
+      return input.opened ? COPY.starting : COPY.resting;
+    case "stopping":
+      return COPY.stopping;
+    case "error":
+      return COPY.error;
+    default:
+      return fill(COPY.asleep, { agent });
+  }
+}
+
+/** "You have control. Mira waits until you hand back." */
+export function controlSentence(agentName: string): string {
+  return fill(COPY.controlHere.web, { agent: agentName });
+}
+
+/** "Mira took the computer back." */
+export function takenBackSentence(agentName: string): string {
+  return fill(COPY.takenBack, { agent: agentName });
 }

@@ -31,6 +31,7 @@ import {
 } from "@/lib/work/code-routine";
 import { admissionRefusal } from "@/app/api/work/protocol";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { loadScheduleHealth } from "@/lib/work/schedule-health-store";
 
 export const runtime = "nodejs";
 
@@ -165,9 +166,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
   if (!schedule) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const spent = await routineSpendThisPeriod(user.id, [schedule.id]);
+  const [spent, health] = await Promise.all([
+    routineSpendThisPeriod(user.id, [schedule.id]),
+    loadScheduleHealth(user.id, [schedule]),
+  ]);
   return NextResponse.json({
-    schedule: { ...serializeSchedule(schedule, schedule.triggers), spentThisPeriodMicroUsd: spent.get(schedule.id) ?? 0 },
+    schedule: {
+      ...serializeSchedule(schedule, schedule.triggers),
+      spentThisPeriodMicroUsd: spent.get(schedule.id) ?? 0,
+      health: health.get(schedule.id) ?? null,
+    },
   });
 }
 

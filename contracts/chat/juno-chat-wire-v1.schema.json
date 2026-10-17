@@ -11,8 +11,8 @@
   },
   "x-native-summary": {
     "native": 199,
-    "planned": 227,
-    "web-only": 45,
+    "planned": 235,
+    "web-only": 67,
     "unclassified": 0
   },
   "x-native-only": {
@@ -291,6 +291,13 @@
           "maxLength": 400,
           "x-native": "native"
         },
+        "regenerateMessageId": {
+          "type": "string",
+          "format": "cuid",
+          "pattern": "^[cC][0-9a-z]{6,}$",
+          "x-native": "planned",
+          "x-native-note": "Regenerate an earlier answer as a new branch (src/lib/chat/branches.ts). The apps regenerate the newest answer only, and branch locally."
+        },
         "voiceMode": {
           "type": "boolean",
           "x-native": "planned",
@@ -472,6 +479,16 @@
         "workHandoff": {
           "type": "boolean",
           "x-native": "native"
+        },
+        "taskApprovalMode": {
+          "type": "string",
+          "enum": [
+            "conservative",
+            "balanced",
+            "permissive"
+          ],
+          "x-native": "planned",
+          "x-native-note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
         },
         "localFolder": {
           "x-native": "native"
@@ -1288,6 +1305,11 @@
           },
           "x-native": "native"
         },
+        "memoryWrite": {
+          "$ref": "#/$defs/ClientMemoryWrite",
+          "x-native": "planned",
+          "x-native-note": "What a turn saved or forgot, by memory id, on the \"Memory updated\" / \"Forgotten\" row (src/lib/chat/memory-receipts.ts). The web turns it into View, Edit and Undo; the apps still draw the row's title and detail only."
+        },
         "artifactVerification": {
           "type": "object",
           "properties": {
@@ -1414,6 +1436,11 @@
           "$ref": "#/$defs/ClientAgentChange",
           "x-native": "web-only",
           "x-native-note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
+        },
+        "routineProposal": {
+          "$ref": "#/$defs/ClientRoutineProposal",
+          "x-native": "web-only",
+          "x-native-note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
         },
         "contextReceipt": {
           "type": "object",
@@ -2330,6 +2357,28 @@
         "content"
       ]
     },
+    "ClientMemoryWrite": {
+      "type": "object",
+      "properties": {
+        "saved": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientMemoryReceipt"
+          },
+          "x-native": "planned"
+        },
+        "forgotten": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "saved"
+      ]
+    },
     "ClientMessage": {
       "type": "object",
       "properties": {
@@ -2402,6 +2451,11 @@
           },
           "x-native": "web-only",
           "x-native-note": "The Mac's version pager reads /api/messages/{id}/versions."
+        },
+        "branch": {
+          "$ref": "#/$defs/ClientMessageBranch",
+          "x-native": "planned",
+          "x-native-note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server; a branched message's versions list the alternatives before it, which their version pager reads."
         },
         "attachments": {
           "type": "array",
@@ -2558,6 +2612,26 @@
         "attachments"
       ]
     },
+    "ClientMessageBranch": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "siblingIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "index",
+        "siblingIds"
+      ]
+    },
     "ClientMessageVersion": {
       "type": "object",
       "properties": {
@@ -2623,6 +2697,129 @@
         "used",
         "limit",
         "remaining"
+      ]
+    },
+    "ClientRoutineProposal": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1,
+          "x-native": "web-only"
+        },
+        "key": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "name": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "instructions": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "schedule": {
+          "type": "object",
+          "properties": {
+            "phrase": {
+              "type": "string",
+              "x-native": "web-only"
+            },
+            "kind": {
+              "$ref": "#/$defs/PhraseTriggerKind",
+              "x-native": "web-only"
+            },
+            "config": {
+              "$ref": "#/$defs/JsonObject",
+              "x-native": "web-only"
+            },
+            "summary": {
+              "type": "string",
+              "x-native": "web-only"
+            },
+            "assumedTime": {
+              "type": "boolean",
+              "x-native": "web-only"
+            }
+          },
+          "required": [
+            "phrase",
+            "kind",
+            "config",
+            "summary",
+            "assumedTime"
+          ],
+          "x-native": "web-only"
+        },
+        "timezone": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "nextRuns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoutineProposalApp"
+          },
+          "x-native": "web-only"
+        },
+        "missingApps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "maxCostMicroUsd": {
+          "type": "number",
+          "x-native": "web-only"
+        },
+        "estimatedCostMicroUsd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "web-only"
+        },
+        "notifyPolicy": {
+          "type": "string",
+          "enum": [
+            "on_attention",
+            "on_finish"
+          ],
+          "x-native": "web-only"
+        },
+        "fromOutsideContent": {
+          "type": "boolean",
+          "x-native": "web-only"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "version",
+        "key",
+        "name",
+        "instructions",
+        "schedule",
+        "timezone",
+        "nextRuns",
+        "apps",
+        "missingApps",
+        "maxCostMicroUsd",
+        "estimatedCostMicroUsd",
+        "notifyPolicy",
+        "fromOutsideContent",
+        "createdAt"
       ]
     },
     "ClientSetupChangeRef": {
@@ -3175,12 +3372,60 @@
         "uploading"
       ]
     },
+    "JsonObject": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      }
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "MessageRole": {
       "type": "string",
       "enum": [
         "ASSISTANT",
         "SYSTEM",
         "USER"
+      ]
+    },
+    "PhraseTriggerKind": {
+      "type": "string",
+      "enum": [
+        "cron",
+        "daily",
+        "hourly",
+        "monthly",
+        "weekdays",
+        "weekly",
+        "yearly"
       ]
     },
     "ReasoningEffort": {
@@ -3220,6 +3465,23 @@
       "required": [
         "round",
         "offset"
+      ]
+    },
+    "RoutineProposalApp": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "label": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "id",
+        "label"
       ]
     },
     "RoutingReceipt": {

@@ -115,28 +115,97 @@ export function applyTrigger(text: string, caret: number, trigger: Trigger, inse
   return { text: next, caret: trigger.start + insert.length };
 }
 
+/**
+ * Who answers a command: `app` ones run here and never spend a turn (Codex,
+ * Claude Code and T3 Code all treat /model, /clear and /plan this way);
+ * `agent` ones are sent to the agent as the message. The menu groups them
+ * under different headings so the difference is visible before Enter.
+ */
+export type SlashRunner = "app" | "agent";
+
+/*
+ * The menu's headings, named so the i18n extractor catalogues them (a
+ * `section` property is not one it reads, and the DOM translator only
+ * translates catalogued text).
+ */
+export const SLASH_ACTIONS_LABEL = "Actions";
+export const SLASH_AGENT_LABEL = "Sent to the agent";
+export const SLASH_SKILLS_LABEL = "Skills";
+export const SLASH_AGENTS_LABEL = "Agents";
+
 export interface SlashCommand {
   name: string;
   description: string;
-  section: "Commands" | "Skills" | "Agents";
+  section: typeof SLASH_ACTIONS_LABEL | typeof SLASH_AGENT_LABEL | typeof SLASH_SKILLS_LABEL | typeof SLASH_AGENTS_LABEL;
+  runs: SlashRunner;
   glyph: string;
   /** Inserted as text instead of run (skills and agents become a mention). */
   insert?: string;
+  /** Offered on the /code landing, before a session exists. */
+  landing?: boolean;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
-  { name: "plan", description: "Plan first; nothing changes until you approve the plan.", section: "Commands", glyph: "plan" },
-  { name: "compact", description: "Summarise the oldest turns to free context.", section: "Commands", glyph: "fold" },
-  { name: "review", description: "Have the reviewer read this thread's changes.", section: "Commands", glyph: "review" },
-  { name: "init", description: "Write an AGENTS.md from what Alevr learns of this repo.", section: "Commands", glyph: "document" },
-  { name: "test", description: "Run the project's tests and fix what fails.", section: "Commands", glyph: "test" },
-  { name: "commit", description: "Commit the changes with a message drawn from the thread.", section: "Commands", glyph: "commit" },
-  { name: "pr", description: "Open a pull request for this branch.", section: "Commands", glyph: "pull-request" },
-  { name: "model", description: "Choose the model.", section: "Commands", glyph: "layers" },
-  { name: "clear", description: "Start a fresh thread in this project.", section: "Commands", glyph: "new-chat" },
-  { name: "explorer", description: "Ask the explorer to map something read-only.", section: "Agents", glyph: "agent", insert: "@explorer " },
-  { name: "reviewer", description: "Ask the reviewer for a second read.", section: "Agents", glyph: "agent", insert: "@reviewer " },
+  { name: "model", description: "Choose the model.", section: SLASH_ACTIONS_LABEL, runs: "app", glyph: "layers", landing: true },
+  { name: "plan", description: "Switch to Plan. Anything after it is sent as the task.", section: SLASH_ACTIONS_LABEL, runs: "app", glyph: "plan", landing: true },
+  { name: "clear", description: "Start a fresh session in this project.", section: SLASH_ACTIONS_LABEL, runs: "app", glyph: "new-chat" },
+  { name: "compact", description: "Summarise the oldest turns to free context.", section: SLASH_AGENT_LABEL, runs: "agent", glyph: "fold" },
+  { name: "review", description: "Have the reviewer read this thread's changes.", section: SLASH_AGENT_LABEL, runs: "agent", glyph: "review" },
+  { name: "init", description: "Write an AGENTS.md from what Alevr learns of this repo.", section: SLASH_AGENT_LABEL, runs: "agent", glyph: "document" },
+  { name: "test", description: "Run the project's tests and fix what fails.", section: SLASH_AGENT_LABEL, runs: "agent", glyph: "test" },
+  { name: "commit", description: "Commit the changes with a message drawn from the thread.", section: SLASH_AGENT_LABEL, runs: "agent", glyph: "commit" },
+  { name: "pr", description: "Open a pull request for this branch.", section: SLASH_AGENT_LABEL, runs: "agent", glyph: "pull-request" },
+  { name: "explorer", description: "Ask the explorer to map something read-only.", section: SLASH_AGENTS_LABEL, runs: "agent", glyph: "agent", insert: "@explorer " },
+  { name: "reviewer", description: "Ask the reviewer for a second read.", section: SLASH_AGENTS_LABEL, runs: "agent", glyph: "agent", insert: "@reviewer " },
 ];
+
+/** The commands a composer offers: all of them in a session, the landing's few before one exists. */
+export function slashCommandsFor(variant: "session" | "landing"): SlashCommand[] {
+  return variant === "landing" ? SLASH_COMMANDS.filter((c) => c.landing) : SLASH_COMMANDS;
+}
+
+/** What an app command does when sent. */
+export type ClientCommand =
+  | { kind: "model" }
+  | { kind: "clear"; rest: string }
+  | { kind: "plan"; rest: string }
+  | { kind: "compact"; rest: string };
+
+const CLIENT_COMMAND = /^\s*\/(model|clear|plan|compact)(?=\s|$)([\s\S]*)$/i;
+
+/**
+ * The app command a draft is, or null when it is a message. Only a draft that
+ * opens with the command counts: "/plan" inside a sentence, or "/planner", is
+ * text. `/compact` is listed because the composer routes it through the
+ * thread's compact action (which the "Compact and switch" picker row uses
+ * too), even though the engine is what does the summarising.
+ */
+export function parseClientCommand(text: string): ClientCommand | null {
+  const match = CLIENT_COMMAND.exec(text);
+  if (!match) return null;
+  const rest = match[2].trim();
+  switch (match[1].toLowerCase()) {
+    case "model":
+      return { kind: "model" };
+    case "clear":
+      return { kind: "clear", rest };
+    case "plan":
+      return { kind: "plan", rest };
+    default:
+      return { kind: "compact", rest };
+  }
+}
+
+/**
+ * The message `/compact` sends: the engines read the command themselves.
+ * Claude Code takes focus instructions after it (`/compact keep the API
+ * notes`); Alevr's engine (agent-core, on a Mac and in the cloud runner) reads
+ * only the bare command and would take anything longer as a prompt, so the
+ * instructions are dropped for it rather than spending a turn on them.
+ */
+export function compactMessage(rest: string, takesInstructions = true): string {
+  return rest && takesInstructions ? `/compact ${rest}` : "/compact";
+}
 
 /** Fuzzy-ish filter: prefix matches first, then substring, in list order. */
 export function filterByQuery<T>(items: readonly T[], query: string, key: (t: T) => string): T[] {

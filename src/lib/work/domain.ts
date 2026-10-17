@@ -1038,6 +1038,85 @@ export function defaultVisibilityFor(kind: string): "user" | "operator" | "inter
 }
 
 // ---------------------------------------------------------------------------
+// Tool event payloads: additive keys
+// ---------------------------------------------------------------------------
+
+/*
+ * Keys `tool_started` and `tool_finished` may carry beyond the ones every
+ * client already reads (runner/agent-core/src/work/types.ts, `WorkEvent`).
+ *
+ * Additive, so neither kind's `payloadVersion` changes and both stay
+ * visibility `user`: a client that has never heard of them ignores them and
+ * draws the row exactly as before. They are optional on every event — only a
+ * screen action has a point, and only a step whose screenshot was kept has a
+ * frame — and the readers below return null rather than trusting the shape.
+ *
+ *   tool_started.point        { x, y }  where the action lands, screenshot pixels
+ *   tool_finished.frame       { ref, width, height }  the step's stored screenshot
+ *   tool_finished.settleMs    time spent waiting for the screen to settle
+ *   tool_finished.captureMs   time one capture took
+ */
+
+export interface WorkToolPoint {
+  x: number;
+  y: number;
+}
+
+export interface WorkToolFrameRef {
+  ref: string;
+  width: number;
+  height: number;
+}
+
+/** A frame reference as the frames route accepts it. */
+export const WORK_FRAME_REF_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** Where a client loads a run's frame from: the owner-only frames route. */
+export function workFramePath(runId: string, ref: string): string {
+  return `/api/work/runs/${encodeURIComponent(runId)}/frames/${encodeURIComponent(ref)}`;
+}
+
+function payloadRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** `tool_started.point`, or null. */
+export function readWorkToolPoint(payload: unknown): WorkToolPoint | null {
+  const point = payloadRecord(payloadRecord(payload)?.point);
+  const x = finiteNumber(point?.x);
+  const y = finiteNumber(point?.y);
+  return x !== null && y !== null && x >= 0 && y >= 0 ? { x, y } : null;
+}
+
+/** `tool_finished.frame`, or null. */
+export function readWorkToolFrame(payload: unknown): WorkToolFrameRef | null {
+  const frame = payloadRecord(payloadRecord(payload)?.frame);
+  const ref = frame?.ref;
+  const width = finiteNumber(frame?.width);
+  const height = finiteNumber(frame?.height);
+  if (typeof ref !== "string" || !WORK_FRAME_REF_PATTERN.test(ref)) return null;
+  if (width === null || height === null || width <= 0 || height <= 0) return null;
+  return { ref, width, height };
+}
+
+/** `tool_finished.settleMs` / `captureMs`, each null when absent. */
+export function readWorkToolTiming(payload: unknown): { settleMs: number | null; captureMs: number | null } {
+  const record = payloadRecord(payload);
+  const settle = finiteNumber(record?.settleMs);
+  const capture = finiteNumber(record?.captureMs);
+  return {
+    settleMs: settle !== null && settle >= 0 ? settle : null,
+    captureMs: capture !== null && capture >= 0 ? capture : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Steering
 // ---------------------------------------------------------------------------
 

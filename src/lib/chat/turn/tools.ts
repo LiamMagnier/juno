@@ -12,6 +12,7 @@ import type { ToolTurn } from "@/lib/tools/types";
 import { codeExecutionNote } from "@/lib/chat/prompt-sections";
 import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
+import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
 import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
@@ -22,6 +23,7 @@ import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
 import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
+import { parseChatTaskMode } from "@/lib/chat/task-approval-mode";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
 import type { ActiveConnector } from "@/lib/mcp";
@@ -160,7 +162,7 @@ export async function buildNativeTools({
   conversationId,
   conversation,
   userMessageId,
-  approvals: { taskToolOn, agentConfigToolsOn, agentContext },
+  approvals: { taskToolOn, routineToolOn = false, agentConfigToolsOn, agentContext },
   appliedSkill,
   conversationModelId,
   requestedEffort,
@@ -182,9 +184,10 @@ export async function buildNativeTools({
   user: TurnUser;
   input: ChatRequestBody;
   conversationId: string;
-  conversation: { projectId: string | null };
+  conversation: { projectId: string | null; taskApprovalMode?: string | null };
   userMessageId: string | null;
-  approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext">;
+  approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext"> &
+    Partial<Pick<TurnApprovals, "routineToolOn">>;
   appliedSkill: TurnSkill["appliedSkill"];
   conversationModelId: string;
   requestedEffort: ReasoningEffort | undefined;
@@ -230,6 +233,9 @@ export async function buildNativeTools({
                 status: agentContext.agent.status,
               }
             : null,
+          // The composer's mode for this chat: what this request carried, else
+          // what the conversation saved (accept.ts writes one into the other).
+          approvalMode: parseChatTaskMode(input.taskApprovalMode ?? conversation.taskApprovalMode),
           generationId,
           onApprovalRequest: requestApproval,
           // The panel appears as soon as the run exists rather than on the
@@ -368,8 +374,26 @@ export async function buildNativeTools({
   const folderTools = localFolder
     ? createLocalFolderTools({ folder: localFolder, userId: user.id, generationId, send })
     : [];
+  // A recurring routine drafted for the person to confirm
+  // (src/lib/chat/routine-tool.ts). It creates nothing: the card it puts
+  // under the reply has the only Schedule button.
+  const routineTool =
+    routineToolOn && userMessageId
+      ? createProposeRoutineTool({
+          user,
+          userMessageId,
+          timeZone: input.timeZone,
+          activeConnectors: activeConnectors.map((connector) => ({ id: connector.id, label: connector.label })),
+          model: conversationModelId,
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          onProposal: (proposal) => {
+            sendActivity(routineProposalActivity(proposal));
+          },
+        })
+      : null;
   const nativeTools = [
     taskTool,
+    routineTool,
     handoffTool,
     ...agentConfigTools,
     setupChangeTool,

@@ -80,10 +80,33 @@ export interface DocumentQuote {
   mode: "ask";
 }
 
-export type ComposerQuote = ArtifactQuote | DocumentQuote;
+/**
+ * A passage of one of the assistant's own answers, selected in the transcript
+ * (answer-selection-bar.tsx). Always "ask": an answer is not edited in place,
+ * it is asked about, and the reply is a new turn.
+ */
+export interface AnswerQuote {
+  source: "answer";
+  /** The answer it came from. Kept for the highlight while composing; never sent. */
+  messageId: string;
+  /** Shown on the chip and read back on the card: always ANSWER_QUOTE_TITLE. */
+  title: string;
+  kind: "text";
+  text: string;
+  mode: "ask";
+}
+
+export type ComposerQuote = ArtifactQuote | DocumentQuote | AnswerQuote;
+
+/** The chip's and the card's name for a quoted answer passage. */
+export const ANSWER_QUOTE_TITLE = "Earlier answer";
 
 export function isDocumentQuote(quote: ComposerQuote): quote is DocumentQuote {
   return quote.source === "document";
+}
+
+export function isAnswerQuote(quote: ComposerQuote): quote is AnswerQuote {
+  return quote.source === "answer";
 }
 
 export const QUOTE_TEXT_LIMIT = 2000;
@@ -132,6 +155,7 @@ export function documentLocationLabel(location: DocumentQuoteLocation | undefine
 
 /** Short human-readable location tag for the chip ("lines 4–12", "element .card", "page 4 · area"). */
 export function quoteLocationLabel(quote: ComposerQuote): string | null {
+  if (isAnswerQuote(quote)) return null;
   if (isDocumentQuote(quote)) {
     const where = documentLocationLabel(quote.location);
     if (quote.kind === "area") return where ? `${where} · area` : "area";
@@ -158,7 +182,12 @@ export const QUOTE_INSTRUCTIONS = {
     "Answer about this area specifically. Look closely at the attached image of it — it is the part of the file the person drew a box around — and use the rest of the file for context where it helps.",
   documentAreaBare:
     "Explain what this area shows. Look closely at the attached image of it — it is the part of the file the person drew a box around — and use the rest of the file for context where it helps.",
+  answerText:
+    "Answer about this passage specifically. It is quoted verbatim from one of your earlier replies in this conversation; use the rest of the conversation for context where it helps.",
 } as const;
+
+/** The first line of a quoted answer passage, written and read back exactly. */
+const ANSWER_HEADER_LINE = "[Selection from an earlier answer in this conversation]:";
 
 function artifactModifyInstruction(identifier: string): string {
   return `Apply a minimal, targeted change to ONLY this selected part in the existing artifact "${identifier}" and keep everything else unchanged.`;
@@ -208,6 +237,12 @@ function serializeDocumentQuote(quote: DocumentQuote, request: string): string {
 export function serializeQuote(quote: ComposerQuote, userText: string): string {
   const request = userText.trim();
   if (isDocumentQuote(quote)) return serializeDocumentQuote(quote, request);
+  if (isAnswerQuote(quote)) {
+    const fence = quoteFence(quote.text);
+    return [ANSWER_HEADER_LINE, fence, quote.text, fence, ...(request ? ["", request] : []), "", QUOTE_INSTRUCTIONS.answerText].join(
+      "\n",
+    );
+  }
   const where =
     quote.kind === "element" && quote.selector
       ? `, element ${quote.selector}`
@@ -231,7 +266,7 @@ export function serializeQuote(quote: ComposerQuote, userText: string): string {
 /* ─── Reading a sent quote back, for the transcript ──────────────────────── */
 
 export interface ParsedQuotedMessage {
-  source: "artifact" | "document";
+  source: "artifact" | "document" | "answer";
   kind: "text" | "element" | "area";
   mode: ComposerQuoteMode;
   /** The artifact's title or the file's name. */
@@ -253,12 +288,24 @@ function screenSpelling(location: string): string {
 }
 
 /** Lines `from..` up to (not including) the closing `"""`, or null when unclosed. */
-function readFence(lines: string[], from: number): { text: string; next: number } | null {
-  if (lines[from] !== `"""`) return null;
+function readFence(lines: string[], from: number, fence = `"""`): { text: string; next: number } | null {
+  if (lines[from] !== fence) return null;
   for (let i = from + 1; i < lines.length; i++) {
-    if (lines[i] === `"""`) return { text: lines.slice(from + 1, i).join("\n"), next: i + 1 };
+    if (lines[i] === fence) return { text: lines.slice(from + 1, i).join("\n"), next: i + 1 };
   }
   return null;
+}
+
+/**
+ * The fence for a quoted passage: `"""`, or one quote longer than the longest
+ * line of bare quotes inside it. An answer often holds code, and a Python
+ * docstring's `"""` on a line of its own would otherwise close the block early
+ * and spill the rest of the passage into what the person asked.
+ */
+export function quoteFence(text: string): string {
+  let longest = 2;
+  for (const line of text.split("\n")) if (/^"{3,}$/.test(line)) longest = Math.max(longest, line.length);
+  return '"'.repeat(longest + 1);
 }
 
 /**
@@ -281,6 +328,16 @@ export function parseQuotedMessage(content: string): ParsedQuotedMessage | null 
   if (!content.startsWith("[")) return null;
   const lines = content.split("\n");
   const header = lines[0];
+
+  if (header === ANSWER_HEADER_LINE) {
+    const open = lines[1] ?? "";
+    if (!/^"{3,}$/.test(open)) return null;
+    const fence = readFence(lines, 1, open);
+    if (!fence) return null;
+    const request = splitRequest(lines.slice(fence.next).join("\n"), [QUOTE_INSTRUCTIONS.answerText]);
+    if (request === null) return null;
+    return { source: "answer", kind: "text", mode: "ask", title: ANSWER_QUOTE_TITLE, location: null, text: fence.text, request };
+  }
 
   const artifact = ARTIFACT_HEADER.exec(header);
   if (artifact) {

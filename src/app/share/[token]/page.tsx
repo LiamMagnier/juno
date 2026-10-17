@@ -7,6 +7,9 @@ import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
+import { ShareCopyButton } from "@/components/share/share-copy-button";
+import { sharedTypeCopyable } from "@/lib/share-copy";
+import { getCurrentUser } from "@/lib/session";
 import { ShareGone } from "@/components/share/share-gone";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { publicShareProfile } from "@/lib/sandbox-policy";
@@ -48,6 +51,9 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export const dynamic = "force-dynamic";
 
 const SHARE_DESCRIPTION = `Shared from ${PRODUCT_NAME}. Conversation. Agents. Code.`;
+// A Code session that ran on its owner's Mac: the server never held its
+// transcript, so the page says where the words came from.
+const FROM_DEVICE_NOTE = "This session ran on its owner’s Mac. Their app sent this transcript when the link was made.";
 
 const GONE_METADATA: Metadata = { title: "Not shared any more", robots: { index: false, follow: false } };
 
@@ -114,12 +120,23 @@ async function resolveSubject(token: string): Promise<PageSubject | "gone" | nul
   };
 }
 
-export default async function SharePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function SharePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams?: Promise<{ copy?: string }>;
+}) {
   const { token } = await params;
   const subject = await resolveSubject(token);
   if (subject === "gone") return <ShareGone />;
   if (!subject) notFound();
   const { chat, artifact, title } = subject;
+  // A visitor can make their own copy of a shared artifact (not a design,
+  // whose document the page never shows): src/lib/share-copy.ts.
+  const copyable = !!artifact && sharedTypeCopyable(artifact.type);
+  const signedIn = copyable ? !!(await getCurrentUser().catch(() => null)) : false;
+  const askCopy = copyable && (await searchParams)?.copy === "1";
 
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
@@ -139,9 +156,12 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           <div className="min-w-0 flex-1 basis-32">
             {artifact && <><h1 className="truncate font-serif text-title font-medium">{title}</h1><p className="truncate text-caption text-muted-foreground">{subject.dateLine}</p></>}
           </div>
-          <Button size="sm" asChild>
-            <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {copyable && <ShareCopyButton token={token} signedIn={signedIn} askOnArrival={askCopy} />}
+            <Button size="sm" asChild>
+              <Link href="/">{`Open in ${PRODUCT_NAME}`}</Link>
+            </Button>
+          </div>
         </AppPage>
       </header>
 
@@ -150,7 +170,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
           <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="alevr-shared-prose">
-            <header className="alevr-shared-title"><p className="text-ui text-muted-foreground">{subject.dateLine}</p><h1 className="mt-4 font-serif">{title}</h1></header>
+            <header className="alevr-shared-title"><p className="text-ui text-muted-foreground">{subject.dateLine}</p><h1 className="mt-4 font-serif">{title}</h1>{chat.fromDevice && <p className="mt-3 text-caption text-muted-foreground">{FROM_DEVICE_NOTE}</p>}</header>
             <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
             {/* The end of a shared conversation is where a reader decides what
                 Juno is: one quiet invitation on the front door's own art. */}

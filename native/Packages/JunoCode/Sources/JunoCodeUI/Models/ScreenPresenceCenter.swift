@@ -28,6 +28,7 @@ public final class ScreenPresenceCenter {
     /// The app Juno is using, for notifications.
     public private(set) var appName: String?
 
+    @ObservationIgnored private var sessionID: String?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private let service: ScreenControlService
     /// The height of the main display in points, for flipping CoreGraphics'
@@ -51,6 +52,7 @@ public final class ScreenPresenceCenter {
     }
 
     func apply(_ state: ScreenPresenceState) {
+        sessionID = state.holder?.id
         caption = state.caption
         isActive = state.holder != nil
         isTakeover = state.mode == .takeover && isActive
@@ -64,9 +66,28 @@ public final class ScreenPresenceCenter {
         CGRect(x: rect.x, y: mainDisplayHeight() - rect.y - rect.height, width: rect.width, height: rect.height)
     }
 
+    /// Explicit intent survives reader-input auto-pause arriving before the click.
+    @discardableResult
+    public func setPaused(_ paused: Bool, sessionID requested: String? = nil) -> Task<Void, Never>? {
+        guard let sessionID = requested ?? sessionID else { return nil }
+        let service = self.service
+        return Task {
+            if paused { await service.pause(sessionID: sessionID) }
+            else { await service.resume(sessionID: sessionID) }
+        }
+    }
+
     /// The menu bar's "Stop Juno using apps".
     public func stop() {
         let service = self.service
         Task { await service.stopAll(reason: .menuBar) }
     }
+}
+
+extension ScreenPresenceCenter {
+    /// Where the presence draws: which screen holds the caption, the
+    /// caption's frame, the window outline's frame (``ScreenPresenceLayout``).
+    /// Named here so the app shell, which links this module and not
+    /// JunoScreenControl, never imports a package it does not depend on.
+    public typealias Layout = ScreenPresenceLayout
 }

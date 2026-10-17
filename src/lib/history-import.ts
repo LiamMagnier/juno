@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { isFeedbackReason, normalizeFeedbackNote, type FeedbackReason } from "@/lib/feedback-reasons";
 
 /*
  * Parsers for ChatGPT, Claude, Gemini and Juno data-export ZIPs. The providers
@@ -31,11 +32,27 @@ export interface ImportedMessage {
   reasoningParts?: string[] | null;
   model?: string | null;
   feedback?: "UP" | "DOWN" | null;
+  /** Why a DOWN was given, and the reader's note (plain text here; sealed on import). */
+  feedbackReason?: FeedbackReason | null;
+  feedbackNote?: string | null;
   promptTokens?: number | null;
   completionTokens?: number | null;
   costMicroUsd?: number | null;
   sources?: unknown;
   activity?: unknown;
+  /**
+   * Its place in the conversation's branch tree, from a Juno export made with
+   * `?branches=all` (src/lib/chat/branches.ts): its own `id` in the export
+   * (which the pointers name; a re-exported import keeps a different
+   * `sourceId`), the export ids of the message it follows and of its group of
+   * alternatives, and whether it was on the shown branch. Absent on a linear
+   * export.
+   */
+  exportId?: string;
+  parentSourceId?: string | null;
+  branchGroupSourceId?: string | null;
+  onActivePath?: boolean;
+  branchSelected?: boolean;
 }
 
 export interface ImportedConversation {
@@ -147,6 +164,9 @@ export function findConversationsEntry(zipEntries: string[]): string | null {
     "My Activity.json",
     "my_activity.json",
     "gemini.json",
+    // Alevr's own account export, under its current name and the one it
+    // shipped with before the rename, so an older archive still imports.
+    "alevr-export.json",
     "juno-export.json",
   ]);
   const hits = zipEntries
@@ -166,7 +186,7 @@ export function findConversationsEntry(zipEntries: string[]): string | null {
 export function detectFormat(zipEntries: string[]): ImportFormat | null {
   if (!findConversationsEntry(zipEntries)) return null;
   const names = new Set(zipEntries.map((path) => path.split("/").pop() ?? path));
-  if ([...names].some((name) => /juno-export/i.test(name))) return "juno";
+  if ([...names].some((name) => /(?:alevr|juno)-export/i.test(name))) return "juno";
   if ([...names].some((name) => /gemini|my activity/i.test(name))) return "gemini";
   if (names.has("chat.html") || names.has("user.json") || names.has("message_feedback.json")) return "chatgpt";
   if (names.has("projects.json") || names.has("users.json")) return "claude";
@@ -422,8 +442,12 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       ? entry.reasoningParts.filter((part): part is string => typeof part === "string").slice(0, 200)
       : null;
     const feedback = entry.feedback === "UP" || entry.feedback === "DOWN" ? entry.feedback : null;
+    // A reason only means something beside the DOWN it explains (feedbackWrite).
+    const feedbackReason = feedback === "DOWN" && isFeedbackReason(entry.feedbackReason) ? entry.feedbackReason : null;
+    const feedbackNote = feedback === "DOWN" && typeof entry.feedbackNote === "string" ? normalizeFeedbackNote(entry.feedbackNote) : null;
     const numberValue = (value: unknown) => (typeof value === "number" && Number.isInteger(value) ? value : null);
     const jsonValue = (value: unknown) => (value && typeof value === "object" ? value : null);
+    const idValue = (value: unknown) => (typeof value === "string" && value.length <= 200 ? value : null);
     raw.push({
       role,
       content: clampContent(text),
@@ -435,11 +459,22 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       reasoningParts,
       model: typeof entry.model === "string" && entry.model.length <= 200 ? entry.model : null,
       feedback,
+      feedbackReason,
+      feedbackNote,
       promptTokens: numberValue(entry.promptTokens),
       completionTokens: numberValue(entry.completionTokens),
       costMicroUsd: numberValue(entry.costMicroUsd),
       sources: jsonValue(entry.sources),
       activity: jsonValue(entry.activity),
+      ...(typeof entry.onActivePath === "boolean"
+        ? {
+            ...(idValue(entry.id) ? { exportId: idValue(entry.id)! } : {}),
+            parentSourceId: idValue(entry.parentId),
+            branchGroupSourceId: idValue(entry.branchGroupId),
+            onActivePath: entry.onActivePath,
+            ...(typeof entry.branchSelected === "boolean" ? { branchSelected: entry.branchSelected } : {}),
+          }
+        : {}),
     });
   }
   if (raw.length === 0) return null;

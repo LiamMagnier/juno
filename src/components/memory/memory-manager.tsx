@@ -133,14 +133,24 @@ export function MemoryManagerView({
   const [rebuilding, setRebuilding] = React.useState(false);
   const [highlightIds, setHighlightIds] = React.useState<ReadonlySet<string>>(() => new Set());
   const [justApplied, setJustApplied] = React.useState<ReadonlyMap<string, number>>(() => new Map());
+  /**
+   * The fact the page was opened on — `/memory?entry=<id>`, where a chat's
+   * "View in memory" and "Memory updated → View" land — and whether to open
+   * it for editing (`&edit=1`). The list unfolds its section, scrolls it into
+   * view and lights it once.
+   */
+  const [reveal, setReveal] = React.useState<{ id: string; edit: boolean } | null>(null);
   const dockRef = React.useRef<PromptDockHandle>(null);
 
   // `/memory?project=<id>` is where the project page's "Manage memory" lands.
   // Read off `location` rather than useSearchParams, which would ask for a
   // Suspense boundary around a page that is otherwise plain.
   React.useEffect(() => {
-    const requested = new URL(window.location.href).searchParams.get("project");
+    const params = new URL(window.location.href).searchParams;
+    const requested = params.get("project");
     if (requested) setScope(requested);
+    const entry = params.get("entry");
+    if (entry) setReveal({ id: entry, edit: params.get("edit") === "1" });
     try {
       const saved = window.localStorage.getItem(SORT_KEY);
       if (saved === "topic" || saved === "newest") setSort(saved);
@@ -232,6 +242,11 @@ export function MemoryManagerView({
     highlightMarker.current = null;
     setHighlightIds(new Set(ids));
   }, [memory.memories]);
+  // The linked fact is lit once its row exists.
+  const revealedId = reveal && memory.memories?.some((entry) => entry.id === reveal.id) ? reveal.id : null;
+  React.useEffect(() => {
+    if (revealedId) setHighlightIds(new Set([revealedId]));
+  }, [revealedId]);
   React.useEffect(() => {
     if (highlightIds.size === 0) return;
     const timer = window.setTimeout(() => setHighlightIds(new Set()), HIGHLIGHT_MS);
@@ -452,6 +467,8 @@ export function MemoryManagerView({
                 onEdit={memory.editMemory}
                 onRemove={removal.remove}
                 onMove={(entry, project) => void memory.moveMemory(entry, project)}
+                revealId={revealedId}
+                revealEdit={reveal?.edit ?? false}
               />
             </div>
           </div>

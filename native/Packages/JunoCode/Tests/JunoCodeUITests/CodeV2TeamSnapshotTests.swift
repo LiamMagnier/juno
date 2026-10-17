@@ -69,6 +69,7 @@ final class CodeV2TeamSnapshotTests: XCTestCase {
 /// the test bundle): each role's model control carries the lab's real mark
 /// and an open-me chevron, and the builders' stepper its minus and plus,
 /// all drawn from assets the Mac app ships.
+@MainActor
 final class CodeV2TeamAssetTests: XCTestCase {
     private var resources: URL {
         var root = URL(fileURLWithPath: #filePath)
@@ -94,6 +95,8 @@ final class CodeV2TeamAssetTests: XCTestCase {
         }
     }
 
+    // `CodeV2TeamBudgetField` is a view, so its helpers are main-actor isolated.
+    @MainActor
     func testTheBudgetFieldTakesWhatPeopleType() {
         XCTAssertEqual(CodeV2TeamBudgetField.parse("$4"), .some(4))
         XCTAssertEqual(CodeV2TeamBudgetField.parse("2.505"), .some(2.51))

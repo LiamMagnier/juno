@@ -25,14 +25,15 @@
  * read and then measures itself, so the line, the small cut and the hinting
  * are always those of its real size.
  *
- * MOTION IS OPT-IN (INTERACTION_SPEC I-7, MOTION_AND_THINKING's feature map).
- * A glyph moves only inside a control marked `.jicon-trigger.jicon-hover` (or
- * a `.jicon-hover` region), only under a fine pointer, never on keyboard
- * focus, and only for low-frequency destinations: the sidebar's New chat,
- * Projects, Library and Customize. Lists, menus, the composer and the message
- * actions stay still. An icon-only button marked `.jicon-trigger` gets the
- * press dip (0.97, 70 ms). The old per-glyph `motion` prop is accepted and
- * ignored.
+ * MOTION IS OPT-IN (G46, INTERACTION_SPEC I-7). A glyph plays its hover
+ * gesture only inside a control marked `data-jicon-articulate` (or inside a
+ * `data-jicon-articulate="within"` region), only under a fine pointer, never
+ * on keyboard focus, and only for destinations: the sidebar's New chat and
+ * destination rows, the product switch, an empty state's actions. Lists,
+ * menus, the composer and the message actions stay still
+ * (juno-icons/icons.css). An icon-only button marked `.jicon-trigger` gets
+ * the press dip (0.97, 70 ms). The old per-glyph `motion` prop is accepted
+ * and ignored.
  *
  * STATE. `weight="fill"`, `fill="currentColor"` or a `fill-*` class ask for the
  * "on" drawing (a pinned pin, a filled square); a drawing without one stays

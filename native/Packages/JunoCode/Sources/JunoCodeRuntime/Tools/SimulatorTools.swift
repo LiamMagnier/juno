@@ -42,6 +42,7 @@ public struct ScreenToolProvider: CodeToolProvider {
                 // A blind model's frames are captured for the timeline but
                 // never sent: its route may refuse images outright.
                 let portableBudget = wire == .portable ? budget : (budget.coordinates == .normalized1000 ? .portableNormalized : .portable)
+                let frames = screen.frameMemory ?? PortableFrameMemory()
                 tools.append(PortableComputerTool(
                     computer: computer,
                     permissions: context.permissions,
@@ -49,12 +50,14 @@ public struct ScreenToolProvider: CodeToolProvider {
                     seesImages: context.supportsVision,
                     tracker: screen.turnTracker,
                     recorder: recorder,
-                    frames: screen.frameMemory ?? PortableFrameMemory()
+                    frames: frames
                 ))
                 var apps = ComputerAppsTool(computer: computer, permissions: context.permissions, budget: portableBudget)
                 apps.sendsImages = context.supportsVision
                 tools.append(apps)
                 if context.supportsVision {
+                    tools.append(ComputerBatchTool(computer: computer, permissions: context.permissions, budget: portableBudget,
+                                                  tracker: screen.turnTracker, recorder: recorder, portableFrames: frames))
                     tools.append(ComputerDisplayTool(computer: computer, permissions: context.permissions))
                 }
             }

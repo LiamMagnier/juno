@@ -2,18 +2,19 @@
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { KeyRound, Link2, Plug, Search } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { DialogCloseButton, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import type { UserMcpServerStatus } from "@/components/connections/types";
 import { ease, transition, duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * Add (or edit) a user-registered remote MCP server: name, Streamable HTTP
@@ -22,7 +23,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  *
  * Motion: the panel is the skill-dialog-shell recipe with the DRAWER curve
  * (ease.drawer) rather than the modal spring, per
- * docs/design/PREMIUM_REWORK_PASS.md W1. Test uses PhaseOrb (a live status
+ * docs/design/PREMIUM_REWORK_PASS.md W1. Test uses the galaxy (a live status
  * orb), never a bare spinner.
  */
 
@@ -314,13 +315,13 @@ export function AddMcpServerDialog({
   );
 }
 
-/** Live status for the Test row: PhaseOrb while probing, words once settled. */
+/** Live status for the Test row: the galaxy while probing, words once settled. */
 function TestStatus({ state, error }: { state: TestState; error: string | null }) {
   if (state === "idle") return null;
   if (state === "testing") {
     return (
       <span className="inline-flex items-center gap-1.5 text-caption text-muted-foreground">
-        <PhaseOrb state="connecting" />
+        <GalaxyMark phase="working" size={14} />
         Connecting…
       </span>
     );

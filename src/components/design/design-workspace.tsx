@@ -150,7 +150,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
         <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">v{currentVersion}</span>
 
         <div className="flex-1" />
-        <ArtifactLifecycleActions id={artifactId} title={name} version={currentVersion} latest={currentVersion} />
+        <ArtifactLifecycleActions id={artifactId} title={name} version={currentVersion} latest={currentVersion} type="DESIGN" renamable={false} />
 
         {conversationId && (
           <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">

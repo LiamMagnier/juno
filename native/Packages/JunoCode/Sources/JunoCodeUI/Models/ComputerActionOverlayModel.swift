@@ -10,7 +10,7 @@ import Observation
 /// Plain values in AppKit's global coordinates (bottom-left origin), so the
 /// window in the app shell needs nothing but this. The ring is coral while an
 /// action is being sent — "working" — and settles to neutral; the overlay
-/// lingers a moment after the last step, then goes. No dots, no pills.
+/// stays visible until the session releases control.
 @MainActor
 @Observable
 public final class ComputerActionOverlayModel {
@@ -29,20 +29,28 @@ public final class ComputerActionOverlayModel {
         public var succeeded: Bool?
         /// Bumped per action, so the view can restart its one entry motion.
         public var serial: Int
+        public var paused: Bool = false
+        public var capturePoint: ScreenPoint? = nil
+        public var thumbnail: Data? = nil
+        /// The captured window in CoreGraphics global coordinates.
+        public var windowFrame: ScreenRect? = nil
     }
 
     public private(set) var mark: Mark?
+    /// The status bar stays compact until the reader asks to see the app.
+    public var isPreviewExpanded = false
 
     @ObservationIgnored private let feed: ComputerActionFeed
     @ObservationIgnored private let mainDisplayHeight: () -> CGFloat
-    @ObservationIgnored private let linger: Duration
+    @ObservationIgnored private let linger: Duration?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var hide: Task<Void, Never>?
     @ObservationIgnored private var serial = 0
+    @ObservationIgnored public private(set) var sessionID: String?
 
     public init(
         feed: ComputerActionFeed = .shared,
-        linger: Duration = .milliseconds(1_200),
+        linger: Duration? = nil,
         mainDisplayHeight: @escaping () -> CGFloat = { CGDisplayBounds(CGMainDisplayID()).height }
     ) {
         self.feed = feed
@@ -66,38 +74,71 @@ public final class ComputerActionOverlayModel {
         task = nil
         hide?.cancel()
         mark = nil
+        sessionID = nil
+        isPreviewExpanded = false
     }
 
     func apply(_ cue: ComputerActionCue) {
         switch cue.phase {
+        case .observing:
+            hide?.cancel()
+            let sameTarget = sessionID == cue.sessionID && mark?.appName == cue.appName
+            let previous = sameTarget ? mark : nil
+            sessionID = cue.sessionID
+            serial += 1
+            mark = Mark(
+                label: cue.label, appName: cue.appName,
+                point: cue.point.map(flip) ?? previous?.point,
+                live: false, succeeded: nil, serial: serial,
+                capturePoint: cue.point ?? previous?.capturePoint,
+                thumbnail: cue.thumbnail ?? previous?.thumbnail,
+                windowFrame: cue.windowFrame ?? previous?.windowFrame
+            )
         case .acting:
             hide?.cancel()
+            let previous = sessionID == cue.sessionID && mark?.appName == cue.appName ? mark : nil
+            sessionID = cue.sessionID
             serial += 1
             mark = Mark(
                 label: cue.label,
                 appName: cue.appName,
-                point: cue.point.map(flip),
+                point: cue.point.map(flip) ?? previous?.point,
                 live: true,
                 succeeded: nil,
-                serial: serial
+                serial: serial,
+                capturePoint: cue.point ?? previous?.capturePoint,
+                thumbnail: cue.thumbnail ?? previous?.thumbnail, windowFrame: cue.windowFrame ?? previous?.windowFrame
             )
         case let .settled(succeeded):
-            guard var current = mark else { return }
+            guard sessionID == cue.sessionID, var current = mark else { return }
+            current.label = cue.label
+            current.thumbnail = cue.thumbnail ?? current.thumbnail
+            current.windowFrame = cue.windowFrame ?? current.windowFrame
             current.live = false
             current.succeeded = succeeded
             mark = current
             scheduleHide(serial: current.serial)
+        case let .paused(paused):
+            guard sessionID == cue.sessionID, var current = mark else { return }
+            hide?.cancel()
+            current.paused = paused
+            current.live = false
+            mark = current
         case .cleared:
+            guard cue.sessionID.isEmpty || cue.sessionID == sessionID else { return }
             hide?.cancel()
             mark = nil
+            sessionID = nil
+            isPreviewExpanded = false
         }
     }
 
     private func scheduleHide(serial: Int) {
         hide?.cancel()
-        let linger = self.linger
+        guard let linger else { return }
         hide = Task { [weak self] in
-            try? await Task.sleep(for: linger)
+            let clock = ContinuousClock()
+            try? await clock.sleep(until: clock.now.advanced(by: linger))
             guard !Task.isCancelled else { return }
             self?.clearIfStill(serial)
         }

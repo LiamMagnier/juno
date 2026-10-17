@@ -55,9 +55,10 @@ export function settleClientMessage(
  * Keyed by identifier: the server keeps one row per identifier per
  * conversation and appends to it across edits and regenerates, so a returned
  * artifact replaces the entry it updates and keeps its id (an open canvas
- * looks it up by id). Any other entry still pinned to `messageId` was
- * detached by the server — a regenerated answer that no longer emits it — so
- * it is detached here too rather than left claiming an answer it is not in.
+ * looks it up by id). Any other entry still pinned to `messageId` is no
+ * longer in that answer, so it is let go of here rather than left claiming an
+ * answer it is not in. (A regenerate writes its answer under a new id, a
+ * sibling of the old one, which keeps its own artifacts on its branch.)
  * Nothing is removed: the server removed nothing.
  */
 export function applyTurnArtifacts(
@@ -99,19 +100,6 @@ export function replaceArtifactById(current: ClientArtifact[], next: ClientArtif
   const out = current.slice();
   out[index] = mergeArtifactUpdate(current[index], next);
   return out;
-}
-
-/**
- * The server's side of an edit, mirrored: the answers after the edited
- * message are deleted, and their artifacts stay, detached, with every version
- * and share link.
- */
-export function detachArtifactsFromMessages(
-  current: ClientArtifact[],
-  messageIds: ReadonlySet<string>
-): ClientArtifact[] {
-  if (!current.some((a) => a.messageId && messageIds.has(a.messageId))) return current;
-  return current.map((a) => (a.messageId && messageIds.has(a.messageId) ? { ...a, messageId: null } : a));
 }
 
 /**

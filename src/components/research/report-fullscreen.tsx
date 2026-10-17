@@ -106,6 +106,8 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
+        // Full screen at every width: a reader, not a sheet.
+        sheet={false}
         // Open on the document, not on its first toolbar button: focus lands on
         // the title (read first by a screen reader), with no ring drawn on Markdown.
         onOpenAutoFocus={(event) => {
@@ -137,8 +139,9 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
             </div>
             <div className="flex items-center gap-1">
               <ReportExportButtons
-                input={{ run, report: model.report, citationOrder: model.citationOrder }}
+                input={{ run, model, title }}
                 onPdf={() => printReport(title)}
+                onLeave={() => onOpenChange(false)}
               />
               <DialogClose asChild>
                 <Button variant="ghost" size="icon-sm" aria-label={closeName}>

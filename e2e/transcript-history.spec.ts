@@ -132,3 +132,43 @@ test("a ?m= deep link opens on a message far above the newest page", async ({ pa
   expect(count).toBeGreaterThan(400);
   expect(count).toBeLessThan(2000);
 });
+
+test("a row inserted into the transcript restyles that row, not the transcript", async ({ page }) => {
+  // One `+` or `~` rule whose left side has no class, id or attribute, anywhere
+  // in the page's CSS, made Chrome restyle the whole mounted transcript on every
+  // insertion: 3,219 elements per insert on this fixture, 1 without
+  // (PERFORMANCE.md, "Row insertion restyle"; tests/sibling-invalidation-guard
+  // keeps such rules out of the stylesheets, this catches any that arrive another way).
+  await open(page);
+  // A web font landing inside the trace restyles the whole page by itself, and
+  // the max below would read it as the insert's cost.
+  await page.evaluate(() => document.fonts.ready.then(() => true));
+  await page.waitForTimeout(1000);
+  const cdp = await page.context().newCDPSession(page);
+  const counts: number[] = [];
+  cdp.on("Tracing.dataCollected", ({ value }) => {
+    for (const event of value as unknown[] as Array<{ name: string; ph: string; args?: { elementCount?: number } }>) {
+      if (event.name === "UpdateLayoutTree" && event.ph === "X" && event.args?.elementCount != null) counts.push(event.args.elementCount);
+    }
+  });
+  await cdp.send("Tracing.start", { traceConfig: { includedCategories: ["devtools.timeline"] }, transferMode: "ReportEvents" });
+  const mounted = await page.locator(log).evaluate((el) => {
+    const anchor = el.querySelector("[data-message-id]")!;
+    let read = "";
+    for (let i = 0; i < 5; i++) {
+      const row = document.createElement("div");
+      el.insertBefore(row, anchor);
+      read += getComputedStyle(row).color; // forces the style update this insert caused
+      row.remove();
+      read += getComputedStyle(anchor).color;
+    }
+    return read ? el.querySelectorAll("*").length : 0;
+  });
+  const done = new Promise((resolve) => cdp.once("Tracing.tracingComplete", resolve));
+  await cdp.send("Tracing.end");
+  await done;
+  await cdp.detach();
+  expect(mounted).toBeGreaterThan(500);
+  expect(counts.length).toBeGreaterThan(0);
+  expect(Math.max(...counts), `elements restyled per insertion, with ${mounted} mounted`).toBeLessThan(50);
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useIsPresent, useReducedMotion, type Transition } from "framer-motion";
+import { AnimatePresence, motion, useIsPresent, type Transition } from "framer-motion";
 import { Clock, Plus, Radio } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ConnectorEventStreamField } from "@/components/connections/connector-event-stream";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * What starts a schedule, in a form.

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 
 /**
  * DICTATION'S WAVEFORM: the web's half of `JunoDictationWaveform` (the Mac
@@ -75,10 +76,6 @@ export function waveformBars(samples: readonly number[], width: number, active: 
   return bars;
 }
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
-
 export function DictationWaveform({
   level,
   active,
@@ -142,12 +139,11 @@ export function DictationWaveform({
     });
     resize.observe(canvas);
 
-    const motion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const onMotion = () => {
       reduced = prefersReducedMotion();
       draw();
     };
-    motion?.addEventListener?.("change", onMotion);
+    const unsubscribeMotion = subscribeReducedMotion(onMotion);
 
     // A theme switch changes the ink without resizing anything.
     const theme = new MutationObserver(draw);
@@ -171,7 +167,7 @@ export function DictationWaveform({
       cancelAnimationFrame(raf);
       resize.disconnect();
       theme.disconnect();
-      motion?.removeEventListener?.("change", onMotion);
+      unsubscribeMotion();
     };
   }, [active, frozen]);
 

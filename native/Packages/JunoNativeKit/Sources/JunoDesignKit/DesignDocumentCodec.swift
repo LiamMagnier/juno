@@ -18,7 +18,7 @@ public enum DesignDocumentCodec {
             case .notJSON:
                 "This design document is not valid JSON."
             case .notADocument:
-                "This file is not a Alevr Design document."
+                "This file is not an Alevr Design document."
             case .futureSchema(let found, let supported):
                 """
                 This document was made with a newer version of Alevr \

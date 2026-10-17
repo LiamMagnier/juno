@@ -38,3 +38,15 @@ test("the report's price strings render as text, not KaTeX", () => {
   assert.doesNotMatch(html, /katex|math-inline/);
   assert.match(html, /\$100–\$250 price band, Claude Max 5x \(\$100\/month\)/);
 });
+
+test("HTML comments are notes in the source, never text on the page", () => {
+  // A saved research report keeps its section markers; published or opened in
+  // the canvas, they must not print (they name the product's codename, too).
+  const html = render("# Title\n<!-- juno:section=bottom-line -->\n## Bottom line\nText <!-- inline note --> stays [1].");
+  assert.doesNotMatch(html, /juno:section|inline note|&lt;!--/);
+  assert.match(html, /Bottom line/);
+  assert.match(html, /Text/);
+  // Anything that is not only a comment is left exactly as before.
+  assert.match(render("<!-- open and still streaming"), /&lt;!-- open and still streaming/);
+  assert.match(render("<div>raw</div>"), /&lt;div&gt;raw&lt;\/div&gt;/);
+});

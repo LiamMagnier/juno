@@ -19,7 +19,7 @@ final class ComputerActionOverlayModelTests: XCTestCase {
         XCTAssertEqual(model.mark?.succeeded, true)
         let first = model.mark?.serial
         model.apply(cue(.acting, point: nil))
-        XCTAssertNil(model.mark?.point, "typing with no point shows the line alone")
+        XCTAssertEqual(model.mark?.point, CGPoint(x: 940, y: 347), "typing keeps the last known agent position")
         XCTAssertNotEqual(model.mark?.serial, first)
         model.apply(cue(.cleared))
         XCTAssertNil(model.mark, "Esc or Stop clears it at once")
@@ -41,6 +41,55 @@ final class ComputerActionOverlayModelTests: XCTestCase {
         model.apply(cue(.acting))
         try await Task.sleep(for: .milliseconds(120))
         XCTAssertEqual(model.mark?.live, true, "the earlier step's linger does not hide the running one")
+    }
+
+    func testDefaultPreviewPersistsBetweenStepsAndDiscardsLateResultsAfterStop() async throws {
+        let model = ComputerActionOverlayModel(feed: ComputerActionFeed(), mainDisplayHeight: { 900 })
+        var observation = cue(.observing, point: nil)
+        observation.thumbnail = Data([1, 2, 3])
+        observation.windowFrame = ScreenRect(x: 100, y: 100, width: 600, height: 400)
+        model.apply(observation)
+        XCTAssertNil(model.mark?.point, "looking at a window does not invent a cursor target")
+        XCTAssertFalse(model.isPreviewExpanded, "the floating control starts compact")
+        model.isPreviewExpanded = true
+        model.apply(cue(.acting))
+        model.apply(cue(.settled(succeeded: true)))
+        try await Task.sleep(for: .milliseconds(1_300))
+        XCTAssertNotNil(model.mark, "the agent stays visible while thinking")
+        XCTAssertEqual(model.mark?.thumbnail, observation.thumbnail)
+        model.apply(cue(.cleared))
+        XCTAssertFalse(model.isPreviewExpanded, "a new session starts compact again")
+        model.apply(cue(.settled(succeeded: false)))
+        XCTAssertNil(model.mark, "a suspended action cannot restore stopped content")
+    }
+
+    func testAnOlderSessionCannotSettleOrClearTheCurrentPreview() {
+        let model = ComputerActionOverlayModel(feed: ComputerActionFeed(), mainDisplayHeight: { 1080 })
+        model.apply(cue(.acting))
+        var other = cue(.settled(succeeded: false))
+        other.sessionID = "older"
+        model.apply(other)
+        XCTAssertEqual(model.mark?.live, true)
+        other.phase = .cleared
+        model.apply(other)
+        XCTAssertNotNil(model.mark)
+        model.apply(cue(.observing, point: nil))
+        XCTAssertEqual(model.mark?.point, CGPoint(x: 940, y: 1080 - 635), "observation keeps the target")
+    }
+
+    func testReaderHandoffPreservesPreviewAndStopsTheLivePointer() {
+        let model = ComputerActionOverlayModel(feed: ComputerActionFeed())
+        model.apply(cue(.acting))
+        let point = model.mark?.point
+        model.apply(cue(.paused(true)))
+        XCTAssertEqual(model.mark?.paused, true)
+        XCTAssertEqual(model.mark?.live, false)
+        XCTAssertEqual(model.mark?.point, point)
+        model.apply(cue(.paused(false)))
+        XCTAssertEqual(model.mark?.paused, false)
+        model.apply(cue(.cleared))
+        model.apply(cue(.paused(true)))
+        XCTAssertNil(model.mark)
     }
 
     func testItFollowsTheFeed() async throws {

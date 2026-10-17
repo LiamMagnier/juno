@@ -1024,7 +1024,7 @@ export const ICONS = {
   auto: I({
     group: "Composer",
     elements: [p(arc(12, 13.125, 8.25, 150, 390)), g([p(poly(12, 13.125, ...pt(12, 13.125, 5.625, -150)))], { r: 95, o: [12, 13.125] }), dot(12, 13.125, 1.5)],
-    motion: "The needle sweeps across the dial: Juno picks the model.",
+    motion: "The needle sweeps across the dial: Alevr picks the model.",
   }),
 
   /* ——— Message actions ——— */
@@ -1360,7 +1360,7 @@ export const ICONS = {
       p(poly(8.25, 19.5, 15.75, 19.5)),
       g([p(roundPoly(0.5, 10.5, 7.5, 15, 9.9, 12.6, 10.65, 11.7, 13.2))], { rest: 0, op: 1 }),
     ],
-    motion: "A pointer appears on the screen: Juno can use it.",
+    motion: "A pointer appears on the screen: Alevr can use it.",
   }),
   pointer: I({
     group: "Code",

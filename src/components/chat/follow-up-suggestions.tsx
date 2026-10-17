@@ -163,9 +163,8 @@ export function FollowUpSuggestions({ conversationId, onPick, visible: wanted }:
               {/* Marks the pill as "add a turn" rather than a fragment of the
                   reply it sits under. Inherits currentColor, so it warms with
                   the label on hover instead of needing a second colour to keep
-                  in sync. The fade rides a wrapper: the glyph's own
-                  transition list belongs to its hover turn (globals.css
-                  `svg.icon[data-motion]`) and would swallow one written on it. */}
+                  in sync. The fade rides a wrapper, which keeps the glyph's
+                  own transition list (juno-icons/icons.css) untouched. */}
               <span
                 aria-hidden="true"
                 className={cn(

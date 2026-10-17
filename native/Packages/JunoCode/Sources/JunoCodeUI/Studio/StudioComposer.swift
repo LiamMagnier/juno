@@ -634,8 +634,15 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 struct StudioDoublePress {
     /// Quick enough that a single press is never mistaken for the first half
     /// of a pair the reader did not mean.
-    var interval: TimeInterval = 0.5
+    var interval: TimeInterval
     private var last: Date?
+
+    /// Spelled out: with a `private` stored property the memberwise
+    /// initialiser is private too, and Xcode 26's compiler then refuses
+    /// `interval:` from outside this file (the tests pass one).
+    init(interval: TimeInterval = 0.5) {
+        self.interval = interval
+    }
 
     /// Records a press, and answers whether it completes a pair. A completed
     /// pair starts over, so a third press is the first of the next pair.

@@ -3,6 +3,7 @@ import type { RoutingReceipt } from "@/lib/router/receipt";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
+import type { ClientRoutineProposal } from "@/lib/work/routine-proposal";
 import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientFeature } from "@/lib/chat/client-features";
 import type {
@@ -84,6 +85,15 @@ export interface ClientMessage {
   conversationId?: string;
   /** Prior contents preserved across regenerate / edit-and-resend, oldest first. The message itself is always the NEWEST version; these are read-only history for the "‹ 2/3 ›" pager. */
   versions?: ClientMessageVersion[];
+  /**
+   * Where this message sits among its alternatives (src/lib/chat/branches.ts):
+   * an edit of a question or a regenerate of an answer adds a sibling and
+   * keeps the old one with everything that followed it. Absent when the
+   * message has never had an alternative. Supersedes `versions` for any
+   * message that has it; `versions` then lists the alternatives before this
+   * one, for the apps' version pager, which does not read `branch` yet.
+   */
+  branch?: ClientMessageBranch;
   attachments: ClientAttachment[];
   sources?: ClientSource[];
   activity?: ClientActivityEvent[];
@@ -161,6 +171,14 @@ export interface ClientSource {
   /** Where it came from (SPEC §2.4): written for every source that comes from an
    *  `LlmEvent` `sources` or from a research completion. Absent on older rows. */
   origin?: ChatSourceOrigin;
+}
+
+/** A message's place among its alternatives: the "‹ 2/3 ›" pager under a turn. */
+export interface ClientMessageBranch {
+  /** Zero-based position of this message, oldest alternative first. */
+  index: number;
+  /** Every alternative at this point of the thread, oldest first, this one included. */
+  siblingIds: string[];
 }
 
 /** Metadata for one preserved prior version of a message (regenerate / edit-and-resend history). */
@@ -324,6 +342,17 @@ export interface ClientMemoryReceipt {
   sourceMessageId?: string | null;
 }
 
+/**
+ * What a turn wrote to memory: the facts it saved (or believed again), each
+ * with the id that Undo and Edit act on, and the statements it forgot when the
+ * person said "forget that" in the chat. Rides the "Memory updated" activity
+ * row, so it is saved with the turn and the receipt survives a reload.
+ */
+export interface ClientMemoryWrite {
+  saved: ClientMemoryReceipt[];
+  forgotten?: string[];
+}
+
 export interface ClientAgentChangeItem {
   label: string;
   from?: string;
@@ -377,6 +406,8 @@ export interface ClientActivityEvent {
   tool?: ClientToolDetail;
   /** Structured memory receipt; detail remains a compact legacy-friendly line. */
   memoryReceipt?: ClientMemoryReceipt[];
+  /** What this turn wrote to memory (the "Memory updated" row); see ClientMemoryWrite. */
+  memoryWrite?: ClientMemoryWrite;
   /** Durable parse/verify/repair receipt for generated chat artifacts. */
   artifactVerification?: {
     version: 1;
@@ -396,6 +427,12 @@ export interface ClientActivityEvent {
   };
   /** Structured receipt for conversational agent setup or self-configuration edits. */
   agentChange?: ClientAgentChange;
+  /**
+   * A recurring routine the model drafted for the person to confirm
+   * (`propose_routine`, src/lib/chat/routine-tool.ts). Nothing exists until the
+   * card's Schedule press creates it; the card reads whether it did by key.
+   */
+  routineProposal?: ClientRoutineProposal;
   /**
    * What became of each context token the message named (the files, apps,
    * projects, crew members, skills, chats and artifacts), on the turn's
@@ -689,6 +726,8 @@ export interface ChatRequestBody {
   generationId?: string;
   /** The client can draw a task the model starts (see `workHandoff` in request.ts). */
   workHandoff?: boolean;
+  /** How often a task the model starts stops to ask (see `taskApprovalMode` in request.ts). */
+  taskApprovalMode?: "conservative" | "balanced" | "permissive";
   /** Mac only: the folder this chat works in, by display name (see `localFolder` in request.ts). */
   localFolder?: { name: string; access: "read" | "read_write" };
   /** Durable creation surface for a newly saved conversation. */

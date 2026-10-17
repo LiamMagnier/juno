@@ -6,6 +6,8 @@
  * a dead end.
  */
 
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 export function invalidJsonText(parserMessage: string): string {
   return `The arguments were not valid JSON (${parserMessage}). Nothing was run. Send the call again with a JSON object that matches the tool's schema.`;
 }
@@ -106,4 +108,4 @@ export function notPermittedText(reason: string): string {
 }
 
 export const BROKER_UNAVAILABLE_TEXT =
-  "Juno could not verify permission for this call, so it was not run. Answer without it.";
+  `${PRODUCT_NAME} could not verify permission for this call, so it was not run. Answer without it.`;

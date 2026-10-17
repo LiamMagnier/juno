@@ -37,7 +37,8 @@ import type { ToolExecuteOptions } from "@/lib/tools/types";
 import { ACTION_PREVIEW_STRING_CHARS, type ActionReceiptStatus, type ClientActionApproval } from "@/lib/action-approval";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
-import { DEFAULT_WORK_PERMISSION_POLICY, type WorkPermissionPolicy } from "@/lib/work/domain";
+import type { WorkPermissionPolicy } from "@/lib/work/domain";
+import { chatTaskPolicy } from "@/lib/chat/task-approval-mode";
 import {
   CONVERSATION_LIVE_STATUSES,
   MAX_LIVE_TASKS_PER_CONVERSATION,
@@ -536,6 +537,12 @@ export interface StartTaskToolContext {
    * a mode somebody chose on the agent's page is a decision, not a default.
    */
   agent?: { id: string; approvalMode: WorkPermissionPolicy; status?: string } | null;
+  /**
+   * How often the task stops to ask, as chosen in this chat's composer
+   * (src/lib/chat/task-approval-mode.ts), or null for the default. In an
+   * agent's thread it can only narrow the agent's own mode.
+   */
+  approvalMode?: WorkPermissionPolicy | null;
   /** The generation id: with the broker's idempotency key. */
   generationId: string;
   onApprovalRequest?: (approval: ClientActionApproval) => void;
@@ -681,10 +688,11 @@ async function startTask(
     conversationId: ctx.conversation.id,
     model: ctx.model,
     ...(ctx.reasoningEffort ? { reasoningEffort: ctx.reasoningEffort } : {}),
-    // Asks before risky steps. The user never picked a mode for a task the
-    // model started, so it gets the default a person composing one gets —
-    // unless this is an agent's thread, where they picked one for the agent.
-    permissionPolicy: ctx.agent?.approvalMode ?? DEFAULT_WORK_PERMISSION_POLICY,
+    // The mode picked in this chat's composer, or the default a person
+    // composing a task gets when nobody picked one. In an agent's thread the
+    // agent's own mode holds and the composer may only narrow it. A project's
+    // stricter mode still wins inside the dispatcher (`resolveSessionFields`).
+    permissionPolicy: chatTaskPolicy({ chosen: ctx.approvalMode ?? null, agentMode: ctx.agent?.approvalMode ?? null }),
     attachmentIds: [...new Set(ctx.attachmentIds)],
     connectorIds: [...new Set(ctx.connectorIds)].slice(0, MAX_TASK_CONNECTORS),
     idempotencyKey: keys.session,

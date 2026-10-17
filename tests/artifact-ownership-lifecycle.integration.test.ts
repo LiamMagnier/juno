@@ -66,6 +66,7 @@ if (!DB_URL || !canMockModules) {
     mock.module("@/components/share/shared-chat-transcript", { namedExports: { SharedChatTranscript: Stub } });
     mock.module("@/components/share/shared-artifact-viewer", { namedExports: { SharedArtifactViewer: Stub } });
     mock.module("@/components/share/report-share-dialog", { namedExports: { ReportShareButton: Stub } });
+    mock.module("@/components/share/share-copy-button", { namedExports: { ShareCopyButton: Stub } });
     mock.module("@/components/canvas/sandbox-document-frame", { namedExports: { SandboxProfileProvider: Stub } });
     mock.module("@/components/landing/plate", { namedExports: { Plate: Stub } });
     mock.module("@/components/ui/app-page", { namedExports: { AppPage: Stub } });
@@ -665,7 +666,7 @@ if (!DB_URL || !canMockModules) {
     const designZip = await route.GET(request("GET", `/api/artifacts/${design.artifact.id}/download`), params({ id: design.artifact.id }));
     assert.equal(designZip.headers.get("content-type"), "application/zip", "a design is more than one file");
     const bundle = await JSZip.loadAsync(await designZip.arrayBuffer());
-    assert.ok(bundle.file("Sign in.juno.design.json"));
+    assert.ok(bundle.file("Sign in.alevr.design.json"));
     assert.ok(bundle.file("poster.svg"));
     assert.ok(bundle.file("handoff.json"));
   });

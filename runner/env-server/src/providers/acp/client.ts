@@ -532,7 +532,7 @@ export class AcpClient {
       // version is telling us what it can speak. Anything we then send that it
       // does not understand comes back as -32601, which is survivable.
       this.logger.warn(
-        `agent negotiated protocol version ${response.protocolVersion}; Juno targets ${ACP_PROTOCOL_VERSION}`,
+        `agent negotiated protocol version ${response.protocolVersion}; Alevr targets ${ACP_PROTOCOL_VERSION}`,
       );
     }
     return response;
@@ -905,7 +905,7 @@ function parseOrThrow<S extends z.ZodType>(schema: S, params: unknown, method: s
 }
 
 function methodNotFound(method: string): AcpError {
-  return new AcpError(`Juno does not implement ${method}`, ACP_ERROR_CODES.methodNotFound);
+  return new AcpError(`Alevr does not implement ${method}`, ACP_ERROR_CODES.methodNotFound);
 }
 
 function toAcpError(method: string, error: JsonRpcError): AcpError {

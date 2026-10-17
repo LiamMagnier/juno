@@ -235,6 +235,72 @@ test("codex: steer lands in the running turn, interrupt stops the next", async (
   assert.equal(client.snapshot(sid).queue.length, 1);
 });
 
+test("queue lane: remove, edit, move and Steer now change the session's own queue", async () => {
+  const { client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const sid = await openSession(client, tempDir("cwd"), selection);
+  const texts = () => client.snapshot(sid).queue.map((q) => q.input.text);
+  const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "slow one" }, selection, ...ask });
+  await client.waitFor(() => deltasSince(client, sid, t1.turnId) > 0, 5000, "streaming");
+  const ids: string[] = [];
+  for (const text of ["first", "second", "third"]) ids.push((await client.command<{ queuedId: string }>("turn.queue", { sessionId: sid, input: { text } })).queuedId);
+  await client.waitFor(() => client.snapshot(sid).queue.length === 3 || undefined, 2000, "three queued");
+
+  assert.deepEqual(await client.command("queue.move", { sessionId: sid, queuedId: ids[2], to: 0 }), { moved: true });
+  await client.waitFor(() => texts()[0] === "third" || undefined, 2000, "moved");
+  assert.deepEqual(texts(), ["third", "first", "second"]);
+
+  assert.deepEqual(await client.command("queue.edit", { sessionId: sid, queuedId: ids[0], text: "first, edited" }), { updated: true });
+  await client.waitFor(() => texts().includes("first, edited") || undefined, 2000, "edited");
+  assert.deepEqual(texts(), ["third", "first, edited", "second"], "edited in place, not appended");
+
+  const removed = await client.command<{ removed: boolean; input?: { text: string } }>("queue.remove", { sessionId: sid, queuedId: ids[1] });
+  assert.equal(removed.removed, true);
+  assert.equal(removed.input?.text, "second", "Remove hands back what was queued (Edit takes it into the composer)");
+  await client.waitFor(() => texts().length === 2 || undefined, 2000, "removed");
+  assert.deepEqual(await client.command("queue.remove", { sessionId: sid, queuedId: ids[1] }), { removed: false }, "a second Remove is a no-op, not an error");
+
+  // Steer now joins the running turn and leaves no queued copy behind.
+  const promoted = await client.command<{ outcome: string }>("queue.promote", { sessionId: sid, queuedId: ids[2] });
+  assert.equal(promoted.outcome, "steered");
+  await client.waitFor(() => texts().length === 1 || undefined, 2000, "steered out of the queue");
+  assert.deepEqual(texts(), ["first, edited"]);
+  assert.ok(items(client, sid).some((i) => i.kind === "user_message" && i.delivery === "steer" && i.text === "third"));
+  assert.equal((await client.command<{ outcome: string }>("queue.promote", { sessionId: sid, queuedId: ids[2] })).outcome, "gone");
+  await assert.rejects(client.command("queue.edit", { sessionId: "nope", queuedId: ids[0], text: "x" }), /No session/);
+
+  // An interrupted turn leaves the queue waiting; Steer now on an idle session starts the message at once.
+  await client.command("turn.interrupt", { sessionId: sid, turnId: t1.turnId });
+  assert.equal((await client.turnCompleted(sid, t1.turnId)).outcome, "interrupted");
+  assert.equal(client.snapshot(sid).queue.length, 1);
+  const started = await client.command<{ outcome: string }>("queue.promote", { sessionId: sid, queuedId: ids[0] });
+  assert.equal(started.outcome, "started");
+  await client.waitFor(() => (client.snapshot(sid).queue.length === 0 && client.snapshot(sid).activeTurnId) || undefined, 3000, "the promoted message runs");
+  const userTexts = items(client, sid).filter((i) => i.kind === "user_message").map((i) => (i as { text: string }).text);
+  assert.equal(userTexts.filter((t) => t === "third").length, 1, "the steered message ran once");
+  assert.ok(!userTexts.includes("second"), "the removed message never ran");
+  assert.deepEqual(client.gaps, [], "no sequence gaps on the wire");
+});
+
+test("queue lane: empty text removes, and another conversation's message cannot be rewritten", async () => {
+  const { server, client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const sid = await openSession(client, tempDir("cwd"), selection);
+  const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "slow one" }, selection, ...ask });
+  await client.waitFor(() => deltasSince(client, sid, t1.turnId) > 0, 5000, "streaming");
+  const { queuedId } = await client.command<{ queuedId: string }>("turn.queue", { sessionId: sid, input: { text: "maybe later" } });
+  assert.deepEqual(await client.command("queue.edit", { sessionId: sid, queuedId, text: "   " }), { updated: true });
+  await client.waitFor(() => client.snapshot(sid).queue.length === 0 || undefined, 2000, "emptied");
+  // A delivered message sits in the queue too (the manager is driven directly: the wire strips `conversation`).
+  const delivered = server.sessions.queue({ sessionId: sid, input: { text: "fenced", conversation: { fromRef: "c1", fromTitle: "Trip", fromProduct: "chat", text: "hi", hop: 0, chainId: "ch" } } });
+  await assert.rejects(client.command("queue.edit", { sessionId: sid, queuedId: delivered.queuedId, text: "mine now" }), /cannot be edited/);
+  assert.deepEqual(await client.command("queue.remove", { sessionId: sid, queuedId: delivered.queuedId }), { removed: true, input: { text: "fenced", conversation: { fromRef: "c1", fromTitle: "Trip", fromProduct: "chat", text: "hi", hop: 0, chainId: "ch" } } });
+  await client.command("turn.interrupt", { sessionId: sid, turnId: t1.turnId });
+  await client.turnCompleted(sid, t1.turnId);
+});
+
 test("codex: usage limit becomes 'limited' with a reset time, on the session and the instance", async () => {
   const { client } = await boot();
   await client.command("provider.probe", { instanceId: "codex:default" });

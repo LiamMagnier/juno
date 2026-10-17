@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 export type OrbStatus = "idle" | "listening" | "thinking" | "speaking" | "error";
 
@@ -54,7 +55,7 @@ export function VoiceOrb({
     const root = rootRef.current;
     if (!root) return;
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = prefersReducedMotion();
     let frame = 0;
     let smooth = FLOOR[statusRef.current];
 

@@ -9,6 +9,7 @@ import { generateChatTitleFromMessages, fallbackChatTitle, generateProjectName, 
 import { canAutoRenameChatTitle, canAutoRenameProjectName, coerceTitleSource } from "@/lib/title-ownership";
 import { loadBackgroundProviderPolicy } from "@/lib/memory";
 import { getModel } from "@/lib/models";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -58,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const storedMessages = await prisma.message.findMany({
-    where: { conversationId: id },
+    where: { conversationId: id, ...ON_ACTIVE_PATH },
     orderBy: { createdAt: "asc" },
     take: 8,
     select: { role: true, content: true },

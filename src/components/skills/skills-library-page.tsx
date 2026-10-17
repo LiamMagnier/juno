@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useReducedMotion } from "framer-motion";
+
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,7 @@ import { useSkillLibrary } from "@/components/skills/use-skill-library";
 import { PENDING_SKILL_MARKDOWN_KEY, updateOutcomeMessage } from "@/components/skills/skill-library-model";
 import type { SkillImportOutcome, SkillImportPreview } from "@/components/skills/skills-transport";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * /skills, and /skills/import (the same page with the importer open).

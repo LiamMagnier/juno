@@ -135,10 +135,12 @@ const pressableVariants = cva(
       },
 
       // Sizes. Only `icon` and `chip` are size-sensitive; a row and a tile size
-      // to their content. Touch targets grow to ~44px on coarse pointers, the
-      // same rule <Button> follows.
-      { kind: "icon", size: "sm", class: "size-7 coarse:size-9" },
-      { kind: "icon", size: "md", class: "size-8 coarse:size-10" },
+      // to their content. Touch targets grow on coarse pointers, the same rule
+      // <Button> follows, and the two smaller rungs take the rest of the way
+      // to 44px as an invisible pad (`hit-44`, G54), so a dense row of glyphs
+      // keeps its rhythm on a phone.
+      { kind: "icon", size: "sm", class: "size-7 coarse:size-9 hit-44" },
+      { kind: "icon", size: "md", class: "size-8 coarse:size-10 hit-44" },
       { kind: "icon", size: "lg", class: "size-9 coarse:size-11" },
       { kind: "chip", size: "sm", class: "h-6 px-2 text-caption" },
       { kind: "chip", size: "lg", class: "h-8 px-3 text-ui" },

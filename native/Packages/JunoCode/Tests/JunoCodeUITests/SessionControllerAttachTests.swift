@@ -65,6 +65,9 @@ final class SessionControllerAttachTests: XCTestCase {
         XCTAssertFalse(names.contains("bash"))
         XCTAssertTrue(request.systemPrompt.contains("Choose computer tools yourself"))
         XCTAssertFalse(request.systemPrompt.contains("no computer control"))
+        XCTAssertTrue(request.systemPrompt.contains("Authorized repetitive work"))
+        XCTAssertTrue(request.systemPrompt.contains("do not invent terms-of-service restrictions"))
+        XCTAssertTrue(request.systemPrompt.contains("never bypass a site's security controls"))
         await controller.detach()
     }
 

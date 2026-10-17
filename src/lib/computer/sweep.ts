@@ -204,7 +204,7 @@ export async function sweepAgentComputers(opts?: {
 
     const idleMs = nowMs - lastMeaningfulTimestamp(row);
 
-    // 5. Sleep after AGENT_COMPUTER_SLEEP_HOURS (default 24h)
+    // 5. Sleep after env.agentComputer.sleepHours (AGENT_COMPUTER_SLEEP_HOURS, default 0.5h)
     if (
       (row.status === "resting" || row.status === "awake") &&
       idleMs >= sleepThresholdMs
@@ -213,7 +213,7 @@ export async function sweepAgentComputers(opts?: {
       continue;
     }
 
-    // 6. Rest (pause) after AGENT_COMPUTER_REST_MINUTES (default 20m)
+    // 6. Rest (pause) after env.agentComputer.restMinutes (AGENT_COMPUTER_REST_MINUTES, default 3m)
     if (row.status === "awake" && idleMs >= restThresholdMs) {
       if (await restComputer(row.userId, row.agentId, { now, ifIdle })) summary.rested.push(row.agentId);
     }

@@ -87,7 +87,8 @@ test("keys, as native: Esc cancels, Return/Enter sends, IME and Shift+Enter pass
   assert.equal(dictationKeyAction({ key: "a" }), null);
   const src = read("src/components/chat/composer-dictation.tsx");
   assert.match(src, /onClick=\{onDone\}/, "✓ is the way to keep the words as a draft");
-  assert.match(src, /onDone=\{stop\}/);
+  // ✓ keeps the words; after a failed server cut it retries the kept recording (G36).
+  assert.match(src, /onDone=\{failedTake \? retryTake : stop\}/);
 });
 
 test("the row is ✕ · waveform · ✓ in the card, with no status word, no meter and no second send disc", () => {
@@ -117,10 +118,11 @@ test("every composer dictates through the one row", () => {
   for (const file of [
     "src/components/chat/composer.tsx",
     "src/components/code/v2/composer.tsx",
-    "src/components/code/code-composer.tsx",
   ]) {
     assert.match(read(file), /<DictationSwap\b/, `${file} swaps in ComposerDictation`);
   }
+  // The /code landing is the session's composer in its landing variant (G58), so it dictates through the same row.
+  assert.match(read("src/components/code/code-composer.tsx"), /<Composer\b[\s\S]*variant="landing"/);
   assert.match(read("src/components/ui/dictation-swap.tsx"), /<ComposerDictation\b/);
 });
 

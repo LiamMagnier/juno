@@ -76,7 +76,8 @@ import {
 } from "@/lib/research/envelope";
 import { researchRoster } from "@/lib/research/search-metering";
 import { parseWorkspaceConfig, type WorkspaceConfig } from "@/lib/projects/workspace-config";
-import { buildCompletionWrite } from "@/lib/research/completion-core";
+import { buildCompletionWrite, researchReportIdentifier } from "@/lib/research/completion-core";
+import { ownedArtifactWhere } from "@/lib/artifact-access";
 import { runWorkingMs } from "@/lib/research/working-time";
 
 export { runWorkingMs };
@@ -105,6 +106,7 @@ import {
 } from "@/lib/research/view";
 import type { ResearchPlan } from "@/lib/research/domain";
 import type { ResearchRunSummary, ResearchRunViewAdditions, ResearchScope } from "@/types/research";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /**
  * The durable research job, wired to Postgres and to the real search backend.
@@ -919,7 +921,7 @@ export async function researchAccountFacts(userId: string, conversationId?: stri
 export async function conversationContextFor(conversationId: string | null | undefined, userId: string): Promise<string | null> {
   if (!conversationId) return null;
   const rows = await prisma.message.findMany({
-    where: { conversationId, conversation: { userId } },
+    where: { conversationId, conversation: { userId }, ...ON_ACTIVE_PATH },
     orderBy: { createdAt: "desc" },
     take: 6,
     select: { role: true, content: true },
@@ -1312,7 +1314,7 @@ export async function readResearchRun(input: {
   // The notes behind "What we know so far" (RESEARCH_V2 §3): live runs only —
   // a finished run has its report — strongest first, claims only, bounded.
   const live = !isTerminalResearchState(run.state);
-  const [events, sources, auditEvent, latestEvent, phaseEvent, findings, notes] = await Promise.all([
+  const [events, sources, auditEvent, latestEvent, phaseEvent, findings, notes, reportArtifact] = await Promise.all([
     store.readEvents({
       runId: run.id,
       userId: run.userId,
@@ -1354,6 +1356,15 @@ export async function readResearchRun(input: {
           select: { objectiveId: true, sourceId: true, claim: true, confidence: true, createdAt: true, source: { select: { url: true } } },
         })
       : Promise.resolve([]),
+    // The report as saved in Library (completion writes it beside the
+    // message), for the reader's Share and Library link (G37). Finished runs
+    // only, so the live poll never pays for it; absent once it is trashed.
+    !live && run.assistantMessageId && run.conversationId
+      ? prisma.artifact.findFirst({
+          where: ownedArtifactWhere(run.userId, { conversationId: run.conversationId, identifier: researchReportIdentifier(run.id) }),
+          select: { id: true },
+        })
+      : Promise.resolve(null),
   ]);
   const plan = parsePlan(run.plan);
   const state = isResearchState(run.state) ? run.state : "failed";
@@ -1385,6 +1396,7 @@ export async function readResearchRun(input: {
     phaseDetail: phaseDetailFor(phase, latest),
     workingMs,
     assistantMessageId: run.assistantMessageId ?? null,
+    reportArtifactId: reportArtifact?.id ?? null,
     // "Written by" is the recorded writer only; older runs show no model.
     leadModel: recorded.leadModel,
     models: recorded.models,

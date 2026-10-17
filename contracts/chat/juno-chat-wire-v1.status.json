@@ -29,6 +29,10 @@
     "request.model": "native",
     "request.regenerate": "native",
     "request.regenerateInstruction": "native",
+    "request.regenerateMessageId": {
+      "status": "planned",
+      "note": "Regenerate an earlier answer as a new branch (src/lib/chat/branches.ts). The apps regenerate the newest answer only, and branch locally."
+    },
     "request.voiceMode": {
       "status": "planned",
       "note": "The web sets it for a turn spoken in voice mode; the Mac's voice path does not send it yet."
@@ -85,6 +89,10 @@
     "request.skillSlug": "native",
     "request.generationId": "native",
     "request.workHandoff": "native",
+    "request.taskApprovalMode": {
+      "status": "planned",
+      "note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
+    },
     "request.localFolder": "native",
     "request.roomTurn": {
       "status": "planned",
@@ -217,6 +225,10 @@
       "status": "web-only",
       "note": "The Mac's version pager reads /api/messages/{id}/versions."
     },
+    "ClientMessage.branch": {
+      "status": "planned",
+      "note": "The server-side branch pager (POST /api/messages/{id}/branch). The apps keep their own local branch tree and read only the shown branch from the server; a branched message's versions list the alternatives before it, which their version pager reads."
+    },
     "ClientMessage.attachments": "native",
     "ClientMessage.sources": "native",
     "ClientMessage.activity": "native",
@@ -294,6 +306,10 @@
     "ClientActivityEvent.createdAt": "native",
     "ClientActivityEvent.tool": "native",
     "ClientActivityEvent.memoryReceipt": "native",
+    "ClientActivityEvent.memoryWrite": {
+      "status": "planned",
+      "note": "What a turn saved or forgot, by memory id, on the \"Memory updated\" / \"Forgotten\" row (src/lib/chat/memory-receipts.ts). The web turns it into View, Edit and Undo; the apps still draw the row's title and detail only."
+    },
     "ClientActivityEvent.artifactVerification": {
       "status": "planned",
       "note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."
@@ -305,6 +321,10 @@
     "ClientActivityEvent.agentChange": {
       "status": "web-only",
       "note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
+    },
+    "ClientActivityEvent.routineProposal": {
+      "status": "web-only",
+      "note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
     },
     "ClientToolDetail.server": "native",
     "ClientToolDetail.name": "native",

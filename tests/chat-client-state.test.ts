@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyTurnArtifacts,
-  detachArtifactsFromMessages,
   serverTranscriptRevision,
   settleClientMessage,
 } from "../src/lib/chat-client-state";
@@ -101,18 +100,6 @@ test("a regenerated answer updates the artifacts it re-emits in place and detach
 test("a turn that changes nothing leaves the list as it was", () => {
   const list = [artifact({ messageId: "assistant-0" })];
   assert.equal(applyTurnArtifacts(list, [], "assistant-1"), list);
-});
-
-test("an edit detaches the truncated answers' artifacts and removes none", () => {
-  const plan = artifact({ messageId: "assistant-1" });
-  const outline = artifact({ id: "art-old", identifier: "outline", messageId: "assistant-0" });
-  const next = detachArtifactsFromMessages([outline, plan], new Set(["user-2", "assistant-1"]));
-  assert.deepEqual(next.map((a) => [a.id, a.messageId]), [
-    ["art-old", "assistant-0"],
-    ["art-plan", null],
-  ]);
-  const untouched = [outline];
-  assert.equal(detachArtifactsFromMessages(untouched, new Set(["assistant-1"])), untouched);
 });
 
 test("an artifact tag resolves to the artifact that existed when its message was written", async () => {

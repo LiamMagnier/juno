@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 import { ownedArtifactWhere } from "@/lib/artifact-access";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { decryptJsonField } from "@/lib/field-crypto";
@@ -154,7 +155,7 @@ export function prismaContextPort(options: ContextPortOptions): ContextPort {
         prisma.message.findMany({
           // The turns a person and Juno wrote. A SYSTEM row is never sent to
           // a provider (every adapter skips it), so it is not quoted either.
-          where: { conversationId: conversation.id, conversation: { userId }, role: { in: ["USER", "ASSISTANT"] } },
+          where: { conversationId: conversation.id, conversation: { userId }, role: { in: ["USER", "ASSISTANT"] }, ...ON_ACTIVE_PATH },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: EXCERPT_MESSAGES,
           select: { role: true, content: true },
@@ -216,10 +217,14 @@ export function prismaContextPort(options: ContextPortOptions): ContextPort {
  * each is re-resolved (ownership included) as if sent again. Only applied
  * tokens come back — see `contextTokensFromReceipt`.
  */
-export async function regenerateContextTokens(userId: string, conversationId: string): Promise<ContextToken[]> {
+export async function regenerateContextTokens(userId: string, conversationId: string, messageId?: string): Promise<ContextToken[]> {
+  // The reply being replaced: the one named (a regenerate of an earlier
+  // answer), else the newest one shown (src/lib/chat/branches.ts).
   const last = await prisma.message.findFirst({
-    where: { conversationId, conversation: { userId } },
-    orderBy: { createdAt: "desc" },
+    where: messageId
+      ? { id: messageId, conversationId, conversation: { userId } }
+      : { conversationId, conversation: { userId }, ...ON_ACTIVE_PATH },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { role: true, activity: true },
   });
   if (!last || last.role !== "ASSISTANT") return [];

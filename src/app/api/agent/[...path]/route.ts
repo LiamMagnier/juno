@@ -38,6 +38,7 @@ import {
   tierScaledRates,
 } from "@/lib/code-v2/agent-routing";
 import { isByokProvider } from "@/lib/code-v2/contracts";
+import { admitCodeCall, countCodeTurn } from "@/lib/metering/code-turn-store";
 
 // Streaming needs the Node runtime. There is deliberately no `maxDuration`:
 // it is a Vercel-only directive that `next start` ignores (the chat route says
@@ -90,6 +91,15 @@ function isAllowedPath(kind: "anthropic" | "openai", provider: Provider, forward
  *    or cookie auth) instead would let any signed-in account use this proxy as
  *    unmetered provider access, since the budget gates above read only the
  *    ledger.
+ *
+ * TURNS. A Code turn is also admitted and counted here the way a chat turn is
+ * in `consumeMessage`: an unconfirmed address is refused, and the call that
+ * opens a turn — read off the body, never a header — puts one message on the
+ * month's counter once it has been billed (src/lib/metering/code-turn.ts and
+ * code-turn-store.ts). None of the callers above reported a turn anywhere, so
+ * before this a month of Code read as a month of nothing on the account. The
+ * reporter route no longer counts at `phase: "start"`, so its hosts are not
+ * counted twice.
  *
  * Voice never comes through here: the relay speaks to its providers directly
  * and reports through `/api/voice/spend`.
@@ -261,6 +271,16 @@ export async function POST(
   const checked = inspectAgentRequest(wire, bodyResult.body);
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
   const request = checked.request;
+  // The rest of a chat turn's admission (src/lib/metering/code-turn-store.ts):
+  // an unconfirmed address spends nothing, and a plan's message cap, should
+  // one ever have one, is met when a turn opens. Only on Alevr's key, like the
+  // budget and the windows above: a call on the user's own key costs Alevr
+  // nothing and is theirs to make.
+  const opensTurn = request.turn?.opens === true;
+  if (!byok) {
+    const admission = await admitCodeCall({ userId: user.id, plan, opensTurn });
+    if (!admission.allowed) return NextResponse.json(admission.body, { status: admission.status });
+  }
   // The context tier the run chose, when it chose one: offered by this model
   // (catalogue), and the prompt must fit it.
   const tierModel = catalogModel(`${provider}:${request.model}`);
@@ -394,6 +414,13 @@ export async function POST(
       void recordSpend({ userId, model: spendModel, kind: "code", source, ...metered.usage }).catch(
         () => undefined,
       );
+      // The turn this call opened, on the month's message counter — once, from
+      // the one place that knows the call was billed. A retry of the same
+      // opening finds its key taken and counts nothing; a continuation call is
+      // never an opening. See src/lib/metering/code-turn-store.ts.
+      if (request.turn?.opens) {
+        void countCodeTurn({ userId, fingerprint: request.turn.fingerprint }).catch(() => undefined);
+      }
     },
   });
   return new Response(bodyStream, { status: upstream.status, headers: respHeaders });

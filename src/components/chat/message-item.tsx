@@ -4,13 +4,12 @@ import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Volume2 } from "@/components/ui/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, Volume2 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
-import { Burst, Swell } from "@/components/ui/micro";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,11 +32,14 @@ import { useModifierKeyLabel } from "@/components/ui/platform";
 import { StreamingMarkdown } from "@/components/chat/stream-text";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
+import { AnswerMemory } from "@/components/chat/answer-memory";
 import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
+import { MessageFeedback } from "@/components/chat/message-feedback";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import { codeLiveCopy } from "@/components/code/code-activity";
 import { writtenPaths } from "@/lib/chat/tool-receipt";
 /**
@@ -51,6 +53,10 @@ const ApprovalCard = nextDynamic(
 );
 const AgentChangeCard = nextDynamic(
   () => import("@/components/chat/agent-change-card").then((m) => m.AgentChangeCard),
+  { ssr: false },
+);
+const RoutineProposalList = nextDynamic(
+  () => import("@/components/chat/routine-proposal-card").then((m) => m.RoutineProposalList),
   { ssr: false },
 );
 import { SourcesPill } from "@/components/chat/sources-pill";
@@ -208,10 +214,12 @@ function stripTrailingSourcesSection(content: string): string {
 }
 
 /**
- * ChatGPT-style "‹ 2/3 ›" version pager, shown whenever a message has preserved
- * prior versions (regenerate and edit-and-resend never overwrite history). It
- * sits in the action-toolbar row but OUTSIDE the hover-revealed cluster so the
- * existence of history stays discoverable at a glance.
+ * ChatGPT-style "‹ 2/3 ›" pager, shown whenever a message has alternatives: the
+ * branches an edit or a regenerate made (`message.branch`, which switch the
+ * whole continuation below), or, on a message that has never branched, the
+ * older wordings kept before branches existed (`message.versions`, text
+ * only). It sits in the action-toolbar row but OUTSIDE the hover-revealed
+ * cluster so the existence of history stays discoverable at a glance.
  */
 function VersionPager({
   index,
@@ -271,7 +279,6 @@ function IconAction({
   children,
   active,
   busy,
-  celebrate,
   buttonRef,
   shortcut,
 }: {
@@ -285,19 +292,8 @@ function IconAction({
   buttonRef?: React.Ref<HTMLButtonElement>;
   /** In flight. Shows a spinner and blocks a second press. */
   busy?: boolean;
-  /**
-   * Swell and burst when this turns ON (components/ui/micro.tsx).
-   *
-   * Opt-in, and only two of the row's six actions take it. Copy, branch and
-   * regenerate are TRANSPORT — they move something somewhere, and the
-   * something is its own receipt (a toast, a new message, a rewritten
-   * answer). Feedback has no receipt at all: the thumb tints, and a tint on a
-   * 16px glyph at the bottom of a long answer is the easiest state change in
-   * the product to miss. The burst is that receipt, and it is worth the
-   * flourish precisely because rating an answer is the one thing here the
-   * person does FOR us rather than for themselves.
-   */
-  celebrate?: boolean;
+  // No celebration here: the thumbs live in message-feedback.tsx, where up
+  // swells and down never does.
 }) {
   return (
     <Tooltip>
@@ -316,11 +312,6 @@ function IconAction({
         >
           {busy ? (
             <Loader2 className="size-4 animate-spin" />
-          ) : celebrate ? (
-            <span className="relative inline-flex items-center justify-center">
-              <Swell on={!!active}>{children}</Swell>
-              <Burst on={!!active} />
-            </span>
           ) : (
             children
           )}
@@ -603,6 +594,11 @@ interface MessageItemProps {
    *  (code sessions), which hides the corresponding buttons entirely —
    *  an action that cannot run must not render. */
   onRegenerate?: (options?: RegenerateOptions) => void;
+  /** Regenerate an earlier answer as a new branch at its turn. Absent on
+   *  surfaces where only the newest answer can be redone (Code, rooms). */
+  onRegenerateAt?: (id: string, options?: RegenerateOptions) => void;
+  /** Show another branch: the "‹ 2/3 ›" pager on a message with `branch`. */
+  onSelectBranch?: (id: string) => Promise<unknown> | void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
   /** Re-send a user turn the server never received (`ChatMessage.unsent`),
@@ -611,7 +607,7 @@ interface MessageItemProps {
   /** This is the newest user turn: `juno:edit-last-user-message` (↑ in an
    *  empty composer) opens it for editing. */
   editOnRequest?: boolean;
-  onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
+  onFeedback: (id: string, value: "UP" | "DOWN" | null, detail?: FeedbackDetail) => void;
   /** False for a bubble with no persisted Message row behind it (code sessions
    *  render optimistic ones): feedback is keyed by message id, so offering it
    *  would POST an id the server has never seen. Defaults to true. */
@@ -670,6 +666,8 @@ export const MessageItem = React.memo(function MessageItem({
   onOpenArtifact,
   onArtifactChanged,
   onRegenerate,
+  onRegenerateAt,
+  onSelectBranch,
   onContinue,
   onEdit,
   onResend,
@@ -790,6 +788,31 @@ export const MessageItem = React.memo(function MessageItem({
     setVersionIndex(next);
   };
 
+  // ---- Branch pager (src/lib/chat/branches.ts) ----
+  // A message with alternatives steps through branches on the server: the
+  // turn and everything after it switch, and this row stays where it is (the
+  // new branch's first row takes over its render key). Held while a reply is
+  // being written, so an answer never lands under a question no longer shown.
+  const branch = message.branch && message.branch.siblingIds.length > 1 ? message.branch : null;
+  const [switchingBranch, setSwitchingBranch] = React.useState(false);
+  const stepBranch = async (dir: -1 | 1) => {
+    const target = branch?.siblingIds[branch.index + dir];
+    if (!target || !onSelectBranch || switchingBranch) return;
+    setSwitchingBranch(true);
+    try {
+      await onSelectBranch(target);
+    } finally {
+      setSwitchingBranch(false);
+    }
+  };
+  const pager = branch ? (
+    onSelectBranch ? (
+      <VersionPager index={branch.index} total={branch.siblingIds.length} loading={busy || switchingBranch} onStep={stepBranch} />
+    ) : null
+  ) : totalVersions > 1 ? (
+    <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
+  ) : null;
+
   // What the bubble displays: an older read-only version, or the live message.
   const viewingOld = versionIndex < versionCount ? versionDetails?.[versionIndex] : undefined;
   const view: ChatMessage = viewingOld
@@ -822,7 +845,7 @@ export const MessageItem = React.memo(function MessageItem({
   // into a new saved conversation and navigates there. Self-contained (needs
   // only the message row), so it requires no plumbing through chat-view.
   const [branching, setBranching] = React.useState(false);
-  const branch = async () => {
+  const branchInNewChat = async () => {
     if (branching || !message.conversationId) return;
     setBranching(true);
     try {
@@ -1053,9 +1076,7 @@ export const MessageItem = React.memo(function MessageItem({
         )}
         {!editing && !message.pending && !isVoice && (
           <div className="mt-1 flex items-center">
-            {totalVersions > 1 && (
-              <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
-            )}
+            {pager}
             <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
               <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
@@ -1078,11 +1099,9 @@ export const MessageItem = React.memo(function MessageItem({
                   <ActionIcons.edit className="size-4" />
                 </IconAction>
               )}
-              {onFork && !busy && !privateMode && !message.unsent && (
-                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
-                  <GitFork className="size-4" />
-                </IconAction>
-              )}
+              {/* No branch glyph here: editing IS branching on a question
+                  (the pager above switches between wordings), and a new chat
+                  is branched from an answer's More menu, one verb in one place. */}
             </div>
           </div>
         )}
@@ -1328,7 +1347,9 @@ export const MessageItem = React.memo(function MessageItem({
             {/* The streamed prose is paced and inked in by StreamingMarkdown
                 (stream-text.tsx); a settled reply renders as plain Markdown. */}
             <LiveUIHostProvider value={{ messageId: message.id }}>
-            <div className="space-y-1">
+            {/* `data-answer-text`: a settled answer's prose, where a selection
+                raises Ask / Quote / Explain (answer-selection-bar.tsx). */}
+            <div className="space-y-1" data-answer-text={message.streaming ? undefined : message.id}>
             {parts.map((part, i) =>
               part.type === "text" ? (
                 <StreamingMarkdown key={i} content={part.text} streaming={message.streaming} sources={sources} writtenFiles={writtenFiles} />
@@ -1353,7 +1374,10 @@ export const MessageItem = React.memo(function MessageItem({
                       // A held tag's body is empty (the suggestion lives in its
                       // own row), so the card shows the saved version — which
                       // is the truth about what the artifact is now.
-                      content={artifact?.content ?? part.content}
+                      // While this reply writes the block, the card shows what is
+                      // being written (a revision's new source, which the live
+                      // blueprint draws), not the saved version it will replace.
+                      content={part.streaming && message.streaming ? (part.content ?? "") : (artifact?.content ?? part.content)}
                       version={artifact?.currentVersion}
                       // Not "Updated" while this reply's update is only waiting:
                       // the bar under the header says what did happen.
@@ -1403,11 +1427,21 @@ export const MessageItem = React.memo(function MessageItem({
           </div>
         )}
 
+        {/* Routines the model drafted (`propose_routine`), under the reply that
+            says so: Schedule, Edit, Not now (routine-proposal-card.tsx). */}
+        {view.activity?.some((evt) => Boolean(evt.routineProposal)) ? (
+          <RoutineProposalList activity={view.activity} />
+        ) : null}
+
         {/* Footer, below the answer it backs — the inline chips are the citation,
             this is the bibliography. */}
         {sources && sources.length > 0 && (
           <SourcesPill sources={sources} audit={citationAudit.phase === "ready" ? citationAudit.audit : undefined} />
         )}
+        {/* Which saved memories this answer was given, and what the turn
+            saved or forgot, each with Edit, Forget or Undo, Not relevant,
+            View, and the chat it was learned in. */}
+        {!message.streaming && <AnswerMemory activity={view.activity} conversationId={message.conversationId} />}
         {/* Above the model/cost line but below the bibliography: what the answer
             rests on, then how well it rests on it. */}
         {citationAudit.phase !== "idle" && citationAudit.phase !== "none" && (
@@ -1421,9 +1455,7 @@ export const MessageItem = React.memo(function MessageItem({
             on phones it stays in More. */}
         {!isVoice && !message.streaming && !message.error && (
           <div className="mt-1.5 flex items-center">
-            {totalVersions > 1 && (
-              <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
-            )}
+            {pager}
             <div
               className={cn(
                 // `fast`: the bar is chrome answering the pointer, and a toolbar
@@ -1454,16 +1486,9 @@ export const MessageItem = React.memo(function MessageItem({
                 </IconAction>
               )}
               {!privateMode && canFeedback && (
-                <>
-                  {/* A rated thumb is filled: `weight="fill"` is this set's
-                      "on", so the state reads in the drawing, not only the tint. */}
-                  <IconAction celebrate label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
-                    <ThumbsUp className="size-4" weight={message.feedback === "UP" ? "fill" : undefined} />
-                  </IconAction>
-                  <IconAction celebrate label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
-                    <ThumbsDown className="size-4" weight={message.feedback === "DOWN" ? "fill" : undefined} />
-                  </IconAction>
-                </>
+                // Up swells; down never celebrates and asks what went wrong
+                // (message-feedback.tsx).
+                <MessageFeedback messageId={message.id} feedback={message.feedback} onFeedback={onFeedback} />
               )}
               {onSpeak && hasTextContent && (
                 // On the row, not in More: listening is a way of reading the
@@ -1478,8 +1503,15 @@ export const MessageItem = React.memo(function MessageItem({
                   />
                 </IconAction>
               )}
-              {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
-                <RegenerateMenu onRegenerate={onRegenerate} currentModelId={view.model ?? currentModelId} />
+              {/* Every answer can be tried again. The newest is redone in place;
+                  an earlier one becomes a new branch at its turn, and the
+                  answer it replaces stays, with everything after it, one
+                  step back on the pager. */}
+              {!isMediaOnly && !busy && !privateMode && (isLast ? onRegenerate : onRegenerateAt) && (
+                <RegenerateMenu
+                  onRegenerate={isLast ? onRegenerate! : (options) => onRegenerateAt?.(message.id, options)}
+                  currentModelId={view.model ?? currentModelId}
+                />
               )}
               {showMore && (
                 <DropdownMenu>
@@ -1514,19 +1546,20 @@ export const MessageItem = React.memo(function MessageItem({
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark
-                              names a repository ref in Juno Code. This forks a
-                              CONVERSATION. */}
-                          <GitBranch className="size-4" /> Branch from here
+                              names a repository ref in Alevr Code. This forks a
+                              CONVERSATION. "In new chat", because a branch
+                              inside this chat is what Edit and Regenerate make. */}
+                          <GitBranch className="size-4" /> Branch in new chat
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className={MENU_W}>
                           {canBranchSaved && (
-                            <DropdownMenuItem onSelect={() => void branch()}>
-                              <GitBranch className="size-4" /> Into a new saved chat
+                            <DropdownMenuItem onSelect={() => void branchInNewChat()}>
+                              <GitBranch className="size-4" /> Saved chat
                             </DropdownMenuItem>
                           )}
                           {canForkPrivate && (
                             <DropdownMenuItem onSelect={() => onFork?.(message.id)}>
-                              <GitFork className="size-4" /> Fork privately
+                              <GitFork className="size-4" /> Private chat
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuSubContent>
@@ -1548,7 +1581,8 @@ export const MessageItem = React.memo(function MessageItem({
                             .split("\n")
                             .map((line) => `> ${line}`)
                             .join("\n");
-                          window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: `${quoted}\n\n` }));
+                          // Appended after the draft, never in place of it.
+                          window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: { text: `${quoted}\n\n`, append: true } }));
                         }}
                       >
                         <TextQuote className="size-4" /> Quote in composer

@@ -23,12 +23,13 @@
  *   npx tsx scripts/generate-design-tokens.ts --check   # verify, exit 1 on drift
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
 import defaultTheme from "tailwindcss/defaultTheme";
 
+import { ACCENT_IDS } from "../src/lib/accents";
 import tailwindConfig from "../tailwind.config";
 
 const CSS_PATH = resolve(process.cwd(), "src/app/globals.css");
@@ -171,8 +172,28 @@ const colors = colorNames.map((name) => {
   };
 });
 
-const ACCENTS = ["coral", "juniper", "teal", "violet", "amber", "sage"] as const;
+/**
+ * The accent list is the web's own (`src/lib/accents.ts`, the list the
+ * settings picker and the API validator use), not a second copy here. A copy
+ * is how Ultramarine shipped on the web and never reached the apps: it was
+ * offered in the picker, saved to the account, and resolved to Graphite on the
+ * Mac and the phone because this list still had six names. Reading the one
+ * list means a new accent cannot reach the picker without reaching the
+ * projection too, and the Swift enum check below fails until JunoAccent has it.
+ */
+const ACCENTS = ACCENT_IDS;
 const ACCENT_TOKENS = ["primary", "ring", "primary-foreground", "primary-ink"] as const;
+const JUNO_ACCENT_SWIFT = resolve(process.cwd(), "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoAccent.swift");
+
+/** The `case` names of `enum JunoAccent`, in declaration order. */
+function junoAccentEnumCases(source: string): string[] {
+  const start = source.search(/\benum JunoAccent\b[^{]*\{/);
+  if (start === -1) throw new Error("JunoAccent.swift declares no `enum JunoAccent`");
+  const body = source.slice(source.indexOf("{", start) + 1);
+  // The cases sit before the first member; stop at the first `var`/`init`/`func`.
+  const head = body.slice(0, body.search(/\n\s*(?:public\s+)?(?:var|init|func|static)\b/));
+  return [...head.matchAll(/^\s*case\s+([a-z][A-Za-z0-9]*)\s*$/gm)].map((m) => m[1]);
+}
 
 const accents = ACCENTS.map((accent) => {
   const light = declsFor(blocks, `:root[data-accent="${accent}"]`);
@@ -537,7 +558,33 @@ ${spaceSteps.map((s) => `    /// \`${s.key}\`\n    public static let step${s.key
 
 // ---- TypeScript ----------------------------------------------------------
 
+/**
+ * The colours a script has to paint WITHOUT the stylesheet: a canvas (the
+ * galaxy, the image-edit selection, the sketch pad), the OS chrome
+ * (`themeColor`, the manifest), an OpenGraph image and the global error page,
+ * none of which can read a custom property. They were hand-typed hex in each
+ * of those files. The page reads the variables; only these read this table.
+ */
+const SCRIPT_COLORS = ["background", "presence", "presence-ink", "galaxy-core"] as const;
+
+const hex = (c: Rgba) =>
+  `#${[c.r, c.g, c.b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
+
+const scriptColors = SCRIPT_COLORS.map((name) => {
+  const entry = colors.find((c) => c.name === name);
+  if (!entry) throw new Error(`--${name} is not a colour token on :root`);
+  return { name, light: hex(entry.light), dark: hex(entry.dark) };
+});
+
 const ts = `${BANNER("//")}
+
+/** The accent ids, in the order the web lists them (src/lib/accents.ts). */
+export const ACCENT_IDS = [${accents.map((a) => JSON.stringify(a.accent)).join(", ")}] as const;
+
+/** Colours for code that paints without the stylesheet (canvas, OS chrome, OG images), as sRGB hex per theme. */
+export const SCRIPT_COLOR = {
+${scriptColors.map((c) => `  ${camel(c.name)}: { light: ${JSON.stringify(c.light)}, dark: ${JSON.stringify(c.dark)} },`).join("\n")}
+} as const;
 
 /** \`--dur-*\` in milliseconds. */
 export const DURATION = {
@@ -581,8 +628,27 @@ const outputs: Array<[string, string]> = [
  */
 const withoutDigest = (text: string) => text.replace(/^\/\/ tokens-digest: [0-9a-f]+$/m, "");
 
+/**
+ * The accent list must be the same on every client, not merely projected.
+ * The generated `generatedPalette` switch already fails to compile when
+ * JunoAccent lacks a case the web has, but only on a machine that builds the
+ * Swift package; this fails the token check itself, which CI runs everywhere,
+ * and also catches a case the app has and the web dropped.
+ */
+// A scratch checkout with only globals.css (tests/design-tokens-digest.test.ts)
+// has no native tree; tests/presence-token.test.ts reads the enum by path, so a
+// moved file still fails there.
+const swiftCases = existsSync(JUNO_ACCENT_SWIFT) ? junoAccentEnumCases(readFileSync(JUNO_ACCENT_SWIFT, "utf8")) : [...ACCENTS];
+const accentDrift = JSON.stringify(swiftCases) !== JSON.stringify([...ACCENTS]);
+if (accentDrift) {
+  console.error(
+    `[design-tokens] ACCENTS JunoAccent.swift lists [${swiftCases.join(", ")}] but src/lib/accents.ts lists [${ACCENTS.join(", ")}].` +
+      " Add or remove the case (same order) in JunoAccent.swift."
+  );
+}
+
 if (process.argv.includes("--check")) {
-  let drifted = false;
+  let drifted = accentDrift;
   for (const [path, expected] of outputs) {
     let actual: string | null = null;
     try {
@@ -617,4 +683,6 @@ if (process.argv.includes("--check")) {
       `${durations.length} durations, ${easings.length} easings, ${radii.length} radii, ` +
       `${typeRungs.length} type rungs, ${spaceSteps.length} spacing steps (digest ${digest})`
   );
+  // Written anyway (the projection is right); the enum is what has to move.
+  if (accentDrift) process.exit(1);
 }

@@ -1595,7 +1595,7 @@ struct DesktopConversationView: View {
     /// comes to the front (B4).
     @State private var systemPermissions = DesktopWorkSystemPermissions.current
 
-    var body: some View {
+    private var conversationLayout: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
         // ``JunoDetailPage`` spells out: a `ScrollView` propagates its content's
         // ideal height rather than absorbing it, so a long transcript reports an
@@ -1631,6 +1631,10 @@ struct DesktopConversationView: View {
                 find.close()
                 followCanvasRequest()
             }
+    }
+
+    private var followedConversation: some View {
+        conversationLayout
             // The chat's tasks, followed while it is open (Phase 5 A2). A
             // draft or a private chat follows none; switching drops the
             // follower with the chat it belonged to.
@@ -1675,6 +1679,10 @@ struct DesktopConversationView: View {
             .onAppear(perform: followCanvasRequest)
             .onChange(of: DesktopPageRouter.shared.pendingCanvas) { _, _ in followCanvasRequest() }
             .onChange(of: configuration.artifactModel?.artifacts.count) { _, _ in followCanvasRequest() }
+    }
+
+    private var syncedConversation: some View {
+        followedConversation
             // The conversation's research runs, followed while it is open —
             // and again whenever a hand-off adds one.
             .task(id: session.profile.id.rawValue) {
@@ -1727,6 +1735,10 @@ struct DesktopConversationView: View {
             .onChange(of: model.selectedMessages) { _, _ in
                 if find.isOpen { find.update(messages: findableMessages) }
             }
+    }
+
+    private var observedConversation: some View {
+        syncedConversation
             // The budget moves when a turn finishes, so the plan is read when
             // the column appears and again as each reply ends.
             .task(id: model.isGenerating) {
@@ -1747,12 +1759,13 @@ struct DesktopConversationView: View {
                     openResearch = nil
                 }
             }
+    }
+
+    var body: some View {
+        observedConversation
             .alert(
                 "Voice is unavailable",
-                isPresented: Binding(
-                    get: { voiceUnavailable != nil },
-                    set: { if !$0 { voiceUnavailable = nil } }
-                ),
+                isPresented: voiceUnavailablePresented,
                 presenting: voiceUnavailable
             ) { _ in
                 Button("OK") { voiceUnavailable = nil }
@@ -1787,6 +1800,13 @@ struct DesktopConversationView: View {
             } message: { reason in
                 Text(reason)
             }
+    }
+
+    private var voiceUnavailablePresented: Binding<Bool> {
+        Binding<Bool>(
+            get: { voiceUnavailable != nil },
+            set: { if !$0 { voiceUnavailable = nil } }
+        )
     }
 
     private var mediaFailurePresented: Binding<Bool> {

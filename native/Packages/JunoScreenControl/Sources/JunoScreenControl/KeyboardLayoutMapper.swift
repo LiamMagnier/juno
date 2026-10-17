@@ -206,7 +206,7 @@ public enum KeyboardLayoutError: Error, Equatable, Sendable, LocalizedError {
         case .emptyChord:
             "No key was given. Name a key like return or a chord like cmd+s."
         case let .unknownKey(key):
-            "'\(key)' is not a key Juno knows. Use a character, or a name like return, tab, escape, delete, forward_delete, up, page_down or f5."
+            "'\(key)' is not a key \(ScreenControlBrand.productName) knows. Use a character, or a name like return, tab, escape, delete, forward_delete, up, page_down or f5."
         case let .unknownModifier(modifier):
             "'\(modifier)' is not a modifier. Use cmd, shift, option, ctrl or fn."
         case let .unmappable(character, layout):

@@ -292,6 +292,12 @@ export interface LifecycleEntry {
   lastVerifiedAt?: Date | null;
   /** Vector-space marker (never the vector). Absent on pre-semantic rows. */
   embeddingModel?: string | null;
+  /**
+   * When the person last marked it "Not relevant" under an answer that used
+   * it. See NOT_RELEVANT_DAYS for what that does to its ranking, and for how
+   * long. Absent on rows read without it, which rank as they always did.
+   */
+  notRelevantAt?: Date | null;
 }
 
 /** When a fact was said, as well as it is known. */
@@ -1357,6 +1363,40 @@ const AMBIENT_CATEGORIES: ReadonlySet<string> = new Set(["identity", "preference
 /** The ambient allowance: a handful of facts, never a profile dump. */
 const AMBIENT_LIMIT = 3;
 
+/**
+ * "NOT RELEVANT", AS A RANKING SIGNAL.
+ *
+ * The answer's memory receipt lets the person say a fact it used had nothing
+ * to do with the answer. That is narrower than Forget: the fact is still true,
+ * it just keeps turning up where it does not belong. Facts that turn up where
+ * they do not belong are, almost always, the ambient ones (who the person is,
+ * how they like answers), which ride along without the message being about
+ * them. So for NOT_RELEVANT_DAYS after the mark:
+ *
+ *   - it loses the ambient pass: it is used only when the message is about it
+ *     (a shared word or a vector that stands out), and
+ *   - it ranks NOT_RELEVANT_PENALTY below a fact that is equally about the
+ *     message, so it is the first to give way to the budget.
+ *
+ * Saying it again in a chat (`lastVerifiedAt` after the mark) ends this early:
+ * a fact the person restated is one they want used. Time ends it too, because
+ * what is beside the point this month can be the point next season; a fact
+ * that should never come back is what Forget is for.
+ */
+export const NOT_RELEVANT_DAYS = 60;
+const NOT_RELEVANT_PENALTY = 0.15;
+
+/** Whether a "Not relevant" mark still bears on this fact's ranking. */
+export function notRelevantNow(
+  entry: { notRelevantAt?: Date | null; lastVerifiedAt?: Date | null },
+  now: Date,
+): boolean {
+  const marked = entry.notRelevantAt;
+  if (!marked) return false;
+  if (entry.lastVerifiedAt && entry.lastVerifiedAt.getTime() > marked.getTime()) return false;
+  return now.getTime() - marked.getTime() < NOT_RELEVANT_DAYS * 86_400_000;
+}
+
 /** Entry ids whose cosine stands out from this turn's field — see SEMANTIC_STANDOUT_SD. */
 function semanticStandouts(weighed: readonly { id: string; cosine: number | null }[]): Set<string> {
   const scored = weighed.filter((w): w is { id: string; cosine: number } => w.cosine !== null && w.cosine > 0);
@@ -1523,6 +1563,8 @@ export function selectMemoriesForContext(
   const standouts = gated && hasSemantic ? semanticStandouts(weighed) : new Set<string>();
   const evidenced = new Set(weighed.filter((w) => w.lexical > 0 || standouts.has(w.id)).map((w) => w.id));
 
+  const quieted = new Set(weighed.filter((w) => notRelevantNow(w.entry, now)).map((w) => w.id));
+
   const eligible = weighed.map((w) => {
     const relevance = fused ? fused.get(w.id) ?? 0 : w.lexical;
     // Fresh means recently SAID. A fact re-read out of last year's chats was
@@ -1536,7 +1578,9 @@ export function selectMemoriesForContext(
     // definition, which no amount of word overlap would otherwise show.
     const scopeBoost = w.entry.projectId !== null && w.entry.projectId === projectId ? 0.15 : 0;
 
-    const score = 0.55 * relevance + 0.25 * recency + 0.2 * w.entry.confidence + categoryWeight + scopeBoost;
+    const penalty = quieted.has(w.id) ? NOT_RELEVANT_PENALTY : 0;
+
+    const score = 0.55 * relevance + 0.25 * recency + 0.2 * w.entry.confidence + categoryWeight + scopeBoost - penalty;
     return { entry: w.entry, score, tokens: w.tokens };
   });
 
@@ -1549,7 +1593,11 @@ export function selectMemoriesForContext(
   for (const candidate of eligible) {
     if (gated && !evidenced.has(candidate.entry.id)) {
       const mayRideAlong =
-        ambient < AMBIENT_LIMIT && candidate.entry.category !== null && AMBIENT_CATEGORIES.has(candidate.entry.category);
+        ambient < AMBIENT_LIMIT &&
+        candidate.entry.category !== null &&
+        AMBIENT_CATEGORIES.has(candidate.entry.category) &&
+        // Marked "Not relevant": it has to be about the message now.
+        !quieted.has(candidate.entry.id);
       if (!mayRideAlong) {
         excluded.irrelevant++;
         continue;
@@ -1623,6 +1671,14 @@ export interface MemoryUpdateActivity {
   detail?: string;
   /** Deep link to the memory page, where the new fact can be corrected. */
   url: string;
+  /**
+   * The facts by id, so the chat can offer Undo and Edit on each one and the
+   * receipt survives a reload (ClientMemoryWrite in src/types/chat.ts).
+   */
+  memoryWrite?: {
+    saved: Array<{ id: string; content: string; category?: string | null }>;
+    forgotten?: string[];
+  };
 }
 
 /**
@@ -1638,7 +1694,9 @@ export interface MemoryUpdateActivity {
  */
 export function memoryUpdateActivity(
   outcome: { created: number; superseded: number },
-  newFacts: readonly string[]
+  newFacts: readonly string[],
+  /** The believed rows themselves, when the caller has them: what Undo and Edit act on. */
+  saved: readonly { id: string; content: string; category?: string | null }[] = []
 ): MemoryUpdateActivity | null {
   if (outcome.created <= 0) return null;
   const parts: string[] = [];
@@ -1658,7 +1716,11 @@ export function memoryUpdateActivity(
     kind: "context",
     title: "Memory updated",
     detail: parts.length ? parts.join(" · ") : undefined,
-    url: "/memory",
+    // The first saved row's own place on the memory page, when there is one.
+    url: saved[0] ? `/memory?entry=${encodeURIComponent(saved[0].id)}` : "/memory",
+    ...(saved.length
+      ? { memoryWrite: { saved: saved.map((row) => ({ id: row.id, content: row.content, category: row.category ?? null })) } }
+      : {}),
   };
 }
 
@@ -1817,5 +1879,11 @@ export function memoryForgetActivity(outcome: {
   if (outcome.retired > 0) {
     parts.push(`${outcome.retired} remembered ${outcome.retired === 1 ? "fact" : "facts"} retired`);
   }
-  return { kind: "context", title: "Forgotten", detail: parts.join(" · "), url: "/memory" };
+  return {
+    kind: "context",
+    title: "Forgotten",
+    detail: parts.join(" · "),
+    url: "/memory",
+    memoryWrite: { saved: [], forgotten: [...outcome.statements] },
+  };
 }

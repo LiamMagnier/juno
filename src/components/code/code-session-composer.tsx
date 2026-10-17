@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AudioLines, Loader2, Mic } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { AudioLines, Mic } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,7 @@ import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
 import { reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 import type { ClientAttachment } from "@/types/chat";
 import type { PendingUpload } from "@/hooks/use-uploads";
 import type { CodeSessionStatus } from "@/hooks/use-code-session";
@@ -287,7 +289,7 @@ export function CodeSessionComposer({
                   value={draft}
                   onChange={(e) => onDraftChange(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !touchReturnBreaksLine(e)) {
                       e.preventDefault();
                       if (isBusy) {
                         if (steerReady) onSteer();
@@ -338,7 +340,7 @@ export function CodeSessionComposer({
                     className="hidden h-8 min-w-0 items-center gap-1.5 px-2 text-ui text-muted-foreground sm:flex coarse:h-10"
                   >
                     {resolving ? (
-                      <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+                      <GalaxyMark phase="working" size={14} />
                     ) : isCloud ? (
                       <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
                     ) : (

@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ActionIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
 import { useDialogFocusReturn } from "@/components/ui/focus-return";
+import { useMergedRef, useSwipeDismiss } from "@/components/ui/sheet-gesture";
 import { cn } from "@/lib/utils";
 
 const Dialog = DialogPrimitive.Root;
@@ -69,27 +70,48 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
  * top-left corner mid-animation. It pops in on the spring (modal-in, 220ms)
  * and leaves on the accelerate (modal-out, 160ms); both keyframes read
  * --motion-shift / --motion-scale-from, so the reduced tier cross-fades.
+ *
+ * ON A PHONE IT IS A SHEET (G54). Below 640px a centred card floats out of
+ * the thumb's reach, so the dialog rises from the bottom edge instead, full
+ * width, with a grabber, and is thrown back down to dismiss (a flick or a
+ * long enough pull; sheet-gesture.ts). The layout lives in sheet.css, keyed
+ * on `data-phone-sheet`, so every dialog gets it without restating classes.
+ * `sheet={false}` keeps a dialog that already owns the whole phone screen
+ * (Settings, the report reader) or sits under the keyboard (the palette).
  */
+const PHONE_SHEET = "(max-width: 639.98px)";
+const phoneSheetNow = () => typeof window !== "undefined" && window.matchMedia(PHONE_SHEET).matches;
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
->(({ className, children, hideClose, onCloseAutoFocus, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    hideClose?: boolean;
+    /** Below 640px, rise from the bottom as a sheet (default). */
+    sheet?: boolean;
+  }
+>(({ className, children, hideClose, sheet = true, onCloseAutoFocus, ...props }, ref) => {
   // Focus goes back to whatever opened the dialog, not only to a
   // <DialogTrigger> — see focus-return.tsx.
   const focusReturn = useDialogFocusReturn(onCloseAutoFocus);
+  const scrimRef = React.useRef<HTMLDivElement>(null);
+  const swipeRef = useSwipeDismiss({ axis: "y", sign: 1, scrimRef, enabled: () => sheet && phoneSheetNow() });
+  const panelRef = useMergedRef<HTMLDivElement>(ref, swipeRef);
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay ref={scrimRef} data-swipe-scrim="" />
       <DialogPrimitive.Content
-        ref={ref}
+        ref={panelRef}
+        data-swipe-panel=""
+        data-phone-sheet={sheet ? "" : undefined}
         className={cn(
-          "overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
+          "ui-dialog overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
           className
         )}
         onCloseAutoFocus={focusReturn.onCloseAutoFocus}
         {...props}
       >
         {focusReturn.capture}
+        {sheet ? <div className="ui-sheet-grabber" data-sheet-handle="" aria-hidden /> : null}
         {children}
         {!hideClose && <DialogCloseButton />}
       </DialogPrimitive.Content>

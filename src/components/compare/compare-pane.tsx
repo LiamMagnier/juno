@@ -7,7 +7,7 @@ import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StreamingMarkdown } from "@/components/chat/stream-text";
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { CompareModelPicker } from "@/components/compare/compare-model-picker";
 import { ProjectCover } from "@/components/projects/project-cover";
 import "@/components/projects/projects.css";
@@ -52,10 +52,10 @@ function PaneStreamStatus({ writing }: { writing: boolean }) {
 
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
-      <ThinkingDots className="text-muted-foreground" />
-      {/* Plain muted text beside the dots — the dots are the one moving thing
+      <GalaxyMark phase={writing ? "working" : "thinking"} size={20} className="text-muted-foreground" />
+      {/* Plain muted text beside the galaxy — the galaxy is the one moving thing
           in this row, exactly as message-item.tsx renders the same row. The
-          sentence breathed as well (status-glow, 2.8s) beside a 1.8s matrix:
+          sentence breathed as well (status-glow, 2.8s) beside a 1.8s mark:
           two loops that share no phase for 25 seconds, and Compare shows the
           row once per pane, so a screen meant to say "still working" read as
           four unrelated events. */}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -41,6 +41,11 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surface";
 import { useRecordDesignCommit } from "@/components/canvas/use-record-design-commit";
+import { useCanvasDraft } from "@/components/canvas/use-canvas-draft";
+import { CloseWithDraftDialog, DraftRestoreBar } from "@/components/canvas/canvas-draft-ui";
+import { CANVAS_DRAFT_COPY, draftSyncWords } from "@/lib/canvas-draft";
+import { formatPhrase } from "@/lib/i18n-phrase";
+import { versionOriginLabel } from "@/lib/artifact-version-labels";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { SemanticArtifactView, postSemanticOps } from "@/components/semantic/semantic-artifact-view";
@@ -53,7 +58,20 @@ import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
 import { staggerDelay, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { reducedMotionAt } from "@/lib/motion-preference";
+import { supportsViewTransitions, withViewTransition } from "@/lib/view-transition";
 import type { ClientArtifact, ClientArtifactVersion } from "@/types/chat";
+import { BuildStage, useBuildWindow } from "@/components/canvas/live-blueprint";
+import { useLatest } from "@/lib/use-presence";
+import { isBlueprintSource } from "@/lib/live-blueprint";
+import type { ArtifactType } from "@/lib/message-content";
+
+/** An artifact's source as the streaming reply has written it so far. */
+export interface LiveArtifactSource {
+  content: string;
+  type: ArtifactType;
+  language?: string | null;
+}
 
 const EXTENSIONS: Record<string, string> = {
   HTML: "html",
@@ -61,7 +79,7 @@ const EXTENSIONS: Record<string, string> = {
   SVG: "svg",
   MARKDOWN: "md",
   MERMAID: "mmd",
-  DESIGN: "juno.design.json",
+  DESIGN: "alevr.design.json",
   CODE: "txt",
 };
 
@@ -127,16 +145,7 @@ function useFlash(ms: number): [boolean, () => void] {
 
 /** "Generated" / "Edited" / "Restored" — how a version came to be. */
 function originLabel(origin: ClientArtifactVersion["origin"]): string | null {
-  switch (origin) {
-    case "generated":
-      return "Generated";
-    case "edit":
-      return "Edited";
-    case "restore":
-      return "Restored";
-    default:
-      return null;
-  }
+  return versionOriginLabel(origin)?.short ?? null;
 }
 
 type SelectionBarState = {
@@ -214,6 +223,7 @@ export function CanvasPanel({
   onToggleFullscreen,
   onQuote,
   shareable,
+  liveSource,
 }: {
   artifact: ClientArtifact;
   onClose: () => void;
@@ -223,6 +233,12 @@ export function CanvasPanel({
   onQuote?: (quote: ComposerQuote) => void;
   /** Show the Share action — off for incognito artifacts (nothing persisted to share). */
   shareable?: boolean;
+  /**
+   * The new source of THIS artifact while the current reply is writing it (a
+   * regeneration), null otherwise. A page shows its live blueprint over the
+   * preview until the new version renders.
+   */
+  liveSource?: LiveArtifactSource | null;
 }) {
   const rt = React.useMemo(() => runtimeFor(artifact.type, artifact.language), [artifact.type, artifact.language]);
   const isMarkdown = artifact.type === "MARKDOWN";
@@ -257,16 +273,36 @@ export function CanvasPanel({
   const [compareBase, setCompareBase] = React.useState<number | null>(null);
   const [diffCopied, flashDiffCopied] = useFlash(COPY_REVERT_MS);
   const [restoring, setRestoring] = React.useState(false);
+  // Close pressed with an edit in the editor: Save version / Keep draft / Discard (G12).
+  const [closeConfirm, setCloseConfirm] = React.useState(false);
   const [inspecting, setInspecting] = React.useState(false);
   const [selectionBar, setSelectionBar] = React.useState<SelectionBarState | null>(null);
   const [runNonce, setRunNonce] = React.useState(0);
   const [consoleEntries, setConsoleEntries] = React.useState<ConsoleEntry[]>([]);
   const [runStatus, setRunStatus] = React.useState<RunStatus>("idle");
+  // The last version whose preview finished booting (done or error).
+  const [renderedVersion, setRenderedVersion] = React.useState<number | null>(null);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [officeFormats, setOfficeFormats] = React.useState<OfficeFormat[]>([]);
   const [exportingFormat, setExportingFormat] = React.useState<OfficeFormat | null>(null);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
+  // Docked ⇄ fullscreen through a view transition: the panel's box morphs
+  // between the two and the chat beside it crossfades, both ways. It is one
+  // node in both modes, so every scroll position inside it stays where it
+  // was. Under reduced motion the box does not travel and only the crossfade
+  // plays; without the API it toggles plainly, with the fade-in on the root.
+  const toggleFullscreen = React.useCallback(() => {
+    const el = rootRef.current;
+    if (!el || !supportsViewTransitions()) {
+      onToggleFullscreen();
+      return;
+    }
+    if (!reducedMotionAt(el)) el.style.viewTransitionName = "canvas-panel";
+    void withViewTransition("canvas", () => flushSync(onToggleFullscreen)).finally(() => {
+      el.style.viewTransitionName = "";
+    });
+  }, [onToggleFullscreen]);
   // Viewport breakpoints can't see the panel: a 500px canvas on a desktop
   // screen is still "sm:". Contextual-action labels key off the PANEL width —
   // and so does the preview-width control, which has nothing to show when the
@@ -294,7 +330,12 @@ export function CanvasPanel({
   // selected version (content cross-fades via the version-keyed container).
   React.useEffect(() => {
     setTab("preview");
+    // The edit made on the artifact being left is not lost here: the draft
+    // hook flushes it (device and server) as its artifact changes, and offers
+    // it back when that artifact opens again.
     setDraft(null);
+    setEditBaseVersion(null);
+    setCloseConfirm(false);
     setStaleConflict(null);
     setHistoryOpen(false);
     setCompareTarget(null);
@@ -370,6 +411,23 @@ export function CanvasPanel({
     artifact.versions.find((v) => v.version === selectedVersion)?.content ?? artifact.content;
   const isLatest = selectedVersion === artifact.currentVersion;
   const hasHistory = artifact.versions.length > 1;
+
+  // ——— The unsaved edit, kept safe (G12) ———
+  // Autosaved to this device and the server as the person types, offered back
+  // when the artifact reopens, and dropped on Save version or Discard. Not for
+  // a design (its editor keeps its own working copy). An incognito canvas
+  // keeps nothing past the page, but holds the edit in memory so opening
+  // another artifact and coming back does not lose it.
+  const headContent = artifact.versions.find((v) => v.version === artifact.currentVersion)?.content ?? artifact.content;
+  const persistDraft = !!shareable && !isDesign;
+  const canvasDraft = useCanvasDraft({
+    artifactId: artifact.id,
+    persist: persistDraft,
+    remember: !isDesign,
+    headContent,
+    currentVersion: artifact.currentVersion,
+    dirty: isLatest && draft != null && draft !== versionContent,
+  });
 
   const versionBefore = React.useCallback(
     (version: number) => {
@@ -507,16 +565,46 @@ export function CanvasPanel({
       if (selectedVersion !== artifact.currentVersion) return; // read-only view
       // First keystroke of a clean editor stamps the base version the edit
       // started from — the stale-write guard compares against it on save.
-      if (draft == null) setEditBaseVersion(artifact.currentVersion);
+      const base = draft == null ? artifact.currentVersion : editBaseVersion ?? artifact.currentVersion;
+      if (draft == null) setEditBaseVersion(base);
       setDraft(next);
+      // While an edit kept from last time is still on offer, a new one is not
+      // written over it: the reader decides first (Restore or Discard on the
+      // bar), and until then the new edit reads as not saved and is guarded
+      // on Close and on leaving the page.
+      if (!canvasDraft.offer) canvasDraft.record(next, base);
     },
-    [artifact.currentVersion, selectedVersion, draft]
+    [artifact.currentVersion, selectedVersion, draft, editBaseVersion, canvasDraft]
   );
 
   const discardDraft = React.useCallback(() => {
     setDraft(null);
     setStaleConflict(null);
-  }, []);
+    // With a kept edit still on offer, nothing of this one was written, and
+    // the kept one is the reader's to decide about on its own bar.
+    if (!canvasDraft.offer) canvasDraft.clear();
+  }, [canvasDraft]);
+
+  /** Put a kept edit back in the editor, on the version it started from (the save checks that base). */
+  const restoreKeptDraft = React.useCallback(() => {
+    const offer = canvasDraft.offer;
+    if (!offer) return;
+    setPinnedVersion(null);
+    setHistoryOpen(false);
+    setEditBaseVersion(offer.baseVersion);
+    setDraft(offer.content);
+    setTab("code");
+    canvasDraft.acceptOffer();
+    canvasDraft.record(offer.content, offer.baseVersion);
+    toast.success(formatPhrase(persistDraft ? CANVAS_DRAFT_COPY.restoredToast : CANVAS_DRAFT_COPY.restoredToastIncognito));
+  }, [canvasDraft, persistDraft]);
+
+  const discardKeptDraft = React.useCallback(() => {
+    canvasDraft.clear();
+    // An edit typed while the offer waited is the one to keep now.
+    if (draft != null) canvasDraft.record(draft, editBaseVersion ?? artifact.currentVersion);
+    toast.success(formatPhrase(CANVAS_DRAFT_COPY.discardedToast));
+  }, [artifact.currentVersion, canvasDraft, draft, editBaseVersion]);
 
   // The draft belongs to the LATEST version only. While an older version is on
   // screen the saved content always wins — a read-only view must never render
@@ -524,25 +612,38 @@ export function CanvasPanel({
   const displayedContent = isLatest && draft != null ? draft : versionContent;
   const dirty = isLatest && draft != null && draft !== versionContent;
 
-  const saveEdit = async (force = false) => {
-    if (draft == null || saving) return;
+  /** Save the edit as the next version. True when it landed. */
+  const saveEdit = async (force = false): Promise<boolean> => {
+    if (draft == null || saving) return false;
     setSaving(true);
     try {
       const result = await appendVersion(draft, "edit", force ? null : editBaseVersion);
       if (result.stale) {
         if (result.latest) setStaleConflict(result.latest);
         else toast.error("Couldn’t save. The artifact may have been deleted.");
-        return;
+        return false;
       }
       onArtifactUpdated(result.artifact);
       setDraft(null);
       setStaleConflict(null);
+      // A version now holds the edit: the kept copies have done their job
+      // (unless an older kept edit is still on offer, which stays the
+      // reader's to restore or discard).
+      if (!canvasDraft.offer) canvasDraft.clear();
       toast.success(`Saved as v${result.artifact.currentVersion}.`);
+      return true;
     } catch {
       toast.error("Couldn’t save the artifact.");
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Close, unless an edit is in the editor: then ask what to do with it first. */
+  const requestClose = () => {
+    if (dirty) setCloseConfirm(true);
+    else onClose();
   };
 
   // Re-run / reload the sandbox (console re-executes; web reloads).
@@ -561,9 +662,27 @@ export function CanvasPanel({
     (status: RunStatus) => {
       setRunStatus(status);
       if (status === "done") lastGoodVersionRef.current = selectedVersion;
+      if (status === "done" || status === "error") setRenderedVersion(selectedVersion);
     },
     [selectedVersion]
   );
+
+  /*
+   * THE LIVE BLUEPRINT ON A REGENERATION. While the reply rewrites this page,
+   * the preview of the version being replaced steps back under the blueprint
+   * of the one being written (live-blueprint.tsx). It holds until a NEWER
+   * version than the one the rebuild started from has rendered, then
+   * dissolves into it; a rewrite that saved no version (held for review)
+   * times out back to the preview it covered.
+   */
+  const liveBuildable = !!liveSource && rt.mode === "web" && !isMarkdown && isBlueprintSource(liveSource.type, liveSource.language);
+  const [buildBase, setBuildBase] = React.useState<number | null>(null);
+  if (liveBuildable && buildBase === null) setBuildBase(artifact.currentVersion);
+  const rebuiltRendered = buildBase !== null && artifact.currentVersion !== buildBase && renderedVersion === artifact.currentVersion;
+  const rebuilding = useBuildWindow(liveBuildable, rebuiltRendered);
+  if (!rebuilding && buildBase !== null) setBuildBase(null);
+  // The blueprint keeps drawing the finished source while the new version boots.
+  const buildSource = useLatest(liveSource);
 
   // ——— Text selection → floating Modify/Ask bar ———
 
@@ -746,24 +865,30 @@ export function CanvasPanel({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
         e.preventDefault();
-        onToggleFullscreen();
+        toggleFullscreen();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [fullscreen, onToggleFullscreen]);
+  }, [fullscreen, toggleFullscreen]);
 
   // One quiet status word in the header — real state only.
   // Plain words, no dot; nothing once it is simply running fine (the green
   // "Live" / "Done" chip is gone, owner directive 2026-09-26). An error keeps
   // its colour, the one state here that asks for the reader.
+  // An edit in the editor says where it is kept ("Draft saved", "Saving
+  // draft"…), after a save in flight and a broken preview, before a run.
+  // An edit recorded nowhere (only while a kept one is still on offer) says so.
+  const draftWords = dirty && persistDraft ? draftSyncWords(canvasDraft.sync ?? "unsaved") : null;
   const status: { label: string; tone: string } | null = saving
     ? { label: "Saving", tone: "text-muted-foreground" }
     : runStatus === "error"
       ? { label: "Error", tone: "text-destructive" }
-      : runStatus === "running" || runStatus === "loading"
-        ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-muted-foreground" }
-        : null;
+      : draftWords
+        ? { label: draftWords.text, tone: draftWords.attention ? "text-destructive" : "text-muted-foreground" }
+        : runStatus === "running" || runStatus === "loading"
+          ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-muted-foreground" }
+          : null;
 
   const previewFailed = runStatus === "error" && isLatest && !historyOpen;
   // Prefer the last version we actually saw render; on a fresh open of a broken
@@ -787,7 +912,11 @@ export function CanvasPanel({
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
       aria-label={fullscreen ? artifact.title : undefined}
-      className={cn("flex h-full flex-col bg-background", fullscreen && "fixed inset-0 z-modal motion-safe:animate-fade-in")}
+      className={cn(
+        "flex h-full flex-col bg-background",
+        fullscreen && "fixed inset-0 z-modal",
+        fullscreen && !supportsViewTransitions() && "motion-safe:animate-fade-in",
+      )}
     >
       {/* ——— Header: identity + one primary action + overflow + window controls ——— */}
       {/* bg-card, not bg-card/50 + backdrop-blur-md. The panel root below is an
@@ -914,7 +1043,7 @@ export function CanvasPanel({
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={onToggleFullscreen}
+              onClick={toggleFullscreen}
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
               className="hidden text-muted-foreground hover:text-foreground @[50rem]/split:inline-flex"
             >
@@ -929,7 +1058,7 @@ export function CanvasPanel({
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close canvas" className="text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon-sm" onClick={requestClose} aria-label="Close canvas" className="text-muted-foreground hover:text-foreground">
               <ActionIcons.dismiss className="size-4" aria-hidden />
             </Button>
           </TooltipTrigger>
@@ -955,6 +1084,20 @@ export function CanvasPanel({
           currentVersion={artifact.currentVersion}
           suggestion={artifact.pendingSuggestion}
           onResolved={onArtifactUpdated}
+        />
+      )}
+
+      {/* ——— An edit kept from last time (G12) ———
+          Above history and the workspace, like the suggestion: whichever tab
+          is open, the reader learns their unsaved work is waiting. It stays
+          until they choose, even if they start typing (a new edit is not
+          written over the kept one until then). */}
+      {canvasDraft.offer && (
+        <DraftRestoreBar
+          key={`${artifact.id}:${canvasDraft.offer.updatedAt}`}
+          offer={canvasDraft.offer}
+          onRestore={restoreKeptDraft}
+          onDiscard={discardKeptDraft}
         />
       )}
 
@@ -1311,6 +1454,13 @@ export function CanvasPanel({
                    * as a narrow preview rather than as a phone, and the one thing
                    * you are checking at that width is where the page ends.
                    */
+                  <BuildStage
+                    building={rebuilding}
+                    content={buildSource?.content ?? ""}
+                    type={buildSource?.type ?? artifact.type}
+                    language={buildSource?.language ?? artifact.language}
+                    streaming={!!liveSource}
+                  >
                   <div
                     key={selectedVersion}
                     className={cn(
@@ -1339,6 +1489,7 @@ export function CanvasPanel({
                     />
                     </div>
                   </div>
+                  </BuildStage>
                 )}
               </TabsContent>
 
@@ -1397,8 +1548,15 @@ export function CanvasPanel({
                       // read as chrome sitting on top of the code it belongs to.
                       className="flex items-center gap-2 border-t border-border/60 bg-card px-3 py-2 motion-safe:animate-rise-in"
                     >
+                      {/* Where the edit is kept is the header's status word;
+                          this line says what Save does. Incognito keeps
+                          nothing, so there it still says the edit is unsaved. */}
                       <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
-                        Unsaved changes · saves as v{artifact.currentVersion + 1}
+                        {persistDraft ? (
+                          <>Not a version yet · saves as v{artifact.currentVersion + 1}</>
+                        ) : (
+                          <>Unsaved changes · saves as v{artifact.currentVersion + 1}</>
+                        )}
                       </span>
                       <div className="flex-1" />
                       <Button variant="ghost" size="sm" onClick={discardDraft} disabled={saving}>
@@ -1419,6 +1577,37 @@ export function CanvasPanel({
       {shareable && (
         <ShareDialog kind="ARTIFACT" artifactId={artifact.id} open={shareOpen} onOpenChange={setShareOpen} />
       )}
+
+      <CloseWithDraftDialog
+        open={closeConfirm}
+        onOpenChange={setCloseConfirm}
+        persisted={persistDraft}
+        // Keep draft is offered only where it is true: the edit is written
+        // somewhere, or about to be by the flush that Keep runs.
+        kept={canvasDraft.sync !== null && canvasDraft.sync !== "unsaved"}
+        saving={saving}
+        onSave={async () => {
+          if (await saveEdit()) {
+            setCloseConfirm(false);
+            onClose();
+          } else {
+            // A refused save (stale, offline) leaves the edit in the editor,
+            // on the Code tab where the reason is shown.
+            setCloseConfirm(false);
+            setTab("code");
+          }
+        }}
+        onKeep={() => {
+          canvasDraft.flush();
+          setCloseConfirm(false);
+          onClose();
+        }}
+        onDiscard={() => {
+          discardDraft();
+          setCloseConfirm(false);
+          onClose();
+        }}
+      />
 
       {/* Floating Modify/Ask bar */}
       {selectionBar &&

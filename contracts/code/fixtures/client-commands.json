@@ -528,6 +528,47 @@
         "cwd": "/Users/me/Projects/storefront",
         "runtimeMode": "full"
       }
+    },
+    {
+      "id": "queue-remove",
+      "type": "queue.remove",
+      "params": {
+        "sessionId": "session-1",
+        "queuedId": "q_1"
+      }
+    },
+    {
+      "id": "queue-edit",
+      "type": "queue.edit",
+      "params": {
+        "sessionId": "session-1",
+        "queuedId": "q_1",
+        "text": "Then open a draft PR"
+      }
+    },
+    {
+      "id": "queue-move",
+      "type": "queue.move",
+      "params": {
+        "sessionId": "session-1",
+        "queuedId": "q_2",
+        "to": 0
+      }
+    },
+    {
+      "id": "queue-promote",
+      "type": "queue.promote",
+      "params": {
+        "sessionId": "session-1",
+        "queuedId": "q_1"
+      }
+    },
+    {
+      "id": "frame-1",
+      "type": "computer.frame",
+      "params": {
+        "ref": "alevr-shot://claude:t7/toolu_1.jpg"
+      }
     }
   ]
 }

@@ -823,11 +823,19 @@ struct JunoMobileRootView: View {
       show(.code)
       remoteCodeModel?.selectedDeviceID = deviceID
       remoteCodeModel?.openSession(sessionID)
+      // A link (or a Live Activity button, which opens one) decides nothing
+      // by itself: any app can open it. The session is on screen with its
+      // card, and the decision goes only once the owner confirms it.
+      let decision = JunoMobileApprovalDecision(
+        deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
+      )
       Task {
-        await remoteCodeModel?.respondToApproval(
-          deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
-        )
-        JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
+        await JunoMobileApprovalGate.shared.decide(decision) {
+          await remoteCodeModel?.respondToApproval(
+            deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
+          )
+          JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
+        }
       }
     case .pairRemote(let token):
       JunoMobileRemoteRouting.shared.pairing = .init(token: token)
@@ -838,10 +846,20 @@ struct JunoMobileRootView: View {
     case let .respondToLinkApproval(deviceID, sessionID, requestID, approved):
       showingSettings = false
       show(.code)
-      JunoMobileRemoteRouting.shared.linkApproval = .init(
+      JunoMobileRemoteRouting.shared.linkSession = .init(deviceID: deviceID, sessionID: sessionID)
+      // The notification action asked for Face ID when it was tapped, but the
+      // answer is only sent now, maybe much later, by the app in front: it
+      // asks again, through the same gate as every other way in.
+      let decision = JunoMobileApprovalDecision(
         deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
       )
-      JunoMobileRemoteRouting.shared.linkSession = .init(deviceID: deviceID, sessionID: sessionID)
+      Task {
+        await JunoMobileApprovalGate.shared.decide(decision) {
+          JunoMobileRemoteRouting.shared.linkApproval = .init(
+            deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
+          )
+        }
+      }
     }
   }
 

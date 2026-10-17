@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Archive,
@@ -62,6 +62,7 @@ import { workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
+import { openWithViewTransition } from "@/lib/view-transition";
 import { cachedJson } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
@@ -77,6 +78,7 @@ import { AGENT_STATE_NAMES, BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/bra
 import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
 import { useCrossMessageInbox } from "@/components/chat/use-cross-messages";
 import { CrossMessagesMenuItem } from "@/components/chat/cross-messages-menu-item";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -1872,16 +1874,17 @@ function NavRow({
   layoutId,
   transition: t,
   reveal = false,
-  moves: _moves = false,
+  moves = false,
 }: {
   href?: string;
   onClick?: () => void;
   icon: React.ReactNode;
   label: string;
   /**
-   * No longer gates anything: every row's glyph now answers the pointer
-   * (juno-icons/icons.css, "Hover articulation"). Kept so call sites compile.
-   * @deprecated
+   * A destination: its glyph plays its one hover gesture
+   * (`data-jicon-articulate`, juno-icons/icons.css). Only places you go to
+   * move; actions (Search, Notifications) and every list row stay still, as
+   * menus and message actions do.
    */
   moves?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
@@ -1984,6 +1987,7 @@ function NavRow({
   // (`[.bg-sidebar-accent_&]:text-foreground`), which could not tell the hover
   // fill from the active one.
   const activeAttr = active ? "" : undefined;
+  const articulate = moves ? "" : undefined;
   const el = href ? (
     <Link
       href={href}
@@ -1994,6 +1998,7 @@ function NavRow({
       prefetch={false}
       {...intentPrefetch(router, href)}
       data-active={activeAttr}
+      data-jicon-articulate={articulate}
       aria-current={active ? "page" : undefined}
       aria-label={collapsed || detail ? name : undefined}
       className={cls}
@@ -2005,6 +2010,7 @@ function NavRow({
       type="button"
       onClick={onClick}
       data-active={activeAttr}
+      data-jicon-articulate={articulate}
       aria-label={collapsed || detail ? name : undefined}
       className={cn(cls, "text-left")}
     >
@@ -2342,7 +2348,11 @@ function ConversationRow({
       <Link
         ref={linkRef}
         href={`/chat/${conversation.id}`}
-        onClick={onNavigate}
+        onClick={(event) => {
+          onNavigate();
+          // The thread arrives through a view transition (lib/view-transition.ts).
+          openWithViewTransition(event, router, `/chat/${conversation.id}`);
+        }}
         /* Prefetched on aim, not on scroll — see lib/intent-prefetch.ts. */
         prefetch={false}
         {...intentPrefetch(router, `/chat/${conversation.id}`)}
@@ -2765,7 +2775,10 @@ function ProjectRow({
               <Link
                 key={c.id}
                 href={`/chat/${c.id}`}
-                onClick={onNavigate}
+                onClick={(event) => {
+                  onNavigate();
+                  openWithViewTransition(event, router, `/chat/${c.id}`);
+                }}
                 prefetch={false}
                 {...intentPrefetch(router, `/chat/${c.id}`)}
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}

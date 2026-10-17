@@ -19,7 +19,7 @@ import { hunkOrder, keptCounts, moveHunkFocus, parseUnifiedDiff, splitPath, spli
 import { aggregateChanges, groupTurns, formatDuration } from "@/lib/code-v2/turns";
 import { budgetLine } from "@/lib/code-v2/orchestrate";
 import { displayName, shortModelLabel } from "@/lib/code-v2/providers-view";
-import { ComposerPopover, Glyph, MenuList, ModelMark, Spinner, useIsMac } from "./primitives";
+import { ComposerPopover, Glyph, LiveMark, MenuList, ModelMark, useIsMac } from "./primitives";
 import { agentStep, isCandidate, teamHead, LogRow, lineFor } from "./thread";
 import type { WorkspaceModel } from "./types";
 import { XtermView } from "./xterm-view";
@@ -591,8 +591,9 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
         )}
         <div className="cv2-log">
           <div className={cn("cv2-wl", step.needs && "needs")}>
-            <span className={cn("verb", agent.status === "running" && "cv2-shine")}>{agent.status === "running" ? "Now" : agent.status === "waiting" ? "Needs you" : "Last"}</span>
+            <span className={cn("verb", agent.status === "running" && "cv2-live")}>{agent.status === "running" ? "Now" : agent.status === "waiting" ? "Needs you" : "Last"}</span>
             <span className="obj">{step.text}</span>
+            {agent.status === "running" && <LiveMark />}
             {agent.elapsedMs !== undefined && <span className="t">{formatDuration(agent.elapsedMs)}</span>}
           </div>
           {agent.candidate?.additions !== undefined && (
@@ -693,7 +694,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
                     <span className="cv2-m" style={{ width: 14 }}>{letter}</span>
                     <ModelMark modelId={a.model.model} instance={model.instances.find((x) => x.id === a.model.instanceId)} />
                     <span className="cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
-                    {a.status === "running" && <Spinner size={12} />}
+                    {a.status === "running" && <LiveMark size={12} />}
                   </span>
                   <span className="l2" style={{ display: "block", paddingLeft: 22 }}>
                     {c.testsLine ? `${c.testsLine}. ` : ""}
@@ -750,7 +751,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
                   <ModelMark modelId={a.model.model} instance={instance} />
                   <span className="mdl cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
                 </span>
-                <span className={cn("l2", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")} style={{ display: "block" }}>
+                <span className={cn("l2", step.needs && "cv2-sig", a.status === "running" && "cv2-live")} style={{ display: "block" }}>
                   {step.text}
                 </span>
               </span>
@@ -814,6 +815,7 @@ export function Dock({
   onMention,
   resolveScreenshot,
   composer,
+  exit,
 }: {
   model: WorkspaceModel;
   dock: DockState;
@@ -825,6 +827,8 @@ export function Dock({
   resolveScreenshot?: (ref: string) => string | null;
   /** The composer, re-parented into the panel while expanded. */
   composer?: React.ReactNode;
+  /** The panel is leaving (usePresence in workspace.tsx): it plays its exit, then unmounts. */
+  exit?: { state: "open" | "closed"; onAnimationEnd: (event: React.AnimationEvent<Element>) => void };
 }) {
   const tabs = visibleTabs(model);
   const tab = tabs.includes(dock.tab) ? dock.tab : dock.tab === "preview" ? "preview" : tabs[0];
@@ -858,7 +862,14 @@ export function Dock({
   };
 
   return (
-    <aside className="cv2-dock" style={width ? { ["--dock-w" as string]: `${width}px` } : undefined} aria-label="Panel">
+    <aside
+      className="cv2-dock"
+      style={width ? { ["--dock-w" as string]: `${width}px` } : undefined}
+      aria-label="Panel"
+      data-state={exit?.state}
+      inert={exit?.state === "closed"}
+      onAnimationEnd={exit?.onAnimationEnd}
+    >
       <div
         ref={handle}
         className="cv2-dock-handle"

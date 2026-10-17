@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapse } from "@/components/ui/collapse";
 import { Markdown } from "@/components/chat/markdown";
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { cn } from "@/lib/utils";
 import { parseSummarySections, type SummaryData, type SummarySection } from "@/components/memory/memory-model";
 import { relativeTime } from "@/components/memory/memory-time";
@@ -155,7 +155,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
             </div>
           ) : consolidating ? (
             <p role="status" className="flex items-center gap-2.5 text-body text-muted-foreground">
-              <ThinkingDots />
+              <GalaxyMark phase="working" size={16} />
               {project ? <span>Reading this project’s chats…</span> : <span>Reading your chats and projects…</span>}
             </p>
           ) : project ? (
@@ -189,7 +189,7 @@ function Sections({ sections }: { sections: SummarySection[] }) {
   // Two columns once the panel is wide enough to set two readable measures:
   // the summary reads like a profile, not one 900px line.
   return (
-    <div className="gap-10 @[40rem]/summary:columns-2 [&>section+section]:mt-5">
+    <div className="gap-10 @[40rem]/summary:columns-2 [&>section:not(:first-child)]:mt-5">
       {sections.map((section) => (
         <section key={section.title} className="break-inside-avoid">
           <h3 className="text-ui font-medium text-foreground">{section.title}</h3>

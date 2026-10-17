@@ -19,6 +19,7 @@ import { DATE_BUCKETS, dateBucket, relativeTime } from "@/components/memory/memo
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /*
  * Everything Juno remembers, as one list.
@@ -81,6 +82,10 @@ interface MemoryListProps {
   onActiveChange?: (id: string | null) => void;
   /** Lets the page jump the list to a topic (the constellation's points). */
   handleRef?: React.Ref<MemoryListHandle>;
+  /** A fact to bring into view once (`/memory?entry=`): its section unfolds and it scrolls to it. */
+  revealId?: string | null;
+  /** Open that fact for editing as it arrives (`&edit=1`). */
+  revealEdit?: boolean;
 }
 
 export interface MemoryListHandle {
@@ -114,6 +119,8 @@ export function MemoryList({
   onMove,
   onActiveChange,
   handleRef,
+  revealId = null,
+  revealEdit = false,
 }: MemoryListProps) {
   const [adding, setAdding] = React.useState(false);
   const addButtonRef = React.useRef<HTMLButtonElement>(null);
@@ -176,6 +183,30 @@ export function MemoryList({
       }));
   }, [active, sort]);
 
+  // A linked fact: unfold whatever hides it, once, then bring it into view.
+  const revealed = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!revealId || revealed.current === revealId) return;
+    const entry = facts.find((fact) => fact.id === revealId);
+    if (!entry) return;
+    revealed.current = revealId;
+    if (isRetired(entry)) setShowRetired(true);
+    else {
+      const section = sections.find((candidate) => candidate.rows.some((row) => row.id === revealId));
+      const index = section ? section.rows.findIndex((row) => row.id === revealId) : -1;
+      if (section && index >= PREVIEW_ROWS) setExpanded((prev) => new Set([...prev, section.id]));
+    }
+    // After the unfold has rendered the row.
+    const frame = window.requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(`[data-memory-id="${CSS.escape(revealId)}"]`);
+      row?.scrollIntoView({
+        block: "center",
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [facts, revealId, sections]);
+
   const toggleSection = (id: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -226,7 +257,7 @@ export function MemoryList({
     const el = sectionRefs.current.get(id);
     if (!el) return;
     setCurrent(id);
-    el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    el.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
   }, []);
   React.useImperativeHandle(handleRef, () => ({ jumpTo }), [jumpTo]);
 
@@ -419,6 +450,7 @@ export function MemoryList({
                             memory={entry}
                             busy={busyIds.has(entry.id)}
                             highlighted={highlightIds.has(entry.id)}
+                            startEditing={revealEdit && entry.id === revealId}
                             // Rows past the preview unfold with "Show all"; a row
                             // Undo brought back re-enters where it was.
                             enter={restoredIds.has(entry.id) || (foldable && !instant && rowIndex >= PREVIEW_ROWS)}
@@ -487,6 +519,7 @@ export function MemoryList({
                             memory={entry}
                             busy={busyIds.has(entry.id)}
                             highlighted={highlightIds.has(entry.id)}
+                            startEditing={revealEdit && entry.id === revealId}
                             enter={restoredIds.has(entry.id)}
                             {...rowProps}
                           />

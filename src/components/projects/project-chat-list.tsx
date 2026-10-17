@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
+import { openWithViewTransition } from "@/lib/view-transition";
 import { MessageSquare, Plus, Pin, FolderInput, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -194,6 +195,8 @@ function ChatRow({
         href={`/chat/${chat.id}`}
         prefetch={false}
         {...intentPrefetch(router, `/chat/${chat.id}`)}
+        // The list gives way to the thread through a view transition.
+        onClick={(event) => openWithViewTransition(event, router, `/chat/${chat.id}`)}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
         <span className="truncate text-ui font-medium tracking-[-0.006em] text-foreground">{chat.title}</span>

@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { StatusIcons } from "@/lib/app-icons";
 import { spring, transition } from "@/lib/motion";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 export type SaveState = "idle" | "saving" | "saved" | "failed";
 

@@ -40,6 +40,38 @@ public protocol AccessibilityDriving: Sendable {
     func outline(ofApp bundleIdentifier: String) async throws -> AccessibilityWindowOutline
     func press(elementID: String, inApp bundleIdentifier: String) async throws
     func setValue(_ text: String, elementID: String, inApp bundleIdentifier: String) async throws
+    /// The element an action is about to reach, for the consequential-action
+    /// floor and the overlay: its words, whether it is secure entry, where it
+    /// is. Nil when it cannot be read.
+    func target(elementID: String, inApp bundleIdentifier: String) async throws -> WorkScreenTarget?
+}
+
+extension AccessibilityDriving {
+    /// From the outline: the field with this id, by its label and role.
+    public func target(elementID: String, inApp bundleIdentifier: String) async throws -> WorkScreenTarget? {
+        let outline = try await outline(ofApp: bundleIdentifier)
+        guard let field = outline.fields.first(where: { $0.elementID == elementID }) else { return nil }
+        return WorkScreenTarget(
+            bundleIdentifier: bundleIdentifier,
+            appName: bundleIdentifier,
+            texts: [field.label].compactMap { $0 }.filter { !$0.isEmpty },
+            spokenName: field.label.map { "“\($0)” \(Self.plainRole(field.role))" },
+            role: field.role,
+            isSecure: field.isSecureTextEntry,
+            frame: field.bounds
+        )
+    }
+
+    /// "AXButton" → "button".
+    static func plainRole(_ role: String) -> String {
+        let trimmed = role.hasPrefix("AX") ? String(role.dropFirst(2)) : role
+        var words = ""
+        for character in trimmed {
+            if character.isUppercase, !words.isEmpty { words.append(" ") }
+            words.append(character)
+        }
+        return words.lowercased()
+    }
 }
 
 /// An accessibility driver that drives nothing, for tests and previews.
@@ -212,6 +244,95 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
         }
     }
 
+    /// Read straight from the element, at the moment of acting: its title,
+    /// description and role description (the words the floor matches, as
+    /// Code's hit-test reads them), its text for a button or label whose
+    /// words live in its value, the labels drawn inside a control, and
+    /// where it is.
+    public func target(elementID: String, inApp bundleIdentifier: String) async throws -> WorkScreenTarget? {
+        let element = try resolve(elementID, in: bundleIdentifier)
+        let role = string(element, kAXRoleAttribute)
+        let title = string(element, kAXTitleAttribute)
+        let label = string(element, kAXDescriptionAttribute)
+        var texts = [title, label, string(element, kAXRoleDescriptionAttribute)].compactMap { $0 }
+        if role == "AXButton" || role == "AXStaticText" || role == "AXLink" || role == "AXMenuItem",
+           let value = string(element, kAXValueAttribute)
+        {
+            texts.append(String(value.prefix(200)))
+        }
+        if !Self.textEntryRoles.contains(role ?? "") {
+            // SwiftUI, Catalyst and web views draw a "Send" button as an
+            // untitled button around a static text. Code's hit-test lands on
+            // that text; pressing the button by path never does, so its
+            // labels are read here, or the floor would see no word at all.
+            texts += labels(inside: element)
+        }
+        let name = (title?.isEmpty == false ? title : label) ?? ""
+        let kind = Self.plainRole(role ?? "element")
+        let application = NSWorkspace.shared.runningApplications.first {
+            $0.bundleIdentifier.map(AutomationPermission.normalizeIdentifier)
+                == AutomationPermission.normalizeIdentifier(bundleIdentifier)
+        }
+        return WorkScreenTarget(
+            bundleIdentifier: bundleIdentifier,
+            appName: application?.localizedName ?? bundleIdentifier,
+            texts: texts.filter { !$0.isEmpty },
+            spokenName: name.isEmpty ? kind : "“\(name)” \(kind)",
+            role: role,
+            isSecure: isSecure(element),
+            frame: frame(of: element),
+            // The category Code reads too, so a finance app known only by
+            // its App Store category is refused here as it is on a click.
+            appStoreCategory: application?.bundleURL.flatMap {
+                Bundle(url: $0)?.infoDictionary?["LSApplicationCategoryType"] as? String
+            }
+        )
+    }
+
+    /// Fields whose children are their content, not their label.
+    static let textEntryRoles: Set<String> = [
+        "AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField", "AXWebArea",
+    ]
+
+    /// The words drawn inside a control: titles, descriptions and static
+    /// text of its descendants, two levels down, at most eight of them.
+    private func labels(inside element: AXUIElement) -> [String] {
+        var texts: [String] = []
+        var visited = 0
+        var queue: [(AXUIElement, Int)] = children(of: element).map { ($0, 1) }
+        while !queue.isEmpty, visited < 8 {
+            let (child, depth) = queue.removeFirst()
+            visited += 1
+            let role = string(child, kAXRoleAttribute)
+            texts += [string(child, kAXTitleAttribute), string(child, kAXDescriptionAttribute)].compactMap { $0 }
+            if role == "AXStaticText", let value = string(child, kAXValueAttribute) {
+                texts.append(value)
+            }
+            if depth < 2, !Self.textEntryRoles.contains(role ?? "") {
+                queue += children(of: child).map { ($0, depth + 1) }
+            }
+        }
+        return texts.filter { !$0.isEmpty }.map { String($0.prefix(200)) }
+    }
+
+    private func frame(of element: AXUIElement) -> AutomationRect? {
+        var positionValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let positionValue, let sizeValue,
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID()
+        else { return nil }
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        // swiftlint:disable:next force_cast
+        AXValueGetValue(positionValue as! AXValue, .cgPoint, &point)
+        // swiftlint:disable:next force_cast
+        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        return AutomationRect(x: point.x, y: point.y, width: size.width, height: size.height)
+    }
+
     // MARK: Tree
 
     private func walk(
@@ -325,6 +446,10 @@ public struct SystemAccessibilityDriver: AccessibilityDriving {
 /// names and a sheet appearing changes what a path means. Finer than screen
 /// control, because it still addresses *elements*: it can ask whether the thing
 /// it is about to type into is a secure field, and screen control cannot.
+///
+/// Every press and every text it sets goes through the consequential-action
+/// floor Code uses (``WorkScreenFloor``), read against the element itself, and
+/// draws on the app-wide action overlay (``WorkActionOverlay``).
 public struct AccessibilityControl: AutomationControl, WorkTool {
     public let tier: AutomationTier = .accessibility
     public let declaredIntents: Set<AutomationIntent> = [
@@ -334,10 +459,12 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
 
     private let driver: any AccessibilityDriving
     private let gate: AutomationGate
+    private let overlay: WorkActionOverlay
 
-    public init(driver: any AccessibilityDriving, gate: AutomationGate) {
+    public init(driver: any AccessibilityDriving, gate: AutomationGate, overlay: WorkActionOverlay = .none) {
         self.driver = driver
         self.gate = gate
+        self.overlay = overlay
     }
 
     public func health() async -> AutomationControlHealth {
@@ -413,7 +540,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
         }
 
         do {
-            let result = try await perform(request, token: token)
+            let result = try await perform(request, context: context, token: token)
             await gate.finish(
                 token,
                 characterCount: request.intent == .enterText ? request.text?.count : nil
@@ -431,6 +558,7 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
 
     private func perform(
         _ request: AutomationRequest,
+        context: WorkToolContext,
         token: AutomationRunToken
     ) async throws -> WorkToolResult {
         switch request.intent {
@@ -457,8 +585,30 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
             // between the check and the keystroke receives text approved for a
             // different app entirely.
             try await requireFrontmost(request.target, token: token)
-            try await driver.setValue(text, elementID: elementID, inApp: request.target)
+            let field = try await driver.target(elementID: elementID, inApp: request.target)
             try await gate.checkpoint(token)
+            if let surface = field?.sensitiveSurface {
+                // An extra deny on top of the floor, never a reason to ask.
+                throw AutomationRefusal(
+                    .sensitiveSurface,
+                    "That field is for \(surface.kind.phrase), so nothing was typed. Ask the person to enter it."
+                )
+            }
+            let appName = field?.appName ?? request.target
+            let label = field?.spokenName.map { "Type \(text.count) characters into the \($0) in \(appName)" }
+                ?? "Type \(text.count) characters in \(appName)"
+            try await applyFloor(
+                .type(text), target: field, label: label,
+                request: request, context: context, token: token
+            )
+            try await overlay.around(
+                runID: token.runID,
+                label: label,
+                point: field?.center,
+                appName: appName,
+                input: { try await driver.setValue(text, elementID: elementID, inApp: request.target) },
+                checkpoint: { try await gate.checkpoint(token) }
+            )
             return WorkToolResult(content: "Typed \(text.count) characters.")
         case .activateControl, .sendMessage, .publish, .purchase, .deleteItem,
              .changeAccountSetting:
@@ -468,14 +618,76 @@ public struct AccessibilityControl: AutomationControl, WorkTool {
                     "Juno needed to know which control to press."
                 )
             }
-            try await driver.press(elementID: elementID, inApp: request.target)
+            // The element itself, read now: "Send", "Delete" and "Pay" ask
+            // whatever intent the model filed the press under.
+            let control = try await driver.target(elementID: elementID, inApp: request.target)
             try await gate.checkpoint(token)
+            let appName = control?.appName ?? request.target
+            let label = control?.spokenName.map { "Press the \($0) in \(appName)" } ?? "Press a control in \(appName)"
+            try await applyFloor(
+                .press, target: control, label: label,
+                request: request, context: context, token: token
+            )
+            try await overlay.around(
+                runID: token.runID,
+                label: label,
+                point: control?.center,
+                appName: appName,
+                input: { try await driver.press(elementID: elementID, inApp: request.target) },
+                checkpoint: { try await gate.checkpoint(token) }
+            )
             return WorkToolResult(content: "Pressed a control in \(request.target).")
         case .navigate, .captureScreen, .changeSecuritySetting:
             throw AutomationRefusal(
                 .intentNotServed,
                 "App control cannot do that, and Juno will not fall back to something coarser for it."
             )
+        }
+    }
+
+    /// The floor, against the element: refuses, asks (suspending until the
+    /// person answers), or lets the action through.
+    private func applyFloor(
+        _ gesture: WorkScreenFloor.Gesture,
+        target: WorkScreenTarget?,
+        label: String,
+        request: AutomationRequest,
+        context: WorkToolContext,
+        token: AutomationRunToken
+    ) async throws {
+        switch WorkScreenFloor.ruling(
+            gesture,
+            bundleIdentifier: request.target,
+            appStoreCategory: target?.appStoreCategory,
+            texts: target?.texts ?? []
+        ) {
+        case .clear:
+            return
+        case .deny(let refusal):
+            throw refusal
+        case .ask(let reason):
+            try await WorkScreenFloor.confirm(
+                tool: name,
+                request: request,
+                reason: reason,
+                summary: label + ".",
+                context: context,
+                now: gate.now
+            )
+            try await gate.checkpoint(token)
+            // The answer can take minutes: the element approved must still be
+            // the one at that path, and typing still goes to the app checked.
+            if case .type = gesture { try await requireFrontmost(request.target, token: token) }
+            if let elementID = request.element {
+                let again = try await driver.target(elementID: elementID, inApp: request.target)
+                try await gate.checkpoint(token)
+                guard again?.texts == target?.texts, again?.role == target?.role else {
+                    throw AutomationRefusal(
+                        .focusMoved,
+                        "That control changed while you were being asked, so nothing was done."
+                    )
+                }
+            }
         }
     }
 

@@ -10,6 +10,8 @@ import { getModelMetrics } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import { crossHistoryEntries } from "@/lib/cross-conversation/store";
 import { mergeCrossHistory } from "@/lib/cross-conversation/history";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { OLDEST_FIRST, olderThan } from "@/lib/chat/history-page";
 
 /*
  * Pipeline — the conversation window a saved turn reads: the most recent
@@ -33,14 +35,22 @@ export async function resolveHistory({
   hiddenUserContent: string | null;
   modelInfo: ModelInfo;
 }) {
-  // Build context from the most recent messages, excluding the answer being
-  // regenerated. `historyWindowStart` anchors the window to blocks so the
-  // prompt prefix stays cache-stable across turns — see chat/context-assembly.
-  const totalMessages = await prisma.message.count({ where: { conversationId } });
+  // Build context from the most recent messages of the shown branch
+  // (src/lib/chat/branches.ts), excluding the answer being regenerated and
+  // everything after it: regenerating an earlier answer reads the
+  // conversation as it stood when that question was asked. For the newest
+  // answer that is the answer alone, as before. `historyWindowStart` anchors
+  // the window to blocks so the prompt prefix stays cache-stable across turns
+  // — see chat/context-assembly.
+  const stale = staleAssistantId
+    ? await prisma.message.findFirst({ where: { id: staleAssistantId, conversationId }, select: { id: true, createdAt: true } })
+    : null;
+  const shown = { conversationId, ...ON_ACTIVE_PATH, ...(stale ? olderThan(stale) : {}) };
+  const totalMessages = await prisma.message.count({ where: shown });
   const countStart = historyWindowStart(totalMessages);
   const countWindow = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    where: shown,
+    orderBy: OLDEST_FIRST,
     include: { attachments: { where: { deletedAt: null } } },
     skip: countStart,
   });
@@ -68,7 +78,11 @@ export async function resolveHistory({
     .map((m) => ({ ...m, content: describeHeldArtifactsForModel(m.content) }));
   // Messages from the person's other conversations (src/lib/cross-conversation),
   // read where they arrived, fenced as data and never as the person's own words.
-  const decryptedHistory = mergeCrossHistory(ownHistory, await crossHistoryEntries(userId, conversationId), {
+  // A regenerate of an earlier answer reads nothing that arrived after it.
+  const crossEntries = (await crossHistoryEntries(userId, conversationId)).filter(
+    (entry) => !stale || entry.createdAt < stale.createdAt
+  );
+  const decryptedHistory = mergeCrossHistory(ownHistory, crossEntries, {
     fromStart: countStart === 0 && recent.length === countWindow.length,
   });
   // In a room, every other member's reply reads "[Scout] …", so the answering

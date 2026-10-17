@@ -32,6 +32,8 @@ interface World {
   toolRuns: Array<{ logKey: string | null }>;
   /** Agent ids with a computer. */
   computers: string[];
+  /** Computer events that name step frames (src/lib/computer/frame-keys.ts). */
+  frameEvents: Array<{ runId: string; kind: string; payload: unknown }>;
   /** Keys whose delete throws, as an S3 outage would. */
   failing: Set<string>;
 }
@@ -42,13 +44,13 @@ let events: string[];
 let queries: Record<string, unknown>;
 
 function reset(partial: Partial<World> = {}) {
-  world = { attachments: [], attachmentVersions: [], deliverableVersions: [], importObjects: [], toolRuns: [], computers: [], failing: new Set(), ...partial };
+  world = { attachments: [], attachmentVersions: [], deliverableVersions: [], importObjects: [], toolRuns: [], computers: [], frameEvents: [], failing: new Set(), ...partial };
   events = [];
   queries = {};
 }
 reset();
 
-const findMany = (name: keyof Omit<World, "failing" | "computers">) => async (args: unknown) => {
+const findMany = (name: keyof Omit<World, "failing" | "computers" | "frameEvents">) => async (args: unknown) => {
   queries[name] = args;
   events.push(`query:${name}`);
   return world[name];
@@ -67,6 +69,13 @@ if (!canMockModules) {
         importObject: { findMany: findMany("importObjects") },
         toolRun: { findMany: findMany("toolRuns") },
         workSkillVersion: { findMany: async () => [] },
+        workEvent: {
+          findMany: async (args: unknown) => {
+            queries.frameEvents = args;
+            events.push("query:frameEvents");
+            return world.frameEvents;
+          },
+        },
         agentComputer: {
           findMany: async () => world.computers.map((agentId) => ({ agentId })),
         },
@@ -253,6 +262,42 @@ if (!canMockModules) {
     } finally {
       prisma.workArtifactVersion.findMany = original;
     }
+  });
+
+  test("a cloud computer run's step frames are purged with the account", async () => {
+    // Screenshots of whatever was on the agent's screen, named only by the
+    // run's events, which cascade with the user row.
+    reset({
+      frameEvents: [
+        { runId: "run-1", kind: "tool_started", payload: { kind: "tool_started", callId: "call:1", tool: "computer_click" } },
+        { runId: "run-1", kind: "tool_finished", payload: { kind: "tool_finished", callId: "call:1", tool: "computer_click", frame: { ref: "call_1", width: 1280, height: 800 } } },
+        {
+          runId: "run-2",
+          kind: "approval_requested",
+          payload: { kind: "approval_requested", request: { tool: "computer_type", detail: { frame: { ref: "call_9-pre", width: 1280, height: 800 } } } },
+        },
+        // A hostile ref never becomes a key outside the account's prefix.
+        { runId: "run-2", kind: "tool_finished", payload: { tool: "computer_click", frame: { ref: "../../uploads/user-2/x", width: 1, height: 1 } } },
+        { runId: "../run", kind: "tool_finished", payload: { tool: "computer_click", frame: { ref: "ok", width: 1, height: 1 } } },
+      ],
+    });
+    const { deleteAccountPermanently } = await load();
+    await deleteAccountPermanently({ id: "user-1", email: null, image: null });
+
+    assert.deepEqual(
+      [...deleted()].sort(),
+      [
+        "computer-frames/user-1/run-1/call_1-pre.jpg",
+        "computer-frames/user-1/run-1/call_1.jpg",
+        "computer-frames/user-1/run-2/call_9-pre.jpg",
+      ].sort(),
+    );
+    // Scoped to the account and narrowed to computer events in the query.
+    const where = (queries.frameEvents as { where: Record<string, unknown> }).where;
+    assert.equal(where.userId, "user-1");
+    assert.match(JSON.stringify(where), /"string_starts_with":"computer_"/);
+    // Read with the other keys, before anything is deleted or the row dropped.
+    assert.ok(events.indexOf("query:frameEvents") < events.indexOf("user.delete"));
   });
 
   test("agent computers are destroyed with their volumes and posters before the rows cascade", async () => {

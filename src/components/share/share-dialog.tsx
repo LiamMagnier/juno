@@ -21,6 +21,7 @@ import {
   versionChoices,
   type ClientPublicationView,
 } from "@/lib/publication-view";
+import type { SharedTranscriptEntry } from "@/lib/share-transcript";
 
 /*
  * Share dialog for chats and artifacts.
@@ -110,7 +111,7 @@ function Failure({ message, onRetry }: { message: string; onRetry?: () => void }
 type ChatStatus = "loading" | "none" | "creating" | "ready" | "revoked" | "error" | "blocked";
 
 /** A chat's snapshot link: read on open, created only on "Create link". */
-function ChatLinkPanel({ conversationId, open }: { conversationId: string; open: boolean }) {
+function ChatLinkPanel({ conversationId, open, transcript }: { conversationId: string; open: boolean; transcript?: () => SharedTranscriptEntry[] | null }) {
   const [status, setStatus] = React.useState<ChatStatus>("loading");
   const [share, setShare] = React.useState<ShareInfo | null>(null);
   const [revoking, setRevoking] = React.useState(false);
@@ -138,17 +139,44 @@ function ChatLinkPanel({ conversationId, open }: { conversationId: string; open:
     }
   }, [open, load]);
 
+  // A conversation whose transcript is not on the server (a Code session on a Mac) sends it along.
+  const post = () => {
+    const entries = transcript?.() ?? null;
+    return fetch("/api/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "CHAT", conversationId, ...(entries ? { transcript: entries } : {}) }),
+    });
+  };
+
+  // A transcript link's snapshot is what the owner's app sent: sending again refreshes the same
+  // link (the server keeps its token), so the people who have it see the session as it is now.
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await post();
+      const body = (await res.json().catch(() => null)) as { share?: ShareInfo; error?: string } | null;
+      if (!res.ok || !body?.share) {
+        toast.error(body?.error ?? "Couldn’t update the link.");
+        return;
+      }
+      setShare(body.share);
+      toast.success("Link updated. It shows the session as it is now.");
+    } catch {
+      toast.error("Couldn’t update the link.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const create = async () => {
     setStatus("creating");
     try {
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "CHAT", conversationId }),
-      });
-      if (res.status === 403) {
+      const res = await post();
+      if (res.status === 403 || res.status === 400) {
         const body = (await res.json().catch(() => null)) as { code?: string; error?: string } | null;
-        if (body?.code === "share_taken_down") {
+        if (body?.code === "share_taken_down" || body?.code === "transcript_invalid") {
           setBlockedReason(body.error ?? "This can’t be shared.");
           setStatus("blocked");
           return;
@@ -202,20 +230,27 @@ function ChatLinkPanel({ conversationId, open }: { conversationId: string; open:
   return (
     <div className="space-y-3 motion-safe:animate-fade-in">
       <LinkField url={share.url} label="Share link" />
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-caption tabular-nums text-muted-foreground">
           Snapshot · {formatDate(share.snapshotAt)} · {share.views} {share.views === 1 ? "view" : "views"}
         </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void revoke()}
-          disabled={revoking}
-          aria-busy={revoking}
-          className="text-destructive danger-hover"
-        >
-          {revoking ? "Revoking…" : "Revoke link"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {transcript && (
+            <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={refreshing || revoking} aria-busy={refreshing}>
+              {refreshing ? "Updating…" : "Update to now"}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void revoke()}
+            disabled={revoking || refreshing}
+            aria-busy={revoking}
+            className="text-destructive danger-hover"
+          >
+            {revoking ? "Revoking…" : "Revoke link"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -359,26 +394,35 @@ export function ShareDialog({
   artifactId,
   open,
   onOpenChange,
+  title,
+  description,
+  transcript,
 }: {
   kind: "CHAT" | "ARTIFACT";
   conversationId?: string;
   artifactId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Overrides for a chat-kind link that is not a chat (a Code session). */
+  title?: string;
+  description?: string;
+  /** For a conversation whose transcript is not on the server: what the link should show. */
+  transcript?: () => SharedTranscriptEntry[] | null;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{kind === "CHAT" ? "Share this chat" : "Publish this artifact"}</DialogTitle>
+          <DialogTitle>{title ?? (kind === "CHAT" ? "Share this chat" : "Publish this artifact")}</DialogTitle>
           <DialogDescription>
-            {kind === "CHAT"
-              ? "A link shows the conversation up to the moment you create it. New messages stay private."
-              : "Publishing puts the version you choose on a public page anyone with the link can open. Later edits stay private until you update it, unless you choose to follow the latest version."}
+            {description ??
+              (kind === "CHAT"
+                ? "A link shows the conversation up to the moment you create it. New messages stay private."
+                : "Publishing puts the version you choose on a public page anyone with the link can open. Later edits stay private until you update it, unless you choose to follow the latest version.")}
           </DialogDescription>
         </DialogHeader>
         {kind === "CHAT" && conversationId ? (
-          <ChatLinkPanel conversationId={conversationId} open={open} />
+          <ChatLinkPanel conversationId={conversationId} open={open} transcript={transcript} />
         ) : kind === "ARTIFACT" && artifactId ? (
           <PublishPanel artifactId={artifactId} open={open} />
         ) : null}
