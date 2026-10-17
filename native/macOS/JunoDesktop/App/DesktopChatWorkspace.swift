@@ -1595,81 +1595,94 @@ struct DesktopConversationView: View {
     /// comes to the front (B4).
     @State private var systemPermissions = DesktopWorkSystemPermissions.current
 
-    var body: some View {
-        followingColumn
-            .onChange(of: model.selectedMessages) { _, _ in
-                if find.isOpen { find.update(messages: findableMessages) }
+    private var conversationLayout: some View {
+        // Clamped through `Color.clear.overlay { … }`, for the reason
+        // ``JunoDetailPage`` spells out: a `ScrollView` propagates its content's
+        // ideal height rather than absorbing it, so a long transcript reports an
+        // ideal of "every message stacked" — and `NavigationSplitView` answers an
+        // ideal it cannot meet by *growing the window's split view*. `Color.clear`
+        // takes whatever height it is proposed and an overlay is sized by its
+        // base, so the chat can never resize the window it lives in.
+        Color.clear
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                columnHeight = size.height
+                columnWidth = size.width
             }
-            // The budget moves when a turn finishes, so the plan is read when
-            // the column appears and again as each reply ends.
-            .task(id: model.isGenerating) {
-                guard !model.isGenerating else { return }
-                await readPlan()
+            .overlay { conversationContent }
+            // The toolbar's Private toggle steps aside while a call is live.
+            .onChange(of: voiceSession != nil, initial: true) { _, active in
+                callActiveChanged(active)
             }
-            // The web's COEXISTENCE RULE, in the one shape this window has for
-            // it: the canvas and a live call are both large right-hand claims on
-            // the conversation column, and the call also lights the whole column
-            // with its own field. Starting one dismisses the other.
-            .onChange(of: voiceSession?.id) { _, started in
-                guard started != nil, openArtifact != nil || openActivity != nil || openResearch != nil else { return }
-                withAnimation(
-                    JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
-                ) {
-                    openArtifact = nil
-                    openActivity = nil
-                    openResearch = nil
-                }
+            .onDisappear { callActiveChanged(false) }
+            // The stand-in for a first turn has done its job once the store
+            // holds the real one — or once this is no longer that draft.
+            .onChange(of: model.selectedMessages.contains { $0.role == .user }) { _, hasTurn in
+                if hasTurn { handoffTurn = nil }
             }
-            .alert(
-                "Voice is unavailable",
-                isPresented: voiceUnavailablePresented,
-                presenting: voiceUnavailable
-            ) { _ in
-                Button("OK") { voiceUnavailable = nil }
-            } message: { reason in
-                Text(reason)
-            }
-            .quickLookPreview($quickLookURL)
-            .modifier(ChatWorkPresentations(
-                skillCapture: $skillCapture,
-                pendingUnvalidatedSave: $pendingUnvalidatedSave,
-                systemPermissions: $systemPermissions,
-                saveSkill: { draft in await saveSkill(draft) },
-                saveUnvalidated: { attachment in
-                    guard let workFiles else { return }
-                    ChatWorkFileSaving.save(attachment, from: workFiles) { mediaFailure = $0 }
-                }
-            ))
-            // The toolbar's Outputs and the ⌘K panel open an artifact's canvas
-            // or a file's Quick Look here, where both are owned.
-            .desktopOutputRequests(
-                conversationID: privateChat == nil ? model.selectedConversationID : nil,
-                openArtifact: { open(artifact: $0) },
-                quickLook: { attachment in withFile(attachment) { openFilePanel($0) } }
-            )
-            .sheet(item: $imageEditTarget) { target in
-                imageEditSheet(target)
-            }
-            // Opener and action on one line: the targets gate reads a dialog's
-            // buttons as system-drawn only when its brace opens on that line.
-            .alert("Couldn’t open the file", isPresented: mediaFailurePresented, presenting: mediaFailure) { _ in
-                Button("OK") { mediaFailure = nil }
-            } message: { reason in
-                Text(reason)
+            .onChange(of: privateChat != nil) { _, _ in handoffTurn = nil }
+            // The canvas closes when a conversation does. It belongs to the
+            // thread it was opened from, and a panel that survived the switch
+            // would be describing a reply that is no longer on screen.
+            .onChange(of: model.selectedConversationID) { _, _ in
+                openArtifact = nil
+                openActivity = nil
+                openResearch = nil
+                openTask = nil
+                find.close()
+                followCanvasRequest()
             }
     }
 
-    /// What `body` draws and follows, in three runs of modifiers rather
-    /// than one: a single chain of them all was more than Xcode 26's type
-    /// checker would take ("unable to type-check this expression in
-    /// reasonable time"). The same modifiers, in the same order.
-    private var followingColumn: some View {
-        observedColumn
+    private var followedConversation: some View {
+        conversationLayout
+            // The chat's tasks, followed while it is open (Phase 5 A2). A
+            // draft or a private chat follows none; switching drops the
+            // follower with the chat it belonged to.
+            .task(id: workFollowerKey) {
+                guard let work = makeConversationWork() else {
+                    conversationWork = nil
+                    return
+                }
+                conversationWork = work
+                if workFiles?.accountID != session.profile.id {
+                    workFiles = ChatWorkFiles(client: configuration.workModel?.transport, accountID: session.profile.id)
+                }
+                adoptWorkStart()
+                await work.run()
+                work.close()
+                if conversationWork === work { conversationWork = nil }
+            }
+            // A reply's `work` frame: the model started a task from this turn.
+            .onChange(of: pendingWorkStartID) { _, _ in adoptWorkStart() }
+            // After each reply, look again: the web discovers on `done` too.
+            .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
+                guard wasGenerating, !isGenerating, let work = conversationWork else { return }
+                Task { await work.discover() }
+            }
+            .onChange(of: windowVisible) { _, visible in conversationWork?.isVisible = visible }
+            .onChange(of: panelRequests.report, initial: true) { _, id in
+                guard let id else { return }
+                panelRequests.report = nil
+                openReport(id)
+                #if DEBUG
+                if CommandLine.arguments.contains("--juno-preview-report-fullscreen") { reportFullscreen = true }
+                #endif
+            }
+            .onChange(of: panelRequests.file, initial: true) { _, url in
+                guard let url else { return }
+                panelRequests.file = nil
+                openFilePanel(url)
+            }
+            .background(DesktopWindowVisibilityReader { windowVisible = $0 })
             // Open in Conversation from the Artifacts page: once this chat is
             // the one on screen, the canvas opens on that row by id.
             .onAppear(perform: followCanvasRequest)
             .onChange(of: DesktopPageRouter.shared.pendingCanvas) { _, _ in followCanvasRequest() }
             .onChange(of: configuration.artifactModel?.artifacts.count) { _, _ in followCanvasRequest() }
+    }
+
+    private var syncedConversation: some View {
+        followedConversation
             // The conversation's research runs, followed while it is open —
             // and again whenever a hand-off adds one.
             .task(id: session.profile.id.rawValue) {
@@ -1719,83 +1732,74 @@ struct DesktopConversationView: View {
                 find.update(messages: findableMessages)
             }
             .onChange(of: find.query) { _, _ in find.recount() }
+            .onChange(of: model.selectedMessages) { _, _ in
+                if find.isOpen { find.update(messages: findableMessages) }
+            }
     }
 
-    private var observedColumn: some View {
-        // Clamped through `Color.clear.overlay { … }`, for the reason
-        // ``JunoDetailPage`` spells out: a `ScrollView` propagates its content's
-        // ideal height rather than absorbing it, so a long transcript reports an
-        // ideal of "every message stacked" — and `NavigationSplitView` answers an
-        // ideal it cannot meet by *growing the window's split view*. `Color.clear`
-        // takes whatever height it is proposed and an overlay is sized by its
-        // base, so the chat can never resize the window it lives in.
-        Color.clear
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                columnHeight = size.height
-                columnWidth = size.width
+    private var observedConversation: some View {
+        syncedConversation
+            // The budget moves when a turn finishes, so the plan is read when
+            // the column appears and again as each reply ends.
+            .task(id: model.isGenerating) {
+                guard !model.isGenerating else { return }
+                await readPlan()
             }
-            .overlay { conversationContent }
-            // The toolbar's Private toggle steps aside while a call is live.
-            .onChange(of: voiceSession != nil, initial: true) { _, active in
-                callActiveChanged(active)
-            }
-            .onDisappear { callActiveChanged(false) }
-            // The stand-in for a first turn has done its job once the store
-            // holds the real one — or once this is no longer that draft.
-            .onChange(of: model.selectedMessages.contains { $0.role == .user }) { _, hasTurn in
-                if hasTurn { handoffTurn = nil }
-            }
-            .onChange(of: privateChat != nil) { _, _ in handoffTurn = nil }
-            // The canvas closes when a conversation does. It belongs to the
-            // thread it was opened from, and a panel that survived the switch
-            // would be describing a reply that is no longer on screen.
-            .onChange(of: model.selectedConversationID) { _, _ in
-                openArtifact = nil
-                openActivity = nil
-                openResearch = nil
-                openTask = nil
-                find.close()
-                followCanvasRequest()
-            }
-            // The chat's tasks, followed while it is open (Phase 5 A2). A
-            // draft or a private chat follows none; switching drops the
-            // follower with the chat it belonged to.
-            .task(id: workFollowerKey) {
-                guard let work = makeConversationWork() else {
-                    conversationWork = nil
-                    return
+            // The web's COEXISTENCE RULE, in the one shape this window has for
+            // it: the canvas and a live call are both large right-hand claims on
+            // the conversation column, and the call also lights the whole column
+            // with its own field. Starting one dismisses the other.
+            .onChange(of: voiceSession?.id) { _, started in
+                guard started != nil, openArtifact != nil || openActivity != nil || openResearch != nil else { return }
+                withAnimation(
+                    JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
+                ) {
+                    openArtifact = nil
+                    openActivity = nil
+                    openResearch = nil
                 }
-                conversationWork = work
-                if workFiles?.accountID != session.profile.id {
-                    workFiles = ChatWorkFiles(client: configuration.workModel?.transport, accountID: session.profile.id)
+            }
+    }
+
+    var body: some View {
+        observedConversation
+            .alert(
+                "Voice is unavailable",
+                isPresented: voiceUnavailablePresented,
+                presenting: voiceUnavailable
+            ) { _ in
+                Button("OK") { voiceUnavailable = nil }
+            } message: { reason in
+                Text(reason)
+            }
+            .quickLookPreview($quickLookURL)
+            .modifier(ChatWorkPresentations(
+                skillCapture: $skillCapture,
+                pendingUnvalidatedSave: $pendingUnvalidatedSave,
+                systemPermissions: $systemPermissions,
+                saveSkill: { draft in await saveSkill(draft) },
+                saveUnvalidated: { attachment in
+                    guard let workFiles else { return }
+                    ChatWorkFileSaving.save(attachment, from: workFiles) { mediaFailure = $0 }
                 }
-                adoptWorkStart()
-                await work.run()
-                work.close()
-                if conversationWork === work { conversationWork = nil }
+            ))
+            // The toolbar's Outputs and the ⌘K panel open an artifact's canvas
+            // or a file's Quick Look here, where both are owned.
+            .desktopOutputRequests(
+                conversationID: privateChat == nil ? model.selectedConversationID : nil,
+                openArtifact: { open(artifact: $0) },
+                quickLook: { attachment in withFile(attachment) { openFilePanel($0) } }
+            )
+            .sheet(item: $imageEditTarget) { target in
+                imageEditSheet(target)
             }
-            // A reply's `work` frame: the model started a task from this turn.
-            .onChange(of: pendingWorkStartID) { _, _ in adoptWorkStart() }
-            // After each reply, look again: the web discovers on `done` too.
-            .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
-                guard wasGenerating, !isGenerating, let work = conversationWork else { return }
-                Task { await work.discover() }
+            // Opener and action on one line: the targets gate reads a dialog's
+            // buttons as system-drawn only when its brace opens on that line.
+            .alert("Couldn’t open the file", isPresented: mediaFailurePresented, presenting: mediaFailure) { _ in
+                Button("OK") { mediaFailure = nil }
+            } message: { reason in
+                Text(reason)
             }
-            .onChange(of: windowVisible) { _, visible in conversationWork?.isVisible = visible }
-            .onChange(of: panelRequests.report, initial: true) { _, id in
-                guard let id else { return }
-                panelRequests.report = nil
-                openReport(id)
-                #if DEBUG
-                if CommandLine.arguments.contains("--juno-preview-report-fullscreen") { reportFullscreen = true }
-                #endif
-            }
-            .onChange(of: panelRequests.file, initial: true) { _, url in
-                guard let url else { return }
-                panelRequests.file = nil
-                openFilePanel(url)
-            }
-            .background(DesktopWindowVisibilityReader { windowVisible = $0 })
     }
 
     private var voiceUnavailablePresented: Binding<Bool> {

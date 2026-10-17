@@ -133,7 +133,8 @@ public final class ComputerActionOverlayModel {
         hide?.cancel()
         guard let linger else { return }
         hide = Task { [weak self] in
-            try? await Task.sleep(for: linger)
+            let clock = ContinuousClock()
+            try? await clock.sleep(until: clock.now.advanced(by: linger))
             guard !Task.isCancelled else { return }
             self?.clearIfStill(serial)
         }
