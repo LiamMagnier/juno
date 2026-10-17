@@ -294,8 +294,9 @@ jobs:
     runs-on: macos-26
     # JunoNativeKit can finish compiling and then leave xctest parked forever on
     # a hosted runner. The package runner below bounds that state and retries it
-    # once with a clean scratch path; this outer limit remains the final fuse.
-    timeout-minutes: 22
+    # once in a fresh process. Build and test have separate bounded deadlines;
+    # this outer limit remains the final fuse.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -318,9 +319,10 @@ jobs:
           sudo xcode-select -s "$newest/Contents/Developer"
           xcodebuild -version
 
+      - name: Verify the Swift test runner
+        run: python3 scripts/test-swift-package-runner.py
+
       - name: Test ${{ matrix.package }}
-        env:
-          SWIFT_BACKTRACE: enable=yes,interactive=no,color=no
         run: >-
           python3 scripts/run-swift-package-tests.py
           --package "${{ matrix.package }}"
