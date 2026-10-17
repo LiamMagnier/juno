@@ -68,18 +68,19 @@ export const bashTool: ToolDefinition = {
       // name the caller did not put in `ctx.env` therefore arrives unset rather
       // than carrying the host's value, and nothing else of the host's crosses
       // the boundary. See runner/agent-core/VENDORED.md (divergence #3).
-      const invocation = ctx.containerSandbox
-        ? { file: 'docker', args: buildContainerArgs(command, ctx.containerSandbox) }
-        : { file: '/bin/bash', args: ['-c', command] };
-
-      const child = spawn(invocation.file, invocation.args, {
+      const spawnOptions = {
         cwd: ctx.cwd,
         env: ctx.env ?? MINIMAL_ENV,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
         // Its own process group, so the timeout below can kill everything the
         // command started rather than just the shell that started it.
         detached: true,
-      });
+      };
+      // Keep the container argv on a literal Docker invocation. The host
+      // shell only receives the separately authorized local command.
+      const child = ctx.containerSandbox
+        ? spawn('docker', buildContainerArgs(command, ctx.containerSandbox), spawnOptions)
+        : spawn('/bin/bash', ['-c', command], spawnOptions);
       let out = '';
       let killed = false;
       let cancelled = false;
