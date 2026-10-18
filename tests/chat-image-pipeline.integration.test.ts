@@ -120,7 +120,7 @@ if (!DB_URL) {
       assert.equal(result.ok, true, result.text);
       assert.equal(providerCalls, 1);
       assert.equal(generated.length, 1);
-      const row = await prisma.attachment.findUniqueOrThrow({ where: { id: generated[0]! } });
+      const row = await prisma.attachment.findFirstOrThrow({ where: { id: generated[0]!, userId: user.id } });
       assert.equal(row.userId, user.id);
       assert.equal(row.conversationId, conversation.id);
       assert.equal(row.origin, "generated");
@@ -184,7 +184,7 @@ if (!DB_URL) {
       });
       const log: Activity[] = [];
       const result = await makeTool([], log).execute({ prompt: "A third fox" });
-      await prisma.apiSpend.delete({ where: { id: row.id } });
+      await prisma.apiSpend.deleteMany({ where: { id: row.id, userId: user.id } });
       assert.equal(result.ok, false);
       assert.equal(log.at(-1)?.imageGeneration?.failure?.code, "budget_exceeded");
       assert.equal(providerCalls, calls, "the provider was never called");
