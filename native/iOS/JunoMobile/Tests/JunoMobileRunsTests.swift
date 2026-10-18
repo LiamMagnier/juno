@@ -46,11 +46,4 @@ final class JunoMobileRunsTests: XCTestCase {
   func testNotificationIdentifiersAreKeyedOnTheApproval() {
     XCTAssertEqual(JunoMobileRunsCoordinator.notificationID("req-1"), "run-approval-req-1")
   }
-
-  /// No push entitlement on a free account, and no server sending Live
-  /// Activity pushes yet: every update is local.
-  func testRemoteLiveActivityUpdatesAreOffUntilPushExists() {
-    XCTAssertFalse(JunoMobileRunActivityPush.serverSendsActivityPushes)
-    XCTAssertFalse(JunoMobileRunActivityPush.isAvailable)
-  }
 }

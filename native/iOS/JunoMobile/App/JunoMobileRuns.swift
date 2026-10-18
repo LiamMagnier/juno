@@ -15,14 +15,13 @@ import UserNotifications
 /// a paired Mac and Work tasks on a Mac or a cloud computer, with Stop and
 /// Approve / Deny.
 ///
-/// Built for a phone without remote push. Everything is fed by the
+/// Updated entirely from inside the app. Everything is fed by the
 /// authenticated `/api/runs/live` feed while the app is in the foreground, and
 /// for the background execution time iOS grants after it leaves (about 30 s).
 /// Inside that window the Live Activity keeps updating and a newly pending
 /// approval raises a local notification. After it, the Live Activity keeps its
 /// last state and its system-drawn clock keeps counting; the next foreground
-/// (or background refresh) catches it up. Remote Live Activity updates light
-/// up through ``JunoMobileRunActivityPush`` once the account can send pushes.
+/// (or background refresh) catches it up.
 @MainActor
 @Observable
 final class JunoMobileRunsCoordinator {
@@ -199,33 +198,11 @@ final class JunoMobileRunsCoordinator {
 
 // MARK: - Live Activities
 
-/// Whether a run's Live Activity can be updated by push when the app is not
-/// running. That needs a paid Apple Developer account (the APNs key and the
-/// push entitlement) and a server that sends Live Activity pushes, neither of
-/// which this build has, so it is off and every update is local. Flipping
-/// `serverSendsActivityPushes` after both exist requests activities with a
-/// push token and hands each token to ``register(token:runKey:)``.
-enum JunoMobileRunActivityPush {
-  static let serverSendsActivityPushes = false
-
-  @MainActor
-  static var isAvailable: Bool {
-    // A device token only exists when the push entitlement is present and
-    // APNs registration succeeded, which a free account's build never does.
-    serverSendsActivityPushes && NativePushRegistrar.shared.tokenHex != nil
-  }
-
-  /// Where a Live Activity push token will go once the server accepts them
-  /// (alongside `/api/v1/devices/apns`). Deliberately a no-op until then.
-  static func register(token _: Data, runKey _: String) async {}
-}
-
 /// One Live Activity per live run (up to two at once), started, updated and
 /// ended from the live list.
 @MainActor
 final class JunoMobileRunActivities {
   private var activities: [String: Activity<JunoAgentRunActivityAttributes>] = [:]
-  private var tokenTasks: [String: Task<Void, Never>] = [:]
 
   init() {
     // Activities outlive the process. Adopt the ones a previous launch left,
@@ -251,21 +228,12 @@ final class JunoMobileRunActivities {
         runKey: run.key, title: run.title, hostName: run.target == .cloud ? "Cloud" : run.hostName,
         startedAt: run.startedAt
       )
-      let pushes = JunoMobileRunActivityPush.isAvailable
       guard
         let activity = try? Activity.request(
-          attributes: attributes, content: Self.content(summary), pushType: pushes ? .token : nil
+          attributes: attributes, content: Self.content(summary), pushType: nil
         )
       else { continue }
       activities[run.key] = activity
-      if pushes {
-        let key = run.key
-        tokenTasks[key] = Task {
-          for await token in activity.pushTokenUpdates {
-            await JunoMobileRunActivityPush.register(token: token, runKey: key)
-          }
-        }
-      }
     }
   }
 
@@ -273,7 +241,6 @@ final class JunoMobileRunActivities {
   /// keeps briefly, so the person sees how it ended.
   func end(_ key: String) {
     guard let activity = activities.removeValue(forKey: key) else { return }
-    tokenTasks.removeValue(forKey: key)?.cancel()
     var state = activity.content.state
     state.finished = true
     state.needsYou = false
@@ -286,8 +253,7 @@ final class JunoMobileRunActivities {
   func endAll() {
     for key in Array(activities.keys) {
       guard let activity = activities.removeValue(forKey: key) else { continue }
-      tokenTasks.removeValue(forKey: key)?.cancel()
-      Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        Task { await activity.end(nil, dismissalPolicy: .immediate) }
     }
   }
 
@@ -305,7 +271,7 @@ final class JunoMobileRunActivities {
         usesComputer: summary.usesComputer,
         finished: false
       ),
-      // Without pushes nothing can update it once the app is suspended; past
+      // Nothing updates it once the app is suspended; past
       // this the system marks the card as out of date instead of letting it
       // claim a step count from an hour ago is current.
       staleDate: Date(timeIntervalSinceNow: 15 * 60)
