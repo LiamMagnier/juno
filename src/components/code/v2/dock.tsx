@@ -19,7 +19,9 @@ import { hunkOrder, keptCounts, moveHunkFocus, parseUnifiedDiff, splitPath, spli
 import { aggregateChanges, groupTurns, formatDuration } from "@/lib/code-v2/turns";
 import { budgetLine } from "@/lib/code-v2/orchestrate";
 import { displayName, shortModelLabel } from "@/lib/code-v2/providers-view";
-import { ComposerPopover, Glyph, LiveMark, MenuList, ModelMark, useIsMac } from "./primitives";
+import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac } from "./primitives";
+import { RunAgentFace, useRunAvatars } from "./run-agent-face";
+import { runAgentAvatar, subagentFaceState } from "@/lib/agents/run-avatar";
 import { agentStep, isCandidate, teamHead, LogRow, lineFor } from "./thread";
 import type { WorkspaceModel } from "./types";
 import { XtermView } from "./xterm-view";
@@ -564,12 +566,15 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
   const live = agent.status === "running" || agent.status === "waiting";
   const step = agentStep(agent);
   const name = agent.title ?? agent.task?.split("\n")[0] ?? agent.label ?? "Agent";
+  const avatars = useRunAvatars(model.items);
+  const avatar = avatars.get(agent.agentId) ?? runAgentAvatar({ id: agent.agentId, role: agent.role, phase: agent.phase });
   return (
     <div className="cv2-dock-pane" key={agent.agentId}>
       <div className="cv2-dockbar">
         <button type="button" className="cv2-iconbtn" aria-label="All agents" onClick={onBack} style={{ marginLeft: -6 }}>
           <Glyph name="chevron-left" />
         </button>
+        <RunAgentFace avatar={avatar} state={subagentFaceState(agent.status, agent.paused)} size="sm" />
         <span className="cv2-m">{name}</span>
         <span className="cv2-mute cv2-small cv2-trunc cv2-grow">
           {modelLabelFor(agent.model.model, model.instances, agent.model.instanceId)}
@@ -594,7 +599,6 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
           <div className={cn("cv2-wl", step.needs && "needs")}>
             <span className={cn("verb", agent.status === "running" && "cv2-live")}>{agent.status === "running" ? "Now" : agent.status === "waiting" ? "Needs you" : "Last"}</span>
             <span className="obj">{step.text}</span>
-            {agent.status === "running" && <LiveMark />}
             {agent.elapsedMs !== undefined && <span className="t">{formatDuration(agent.elapsedMs)}</span>}
           </div>
           {agent.candidate?.additions !== undefined && (
@@ -667,6 +671,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
   const selected = agents.find((a) => a.agentId === selectedId);
   const [pick, setPick] = React.useState<string | null>(null);
   const best = model.routing.preset === "best-of-n" || agents.some(isCandidate);
+  const avatars = useRunAvatars(model.items);
   if (!agents.length) return <div className="cv2-dock-empty">No agents in this session. Choose Team or Best of N under the composer&apos;s options to fan out.</div>;
   // A team or delegated run: the live tree with its controls (REA backlog 10).
   if (!best) return <AgentsTreePane model={model} selectedId={selectedId} onSelect={onSelect} modelLabel={(s) => modelLabelFor(s.model, model.instances, s.instanceId)} />;
@@ -695,9 +700,10 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
                 <span style={{ minWidth: 0 }}>
                   <span className="l1">
                     <span className="cv2-m" style={{ width: 14 }}>{letter}</span>
+                    <RunAgentFace avatar={avatars.get(a.agentId) ?? runAgentAvatar({ id: a.agentId, role: a.role })} state={subagentFaceState(a.status, a.paused)} />
                     <ModelMark modelId={a.model.model} instance={model.instances.find((x) => x.id === a.model.instanceId)} />
                     <span className="cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
-                    {a.status === "running" && <LiveMark size={12} />}
+                    <span className="cv2-sr">{a.status === "running" ? "Working" : a.status === "waiting" ? "Needs you" : a.status === "failed" ? "Failed" : a.status === "interrupted" ? "Stopped" : "Done"}</span>
                   </span>
                   <span className="l2" style={{ display: "block", paddingLeft: 22 }}>
                     {c.testsLine ? `${c.testsLine}. ` : ""}

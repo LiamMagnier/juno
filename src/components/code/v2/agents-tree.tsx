@@ -14,7 +14,7 @@
  *
  * Accessibility: a WAI-ARIA tree (roving focus, arrows / Home / End,
  * Left-Right to fold, Enter or Space to select), every state in words as well
- * as a mark, results announced in a polite status line, no motion beyond the
+ * as the agent's face (run-agent-face.tsx), results announced in a polite status line, no motion beyond the
  * global tiers (the meter's fill is a Tier A change).
  */
 import * as React from "react";
@@ -31,11 +31,13 @@ import {
   isLive,
   treeKey,
   visibleRows,
-  type AgentNodeState,
   type AgentTreeNode,
 } from "@/lib/code-v2/agent-tree";
 import { formatDuration } from "@/lib/code-v2/turns";
-import { Glyph, LiveMark } from "./primitives";
+import { Glyph } from "./primitives";
+import { RunAgentFace, useRunAvatars } from "./run-agent-face";
+import { runAgentAvatar, runFaceState } from "@/lib/agents/run-avatar";
+import type { AgentAvatar } from "@/lib/agents/avatar";
 import { LogRow, lineFor } from "./thread";
 import type { AgentControlRequestInput, WorkspaceModel } from "./types";
 import type { ModelSelection } from "@/lib/code-v2/contracts";
@@ -49,12 +51,13 @@ export const AGENT_TOP_UP_TOKENS = [50_000, 100_000, 200_000] as const;
 /** Dollar top-ups for the run's own budget. */
 export const RUN_TOP_UP_USD = [1, 5, 10] as const;
 
-function StateMark({ state, animate }: { state: AgentNodeState; animate?: boolean }) {
-  if ((state === "thinking" || state === "tool") && animate) return <LiveMark size={12} />;
-  const glyph: Partial<Record<AgentNodeState, string>> = { waiting: "hand", paused: "pause", done: "check", failed: "x-circle", stopped: "stop" };
-  const name = glyph[state];
-  if (name) return <Glyph name={name} size={12} className="cv2-amark" />;
-  return <span className="cv2-adot" data-state={state} aria-hidden="true" />;
+/**
+ * The agent's face (the Orbit character, in 2D) in place of a status dot: its
+ * eyes say the state, and the row says it in words beside it.
+ */
+function StateFace({ node, avatars, size = "xs" }: { node: AgentTreeNode; avatars: ReadonlyMap<string, AgentAvatar>; size?: "xs" | "sm" }) {
+  const avatar = avatars.get(node.id) ?? runAgentAvatar({ id: node.id, role: node.agent?.role, phase: node.agent?.phase });
+  return <RunAgentFace avatar={avatar} state={runFaceState(node.state)} size={size} />;
 }
 
 function elapsedOf(node: AgentTreeNode, now: number): number | undefined {
@@ -96,9 +99,10 @@ interface RowProps {
   onToggle: (id: string) => void;
   onFocusRow: (id: string) => void;
   rowRefs: React.MutableRefObject<Map<string, HTMLLIElement>>;
+  avatars: ReadonlyMap<string, AgentAvatar>;
 }
 
-function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggle, onFocusRow, rowRefs }: RowProps) {
+function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggle, onFocusRow, rowRefs, avatars }: RowProps) {
   const open = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
   const selected = selectedId === node.id;
@@ -144,7 +148,7 @@ function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggl
         >
           {hasChildren && <Glyph name="chevron-right" size={12} />}
         </span>
-        <StateMark state={node.state} animate={selected} />
+        <StateFace node={node} avatars={avatars} />
         <span className="cv2-acol">
           <span className="nm cv2-trunc">{node.label}</span>
           <span className={cn("st cv2-trunc", node.state === "waiting" && "cv2-sig")}>{node.step}</span>
@@ -157,7 +161,7 @@ function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggl
       {hasChildren && open && (
         <ul role="group" className="cv2-agroup">
           {node.children.map((c) => (
-            <TreeRow key={c.id} node={c} now={now} expanded={expanded} focusedId={focusedId} selectedId={selectedId} onSelect={onSelect} onToggle={onToggle} onFocusRow={onFocusRow} rowRefs={rowRefs} />
+            <TreeRow key={c.id} node={c} now={now} expanded={expanded} focusedId={focusedId} selectedId={selectedId} onSelect={onSelect} onToggle={onToggle} onFocusRow={onFocusRow} rowRefs={rowRefs} avatars={avatars} />
           ))}
         </ul>
       )}
@@ -286,7 +290,7 @@ function AgentActivity({ node, items }: { node: AgentTreeNode; items: readonly T
   );
 }
 
-function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLabel }: { node: AgentTreeNode; model: WorkspaceModel; now: number; runBudgetUsd?: number; onRunBudget: (usd: number) => void; modelLabel: ModelLabeler }) {
+function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLabel, avatars }: { node: AgentTreeNode; model: WorkspaceModel; now: number; runBudgetUsd?: number; onRunBudget: (usd: number) => void; modelLabel: ModelLabeler; avatars: ReadonlyMap<string, AgentAvatar> }) {
   const control = model.actions.controlAgent;
   const { pending, notice, run } = useControl(control);
   const [draft, setDraft] = React.useState("");
@@ -313,9 +317,9 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
   return (
     <section className="cv2-adetail" aria-labelledby={headingId}>
       <header className="cv2-adetail-head">
+        <StateFace node={node} avatars={avatars} size="sm" />
         <h3 id={headingId} className="cv2-m cv2-trunc">{node.label}</h3>
         <span className={cn("cv2-achip", node.state === "waiting" && "cv2-sig")} data-state={node.state}>
-          <StateMark state={node.state} animate={live} />
           <span>{AGENT_NODE_STATE_LABEL[node.state]}</span>
         </span>
       </header>
@@ -475,6 +479,7 @@ export function AgentsTreePane({
   const [focusedId, setFocusedId] = React.useState<string>(selected.id);
   const rowRefs = React.useRef(new Map<string, HTMLLIElement>());
   const rows = React.useMemo(() => visibleRows(root, expanded), [root, expanded]);
+  const avatars = useRunAvatars(model.items);
   const focus = rows.some((r) => r.id === focusedId) ? focusedId : selected.id;
 
   // One clock for every live row; nothing ticks once the run has settled.
@@ -526,11 +531,11 @@ export function AgentsTreePane({
       </div>
       <div className="cv2-atree-wrap">
         <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
-          <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={setFocusedId} rowRefs={rowRefs} />
+          <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={setFocusedId} rowRefs={rowRefs} avatars={avatars} />
         </ul>
       </div>
       <div className="cv2-dockscroll cv2-adetail-wrap">
-        <AgentDetailPanel key={selected.id} node={selected} model={model} now={now} runBudgetUsd={runBudgetUsd} onRunBudget={setRunBudgetUsd} modelLabel={modelLabel} />
+        <AgentDetailPanel key={selected.id} node={selected} model={model} now={now} runBudgetUsd={runBudgetUsd} onRunBudget={setRunBudgetUsd} modelLabel={modelLabel} avatars={avatars} />
       </div>
     </div>
   );

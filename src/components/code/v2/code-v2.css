@@ -782,7 +782,7 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 .cv2-aitem { outline: none; }
 .cv2-aitem:focus-visible > .cv2-anode { box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0.7); }
 .cv2 .cv2-aitem:focus-visible { outline: none; }
-.cv2-anode { display: grid; grid-template-columns: 16px 14px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 44px; margin: 0 6px; padding-block: 4px; padding-inline-end: 10px; border-radius: 8px; cursor: default; transition: background-color 80ms var(--cv2-ease); }
+.cv2-anode { display: grid; grid-template-columns: 16px 20px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 44px; margin: 0 6px; padding-block: 4px; padding-inline-end: 10px; border-radius: 8px; cursor: default; transition: background-color 80ms var(--cv2-ease); }
 .cv2-anode:hover { background: hsl(var(--accent) / 0.6); }
 .cv2-anode[data-selected] { background: hsl(var(--accent)); }
 .cv2-atwisty { width: 16px; height: 16px; display: grid; place-items: center; color: hsl(var(--muted-foreground)); border-radius: 4px; }
@@ -794,12 +794,15 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 .cv2-acol .st { font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
 .cv2-aside { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .cv2-aside .t { font-size: 12px; line-height: 14px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cv2-adot { width: 8px; height: 8px; border-radius: 50%; justify-self: center; background: hsl(var(--status-running, var(--presence))); }
-.cv2-adot[data-state="queued"] { background: none; box-shadow: inset 0 0 0 1.5px hsl(var(--muted-foreground)); }
-.cv2-amark { color: hsl(var(--muted-foreground)); justify-self: center; }
-[data-state="waiting"] > .cv2-anode .cv2-amark, .cv2-achip[data-state="waiting"] .cv2-amark { color: hsl(var(--signal-ink)); }
-[data-state="failed"] > .cv2-anode .cv2-amark, .cv2-achip[data-state="failed"] .cv2-amark, [data-state="failed"] > .cv2-anode .st { color: hsl(var(--destructive)); }
-[data-state="done"] > .cv2-anode .cv2-amark, .cv2-achip[data-state="done"] .cv2-amark { color: hsl(var(--foreground)); }
+/* An agent's face (run-agent-face.tsx) where a status dot used to be: the
+   Orbit character in 2D, its eyes saying the state; the row says it in words. */
+.cv2-aface { display: inline-grid; place-items: center; flex: none; line-height: 0; justify-self: center; }
+.cv2-agentline .cv2-aface { align-self: center; }
+.cv2-agentline .cv2-aface-line { margin-left: -2px; }
+.cv2-afaces { display: inline-flex; align-items: center; align-self: center; }
+.cv2-afaces > .cv2-aface + .cv2-aface { margin-inline-start: -6px; }
+[data-state="stopped"] > .cv2-anode .cv2-aface, [data-state="queued"] > .cv2-anode .cv2-aface { opacity: 0.6; }
+[data-state="failed"] > .cv2-anode .st { color: hsl(var(--destructive)); }
 .cv2-ameter { display: block; width: 40px; height: 4px; border-radius: 2px; background: hsl(var(--border)); overflow: hidden; }
 .cv2-ameter > span { display: block; height: 100%; border-radius: inherit; background: hsl(var(--foreground) / 0.55); transition: inline-size 220ms var(--cv2-ease); }
 .cv2-ameter[data-warn] > span { background: hsl(var(--signal)); }

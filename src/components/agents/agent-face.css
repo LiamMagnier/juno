@@ -73,6 +73,11 @@
   .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
 }
 
+/* ---------- Still: the pose without the loop ---------- */
+/* A list of many busy faces animates only a few (useFaceMotionSlot); the rest
+   keep their state's pose, exactly as reduced motion draws them. */
+.agent-face[data-still] :is(.agent-face__all, .agent-face__body, .agent-face__eyes, .agent-face__dots circle, .agent-face__thought circle) { animation: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .agent-face :is(.agent-face__gaze, .agent-face__lids, .agent-face__eye, .agent-face__rig, .agent-face__eyes, .agent-face__happy) { transition: none; }
 }

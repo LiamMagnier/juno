@@ -164,6 +164,13 @@ export interface AgentFaceProps {
    * swatches), where twenty blinking faces would be noise.
    */
   live?: boolean;
+  /**
+   * Holds the state's loop still while keeping its pose (the eyes' shape still
+   * says the state). Lists that can show many busy faces at once give only a
+   * few of them motion (`useFaceMotionSlot`, capped by the shell's
+   * `galaxyMaxAnimating`), the rest are drawn still.
+   */
+  still?: boolean;
   className?: string;
 }
 
@@ -180,7 +187,7 @@ function Shading({ id }: { id: string }) {
   );
 }
 
-export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = false, className }: AgentFaceProps) {
+export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = false, still = false, className }: AgentFaceProps) {
   const px = typeof size === "number" ? size : PX[size];
   const spec = SHAPES[avatar.shape];
   const cut = EYES[avatar.eyes];
@@ -236,6 +243,7 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
       focusable="false"
       data-state={state}
       data-rich={rich ? "" : undefined}
+      data-still={still ? "" : undefined}
       className={cn("agent-face shrink-0 overflow-visible", className)}
       style={{ "--face-tone": `var(--agent-${avatar.tone})` } as React.CSSProperties}
     >

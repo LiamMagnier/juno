@@ -41,6 +41,8 @@ import { TEAM_PHASE_LABELS } from "@/lib/code-v2/team";
 import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
 import { Glyph, LiveMark, useNow } from "./primitives";
+import { RunAgentFace, RunAgentFaceStack } from "./run-agent-face";
+import { runAgentAvatars, subagentFaceState } from "@/lib/agents/run-avatar";
 import type { PagedHistory } from "./types";
 import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { cn } from "@/lib/utils";
@@ -305,11 +307,14 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
   const [open, setOpen] = React.useState<boolean | null>(null);
   const shown = open ?? (live || forceOpen);
   const elapsed = Math.max(0, ...items.map((i) => i.elapsedMs ?? 0));
+  // Each agent's face: the lead first, then arrival order (run-avatar.ts).
+  const avatars = React.useMemo(() => runAgentAvatars([{ id: "lead", role: "orchestrator" }, ...items.map((a) => ({ id: a.agentId, role: a.role, phase: a.phase }))]), [items]);
+  const faces = items.filter((a) => a.status === "running" || a.status === "waiting").map((a) => ({ id: a.agentId, avatar: avatars.get(a.agentId)!, state: subagentFaceState(a.status, a.paused) }));
   return (
     <div role="group" aria-label={teamHead(items)}>
       <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen(!shown)}>
         <span className={cn("verb", live && "cv2-live")}>{teamHead(items)}</span>
-        {live && <LiveMark />}
+        {live && <RunAgentFaceStack faces={faces} />}
         <Glyph name="chevron-right" size={12} className="chev" />
         {elapsed > 0 && <span className="t">{formatDuration(elapsed)}</span>}
       </button>
@@ -330,6 +335,7 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
                 props.onOpenDock?.({ tab: "agents", target: a.agentId });
               }}
             >
+              <RunAgentFace avatar={avatars.get(a.agentId)!} state={subagentFaceState(a.status, a.paused)} className="cv2-aface-line" />
               <span className="who">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
               <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-live")}>{step.text}</span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>

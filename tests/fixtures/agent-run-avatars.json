@@ -1,0 +1,501 @@
+{
+  "$comment": "Run-agent faces: src/lib/agents/run-avatar.ts and JunoAgentRunAvatar.swift are both tested against this file (tests/agent-run-avatar.test.ts, JunoAgentRunAvatarTests.swift). Change it only with a deliberate change to the derivation.",
+  "roles": [
+    {
+      "role": "orchestrator",
+      "phase": null,
+      "expected": "lead"
+    },
+    {
+      "role": "lead",
+      "phase": null,
+      "expected": "lead"
+    },
+    {
+      "role": "worker",
+      "phase": "build",
+      "expected": "worker"
+    },
+    {
+      "role": "builder",
+      "phase": null,
+      "expected": "worker"
+    },
+    {
+      "role": "explorer",
+      "phase": null,
+      "expected": "explorer"
+    },
+    {
+      "role": "Explore",
+      "phase": null,
+      "expected": "explorer"
+    },
+    {
+      "role": "reviewer",
+      "phase": null,
+      "expected": "reviewer"
+    },
+    {
+      "role": "reviewer",
+      "phase": "verify",
+      "expected": "verifier"
+    },
+    {
+      "role": "verifier",
+      "phase": null,
+      "expected": "verifier"
+    },
+    {
+      "role": "architect",
+      "phase": "plan",
+      "expected": "architect"
+    },
+    {
+      "role": "planner",
+      "phase": null,
+      "expected": "architect"
+    },
+    {
+      "role": "compaction",
+      "phase": null,
+      "expected": "compaction"
+    },
+    {
+      "role": "db-migrator",
+      "phase": null,
+      "expected": "custom"
+    },
+    {
+      "role": "",
+      "phase": null,
+      "expected": "custom"
+    },
+    {
+      "role": null,
+      "phase": null,
+      "expected": "custom"
+    }
+  ],
+  "states": {
+    "thinking": "thinking",
+    "tool": "working",
+    "waiting": "waiting",
+    "queued": "idle",
+    "paused": "sleeping",
+    "done": "done",
+    "failed": "blocked",
+    "stopped": "idle"
+  },
+  "runs": [
+    {
+      "name": "a lone worker",
+      "agents": [
+        {
+          "id": "w1",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "sage",
+            "eyes": "soft",
+            "mark": "none"
+          }
+        }
+      ]
+    },
+    {
+      "name": "the lead alone",
+      "agents": [
+        {
+          "id": "lead",
+          "role": "orchestrator",
+          "phase": null,
+          "expected": {
+            "shape": "halo",
+            "tone": "teal",
+            "eyes": "wide",
+            "mark": "ring"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a delegated run",
+      "agents": [
+        {
+          "id": "lead",
+          "role": "orchestrator",
+          "phase": null,
+          "expected": {
+            "shape": "halo",
+            "tone": "teal",
+            "eyes": "wide",
+            "mark": "ring"
+          }
+        },
+        {
+          "id": "w1",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "sage",
+            "eyes": "soft",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "w2",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "amber",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "w3",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "orb",
+            "tone": "violet",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "e1",
+          "role": "explorer",
+          "phase": null,
+          "expected": {
+            "shape": "spark",
+            "tone": "juniper",
+            "eyes": "tall",
+            "mark": "antenna"
+          }
+        },
+        {
+          "id": "w2a",
+          "role": "explorer",
+          "phase": null,
+          "expected": {
+            "shape": "spark",
+            "tone": "teal",
+            "eyes": "soft",
+            "mark": "antenna"
+          }
+        }
+      ]
+    },
+    {
+      "name": "plan, build, verify",
+      "agents": [
+        {
+          "id": "ar",
+          "role": "architect",
+          "phase": "plan",
+          "expected": {
+            "shape": "tile",
+            "tone": "violet",
+            "eyes": "wide",
+            "mark": "leaf"
+          }
+        },
+        {
+          "id": "b1",
+          "role": "worker",
+          "phase": "build",
+          "expected": {
+            "shape": "capsule",
+            "tone": "juniper",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "b2",
+          "role": "worker",
+          "phase": "build",
+          "expected": {
+            "shape": "orb",
+            "tone": "teal",
+            "eyes": "soft",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "v1",
+          "role": "reviewer",
+          "phase": "verify",
+          "expected": {
+            "shape": "orb",
+            "tone": "sage",
+            "eyes": "wide",
+            "mark": "spark"
+          }
+        },
+        {
+          "id": "r1",
+          "role": "reviewer",
+          "phase": null,
+          "expected": {
+            "shape": "bloom",
+            "tone": "amber",
+            "eyes": "tall",
+            "mark": "visor"
+          }
+        }
+      ]
+    },
+    {
+      "name": "best of n",
+      "agents": [
+        {
+          "id": "cA",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "orb",
+            "tone": "teal",
+            "eyes": "round",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "cB",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "juniper",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "cC",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "tile",
+            "tone": "sage",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom subagent types and a compaction",
+      "agents": [
+        {
+          "id": "agent_7f3c",
+          "role": "db-migrator",
+          "phase": null,
+          "expected": {
+            "shape": "petal",
+            "tone": "teal",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "agent_91aa",
+          "role": "Explore",
+          "phase": null,
+          "expected": {
+            "shape": "spark",
+            "tone": "amber",
+            "eyes": "wide",
+            "mark": "antenna"
+          }
+        },
+        {
+          "id": "agent_02",
+          "role": "verifier",
+          "phase": null,
+          "expected": {
+            "shape": "tile",
+            "tone": "violet",
+            "eyes": "wide",
+            "mark": "spark"
+          }
+        },
+        {
+          "id": "c1",
+          "role": "compaction",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "sage",
+            "eyes": "round",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "",
+          "role": "",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "juniper",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "ünïcødé-🤖",
+          "role": "custom",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "violet",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a large team (more agents than tones)",
+      "agents": [
+        {
+          "id": "worker-1",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "teal",
+            "eyes": "round",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-2",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "orb",
+            "tone": "juniper",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-3",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "tile",
+            "tone": "sage",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-4",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "amber",
+            "eyes": "round",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-5",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "orb",
+            "tone": "violet",
+            "eyes": "soft",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-6",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "teal",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-7",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "juniper",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-8",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "violet",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-9",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "sage",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-10",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "pebble",
+            "tone": "sage",
+            "eyes": "round",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-11",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "tile",
+            "tone": "juniper",
+            "eyes": "tall",
+            "mark": "none"
+          }
+        },
+        {
+          "id": "worker-12",
+          "role": "worker",
+          "phase": null,
+          "expected": {
+            "shape": "capsule",
+            "tone": "violet",
+            "eyes": "wide",
+            "mark": "none"
+          }
+        }
+      ]
+    }
+  ]
+}
