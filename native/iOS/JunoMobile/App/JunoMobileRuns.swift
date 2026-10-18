@@ -42,6 +42,7 @@ final class JunoMobileRunsCoordinator {
 
   @ObservationIgnored private var client: (any LiveRunsServing)?
   @ObservationIgnored private var watchTask: Task<Void, Never>?
+  @ObservationIgnored private var watchGeneration: UUID?
   @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
   @ObservationIgnored private let activities = JunoMobileRunActivities()
   @ObservationIgnored private(set) var authenticator: any JunoMobileOwnerAuthenticating =
@@ -118,9 +119,13 @@ final class JunoMobileRunsCoordinator {
 
   private func resume() {
     guard watchTask == nil, let model, model.isStarted else { return }
+    let generation = UUID()
+    watchGeneration = generation
     watchTask = Task { [weak self] in
       await model.watch()
-      self?.watchTask = nil
+      // Only the watcher that is still current clears the slot: one that was
+      // cancelled and replaced must not free the slot of its replacement.
+      if self?.watchGeneration == generation { self?.watchTask = nil }
     }
   }
 
