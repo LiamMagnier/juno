@@ -1120,32 +1120,6 @@
       }
     },
     {
-      "id": "minimax:MiniMax-M2.7-highspeed",
-      "provider": "minimax",
-      "adapter": "openai-compatible",
-      "vision": false,
-      "catalogAgenticTools": true,
-      "compatible": false,
-      "verdicts": {
-        "roundTrip": {
-          "verdict": "untested"
-        },
-        "parallel": {
-          "verdict": "untested"
-        },
-        "toolImages": {
-          "verdict": "not_applicable",
-          "note": "No vision."
-        },
-        "runCodeE2E": {
-          "verdict": "untested"
-        },
-        "skillE2E": {
-          "verdict": "untested"
-        }
-      }
-    },
-    {
       "id": "mimo:mimo-v2.6-pro",
       "provider": "mimo",
       "adapter": "openai-compatible",
@@ -1286,6 +1260,57 @@
         },
         "toolImages": {
           "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-27b",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-2.4t-a95b",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
         },
         "runCodeE2E": {
           "verdict": "untested"

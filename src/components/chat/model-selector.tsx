@@ -133,7 +133,7 @@ export function ModelSelector({
       setOpen(false);
       return;
     }
-    if (m.comingSoon) return;
+    if (m.comingSoon || m.unavailableReason) return;
     if (isModelLocked(m, plan)) {
       setOpen(false);
       // Say why the click went to /upgrade, and name the cheapest plan that

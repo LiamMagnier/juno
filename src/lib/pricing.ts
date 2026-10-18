@@ -359,6 +359,8 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       // Singapore (international) list prices from each model's Model Studio
       // page, read 2026-10-04; tiered models quote their lowest input tier.
       if (pm.includes("qwen3.8-max")) return { input: 2, output: 6 };
+      if (pm.includes("qwen3.8-2.4t")) return { input: 2, output: 6 };
+      if (pm.includes("qwen3.8-27b")) return { input: 0.5, output: 3 };
       if (pm.includes("qwen3.8-flash")) return { input: 0.15, output: 0.47 };
       if (pm.includes("qwen3.7-max")) return { input: 2.5, output: 7.5 };
       if (pm.includes("qwen3.7-plus")) return { input: 0.4, output: 1.6 };

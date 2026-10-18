@@ -3641,11 +3641,21 @@ components:
                     items: { type: string }
               availability:
                 type: string
-                enum: [available, coming_soon, requires_plan]
+                enum: [available, coming_soon, requires_plan, health_check_failed]
                 description: >-
                   `requires_plan` means the model exists and streams but the
                   caller's plan cannot call it. A client must show it disabled
                   with `requiredPlan` as the reason, never as a selection.
+                  `health_check_failed` means the model cannot be served right
+                  now (its lab's route is failing its health probe, or its own
+                  capability probe failed); `availabilityReason` says which. A
+                  client must show it disabled, never as a selection.
+              availabilityReason:
+                type: string
+                nullable: true
+                description: >-
+                  Set only with `health_check_failed`: `provider_unhealthy`, or
+                  the model capability probe's reason (e.g. `model_health_check`).
               requiredPlan:
                 type: string
                 description: The plan the chat route actually enforces (paid models are Pro-floored).
