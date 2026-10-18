@@ -955,6 +955,10 @@
         {
           "value": "tier_downgrade_refused",
           "summary": "A less precise tool was refused while a more precise one could serve the same intent."
+        },
+        {
+          "value": "run_stop_requested",
+          "summary": "Someone asked a live run to stop, from the web, the Mac or the phone."
         }
       ]
     },

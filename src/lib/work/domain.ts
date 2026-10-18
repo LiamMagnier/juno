@@ -1406,6 +1406,7 @@ export const WORK_AUDIT_KINDS = [
   "skill_security_scanned",
   "skill_permission_consent",
   "tier_downgrade_refused",
+  "run_stop_requested",
 ] as const;
 
 export type WorkAuditKind = (typeof WORK_AUDIT_KINDS)[number];
