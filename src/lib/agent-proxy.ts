@@ -327,6 +327,59 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The lab-specific request fields DeepInfra has no use for. A client speaks its
+ * lab's dialect (Z.ai's `thinking`, Qwen's `enable_thinking`, MiniMax's
+ * `reasoning_split`, the labs' own search switches); DeepInfra speaks only
+ * OpenAI's, so these are dropped rather than forwarded to a host that may
+ * reject them.
+ */
+const LAB_ONLY_FIELDS = [
+  "thinking",
+  "enable_thinking",
+  "thinking_budget",
+  "reasoning_split",
+  "enable_search",
+  "search_options",
+  "search_parameters",
+  "web_search_options",
+] as const;
+
+/**
+ * Re-address a Chat Completions body to DeepInfra (src/lib/model-host.ts):
+ * DeepInfra's model id, its `reasoning_effort` enum (none|low|medium|high),
+ * and no lab-only fields. Everything else — messages, tools, stream options,
+ * the output cap — is forwarded as the client sent it. A body that is not a
+ * JSON object is returned unchanged; `inspectAgentRequest` has already refused
+ * those.
+ */
+export function rehostChatBodyForDeepInfra(body: string, deepInfraModel: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (!isRecord(parsed)) return body;
+  parsed.model = deepInfraModel;
+  for (const field of LAB_ONLY_FIELDS) delete parsed[field];
+  // Lab tools that are not functions (Z.ai's `web_search` tool type) have no
+  // meaning on DeepInfra either.
+  if (Array.isArray(parsed.tools)) {
+    parsed.tools = parsed.tools.filter((tool) => isRecord(tool) && tool.type === "function");
+    if ((parsed.tools as unknown[]).length === 0) {
+      delete parsed.tools;
+      delete parsed.tool_choice;
+    }
+  }
+  const effort = parsed.reasoning_effort;
+  if (typeof effort === "string") {
+    parsed.reasoning_effort =
+      effort === "minimal" ? "low" : effort === "xhigh" || effort === "max" ? "high" : effort;
+  }
+  return JSON.stringify(parsed);
+}
+
 function refuse(error: string): AgentRequestCheck {
   return { ok: false, error };
 }

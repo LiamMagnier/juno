@@ -39,7 +39,7 @@ import {
 import { MODEL_LIST, hasRetired, type ModelInfo } from "@/lib/models";
 import { getModelMetrics, reasoningMultiplier, type ReasoningEffort } from "@/lib/model-metrics";
 import { canUseModel } from "@/lib/plans";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { autoDataUseVerdict, type AutoDataBoundary } from "@/lib/router/data-policy";
 import { emptyEvidence, evidenceKey, posterior, type EvidenceTable } from "@/lib/router/evidence";
 import { classifyTask, type TaskProfile } from "@/lib/router/task-class";
@@ -84,8 +84,9 @@ export interface RouteInput {
   /** Providers the owner attested are on a paid (no-training) tier. */
   paidTier?: ReadonlySet<string>;
   evidence?: EvidenceTable;
-  /** Provider currently answering (provider-health). Default: yes. */
-  isProviderAvailable?: (provider: string) => boolean;
+  /** Provider currently answering (provider-health). Default: yes. The model is
+   *  passed too, so a DeepInfra-hosted row is judged by DeepInfra's health. */
+  isProviderAvailable?: (provider: string, model?: ModelInfo) => boolean;
   /** Expected extra attempts from recent rate limits (provider-pressure). Default 0. */
   retryPressure?: (provider: string) => number;
   /** The tool round-trip probe verdict per model id. Default: untested. */
@@ -228,7 +229,7 @@ export function priorSuccess(
   if (profile.needs.structuredOutput && metrics.intelligence < 5) p *= 0.85;
   if ((profile.complexity === "hard" || profile.complexity === "expert") && !model.reasoning) p *= 0.8;
   if (profile.needs.longContext) {
-    const ctx = model.contextWindow ?? metrics.contextTokens;
+    const ctx = metrics.contextTokens;
     if (ctx < profile.estInputTokens * 2) p *= 0.85;
   }
   return Math.max(0.01, Math.min(0.99, p));
@@ -265,7 +266,9 @@ export function routeAuto(input: RouteInput): RouteDecision {
   const preference = input.preference ?? DEFAULT_AUTO_PREFERENCE;
   const weights = PREFERENCE_WEIGHTS[preference];
   const catalogue = input.catalogue ?? MODEL_LIST;
-  const isConfigured = input.isConfigured ?? ((p: string) => isProviderConfigured(p as never));
+  // Per MODEL by default: a lab without its own key can still have rows that
+  // DeepInfra serves (src/lib/model-host.ts). The seam keeps its per-provider shape.
+  const isConfigured = (m: ModelInfo) => (input.isConfigured ? input.isConfigured(m.provider) : isModelConfigured(m));
   const canUse = input.canUse ?? canUseModel;
   const available = input.isProviderAvailable ?? (() => true);
   const pressure = input.retryPressure ?? (() => 0);
@@ -281,12 +284,13 @@ export function routeAuto(input: RouteInput): RouteDecision {
   let pool = catalogue.filter((m) => {
     if (m.modality !== "chat") return drop("not_chat");
     if (m.comingSoon || m.status === "deprecated" || hasRetired(m)) return drop("unavailable_in_catalogue");
-    if (!isConfigured(m.provider)) return drop("provider_not_configured");
+    if (!isConfigured(m)) return drop("provider_not_configured");
     if (!canUse(input.plan, m.id)) return drop("not_in_plan");
     if (!autoDataUseVerdict(m, { paidTier, boundary: input.boundary }).eligible) return drop("data_use_terms");
     if (profile.needs.vision && !m.vision) return drop("needs_vision");
     if (input.wantsWebSearch && !webSearchPossible(m, !!input.alevrSearch)) return drop("needs_web_search");
-    const ctx = m.contextWindow ?? getModelMetrics(m).contextTokens;
+    // The metrics window: the catalog's, trimmed to what the serving host takes.
+    const ctx = getModelMetrics(m).contextTokens;
     if (ctx < profile.estInputTokens * 1.1) return drop("context_too_small");
     return true;
   });
@@ -313,7 +317,7 @@ export function routeAuto(input: RouteInput): RouteDecision {
   }
 
   let degraded: RouteDecision["degraded"] = null;
-  const healthy = pool.filter((m) => available(m.provider));
+  const healthy = pool.filter((m) => available(m.provider, m));
   if (healthy.length > 0) {
     if (healthy.length < pool.length) excluded.provider_unavailable = pool.length - healthy.length;
     pool = healthy;

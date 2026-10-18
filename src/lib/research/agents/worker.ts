@@ -11,7 +11,7 @@ import { canUseModel } from "@/lib/plans";
 import type { ResearchChosenRefusal, ResearchWorkerNote } from "@/types/research";
 import { compatPromptCacheTokens, estimateGenerationCostUsd, type CompatPromptCacheFields } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
-import { isProviderConfigured, providerApiKey, providerBaseUrl } from "@/lib/providers";
+import { isModelConfigured, modelRoute } from "@/lib/model-host";
 import { recordSpend } from "@/lib/spend";
 import { truncate } from "@/lib/utils";
 import {
@@ -94,7 +94,7 @@ export function researchWorkerModel(): ModelInfo | null {
       model.agenticTools &&
       !model.comingSoon &&
       model.status !== "deprecated" &&
-      isProviderConfigured(model.provider) &&
+      isModelConfigured(model) &&
       // Nobody picks a research worker — this function does, cheapest-first,
       // and a worker carries the reader's question plus a full page digest in
       // every one of dozens of turns. That is the largest volume of prose
@@ -150,7 +150,7 @@ export function researchLeadModel(opts: { plan?: Plan; preferred?: string | null
       model.agenticTools &&
       !model.comingSoon &&
       model.status !== "deprecated" &&
-      isProviderConfigured(model.provider) &&
+      isModelConfigured(model) &&
       // Same reason as the worker above: the lead reads the goal and every
       // finding the workers return, and nobody chose it either.
       !trainsOnPrompts(model) &&
@@ -181,7 +181,7 @@ export function researchStepDownModel(opts: { plan: Plan; preferred?: string | n
       model.agenticTools &&
       !model.comingSoon &&
       model.status !== "deprecated" &&
-      isProviderConfigured(model.provider) &&
+      isModelConfigured(model) &&
       !trainsOnPrompts(model) &&
       model.api !== "responses"
   );
@@ -226,7 +226,7 @@ export function chosenResearchVerdict(
   const model = MODEL_LIST.find((candidate) => candidate.id === id);
   if (!model) return null;
   if (model.modality !== "chat" || model.comingSoon) return { refused: "unavailable", id: model.id };
-  if (!isProviderConfigured(model.provider)) return { refused: "not_configured", id: model.id };
+  if (!isModelConfigured(model)) return { refused: "not_configured", id: model.id };
   if (plan && !canUseModel(plan, model.id)) return { refused: "plan", id: model.id };
   return { model };
 }
@@ -298,7 +298,7 @@ export function researchRunModels(opts: { plan: Plan; preferred?: string | null 
 export function configuredResearchModel(id: string | null | undefined): ModelInfo | null {
   if (!id) return null;
   const model = MODEL_LIST.find((candidate) => candidate.id === id);
-  return model && isProviderConfigured(model.provider) ? model : null;
+  return model && isModelConfigured(model) ? model : null;
 }
 
 function leadCandidate(model: ModelInfo): ResearchLeadCandidate {
@@ -516,12 +516,14 @@ function findCall(messages: AnthropicMessage[], id: string): ToolCall | null {
 const compatClients = new Map<string, OpenAI>();
 
 function compatClient(model: ModelInfo): OpenAI {
-  const apiKey = providerApiKey(model.provider);
-  if (!apiKey) throw new Error(`${model.provider} API key is not configured.`);
-  let client = compatClients.get(model.provider);
+  // The lab's API, or DeepInfra when it hosts this row (src/lib/model-host.ts).
+  const route = modelRoute(model);
+  if (!route.apiKey) throw new Error(`${route.label} API key is not configured.`);
+  const slot = route.host === "deepinfra" ? "deepinfra" : model.provider;
+  let client = compatClients.get(slot);
   if (!client) {
-    client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 0 });
-    compatClients.set(model.provider, client);
+    client = new OpenAI({ apiKey: route.apiKey, baseURL: route.baseUrl, maxRetries: 0 });
+    compatClients.set(slot, client);
   }
   return client;
 }
@@ -542,7 +544,7 @@ function compatAdapter(model: ModelInfo, system: string, user: string): Adapter 
   return {
     async next(signal) {
       const response = await client.chat.completions.create(
-        { model: model.providerModel, messages, tools, tool_choice: "auto", max_tokens: 2_048 },
+        { model: modelRoute(model).requestModel, messages, tools, tool_choice: "auto", max_tokens: 2_048 },
         { signal }
       );
       const choice = response.choices[0];

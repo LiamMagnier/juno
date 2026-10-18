@@ -57,7 +57,7 @@ export interface SelectionInputs<M extends SelectableModel> {
   /** Configured provider, allowed by plan, shipping, and a chat model. */
   isEligible: (model: M) => boolean;
   /** Whether the provider is currently answering rather than erroring. */
-  isProviderHealthy: (provider: string) => boolean;
+  isProviderHealthy: (provider: string, model?: M) => boolean;
   /** The model asked for, already looked up. Null when unknown or Auto. */
   requested: M | null;
   /** True when a platform-wide daily spend ceiling has been reached. */
@@ -96,13 +96,13 @@ export interface SelectionInputs<M extends SelectableModel> {
 export function cheapestEligible<M extends SelectableModel>(
   catalogue: readonly M[],
   isEligible: (model: M) => boolean,
-  isProviderHealthy?: (provider: string) => boolean
+  isProviderHealthy?: (provider: string, model?: M) => boolean
 ): M | null {
   const candidates = catalogue.filter(
     (model) =>
       model.trainsOnPrompts !== true &&
       isEligible(model) &&
-      (!isProviderHealthy || isProviderHealthy(model.provider))
+      (!isProviderHealthy || isProviderHealthy(model.provider, model))
   );
   if (candidates.length === 0) return null;
   return [...candidates].sort((a, b) => a.cost - b.cost)[0];
@@ -127,7 +127,7 @@ export function selectModel<M extends SelectableModel>(
   if (!requested || !isEligible(requested)) {
     model = allowSubstitution ? fallback() : null;
     reason = "fallback";
-  } else if (!isProviderHealthy(requested.provider)) {
+  } else if (!isProviderHealthy(requested.provider, requested)) {
     // Auto may reroute a provider known to be failing auth or billing. An exact
     // choice keeps the requested model and lets its provider error surface.
     const alternative = allowSubstitution

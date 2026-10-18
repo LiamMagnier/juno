@@ -2,7 +2,7 @@ import "server-only";
 import type { Plan } from "@prisma/client";
 import { canUseModel } from "@/lib/plans";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { modelToolCallingVerdict, type loadModelCapabilityMap } from "@/lib/model-capability";
 import { supportsProMode } from "@/lib/model-metrics";
 import type { NativeChatTool } from "@/lib/llm";
@@ -134,7 +134,7 @@ export async function resolveTools({
             candidate.status === "current" &&
             !candidate.comingSoon &&
             candidate.id !== modelInfo!.id &&
-            isProviderConfigured(candidate.provider) &&
+            isModelConfigured(candidate) &&
             canUseModel(plan, candidate.id) &&
             modelToolCallingVerdict(candidate, capabilityProbes, new Date(), {
               proMode: useProMode && supportsProMode(candidate),

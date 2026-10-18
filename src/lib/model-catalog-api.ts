@@ -4,7 +4,8 @@ import type { ModelCapabilityProbe } from "@prisma/client";
 import { modelCanRoute } from "@/lib/model-capability";
 import { isWorkCapableModel } from "@/lib/work/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
-import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
+import { ensureProviderHealthFresh, modelHealthy } from "@/lib/provider-health";
+import { isModelConfigured } from "@/lib/model-host";
 import { isVideoGenSupported } from "@/lib/video-gen";
 import { isAudioGenSupported } from "@/lib/audio-gen-core";
 
@@ -22,7 +23,10 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
   // Curated chat models only. Providers' live /models lists used to be merged
   // in here with guessed metadata; that is gone — a model reaches the pickers
   // only once it has a hand-written entry in models.ts, read from its docs.
-  const chat = Object.values(MODELS).filter((model) => model.modality === "chat" && configured.has(model.provider));
+  // Per model: the lab's own key, or a DeepInfra route for that row
+  // (src/lib/model-host.ts). A lab served only through DeepInfra lists only the
+  // rows DeepInfra hosts; its others stay out, exactly as an unconfigured lab's.
+  const chat = Object.values(MODELS).filter((model) => model.modality === "chat" && isModelConfigured(model));
   const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)) && (model.modality !== "audio" || isAudioGenSupported(model)));
   const byId = new Map<string, ModelInfo>();
   for (const model of [...chat, ...generated]) byId.set(model.id, model);
@@ -122,9 +126,10 @@ export function backendAgentCatalog(
         // protocol the runner speaks?". Both must be true before a runner
         // treats the entry as selectable. The optional map preserves the pure
         // catalog contract for callers that only need its shape.
-        available: providerHealthy(model.provider) && (capabilities ? modelCanRoute(model, capabilities) : true),
+        available: modelHealthy(model) && (capabilities ? modelCanRoute(model, capabilities) : true),
         vision: model.vision,
-        contextWindow: model.contextWindow ?? metrics.contextTokens,
+        // The metrics window: the catalog's, trimmed to what the serving host takes.
+        contextWindow: metrics.contextTokens,
       };
     });
 }

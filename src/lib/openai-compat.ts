@@ -2,7 +2,8 @@ import "server-only";
 import type { FastMode } from "@/lib/pricing";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
-import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
+import { deepInfraApiKey, deepInfraBaseUrl, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
+import { deepInfraReasoningFields, deepInfraRoute, hostLabel, type ModelHost } from "@/lib/model-host";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import {
@@ -30,7 +31,7 @@ import {
   toolImageIntro,
   withheldImagesNote,
 } from "@/lib/tool-result-images";
-import { providerRequestModel } from "@/lib/model-request";
+import { hostRequestModel } from "@/lib/model-request";
 import { compatCarriesLabSearch, labSearchRequest, labSearchSources } from "@/lib/lab-web-search";
 import {
   accumulateToolCallDeltas,
@@ -45,12 +46,13 @@ import {
   type CompatUsagePayload,
 } from "@/lib/openai-compat-round";
 
-const clients = new Map<Provider, OpenAI>();
+const clients = new Map<Provider | "deepinfra", OpenAI>();
 
-function client(provider: Provider): OpenAI {
-  const apiKey = providerApiKey(provider);
-  if (!apiKey) throw new Error(`${PROVIDERS[provider].label} API key is not configured.`);
-  let c = clients.get(provider);
+function client(provider: Provider, host: ModelHost = "lab"): OpenAI {
+  const apiKey = host === "deepinfra" ? deepInfraApiKey() : providerApiKey(provider);
+  if (!apiKey) throw new Error(`${hostLabel(provider, host)} API key is not configured.`);
+  const slot = host === "deepinfra" ? "deepinfra" : provider;
+  let c = clients.get(slot);
   if (!c) {
     // Do not let the SDK replay a billable request behind the accounting
     // boundary. A streamed request can have consumed tokens before a
@@ -58,8 +60,8 @@ function client(provider: Provider): OpenAI {
     // twice or make the usage ledger under-report. Work retries at a higher
     // level where the attempt gets a new idempotency key and an explicit
     // provider/model attribution.
-    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 0 });
-    clients.set(provider, c);
+    c = new OpenAI({ apiKey, baseURL: host === "deepinfra" ? deepInfraBaseUrl() : providerBaseUrl(provider), maxRetries: 0 });
+    clients.set(slot, c);
   }
   return c;
 }
@@ -344,11 +346,15 @@ export async function* streamOpenAICompat(
     else messages.splice(lastUser, 0, dynamicMessage);
   }
   const modelId = model.providerModel.toLowerCase();
-  const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
-  const isMiniMax = model.provider === "minimax";
+  // DeepInfra-hosted (src/lib/model-host.ts): one OpenAI dialect for every
+  // model it serves, so none of the lab-specific fields below go on its wire.
+  const deepInfra = deepInfraRoute(model);
+  const onLab = deepInfra === null;
+  const isZhipuThinking = onLab && model.provider === "zhipu" && model.reasoning;
+  const isMiniMax = onLab && model.provider === "minimax";
   // Qwen (DashScope) drives thinking with enable_thinking/thinking_budget, not
   // OpenAI's reasoning_effort — sending both would be redundant or rejected.
-  const isQwenThinking = model.provider === "qwen" && model.reasoning;
+  const isQwenThinking = onLab && model.provider === "qwen" && model.reasoning;
   // The route already clamped the effort to what this model supports; relay it.
   // For GLM (on/off thinking) an effort means enabled, its absence means off.
   const effectiveReasoningEffort = reasoningEffort;
@@ -367,9 +373,9 @@ export async function* streamOpenAICompat(
    *   enable_thinking   → qwen (+ thinking_budget before 3.8)
    */
   const usesThinkingObject =
-    model.provider === "minimax" || model.provider === "moonshot" || model.provider === "mimo" || model.provider === "longcat";
+    onLab && (model.provider === "minimax" || model.provider === "moonshot" || model.provider === "mimo" || model.provider === "longcat");
   const usesReasoningEffort =
-    model.provider === "openai" ||
+    onLab && (model.provider === "openai" ||
     // Google was previously absent from EVERY send path here, so no thinking
     // parameter ever reached Gemini and every tier in the UI was inert. Its
     // OpenAI-compat shim does take reasoning_effort (enum
@@ -397,10 +403,10 @@ export async function* streamOpenAICompat(
     // false, so it never actually emits `thinking` either).
     (model.provider === "moonshot" && modelId.includes("k3")) ||
     // MiniMax M3.1 Flash Preview: the one MiniMax with reasoning_effort.
-    (model.provider === "minimax" && modelId.includes("m3.1"));
+    (model.provider === "minimax" && modelId.includes("m3.1")));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
-    model: providerRequestModel(model),
+    model: hostRequestModel(model, deepInfra),
     messages,
     stream: true,
   };
@@ -459,7 +465,8 @@ export async function* streamOpenAICompat(
     const glmAlwaysThinks = modelId.includes("glm-5.3");
     params.thinking = { type: effectiveReasoningEffort || glmAlwaysThinks ? "enabled" : "disabled" };
   }
-  if (model.provider === "deepseek" && model.reasoning && !effectiveReasoningEffort && reasoningCaps(model).canDisable) {
+  if (deepInfra) Object.assign(params, deepInfraReasoningFields(deepInfra, model, effectiveReasoningEffort));
+  if (onLab && model.provider === "deepseek" && model.reasoning && !effectiveReasoningEffort && reasoningCaps(model).canDisable) {
     // DeepSeek V4/V4.1 think by DEFAULT (effort high), so Instant has to be
     // sent: thinking.type "disabled" (api-docs.deepseek.com/guides/thinking_mode).
     // Leaving it out made Instant think at high on every turn.
@@ -506,10 +513,10 @@ export async function* streamOpenAICompat(
   // - Zhipu/DeepSeek/Moonshot: implicit on stable prefixes only.
   if (model.provider === "openai") {
     Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey, { promptCache, hasTools }));
-  } else {
+  } else if (onLab) {
     Object.assign(params, compatPromptCacheRequestFields(model, cacheKey));
   }
-  const qwenExplicitCache = qwenExplicitCacheModel(model);
+  const qwenExplicitCache = onLab && qwenExplicitCacheModel(model);
   // xAI Grok "Live Search" — a request-body extension that returns citations.
   if (webSearch && model.provider === "xai") {
     params.search_parameters = { mode: "auto", return_citations: true };
@@ -517,7 +524,7 @@ export async function* streamOpenAICompat(
   if (hasTools) params.tools = toWireTools(toolset!.tools);
   // The lab's own search (Z.ai and MiMo `web_search` tools, Qwen
   // `enable_search`) — src/lib/lab-web-search.ts has each documented shape.
-  const labSearch = webSearch && compatCarriesLabSearch(model.provider) ? labSearchRequest(model.provider) : null;
+  const labSearch = webSearch && onLab && compatCarriesLabSearch(model.provider) ? labSearchRequest(model.provider) : null;
   if (labSearch) {
     if (labSearch.tools.length) {
       params.tools = [...(params.tools ?? []), ...labSearch.tools] as unknown as typeof params.tools;
@@ -529,7 +536,7 @@ export async function* streamOpenAICompat(
 
   const seen = new Set<string>();
   const c: CompatTransport = transport ?? {
-    create: (body, options) => client(model.provider).chat.completions.create(body, options),
+    create: (body, options) => client(model.provider, deepInfra ? "deepinfra" : "lab").chat.completions.create(body, options),
   };
   // Turn total: rounds fold with `max` inside themselves and are ADDED here,
   // because each tool round is a separately billed request that re-sends the
@@ -541,6 +548,7 @@ export async function* streamOpenAICompat(
 
   console.info("[llm:openai-compat] stream start", {
     provider: model.provider,
+    host: deepInfra ? "deepinfra" : "lab",
     model: model.providerModel,
     maxTokens,
     reasoningEffort: effectiveReasoningEffort ?? null,

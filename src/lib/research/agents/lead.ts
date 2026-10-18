@@ -2,7 +2,7 @@ import "server-only";
 import { streamChat } from "@/lib/llm";
 import { utilityModelCandidates } from "@/lib/memory";
 import { MODEL_LIST } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { researchLeadModel } from "@/lib/research/agents/worker";
 import { cacheUsageFrom, estimateGenerationCostUsd, type CacheUsage } from "@/lib/pricing";
 import { recordSpend } from "@/lib/spend";
@@ -60,7 +60,7 @@ function leadModel(pinned?: string) {
   // (§9.5.1): the model that planned and will write is the one that reviews.
   if (pinned) {
     const model = MODEL_LIST.find((candidate) => candidate.id === pinned);
-    if (model && isProviderConfigured(model.provider)) return model;
+    if (model && isModelConfigured(model)) return model;
   }
   // The lead judges coverage and writes the next round's briefs, so like the
   // planner it runs on the strongest configured model rather than the workers'

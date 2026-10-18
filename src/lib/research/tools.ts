@@ -47,7 +47,7 @@ import { plannerLinesSystemPrompt, researchLanguageLine } from "@/lib/research/p
 import type { ReasoningEffort } from "@/types/chat";
 import { REASONING_TIERS, getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import { MODEL_LIST } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import type { AdapterRequest } from "@/lib/llm/types";
 
 /**
@@ -347,7 +347,7 @@ async function utilityCompletion(opts: {
 function configuredModel(id: string | null | undefined): ModelInfo | null {
   if (!id) return null;
   const model = MODEL_LIST.find((candidate) => candidate.id === id);
-  return model && isProviderConfigured(model.provider) ? model : null;
+  return model && isModelConfigured(model) ? model : null;
 }
 
 /**

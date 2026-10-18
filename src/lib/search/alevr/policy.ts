@@ -22,6 +22,7 @@
 
 import type { ModelInfo } from "@/lib/models";
 import { toolCapabilitiesFor } from "@/lib/model-tools";
+import { deepInfraRoute } from "@/lib/model-host";
 
 export type NativeSearchPolicy = "fallback" | "also" | "prefer";
 
@@ -55,7 +56,8 @@ export function alevrToolsUsable(model: TurnSearchInput["model"]): boolean {
 export function planTurnSearch(input: TurnSearchInput): TurnSearchPlan {
   if (!input.webRequested) return { alevr: false, native: false };
   const policy = input.policy ?? "fallback";
-  const providerHas = !!input.model.webSearch;
+  // A DeepInfra-hosted turn has no lab search to turn on (model-host.ts).
+  const providerHas = !!input.model.webSearch && !deepInfraRoute(input.model);
   const alevr = input.alevrAvailable && !input.voice && !input.private && alevrToolsUsable(input.model);
   if (!alevr) return { alevr: false, native: providerHas };
   if (policy === "prefer" && providerHas) return { alevr: false, native: true };

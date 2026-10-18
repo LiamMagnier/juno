@@ -3,7 +3,7 @@ import { RESEARCH_TRIAGE_SYSTEM } from "@/lib/preflight-triage.prompt";
 import { streamChat } from "@/lib/llm";
 import { recordSpend } from "@/lib/spend";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { getModelMetrics } from "@/lib/model-metrics";
 import {
   noPreflightClarification,
@@ -74,7 +74,7 @@ export function triageModelCandidates(): ModelInfo[] {
       !m.comingSoon &&
       !m.legacy &&
       m.minPlan === "FREE" &&
-      isProviderConfigured(m.provider)
+      isModelConfigured(m)
   ).map((m) => ({ m, metrics: getModelMetrics(m) }));
   // Prefer smart-and-fast; if no configured provider clears the intelligence
   // bar, fall back to the old fast-only bar rather than disabling the feature.

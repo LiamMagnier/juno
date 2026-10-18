@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
 import { MODEL_LIST, resolveModel } from "@/lib/models";
-import { configuredProviders } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS, canUseModel } from "@/lib/plans";
 import type { SessionUser } from "@/lib/session";
@@ -825,14 +825,17 @@ function resolveRunModel(input: {
   /** Models earlier attempts at this task already failed on. Auto only. */
   spentModels?: readonly string[];
 }): RunModel {
-  const providers = configuredProviders();
+  // Per model, not per lab: a lab without its own key can still have rows
+  // DeepInfra serves (src/lib/model-host.ts), and only those are reachable.
+  const reachable = MODEL_LIST.filter((model) => isModelConfigured(model));
+  const providers = null;
   const spent = input.spentModels ?? [];
 
   // Asked before anything else, because "this deployment can reach no drivable
   // model" and "your plan includes no drivable model" are the 503 and the 403,
   // and a single null from the router below cannot tell them apart. Reading the
   // reachable pool first is what keeps those two answers distinct.
-  if (workModelOptions(MODEL_LIST, { providers }).length === 0) {
+  if (workModelOptions(reachable, { providers }).length === 0) {
     throw new NoReachableModelError();
   }
 
@@ -848,7 +851,7 @@ function resolveRunModel(input: {
       const [next] = workFailoverModels({
         goal: input.goal,
         plan: input.plan,
-        models: MODEL_LIST,
+        models: reachable,
         providers,
         exclude: spent,
       });
@@ -878,7 +881,7 @@ function resolveRunModel(input: {
     const pick = pickWorkModel({
       goal: input.goal,
       plan: input.plan,
-      models: MODEL_LIST,
+      models: reachable,
       providers,
     });
     if (!pick) throw new NoEntitledModelError();
@@ -912,7 +915,7 @@ function resolveRunModel(input: {
   const fallback = pickWorkModel({
     goal: input.goal,
     plan: input.plan,
-    models: MODEL_LIST,
+    models: reachable,
     providers,
   });
   if (!fallback) throw new NoEntitledModelError();

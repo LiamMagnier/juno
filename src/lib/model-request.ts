@@ -12,3 +12,16 @@ export function providerRequestModel(model: Pick<ModelInfo, "id" | "provider" | 
   }
   return model.providerModel;
 }
+
+/**
+ * The `model` a request sends on the host serving it: the lab's own id, or the
+ * id DeepInfra lists the same model under when src/lib/model-host.ts routes it
+ * there. The catalog/request equality above is still checked either way.
+ */
+export function hostRequestModel(
+  model: Pick<ModelInfo, "id" | "provider" | "providerModel">,
+  deepInfra: { model: string } | null,
+): string {
+  const labModel = providerRequestModel(model);
+  return deepInfra ? deepInfra.model : labModel;
+}

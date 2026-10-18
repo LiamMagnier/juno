@@ -11,8 +11,9 @@ import { autoDataUseVerdict, isAutoDataBoundary } from "@/lib/router/data-policy
 import { providerRetryPressure } from "@/lib/router/provider-pressure";
 import { autoBudgetRoom, autoRoutingContext, autoPaidTierProviders, classifyTaskForTelemetry } from "@/lib/router/chat-inputs";
 import { loadRoutingEvidence } from "@/lib/router/telemetry-store";
-import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
-import { providerHealthy } from "@/lib/provider-health";
+import { configuredProviders, PROVIDERS, DEEPINFRA, type Provider } from "@/lib/providers";
+import { modelHealthy, providerHealthy } from "@/lib/provider-health";
+import { isModelConfigured } from "@/lib/model-host";
 import { loadModelCapabilityMap, modelCanRoute, modelToolCallingVerdict } from "@/lib/model-capability";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { formatClarificationModelMessage } from "@/lib/clarification-wizard";
@@ -75,7 +76,7 @@ export async function resolveModel({
         !!model &&
         model.modality === "chat" &&
         !model.comingSoon &&
-        isProviderConfigured(model.provider) &&
+        isModelConfigured(model) &&
         canUseModel(plan, model.id)
       );
     },
@@ -169,7 +170,7 @@ export async function resolveModel({
           boundary: isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined,
           paidTier: autoPaidTierProviders(),
           evidence,
-          isProviderAvailable: (provider) => providerHealthy(provider as Provider),
+          isProviderAvailable: (provider, m) => (m ? modelHealthy(m) : providerHealthy(provider as Provider)),
           retryPressure: providerRetryPressure,
           toolVerdict: (modelId) => {
             const m = getModel(modelId);
@@ -237,7 +238,7 @@ export async function resolveModel({
       m.modality === "chat" &&
       !m.comingSoon &&
       !isAutoModelId(m.id) &&
-      isProviderConfigured(m.provider) &&
+      isModelConfigured(m) &&
       canUseModel(plan, m.id) &&
       modelCanRoute(m, capabilityProbes) &&
       // Every Auto substitute must have passed this turn's context, vision
@@ -250,10 +251,10 @@ export async function resolveModel({
     // route here (an unprobed discovered model, a provider that went down
     // since), the next candidate in the decision's ranking is the router's
     // answer, not whichever eligible model is cheapest.
-    if (autoDecision && modelInfo && !(eligible(modelInfo) && providerHealthy(modelInfo.provider as Provider))) {
+    if (autoDecision && modelInfo && !(eligible(modelInfo) && modelHealthy(modelInfo))) {
       const next = autoDecision.ranked
         .map((c) => getModel(c.modelId))
-        .find((m): m is ModelInfo => !!m && eligible(m) && providerHealthy(m.provider as Provider));
+        .find((m): m is ModelInfo => !!m && eligible(m) && modelHealthy(m));
       if (next) modelInfo = next;
     }
 
@@ -262,7 +263,7 @@ export async function resolveModel({
       requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
       catalogue: MODEL_LIST,
       isEligible: eligible,
-      isProviderHealthy: (provider) => providerHealthy(provider as Provider),
+      isProviderHealthy: (provider, m) => (m ? modelHealthy(m) : providerHealthy(provider as Provider)),
       allowSubstitution: isAutoModelId(requestedId),
     });
     if (selection.reason === "rerouted_unhealthy_provider") {
@@ -288,7 +289,7 @@ export async function resolveModel({
         { status: 503 }
       );
     }
-    const cheapest = cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
+    const cheapest = cheapestEligible(MODEL_LIST, eligible, (p, m) => (m ? modelHealthy(m) : providerHealthy(p as Provider)));
     if (cheapest && cheapest.cost < modelInfo.cost) {
       console.warn("[chat] platform budget exceeded — Auto is choosing a cheaper model", {
         from: modelInfo.id,
@@ -304,8 +305,12 @@ export async function resolveModel({
     let msg: string;
     let code = "MODEL_UNAVAILABLE";
     let status = 503;
-    if (requested && !isProviderConfigured(requested.provider)) {
-      msg = `${PROVIDERS[requested.provider].label} is not configured. Add ${PROVIDERS[requested.provider].apiKeyEnv} before using ${requested.name}.`;
+    if (requested && !isModelConfigured(requested)) {
+      // A row DeepInfra also serves can be enabled by either key.
+      const keys = requested.deepinfra
+        ? `${PROVIDERS[requested.provider].apiKeyEnv} or ${DEEPINFRA.apiKeyEnv}`
+        : PROVIDERS[requested.provider].apiKeyEnv;
+      msg = `${PROVIDERS[requested.provider].label} is not configured. Add ${keys} before using ${requested.name}.`;
       code = "PROVIDER_NOT_CONFIGURED";
     } else if (requested && !canUseModel(plan, requested.id)) {
       msg = `${requested.name} is not included in your current plan.`;
@@ -316,7 +321,7 @@ export async function resolveModel({
     } else if (requested) {
       msg = `${requested.name} cannot be reached with its provider right now. ${PRODUCT_NAME} did not send your prompt to a different provider.`;
     } else {
-      msg = configuredProviders().length === 0
+      msg = configuredProviders().length === 0 && !MODEL_LIST.some((m) => isModelConfigured(m))
         ? "No AI model providers are configured. Add at least one provider API key (e.g. ANTHROPIC_API_KEY)."
         : "No AI model is available for your plan. Configure a provider with a model your plan allows.";
     }

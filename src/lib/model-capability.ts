@@ -3,7 +3,7 @@ import "server-only";
 import type { ModelCapabilityProbe, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { ModelInfo } from "@/lib/models";
-import { providerApiKey } from "@/lib/providers";
+import { isModelConfigured, modelRoute } from "@/lib/model-host";
 import {
   decideModelCapability,
   MODEL_CAPABILITY_TRANSPORT_FAILURE_TTL_MS,
@@ -89,8 +89,10 @@ export function nativeModelCapabilityVerdicts(
  * explicit operator/background action, not part of a user's chat request.
  */
 export async function probeModelCapability(model: ModelInfo, now = new Date()): Promise<ModelCapabilitySnapshot> {
-  const apiKey = providerApiKey(model.provider);
-  const request = apiKey ? probeRequestFor(model, apiKey) : null;
+  // The host that serves the model here: the lab's API, or DeepInfra.
+  const route = modelRoute(model);
+  const apiKey = route.apiKey;
+  const request = apiKey ? probeRequestFor(model, apiKey, route.host) : null;
   const checkedAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + MODEL_CAPABILITY_TTL_MS).toISOString();
   /**
@@ -117,6 +119,8 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
     evidence: {
       probeVersion: MODEL_CAPABILITY_PROBE_VERSION,
       providerModel: model.providerModel,
+      host: route.host,
+      requestModel: route.requestModel,
       catalogCapabilities: {
         tools: model.agenticTools,
         vision: model.vision,
@@ -270,7 +274,7 @@ export async function probeModelToolCalling(
   model: ModelInfo,
   now = new Date(),
 ): Promise<{ evidence: ToolProbeEvidence; answered: boolean } | null> {
-  if (!providerApiKey(model.provider)) return null;
+  if (!isModelConfigured(model)) return null;
   // Imported here, not at the top: llm.ts imports this module.
   const { streamChat } = await import("@/lib/llm");
   return runToolProbe({

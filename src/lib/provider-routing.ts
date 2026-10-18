@@ -1,6 +1,7 @@
 import type { ModelInfo } from "@/lib/models";
 import { providerSearchAvailable, toolCapabilitiesFor } from "@/lib/model-tools";
 import { compatCarriesLabSearch } from "@/lib/lab-web-search";
+import { deepInfraRoute } from "@/lib/model-host";
 
 /**
  * Every transport `providerAdapterFor` can pick, as a value, so a test can
@@ -94,5 +95,8 @@ export function providerAdapterFor(
 export function providerSearchServed(model: Pick<ModelInfo, "provider" | "id" | "api" | "tools">): boolean {
   // Asked of the transport a turn WITH web search is routed to (Meta's differs).
   if (!providerSearchAvailable(model)) return false;
+  // A lab's own search rides the lab's own API. DeepInfra hosts the model, not
+  // the lab's tools, so a DeepInfra-routed turn searches through Alevr Search.
+  if (deepInfraRoute(model)) return false;
   return providerAdapterFor(model, false, { webSearch: true }) !== "openai-compatible" || compatCarriesLabSearch(model.provider);
 }

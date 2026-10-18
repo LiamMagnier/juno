@@ -7,8 +7,11 @@ import type { Provider } from "@/lib/providers";
  * `server-only` and cannot be loaded under `tsx --test`.
  */
 
+/** What a health verdict is about: a lab's own API, or the DeepInfra host. */
+export type HealthHost = Provider | "deepinfra";
+
 export interface ProviderHealthState {
-  provider: Provider;
+  provider: HealthHost;
   healthy: boolean;
   /** Epoch ms of the last completed probe; null when never probed. */
   checkedAt: number | null;
@@ -52,7 +55,7 @@ export type ProbeOutcome =
  * every single request.
  */
 export function nextHealthState(
-  provider: Provider,
+  provider: HealthHost,
   previous: ProviderHealthState | undefined,
   outcome: ProbeOutcome,
   now: number

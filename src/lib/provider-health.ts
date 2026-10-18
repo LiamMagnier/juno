@@ -5,17 +5,22 @@ import {
   healthTransition,
   isHealthStale,
   nextHealthState,
+  type HealthHost,
   type ProbeOutcome,
   type ProviderHealthState,
 } from "@/lib/provider-health-policy";
 import { MODELS, type ModelInfo } from "@/lib/models";
 import { probeRequestFor } from "@/lib/model-capability-probe";
 import {
+  DEEPINFRA,
   PROVIDERS,
   configuredProviders,
+  deepInfraApiKey,
+  isDeepInfraConfigured,
   providerApiKey,
   type Provider,
 } from "@/lib/providers";
+import { deepInfraEntry, modelHost } from "@/lib/model-host";
 
 /**
  * Is each provider's API key actually *usable*?
@@ -59,8 +64,28 @@ export type ProviderHealth = ProviderHealthState;
 export const PROVIDER_PROBE_TIMEOUT_MS = 8_000;
 export const PROVIDER_DIAGNOSTIC_TIMEOUT_MS = PROVIDER_PROBE_TIMEOUT_MS + 2_000;
 
-const health = new Map<Provider, ProviderHealth>();
-const inFlight = new Map<Provider, Promise<void>>();
+const health = new Map<HealthHost, ProviderHealth>();
+const inFlight = new Map<HealthHost, Promise<void>>();
+
+/**
+ * Everything this deployment can be served by: each lab with its own key, and
+ * DeepInfra when its key is set and it hosts at least one catalog row
+ * (src/lib/model-host.ts). DeepInfra is one host for every lab it serves, so it
+ * gets one verdict of its own rather than lending or borrowing a lab's.
+ */
+function configuredHosts(): HealthHost[] {
+  const hosts: HealthHost[] = configuredProviders();
+  if (isDeepInfraConfigured() && probeModel("deepinfra")) hosts.push("deepinfra");
+  return hosts;
+}
+
+function hostLabelOf(host: HealthHost): string {
+  return host === "deepinfra" ? DEEPINFRA.label : PROVIDERS[host].label;
+}
+
+function hostDocsOf(host: HealthHost): string {
+  return host === "deepinfra" ? DEEPINFRA.docsUrl : PROVIDERS[host].docsUrl;
+}
 
 interface BoundedSignal {
   signal: AbortSignal;
@@ -94,10 +119,13 @@ function boundedSignal(parent: AbortSignal | undefined, timeoutMs: number): Boun
   };
 }
 
-/** Cheapest curated chat model for a provider — the probe should cost nothing. */
-function probeModel(provider: Provider): ModelInfo | null {
+/** Cheapest curated chat model for a host — the probe should cost nothing. */
+function probeModel(host: HealthHost): ModelInfo | null {
   const candidates = Object.values(MODELS).filter(
-    (m) => m.provider === provider && m.modality === "chat" && !m.comingSoon
+    (m) =>
+      m.modality === "chat" &&
+      !m.comingSoon &&
+      (host === "deepinfra" ? deepInfraEntry(m) !== null : m.provider === host)
   );
   if (!candidates.length) return null;
   candidates.sort((a, b) => a.cost - b.cost);
@@ -105,8 +133,8 @@ function probeModel(provider: Provider): ModelInfo | null {
 }
 
 /** Issue the smallest possible completion. Resolves on success, throws on failure. */
-async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promise<void> {
-  const apiKey = providerApiKey(provider);
+async function probeOnce(provider: HealthHost, parentSignal?: AbortSignal): Promise<void> {
+  const apiKey = provider === "deepinfra" ? deepInfraApiKey() : providerApiKey(provider);
   if (!apiKey) throw Object.assign(new Error("No API key configured"), { status: 401 });
 
   const model = probeModel(provider);
@@ -118,7 +146,9 @@ async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promis
   // the native GenerateContent surface, so a shim-only fault could mark a
   // perfectly healthy lab down — and a shim-only recovery could mark a broken
   // one up.
-  const request = probeRequestFor(model, apiKey);
+  // Pinned to the host being judged: a lab's verdict is about the lab's own
+  // API even for a row DeepInfra serves, and DeepInfra's about DeepInfra.
+  const request = probeRequestFor(model, apiKey, provider === "deepinfra" ? "deepinfra" : "lab");
   if (!request) throw new Error("No probe endpoint for provider");
   const deadline = boundedSignal(parentSignal, PROVIDER_PROBE_TIMEOUT_MS);
 
@@ -150,7 +180,7 @@ async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promis
   }
 }
 
-function record(provider: Provider, next: ProviderHealth): void {
+function record(provider: HealthHost, next: ProviderHealth): void {
   const previous = health.get(provider);
   health.set(provider, next);
 
@@ -174,13 +204,13 @@ function record(provider: Provider, next: ProviderHealth): void {
       severity: isFunding ? "warn" : "critical",
       mail: false,
       title: isFunding
-        ? `${PROVIDERS[provider].label} has no credit left`
-        : `${PROVIDERS[provider].label} cannot serve requests`,
+        ? `${hostLabelOf(provider)} has no credit left`
+        : `${hostLabelOf(provider)} cannot serve requests`,
       detail: {
         provider,
         failure: next.failure,
         detail: next.detail,
-        docs: PROVIDERS[provider].docsUrl,
+        docs: hostDocsOf(provider),
         effect: "Its models are hidden from the catalog until it recovers.",
       },
     });
@@ -190,13 +220,13 @@ function record(provider: Provider, next: ProviderHealth): void {
       key: provider,
       severity: "warn",
       mail: false,
-      title: `${PROVIDERS[provider].label} is serving requests again`,
+      title: `${hostLabelOf(provider)} is serving requests again`,
       detail: { provider },
     });
   }
 }
 
-async function refresh(provider: Provider, signal?: AbortSignal): Promise<void> {
+async function refresh(provider: HealthHost, signal?: AbortSignal): Promise<void> {
   let outcome: ProbeOutcome;
   try {
     await probeOnce(provider, signal);
@@ -208,7 +238,7 @@ async function refresh(provider: Provider, signal?: AbortSignal): Promise<void> 
   record(provider, nextHealthState(provider, health.get(provider), outcome, Date.now()));
 }
 
-function startRefresh(provider: Provider, signal?: AbortSignal): Promise<void> {
+function startRefresh(provider: HealthHost, signal?: AbortSignal): Promise<void> {
   const existing = inFlight.get(provider);
   if (existing) return existing;
 
@@ -230,7 +260,7 @@ function startRefresh(provider: Provider, signal?: AbortSignal): Promise<void> {
  */
 export function ensureProviderHealthFresh(): void {
   const now = Date.now();
-  for (const provider of configuredProviders()) {
+  for (const provider of configuredHosts()) {
     if (!isHealthStale(health.get(provider), now)) continue;
     startRefresh(provider);
   }
@@ -246,9 +276,18 @@ export function providerHealthy(provider: Provider): boolean {
   return health.get(provider)?.healthy ?? true;
 }
 
+/**
+ * Can the host that serves this model take traffic? A DeepInfra-routed row
+ * answers with DeepInfra's verdict, every other row with its lab's.
+ */
+export function modelHealthy(model: Pick<ModelInfo, "id" | "provider"> & Partial<Pick<ModelInfo, "deepinfra">>): boolean {
+  const host: HealthHost = modelHost(model) === "deepinfra" ? "deepinfra" : model.provider;
+  return health.get(host)?.healthy ?? true;
+}
+
 /** Every configured provider's current verdict, for the owner diagnostic path. */
 export function providerHealthSnapshot(): ProviderHealth[] {
-  return configuredProviders().map(
+  return configuredHosts().map(
     (provider) =>
       health.get(provider) ?? {
         provider,
@@ -276,7 +315,7 @@ export async function probeAllProviders(options: {
     options.timeoutMs ?? PROVIDER_DIAGNOSTIC_TIMEOUT_MS,
   );
   try {
-    await Promise.all(configuredProviders().map((provider) => startRefresh(provider, deadline.signal)));
+    await Promise.all(configuredHosts().map((provider) => startRefresh(provider, deadline.signal)));
     return providerHealthSnapshot();
   } finally {
     deadline.cleanup();

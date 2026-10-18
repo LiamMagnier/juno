@@ -206,6 +206,33 @@ export function googleNativeBaseUrl(): string {
   return trimmed || GOOGLE_NATIVE_DEFAULT_BASE_URL;
 }
 
+/**
+ * DeepInfra: a HOST, not a lab. It serves open-weight models from several of
+ * the labs above on one OpenAI-compatible endpoint, so it is deliberately not a
+ * `Provider` — a model's lab, branding and canonical id never change because of
+ * where it is served. A catalog row opts in with `deepinfra: "<DeepInfra model
+ * id>"`, and src/lib/model-host.ts decides per request which host serves it.
+ */
+export const DEEPINFRA = {
+  label: "DeepInfra",
+  apiKeyEnv: "DEEPINFRA_API_KEY",
+  baseUrlEnv: "DEEPINFRA_BASE_URL",
+  defaultBaseUrl: "https://api.deepinfra.com/v1/openai",
+  docsUrl: "https://deepinfra.com/dash/api_keys",
+} as const;
+
+export function deepInfraApiKey(): string | undefined {
+  return readEnv(DEEPINFRA.apiKeyEnv);
+}
+
+export function deepInfraBaseUrl(): string {
+  return readEnv(DEEPINFRA.baseUrlEnv) ?? DEEPINFRA.defaultBaseUrl;
+}
+
+export function isDeepInfraConfigured(): boolean {
+  return Boolean(deepInfraApiKey());
+}
+
 export function isProviderConfigured(p: Provider): boolean {
   return Boolean(providerApiKey(p));
 }

@@ -177,7 +177,12 @@ export interface AppBootstrap {
     /** The VAPID public key a browser subscribes with, delivered at runtime —
      *  never baked into the bundle, so a key change needs no rebuild. */
     webPushPublicKey?: string | null;
+    /** Labs with at least one model this deployment can serve (its own key, or DeepInfra). */
     providers: Provider[];
+    /** Chat models of a listed lab that still cannot be served — a lab reached
+     *  only through DeepInfra lists only the rows DeepInfra hosts. Optional: an
+     *  older server never sends it. */
+    unreachableModels?: string[];
     isOwner: boolean;
     /** Alevr Code opens for this person even below its plan: they brought
      *  their own inference (an API key, or a paired Mac running their own

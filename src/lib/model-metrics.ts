@@ -3,6 +3,7 @@ import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 import { geminiArgonRate, geminiFlashRate, type TokenPrice } from "@/lib/scheduled-prices";
 import { OFFICIAL_RATES } from "@/lib/model-rates.generated";
+import { deepInfraRoute } from "@/lib/model-host";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
 
@@ -402,14 +403,21 @@ export function getModelMetrics(model: ModelInfo, at: Date | number = Date.now()
   const benchmarked = overlayBenchmark(base, BENCHMARKS[model.id]);
   // The lab's own published rate (models:sync) outranks both the hand-tuned
   // family rule and a leaderboard's copy of it: it is the figure billing uses.
-  const official = OFFICIAL_RATES[model.id];
+  // A DeepInfra-routed request is billed at DeepInfra's price (pricing.ts), so
+  // Auto ranks it by that price too.
+  const deepInfra = deepInfraRoute(model);
+  const official = deepInfra ?? OFFICIAL_RATES[model.id];
   const grounded: ModelMetrics = official
     ? { ...benchmarked, inputUsdPerMTok: official.input, outputUsdPerMTok: official.output, source: "official" }
     : benchmarked;
   // The registry's verified per-model context window always wins; the family
   // rule's contextTokens is only a fallback for discovered models.
-  if (model.contextWindow && model.contextWindow !== grounded.contextTokens) {
-    return { ...grounded, contextTokens: model.contextWindow };
+  let contextTokens = model.contextWindow || grounded.contextTokens;
+  // ...except that DeepInfra may serve a shorter window than the lab does
+  // (MiniMax M3: 512K there, 1M at MiniMax). Trim to what will actually answer.
+  if (deepInfra?.contextTokens && deepInfra.contextTokens < contextTokens) contextTokens = deepInfra.contextTokens;
+  if (contextTokens !== grounded.contextTokens) {
+    return { ...grounded, contextTokens };
   }
   return grounded;
 }

@@ -5,7 +5,7 @@ import type { PromptCacheMode } from "@/types/llm";
 import { decryptField, encryptField } from "@/lib/field-crypto";
 import { streamChat } from "@/lib/llm";
 import { MODEL_LIST, getModel, type ModelInfo } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { getModelMetrics } from "@/lib/model-metrics";
 import {
   DEFAULT_BACKGROUND_PROVIDER_MODE,
@@ -103,7 +103,7 @@ import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 export function utilityModelCandidates(): ModelInfo[] {
   const byProvider = new Map<string, ModelInfo[]>();
   for (const m of MODEL_LIST) {
-    if (m.minPlan !== "FREE" || m.modality !== "chat" || m.comingSoon || !isProviderConfigured(m.provider)) continue;
+    if (m.minPlan !== "FREE" || m.modality !== "chat" || m.comingSoon || !isModelConfigured(m)) continue;
     const arr = byProvider.get(m.provider) ?? [];
     arr.push(m);
     byProvider.set(m.provider, arr);

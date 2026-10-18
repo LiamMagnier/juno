@@ -11,8 +11,9 @@ import { isStripeConfigured, isStorageAvailable, isServerTtsConfigured, activeTt
 import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
-import { configuredProviders } from "@/lib/providers";
-import { defaultModelFor, providerSupportsWebSearch } from "@/lib/models";
+import { configuredProviders, PROVIDER_LIST } from "@/lib/providers";
+import { isModelConfigured, reachableProviders } from "@/lib/model-host";
+import { defaultModelFor, MODEL_LIST, providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { chatSearchAvailable } from "@/lib/web/search";
 import { searchProviderStatus } from "@/lib/search/search-engine";
@@ -30,6 +31,16 @@ import { normalizeSensitiveTopics } from "@/lib/memory-sensitive";
 import { webPushPublicKey } from "@/lib/notify/web-push";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
+
+/**
+ * Chat models whose lab is listed under `features.providers` but which this
+ * deployment still cannot serve: a lab reached only through DeepInfra offers
+ * just the rows DeepInfra hosts (src/lib/model-host.ts). The client drops them
+ * from its first paint, before the authoritative /api/models list arrives.
+ */
+function unreachableModelIds(): string[] {
+  return MODEL_LIST.filter((model) => model.modality === "chat" && !isModelConfigured(model)).map((model) => model.id);
+}
 
 /**
  * Alevr Search can answer a chat search here: a keyed engine, or the
@@ -244,7 +255,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       email: isEmailEnabled(),
       webPush: Boolean(pushPublicKey),
       webPushPublicKey: pushPublicKey,
-      providers: configuredProviders(),
+      providers: reachableProviders(MODEL_LIST, PROVIDER_LIST),
+      unreachableModels: unreachableModelIds(),
       ...(codeAccess?.allowed ? { codeOpen: true } : {}),
       isOwner: isOwnerEmail(user.email),
     },

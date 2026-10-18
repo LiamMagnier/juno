@@ -168,7 +168,9 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   // exposes models whose API key is absent.
   const [models, setModels] = React.useState<ModelInfo[]>(() => {
     const configured = new Set(bootstrap.features.providers);
-    return INITIAL_MODELS.filter((model) => configured.has(model.provider));
+    // A lab served only through DeepInfra is listed, but not all of its rows are.
+    const unreachable = new Set(bootstrap.features.unreachableModels ?? []);
+    return INITIAL_MODELS.filter((model) => configured.has(model.provider) && !unreachable.has(model.id));
   });
   const { resolvedTheme } = useTheme();
 

@@ -14,7 +14,7 @@ import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { providerErrorMessage, streamChat } from "@/lib/llm";
 import { isAutoModelId } from "@/lib/auto-model";
 import { DEFAULT_MODEL, getModel, MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
+import { isModelConfigured } from "@/lib/model-host";
 import { buildDesignEditPrompt, DesignAiError, parseDesignProposal, previewProposal } from "@/lib/design/ai";
 import { buildSelectionContext } from "@/lib/design/selection-context";
 import { documentFromArtifact, loadOwnedDesignArtifact } from "@/lib/design/store";
@@ -65,7 +65,7 @@ function pickEditModel(plan: Plan, requested: string | null): ModelInfo | null {
     model.modality === "chat" &&
     !model.comingSoon &&
     !isAutoModelId(model.id) &&
-    isProviderConfigured(model.provider) &&
+    isModelConfigured(model) &&
     canUseModel(plan, model.id);
 
   const chosen = requested && !isAutoModelId(requested) ? getModel(requested) : null;

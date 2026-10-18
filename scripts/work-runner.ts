@@ -92,11 +92,11 @@ import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/m
 import { workRunPricing } from "@/lib/metering/work-pricing";
 import { clampReasoningEffort } from "@/lib/model-metrics";
 import {
+  DEEPINFRA,
   PROVIDERS,
-  providerApiKey,
-  providerBaseUrl,
   type Provider,
 } from "@/lib/providers";
+import { modelRoute, type ModelHost } from "@/lib/model-host";
 import { workModelOptions } from "@/lib/work/models";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
@@ -3011,12 +3011,17 @@ const REASONING_EFFORT_PROVIDERS: ReadonlySet<Provider> = new Set<Provider>(["op
  * environment instead. The consequence is real and worth stating plainly: this
  * worker holds a provider key, where the Code runner does not.
  */
-function providerSpecFor(provider: Provider, runtime: WorkRuntime): ProviderSpec {
+function providerSpecFor(choice: RunModelChoice, runtime: WorkRuntime): ProviderSpec {
+  const provider = choice.provider;
   const def = PROVIDERS[provider];
-  const apiKey = providerApiKey(provider);
+  // The host serving this run's model: the lab's own API, or DeepInfra for a
+  // row it hosts (src/lib/model-host.ts). One spec speaks to one host.
+  const route = choice.info ? modelRoute(choice.info) : modelRoute({ id: `${provider}:${choice.providerModel}`, provider, providerModel: choice.providerModel });
+  const apiKey = route.apiKey;
   if (!apiKey) {
+    const keys = choice.info?.deepinfra ? `${def.apiKeyEnv} or ${DEEPINFRA.apiKeyEnv}` : def.apiKeyEnv;
     throw new UnrunnableModelError(
-      `${def.label} is not set up on this deployment, so nothing could run this task. Set ${def.apiKeyEnv}, or pick a model from a provider that is configured.`
+      `${def.label} is not set up on this deployment, so nothing could run this task. Set ${keys}, or pick a model from a provider that is configured.`
     );
   }
 
@@ -3025,23 +3030,24 @@ function providerSpecFor(provider: Provider, runtime: WorkRuntime): ProviderSpec
   // in the adapter's table, because `capabilities()` falling back to a generic
   // answer for it is how a surface comes to promise something that then 400s.
   const models = workModelOptions(MODEL_LIST, { providers: null }).filter(
-    (model) => model.provider === provider
+    (model) => model.provider === provider && modelRoute(model).host === route.host
   );
 
-  const baseUrl = providerBaseUrl(provider);
+  const baseUrl = route.baseUrl;
   return {
     id: provider,
-    name: def.label,
+    name: route.label,
     kind: def.kind,
     apiKey,
     ...(baseUrl ? { baseUrl } : {}),
     // The catalog's own first entry for this lab, which is the newest one it
     // lists. Only consulted when a caller asks the adapter for a default, which
     // a Work run never does — the run always carries its own model.
-    defaultModel: models[0]?.providerModel ?? "",
+    defaultModel: models[0] ? modelRoute(models[0]).requestModel : "",
     models: Object.fromEntries(
       models.map((model) => [
-        model.providerModel,
+        // Keyed by the id the host expects: DeepInfra's own, when it serves the row.
+        modelRoute(model).requestModel,
         {
           label: model.name,
           capabilities: {
@@ -3068,6 +3074,9 @@ interface RunModelChoice {
   provider: Provider;
   /** The id the provider's API expects, from the catalog rather than a split. */
   providerModel: string;
+  /** What the request names on the host serving it — DeepInfra's id when it does. */
+  requestModel: string;
+  host: ModelHost;
   /** The catalog entry, when this build carries one. */
   info: ModelInfo | null;
 }
@@ -3135,7 +3144,10 @@ function runModelChoice(canonicalModelId: string): RunModelChoice {
   }
 
   const info = resolveModel(id);
-  if (info) return { provider: info.provider, providerModel: info.providerModel, info };
+  if (info) {
+    const route = modelRoute(info);
+    return { provider: info.provider, providerModel: info.providerModel, requestModel: route.requestModel, host: route.host, info };
+  }
 
   // Not in the catalog. The id still has a shape, and honouring it is what lets
   // a rolling deploy run a model this build has not heard of yet — the dispatch
@@ -3147,7 +3159,7 @@ function runModelChoice(canonicalModelId: string): RunModelChoice {
       `"${id}" is not a model ${PRODUCT_NAME} knows how to run. Pick another one on the task.`
     );
   }
-  return { provider: ref.provider, providerModel: ref.providerModel, info: null };
+  return { provider: ref.provider, providerModel: ref.providerModel, requestModel: ref.providerModel, host: "lab", info: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -3479,7 +3491,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // so within a second of the claim, which is the whole of requirement C: a run
   // that cannot start must say so in words, not sit at zero tokens.
   const choice = runModelChoice(run.effectiveModel ?? run.requestedModel ?? "");
-  const spec = providerSpecFor(choice.provider, runtime);
+  const spec = providerSpecFor(choice, runtime);
   const reasoning = reasoningEffortFor(choice, run.session.reasoningEffort, runtime);
 
   // Wrapped before the session ever sees it, so every turn this run takes — the
@@ -3816,8 +3828,9 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     provider,
     // The adapter was selected by the provider half, and this is the id that
     // lab's API expects — from the catalog, not from splitting the string, so a
-    // stored id that has since been retired arrives as its replacement.
-    model: choice.providerModel,
+    // stored id that has since been retired arrives as its replacement. On
+    // DeepInfra it is DeepInfra's id for the same model.
+    model: choice.requestModel,
     cwd: process.cwd(),
     tools: effectiveTools,
     plan,
@@ -3878,7 +3891,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // It is built to be hard to fail and it fails open: see the note on
     // `goalValidator`. The run's own provider and model, so this adds no
     // credential and no second catalog.
-    validate: runtime.goalValidator({ provider, model: choice.providerModel }),
+    validate: runtime.goalValidator({ provider, model: choice.requestModel }),
     // A headless run should not wait as long as a person would.
     //
     // Unset, this falls through to `DEFAULT_STREAM_SILENCE_MS`, which is the

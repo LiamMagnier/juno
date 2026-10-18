@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { isTerminalTaskStatus, taskTokenAuth } from "@/lib/code-remote";
-import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
+import { PROVIDERS, deepInfraApiKey, deepInfraBaseUrl, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
+import { deepInfraRoute } from "@/lib/model-host";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
@@ -16,6 +17,7 @@ import {
   isUpstreamTimeout,
   providerWire,
   readLimitedRequestBody,
+  rehostChatBodyForDeepInfra,
   relayedResponseHeaders,
   relayUpstreamBody,
   upstreamTimeoutKind,
@@ -229,21 +231,15 @@ export async function POST(
     return NextResponse.json({ error: "Endpoint not allowed." }, { status: 403 });
   }
 
-  const key = byok ? userKey : providerApiKey(provider);
-  if (!key) {
-    return NextResponse.json(
-      { error: `${def.label} isn't configured on the server.` },
-      { status: 502 },
-    );
-  }
+  // Checked once the model is known (below): a row DeepInfra hosts needs
+  // DeepInfra's key, not the lab's (src/lib/model-host.ts).
+  let key = byok ? userKey : providerApiKey(provider);
 
   // A user's key only ever goes to the lab's public endpoint, never to this
   // deployment's *_BASE_URL override (byokBaseUrl).
-  const base = byok && isByokProvider(provider)
+  let base = byok && isByokProvider(provider)
     ? byokBaseUrl(provider)
     : def.kind === "anthropic" ? ANTHROPIC_BASE : providerBaseUrl(provider);
-  if (!base) return NextResponse.json({ error: "No base URL for provider." }, { status: 502 });
-  const target = `${base.replace(/\/+$/, "")}/${forwardPath}`;
 
   // Forward the app's provider-native body, swapping in the real key.
   // Read it with a limit: req.text() otherwise buffers an unbounded request in
@@ -271,6 +267,24 @@ export async function POST(
   const checked = inspectAgentRequest(wire, bodyResult.body);
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
   const request = checked.request;
+  // On Alevr's key, a row DeepInfra hosts is served there: DeepInfra's key, its
+  // endpoint, its model id and dialect. The ledger and the rates below still
+  // name the canonical model, and pricing.ts prices it at DeepInfra's rate. A
+  // user's own key always goes to its own lab.
+  const hosted = !byok && wire === "openai-chat" ? deepInfraRoute({ id: `${provider}:${request.model}` }) : null;
+  if (hosted) {
+    key = deepInfraApiKey() ?? null;
+    base = deepInfraBaseUrl();
+    request.body = rehostChatBodyForDeepInfra(request.body, hosted.model);
+  }
+  if (!key) {
+    return NextResponse.json(
+      { error: `${def.label} isn't configured on the server.` },
+      { status: 502 },
+    );
+  }
+  if (!base) return NextResponse.json({ error: "No base URL for provider." }, { status: 502 });
+  const target = `${base.replace(/\/+$/, "")}/${forwardPath}`;
   // The rest of a chat turn's admission (src/lib/metering/code-turn-store.ts):
   // an unconfirmed address spends nothing, and a plan's message cap, should
   // one ever have one, is met when a turn opens. Only on Alevr's key, like the

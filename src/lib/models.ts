@@ -129,6 +129,17 @@ export interface ModelInfo {
    * a partial override and absent on almost every entry.
    */
   tools?: Partial<ModelToolCapabilities>;
+  /**
+   * The same model's id on DeepInfra, when DeepInfra serves it.
+   *
+   * A hosting route, not a different model: the canonical id, the lab and the
+   * branding stay exactly as they are, so saved chats and selections never
+   * notice. When `DEEPINFRA_API_KEY` is set, requests for this row go to
+   * DeepInfra with this id instead of to the lab's own API (src/lib/
+   * model-host.ts has the rule). Only rows whose DeepInfra listing covers the
+   * row's own vision / tool / reasoning flags carry one — see docs/models.md.
+   */
+  deepinfra?: string;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -270,6 +281,8 @@ interface ModelDef {
    *  See the field's note on ModelInfo. */
   trainsOnPrompts?: boolean;
   api?: "chat" | "responses";
+  /** The model's id on DeepInfra — see the field's note on ModelInfo. */
+  deepinfra?: string;
 }
 
 /**
@@ -312,6 +325,7 @@ function def(d: ModelDef): ModelInfo {
     comingSoon: d.comingSoon,
     trainsOnPrompts: d.trainsOnPrompts,
     api: d.api,
+    ...(d.deepinfra ? { deepinfra: d.deepinfra } : {}),
   };
 }
 
@@ -512,21 +526,21 @@ const CURATED: ModelInfo[] = [
   // Back in `glm` and ahead of 5.2, which is the whole point: the pickers show
   // the newest CURRENT row per family, and the newest one now answers.
   // Reasoning is always on with no control — the gains are post-training.
-  def({ provider: "zhipu", id: "glm-5.3", name: "GLM-5.3", family: "glm", status: "current", released: "2026-08", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Z.ai's newest flagship: coding and long-horizon agents, always reasoning." }),
+  def({ provider: "zhipu", id: "glm-5.3", deepinfra: "zai-org/GLM-5.3", name: "GLM-5.3", family: "glm", status: "current", released: "2026-08", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Z.ai's newest flagship: coding and long-horizon agents, always reasoning." }),
   // GLM-5.3-Flash / FlashX (docs.z.ai/guides/vlm/glm-5.3-flash, read
   // 2026-10-04): the first natively multimodal GLM-5 (video / image / text /
   // file in), 1M context, 128K output, thinking always on with the GLM-5.3
   // reasoning_effort ladder low|high|max (default max). FlashX is the same
   // model served at ~200 tok/s. $0.15/$0.50 and $0.37/$1.25 per MTok.
-  def({ provider: "zhipu", id: "glm-5.3-flash", name: "GLM-5.3 Flash", family: "glm-5-flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Natively multimodal GLM-5.3 at a fraction of the price: images, video and files in, 1M context, always reasoning." }),
+  def({ provider: "zhipu", id: "glm-5.3-flash", deepinfra: "zai-org/GLM-5.3-Flash", name: "GLM-5.3 Flash", family: "glm-5-flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Natively multimodal GLM-5.3 at a fraction of the price: images, video and files in, 1M context, always reasoning." }),
   def({ provider: "zhipu", id: "glm-5.3-flashx", name: "GLM-5.3 FlashX", family: "glm-5-flashx", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "GLM-5.3 Flash served at about 200 tokens a second." }),
-  def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "legacy", released: "2026-06", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Previous GLM flagship, superseded by 5.3: same 1M context and base." }),
+  def({ provider: "zhipu", id: "glm-5.2", deepinfra: "zai-org/GLM-5.2", name: "GLM-5.2", family: "glm", status: "legacy", released: "2026-06", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Previous GLM flagship, superseded by 5.3: same 1M context and base." }),
   def({ provider: "zhipu", id: "glm-4.7-flash", name: "GLM-4.7 Flash", family: "glm-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Current free-tier GLM: capable and completely free." }),
   def({ provider: "zhipu", id: "glm-4.7-flashx", name: "GLM-4.7 FlashX", family: "glm-flashx", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Low-latency GLM FlashX variant for high-throughput chat." }),
   def({ provider: "zhipu", id: "glm-5.1", name: "GLM-5.1", family: "glm", status: "legacy", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Previous GLM flagship." }),
   def({ provider: "zhipu", id: "glm-5", name: "GLM-5", family: "glm", status: "legacy", released: "2026-02", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "First 5-series GLM." }),
   def({ provider: "zhipu", id: "glm-4.7", name: "GLM-4.7", family: "glm", status: "legacy", released: "2025-12", minPlan: "PRO", cost: 1, contextWindow: 200_000, description: "Cheaper previous-generation workhorse." }),
-  def({ provider: "zhipu", id: "glm-4.6", name: "GLM-4.6", family: "glm", status: "legacy", released: "2025-09", minPlan: "PRO", cost: 1, contextWindow: 200_000, description: "Older 4.x generation." }),
+  def({ provider: "zhipu", id: "glm-4.6", deepinfra: "zai-org/GLM-4.6", name: "GLM-4.6", family: "glm", status: "legacy", released: "2025-09", minPlan: "PRO", cost: 1, contextWindow: 200_000, description: "Older 4.x generation." }),
   def({ provider: "zhipu", id: "glm-4.6v", name: "GLM-4.6V", family: "glm-v", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Previous-generation vision model." }),
   def({ provider: "zhipu", id: "glm-4.6v-flashx", name: "GLM-4.6V FlashX", family: "glm-v-flashx", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Fast GLM vision-language model for image understanding." }),
   def({ provider: "zhipu", id: "glm-4.6v-flash", name: "GLM-4.6V Flash", family: "glm-v-flash", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Cheaper GLM vision-language model for image understanding." }),
@@ -552,8 +566,8 @@ const CURATED: ModelInfo[] = [
   // `kimi-k3` family only so that two `current` entries could coexist while K2.6
   // was still the recommended one. Under one family the picker shows the newest
   // Kimi and nothing else, which is what K3 shipping means.
-  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Moonshot's flagship: 2.8T-parameter reasoner with a 1M context, always thinking at a selectable effort (low/high/max, default max), and image/video input." }),
-  def({ provider: "moonshot", id: "kimi-k2.6", name: "Kimi K2.6", family: "kimi", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Previous Kimi flagship: multimodal (image + video input) with toggleable thinking, superseded by K3." }),
+  def({ provider: "moonshot", id: "kimi-k3", deepinfra: "moonshotai/Kimi-K3", name: "Kimi K3", family: "kimi", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Moonshot's flagship: 2.8T-parameter reasoner with a 1M context, always thinking at a selectable effort (low/high/max, default max), and image/video input." }),
+  def({ provider: "moonshot", id: "kimi-k2.6", deepinfra: "moonshotai/Kimi-K2.6", name: "Kimi K2.6", family: "kimi", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Previous Kimi flagship: multimodal (image + video input) with toggleable thinking, superseded by K3." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code", name: "Kimi K2.7 Code", family: "kimi-code", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Dedicated Kimi coding model: always-on thinking, agentic coding, image and video input." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code High-Speed", family: "kimi-code-highspeed", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 262_144, description: "K2.7 Code served at ~180 tok/s for latency-sensitive agent loops." }),
 
@@ -562,8 +576,8 @@ const CURATED: ModelInfo[] = [
   // DeepSeek points the unversioned alias at the current Flash generation the
   // way `deepseek-chat` used to work, and the version appears only in the
   // product name. Getting this wrong is a 404 on every message.
-  def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_048_576, reasoning: true, description: "Sparse MoE on a 552B backbone: a 1M window, 384K of output, image input, and the cheapest frontier tier there is." }),
-  def({ provider: "deepseek", id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship: hardest reasoning and complex agent tasks." }),
+  def({ provider: "deepseek", id: "deepseek-flash", deepinfra: "deepseek-ai/DeepSeek-V4.1-Flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_048_576, reasoning: true, description: "Sparse MoE on a 552B backbone: a 1M window, 384K of output, image input, and the cheapest frontier tier there is." }),
+  def({ provider: "deepseek", id: "deepseek-v4-pro", deepinfra: "deepseek-ai/DeepSeek-V4-Pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship: hardest reasoning and complex agent tasks." }),
 
   // —— Mistral ——
   def({ provider: "mistral", id: "mistral-medium-latest", name: "Mistral Medium 3.5", family: "medium", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Mistral's frontier multimodal model: agentic work with reasoning effort." }),
@@ -620,7 +634,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "xai", id: "grok-4.20-0309-non-reasoning", name: "Grok 4.20", family: "grok", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Low-latency non-thinking Grok 4.20." }),
 
   // —— MiniMax ——
-  def({ provider: "minimax", id: "MiniMax-M3", name: "MiniMax M3", family: "m", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Frontier coding and agentic work: 1M context, multimodal input." }),
+  def({ provider: "minimax", id: "MiniMax-M3", deepinfra: "MiniMaxAI/MiniMax-M3", name: "MiniMax M3", family: "m", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Frontier coding and agentic work: 1M context, multimodal input." }),
   // MiniMax-M3.1-Flash-Preview (platform.minimax.io models + text-chat-openai,
   // read 2026-10-04): 1M context, multimodal, always thinks (thinking
   // "disabled" is a 400) with reasoning_effort low|medium|high|xhigh|max,
@@ -644,14 +658,14 @@ const CURATED: ModelInfo[] = [
   // omitted because `getModelMetrics` silently falls back to a flat 128K when
   // `contextWindow` is absent, which is a wrong number with no note attached.
   // Re-check all six figures against Xiaomi's price card when it lands.
-  def({ provider: "mimo", id: "mimo-v2.6-pro", name: "MiMo V2.6 Pro", family: "mimo", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Xiaomi's trillion-parameter flagship: omnimodal reasoning for long-horizon and high-stakes work." }),
+  def({ provider: "mimo", id: "mimo-v2.6-pro", deepinfra: "XiaomiMiMo/MiMo-V2.6-Pro", name: "MiMo V2.6 Pro", family: "mimo", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Xiaomi's trillion-parameter flagship: omnimodal reasoning for long-horizon and high-stakes work." }),
   // Its own family, not `mimo`. UltraSpeed is the SAME model at ~20x the
   // throughput and (on the V2.5 UltraSpeed precedent) 3x the price, so it is a
   // latency tier rather than a newer generation: putting it in `mimo` would
   // make the one-current-row-per-family rule hide whichever of the two lost,
   // and the choice between them is exactly the one a user should be making.
   def({ provider: "mimo", id: "mimo-v2.6-pro-ultraspeed", name: "MiMo V2.6 Pro UltraSpeed", family: "mimo-ultraspeed", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, description: "V2.6 Pro at up to 20x the speed: real-time and latency-sensitive work, at a premium rate." }),
-  def({ provider: "mimo", id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", family: "mimo-flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_050_000, description: "Full-modality reasoning at low cost: the volume tier for high-frequency calls." }),
+  def({ provider: "mimo", id: "mimo-v2.6-flash", deepinfra: "XiaomiMiMo/MiMo-V2.6-Flash", name: "MiMo V2.6 Flash", family: "mimo-flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_050_000, description: "Full-modality reasoning at low cost: the volume tier for high-frequency calls." }),
   def({ provider: "mimo", id: "mimo-v2.5", name: "MiMo V2.5", family: "mimo-omni", status: "deprecated", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Natively omnimodal (text, audio, images and video in) at half the Pro's cost.", deprecationNote: "Retires Oct 13, 2026 (Xiaomi answers it with MiMo V2.6 Flash from Oct 14). Use MiMo V2.6 Flash", retiresOn: "2026-10-13", replacedBy: "mimo:mimo-v2.6-flash" }),
   def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: false, cost: 2, contextWindow: 1_050_000, description: "Previous MiMo flagship, superseded by V2.6 Pro.", deprecationNote: "Retires Oct 13, 2026 (Xiaomi answers it with MiMo V2.6 Pro from Oct 14). Use MiMo V2.6 Pro", retiresOn: "2026-10-13", replacedBy: "mimo:mimo-v2.6-pro" }),
 
@@ -692,7 +706,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen3-vl-flash", name: "Qwen3-VL Flash", family: "qwen-vl-flash", status: "legacy", released: "2025-09", minPlan: "FREE", vision: true, reasoning: true, agenticTools: false, cost: 1, contextWindow: 262_144, description: "Previous fast vision-language model, superseded by Qwen3.6 Flash." }),
   def({ provider: "qwen", id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", family: "qwen-coder", status: "legacy", released: "2025-07", minPlan: "PRO", reasoning: false, agenticTools: false, cost: 2, contextWindow: 1_000_000, description: "Qwen3 coding model, superseded by Qwen3.7 Plus. No function calling on the international (Singapore) endpoint." }),
   def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "legacy", released: "2025-04", minPlan: "PRO", reasoning: true, agenticTools: false, cost: 2, contextWindow: 131_072, description: "Open-weight hybrid-thinking MoE (235B total / 22B active), superseded in hosted Model Studio." }),
-  def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "legacy", released: "2025-04", minPlan: "FREE", reasoning: true, agenticTools: false, cost: 1, contextWindow: 131_072, description: "Efficient open-weight hybrid-thinking MoE (30B total / 3B active), superseded in hosted Model Studio." }),
+  def({ provider: "qwen", id: "qwen3-30b-a3b", deepinfra: "Qwen/Qwen3-30B-A3B", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "legacy", released: "2025-04", minPlan: "FREE", reasoning: true, agenticTools: false, cost: 1, contextWindow: 131_072, description: "Efficient open-weight hybrid-thinking MoE (30B total / 3B active), superseded in hosted Model Studio." }),
   def({ provider: "qwen", id: "qwen-max", name: "Qwen Max", family: "qwen-max", status: "legacy", released: "2025-01", minPlan: "PRO", reasoning: false, agenticTools: false, cost: 3, contextWindow: 32_768, description: "Previous-generation Qwen-Max (2.5 line)." }),
 
   // —— Meituan · LongCat ——

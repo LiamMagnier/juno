@@ -1,8 +1,9 @@
 import { geminiEndpoint } from "@/lib/gemini-core";
-import { providerRequestModel } from "@/lib/model-request";
+import { hostRequestModel } from "@/lib/model-request";
 import type { ModelInfo } from "@/lib/models";
+import { deepInfraEntry, modelHost, type ModelHost } from "@/lib/model-host";
 import { providerAdapterFor, type ProviderAdapter } from "@/lib/provider-routing";
-import { providerBaseUrl } from "@/lib/providers";
+import { deepInfraBaseUrl, providerBaseUrl } from "@/lib/providers";
 
 /**
  * What a capability probe sends, and what a valid answer looks like.
@@ -32,9 +33,28 @@ export interface ProbeRequest {
 
 const PROBE_PROMPT = "Reply with OK.";
 
-export function probeRequestFor(model: ModelInfo, apiKey: string): ProbeRequest | null {
+/**
+ * `host` defaults to whichever host serves the model on this deployment
+ * (src/lib/model-host.ts); the provider health probe passes "lab" to ask a
+ * lab's own API even when DeepInfra serves that row. `apiKey` must be the key
+ * of that same host.
+ */
+export function probeRequestFor(model: ModelInfo, apiKey: string, host: ModelHost = modelHost(model)): ProbeRequest | null {
+  const deepInfra = host === "deepinfra" ? deepInfraEntry(model) : null;
+  if (host === "deepinfra" && !deepInfra) return null;
   const adapter = providerAdapterFor(model);
-  const requestModel = providerRequestModel(model);
+  const requestModel = hostRequestModel(model, deepInfra);
+
+  if (deepInfra) {
+    // DeepInfra serves every row it hosts on one OpenAI-compatible endpoint.
+    return {
+      adapter: "openai-compatible",
+      shape: "openai",
+      url: `${deepInfraBaseUrl().replace(/\/+$/, "")}/chat/completions`,
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: { model: requestModel, max_tokens: 1, messages: [{ role: "user", content: PROBE_PROMPT }] },
+    };
+  }
 
   switch (adapter) {
     case "anthropic-native":

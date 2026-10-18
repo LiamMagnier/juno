@@ -42,7 +42,8 @@ import {
 import type { AdapterRequest, ProviderTransport } from "@/lib/llm/types";
 import type { McpFunctionTool, McpToolset } from "@/lib/mcp";
 import { reasoningCaps } from "@/lib/model-metrics";
-import { providerRequestModel } from "@/lib/model-request";
+import { hostRequestModel } from "@/lib/model-request";
+import { deepInfraReasoningFields, deepInfraRoute } from "@/lib/model-host";
 import { toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
 import type { ModelInfo } from "@/lib/models";
 import {
@@ -144,6 +145,9 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
  *   enable_thinking   → qwen (+ thinking_budget before 3.8)
  */
 export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort | undefined): Record<string, unknown> {
+  // DeepInfra-hosted: one dialect for every model it serves (model-host.ts).
+  const deepInfra = deepInfraRoute(model);
+  if (deepInfra) return deepInfraReasoningFields(deepInfra, model, effort);
   const out: Record<string, unknown> = {};
   const id = model.providerModel.toLowerCase();
   const caps = reasoningCaps(model);
@@ -462,9 +466,10 @@ export function buildCompatRequest(
   step: { final: boolean },
 ): Record<string, unknown> {
   const { model, caps } = shape;
+  const deepInfra = deepInfraRoute(model);
   const params: Record<string, unknown> = {
-    // The one identifier an adapter may serialize.
-    model: providerRequestModel(model),
+    // The one identifier an adapter may serialize (DeepInfra's, when it hosts the model).
+    model: hostRequestModel(model, deepInfra),
     messages: [...messages],
     stream: true,
   };
@@ -478,7 +483,7 @@ export function buildCompatRequest(
   // asked. xAI routes by header (the transport's). The rest cache stable
   // prefixes on their own.
   if (model.provider === "openai") Object.assign(params, openAIPromptCacheRequestFields(model, req.cacheKey));
-  else Object.assign(params, compatPromptCacheRequestFields(model, req.cacheKey));
+  else if (!deepInfra) Object.assign(params, compatPromptCacheRequestFields(model, req.cacheKey));
 
   const toolsOn = shape.wire.tools.length > 0 && (!step.final || caps.finalRound === "tool_choice_none");
   if (toolsOn) {
