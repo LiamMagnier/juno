@@ -91,7 +91,7 @@ enum OverlayFixtures {
         "share-artifact-sheet",
         "quick-entry-chat",
         "quick-entry-code",
-        "quick-entry-no-accessibility",
+        "quick-entry-shortcut-unavailable",
     ]
 
     static let now = Date()
@@ -221,12 +221,14 @@ enum OverlayFixtures {
             )
 
         // MARK: Quick Entry
-        case "quick-entry-chat", "quick-entry-code", "quick-entry-no-accessibility":
+        case "quick-entry-chat", "quick-entry-code", "quick-entry-shortcut-unavailable":
             let product: DesktopProductMode = name == "quick-entry-code" ? .code : .chat
-            let trusted = name != "quick-entry-no-accessibility"
+            let notice: String? = name == "quick-entry-shortcut-unavailable"
+                ? DesktopQuickEntryHotkey.message(for: .unavailable, hotkey: .quickEntryDefault) + " Change it in Settings › General."
+                : nil
             return FinalFixture(name: name, width: 656 + 48, view: {
                 AnyView(
-                    DesktopQuickEntryView(readTrust: { trusted }, dismiss: {}, startingProduct: product)
+                    DesktopQuickEntryView(readNotice: { notice }, dismiss: {}, startingProduct: product)
                         .padding(24)
                         .background(Color.junoCanvas)
                         .environment(\.junoSnapshotOpaqueGlass, true)
