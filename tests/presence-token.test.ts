@@ -59,11 +59,15 @@ test("--presence and --presence-ink are the brand's ultramarine in both themes",
   assert.equal(hslHex(decl(dark, "presence-ink")!), "#97a6e6");
 });
 
-test("the Ultramarine accent is presence used as the control colour", () => {
+// Wave 2 (spec D26, sign-off S7): the accent stored as "ultramarine" is Cobalt,
+// and it is NOT presence any more. A user's accent painted every control in
+// the one colour that means "Alevr is live here"; accents never paint presence.
+test("the accent stored as ultramarine is Cobalt, a different colour from presence", () => {
   const light = /:root\[data-accent="ultramarine"\]\s*\{([^}]*)\}/.exec(globals)?.[1] ?? "";
   const dark = /\.dark\[data-accent="ultramarine"\]\s*\{([^}]*)\}/.exec(globals)?.[1] ?? "";
-  assert.equal(decl(light, "primary"), decl(block(":root"), "presence"));
-  assert.equal(decl(dark, "primary"), decl(block(".dark"), "presence"));
+  assert.equal(hslHex(decl(light, "primary")!), "#1468a3");
+  assert.notEqual(hslHex(decl(light, "primary")!), hslHex(decl(block(":root"), "presence")!));
+  assert.notEqual(hslHex(decl(dark, "primary")!), hslHex(decl(block(".dark"), "presence")!));
 });
 
 test("the script projection matches the tokens, and canvas consumers read it", () => {

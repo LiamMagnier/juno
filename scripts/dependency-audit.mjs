@@ -17,8 +17,8 @@ export const ACCEPTED_ADVISORIES = [
     package: "braces",
     advisories: ["GHSA-vfj7-8cjw-p6xm"],
     reason:
-      "No patched release exists (3.0.3 is the latest and is affected). braces arrives only through tailwindcss (chokidar, micromatch) and runs at build time on the repository's own content globs; no request, upload or user string ever reaches it, so the stack-exhaustion pattern cannot be supplied by an attacker. Re-check for a fixed release by the expiry.",
-    expires: "2026-10-17",
+      "No patched release exists (3.0.3 is the latest and is affected). braces arrives only through tailwindcss (chokidar, micromatch) and runs at build time on the repository's own content globs; no request, upload or user string ever reaches it, so the stack-exhaustion pattern cannot be supplied by an attacker. Re-check for a fixed release by the expiry. Re-assessed 2026-10-18: 3.0.3 is still the latest release, the advisory still lists <= 3.0.3 as affected with no fix, and braces still reaches the app only through tailwindcss at build time; renewed by the owner.",
+    expires: "2026-11-30",
   },
   {
     package: "postcss-selector-parser",

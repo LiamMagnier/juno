@@ -76,6 +76,9 @@
 
     /* Refoundation round 3: floating layers only, solid fallbacks below. */
     --faint-foreground: 217.500 3.704% 42.353%;
+    /* WARNINGS ONLY: a budget, a limit, offline. Always beside a warning
+       glyph and a word. Never "needs you" (that is --signal) and never a
+       status colour of its own (wave 2 D3, S1). */
     --attention: 34.161 91.946% 29.216%;
     --user-bubble: 210.000 6.667% 94.118%;
     --material-opacity: .86;
@@ -161,9 +164,11 @@
        its edge with it and Pressable adds the accent edge. */
     --selected: 220.000 6.383% 90.784%;
 
-    --destructive: 3.221 71.292% 40.980%;
+    /* Blocked or failed, always beside the circle-x glyph. Hue 356 (was 3)
+       so it stands clear of the ember signal above (D3). 6.45:1 on a card. */
+    --destructive: 356 72% 42%;
     --destructive-foreground: 0 0% 100%;
-    --destructive-ink: 3.221 71.292% 40.980%;
+    --destructive-ink: var(--destructive);
 
     --success: 139.579 63.758% 29.216%;
     --success-foreground: 0 0% 100%;
@@ -182,10 +187,18 @@
      * `npm run design:tokens`, so the Mac and the iPhone draw the same face.
      */
     --agent-coral: 15 62% 64%;
-    /* Code's one signal colour (working, needs you): global, because the
-       shell's sidebar draws it on every route, not only inside Code. */
-    --signal: 14 64% 46%;
-    --signal-ink: 14 64% 42%;
+    /* SIGNAL MEANS NEEDS YOU, in every product and on every platform (wave 2
+       spec D3, owner sign-off S1). Ember, hue 24 here and 28 in dark, moved
+       off coral (hue 14) so it sits 28° from destructive (356) with 1.71:1
+       luminance contrast between them in light (2.30:1 under simulated
+       deuteranopia) — red-versus-orange is told apart by lightness and by
+       the hand glyph, never by hue alone. `--signal` is the GLYPH and badge
+       colour and is never text; `--signal-ink` is the text ramp and is only
+       ever set on background, card or popover. Consumers read the role
+       tokens below (`--status-needs-you`, `--status-needs-you-ink`), so a
+       rejected S1 changes only that mapping. */
+    --signal: 24 80% 46%;
+    --signal-ink: 22 78% 40%;
     --agent-juniper: 152 36% 56%;
     --agent-teal: 184 46% 54%;
     --agent-violet: 249 64% 72%;
@@ -247,9 +260,21 @@
     --aura-thinking: var(--ultra);
     --aura-juno: var(--source);
 
+    /* `--border` is a DECORATIVE separator (1.32:1) and is exempt from the
+       3:1 non-text rule; so is `--hairline`. `--input` is the CONTROL
+       BOUNDARY: a field edge, a checkbox or radio outline, a switch's off
+       track — anything whose edge is how you find the control (WCAG 1.4.11).
+       It clears 3:1 against every ground it sits on (3.51 card, 3.43 canvas;
+       scripts/check-contrast-matrix.ts holds it there). A control identified
+       by a fill or a text label needs no boundary at all. */
     --border: 220.000 4.918% 88.039%;
     --input: 214.286 2.979% 53.922%;
     --ring: 216.000 9.091% 10.784%;
+    /* One ring everywhere (§3.9): 2px at a 2px offset, 3px in high contrast. */
+    --ring-width: 2px;
+    /* The tone-step edge: nothing at standard contrast, a 1px line at
+       foreground / 0.32 in high contrast (see the block below). */
+    --tone-edge: 0 0% 0% / 0;
 
     /* The sidebar is a flat panel a step below the page, painted by
        `.app-sidebar-frame`; its rows mark state with fills, never a lift. */
@@ -295,12 +320,60 @@
     --sidebar-selected: 220.000 5.455% 89.216%;
     --sidebar-selected-border: 216.000 5.618% 82.549%;
 
+    /* ---- Wave 2 roles (docs: UI_UX_MOTION_SPEC §3.1, §3.4) ---------------
+       QUIET TEXT ON A FILL. `--muted-foreground` is tuned for the base grounds
+       (canvas, card, popover, sidebar, bubble, muted) and measures only
+       4.32:1 on `--selected` — a real AA failure the contrast matrix keeps as
+       a recorded misuse. Text and metadata on a hover, selected,
+       sidebar-selected or bubble-hover fill use this instead: 4.95 on
+       selected, 4.77 on sidebar-selected, 5.04 on sidebar-hover, 4.90 on
+       bubble-hover. */
+    --muted-foreground-on-fill: 217.5 4% 38.8%;
+    /* Decorative glyphs and separators ONLY (2.72:1). Never text. */
+    --ink-tertiary: 220 4% 62%;
+    /* The hover and press of a control drawn ON the user bubble (Show more,
+       the inline editor's buttons). The bubble's own fill is the hover fill
+       (`--accent`), so a hover there needs a rung of its own. Text on it is
+       foreground or muted-on-fill. */
+    --user-bubble-hover: 210 6% 90.2%;
+    /* The finished-away wash (C22) and the needs-you badge disc (D4). Washes
+       carry their own alpha, so they are written `hsl(var(--x))` with no
+       second alpha. */
+    --presence-wash: var(--presence) / 0.10;
+    --signal-wash: var(--signal) / 0.14;
+
+    /* STATUS ROLES. Every status consumer — StatusMark, PlanStepGlyph, the
+       sidebar's Now rows, the menu bar, the Dock badge, widgets — reads these
+       and never the inks underneath, so an owner decision on the needs-you
+       colour (S1) is a change to this mapping and nowhere else. Every status
+       also carries a glyph and a word; colour is never the only signal. */
+    --status-running: var(--presence);
+    --status-needs-you: var(--signal);
+    --status-needs-you-ink: var(--signal-ink);
+    --status-ready: var(--foreground);
+    --status-blocked: var(--destructive);
+
+    /* The composer's recessed inks, moved here from composer.css (same
+       values) so they generate to Swift with every other colour. */
+    --cmp-ink-2: 220 4% 32%;
+    --cmp-well: 210 7% 94%;
+    --cmp-well-2: 220 5% 90.6%;
+    --cmp-well-3: 216 6% 87.3%;
+
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 8 · field 10 · card 12 · popover 12 ·
        menu 14 · panel 16 · composer 22); this is the one value CSS-side
        recipes read. A CSS recipe nesting a box in a card writes its corner as
        `calc(var(--radius) - <inset>)`, never as a second literal. */
     --radius: 12px;
+    /* The one user bubble (D6, S3): card radius with an 8px tuck on the
+       logical end-end corner (`border-end-end-radius`), so it mirrors in RTL.
+       tailwind.config.ts names them `rounded-bubble` / `rounded-ee-bubble-tuck`. */
+    --radius-bubble: 12px;
+    --radius-bubble-tuck: 8px;
+    /* The superellipse the composer, card and panel radii take where the
+       browser has `corner-shape` (progressive; plain radii elsewhere). */
+    --corner-shape: superellipse(1.5);
 
     /* ---- Motion tokens ------------------------------------------------------
        One vocabulary, mirrored as ease-* / duration-* in tailwind.config.ts.
@@ -411,21 +484,120 @@
        run finishing while they were reading something else. Long enough to be
        noticed without reading as a page transition. */
     --dur-emphasis: 560ms;
-    /* Run UI: one loop family. Every loop period is a multiple of the beat. */
+    /* ---- Named timing families (spec §4.2) --------------------------------
+       NOT durations. The six rungs above are the only transition and
+       animation lengths; these are how long something WAITS, HOLDS, LOOPS,
+       SETTLES or PACES, and the off-ladder lint (eslint-rules) accepts them by
+       name. src/lib/interaction.ts TIMING mirrors the delays and holds, and
+       the generator projects every one to TS and Swift. */
+    --delay-show: 200ms;          /* TurnStatus, skeletons: only if still waiting */
+    --delay-tooltip: 500ms;
+    --delay-tooltip-skip: 300ms;  /* a peer within this shows at once */
+    --delay-hairline: 300ms;      /* the palette's in-flight hairline */
+    --delay-action-row: 180ms;    /* after settle, the "done" cue */
+    --delay-greeting: 60ms;
+    --delay-insert-flush: 300ms;  /* Now's held inserts, after pointer leave */
+    --hold-phase: 600ms;          /* minimum life of a phase word */
+    --hold-skeleton: 400ms;       /* minimum life of a skeleton once shown */
+    --hold-check: 120ms;
+    --hold-reasoning: 1000ms;
+    --hold-arm: 500ms;            /* an approval's primary verb is disarmed */
+    --hold-needs-you-max: 2000ms;
+    --hold-insert-max: 10000ms;
+    --hold-composer-idle: 2000ms;
+    /* Loops. Every period is a multiple of the 1.2s beat. */
     --loop-beat: 1.2s;
     --loop: 2.4s;
     --loop-calm: 4.8s;
+    --loop-breathe: 1.8s;
+    --loop-galaxy: 2.4s;
+    --loop-galaxy-calm: 4.8s;     /* after 20s of running */
+    /* Release settle for drags (D18): clamp(remaining / |v|, min, max). */
+    --settle-min: 140ms;
+    --settle-max: 300ms;
+    /* Streamed writing (C2): five 56ms bands, a capped tail, a rate clamp in
+       graphemes per second, and the drain timer that runs while rAF is paused. */
+    --stream-band: 280ms;
+    --stream-tail-max: 250ms;
+    --stream-rate-min: 20;
+    --stream-rate-max: 800;
+    --stream-drain-tick: 50ms;
     /* Travel, always multiplied by --motion-shift (0 under reduced motion). */
     --shift-row: 4px;
     --shift-label: 0.4em;
     --shift-dock: 24px;
+    /* Stagger (D17): at most four items animate; later ones paint with the
+       fourth. Nothing opened from the keyboard staggers. */
     --stagger-row: 30ms;
-    --stagger-fav: 50ms;
-    /* CSS springs from the framer presets (scale/translate only; never opacity or colour). */
-    --spring-standard-dur: 250ms;
-    --spring-standard: linear(0, 0.078, 0.235, 0.404, 0.555, 0.679, 0.775, 0.845, 0.895, 0.931, 0.955, 0.972, 0.982, 0.989, 0.994, 0.996, 1);
-    --spring-pop-dur: 370ms;
-    --spring-pop: linear(0, 0.094, 0.289, 0.502, 0.686, 0.826, 0.922, 0.981, 1.013, 1.026, 1.028, 1.024, 1.018, 1.013, 1.008, 1.004, 1);
+    --stagger-tile: 45ms;
+    --stagger-onboarding: 60ms;
+    --stagger-max: 4;
+    /* RETIRED (D28): `--stagger-fav` is gone; the favicon stack uses
+       --stagger-row. The off-ladder lint rejects the old name. */
+
+    /* ---- Springs (spec §4.4) -----------------------------------------------
+       Each spring is defined ONCE, as framer `{ visualDuration, bounce }` —
+       which is SwiftUI's `.spring(duration:bounce:)` — in the params below.
+       The CSS twin (`--spring-<name>`, a linear() easing) and its settle time
+       (`--spring-<name>-dur`) between the markers are WRITTEN by
+       `npm run design:tokens` from those params, and `design:tokens:check`
+       fails when they drift. Scale and translate only: never opacity or
+       colour, which would clip at the overshoot. */
+    --spring-snap-params: 0.18 0;
+    --spring-standard-params: 0.22 0.05;
+    --spring-layout-params: 0.36 0;
+    --spring-emphasized-params: 0.36 0.1;
+    --spring-reward-params: 0.36 0.18;
+    --spring-articulate-params: 0.22 0.15;
+    /* @generated-springs:begin — scripts/generate-design-tokens.ts; do not edit by hand */
+    --spring-snap: linear(0, 0.006, 0.023, 0.048, 0.08, 0.116, 0.155, 0.196, 0.239, 0.282, 0.324, 0.366, 0.407, 0.446, 0.484, 0.521, 0.555, 0.588, 0.619, 0.648, 0.675, 0.701, 0.725, 0.747, 0.768, 0.787, 0.805, 0.821, 0.836, 0.85, 0.863, 0.875, 0.886, 0.896, 0.905, 0.914, 0.921, 0.928, 0.935, 0.941, 0.946, 0.951, 0.956, 0.96, 0.963, 0.967, 0.97, 0.973, 0.975, 0.978, 0.98, 0.982, 0.983, 0.985, 0.986, 0.988, 0.989, 0.99, 0.991, 0.992, 0.993, 0.993, 0.994, 0.995, 1);
+    --spring-snap-dur: 256ms;
+    --spring-standard: linear(0, 0.008, 0.031, 0.064, 0.104, 0.15, 0.199, 0.249, 0.301, 0.351, 0.401, 0.449, 0.495, 0.539, 0.58, 0.619, 0.655, 0.688, 0.719, 0.748, 0.774, 0.797, 0.819, 0.839, 0.856, 0.872, 0.887, 0.9, 0.912, 0.922, 0.931, 0.94, 0.947, 0.954, 0.96, 0.965, 0.969, 0.973, 0.977, 0.98, 0.983, 0.985, 0.987, 0.989, 0.991, 0.992, 0.993, 0.994, 1);
+    --spring-standard-dur: 272ms;
+    --spring-layout: linear(0, 0.006, 0.023, 0.048, 0.08, 0.116, 0.155, 0.196, 0.238, 0.281, 0.323, 0.365, 0.406, 0.445, 0.483, 0.52, 0.554, 0.587, 0.618, 0.647, 0.674, 0.7, 0.724, 0.746, 0.767, 0.786, 0.804, 0.82, 0.835, 0.849, 0.862, 0.874, 0.885, 0.895, 0.905, 0.913, 0.921, 0.928, 0.934, 0.94, 0.946, 0.951, 0.955, 0.959, 0.963, 0.967, 0.97, 0.972, 0.975, 0.977, 0.98, 0.981, 0.983, 0.985, 0.986, 0.988, 0.989, 0.99, 0.991, 0.992, 0.992, 0.993, 0.994, 0.994, 1);
+    --spring-layout-dur: 511ms;
+    --spring-emphasized: linear(0, 0.006, 0.023, 0.048, 0.079, 0.116, 0.156, 0.199, 0.243, 0.288, 0.333, 0.377, 0.421, 0.463, 0.504, 0.543, 0.58, 0.615, 0.648, 0.68, 0.709, 0.736, 0.761, 0.784, 0.806, 0.826, 0.844, 0.861, 0.876, 0.89, 0.902, 0.914, 0.924, 0.933, 0.942, 0.949, 0.956, 0.962, 0.967, 0.972, 0.976, 0.98, 0.983, 0.986, 0.988, 0.99, 0.992, 0.994, 1);
+    --spring-emphasized-dur: 377ms;
+    --spring-reward: linear(0, 0.006, 0.022, 0.047, 0.078, 0.115, 0.156, 0.199, 0.244, 0.291, 0.337, 0.384, 0.429, 0.474, 0.517, 0.558, 0.598, 0.635, 0.671, 0.704, 0.735, 0.764, 0.79, 0.815, 0.838, 0.858, 0.877, 0.894, 0.91, 0.923, 0.936, 0.947, 0.957, 0.965, 0.973, 0.98, 0.985, 0.99, 0.995, 0.998, 1.001, 1.004, 1.006, 1.007, 1.009, 1.01, 1.01, 1.011, 1.011, 1.011, 1.011, 1.011, 1.011, 1.01, 1.01, 1.009, 1.009, 1.008, 1.008, 1.007, 1.007, 1.006, 1.006, 1.005, 1);
+    --spring-reward-dur: 492ms;
+    --spring-articulate: linear(0, 0.005, 0.02, 0.042, 0.071, 0.104, 0.141, 0.181, 0.222, 0.265, 0.308, 0.351, 0.394, 0.436, 0.477, 0.516, 0.554, 0.59, 0.625, 0.658, 0.688, 0.717, 0.744, 0.769, 0.793, 0.815, 0.835, 0.853, 0.87, 0.885, 0.899, 0.912, 0.924, 0.934, 0.944, 0.952, 0.96, 0.966, 0.972, 0.977, 0.982, 0.986, 0.99, 0.993, 0.995, 0.998, 0.999, 1.001, 1.002, 1.003, 1.004, 1.005, 1.005, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.006, 1.005, 1.005, 1);
+    --spring-articulate-dur: 285ms;
+    /* @generated-springs:end */
+    /* RETIRED (D28): `--spring-pop` (2.8% overshoot) is gone; its one use
+       moved to --spring-reward (about 1.1%). The off-ladder lint rejects the
+       old name. */
+
+    /* ---- Shell and gesture tokens (spec §3.12) -----------------------------
+       Generated to TS (tokens.generated.ts → SHELL / GESTURE) and Swift.
+       src/lib/sheet-gesture.ts reads the gesture half from there; its values
+       are wave 1's, unchanged. Velocities are px per ms; fractions are of the
+       sheet's or drawer's travel. */
+    --sidebar-min: 224px;
+    --sidebar-default: 260px;
+    --sidebar-max: 352px;
+    --drawer-width: min(80vw, 380px);
+    --drawer-parallax: 0.22;
+    --drawer-dim: 0.12;
+    --edge-zone: 24px;
+    /* The iOS edge strip that yields to the system back gesture
+       (JunoGesture.edgeStrip). Native only; declared here so the one table
+       generates it. */
+    --edge-strip-native: 16px;
+    --gesture-slop: 8px;
+    --gesture-dismiss-velocity: 0.5;
+    --gesture-dismiss-fraction: 0.3;
+    --gesture-open-velocity: 0.3;
+    --gesture-open-fraction: 0.4;
+    --rubber-band-limit: 64px;
+    --rubber-band-c: 0.55;
+    --snap-zone: 16px;
+    --header-h: 48px;
+    --composer-h: 0px;
+    --kb-inset: 0px;
+    --transcript-fade: 32px;
+    --galaxy-max-animating: 3;
+    --dock-panes-max: 3;
+    --dock-pane-evict: 600000ms;
 
     /* Dot/ASCII signature atom. */
     --dot-size: 5px;
@@ -627,9 +799,15 @@
        it keeps `--muted-foreground` at 4.64:1 and foreground ink at 9.7:1. */
     --selected: 228.000 4.348% 22.549%;
 
-    --destructive: 4.706 77.273% 74.118%;
+    /* The glyph and the text are split here, as signal and presence are.
+       The spec's 356 70% 64% measured 4.41:1 as text on a popover and 1.995
+       from signal under simulated deuteranopia, a hair under both gates
+       (scripts/check-contrast-matrix.ts). One point darker for the glyph
+       (2.09 apart, at least 3.39:1 on every ground, 5.09:1 under a dark
+       label) and a lighter text ramp (5.62 page, 5.02 card, 4.71 popover). */
+    --destructive: 356 70% 63%;
     --destructive-foreground: 220.000 5.882% 10.000%;
-    --destructive-ink: 4.706 77.273% 74.118%;
+    --destructive-ink: 356 70% 66%;
 
     --success: 136.098 41.837% 61.569%;
     /* Text ON the success fill. The 53% green is mid-tone, so the ink on it is
@@ -652,8 +830,10 @@
        charcoal; the ink stays the same near-black, which is what keeps the eyes
        legible on every tone. */
     --agent-coral: 15 56% 62%;
-    --signal: 16 76% 64%;
-    --signal-ink: 16 80% 70%;
+    /* Ember, lifted for charcoal: 9.52:1 on the page, 1.81:1 from
+       destructive (2.00:1 simulated deuteranopia). */
+    --signal: 28 95% 70%;
+    --signal-ink: 28 95% 72%;
     --agent-juniper: 152 32% 54%;
     --agent-teal: 184 40% 52%;
     --agent-violet: 249 56% 70%;
@@ -703,6 +883,19 @@
     --sidebar-hover: 210.000 3.333% 11.765%;
     --sidebar-selected: 220.000 4.225% 13.922%;
     --sidebar-selected-border: 228.000 4.348% 22.549%;
+
+    /* Wave 2 roles, the other way up (see the light block). Muted on a fill:
+       4.92 on selected, 5.71 on hover. */
+    --muted-foreground-on-fill: 222.9 4.1% 66.5%;
+    --ink-tertiary: 222 3% 42%;
+    --user-bubble-hover: 225 5% 19.5%;
+    --presence-wash: var(--presence) / 0.16;
+    --signal-wash: var(--signal) / 0.18;
+    --cmp-ink-2: 220 4% 72%;
+    --cmp-well: 225 3.4% 18.4%;
+    --cmp-well-2: 228 4.2% 22.7%;
+    --cmp-well-3: 228 3.4% 26.5%;
+    --drawer-dim: 0.30;
 
     /*
      * Depth kit (dark). The highlight is a near-white at 6%: enough that the
@@ -758,12 +951,18 @@
    *               ≥ 3.0:1 for large text/icons.
    */
   /* "coral" is the id every account stores by default; it now names Graphite,
-     the brand's primary control, and inherits the base values above. The
-     presence blue it used to paint every button with is Ultramarine. */
+     the brand's primary control, and inherits the base values above. */
   :root[data-accent="coral"] { --primary: 216 9% 11%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 216 9% 11%; }
   .dark[data-accent="coral"] { --primary: 220 7% 91%; --ring: 220 7% 91%; --primary-foreground: 216 9% 11%; --primary-ink: 220 7% 91%; }
-  :root[data-accent="ultramarine"] { --primary: 229.231 63.415% 48.235%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229.231 63.415% 48.235%; }
-  .dark[data-accent="ultramarine"] { --primary: 228.608 61.240% 74.706%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 228.608 61.240% 74.706%; }
+  /* "ultramarine" is the stored id of COBALT (spec D26, owner sign-off S7).
+     It used to be byte-identical to --presence, so a user who picked it
+     painted every control in the one colour that means "Alevr is live here".
+     Cobalt is a different hue (205 against presence's 229) at 5.95:1 under a
+     white label; the dark value clears 6.5:1 on the page and under its dark
+     label. The id is unchanged so every stored choice keeps resolving.
+     Accents never paint status (spec §3.3). */
+  :root[data-accent="ultramarine"] { --primary: 205 78% 36%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 205 78% 36%; }
+  .dark[data-accent="ultramarine"] { --primary: 205 70% 60%; --ring: 220 7% 91%; --primary-foreground: 220 6% 10%; --primary-ink: 205 70% 60%; }
 
   :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 220 9% 11%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
   .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 220 7% 91%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
@@ -878,6 +1077,86 @@
    * own original value as its fallback, so nothing moves differently when the
    * preference is unset. ANY NEW TRANSFORMING KEYFRAME MUST DO THE SAME.
    */
+
+  /*
+   * THE TIER TABLE (spec §4.7). Every keyframe this file and tailwind.config.ts
+   * define, and what reduced motion (OS or in-app) does to it. A is kept as is
+   * (opacity, colour, progress); B keeps its fade and loses its travel because
+   * every transform in it reads --motion-shift / --motion-scale-from; C is a
+   * loop or a pure flourish and stops (the unlayered kill list at the end of
+   * this file, a reduced-motion rule beside it, or `motion-safe:` at the call
+   * site). tests/wave2-p1-tier-table.test.ts holds the table to the keyframes
+   * both ways, checks that every B transform reads the vars and that no
+   * keyframe blurs, so a new keyframe cannot ship without a tier.
+   *
+   * @tier-table:begin
+   * accordion-down         B  a height fold; --dur-slow flattens to base
+   * accordion-up           B  a height fold; --dur-slow flattens to base
+   * agent-arrive           B
+   * agent-face-blink       C
+   * agent-face-breathe     C
+   * agent-face-dot         C
+   * agent-face-lift        C
+   * agent-face-look        C
+   * agent-face-settle      C
+   * aicss-fade-in          A
+   * aicss-ig-morph         C
+   * aicss-todo-in          B
+   * aicss-ws-enter         B  travel is the element's own from-state, which reads --motion-shift
+   * ambient-aura-in        A
+   * blink                  C
+   * check-morph            B
+   * cite-flash             A
+   * dot-wave               C
+   * fade-in                A
+   * fade-in-up             B
+   * fade-out               A
+   * gen-drift-a            C
+   * gen-drift-b            C
+   * gen-grid-pulse         C
+   * icon-breathe           C
+   * juno-mark-pop          C
+   * marquee                C
+   * nudge                  B
+   * pop-in                 B
+   * pop-out                B
+   * pulse-ring             C
+   * reasoning-fast-charge  C
+   * reduced-working        A  the reduced-motion stand-in for a spinner
+   * research-arrive        B
+   * research-detail-in     B
+   * research-stage         B
+   * rise-in                B
+   * rise-user              B
+   * run-breathe            C
+   * run-breathe-opacity    A  the reduced-motion stand-in for the run marker's breath
+   * scroll-settle          C  scroll-driven, marketing only, under no-preference
+   * settle-part            B
+   * sheet-in               B
+   * sheet-out              B
+   * shimmer                C
+   * skeleton-breathe       C  holds still at 0.8 (C21)
+   * stage-in               B
+   * stream-progress        C
+   * stroke-draw            A  a progress fill
+   * studio-swap            B
+   * title-fade-in          A
+   * title-fade-out         A
+   * title-in               B
+   * title-out              B
+   * tooltip-in             B
+   * tooltip-out            B
+   * ultra-pan              C
+   * ultra-pop              B
+   * ultra-spark            C
+   * vt-fade-in             A
+   * vt-page-in             B
+   * vt-page-out            A
+   * work-breathing         C
+   * work-crossfade-out     A
+   * work-status-shift      B
+   * @tier-table:end
+   */
   @media (prefers-reduced-motion: reduce) {
     :root {
       --motion-shift: 0;
@@ -889,6 +1168,26 @@
       --ease-spring: var(--ease-out-soft);
       --ease-drawer: var(--ease-out-soft);
       --dur-slow: var(--dur-base);
+    }
+    /* Tier B for the springs, in a block of its own: the one above is the
+       motion vocabulary the Design editor shares byte for byte
+       (src/components/design/host/editor.css), which has no springs. Every
+       spring becomes out-soft at the base rung (§4.7); the generated twins
+       carry overshoot, which is travel. */
+    :root {
+      --spring-snap: var(--ease-out-soft);
+      --spring-standard: var(--ease-out-soft);
+      --spring-layout: var(--ease-out-soft);
+      --spring-emphasized: var(--ease-out-soft);
+      --spring-reward: var(--ease-out-soft);
+      --spring-articulate: var(--ease-out-soft);
+      --spring-snap-dur: var(--dur-base);
+      --spring-standard-dur: var(--dur-base);
+      --spring-layout-dur: var(--dur-base);
+      --spring-emphasized-dur: var(--dur-base);
+      --spring-reward-dur: var(--dur-base);
+      --spring-articulate-dur: var(--dur-base);
+      --drawer-parallax: 0;
     }
     /* The Tier C kill list MOVED OUT OF THIS LAYER — see the unlayered block
        at the end of this file. It cannot live in `@layer base`, because every
@@ -909,8 +1208,58 @@
      rather than 1.5: a hairline outline offset 2px from a 1px hairline border
      reads as a second border, not as focus. */
   :focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: var(--ring-width, 2px) solid hsl(var(--ring));
     outline-offset: 2px;
+  }
+
+  /*
+   * High contrast (spec §3.2), the third appearance.
+   *
+   * Written ONCE, against the media query. postcss/motion-preference.cjs
+   * compiles every `@media (prefers-contrast: more)` block into its twins, the
+   * same way it does for reduced motion: the block stops applying under
+   * `html[data-contrast="standard"]` (the in-app "off"), and a copy applies
+   * under `html[data-contrast="more"]` (the in-app toggle) on any device. The
+   * Swift side reads this block as its Increase Contrast appearance
+   * (scripts/generate-design-tokens.ts), so the three are one table.
+   *
+   * Both blocks set the same tokens: the light one also matches <html> in dark
+   * mode (`:root` is <html>), and the dark one, later at equal specificity,
+   * replaces every value it set. Muted text reaches 7:1 on every ground in
+   * both themes; scripts/check-contrast-matrix.ts holds it there.
+   */
+  @media (prefers-contrast: more) {
+    :root {
+      --muted-foreground: 217 5% 28%;
+      --muted-foreground-on-fill: 217 5% 28%;
+      /* 47%, one point under the spec's 48% (#747881 measured 3.56:1 on
+         --selected, under the 3.58 the acceptance asks for): #72767E, 3.69. */
+      --border: 220 5% 47%;
+      /* The hairline stops being a tint and becomes a solid line. */
+      --hairline: 220 5% 47%;
+      --presence: 229.051 68.844% 39.020%;
+      --presence-ink: var(--presence);
+      --signal-ink: 20 80% 32%;
+      --destructive: 356 75% 34%;
+      --destructive-ink: var(--destructive);
+      --ring-width: 3px;
+      /* Tone-step boundaries (bubble, composer, card, chip, selected row):
+         a 1px edge where a fill alone used to carry the step. */
+      --tone-edge: var(--foreground) / 0.32;
+    }
+    .dark {
+      --muted-foreground: 223 5% 80%;
+      --muted-foreground-on-fill: 223 5% 80%;
+      --border: 225 4% 52%;
+      --hairline: 225 4% 52%;
+      --presence: 228 66.667% 82.353%;
+      --presence-ink: var(--presence);
+      --signal-ink: 26 100% 80%;
+      --destructive: 356 90% 82%;
+      --destructive-ink: var(--destructive);
+      --ring-width: 3px;
+      --tone-edge: var(--foreground) / 0.32;
+    }
   }
 
   /* Thin, theme-aware scrollbars */
@@ -947,7 +1296,7 @@
   @keyframes research-stage {
     from {
       opacity: 0.45;
-      transform: translateY(4px);
+      transform: translateY(calc(4px * var(--motion-shift, 1)));
     }
     to {
       opacity: 1;
@@ -958,7 +1307,7 @@
   @keyframes research-detail-in {
     from {
       opacity: 0;
-      transform: translateY(-4px);
+      transform: translateY(calc(-4px * var(--motion-shift, 1)));
     }
     to {
       opacity: 1;
@@ -1130,10 +1479,12 @@
     border: 1px solid hsl(var(--border) / .8);
     box-shadow: none;
   }
+  /* Opaque (spec D15): no backdrop-filter in product chrome. The blur cost a
+     composited layer and a repaint under every floating layer, for a
+     translucency the flat material does not use anywhere else. */
   .surface-float {
-    background-color: hsl(var(--popover) / var(--material-opacity));
-    -webkit-backdrop-filter: blur(18px) saturate(1.3);
-    backdrop-filter: blur(18px) saturate(1.3);
+    background-color: hsl(var(--popover));
+    --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
     border: 1px solid hsl(var(--border) / .9);
     box-shadow: var(--shadow-float);
@@ -1212,9 +1563,10 @@
     filter: brightness(.94);
     transform: scale(.97);
   }
+  /* Tier B only: the press dip is travel and goes; the fill, edge and shadow
+     cross-fades are Tier A and keep their timing (§4.7). This used to set
+     `transition: none` as well, which cut the Tier A fades with the dip. */
   @media (prefers-reduced-motion: reduce) {
-    .control-neu,
-    .control-primary { transition: none; }
     .control-neu:active,
     .control-primary:active { transform: none; }
   }
@@ -1253,7 +1605,7 @@
      was cubic-bezier(0.34, 1.56, 0.64, 1) — the token with roughly four times the
      overshoot its own comment permits, on the product's own mark. */
   .juno-mark-popping {
-    animation: juno-mark-pop 0.5s var(--ease-out-back) both;
+    animation: juno-mark-pop var(--dur-emphasis) var(--ease-out-back) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .juno-mark-popping { animation: none; }
@@ -1306,7 +1658,7 @@
     line-height: 20px;
     letter-spacing: -0.01em;
     font-optical-sizing: auto;
-    transition: color 200ms ease-out;
+    transition: color var(--dur-base) var(--ease-out-soft);
   }
   .product-orbit {
     --dots-pitch: 2.4px;
@@ -1367,11 +1719,8 @@
   /* The folder used to be two stacked glyphs cross-fading here, closed to
      open. It is one drawing now whose own hover swap opens it (drawings.ts,
      `folder`); the rule that faded the closed glyph out stayed behind and,
-     with no second glyph left to fade in, left Projects blank on hover. */
-
-  @media (prefers-reduced-motion: reduce) {
-    .sidebar-motion-icon__glyph { transition: none; }
-  }
+     with no second glyph left to fade in, left Projects blank on hover.
+     The glyph's opacity fade is Tier A, so it has no reduced-motion rule. */
 
   /*
    * A title that the model just rewrote.
@@ -1575,9 +1924,9 @@
   .composer-surface[data-kbd-focus]::after {
     opacity: 1;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .composer-surface, .composer-surface::after { transition: none; }
-  }
+  /* No reduced-motion rule here, on purpose: the composer's edge is a colour
+     cross-fade and a shadow, both Tier A (§4.7), so they keep their timing
+     under the preference. A `transition: none` here used to cut them. */
   /* Increase Contrast: the edge is a full line, not a tint (§1.7). */
   @media (prefers-contrast: more) {
     .composer-surface { border-color: hsl(var(--foreground) / 0.45); }
@@ -1699,7 +2048,7 @@
     }
   }
   .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon {
-    animation: reasoning-fast-charge 480ms var(--ease-out-strong) both;
+    animation: reasoning-fast-charge var(--dur-emphasis) var(--ease-out-strong) both;
   }
   /* The animated carriers intentionally span a full lane before translating.
      Clip their invisible overflow while retaining enough margin for the thumb's
@@ -1802,6 +2151,7 @@
   .overlay-glass {
     border: 1px solid hsl(var(--border) / .7);
     background-color: hsl(var(--popover));
+    --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
     box-shadow: var(--shadow-float);
   }
@@ -1846,7 +2196,6 @@
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     border-radius: 9999px;
-    backdrop-filter: blur(14px);
     /* On the ladder, at the `float` rung, rather than the hand-rolled
        `0 10px 28px -12px / .4` this carried — which was heavier than
        --shadow-float itself, so a play glyph sitting inside a media card
@@ -1926,7 +2275,7 @@
   .aicss-tr {
     display: flex;
     flex-direction: column;
-    animation: aicss-fade-in 320ms var(--ease-out-soft) both;
+    animation: aicss-fade-in var(--dur-slow) var(--ease-out-soft) both;
   }
   .aicss-tr-header {
     display: inline-flex;
@@ -2065,7 +2414,7 @@
        and it ran simultaneously with a second raw curve, inside the transcript,
        on a surface someone is reading. --ease-breathe is the symmetric loop
        curve that exists so a cycle has no seam to pulse at. */
-    animation: aicss-ig-morph 4.2s var(--ease-breathe) infinite;
+    animation: aicss-ig-morph var(--loop-calm) var(--ease-breathe) infinite;
   }
   @keyframes aicss-ig-morph {
     0%   { mask-size: 52% 46%, 40% 40%; -webkit-mask-size: 52% 46%, 40% 40%; mask-position: 16% 20%, 30% 32%; -webkit-mask-position: 16% 20%, 30% 32%; }
@@ -2085,8 +2434,7 @@
        now, so a translucent card fill resolved to the same value as its own
        ground and the plate vanished. A badge floating over media belongs on the
        floating rung; the alpha stays so it still reads as glass over a picture. */
-    background: hsl(var(--popover) / .82);
-    backdrop-filter: blur(4px);
+    background: hsl(var(--popover));
     color: hsl(var(--muted-foreground));
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 11px;
@@ -2176,8 +2524,8 @@
     line-height: 18px;
     color: hsl(var(--muted-foreground));
     opacity: 0;
-    transform: translateY(4px);
-    animation: aicss-ws-enter .34s var(--ease-out-strong) forwards;
+    transform: translateY(calc(4px * var(--motion-shift, 1)));
+    animation: aicss-ws-enter var(--dur-slow) var(--ease-out-strong) forwards;
   }
   .aicss-ws-site[data-state="done"] { cursor: pointer; }
   /* Three glyphs in one 12px box, crossfading: dashed ring (pending) → spinning
@@ -2201,19 +2549,19 @@
     justify-content: center;
     color: hsl(var(--muted-foreground) / .7);
   }
-  .aicss-ws-dots { opacity: 1; transition: opacity .32s var(--ease-out-strong); pointer-events: none; }
+  .aicss-ws-dots { opacity: 1; transition: opacity var(--dur-slow) var(--ease-out-strong); pointer-events: none; }
   .aicss-ws-site[data-state="loading"] .aicss-ws-dots,
   .aicss-ws-site[data-state="done"] .aicss-ws-dots { opacity: 0; }
   .aicss-ws-globe {
     opacity: 0;
     transform: scale(.88);
-    transition: opacity .32s var(--ease-out-strong), transform .36s var(--ease-out-strong);
+    transition: opacity var(--dur-slow) var(--ease-out-strong), transform var(--dur-slow) var(--ease-out-strong);
   }
   .aicss-ws-site[data-state="loading"] .aicss-ws-globe { opacity: 1; transform: scale(1); }
   .aicss-ws-site[data-state="done"] .aicss-ws-globe {
     opacity: 0;
     transform: scale(.775);
-    transition: opacity .22s var(--ease-out-strong), transform .26s var(--ease-out-strong);
+    transition: opacity var(--dur-base) var(--ease-out-strong), transform var(--dur-base) var(--ease-out-strong);
   }
   .aicss-ws-check {
     display: inline-flex;
@@ -2222,7 +2570,7 @@
     color: hsl(var(--success-ink));
     opacity: 0;
     transform: scale(1.175);
-    transition: opacity .24s var(--ease-out-strong) .06s, transform .28s var(--ease-out-strong) .06s;
+    transition: opacity var(--dur-base) var(--ease-out-strong) calc(var(--dur-fast) / 2), transform var(--dur-base) var(--ease-out-strong) calc(var(--dur-fast) / 2);
   }
   .dark .aicss-ws-check { color: hsl(var(--success)); }
   .aicss-ws-site[data-state="done"] .aicss-ws-check { opacity: 1; transform: scale(1); }
@@ -2265,13 +2613,23 @@
      shade the transcript already uses for "a block that is not prose" (the
      user bubble), and a code block is that. The hairline ring this replaced
      boxed every fence like a card sitting on the reply. */
+  /* `overflow: clip`, not `hidden`: both clip the corners, but `hidden` makes
+     the card a scroll container, and a sticky header only sticks to its
+     nearest scroll container — the card itself, which never scrolls. */
   .aicss-cb {
-    overflow: hidden;
+    overflow: clip;
     padding: 12px 16px 16px;
     border-radius: 14px;
     background: hsl(var(--secondary));
   }
+  /* The header (with Copy) stays at the top of the transcript while a long
+     block scrolls past under it (spec §5.1), on the block's own fill so the
+     code does not show through. */
   .aicss-cb-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: hsl(var(--secondary));
     display: flex;
     align-items: center;
     gap: 8px;
@@ -2782,10 +3140,11 @@
     line-height: 18px;
     color: hsl(var(--muted-foreground));
     animation: aicss-todo-in var(--dur-slow) var(--ease-out-soft) backwards;
-    animation-delay: calc(var(--aicss-todo-i, 0) * 50ms);
+    /* At most four rows stagger (D17); later ones paint with the fourth. */
+    animation-delay: calc(min(var(--aicss-todo-i, 0), var(--stagger-max) - 1) * var(--stagger-row));
   }
   @keyframes aicss-todo-in {
-    from { opacity: 0; transform: translateY(-7px); }
+    from { opacity: 0; transform: translateY(calc(-7px * var(--motion-shift, 1))); }
     to { opacity: 1; transform: translateY(0); }
   }
   .aicss-todo-icon-wrap { position: relative; flex: none; width: 16px; height: 16px; margin-top: 1px; }
@@ -2855,15 +3214,17 @@
     font-size: 1rem;
     line-height: 1.7;
     word-break: break-word;
-    /* 45–75ch is the readability band and the transcript runs about 104ch, so
-       this is the smallest compliant move rather than a comfortable one. Applied
-       here and not to the transcript container on purpose: the shell, the user
-       bubbles, code blocks and artifact cards all stay exactly where they are —
-       only the assistant's paragraphs stop running long. `ch` rather than px so
-       the constraint survives any future change to the type scale. */
-    max-inline-size: 75ch;
+    /* THE MEASURE (spec D13, sign-off S4). Prose fills the column at the
+       narrow (640) and medium (768) widths, which are already inside the
+       45–75ch readability band. At wide (992) the column runs past it, so
+       there, and only there, the reading blocks are capped at 75ch (below)
+       while code, tables, artifacts and the bubble keep the full 992. The cap
+       used to sit on the whole prose box, which also capped every code block
+       and table inside it at 75ch, at every width. */
+    max-inline-size: none;
   }
-  /* Anything that has to stay full-bleed inside prose opts back out. */
+  html[data-transcript-width="wide"] .prose-juno :is(p, li, blockquote, h1, h2, h3, h4) { max-inline-size: 75ch; }
+  /* Anything that has to stay full-bleed inside prose says so. */
   .prose-juno pre,
   .prose-juno table,
   .prose-juno .aicss-cb { max-inline-size: none; }
@@ -3016,6 +3377,29 @@
   /* Cell content must not force break-word mid-token inside the scroll wrapper —
      the wrapper (markdown.tsx) scrolls instead, keeping columns readable. */
   .prose-juno th, .prose-juno td { word-break: normal; }
+  /*
+   * A table wider than the column (spec §6.17): the wrapper scrolls, the first
+   * column stays put, and an edge shadow shows only on the side there is more
+   * to scroll to. No mask-image: the shadows are the scrolling-shadows
+   * technique — two ground-coloured covers that scroll WITH the content
+   * (`local`) over two shadows that stay at the edges (`scroll`), so a cover
+   * hides its shadow exactly when that edge is reached, and a table that fits
+   * shows none. `--table-ground` is the surface the table sits on.
+   */
+  .prose-juno :where(div:has(> table)) {
+    --table-ground: var(--background);
+    background:
+      linear-gradient(to right, hsl(var(--table-ground)) 30%, hsl(var(--table-ground) / 0)) left center / 32px 100% no-repeat local,
+      linear-gradient(to left, hsl(var(--table-ground)) 30%, hsl(var(--table-ground) / 0)) right center / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, hsl(var(--shadow-ink) / 0.14), transparent) left center / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, hsl(var(--shadow-ink) / 0.14), transparent) right center / 10px 100% no-repeat scroll;
+  }
+  .prose-juno :where(div:has(> table)) :is(th, td):first-child {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background: hsl(var(--table-ground, var(--background)));
+  }
   /* Display math can be arbitrarily wide (long equations); scroll it in place. */
   .prose-juno .katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
   /* A run of citation chips stays on the line of the word it cites
@@ -3104,7 +3488,7 @@
    * plain CSS.
    */
   .skeleton {
-    animation: skeleton-breathe 1.8s var(--ease-breathe, ease-in-out) infinite;
+    animation: skeleton-breathe var(--loop-breathe) var(--ease-breathe, ease-in-out) infinite;
   }
   @keyframes skeleton-breathe {
     0%, 100% { opacity: 1; }
@@ -3128,16 +3512,20 @@
     mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
   }
 
-  /* Progressive-blur scroll edge — the overlays rendered by <ScrollFade>.
-     A short band pinned at a scroll edge that blurs the content passing under
-     it and masks that blur so it ramps from full at the very edge to nothing a
-     few rows in. Reads as "content dissolves off the edge" instead of a hard
-     cut. Sibling of the scroller (never scrolls itself); the component fades
-     each one in only when there is more to scroll that way, so the first and
-     last rows stay crisp at the extremes.
-     Two stacked layers per edge (via ::before) give a real blur ramp — a lighter
-     wide layer under a heavier narrow one at the lip — rather than one constant
-     blur whose opacity merely fades. */
+  /* Scroll edge — the overlays rendered by <ScrollFade>. A short band pinned
+     at a scroll edge, fading from the surface's own ground to nothing, so
+     content dissolves off the edge instead of meeting a hard cut. Sibling of
+     the scroller (never scrolls itself); the component fades each one in only
+     when there is more to scroll that way, so the first and last rows stay
+     crisp at the extremes.
+
+     It used to be a two-layer progressive BLUR (backdrop-filter, masked). No
+     backdrop-filter in product chrome (spec D15): a blur band composites and
+     repaints on every scrolled frame. `--scroll-fade-ground` is the surface
+     the scroller sits on (the page by default; the sidebar frame and the
+     floating surfaces set their own, so the band never paints a lighter or
+     darker stripe over a ground that is not the page). The opacity fade is Tier A,
+     so it keeps its timing under reduced motion. */
   .scroll-fade-edge {
     position: absolute;
     left: 0;
@@ -3146,49 +3534,14 @@
     z-index: 2;
     pointer-events: none;
     transition: opacity var(--dur-base) var(--ease-out-soft);
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
-  }
-  .scroll-fade-edge::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 55%;
-    -webkit-backdrop-filter: blur(5px);
-    backdrop-filter: blur(5px);
   }
   .scroll-fade-edge[data-edge="top"] {
     top: 0;
-    -webkit-mask-image: linear-gradient(to top, transparent, #000 72%);
-    mask-image: linear-gradient(to top, transparent, #000 72%);
-  }
-  .scroll-fade-edge[data-edge="top"]::before {
-    top: 0;
-    -webkit-mask-image: linear-gradient(to top, transparent, #000);
-    mask-image: linear-gradient(to top, transparent, #000);
+    background: linear-gradient(to bottom, hsl(var(--scroll-fade-ground, var(--background))), hsl(var(--scroll-fade-ground, var(--background)) / 0));
   }
   .scroll-fade-edge[data-edge="bottom"] {
     bottom: 0;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 72%);
-    mask-image: linear-gradient(to bottom, transparent, #000 72%);
-  }
-  .scroll-fade-edge[data-edge="bottom"]::before {
-    bottom: 0;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000);
-    mask-image: linear-gradient(to bottom, transparent, #000);
-  }
-  /* Solid-fill fallback where translucency/blur is unwanted: no backdrop-filter,
-     just a short scrim of the surface so the edge still softens. */
-  @media (prefers-reduced-transparency: reduce) {
-    .scroll-fade-edge,
-    .scroll-fade-edge::before {
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .scroll-fade-edge { transition: none; }
+    background: linear-gradient(to top, hsl(var(--scroll-fade-ground, var(--background))), hsl(var(--scroll-fade-ground, var(--background)) / 0));
   }
 
   /* Streamed writing (components/chat/stream-text.tsx).
@@ -3198,32 +3551,63 @@
      and text older than the fade carries no styling at all. Each band lowers
      the ink and adds a soft halo of the same ink, which reads as the glyph
      coming into focus (a highlight cannot take `filter`). The bands are only
-     ever populated when motion is allowed (stream-text.tsx checks). */
-  ::highlight(stream-f0) { color: hsl(var(--foreground) / 0.1); text-shadow: 0 0 5px hsl(var(--foreground) / 0.32); }
-  ::highlight(stream-f1) { color: hsl(var(--foreground) / 0.32); text-shadow: 0 0 4px hsl(var(--foreground) / 0.26); }
-  ::highlight(stream-f2) { color: hsl(var(--foreground) / 0.56); text-shadow: 0 0 2.5px hsl(var(--foreground) / 0.18); }
-  ::highlight(stream-f3) { color: hsl(var(--foreground) / 0.76); text-shadow: 0 0 1.5px hsl(var(--foreground) / 0.1); }
-  ::highlight(stream-f4) { color: hsl(var(--foreground) / 0.9); }
+     ever populated when motion is allowed (stream-text.tsx checks).
+
+     THE FIRST BAND STARTS AT 35% INK (spec C2), not 10%: at 10% the newest
+     characters were near-invisible, so a gap opened at the end of the line
+     that read as the text lagging the cursor. 35 → 52 → 68 → 82 → 92.
+
+     `.stream-lite` drops the halo. The text-shadow is the part of the fade
+     that costs paint on every streamed frame; on a coarse or low-end device
+     where the long-task gate fails (P5 measures it), the stream keeps its
+     pacing and ink ramp and loses only the halo. */
+  ::highlight(stream-f0) { color: hsl(var(--foreground) / 0.35); text-shadow: 0 0 4px hsl(var(--foreground) / 0.28); }
+  ::highlight(stream-f1) { color: hsl(var(--foreground) / 0.52); text-shadow: 0 0 3px hsl(var(--foreground) / 0.22); }
+  ::highlight(stream-f2) { color: hsl(var(--foreground) / 0.68); text-shadow: 0 0 2px hsl(var(--foreground) / 0.15); }
+  ::highlight(stream-f3) { color: hsl(var(--foreground) / 0.82); text-shadow: 0 0 1.5px hsl(var(--foreground) / 0.08); }
+  ::highlight(stream-f4) { color: hsl(var(--foreground) / 0.92); }
+  .stream-lite::highlight(stream-f0), .stream-lite ::highlight(stream-f0),
+  .stream-lite::highlight(stream-f1), .stream-lite ::highlight(stream-f1),
+  .stream-lite::highlight(stream-f2), .stream-lite ::highlight(stream-f2),
+  .stream-lite::highlight(stream-f3), .stream-lite ::highlight(stream-f3) { text-shadow: none; }
 
   /* A block that arrives mid-stream (code, a table, a list, a heading, a
-     quote, an image) settles in with a short fade and a 4 px rise instead of
-     popping. Paragraphs are left to the text fade above. Runs once per mount:
-     react-markdown keeps a growing block's element, so this never restarts. */
-  @media (prefers-reduced-motion: no-preference) {
-    .prose-juno[data-streaming] > :not(p) {
-      animation: stream-block-in 320ms var(--ease-out-soft) both;
-    }
+     quote, an image) settles in with a fade and a 4px × shift rise on the
+     base rung instead of popping (`settle-part`, below). Paragraphs are left
+     to the text fade above. Runs once per mount: react-markdown keeps a
+     growing block's element, so this never restarts.
+     No reduced-motion wrapper: the keyframe's travel reads --motion-shift, so
+     under the preference (OS or in-app) it is a plain fade — Tier A kept,
+     Tier B removed (§4.7) — rather than no entrance at all. */
+  .prose-juno[data-streaming] > :not(p) {
+    animation: settle-part var(--dur-base) var(--ease-out-soft) both;
   }
   /* Turn parts: inside a reply that is streaming, each part of the answer
-     column fades up once as it mounts (message-item.tsx, data-turn-streaming). */
-  @media (prefers-reduced-motion: no-preference) {
-    [data-turn-streaming] .turn-body > * {
-      animation: stream-block-in 360ms var(--ease-out-soft) both;
-    }
+     column settles once as it mounts (message-item.tsx, data-turn-streaming).
+     It used to rise out of a 2px blur over 360ms; no entrance blurs (C1). */
+  [data-turn-streaming] .turn-body > * {
+    animation: settle-part var(--dur-base) var(--ease-out-soft) both;
   }
-  @keyframes stream-block-in {
-    from { opacity: 0; transform: translateY(4px); filter: blur(2px); }
-    to { opacity: 1; transform: none; filter: none; }
+
+  /*
+   * THE TRANSCRIPT'S TWO ENTRANCES (spec C1). Neither blurs.
+   *
+   *   rise-user    the user's bubble lands: 6px × shift and opacity over the
+   *                fast rung, so it is painted inside 100ms of Enter
+   *                (`animate-rise-user`).
+   *   settle-part  an answer part arriving: 4px × shift over the base rung
+   *                (`animate-settle-part`, and the two rules above).
+   *
+   * The assistant turn's root never animates. `turn-in` (420ms out of a 4px
+   * blur) and `stream-block-in` (a 2px blur) are RETIRED.
+   */
+  @keyframes rise-user {
+    from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes settle-part {
+    from { opacity: 0; transform: translateY(calc(4px * var(--motion-shift, 1))); }
+    to { opacity: 1; transform: none; }
   }
 
   /* ---- Work ----------------------------------------------------------------
@@ -3267,7 +3651,7 @@
   @keyframes work-status-shift {
     from {
       opacity: 0.35;
-      transform: scale(0.94);
+      transform: scale(calc(1 - 0.06 * var(--motion-shift, 1)));
     }
     to {
       opacity: 1;
@@ -3287,7 +3671,7 @@
      --ease-breathe, not an ease-out: an asymmetric loop snaps at the turn, and
      a ring that snaps is a ring that flashes. */
   .work-breathing {
-    animation: work-breathing 5.2s var(--ease-breathe) infinite;
+    animation: work-breathing var(--loop-calm) var(--ease-breathe) infinite;
   }
   @keyframes work-breathing {
     0%,
@@ -3687,6 +4071,8 @@
   .app-sidebar-frame {
     background-color: hsl(var(--sidebar));
     box-shadow: none;
+    /* ScrollFade's edge bands fade from this ground, not the page's. */
+    --scroll-fade-ground: var(--sidebar);
   }
   /* At md–lg the expanded panel floats over the content (app-shell.tsx):
      it takes the floating rung's throw so it reads as lifted, not as a wider
@@ -3847,7 +4233,7 @@
      the pointer. Only transform moves; still under reduced motion. */
   .agent-face__gaze {
     transform: translate(calc(var(--gaze-x, 0) * 2.4px), calc(var(--gaze-y, 0) * 1.8px));
-    transition: transform 260ms var(--ease-out-soft);
+    transition: transform var(--dur-base) var(--ease-out-soft);
   }
   @media (prefers-reduced-motion: reduce) {
     .agent-face__gaze { transform: none; transition: none; }
@@ -3889,15 +4275,15 @@
   .agent-face[data-state="thinking"] .agent-face__dots circle { opacity: 0.55; }
 
   @media (prefers-reduced-motion: no-preference) {
-    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look 2.4s var(--ease-in-out) infinite; }
-    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe 2.4s var(--ease-breathe) infinite; }
-    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift 2.4s var(--ease-breathe) infinite; }
+    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look var(--loop) var(--ease-in-out) infinite; }
+    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe var(--loop) var(--ease-breathe) infinite; }
+    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift var(--loop) var(--ease-breathe) infinite; }
     .agent-face[data-state="done"] .agent-face__all { animation: agent-face-settle var(--dur-emphasis) var(--ease-spring) 1 both; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot 1.2s var(--ease-in-out) infinite; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: 0.2s; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: 0.4s; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot var(--loop-beat) var(--ease-in-out) infinite; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: calc(var(--loop-beat) / 6); }
+    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: calc(var(--loop-beat) / 3); }
     :is(a, button, [role="link"], [role="button"], [data-face-trigger]):hover .agent-face[data-state="idle"] .agent-face__eyes {
-      animation: agent-face-blink 180ms var(--ease-in-out) 1;
+      animation: agent-face-blink var(--dur-exit) var(--ease-in-out) 1;
     }
     /* `listening` is driven by audio, not a timer: the pupils widen with the
        caller's level, which an open call writes as `--level` (0..1) on an
@@ -3972,7 +4358,7 @@
   .run-label { display: grid; min-inline-size: 0; }
   .run-label__item {
     grid-area: 1 / 1; min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    transition: opacity var(--dur-base) var(--ease-out-soft) 40ms, translate var(--dur-base) var(--ease-out-soft) 40ms;
+    transition: opacity var(--dur-base) var(--ease-out-soft) calc(var(--dur-fast) / 3), translate var(--dur-base) var(--ease-out-soft) calc(var(--dur-fast) / 3);
   }
   @starting-style { .run-label__item { opacity: 0; translate: 0 calc(var(--shift-label) * var(--motion-shift, 1)); } }
   .run-label__item[data-leaving] {
@@ -4023,8 +4409,8 @@
   .run-fav { position: relative; display: grid; place-items: center; inline-size: 16px; block-size: 16px;
     border-radius: 999px; overflow: hidden; background: hsl(var(--secondary)); box-shadow: 0 0 0 1.5px hsl(var(--fav-ring, var(--background)));
     margin-inline-start: -4px;
-    transition: opacity var(--dur-base) var(--ease-out-soft), scale var(--spring-pop-dur) var(--spring-pop);
-    transition-delay: calc(min(var(--i, 0), 2) * var(--stagger-fav)); }
+    transition: opacity var(--dur-base) var(--ease-out-soft), scale var(--spring-reward-dur) var(--spring-reward);
+    transition-delay: calc(min(var(--i, 0), 2) * var(--stagger-row)); }
   .run-fav:first-child { margin-inline-start: 0; }
   @starting-style { .run-fav { opacity: 0; scale: var(--motion-scale-from, 0.6); } }
   .run-fav > img { inline-size: 100%; block-size: 100%; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
@@ -4061,7 +4447,7 @@
 }
 /* Outside the media block, so the in-app "Full" twin of the rule above
    (postcss/motion-preference.cjs) can name it on a device that reduces. */
-@keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes research-arrive { from { opacity: 0; transform: translateY(calc(4px * var(--motion-shift, 1))); } to { opacity: 1; transform: translateY(0); } }
 /* Printing a document that lives in a dialog (the research report reader).
    The dialog unpins itself with `print:` utilities, but it is portalled to
    <body>, so its siblings are the whole app shell and no class on the dialog
@@ -4105,6 +4491,9 @@
   [class*="animate-ultra-"] {
     animation: none !important;
   }
+  /* A stopped skeleton holds at 0.8 rather than at full ink (C21), so it
+     still reads as a placeholder and not as content. */
+  .skeleton { opacity: 0.8; }
 }
 
 /*
@@ -4135,7 +4524,7 @@
      out (`[animation-play-state:paused]`). */
   .animate-spin {
     animation-name: reduced-working;
-    animation-duration: 1.6s;
+    animation-duration: var(--loop-breathe);
     animation-timing-function: var(--ease-breathe);
     animation-iteration-count: infinite;
   }
@@ -4206,7 +4595,7 @@
     mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
   }
   .marquee-track {
-    animation: marquee 48s linear infinite;
+    animation: marquee calc(var(--loop-calm) * 10) linear infinite;
   }
   .marquee:hover .marquee-track,
   .marquee:focus-within .marquee-track { animation-play-state: paused; }
@@ -4248,12 +4637,6 @@
   .context-token[data-selected] { outline: 1px solid hsl(var(--foreground)); outline-offset: 1px; }
   .context-token-mark { display: inline-grid; width: 16px; height: 16px; place-items: center; vertical-align: middle; color: hsl(var(--muted-foreground)); }
   .context-composer-field:is(:empty, [data-empty])::before { content: attr(data-placeholder); color: hsl(var(--muted-foreground)); pointer-events: none; }
-  @media (prefers-reduced-transparency: reduce) {
-    .surface-float { background-color: hsl(var(--popover)); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .surface-float { background-color: hsl(var(--popover)); }
-  }
 }
 
 /*
@@ -4275,6 +4658,13 @@
   /* box-shadow is removed in forced colours: draw the rings with outline. */
   .run-marker::before { box-shadow: none; outline: 1.5px solid CanvasText; outline-offset: -1.5px; }
   .run-marker[data-state="waiting"]::before { outline-color: Highlight; }
+  /* Spec §3.2: borders are CanvasText (the browser forces author borders to
+     it already; the tone-step edge and the hairline, drawn as shadows, need
+     saying), focus, presence and the galaxy's ink are Highlight, and status
+     rides on its glyph and word, which forced colours never remove. */
+  :focus-visible { outline-color: Highlight; }
+  .tone-edge, [data-tone-step] { box-shadow: none; border: 1px solid CanvasText; }
+  .text-presence, .text-presence-ink, [data-status="running"], [data-galaxy] { color: Highlight; }
 }
 
 /*
@@ -4294,25 +4684,44 @@
  *
  * Every offset is multiplied by --motion-shift, so under reduced motion each
  * one is a plain crossfade: the audit's fallback, never a cut.
+ *
+ * Wave 2 (spec D23, C18):
+ *   - The ROOT swaps instantly (no animation on root old/new): the sidebar
+ *     and header sit outside the named group and never animate, and the
+ *     route is not held behind a full-window crossfade (ROUTE_WAIT_MS is 80
+ *     in lib/view-transition.ts).
+ *   - `thread`: the old page leaves on opacity over the fast rung on the
+ *     accelerate; the new one arrives with opacity and a 4px × shift rise over
+ *     the exit rung (160) on out-soft.
+ *   - `canvas`: the group morphs over the slow rung on out-expo when opening
+ *     and over the base rung on the accelerate when closing
+ *     (html[data-vt-dir="close"], set by lib/view-transition.ts).
+ *   - Under reduced motion: no group geometry, a 160 crossfade.
+ *   - There is NO `@view-transition` rule: it only opts in cross-document
+ *     navigation, which the App Router never does.
  */
 html[data-vt]::view-transition-old(root),
 html[data-vt]::view-transition-new(root) {
-  animation-duration: var(--dur-fast);
+  animation: none;
 }
 html[data-vt="thread"] .app-page { view-transition-name: app-page; }
-html[data-vt="thread"]::view-transition-group(app-page) { animation-duration: var(--dur-base); }
+html[data-vt="thread"]::view-transition-group(app-page) { animation-duration: var(--dur-exit); }
 html[data-vt="thread"]::view-transition-old(app-page) {
-  animation: vt-page-out calc(var(--dur-base) * 0.65) var(--ease-in) both;
+  animation: vt-page-out var(--dur-fast) var(--ease-in) both;
 }
 html[data-vt="thread"]::view-transition-new(app-page) {
-  animation: vt-page-in var(--dur-base) var(--ease-out-soft) both;
+  animation: vt-page-in var(--dur-exit) var(--ease-out-soft) both;
 }
 @keyframes vt-page-out { to { opacity: 0; } }
-@keyframes vt-page-in { from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); } }
+@keyframes vt-page-in { from { opacity: 0; transform: translateY(calc(4px * var(--motion-shift, 1))); } }
 html[data-vt="canvas"]::view-transition-group(canvas-panel) {
-  animation-duration: var(--dur-base);
-  animation-timing-function: var(--ease-out-strong);
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-out-expo);
   overflow: clip;
+}
+html[data-vt="canvas"][data-vt-dir="close"]::view-transition-group(canvas-panel) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-in);
 }
 html[data-vt="canvas"]::view-transition-old(canvas-panel),
 html[data-vt="canvas"]::view-transition-new(canvas-panel) {
@@ -4320,8 +4729,27 @@ html[data-vt="canvas"]::view-transition-new(canvas-panel) {
   height: 100%;
   object-fit: none;
   object-position: left top;
+  animation-duration: var(--dur-slow);
+}
+html[data-vt="canvas"][data-vt-dir="close"]::view-transition-old(canvas-panel),
+html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
   animation-duration: var(--dur-base);
 }
+/* Reduced motion: the groups keep no geometry (the snapshots crossfade in
+   place) and every move is one 160 crossfade. Compiled into the in-app twin
+   like every reduced block. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-vt]::view-transition-group(*) { animation: none; }
+  html[data-vt="thread"]::view-transition-old(app-page),
+  html[data-vt="canvas"]::view-transition-old(canvas-panel) {
+    animation: vt-page-out var(--dur-exit) var(--ease-in) both;
+  }
+  html[data-vt="thread"]::view-transition-new(app-page),
+  html[data-vt="canvas"]::view-transition-new(canvas-panel) {
+    animation: vt-fade-in var(--dur-exit) var(--ease-out-soft) both;
+  }
+}
+@keyframes vt-fade-in { from { opacity: 0; } }
 
 /*
  * ——— Interface preferences (Settings › Appearance, Capabilities) ———
@@ -4345,6 +4773,39 @@ html[data-vt="canvas"]::view-transition-new(canvas-panel) {
   html[data-code-wrap="true"] .prose-juno pre,
   html[data-code-wrap="true"] .prose-juno pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+  /* ---- Type rungs a fontSize entry cannot finish (spec §3.5) ----------------
+     `label` is JetBrains Mono 500 with tabular figures; `kbd` is the 11px
+     mono keycap rung. Zero specificity (`:where`), so an explicit `font-sans`
+     or `font-serif` beside the class still wins and only the inherited body
+     face is replaced. */
+  :where(.text-label, .text-kbd) {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  /* An app page's h1 below a 640px viewport: a fixed 1.75rem, which the
+     column-keyed clamp cannot say. Doubled class so it outranks the utility
+     wherever the two land in the sheet. */
+  @media (max-width: 639.98px) {
+    .text-page-title.text-page-title { font-size: 1.75rem; }
+  }
+  /* Notification bodies are on the ui rung (13px), never the old 11px
+     caption (spec §3.5). Zero specificity: a toast that styles its own text
+     keeps it. */
+  :where(.toaster [data-sonner-toast]) :where([data-title], [data-description]) {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  /* ---- Radius: the superellipse, where the browser has it (spec §3.7) -------
+     Progressive: the composer, card and panel radii take a continuous corner
+     in browsers with `corner-shape`, and stay plain everywhere else. The
+     value is a token (--corner-shape), to be tuned by eye in Chrome. */
+  @supports (corner-shape: superellipse(1.5)) {
+    :where(.rounded-composer, .rounded-card, .rounded-panel, .composer-surface, .aicss-cb) {
+      corner-shape: var(--corner-shape);
+    }
+  }
+
   /* Motion (data-motion="reduced" | "full") has no rules here. Every
      `@media (prefers-reduced-motion: …)` block in the product is compiled into
      its in-app twin by postcss/motion-preference.cjs, so "Reduced" in the app
@@ -4358,5 +4819,9 @@ html[data-vt="canvas"]::view-transition-new(canvas-panel) {
 @layer utilities {
   /* The transcript and composer column: one width, set by the reader. */
   .transcript-column { max-width: var(--transcript-max); }
+  /* A tone step (bubble, composer, card, chip, selected row) gains a 1px
+     edge in high contrast and nothing otherwise: --tone-edge is transparent
+     at standard contrast. Opt in on a box with no shadow of its own. */
+  .tone-edge, [data-tone-step] { box-shadow: inset 0 0 0 1px hsl(var(--tone-edge)); }
 }
 
