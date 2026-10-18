@@ -45,10 +45,10 @@ public struct CodeV2TerminalPane: View {
             // Keyed on the character grid, not the point size: dragging the
             // panel's edge changes the size every frame, and resizing the
             // shell each time reflowed it under the drag and made it stutter.
-            .onGeometryChange(for: TerminalGrid.self) { proxy in
+            .onGeometryChange(for: TerminalGrid.self) { [cell = Self.cell, inset = 2 * JunoSpace.cozy] proxy in
                 TerminalGrid(
-                    cols: Int((proxy.size.width - 2 * JunoSpace.cozy) / Self.cell.width),
-                    rows: Int((proxy.size.height - 2 * JunoSpace.cozy) / Self.cell.height)
+                    cols: Int((proxy.size.width - inset) / cell.width),
+                    rows: Int((proxy.size.height - inset) / cell.height)
                 )
             } action: { grid in
                 Task { await terminal.resize(cols: grid.cols, rows: grid.rows) }
