@@ -155,7 +155,7 @@ final class ScreenLockPolicyTests: XCTestCase {
     private func waitUntil(_ condition: @escaping () async -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
         for _ in 0..<400 {
             if await condition() { return }
-            try? await Task.sleep(for: .milliseconds(5))
+            try? await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTFail("timed out", file: file, line: line)
     }

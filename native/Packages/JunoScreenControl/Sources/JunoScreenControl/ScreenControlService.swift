@@ -57,7 +57,7 @@ public actor ScreenControlService: ScreenControlling {
             sessionLock: (any ScreenSessionLockMonitoring)? = nil,
             displayAwake: (any DisplayAwakeAsserting)? = nil,
             displayAwakeIdle: TimeInterval = 60,
-            idleSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+            idleSleep: @escaping @Sendable (Duration) async throws -> Void = ScreenControlService.sleepNanoseconds
         ) {
             self.capture = capture
             self.environment = environment
@@ -81,6 +81,17 @@ public actor ScreenControlService: ScreenControlling {
             self.displayAwakeIdle = displayAwakeIdle
             self.idleSleep = idleSleep
         }
+    }
+
+    /// The idle release's real-time sleep. Not the generic
+    /// `Task.sleep(for:)`: Xcode 26 leaves that one's task allocations behind
+    /// when it is cancelled (every action cancels the last idle timer), and
+    /// the next deallocation aborts with "freed pointer was not the last
+    /// allocation".
+    @Sendable public static func sleepNanoseconds(_ duration: Duration) async throws {
+        let (seconds, attoseconds) = duration.components
+        let nanoseconds = max(0, seconds) * 1_000_000_000 + max(0, attoseconds) / 1_000_000_000
+        try await Task.sleep(nanoseconds: UInt64(nanoseconds))
     }
 
     /// The untrusted-data line on every frame and tree (§3.8 rule 2).
