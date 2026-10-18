@@ -465,6 +465,8 @@ private struct JunoMobileDraftChat: View {
         pendingPrompt.wrappedValue = nil
         composerFocused = true
       }
+      // The unsent words, kept for an unclean exit to give back (§3.3).
+      .modifier(JunoMobileRecoveryDraft(conversationID: nil, text: $prompt))
   }
 
   /// The one composer, placed by ``column`` on an iPad and docked on a phone.
@@ -1466,6 +1468,8 @@ private struct JunoMobileConversationDetail: View {
         pendingPrompt.wrappedValue = nil
         composerFocused = true
       }
+      // The unsent words, kept for an unclean exit to give back (§3.3).
+      .modifier(JunoMobileRecoveryDraft(conversationID: conversation.id, text: $prompt))
       .navigationBarTitleDisplayMode(.inline)
       .junoTranscriptFind(
         find, messages: messages, signature: streamSignature,

@@ -148,10 +148,13 @@ struct JunoMobileApp: App {
         // listed in the iPad's menu bar and its hold-Command overlay.
         .commands { JunoMobileCommands() }
         .onChange(of: scenePhase) { _, phase in
+            // The black box (§3.3): the background saves the snapshot and
+            // marks the run clean; the foreground makes it live again.
+            JunoMobileCrashRecovery.shared.scenePhaseChanged(phase)
             // Ask for a background check when the app goes away, so an
             // approval that lands while the phone is in a pocket still
-            // reaches it.
-            if phase == .background {
+            // reaches it. Not in safe mode, which starts no work by itself.
+            if phase == .background, JunoSafeMode.allows(.backgroundAgents) {
                 JunoMobileCodeNotifications.shared.scheduleRefresh()
                 // A research run this phone saw is still working: check back
                 // while it is away, so "your research is ready" reaches it.
@@ -164,7 +167,10 @@ struct JunoMobileApp: App {
     /// Calendar's controls (owner, Oct 9). Set once here so it reaches sheets
     /// and covers too; icon-only buttons ask for `.circle` where they stand.
     private var rootView: some View {
-        rootShell.buttonBorderShape(.capsule)
+        rootShell
+            .buttonBorderShape(.capsule)
+            // Safe mode: views take their Reduce Motion variants.
+            .junoSafeModeMotion(reduced: JunoMobileCrashRecovery.shared.isSafeMode)
     }
 
     private var rootShell: some View {
@@ -402,6 +408,9 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Before any background work is scheduled: after repeated unclean
+        // exits this run starts in safe mode.
+        JunoMobileCrashRecovery.shared.launch()
         UNUserNotificationCenter.current().delegate = self
         JunoMobileCodeNotifications.shared.registerBackgroundTask()
         JunoMobileResearchNotifications.shared.registerBackgroundTask()
@@ -415,6 +424,12 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
         // A quick action at cold launch arrives through the scene's
         // connection options (`configurationForConnecting`), not here.
         return true
+    }
+
+    /// Rarely sent (a suspended app is ended without it), but when it is,
+    /// the run ended cleanly.
+    func applicationWillTerminate(_ application: UIApplication) {
+        JunoMobileCrashRecovery.shared.endCleanly()
     }
 
     func application(

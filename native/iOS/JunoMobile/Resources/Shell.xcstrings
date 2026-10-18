@@ -1513,6 +1513,114 @@
         }
       }
     },
+    "recovery.dismiss" : {
+      "comment" : "Closes the recovery or safe mode banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignorer"
+          }
+        }
+      }
+    },
+    "recovery.restored" : {
+      "comment" : "Banner after a launch that follows an unclean exit (crash, force quit); the previous conversation, draft and selection are back.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alevr closed unexpectedly. Your conversation is restored."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alevr s’est fermé de façon inattendue. Votre conversation a été restaurée."
+          }
+        }
+      }
+    },
+    "safeMode.body" : {
+      "comment" : "Safe mode banner body: optional features (computer use, extensions, the Quick Entry shortcut, background agents, custom motion) are off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alevr closed unexpectedly more than once, so optional features are off for now."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alevr s’est fermé de façon inattendue plusieurs fois : les fonctions facultatives sont désactivées pour l’instant."
+          }
+        }
+      }
+    },
+    "safeMode.leave" : {
+      "comment" : "iPhone safe mode banner action: turns the optional features back on without relaunching.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off safe mode"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver le mode sans échec"
+          }
+        }
+      }
+    },
+    "safeMode.restartNormally" : {
+      "comment" : "Mac safe mode banner action: relaunches with every feature on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart normally"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redémarrer normalement"
+          }
+        }
+      }
+    },
+    "safeMode.title" : {
+      "comment" : "Safe mode banner title, after repeated unclean exits in a short time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safe mode"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode sans échec"
+          }
+        }
+      }
+    },
     "sidebar.empty" : {
       "comment" : "Under the Recent heading; the shortcut in the platform form.",
       "extractionState" : "manual",

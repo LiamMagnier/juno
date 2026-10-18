@@ -142,10 +142,16 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
                 return
             }
             #endif
+            // The black box (§3.3), before anything optional is installed:
+            // after repeated unclean exits it decides that the subsystems
+            // below stay off for this run (safe mode).
+            DesktopCrashRecovery.shared.launch()
             DesktopUpdateModel.shared.start()
             // ⌥Space from anywhere. Installed at launch rather than on first
             // use so the shortcut exists before any window does.
-            DesktopQuickEntryController.shared.installHotkey()
+            if JunoSafeMode.allows(.quickEntryHotkey) {
+                DesktopQuickEntryController.shared.installHotkey()
+            }
             // Juno Code's notifications, answered for the life of the app
             // rather than while a Code window happens to be on screen. A click
             // is one request the registry hands to exactly one window, which
@@ -155,15 +161,19 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             })
             // A restart or shutdown is not a quit to ask about.
             DesktopLifecycle.observePowerOff()
-            // While Juno uses other apps: the caption, the takeover glow and
-            // the start and stop notifications (CODE_AGENT_SPEC §3.7).
-            DesktopScreenPresence.shared.install()
-            // Computer use for every model (Code v2 SPEC §3.12): the action
-            // overlay, and the bridge connected agents reach the Mac through.
-            ComputerUseDesktopHost.shared.install(summon: {
-                NSApplication.shared.activate()
-                Self.presentMainWindowIfWithheld()
-            })
+            if JunoSafeMode.allows(.computerUse) {
+                // While Juno uses other apps: the caption, the takeover glow and
+                // the start and stop notifications (CODE_AGENT_SPEC §3.7).
+                DesktopScreenPresence.shared.install()
+                // Computer use for every model (Code v2 SPEC §3.12): the action
+                // overlay, and the bridge connected agents reach the Mac through.
+                ComputerUseDesktopHost.shared.install(summon: {
+                    NSApplication.shared.activate()
+                    Self.presentMainWindowIfWithheld()
+                })
+            }
+            // Safe mode starts no MCP server, whoever declared it.
+            MCPServerPolicyStore.suspendsAllServers = !JunoSafeMode.allows(.extensions)
             // After the monitor, which claims the same slot when it installs.
             UNUserNotificationCenter.current().delegate = self
             // Every launch, as Apple asks: the token can change, and asking
@@ -329,6 +339,8 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
+            // A clean quit: the next launch is an ordinary one.
+            DesktopCrashRecovery.shared.endCleanly()
             // No stale bridge socket or token left for an env server to find.
             ComputerUseDesktopHost.shared.uninstall()
             // Never swapped in under a run the reader chose to stop: it is

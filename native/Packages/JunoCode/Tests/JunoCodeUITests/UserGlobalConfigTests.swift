@@ -67,6 +67,15 @@ struct UserGlobalConfigTests {
         #expect(start(try #require(byName["linear"])))
         try projectConsent.set(try #require(byName["github"]), allowed: true)
         #expect(start(try #require(byName["github"])))
+
+        // Safe mode: nothing starts, whoever declared it and whatever consent
+        // it has.
+        let safe = MCPServerPolicyStore.startupAuthorizer(
+            project: projectConsent, imports: f.imports, suspended: { true }
+        )
+        for name in ["github", "notes", "linear"] {
+            #expect(!safe(try #require(byName[name])), "\(name) starts in safe mode")
+        }
     }
 
     @Test

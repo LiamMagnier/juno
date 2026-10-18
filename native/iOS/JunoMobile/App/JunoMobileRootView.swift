@@ -453,13 +453,29 @@ struct JunoMobileRootView: View {
             Task { await authModel.retryRestore() }
           }
         }
+        // After an unclean exit: the work is back, and safe mode if the app
+        // keeps closing (§3.3).
+        JunoMobileRecoveryBanner()
         authenticatedContent(session: session)
+      }
+      // What is on screen, for the snapshot an unclean exit restores.
+      .onChange(of: recoveryState, initial: true) { _, _ in
+        JunoMobileCrashRecovery.shared.noteScreen(
+          isCode: selection == .code,
+          conversationID: incognito ? nil : conversationModel?.selectedConversationID
+        )
       }
     case .restoring:
       JunoMobileQuietLoading(.blank)
     case .signedOut, .signingIn, .unavailable:
       JunoMobileSignInView(authModel: authModel)
     }
+  }
+
+  /// The section and conversation on screen, as the recovery snapshot keeps
+  /// them.
+  private var recoveryState: [String?] {
+    [selection.rawValue, incognito ? nil : conversationModel?.selectedConversationID]
   }
 
   /// The shell: one tab bar carrying the three products and search.
