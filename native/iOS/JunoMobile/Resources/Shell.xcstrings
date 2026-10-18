@@ -2329,6 +2329,42 @@
         }
       }
     },
+    "turn.parked" : {
+      "comment" : "Stream dropped long ago; the turn is parked and resumes on the next reconnect trigger.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for connection"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de connexion"
+          }
+        }
+      }
+    },
+    "turn.parkedDetail" : {
+      "comment" : "Accessible description of a parked turn.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The answer will continue where it left off when the connection is back."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La réponse reprendra là où elle s’est arrêtée dès le retour de la connexion."
+          }
+        }
+      }
+    },
     "turn.ranCode" : {
       "comment" : "Summary part, only when true. Lower case: it follows a middle dot.",
       "extractionState" : "manual",
@@ -2348,7 +2384,7 @@
       }
     },
     "turn.reconnecting" : {
-      "comment" : "Stream dropped, retrying for up to 15s.",
+      "comment" : "Stream dropped; a reconnect attempt is under way now (Tether).",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -2361,6 +2397,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reconnexion…"
+          }
+        }
+      }
+    },
+    "turn.reconnectingIn" : {
+      "comment" : "Stream dropped; the next attempt is {s} seconds away (Tether backoff).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnecting in %llds"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnexion dans %lld s"
           }
         }
       }
@@ -2535,6 +2589,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vous avez arrêté cette réponse"
+          }
+        }
+      }
+    },
+    "turn.waitingForNetwork" : {
+      "comment" : "Stream dropped and the device reports no network; retries when it returns.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for network"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente du réseau"
           }
         }
       }

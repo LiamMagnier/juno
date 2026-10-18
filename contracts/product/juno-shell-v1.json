@@ -743,9 +743,29 @@
         "fr": "code ex\u00e9cut\u00e9"
       },
       "turn.reconnecting": {
-        "comment": "Stream dropped, retrying for up to 15s.",
+        "comment": "Stream dropped; a reconnect attempt is under way now (Tether).",
         "en": "Reconnecting\u2026",
         "fr": "Reconnexion\u2026"
+      },
+      "turn.reconnectingIn": {
+        "comment": "Stream dropped; the next attempt is {s} seconds away (Tether backoff).",
+        "en": "Reconnecting in {s}s",
+        "fr": "Reconnexion dans {s}\u00a0s"
+      },
+      "turn.waitingForNetwork": {
+        "comment": "Stream dropped and the device reports no network; retries when it returns.",
+        "en": "Waiting for network",
+        "fr": "En attente du r\u00e9seau"
+      },
+      "turn.parked": {
+        "comment": "Stream dropped long ago; the turn is parked and resumes on the next reconnect trigger.",
+        "en": "Waiting for connection",
+        "fr": "En attente de connexion"
+      },
+      "turn.parkedDetail": {
+        "comment": "Accessible description of a parked turn.",
+        "en": "The answer will continue where it left off when the connection is back.",
+        "fr": "La r\u00e9ponse reprendra l\u00e0 o\u00f9 elle s\u2019est arr\u00eat\u00e9e d\u00e8s le retour de la connexion."
       },
       "turn.stopped": {
         "comment": "Summary after a failed reconnect or a mid-stream failure.",
