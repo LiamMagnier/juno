@@ -43,6 +43,9 @@ export const RUN_PHRASES_DE: Record<RunCopyKey, string> = {
   startedTask: "Aufgabe gestartet",
   taskNotStarted: "Aufgabe nicht gestartet",
   suggestedResearch: "Recherche vorgeschlagen",
+  creatingImage: "Bild wird erstellt",
+  createdImage: "Bild erstellt",
+  imageNotCreated: "Bild nicht erstellt",
   used: "Verwendet:",
   couldNotOpen: "Konnte nicht öffnen:",
 

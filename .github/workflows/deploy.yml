@@ -509,6 +509,18 @@ jobs:
           CHAT_TURN_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test
           NODE_OPTIONS: --conditions=react-server
 
+      - name: Images in chat through the shared media meter, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_image_test'
+          npx prisma migrate deploy
+          npx tsx --test --experimental-test-module-mocks tests/chat-image-pipeline.integration.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_image_test
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_image_test
+          IMAGE_PIPELINE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_image_test
+          NODE_OPTIONS: --conditions=react-server
+
       - name: Agent computer sweep writes, against a real database
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_computer_test'

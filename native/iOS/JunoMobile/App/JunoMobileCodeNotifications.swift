@@ -92,6 +92,9 @@ final class JunoMobileCodeNotifications {
     scheduleRefresh()
     let work = Task { @MainActor in
       await self.checkForApprovals()
+      // The live runs' Live Activities catch up on the same pass, and a Work
+      // approval that arrived meanwhile gets its notification (REA 8).
+      await JunoMobileRunsCoordinator.shared.backgroundRefresh()
     }
     task.expirationHandler = { work.cancel() }
     await work.value

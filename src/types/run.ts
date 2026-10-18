@@ -27,6 +27,7 @@ export type CanonicalToolId =
   | "provider_web_search"   // Anthropic server web_search, OpenAI/xAI hosted web_search, Gemini grounding
   | "provider_x_search"     // xAI x_search
   | "local_folder"          // the Mac's folder tools (src/lib/chat/local-folder.ts); `args.action` says which
+  | "generate_image"        // a picture made in chat (src/lib/chat/image-tool.ts, G04)
   | "mcp";                  // any connector tool; see connectorId/toolTitle
 
 /** Every canonical id, for readers that must drop one this build does not know. */
@@ -34,7 +35,7 @@ export const CANONICAL_TOOL_IDS = [
   "web_search", "web_fetch", "read_document", "inspect_image", "run_code",
   "search_chats", "current_time", "calculate", "start_task", "suggest_research",
   "search_news", "find_in_page",
-  "provider_web_search", "provider_x_search", "local_folder", "mcp",
+  "provider_web_search", "provider_x_search", "local_folder", "generate_image", "mcp",
 ] as const satisfies readonly CanonicalToolId[];
 
 export interface ToolCallRecord {

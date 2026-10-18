@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "6acf775e1c7d88a2f6b5433d770398cdd74c87a936c6744635870dac624653c8"
+    static let digest = "d923f6b6619db6ad3c30f2fc70d0d58719dc443b1d9723fb5de0e62065eeaa34"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -339,6 +339,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     case project
     case connectors
     case skill
+    case image
     case research
     case search
     case memory
@@ -362,6 +363,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: "Add to project"
         case .connectors: "Apps"
         case .skill: "Run a skill"
+        case .image: "Create image"
         case .research: "Deep research"
         case .search: "Web search"
         case .memory: "Memory"
@@ -380,6 +382,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: "Add to Project"
         case .connectors: "Apps"
         case .skill: "Run a Skill"
+        case .image: "Create Image"
         case .research: "Deep Research"
         case .search: "Web Search"
         case .memory: "Memory"
@@ -397,6 +400,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: .submenu
         case .connectors: .submenu
         case .skill: .submenu
+        case .image: .toggle
         case .research: .toggle
         case .search: .toggle
         case .memory: .toggle
@@ -414,6 +418,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: .projects
         case .connectors: .connections
         case .skill: .skills
+        case .image: .image
         case .research: .research
         case .search: .web
         case .memory: .memory
@@ -432,6 +437,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: true
         case .connectors: true
         case .skill: true
+        case .image: true
         case .research: true
         case .search: false
         case .memory: false
@@ -450,6 +456,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: nil
         case .connectors: nil
         case .skill: nil
+        case .image: nil
         case .research: nil
         case .search: nil
         case .memory: nil
@@ -466,7 +473,7 @@ enum JunoShellPlusMenu {
     static let chat: [[JunoShellPlusRow]] = [
         [.files, .screenshot, .sketch, .library],
         [.mention, .skill],
-        [.research, .search, .memory],
+        [.image, .research, .search, .memory],
         [.project, .connectors],
     ]
 
@@ -934,7 +941,7 @@ enum JunoShellStrings {
     }
     static var turnRanCode: String { turnRanCode(in: .current) }
 
-    /// `turn.reconnecting`: Stream dropped, retrying for up to 15s.
+    /// `turn.reconnecting`: Stream dropped; a reconnect attempt is under way now (Tether).
     static func turnReconnecting(in language: JunoShellLanguage = .current) -> String {
         switch language {
         case .en: "Reconnecting…"
@@ -942,6 +949,41 @@ enum JunoShellStrings {
         }
     }
     static var turnReconnecting: String { turnReconnecting(in: .current) }
+
+    /// `turn.reconnectingIn`: Stream dropped; the next attempt is {s} seconds away (Tether backoff).
+    static func turnReconnectingIn(s: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Reconnecting in \(s)s"
+        case .fr: "Reconnexion dans \(s)\u{00A0}s"
+        }
+    }
+
+    /// `turn.waitingForNetwork`: Stream dropped and the device reports no network; retries when it returns.
+    static func turnWaitingForNetwork(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Waiting for network"
+        case .fr: "En attente du réseau"
+        }
+    }
+    static var turnWaitingForNetwork: String { turnWaitingForNetwork(in: .current) }
+
+    /// `turn.parked`: Stream dropped long ago; the turn is parked and resumes on the next reconnect trigger.
+    static func turnParked(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Waiting for connection"
+        case .fr: "En attente de connexion"
+        }
+    }
+    static var turnParked: String { turnParked(in: .current) }
+
+    /// `turn.parkedDetail`: Accessible description of a parked turn.
+    static func turnParkedDetail(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "The answer will continue where it left off when the connection is back."
+        case .fr: "La réponse reprendra là où elle s’est arrêtée dès le retour de la connexion."
+        }
+    }
+    static var turnParkedDetail: String { turnParkedDetail(in: .current) }
 
     /// `turn.stopped`: Summary after a failed reconnect or a mid-stream failure.
     static func turnStopped(in language: JunoShellLanguage = .current) -> String {
@@ -1936,6 +1978,296 @@ enum JunoShellStrings {
         }
     }
     static var quickEntryRebindFailed: String { quickEntryRebindFailed(in: .current) }
+
+    /// `image.create`: The composer's image mode: its + menu row, its chip and the chat card's heading.
+    static func imageCreate(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Create image"
+        case .fr: "Créer une image"
+        }
+    }
+    static var imageCreate: String { imageCreate(in: .current) }
+
+    /// `image.modeExit`: Leaves the composer's image mode (the chip's close button, read aloud).
+    static func imageModeExit(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Stop creating images"
+        case .fr: "Ne plus créer d’images"
+        }
+    }
+    static var imageModeExit: String { imageModeExit(in: .current) }
+
+    /// `image.placeholder`: The composer field in image mode.
+    static func imagePlaceholder(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Describe an image to generate…"
+        case .fr: "Décrivez l’image à générer…"
+        }
+    }
+    static var imagePlaceholder: String { imagePlaceholder(in: .current) }
+
+    /// `image.generating`: The chat card while a picture is being made.
+    static func imageGenerating(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Creating image"
+        case .fr: "Création de l’image"
+        }
+    }
+    static var imageGenerating: String { imageGenerating(in: .current) }
+
+    /// `image.madeWith`: Under a picture made in chat: the image model that made it.
+    static func imageMadeWith(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Made with \(model)"
+        case .fr: "Créée avec \(model)"
+        }
+    }
+
+    /// `image.autoPicked`: Under a picture made in chat when Auto chose the image model.
+    static func imageAutoPicked(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Auto picked \(model)"
+        case .fr: "Auto a choisi \(model)"
+        }
+    }
+
+    /// `image.savedToLibrary`: Under a picture made in chat: where it was saved.
+    static func imageSavedToLibrary(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Saved to your Library"
+        case .fr: "Enregistrée dans votre bibliothèque"
+        }
+    }
+    static var imageSavedToLibrary: String { imageSavedToLibrary(in: .current) }
+
+    /// `image.aiGenerated`: AI Act label under every generated picture.
+    static func imageAiGenerated(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "AI-generated"
+        case .fr: "Générée par IA"
+        }
+    }
+    static var imageAiGenerated: String { imageAiGenerated(in: .current) }
+
+    /// `image.download`: Image action: save the file.
+    static func imageDownload(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Download"
+        case .fr: "Télécharger"
+        }
+    }
+    static var imageDownload: String { imageDownload(in: .current) }
+
+    /// `image.copy`: Image action: copy the picture to the clipboard.
+    static func imageCopy(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Copy"
+        case .fr: "Copier"
+        }
+    }
+    static var imageCopy: String { imageCopy(in: .current) }
+
+    /// `image.copied`: Toast after the picture was copied.
+    static func imageCopied(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Image copied"
+        case .fr: "Image copiée"
+        }
+    }
+    static var imageCopied: String { imageCopied(in: .current) }
+
+    /// `image.copyFailed`: Toast when the clipboard refused the picture; the link was copied instead.
+    static func imageCopyFailed(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Couldn’t copy the image, so its link was copied"
+        case .fr: "Impossible de copier l’image : son lien a été copié"
+        }
+    }
+    static var imageCopyFailed: String { imageCopyFailed(in: .current) }
+
+    /// `image.vary`: Image action: make a variation from this picture.
+    static func imageVary(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Vary"
+        case .fr: "Varier"
+        }
+    }
+    static var imageVary: String { imageVary(in: .current) }
+
+    /// `image.edit`: Image action: edit a region or the whole picture.
+    static func imageEdit(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Edit"
+        case .fr: "Modifier"
+        }
+    }
+    static var imageEdit: String { imageEdit(in: .current) }
+
+    /// `image.openLibrary`: Image action: open the Library's files.
+    static func imageOpenLibrary(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Open in Library"
+        case .fr: "Ouvrir dans la bibliothèque"
+        }
+    }
+    static var imageOpenLibrary: String { imageOpenLibrary(in: .current) }
+
+    /// `image.varyPrompt`: The prompt a Vary press sends with the picture as its reference.
+    static func imageVaryPrompt(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Make a variation of this image, keeping its subject and style"
+        case .fr: "Crée une variante de cette image en gardant son sujet et son style"
+        }
+    }
+    static var imageVaryPrompt: String { imageVaryPrompt(in: .current) }
+
+    /// `image.failedTitle`: Heading of the chat card when no picture was made.
+    static func imageFailedTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Couldn’t create the image"
+        case .fr: "Impossible de créer l’image"
+        }
+    }
+    static var imageFailedTitle: String { imageFailedTitle(in: .current) }
+
+    /// `image.failureNoModel`: Failure: no image model passes the plan and data settings.
+    static func imageFailureNoModel(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "No image model is available on your plan and data settings."
+        case .fr: "Aucun modèle d’image n’est disponible avec votre forfait et vos réglages de données."
+        }
+    }
+    static var imageFailureNoModel: String { imageFailureNoModel(in: .current) }
+
+    /// `image.failureNotConfigured`: Failure: the image model has no key on this server.
+    static func imageFailureNotConfigured(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(model) isn’t set up on this server yet."
+        case .fr: "\(model) n’est pas encore configuré sur ce serveur."
+        }
+    }
+
+    /// `image.failureUnavailable`: Failure: the image provider is down or refusing.
+    static func imageFailureUnavailable(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(model) can’t be reached right now. Try again shortly or choose another image model."
+        case .fr: "\(model) est injoignable pour le moment. Réessayez bientôt ou choisissez un autre modèle d’image."
+        }
+    }
+
+    /// `image.failurePlan`: Failure: the image model needs a higher plan.
+    static func imageFailurePlan(model: String, plan: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(model) needs the \(plan) plan."
+        case .fr: "\(model) nécessite le forfait \(plan)."
+        }
+    }
+
+    /// `image.failureBudget`: Failure: the account's spending limit is reached.
+    static func imageFailureBudget(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "You’ve reached your spending limit for now."
+        case .fr: "Vous avez atteint votre limite de dépenses pour le moment."
+        }
+    }
+    static var imageFailureBudget: String { imageFailureBudget(in: .current) }
+
+    /// `image.failureRateLimited`: Failure: too many generations in a short time.
+    static func imageFailureRateLimited(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "You’re generating a lot. Give it a minute."
+        case .fr: "Vous générez beaucoup. Patientez une minute."
+        }
+    }
+    static var imageFailureRateLimited: String { imageFailureRateLimited(in: .current) }
+
+    /// `image.failureQuota`: Failure: the plan's messages are used up.
+    static func imageFailureQuota(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "You’ve used all your messages for this period."
+        case .fr: "Vous avez utilisé tous vos messages pour cette période."
+        }
+    }
+    static var imageFailureQuota: String { imageFailureQuota(in: .current) }
+
+    /// `image.failurePolicy`: Failure: the request breaks the acceptable use policy.
+    static func imageFailurePolicy(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "This request goes against our acceptable use policy."
+        case .fr: "Cette demande enfreint notre politique d’utilisation acceptable."
+        }
+    }
+    static var imageFailurePolicy: String { imageFailurePolicy(in: .current) }
+
+    /// `image.failureWorkspace`: Failure: the project's assistant has media generation turned off.
+    static func imageFailureWorkspace(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Image generation is turned off for this project."
+        case .fr: "La génération d’images est désactivée pour ce projet."
+        }
+    }
+    static var imageFailureWorkspace: String { imageFailureWorkspace(in: .current) }
+
+    /// `image.failureEdit`: Failure: the image model can't work from a reference picture.
+    static func imageFailureEdit(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(model) can’t work from a reference image."
+        case .fr: "\(model) ne peut pas partir d’une image de référence."
+        }
+    }
+
+    /// `image.failureReference`: Failure: the reference picture could not be found.
+    static func imageFailureReference(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "The reference image couldn’t be found."
+        case .fr: "L’image de référence est introuvable."
+        }
+    }
+    static var imageFailureReference: String { imageFailureReference(in: .current) }
+
+    /// `image.failureLibraryFull`: Failure: the Library has no room for the picture.
+    static func imageFailureLibraryFull(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Your Library is full. Free some space to save new images."
+        case .fr: "Votre bibliothèque est pleine. Libérez de l’espace pour enregistrer de nouvelles images."
+        }
+    }
+    static var imageFailureLibraryFull: String { imageFailureLibraryFull(in: .current) }
+
+    /// `image.failureTooMany`: Failure: one reply asked for pictures too many times.
+    static func imageFailureTooMany(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "One reply can make images three times at most."
+        case .fr: "Une réponse peut créer des images trois fois au maximum."
+        }
+    }
+    static var imageFailureTooMany: String { imageFailureTooMany(in: .current) }
+
+    /// `image.failureNotRequested`: Failure: a document or page asked for a picture, not the person.
+    static func imageFailureNotRequested(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Images are only made when you ask for one in your own message."
+        case .fr: "Les images ne sont créées que si vous en demandez une dans votre propre message."
+        }
+    }
+    static var imageFailureNotRequested: String { imageFailureNotRequested(in: .current) }
+
+    /// `image.failureProvider`: Failure: the image model returned an error.
+    static func imageFailureProvider(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(model) couldn’t make this image."
+        case .fr: "\(model) n’a pas pu créer cette image."
+        }
+    }
+
+    /// `image.tryAgain`: Failure card action: ask again.
+    static func imageTryAgain(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Try again"
+        case .fr: "Réessayer"
+        }
+    }
+    static var imageTryAgain: String { imageTryAgain(in: .current) }
 
     /// Strings no surface may show any more.
     static let retired: [String] = ["How can I help you today?", "Private chat", "What can I help with?", "Automations", "New automation"]

@@ -45,7 +45,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-54 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+55 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -92,13 +92,14 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `xai:grok-4.20-multi-agent-0309` | xai-responses | untested | untested | untested | untested | untested | no |
 | `minimax:MiniMax-M3` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `minimax:MiniMax-M3.1-Flash-Preview` | openai-compatible | untested | untested | untested | untested | untested | no |
-| `minimax:MiniMax-M2.7-highspeed` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `mimo:mimo-v2.6-pro` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-pro-ultraspeed` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-max` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.7-plus` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-omni-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `qwen:qwen3.8-27b` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `qwen:qwen3.8-2.4t-a95b` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `qwen:qwen3.8-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen-long` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `longcat:LongCat-2.0` | openai-compatible | untested | untested | n/a | untested | untested | no |

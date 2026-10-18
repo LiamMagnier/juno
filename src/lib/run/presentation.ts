@@ -73,6 +73,9 @@ export const RUN_COPY = {
   startedTask: "Started a task",
   taskNotStarted: "Task not started",
   suggestedResearch: "Suggested research",
+  creatingImage: "Creating an image",
+  createdImage: "Created an image",
+  imageNotCreated: "Image not created",
   used: "Used",
   couldNotOpen: "Couldn't open",
 
@@ -342,6 +345,7 @@ export function failurePhrase(record: ToolCallRecord): PhraseSpec {
   if (key) return only(key);
   if (record.tool === "run_code") return only("codeFailed");
   if (record.tool === "start_task") return only("taskNotStarted");
+  if (record.tool === "generate_image") return only("imageNotCreated");
   return only("failGeneric");
 }
 
@@ -547,6 +551,20 @@ const startTask: Entry = {
   failedSubject: () => [],
 };
 
+/**
+ * A picture made in chat (`generate_image`, G04). The card under the reply
+ * shows the picture and the real cause of a failure; the row only says what
+ * happened.
+ */
+const generateImage: Entry = {
+  icon: "image",
+  running: () => [only("creatingImage")],
+  done: () => [only("createdImage")],
+  figure: () => null,
+  // "Image not created" is the whole subject.
+  failedSubject: () => [],
+};
+
 const suggestResearch: Entry = {
   icon: "research",
   running: () => [only("suggestedResearch")],
@@ -614,6 +632,7 @@ const REGISTRY: Record<CanonicalToolId, Entry> = {
   start_task: startTask,
   suggest_research: suggestResearch,
   local_folder: localFolder,
+  generate_image: generateImage,
   mcp: connector,
 };
 

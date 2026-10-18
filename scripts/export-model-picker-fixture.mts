@@ -11,7 +11,7 @@
  * below, which the sync moves forward), so the output does not change at
  * midnight on its own: retirements are applied by the sync, not by the clock.
  */
-export const DEFAULT_FIXTURE_DAY = "2026-10-10";
+export const DEFAULT_FIXTURE_DAY = "2026-10-18";
 const FIXTURE_DAY = process.env.FIXTURE_DAY ?? DEFAULT_FIXTURE_DAY;
 // Before the catalogue loads: MODEL_LIST is filtered by this day at import.
 process.env.JUNO_CATALOG_TODAY = FIXTURE_DAY;

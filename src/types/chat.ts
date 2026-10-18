@@ -4,6 +4,7 @@ import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientRoutineProposal } from "@/lib/work/routine-proposal";
+import type { ClientImageGeneration } from "@/lib/media/image-generation";
 import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientFeature } from "@/lib/chat/client-features";
 import type {
@@ -433,6 +434,13 @@ export interface ClientActivityEvent {
    * card's Schedule press creates it; the card reads whether it did by key.
    */
   routineProposal?: ClientRoutineProposal;
+  /**
+   * A picture the chat model made (`generate_image`, src/lib/chat/image-tool.ts):
+   * generating, then done with the files or failed with the cause. The row is
+   * re-sent with the same id as the call moves, and the files are also the
+   * answer's attachments once it is saved.
+   */
+  imageGeneration?: ClientImageGeneration;
   /**
    * What became of each context token the message named (the files, apps,
    * projects, crew members, skills, chats and artifacts), on the turn's

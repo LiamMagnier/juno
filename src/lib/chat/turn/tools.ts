@@ -13,6 +13,7 @@ import { codeExecutionNote } from "@/lib/chat/prompt-sections";
 import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
 import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
+import { createGenerateImageTool } from "@/lib/chat/image-tool";
 import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
@@ -162,7 +163,7 @@ export async function buildNativeTools({
   conversationId,
   conversation,
   userMessageId,
-  approvals: { taskToolOn, routineToolOn = false, agentConfigToolsOn, agentContext },
+  approvals: { taskToolOn, routineToolOn = false, imageToolOn = false, agentConfigToolsOn, agentContext },
   appliedSkill,
   conversationModelId,
   requestedEffort,
@@ -180,6 +181,9 @@ export async function buildNativeTools({
   preflightVisibleContent,
   crossConversation,
   localFolder = null,
+  plan,
+  generatedAttachmentIds,
+  onImageModel,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -187,7 +191,7 @@ export async function buildNativeTools({
   conversation: { projectId: string | null; taskApprovalMode?: string | null };
   userMessageId: string | null;
   approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext"> &
-    Partial<Pick<TurnApprovals, "routineToolOn">>;
+    Partial<Pick<TurnApprovals, "routineToolOn" | "imageToolOn">>;
   appliedSkill: TurnSkill["appliedSkill"];
   conversationModelId: string;
   requestedEffort: ReasoningEffort | undefined;
@@ -206,6 +210,12 @@ export async function buildNativeTools({
   crossConversation?: CrossTurn | null;
   /** The Mac folder this turn works in (`resolveApprovals`), or null. */
   localFolder?: LocalFolderGrant | null;
+  /** The account's plan, for the image tool's model choice. */
+  plan?: Plan;
+  /** Filled with every attachment `generate_image` made, for linking to the answer. */
+  generatedAttachmentIds?: string[];
+  /** The image model that made a picture, for Auto's receipt. */
+  onImageModel?: (model: { id: string; name: string; auto: boolean }) => void;
 }): Promise<NativeChatTool[]> {
   let taskAnnounced = false;
   const taskTool =
@@ -391,9 +401,27 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // Pictures in chat (src/lib/chat/image-tool.ts): one activity row per call,
+  // re-sent in place as it moves; the files are linked to the answer on save.
+  const imageTool =
+    imageToolOn && userMessageId && plan
+      ? createGenerateImageTool({
+          user: { id: user.id, email: user.email },
+          conversation: { id: conversationId, projectId: conversation.projectId },
+          plan,
+          userRequest: clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? "",
+          turnAttachmentIds: [...(input.attachmentIds ?? []), ...contextAttachmentIds],
+          untrustedContent: untrustedContentInTurn,
+          sendActivity: (event) => sendActivity(event),
+          resendActivity: (entry) => send({ type: "activity", event: entry }),
+          generatedAttachmentIds: generatedAttachmentIds ?? [],
+          onImageModel,
+        })
+      : null;
   const nativeTools = [
     taskTool,
     routineTool,
+    imageTool,
     handoffTool,
     ...agentConfigTools,
     setupChangeTool,

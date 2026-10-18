@@ -132,6 +132,9 @@ struct DesktopCommandContext {
     var openShortcuts: () -> Void = {}
     var toggleQuickEntry: () -> Void = {}
     var openURL: (URL) -> Void = { _ in }
+    /// Quick Entry's shortcut as the reader set it (Settings › General), so
+    /// File › Ask Alevr… shows their chord rather than the registry's ⌥Space.
+    var quickEntryShortcut: KeyboardShortcut? = DesktopQuickEntryHotkey.keyboardShortcut(.quickEntryDefault)
 
     var product: DesktopProductMode? { workspace?.currentProduct }
 
@@ -163,6 +166,12 @@ struct DesktopCommandContext {
     }
 
     private var isDark: Bool { shell?.toggleTheme?.isDark ?? false }
+
+    /// The item's chord: the registry's, except Ask Alevr…, whose chord is the
+    /// reader's to change.
+    func keyboardShortcut(for entry: JunoShortcut) -> KeyboardShortcut? {
+        entry.id == .askJuno ? quickEntryShortcut : entry.keyboardShortcut
+    }
 
     /// A checkmark row's state (View › Chat, Code), or nil for a plain item.
     func isOn(_ id: JunoShortcutID) -> Bool? {
@@ -311,6 +320,7 @@ struct JunoDesktopCommands: Commands {
     @FocusedValue(\.junoComposerStop) private var composerStop
     @Environment(\.openWindow) private var openWindow
     @State private var updater = DesktopUpdateModel.shared
+    @AppStorage(DesktopQuickEntryHotkey.storageKey) private var quickEntryHotkey = ""
 
     private var context: DesktopCommandContext {
         let openWindow = openWindow
@@ -330,7 +340,10 @@ struct JunoDesktopCommands: Commands {
             },
             openShortcuts: { openWindow(id: JunoDesktopWindow.shortcutsID) },
             toggleQuickEntry: { DesktopQuickEntryController.shared.toggle() },
-            openURL: { NSWorkspace.shared.open($0) }
+            openURL: { NSWorkspace.shared.open($0) },
+            quickEntryShortcut: DesktopQuickEntryHotkey.keyboardShortcut(
+                DesktopQuickEntryHotkey.hotkey(storage: quickEntryHotkey)
+            )
         )
     }
 
@@ -501,13 +514,13 @@ struct DesktopMenuSection: View {
                     Toggle(isOn: Binding(get: { isOn }, set: { if $0 { action?() } })) {
                         label(for: entry)
                     }
-                    .keyboardShortcut(entry.keyboardShortcut)
+                    .keyboardShortcut(context.keyboardShortcut(for: entry))
                     .disabled(action == nil)
                 } else {
                     Button { action?() } label: {
                         label(for: entry)
                     }
-                    .keyboardShortcut(entry.keyboardShortcut)
+                    .keyboardShortcut(context.keyboardShortcut(for: entry))
                     .disabled(action == nil)
                 }
             }

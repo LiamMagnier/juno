@@ -384,6 +384,9 @@ struct DesktopCodeWorkspace: View {
             .junoSidebarColumn()
         } detail: {
             canvas
+                // The side panel opening must take its width from this
+                // column, never push the window's columns past its edges.
+                .studioYieldingWidth()
                 .background(Studio.Surface.canvas)
                 .desktopContentPanel()
                 .navigationTitle(title)
@@ -426,6 +429,7 @@ struct DesktopCodeWorkspace: View {
             // a zero width it can ask for thousands of points, and the window
             // then draws every column outside itself.
             .studioBoundedMinimumHeight()
+            .studioYieldingWidth()
             .inspectorColumnWidth(
                 min: Studio.Metrics.panelMinimum,
                 ideal: Studio.Metrics.panelIdeal,

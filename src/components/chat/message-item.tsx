@@ -77,6 +77,9 @@ const CitationAuditPanel = nextDynamic(
 );
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { GeneratedImage, GeneratedImageGrid, GeneratedVideo, useGenerationHandoff } from "@/components/chat/generated-media";
+import { ImageGenerationCard, attachmentsForGeneration, imageGenerationsOf } from "@/components/chat/image-generation-card";
+import { shellString } from "@/lib/strings";
+import { useUiLocale } from "@/lib/i18n-format";
 import { AudioAttachment } from "@/components/chat/audio-attachment";
 /**
  * Split: a full-screen editor that mounts only once a reader has pressed Edit
@@ -89,6 +92,7 @@ const ImageEditOverlay = nextDynamic(
   { ssr: false },
 );
 import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
+import { ConnectionStatus } from "@/components/chat/connection-status";
 import { TIMING } from "@/lib/interaction";
 import { AgentFace } from "@/components/agents/agent-face";
 import { useAgentThread } from "@/components/agents/agent-thread-context";
@@ -701,6 +705,10 @@ export const MessageItem = React.memo(function MessageItem({
   const [editOpen, setEditOpen] = React.useState(false);
   // Where the picture sat when Edit was pressed, so the editor opens out of it.
   const [editOrigin, setEditOrigin] = React.useState<DOMRect | null>(null);
+  // The image model that made the picture being edited, when a chat model's
+  // `generate_image` made it: the answer's own model writes, it does not draw.
+  const [editSourceModel, setEditSourceModel] = React.useState<string | null>(null);
+  const uiLocale = useUiLocale();
   // The shape this turn's generation asked for, kept past the placeholder so
   // the result lands in the same box and reveals (generated-media.tsx).
   const generationHandoff = useGenerationHandoff(message.error ? null : message.progress);
@@ -1114,7 +1122,15 @@ export const MessageItem = React.memo(function MessageItem({
   const hasRunTrace = !!view.reasoning?.trim() || !!view.activity?.length;
   // Generated media: image attachments + video and audio files (kind FILE, video/* or audio/* mime).
   const isPlayable = (a: ClientAttachment) => a.mimeType.startsWith("video/") || a.mimeType.startsWith("audio/");
-  const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || isPlayable(a));
+  // Pictures the chat model made (`generate_image`, G04): drawn by their own
+  // card from the activity row, so they are left out of the generic media
+  // below — and out of `isMediaOnly`, because the turn is still a chat turn
+  // that Regenerate asks again.
+  const imageGenerations = imageGenerationsOf(view.activity);
+  const imageCardIds = new Set(imageGenerations.flatMap(({ generation }) => generation.attachmentIds));
+  const mediaAttachments = message.attachments.filter(
+    (a) => (a.kind === "IMAGE" || isPlayable(a)) && !imageCardIds.has(a.id)
+  );
   // Media from an image, video or audio model is AI output and is labelled as
   // such. A chart a chat model drew with code is not "generated" in that sense.
   const generatedMedia = (() => {
@@ -1251,9 +1267,42 @@ export const MessageItem = React.memo(function MessageItem({
               ))}
           </div>
         ) : null}
+        {imageGenerations.length > 0 ? (
+          <div className="space-y-1">
+            {imageGenerations.map(({ id, generation }) => (
+              <ImageGenerationCard
+                key={generation.callId || id}
+                generation={generation}
+                attachments={attachmentsForGeneration(generation, message.attachments)}
+                live={!!message.streaming}
+                onEdit={
+                  onImageEdit && currentModelId && !privateMode && !busy
+                    ? (attachment, origin, sourceModelId) => {
+                        setEditOrigin(origin ?? null);
+                        setEditSourceModel(sourceModelId);
+                        setEditTarget(attachment);
+                        setEditOpen(true);
+                      }
+                    : undefined
+                }
+                onVary={
+                  onImageEdit && !privateMode && !busy
+                    ? (attachment, modelId) => {
+                        onImageEdit({
+                          prompt: shellString("image.varyPrompt", {}, uiLocale),
+                          model: modelId,
+                          edit: { attachmentId: attachment.id },
+                        });
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        ) : null}
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
-        ) : showCursor && !hasRunTrace ? (
+        ) : showCursor && !hasRunTrace && !message.connection ? (
           // `errorMessage` set while still streaming and NOT errored is exactly
           // the shape `beginDropRecovery` leaves behind — it is the only state
           // that writes an explanation onto a turn it expects to complete.
@@ -1308,6 +1357,7 @@ export const MessageItem = React.memo(function MessageItem({
                 onImageEdit && currentModelId && !privateMode && !busy
                   ? (origin?: DOMRect) => {
                       setEditOrigin(origin ?? null);
+                      setEditSourceModel(null);
                       setEditTarget(a);
                       setEditOpen(true);
                     }
@@ -1400,6 +1450,9 @@ export const MessageItem = React.memo(function MessageItem({
                 loudest thing on the page while a reply arrived, and it is
                 redundant now: the tail fade already says "still writing", and
                 the composer is showing its stop button throughout. */}
+            {/* The stream dropped and Tether is bringing it back: one calm,
+                worded line under whatever has arrived so far. */}
+            {message.streaming && message.connection ? <ConnectionStatus connection={message.connection} /> : null}
             {(view.errorMessage || finishNote || canContinue) && (
               // Same rung, same fill logic and same `text-ui` register as the
               // error notice above — these two are siblings in the same slot
@@ -1670,7 +1723,7 @@ export const MessageItem = React.memo(function MessageItem({
       {editTarget && onImageEdit && currentModelId && (
         <ImageEditOverlay
           attachment={editTarget}
-          sourceModelId={message.model}
+          sourceModelId={editSourceModel ?? message.model}
           currentModelId={currentModelId}
           originRect={editOrigin}
           open={editOpen}

@@ -32,6 +32,7 @@ import { coerceChatOrigin } from "@/lib/chat-origin";
 import { readToolDetail } from "@/lib/chat/tool-detail";
 import { readContextReceipt } from "@/lib/chat/context-tokens";
 import { readRoutineProposal } from "@/lib/work/routine-proposal";
+import { readImageGeneration } from "@/lib/media/image-generation";
 import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
 // import { serializeActivity } from "@/lib/chat/run-record";
 
@@ -121,6 +122,10 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
     // the reason above: without this line the card streams live and is gone
     // after a reload, and with it a row that does not match is dropped.
     const routineProposal = readRoutineProposal(record.routineProposal);
+    // A picture the model made (`generate_image`). Read field by field for the
+    // same reason; the live-only `images` (signed URLs) is never read back —
+    // the files come back as the answer's attachments.
+    const imageGeneration = readImageGeneration(record.imageGeneration);
 
     return [
       {
@@ -137,6 +142,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
         ...(agentChange ? { agentChange } : {}),
         ...(contextReceipt ? { contextReceipt } : {}),
         ...(routineProposal ? { routineProposal } : {}),
+        ...(imageGeneration ? { imageGeneration } : {}),
       },
     ];
   });

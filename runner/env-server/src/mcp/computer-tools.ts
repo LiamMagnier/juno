@@ -26,6 +26,7 @@ import {
   COMPUTER_ACTION_VALUES,
   COMPUTER_COORDINATE_SPACE_VALUES,
   type ComputerActionItem,
+  type SystemNoticeItem,
   type ComputerActionKind,
   type ComputerBridgeResponse,
   type ComputerCoordinateSpace,
@@ -252,6 +253,11 @@ export interface ComputerToolSession {
   coordinateSpace?: ComputerCoordinateSpace;
   /** Whether the agent's model can see images; without, results are text only (ax_find carries the screen). */
   images?: boolean;
+  /**
+   * Nobody is watching this turn (a scheduled resume): the Mac refuses
+   * take-over and skips and records any step that would need approval.
+   */
+  unattended?: boolean;
 }
 
 export interface ComputerToolsOptions {
@@ -259,6 +265,8 @@ export interface ComputerToolsOptions {
   session: ComputerToolSession;
   /** Every call's turn item, for the session log (item.added / item.updated). */
   onItem?: (item: ComputerActionItem) => void;
+  /** A notice the Mac asked to add to the thread (the `screen_locked` pause). */
+  onNotice?: (item: SystemNoticeItem) => void;
   now?: () => Date;
   heartbeatMs?: number;
 }
@@ -318,7 +326,15 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
       let response: ComputerBridgeResponse;
       try {
         response = await bridge.send(
-          { type: "computer.call", sessionId: session.id, title: session.title, runtimeMode: session.runtimeMode, callId, args },
+          {
+            type: "computer.call",
+            sessionId: session.id,
+            title: session.title,
+            runtimeMode: session.runtimeMode,
+            ...(session.unattended ? { unattended: true } : {}),
+            callId,
+            args,
+          },
           { signal },
         );
       } catch (error) {
@@ -339,6 +355,13 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
         durationMs: returned?.durationMs ?? durationMs,
         ...(response.ok ? {} : { error: returned?.error ?? response.text }),
       });
+      if (response.notice?.kind === "system_notice") {
+        try {
+          options.onNotice?.(response.notice);
+        } catch {
+          // A broken listener must not break the agent's tool call.
+        }
+      }
       if (response.endsTurn) {
         // The user pressed Esc or Stop, or a macOS grant is missing: nothing
         // else queued in this turn reaches for the pointer. The next turn

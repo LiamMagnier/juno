@@ -158,6 +158,51 @@ struct DesktopCodeModelMappingTests {
         #expect(option?.thinkingLadder.isPresentable == false)
     }
 
+    /// The Haikus through the real Chat → Code projection: Haiku 5.5's stops
+    /// are Instant plus all five depths with Medium the default, Haiku 4.5's
+    /// are Instant/Thinking with "on" sent as high — from the manifest fields
+    /// alone, on both pickers.
+    @Test
+    func theHaikusKeepTheirManifestLaddersInCode() {
+        let haiku55 = NativeChatModelOption(
+            id: "anthropic:claude-haiku-5-5",
+            providerID: "anthropic",
+            providerName: "Anthropic",
+            displayName: "Claude Haiku 5.5",
+            minimumPlan: "FREE",
+            availability: "available",
+            modality: "chat",
+            supportedReasoningEfforts: [.low, .medium, .high, .xhigh, .max],
+            defaultReasoningEffort: .medium,
+            canDisableReasoning: true,
+            supportsReasoning: true,
+            supportsStreaming: true
+        )
+        let haiku45 = NativeChatModelOption(
+            id: "anthropic:claude-haiku-4-5",
+            providerID: "anthropic",
+            providerName: "Anthropic",
+            displayName: "Claude Haiku 4.5",
+            minimumPlan: "FREE",
+            availability: "available",
+            modality: "chat",
+            supportedReasoningEfforts: [],
+            canDisableReasoning: true,
+            supportsReasoning: true,
+            isOnOffReasoningOnly: true,
+            supportsStreaming: true
+        )
+        let options = JunoDesktopRootView.codeModels(from: [haiku55, haiku45])
+        let h55 = options.first { $0.modelID == "anthropic:claude-haiku-5-5" }
+        #expect(h55?.thinkingLadder.stops.map(\.label) == ["Instant", "Low", "Medium", "High", "Extra high", "Max"])
+        #expect(h55?.thinkingLadder.defaultStopID == "medium")
+        #expect(h55?.refittingEffort(.minimal) == .some(.medium))
+
+        let h45 = options.first { $0.modelID == "anthropic:claude-haiku-4-5" }
+        #expect(h45?.thinkingLadder.stops.map(\.label) == ["Instant", "Thinking"])
+        #expect(h45?.supportedReasoningEfforts == [.high])
+    }
+
     // MARK: - First-turn launch contract
 
     /// Local and Worktree stay on this Mac; Cloud and Device are dispatched

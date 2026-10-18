@@ -282,6 +282,7 @@ async function handleChat(req: Request) {
       untrustedContentInTurn,
       taskToolOn: approvals.taskToolOn,
       routineToolOn: approvals.routineToolOn,
+      imageToolOn: approvals.imageToolOn,
       useWebSearch,
       useAlevrSearch,
       attachmentToolToggles,

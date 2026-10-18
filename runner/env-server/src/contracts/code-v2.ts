@@ -811,6 +811,12 @@ export interface ComputerBridgeRequest {
   title?: string;
   /** The session's runtime mode; the Mac applies the same computer policy as its own sessions. */
   runtimeMode?: RuntimeMode;
+  /**
+   * Nobody is watching this turn (a scheduled resume, a routine). The Mac then
+   * refuses take-over, gives the screen a time limit, and skips and records any
+   * step that would need the reader's approval instead of asking or approving.
+   */
+  unattended?: boolean;
   callId?: string;
   args?: ComputerToolArgs;
 }
@@ -836,6 +842,13 @@ export interface ComputerBridgeResponse {
   holder?: DesktopLockRecord;
   /** The model must stop: the reader pressed Esc / Stop, or a grant is missing. */
   endsTurn?: boolean;
+  /**
+   * A notice for the thread, added by the env server as it is: today the
+   * `screen_locked` pause (the Mac locked mid-run; Alevr never unlocks it).
+   * Its id is stable for one lock, so repeated calls upsert one notice and the
+   * paired phones are told once.
+   */
+  notice?: SystemNoticeItem;
 }
 
 /**

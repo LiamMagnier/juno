@@ -326,6 +326,33 @@
       "status": "web-only",
       "note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
     },
+    "ClientActivityEvent.imageGeneration": {
+      "status": "native",
+      "note": "A picture the chat model made (generate_image, G04): generating, then done with the files or failed with the cause, re-sent in place by id. Both native apps decode it (NativeActivityWire) to draw the placeholder and the named failure; the finished files also arrive as the answer's attachments, which every build draws."
+    },
+    "ClientImageGeneration.v": "native",
+    "ClientImageGeneration.callId": "native",
+    "ClientImageGeneration.status": "native",
+    "ClientImageGeneration.prompt": "native",
+    "ClientImageGeneration.modelId": "native",
+    "ClientImageGeneration.modelName": "native",
+    "ClientImageGeneration.auto": "native",
+    "ClientImageGeneration.aspect": "native",
+    "ClientImageGeneration.count": "native",
+    "ClientImageGeneration.referenceAttachmentId": "native",
+    "ClientImageGeneration.attachmentIds": "native",
+    "ClientImageGeneration.images": {
+      "status": "native",
+      "note": "Live only: the finished files before the done frame carries them as the answer's attachments. Never present after a reload."
+    },
+    "ClientImageGeneration.failure": {
+      "status": "native",
+      "note": "The real cause: a code each client words itself (shell strings image.failure*), plus the server's sentence for an unknown code."
+    },
+    "ImageGenerationFailure.code": "native",
+    "ImageGenerationFailure.message": "native",
+    "ImageGenerationFailure.model": "native",
+    "ImageGenerationFailure.plan": "native",
     "ClientToolDetail.server": "native",
     "ClientToolDetail.name": "native",
     "ClientToolDetail.args": "native",

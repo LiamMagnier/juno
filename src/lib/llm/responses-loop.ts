@@ -108,6 +108,10 @@ export function mapResponsesEffort(model: ModelInfo, effort?: ReasoningEffort): 
  */
 function canDisableViaNoneEffort(model: ModelInfo): boolean {
   const id = model.providerModel.toLowerCase();
+  // Grok 4.3 lists `none` too (docs.x.ai model page, read 2026-10-18; API
+  // default `low`), so its Instant has to be sent rather than omitted. The
+  // always-on Groks report canDisable false and never reach this.
+  if (model.provider === "xai") return model.reasoning && reasoningCaps(model).canDisable;
   if (!/gpt-5\.\d|gpt-6/.test(id)) return false;
   return model.reasoning && reasoningCaps(model).canDisable;
 }
@@ -173,7 +177,7 @@ function turnShape(req: AdapterRequest, dialect: ResponsesDialect, source: ToolS
       dialect,
       functionTools,
       hostedSearch,
-      effort: model.reasoning && req.reasoningEffort ? req.reasoningEffort : undefined,
+      effort: model.reasoning && rc.tiers.length > 0 ? mapResponsesEffort(model, req.reasoningEffort) : undefined,
       usePro: false,
       wantsSummary: false,
     };

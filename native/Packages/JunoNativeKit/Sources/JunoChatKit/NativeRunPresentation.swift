@@ -101,6 +101,7 @@ public enum NativeToolPresentation {
             return NativeRunPhraseLine(phrases)
         case "inspect_image":
             return file(call).map { line(["Looking closer at"], .file($0)) } ?? single("Looking closer at an image")
+        case "generate_image": return single("Creating an image")
         case "run_code", "check_run", "use_skill", "read_skill_file":
             // A real run says what it runs (NativeToolRunPresentation): "Running Python".
             return single(NativeToolRunPresentation.label(call))
@@ -151,6 +152,7 @@ public enum NativeToolPresentation {
             return file(call).map { line(["Read"], .file($0)) } ?? single("Read a document")
         case "inspect_image":
             return file(call).map { line(["Looked closer at"], .file($0)) } ?? single("Looked closer at an image")
+        case "generate_image": return single("Created an image")
         case "run_code", "check_run", "use_skill", "read_skill_file":
             return single(NativeToolRunPresentation.label(call))
         case "search_chats": return single("Searched your chats")
@@ -222,6 +224,9 @@ public enum NativeToolPresentation {
             return NativeRunPhraseLine(runningLine(call).phrases + [reason])
         case "start_task":
             return call.status == .failed ? single("Task not started") : NativeRunPhraseLine(runningLine(call).phrases + [reason])
+        case "generate_image":
+            // The cause is the image card's to name (G04), under the answer.
+            return call.status == .failed ? single("Image not created") : NativeRunPhraseLine(runningLine(call).phrases + [reason])
         default:
             return NativeRunPhraseLine(runningLine(call).phrases + [reason])
         }
@@ -333,7 +338,7 @@ public enum NativeToolPresentation {
         case "web_search", "provider_web_search", "provider_x_search": "search"
         case "web_fetch": "web"
         case "read_document": "file"
-        case "inspect_image": "image"
+        case "inspect_image", "generate_image": "image"
         case "run_code", "check_run": "codeBrackets"
         case "use_skill", "read_skill_file": "skills"
         case "search_chats": "chats"
@@ -368,6 +373,7 @@ public enum NativeToolPresentation {
         case "web_fetch": "Reading web pages"
         case "read_document": "Reading documents"
         case "inspect_image": "Looking closer at images"
+        case "generate_image": "Creating images"
         case "run_code": "Running code"
         case "search_chats": "Searching your chats"
         case "current_time": "Checking the time"

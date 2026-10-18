@@ -462,3 +462,49 @@ public extension View {
         StudioBoundedMinimumHeight(floor: floor) { self }
     }
 }
+
+// MARK: - Yielding width
+
+/// Lets a split view column shrink to the width the window gives it.
+///
+/// A column's minimum width is whatever its content says it needs at a
+/// proposed width of zero. The Code composer's control row, the preview's
+/// toolbar and a page rendered at a fixed width all answer with hundreds of
+/// points, and with the side panel open their sum passed the window's width:
+/// the split view laid the columns out wider than the window, so the sidebar
+/// was cut off on the left and the panel on the right. This reports the width
+/// it is proposed (nothing at zero) and places its content at that width,
+/// clipped, so the window decides the columns and never the other way round.
+public struct StudioYieldingWidth: Layout {
+    public init() {}
+
+    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        guard let width = proposal.width, width.isFinite else { return child.sizeThatFits(proposal) }
+        // A column takes the height it is offered. Measuring the content here
+        // would lay the whole thread out again for every frame of a drag on
+        // the panel's edge (AppKit asks for the minimum at a width of zero,
+        // where a transcript is thousands of points tall), which is what made
+        // resizing stutter.
+        if let height = proposal.height, height.isFinite { return CGSize(width: width, height: height) }
+        return CGSize(width: width, height: child.sizeThatFits(proposal).height)
+    }
+
+    public func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        for child in subviews {
+            child.place(
+                at: bounds.origin,
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+            )
+        }
+    }
+}
+
+public extension View {
+    /// See ``StudioYieldingWidth``: for a split view column or the window's
+    /// inspector, whose content must never set the window's width.
+    func studioYieldingWidth() -> some View {
+        StudioYieldingWidth { self }.clipped()
+    }
+}

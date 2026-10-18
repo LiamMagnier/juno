@@ -69,6 +69,15 @@ export function AutoReceiptReasons({ modelName, receipt }: { modelName: string; 
           </li>
         ))}
       </ul>
+      {/* The picture's own model (`generate_image`, G04): the answer's model
+          wrote the reply, an image model made the image. */}
+      {receipt.image && (
+        <p className="mt-3 border-t border-border/60 pt-2.5 text-caption leading-snug text-muted-foreground">
+          {receipt.image.auto
+            ? `Auto made the image with ${receipt.image.name}.`
+            : `The image was made with ${receipt.image.name}, the model you named.`}
+        </p>
+      )}
       {(receipt.rerouted || receipt.degraded) && (
         <p className="mt-3 border-t border-border/60 pt-2.5 text-caption leading-snug text-muted-foreground">
           {receipt.rerouted

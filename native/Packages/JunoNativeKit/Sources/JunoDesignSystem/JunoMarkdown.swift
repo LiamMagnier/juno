@@ -445,7 +445,20 @@ public enum JunoMarkdown {
 /// exactly the whole-document interpretation, even with one-character deltas.
 public struct JunoIncrementalMarkdown: Sendable {
     private var previous = ""
-    private var committedCharacters = 0
+    /// The committed region — everything before the last blank-line boundary
+    /// the parser has passed — and its length in UTF-8 bytes.
+    ///
+    /// Reuse is keyed on this region rather than on the whole previous source:
+    /// a streamed reply's shown text is *tidied* (JunoStreamTidy closes a
+    /// trailing `**` or `` ` `` on the line being written), so the next frame's
+    /// text routinely does not extend the last one even though everything
+    /// before the line being written is unchanged. Keying on `previous` threw
+    /// the finished blocks away on every such frame and re-parsed the whole
+    /// reply. Bytes rather than Characters because slicing by a UTF-8 offset
+    /// is constant time on a native string, and dropping N Characters walks
+    /// every grapheme before them — per frame, for the whole reply.
+    private var committed = ""
+    private var committedBytes = 0
     private var finished: [JunoMarkdownBlock] = []
     public private(set) var blocks: [JunoMarkdownBlock] = []
     public private(set) var lastParsedCharacters = 0
@@ -455,8 +468,13 @@ public struct JunoIncrementalMarkdown: Sendable {
     @discardableResult
     public mutating func update(_ source: String) -> [JunoMarkdownBlock] {
         if source == previous { return blocks }
-        if !source.hasPrefix(previous) { committedCharacters = 0; finished = [] }
-        let tail = String(source.dropFirst(committedCharacters))
+        if committedBytes > 0, !source.utf8.starts(with: committed.utf8) {
+            committed = ""
+            committedBytes = 0
+            finished = []
+        }
+        let start = source.utf8.index(source.startIndex, offsetBy: committedBytes)
+        let tail = String(source[start...])
         lastParsedCharacters = tail.count
         let parsed = JunoMarkdown.parse(tail)
         blocks = finished + parsed.blocks
@@ -465,8 +483,9 @@ public struct JunoIncrementalMarkdown: Sendable {
         // list or turn prose into a table. Commit only at a blank-line boundary.
         if let lastStart = parsed.starts.last, lastStart > 0,
             lines[lastStart - 1].trimmingCharacters(in: .whitespaces).isEmpty {
-            let consumed = lines.prefix(lastStart).reduce(0) { $0 + $1.count + 1 }
-            committedCharacters += consumed
+            let consumed = lines.prefix(lastStart).reduce(0) { $0 + $1.utf8.count + 1 }
+            committedBytes += consumed
+            committed = String(source[..<source.utf8.index(source.startIndex, offsetBy: committedBytes)])
             finished += parsed.blocks.dropLast()
         }
         previous = source

@@ -11,8 +11,8 @@
  *
  * The distinction the matrix encodes is not cosmetic. `thinking: {type:'enabled',
  * budget_tokens}` is rejected outright by the adaptive-era models (Fable,
- * Mythos, Opus 5.5/4.8/4.7, Sonnet 5) and `thinking: {type:'adaptive'}` is rejected
- * by the older ones (Haiku 4.5, Opus 4.5, Sonnet 4.5). Sending the wrong one is
+ * Mythos, Opus 5.5/4.8/4.7, Sonnet 5/5.5, Haiku 5.5) and `thinking: {type:'adaptive'}`
+ * is rejected by the older ones (Haiku 4.5, Opus 4.5, Sonnet 4.5). Sending the wrong one is
  * a hard 400 before a single token, which is precisely the failure this whole
  * change set exists to stop shipping.
  */
@@ -25,7 +25,9 @@ export type AnthropicEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type AnthropicThinkingParam =
   | { type: 'adaptive'; display?: 'summarized' | 'omitted' }
   | { type: 'enabled'; budget_tokens: number; display?: 'summarized' | 'omitted' }
-  | { type: 'disabled' };
+  | { type: 'disabled' }
+  /** Claude Sonnet 5.5 only: its off switch, valid at effort high or below. */
+  | { type: 'between_tools' };
 
 export interface AnthropicThinkingBits {
   maxTokens: number;
@@ -56,8 +58,11 @@ const MANUAL_BUDGET: Record<ReasoningEffort, number> = {
 function isManual(providerModel: string): boolean {
   const id = providerModel.toLowerCase();
   // Manual-only families are matched first: several of their ids also contain
-  // substrings the adaptive test below would claim.
-  if (id.includes('haiku')) return true;
+  // substrings the adaptive test below would claim. Haiku 4.5 and older only:
+  // Claude Haiku 5.5 is adaptive-only and answers `type:'enabled'` with a 400
+  // (platform.claude.com thinking-troubleshooting table, read 2026-10-18).
+  // Matching every "haiku" here is what broke Haiku 5.5 in Code and Work.
+  if (/haiku-[34]/.test(id) || id.includes('claude-3-haiku')) return true;
   if (id.includes('opus-4-5') || id.includes('sonnet-4-5')) return true;
   if (id.includes('opus-4-1') || /claude-3/.test(id)) return true;
   // Everything else, including Claude ids this build has never heard of, is
@@ -81,9 +86,18 @@ function alwaysOnDefaultEffort(providerModel: string): ReasoningEffort {
   return providerModel.toLowerCase().includes('opus-5-5') ? 'medium' : 'high';
 }
 
-/** Adaptive is the default when `thinking` is omitted, so Instant must say so. */
+/**
+ * Adaptive is the default when `thinking` is omitted on these, so Instant must
+ * say so: Opus 5, Sonnet 5, Sonnet 5.5 and Haiku 5.5 are "On" in Anthropic's
+ * per-model table. Opus 5.5 is always on and is excluded by the lookahead.
+ */
 function adaptiveDefaultOn(providerModel: string): boolean {
-  return providerModel.toLowerCase().includes('sonnet-5');
+  return /(opus|sonnet)-5(?![-.]\d)|sonnet-5-5|haiku-5-5/.test(providerModel.toLowerCase());
+}
+
+/** Sonnet 5.5 rejects `disabled` at every effort; its off switch is `between_tools`. */
+function instantThinkingParam(providerModel: string): AnthropicThinkingParam {
+  return providerModel.toLowerCase().includes('sonnet-5-5') ? { type: 'between_tools' } : { type: 'disabled' };
 }
 
 /** Newest adaptive models omit the thinking text unless asked for a summary. */
@@ -95,7 +109,8 @@ function needsSummarizedDisplay(providerModel: string): boolean {
     id.includes('opus-5') || // claude-opus-5 and claude-opus-5-5 alike
     id.includes('opus-4-8') ||
     id.includes('opus-4-7') ||
-    id.includes('sonnet-5')
+    id.includes('sonnet-5') ||
+    id.includes('haiku-5-5') // display defaults to "omitted" on Haiku 5.5 too
   );
 }
 
@@ -123,7 +138,7 @@ export function anthropicThinkingBits(
   if (!manual) {
     if (!reasoningEffort && !adaptiveAlwaysOn(providerModel)) {
       return adaptiveDefaultOn(providerModel)
-        ? { maxTokens: Math.min(maxTokens, outputCap), thinking: { type: 'disabled' } }
+        ? { maxTokens: Math.min(maxTokens, outputCap), thinking: instantThinkingParam(providerModel) }
         : { maxTokens: Math.min(maxTokens, outputCap) };
     }
     const tier = reasoningEffort ?? alwaysOnDefaultEffort(providerModel);

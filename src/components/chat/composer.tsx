@@ -82,6 +82,9 @@ import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
  * `pendingClarification`. `ssr: false` because a pending clarification is
  * client state by construction — the server has never had one to render.
  */
+/** The image model "Create image" opens on next time, on this device. */
+const LAST_IMAGE_MODEL_KEY = "alevr.lastImageModel";
+
 const ComposerClarificationPopover = nextDynamic(
   () =>
     import("@/components/chat/composer-clarification-popover").then(
@@ -91,6 +94,8 @@ const ComposerClarificationPopover = nextDynamic(
 );
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
+import { defaultImageModel } from "@/lib/router/image-route";
+import { isModelLocked } from "@/lib/model-picker";
 import {
   reasoningOptions,
   defaultReasoning,
@@ -617,6 +622,56 @@ function ComposerImpl({
     },
     [onModelChange, onReasoningChange, reasoningEffort],
   );
+  /*
+   * ── Create image (G04) ─────────────────────────────────────────────────────
+   *
+   * Image mode IS an image model on the row: everything the composer already
+   * does for one (the aspect, count and quality controls in the tray, the
+   * placeholder, sending through /api/generate with every pipeline gate) is
+   * reused rather than drawn a second time. The + menu's "Create image" turns
+   * it on with the image model used last on this device, else the best one
+   * this account can use (image-route.ts' ranking), and remembers the chat
+   * model it replaced; its mark's ✕, or the row again, puts that model back.
+   * A different image model is picked in the model menu as ever.
+   */
+  const lastChatModelRef = React.useRef<ModelId | null>(null);
+  const imageDefault = React.useMemo(() => {
+    let lastUsed: string | null = null;
+    try {
+      lastUsed = window.localStorage.getItem(LAST_IMAGE_MODEL_KEY);
+    } catch {
+      // Storage refused (private window): fall back to the ranking.
+    }
+    return defaultImageModel(models, quota.plan, lastUsed, isModelLocked);
+    // `model` is read so a model chosen in the menu becomes the next default.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models, quota.plan, model]);
+  const imageModeAvailable = !privateMode && !voiceActive && (modality === "image" || imageDefault !== null);
+  React.useEffect(() => {
+    if (modality !== "image") return;
+    try {
+      window.localStorage.setItem(LAST_IMAGE_MODEL_KEY, model);
+    } catch {
+      // Not remembered; the ranking picks next time.
+    }
+  }, [modality, model]);
+  const exitImageMode = React.useCallback(() => {
+    const back = lastChatModelRef.current;
+    lastChatModelRef.current = null;
+    const fallback = resolveModel(settings.defaultModel);
+    changeModel(back ?? (fallback && fallback.modality === "chat" ? fallback.id : AUTO_MODEL_ID));
+  }, [changeModel, settings.defaultModel]);
+  const toggleImageMode = React.useCallback(() => {
+    if (modality === "image") {
+      exitImageMode();
+      return;
+    }
+    if (!imageDefault) return;
+    if (modality === "chat") lastChatModelRef.current = model;
+    changeModel(imageDefault.id);
+    // Straight back to the field: the next thing is describing the picture.
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [changeModel, exitImageMode, imageDefault, modality, model]);
   // Web search — gated by plan and by whether this model can search here:
   // its provider's own search, or Alevr Search's tools on any model that
   // takes function tools (BRIEF §15). Private and voice turns run only the
@@ -2399,6 +2454,20 @@ function ComposerImpl({
           remove: () => setSkillSlug(null),
         }]
       : []),
+    /* Image mode: what this message makes, and the model making it. Its ✕
+       goes back to the chat model it replaced. */
+    ...(modality === "image" && !voiceActive
+      ? [{
+          id: "image",
+          icon: <ComposerIcons.image className="size-4" />,
+          label: "Create image",
+          detail: resolved?.name,
+          tooltip: <>{`Images made with ${resolved?.name ?? "an image model"}. Pick another one in the model menu.`}</>,
+          openLabel: "Creating images. Opens the add menu.",
+          removeLabel: "Stop creating images",
+          remove: exitImageMode,
+        }]
+      : []),
     ...(researchArmed
       ? [{
           id: "research",
@@ -2600,6 +2669,19 @@ function ComposerImpl({
         }
       : null;
 
+  /** The + menu's "Create image" row: image mode on or off (see `toggleImageMode`). */
+  const imageRow: PlusMenuItem | null =
+    imageModeAvailable
+      ? {
+          kind: "toggle",
+          id: "image",
+          label: "Create image",
+          icon: ComposerIcons.image,
+          checked: modality === "image",
+          onToggle: toggleImageMode,
+        }
+      : null;
+
   /** The + menu's "Mention" row: an "@" at the caret, and the palette opens on it. */
   const mentionRow: PlusMenuItem | null =
     !privateMode && !voiceActive && modality === "chat"
@@ -2712,6 +2794,7 @@ function ComposerImpl({
         // How this message is answered: the Deep Field mode, then the two
         // switches people actually flip (C19).
         [
+          ...(imageRow ? [imageRow] : []),
           ...(researchRow ? [researchRow] : []),
           {
             kind: "toggle",

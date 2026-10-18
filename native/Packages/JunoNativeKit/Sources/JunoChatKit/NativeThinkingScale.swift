@@ -16,7 +16,7 @@ public enum NativeThinkingStop: Equatable, Sendable, Identifiable {
     public var id: String {
         switch self {
         case .instant: JunoThinkingLadder.instantStopID
-        case .thinking: "thinking"
+        case .thinking: JunoThinkingLadder.onStopID
         case .effort(let effort): effort.rawValue
         }
     }
@@ -159,18 +159,24 @@ public struct NativeThinkingScale: Equatable, Sendable {
         stops.indices.contains(index) ? stops[index] : nil
     }
 
-    /// The stop a freshly selected model starts on. Off wherever the model
-    /// allows it — deep thinking is slower and pricier, so it is opted into.
-    /// An always-on model starts at a sensible middle tier instead, matching
-    /// `defaultReasoning` on the web so both clients open on the same value.
+    /// The stop a freshly selected model starts on: the model's own declared
+    /// default (`reasoning.defaultEffort`, the web's `defaultReasoning`) when it
+    /// publishes one, so both clients open on the same value — Claude Haiku
+    /// 5.5 opens on Medium although it offers Instant. A model that publishes
+    /// no default and can be switched off starts on Instant (the manifest
+    /// sends no default for exactly those); an always-on model without one
+    /// starts at a sensible middle tier.
+    ///
+    /// The declared default used to be consulted only after Instant, so every
+    /// Instant-capable model opened on Instant whatever the manifest said.
     public var defaultStop: NativeThinkingStop? {
         guard let first = stops.first else { return nil }
-        if first == .instant { return .instant }
         if let declared = declaredDefault,
             stops.contains(.effort(declared))
         {
             return .effort(declared)
         }
+        if first == .instant { return .instant }
         // Backward compatibility with manifests that predate defaultEffort.
         if stops.contains(.effort(.medium)) { return .effort(.medium) }
         return stop(at: min(1, stops.count - 1))
@@ -213,8 +219,9 @@ public struct NativeThinkingScale: Equatable, Sendable {
             )
         }
         guard let requested = effort else {
-            // The previous selection was Off and this model always thinks.
-            let fallback = stops[0]
+            // The previous selection was Off and this model always thinks: its
+            // declared default, as the web's clampReasoningEffort does.
+            let fallback = declaredDefault != nil ? (defaultStop ?? stops[0]) : stops[0]
             return NativeThinkingAdjustment(
                 stop: fallback,
                 explanation: "\(modelName) always thinks — set to \(fallback.label)."
