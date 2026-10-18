@@ -42,10 +42,16 @@ public struct CodeV2TerminalPane: View {
                 .onChange(of: terminal.screen) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
             }
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                let cols = Int((size.width - 2 * JunoSpace.cozy) / Self.cell.width)
-                let rows = Int((size.height - 2 * JunoSpace.cozy) / Self.cell.height)
-                Task { await terminal.resize(cols: cols, rows: rows) }
+            // Keyed on the character grid, not the point size: dragging the
+            // panel's edge changes the size every frame, and resizing the
+            // shell each time reflowed it under the drag and made it stutter.
+            .onGeometryChange(for: TerminalGrid.self) { proxy in
+                TerminalGrid(
+                    cols: Int((proxy.size.width - 2 * JunoSpace.cozy) / Self.cell.width),
+                    rows: Int((proxy.size.height - 2 * JunoSpace.cozy) / Self.cell.height)
+                )
+            } action: { grid in
+                Task { await terminal.resize(cols: grid.cols, rows: grid.rows) }
             }
             footer
         }
@@ -234,4 +240,10 @@ struct CodeV2ConnectedApprovalView: View {
             CodeV2ApprovalTakeover(request: item.request, position: position, respond: respond)
         }
     }
+}
+
+/// A terminal's size in characters.
+private struct TerminalGrid: Equatable {
+    let cols: Int
+    let rows: Int
 }
