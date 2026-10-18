@@ -60,6 +60,20 @@ function fingerprint(abs: string): FileFingerprint | null {
 
 const READ_TOOLS = new Set(['read_file']);
 const WRITE_TOOLS = new Set(['edit_file', 'write_file']);
+/** The multi-file batch tool (tools/edit-files.ts), checked operation by operation. */
+const BATCH_TOOL = 'edit_files';
+
+/** The `{ op, path }` pairs of an edit_files call, skipping malformed entries (the tool refuses those). */
+function batchOperations(input: Record<string, unknown>): Array<{ op: string; path: string }> {
+  if (!Array.isArray(input.operations)) return [];
+  const ops: Array<{ op: string; path: string }> = [];
+  for (const entry of input.operations) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { op, path: p } = entry as { op?: unknown; path?: unknown };
+    if (typeof op === 'string' && typeof p === 'string') ops.push({ op, path: p });
+  }
+  return ops;
+}
 
 export class FileStateGuard {
   private readonly known = new Map<string, FileFingerprint>();
@@ -93,27 +107,71 @@ export class FileStateGuard {
    * tools on files that already exist are checked; a new file needs no read.
    */
   check(toolName: string, input: Record<string, unknown>): string | null {
+    if (toolName === BATCH_TOOL) return this.checkBatch(input);
     if (!WRITE_TOOLS.has(toolName) || typeof input.path !== 'string') return null;
-    const key = this.key(input.path);
+    return this.checkOne(toolName === 'write_file' ? 'overwrite' : 'edit', input.path);
+  }
+
+  /**
+   * One existing file, about to be edited (only text the model saw is
+   * replaced) or overwritten/deleted (everything goes, so a partial read is
+   * not enough).
+   */
+  private checkOne(action: 'edit' | 'overwrite' | 'delete', displayPath: string, toolName = action === 'edit' ? 'edit_file' : 'write_file'): string | null {
+    const key = this.key(displayPath);
     const current = fingerprint(key);
     if (current === null) return null;
     const seen = this.known.get(key);
     if (!seen) {
-      return `Refused: read ${input.path} with read_file before ${toolName === 'write_file' ? 'overwriting' : 'editing'} it, so the change is made against its current contents.`;
+      const verb = action === 'edit' ? 'editing' : action === 'delete' ? 'deleting' : 'overwriting';
+      return `Refused: read ${displayPath} with read_file before ${verb} it, so the change is made against its current contents.`;
     }
     // Overwriting a file seen only in part would drop what was never shown;
     // edit_file replaces only text the model saw, so it stays allowed.
-    if (toolName === 'write_file' && seen.partial && seen.hash === current.hash) {
-      return `Refused: you read only part of ${input.path}, so overwriting it with write_file would drop the rest. Use edit_file for the change, or read the whole file first.`;
+    if (action !== 'edit' && seen.partial && seen.hash === current.hash) {
+      return action === 'delete'
+        ? `Refused: you read only part of ${displayPath}, so deleting it would drop what you have not seen. Read the whole file first.`
+        : `Refused: you read only part of ${displayPath}, so overwriting it with ${toolName} would drop the rest. Use edit_file for the change, or read the whole file first.`;
     }
     if (seen.hash !== current.hash) {
-      return `Refused: ${input.path} changed on disk since you last read it (someone or something else edited it). Read it again, then redo the edit against the new contents.`;
+      return `Refused: ${displayPath} changed on disk since you last read it (someone or something else edited it). Read it again, then redo the edit against the new contents.`;
+    }
+    return null;
+  }
+
+  /**
+   * Every file an edit_files batch edits or deletes, as it is on disk now.
+   * Creating a file needs no read (the tool refuses a create over an existing
+   * file). The first refusal refuses the whole batch, naming the operation.
+   */
+  private checkBatch(input: Record<string, unknown>): string | null {
+    const ops = batchOperations(input);
+    const checked = new Set<string>();
+    for (let i = 0; i < ops.length; i++) {
+      const { op, path: p } = ops[i]!;
+      if (op !== 'edit' && op !== 'delete') continue;
+      const key = `${op === 'delete' ? 'd' : 'e'}:${this.key(p)}`;
+      if (checked.has(key)) continue;
+      checked.add(key);
+      const refusal = this.checkOne(op, p, BATCH_TOOL);
+      if (refusal) return `${refusal} (edit_files operation ${i + 1}; nothing in the batch was written.)`;
     }
     return null;
   }
 
   /** Record what the agent now knows after a successful call. */
   record(toolName: string, input: Record<string, unknown>, isError: boolean): void {
+    if (toolName === BATCH_TOOL) {
+      // All or nothing: a refused batch wrote nothing, so there is nothing new to know.
+      if (isError) return;
+      for (const p of new Set(batchOperations(input).map((op) => op.path))) {
+        const key = this.key(p);
+        const current = fingerprint(key);
+        if (current) this.known.set(key, current);
+        else this.known.delete(key);
+      }
+      return;
+    }
     if (isError || typeof input.path !== 'string') return;
     if (!READ_TOOLS.has(toolName) && !WRITE_TOOLS.has(toolName)) return;
     const key = this.key(input.path);

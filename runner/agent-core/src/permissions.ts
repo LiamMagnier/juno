@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { PermissionMode, RiskLevel } from './types.js';
 import type { ToolDefinition } from './tools/types.js';
 import { assertContainedPath } from './tools/fs.js';
+import { editFilesPaths } from './tools/edit-files.js';
 import {
   PermissionRule,
   PermissionRuleSet,
@@ -151,6 +152,12 @@ export function ruleSubjectFor(
     case 'write_file':
     case 'edit_file':
       return typeof input.path === 'string' ? { path: workspaceRelative(cwd, input.path) } : null;
+    case 'edit_files': {
+      // Every file the batch names, so `Edit(secrets/**)` holds for a batch
+      // exactly as it does for a single edit_file call.
+      const paths = editFilesPaths(input, cwd);
+      return paths.length > 0 ? { paths: paths.map((p) => workspaceRelative(cwd, p)) } : null;
+    }
     default:
       return null;
   }
