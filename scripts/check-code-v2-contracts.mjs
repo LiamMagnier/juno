@@ -262,7 +262,7 @@ function buildSchema() {
     SubagentItem: itemSchema(
       "subagent",
       { agentId: nonEmpty, role: ref("AgentRole"), model: ref("ModelSelection"), status: ref("SubagentStatus") },
-      { task: str, closingText: str, tokens: ref("TokenCount"), phase: ref("TeamPhase") },
+      { task: str, closingText: str, tokens: ref("TokenCount"), phase: ref("TeamPhase"), paused: bool, tokenBudget: int, parentAgentId: nonEmpty },
     ),
     ComputerActionItem: itemSchema(
       "computer_action",
@@ -404,8 +404,11 @@ function buildSchema() {
       { routing: ref("RoleRouting") },
     ),
     "turn.steer": obj({ ...sid, turnId: nonEmpty, input: ref("UserInput") }),
-    "agent.message": obj({ ...sid, agentId: nonEmpty, text: nonEmpty }),
-    "agent.interrupt": obj({ ...sid, agentId: nonEmpty }),
+    "agent.message": obj({ ...sid, agentId: nonEmpty, text: nonEmpty }, { requestId: nonEmpty }),
+    "agent.interrupt": obj({ ...sid, agentId: nonEmpty }, { requestId: nonEmpty }),
+    "agent.pause": obj(sid, { agentId: nonEmpty, requestId: nonEmpty }),
+    "agent.resume": obj(sid, { agentId: nonEmpty, requestId: nonEmpty }),
+    "agent.topUp": obj(sid, { agentId: nonEmpty, tokens: { type: "integer", minimum: 1 }, usd: { type: "number", exclusiveMinimum: 0 }, requestId: nonEmpty }),
     "turn.queue": obj({ ...sid, input: ref("UserInput") }),
     "turn.interrupt": obj(sid, { turnId: nonEmpty }),
     "approval.respond": obj(
