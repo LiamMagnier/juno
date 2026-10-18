@@ -298,6 +298,10 @@ export function makeActions(log: (name: string, ...args: unknown[]) => void): Wo
     commit: wrap("commit"),
     messageAgent: wrap("messageAgent"),
     stopAgent: wrap("stopAgent"),
+    controlAgent: async (input) => {
+      log("controlAgent", input);
+      return { accepted: true, message: input.action === "pause" ? "Pauses after its current step." : "Done." };
+    },
     keepCandidate: wrap("keepCandidate"),
     approvePlan: wrap("approvePlan"),
     resumeAtReset: wrap("resumeAtReset"),
@@ -395,7 +399,16 @@ export const STATES: GalleryState[] = [
       items: [
         { id: "u3", turnId: "turn3", kind: "user_message", text: "Move checkout totals to the server and add tests. Split the call sites across workers.", createdAt: at(4), delivery: "send" },
         { id: "a3", turnId: "turn3", kind: "assistant_message", text: "Three workers, one per call site.", streaming: false, createdAt: at(4, 8) },
-        ...agents().map((a) => (a.status === "waiting" ? { ...a, status: "running" as const, liveLine: "Running pnpm test --filter cart" } : a)),
+        ...agents().map((a) =>
+          a.status === "waiting"
+            ? { ...a, status: "running" as const, liveLine: "Running pnpm test --filter cart", tokens: { input: 22_400, output: 2_900 }, tokenBudget: 400_000 }
+            : a.agentId === "w2"
+              ? { ...a, tokenBudget: 400_000 }
+              : a,
+        ),
+        // Agents tree (REA backlog 10): a nested helper, paused by the reader, and a worker mid-command.
+        { id: "sa5", turnId: "turn3", kind: "subagent", agentId: "w2a", parentAgentId: "w2", role: "explorer", label: "Hook audit", title: "Find every reader of useCartTotal", model: { instanceId: "acp:dsh", model: "deepseek-v4-flash" }, status: "running", paused: true, liveLine: "Paused", tokens: { input: 9_100, output: 800 }, tokenBudget: 400_000, createdAt: at(2) },
+        { id: "x31", turnId: "turn3", kind: "command_execution", callId: "c31", agentId: "w3", command: "pnpm test --filter cart", status: "running", createdAt: at(0.4) },
       ],
       state: "running",
       routing: ROUTING_LEAD,

@@ -312,6 +312,61 @@ final class ComputerBridgeTests: XCTestCase {
         XCTAssertEqual(ComputerBridgeExecutor.conversationID("claude:t7"), "claude:t7")
     }
 
+    // MARK: Unattended turns (REA item 15)
+
+    private func unattendedCall(
+        _ id: String, _ args: CodeV2.ComputerToolArgs, mode: CodeV2.RuntimeMode, session: String = "claude:t7"
+    ) -> CodeV2.ComputerBridgeRequest {
+        .init(id: id, type: .call, token: "t", sessionId: session, title: "Nightly tidy", runtimeMode: mode, unattended: true, callId: id, args: args)
+    }
+
+    func testAnUnattendedTurnNeverShowsACardAndSkipsWhatWouldAsk() async throws {
+        let approver = Approver()
+        let service = makeTestScreenService()
+        let bridge = executor(approver: approver, service: service)
+
+        // Ask mode: nobody can let the agent in, so it is refused, not asked.
+        let refused = await bridge.handle(unattendedCall("u1", .init(action: .screenshot, app: "com.apple.TextEdit"), mode: .ask))
+        XCTAssertFalse(refused.ok)
+        XCTAssertEqual(refused.endsTurn, true)
+        XCTAssertTrue(refused.text.contains("Nobody is watching"), refused.text)
+        XCTAssertTrue(approver.agentAsks.isEmpty)
+        XCTAssertTrue(approver.cards.isEmpty)
+
+        // Full Access: ordinary input runs, as the mode says; the screen knows
+        // nobody is watching.
+        let shot = await bridge.handle(unattendedCall("u2", .init(action: .screenshot, app: "com.apple.TextEdit"), mode: .full))
+        XCTAssertTrue(shot.ok, shot.text)
+        let screenID = ComputerBridgeExecutor.screenSessionID("claude:t7")
+        let unattended = await service.isUnattended(sessionID: screenID)
+        XCTAssertTrue(unattended)
+        let click = await bridge.handle(unattendedCall("u3", .init(action: .click, x: 10, y: 10), mode: .full))
+        XCTAssertTrue(click.ok, click.text)
+
+        // Auto-edit would ask for input: skipped and recorded, never approved.
+        approver.approveCards = true
+        let skipped = await bridge.handle(unattendedCall("u4", .init(action: .click, x: 10, y: 10), mode: .autoEdit))
+        XCTAssertFalse(skipped.ok)
+        XCTAssertEqual(skipped.text, ScreenUnattendedPolicy.skipSentence)
+        XCTAssertTrue(approver.cards.isEmpty, "the approver was never consulted")
+        let recorded = await service.skippedSteps(sessionID: screenID)
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.reason, ScreenUnattendedPolicy.skipReason)
+    }
+
+    func testAnAttendedTurnAfterAnUnattendedOneAsksAgain() async throws {
+        let approver = Approver()
+        let service = makeTestScreenService()
+        let bridge = executor(approver: approver, service: service)
+        _ = await bridge.handle(unattendedCall("u1", .init(action: .screenshot, app: "com.apple.TextEdit"), mode: .full))
+        let screenID = ComputerBridgeExecutor.screenSessionID("claude:t7")
+        let asked = await bridge.handle(call("c1", .init(action: .click, x: 10, y: 10), mode: .ask))
+        XCTAssertTrue(asked.ok, asked.text)
+        XCTAssertTrue(approver.cards.last?.hasPrefix("action:") == true, "a person is back, so the card is shown")
+        let unattended = await service.isUnattended(sessionID: screenID)
+        XCTAssertFalse(unattended)
+    }
+
     func testTheRuntimeModeDecidesWhetherInputAsks() async throws {
         let approver = Approver()
         let bridge = executor(approver: approver)

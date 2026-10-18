@@ -111,6 +111,34 @@ export const LINK_TERMINAL_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cl
 /** Never relayed: secrets (the Mac supplies its own). */
 export const LINK_REFUSED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<ClientCommandType>(["env.configure"]);
 
+/**
+ * A person's controls over one agent of a run (agents lane, REA backlog 10):
+ * Steer, Stop, Pause, Resume and a bounded Top-up. The generic link route
+ * never relays them. Only the agent-control route
+ * (`/api/code/v2/link/[deviceId]/agents`) does, after it has checked the pair,
+ * rate-limited the account, pinned the request id and written the audit row,
+ * so none of that can be skipped by posting the raw command.
+ */
+export const LINK_AGENT_CONTROL_COMMANDS: ReadonlySet<ClientCommandType> = new Set<ClientCommandType>([
+  "agent.message",
+  "agent.interrupt",
+  "agent.pause",
+  "agent.resume",
+  "agent.topUp",
+]);
+
+export interface LinkRpcOptions {
+  /** Set only by the agent-control route: admits LINK_AGENT_CONTROL_COMMANDS. */
+  agentControl?: boolean;
+}
+
+/** Whether the hub relays `type` at all (the terminal switch is checked separately). */
+export function linkRelays(type: ClientCommandType, options: LinkRpcOptions = {}): boolean {
+  if (LINK_REFUSED_COMMANDS.has(type)) return false;
+  if (LINK_TERMINAL_COMMANDS.has(type) || LINK_RELAYED_COMMANDS.has(type)) return true;
+  return options.agentControl === true && LINK_AGENT_CONTROL_COMMANDS.has(type);
+}
+
 export const LINK_LIMITS = {
   /** A Mac that has not pulled for this long is offline. */
   hostOnlineMs: 40_000,
@@ -170,7 +198,7 @@ export interface LinkHostPullReply {
  * several backend processes can share it.
  */
 export interface LinkEndpoint {
-  rpc(command: ClientCommand): Promise<LinkReply>;
+  rpc(command: ClientCommand, options?: LinkRpcOptions): Promise<LinkReply>;
   poll(cursors: Record<string, number>, globalCursor?: number, waitMs?: number, signal?: AbortSignal): Promise<LinkReply>;
   /**
    * `terminal`: the Mac's latest pull says the user shared its terminal. `receipts`: this pull's
@@ -249,13 +277,13 @@ export class DeviceLink implements LinkEndpoint {
   // ── Browser side ──────────────────────────────────────────────────────
 
   /** Relays one command and resolves with the Mac's response (or a plain error). */
-  async rpc(command: ClientCommand): Promise<LinkReply> {
+  async rpc(command: ClientCommand, options: LinkRpcOptions = {}): Promise<LinkReply> {
     const refuse = (code: "unsupported" | "not_ready" | "bad_request", message: string): LinkReply => ({
       responses: [{ type: "response", id: String(command?.id ?? ""), ok: false, error: { code, message } }],
     });
     if (!command || typeof command.id !== "string" || typeof command.type !== "string") return refuse("bad_request", "Malformed command.");
     const terminal = LINK_TERMINAL_COMMANDS.has(command.type);
-    if (LINK_REFUSED_COMMANDS.has(command.type) || (!terminal && !LINK_RELAYED_COMMANDS.has(command.type))) {
+    if (!linkRelays(command.type, options)) {
       return refuse("unsupported", "That action is only available in Alevr on your Mac.");
     }
     if (!this.online) return { offline: true, message: "Your Mac is offline. Open Alevr on it to continue." };

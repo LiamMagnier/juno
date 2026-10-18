@@ -329,6 +329,8 @@ export function computerSessionFor(sessions: SessionManager, scope: ComputerMcpS
     runtimeMode: meta.runtimeMode,
     coordinateSpace: coordinateSpaceForModel(model),
     images: true,
+    // A resume a timer started has nobody watching: no take-over, no cards.
+    ...(sessions.isUnattended(scope.sessionId) ? { unattended: true } : {}),
   };
 }
 
@@ -488,10 +490,17 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       deps.conversations?.noteUserInput(cmd.params.sessionId);
       return sessions.startTurn({ ...cmd.params, input: userOnly(cmd.params.input) });
     case "agent.message":
-      return sessions.messageAgent(cmd.params.sessionId, cmd.params.agentId, cmd.params.text);
+      return sessions.messageAgent(cmd.params.sessionId, cmd.params.agentId, cmd.params.text, cmd.params.requestId);
     case "agent.interrupt":
-      await sessions.interruptAgent(cmd.params.sessionId, cmd.params.agentId);
+      await sessions.interruptAgent(cmd.params.sessionId, cmd.params.agentId, cmd.params.requestId);
       return {};
+    // agents lane (REA backlog 10): a person's Pause / Resume / Top-up from the Agents tree.
+    case "agent.pause":
+      return sessions.pauseAgent(cmd.params);
+    case "agent.resume":
+      return sessions.resumeAgent(cmd.params);
+    case "agent.topUp":
+      return sessions.topUpAgent(cmd.params);
     case "turn.steer":
       deps.conversations?.noteUserInput(cmd.params.sessionId);
       return sessions.steer({ ...cmd.params, input: userOnly(cmd.params.input) });

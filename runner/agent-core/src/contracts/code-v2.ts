@@ -659,6 +659,24 @@ export interface SubagentItem extends TurnItemBase {
   candidate?: { additions?: number; deletions?: number; filesChanged?: number; testsLine?: string; kept?: boolean };
   // team lane (additive): which phase of a Plan → Build → Verify run it belongs to.
   phase?: TeamPhase;
+  // agents lane (additive, REA backlog 10): what the Agents tree shows and controls.
+  /** A person paused it: it holds at its next step boundary until resumed. */
+  paused?: boolean;
+  /** Its own token cap (input + output), top-ups included; absent when uncapped. */
+  tokenBudget?: number;
+  /** The agent that started it; absent for a child of the lead. */
+  parentAgentId?: string;
+}
+/** What a person's agent.pause / agent.resume / agent.topUp did, in words a surface can show. */
+export interface AgentControlResult {
+  accepted: boolean;
+  message?: string;
+  /** Pause or resume of every agent: how many changed. */
+  count?: number;
+  /** Top-up of one agent: its new token cap. */
+  tokenBudget?: number;
+  /** Top-up of the run: the run budget after it. */
+  budget?: { tokens: number; costUsd: number; maxTokens?: number; maxUsd?: number };
 }
 export interface ComputerActionItem extends TurnItemBase {
   kind: "computer_action";
@@ -793,6 +811,12 @@ export interface ComputerBridgeRequest {
   title?: string;
   /** The session's runtime mode; the Mac applies the same computer policy as its own sessions. */
   runtimeMode?: RuntimeMode;
+  /**
+   * Nobody is watching this turn (a scheduled resume, a routine). The Mac then
+   * refuses take-over, gives the screen a time limit, and skips and records any
+   * step that would need the reader's approval instead of asking or approving.
+   */
+  unattended?: boolean;
   callId?: string;
   args?: ComputerToolArgs;
 }
@@ -818,6 +842,13 @@ export interface ComputerBridgeResponse {
   holder?: DesktopLockRecord;
   /** The model must stop: the reader pressed Esc / Stop, or a grant is missing. */
   endsTurn?: boolean;
+  /**
+   * A notice for the thread, added by the env server as it is: today the
+   * `screen_locked` pause (the Mac locked mid-run; Alevr never unlocks it).
+   * Its id is stable for one lock, so repeated calls upsert one notice and the
+   * paired phones are told once.
+   */
+  notice?: SystemNoticeItem;
 }
 
 /**
@@ -938,6 +969,10 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "turn.steer",
   "agent.message",
   "agent.interrupt",
+  // agents lane (REA backlog 10): a person's Pause / Resume / Top-up from the Agents tree.
+  "agent.pause",
+  "agent.resume",
+  "agent.topUp",
   "turn.queue",
   "turn.interrupt",
   "approval.respond",
@@ -1015,8 +1050,18 @@ export interface ClientCommandParams {
     interactionMode: InteractionMode;
   };
   "turn.steer": { sessionId: string; turnId: string; input: UserInput };
-  "agent.message": { sessionId: string; agentId: string; text: string };
-  "agent.interrupt": { sessionId: string; agentId: string };
+  /** `requestId` (agents lane): the env server answers a repeated id with its first answer, so a retry never steers twice. */
+  "agent.message": { sessionId: string; agentId: string; text: string; requestId?: string };
+  "agent.interrupt": { sessionId: string; agentId: string; requestId?: string };
+  /** Holds one agent (or, without `agentId`, every agent) at its next step boundary. */
+  "agent.pause": { sessionId: string; agentId?: string; requestId?: string };
+  "agent.resume": { sessionId: string; agentId?: string; requestId?: string };
+  /**
+   * A person's bounded top-up: one agent's token cap (`tokens`), or without
+   * `agentId` the run's own budget (`tokens` and/or `usd`, only where the run
+   * already has that limit). The engine enforces the bounds.
+   */
+  "agent.topUp": { sessionId: string; agentId?: string; tokens?: number; usd?: number; requestId?: string };
   "turn.queue": { sessionId: string; input: UserInput };
   "turn.interrupt": { sessionId: string; turnId?: string };
   /** Answers an approval_request (decision) or a user_input_request (answers). */
@@ -1281,6 +1326,9 @@ export interface ClientCommandResults {
   "turn.steer": { accepted: boolean };
   "agent.message": { accepted: boolean; message?: string };
   "agent.interrupt": Record<string, never>;
+  "agent.pause": AgentControlResult;
+  "agent.resume": AgentControlResult;
+  "agent.topUp": AgentControlResult;
   "turn.queue": { queuedId: string };
   "turn.interrupt": Record<string, never>;
   "approval.respond": Record<string, never>;

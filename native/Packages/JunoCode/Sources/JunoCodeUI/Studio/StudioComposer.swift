@@ -353,7 +353,13 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             if let callRow = speech?.callRow {
                 callRow(hasDraft, AnyView(sendButton))
             } else {
-                leading()
+                // A narrow column (the side panel open in a small window)
+                // scrolls the chips sideways instead of pushing the send
+                // button out of the composer or the column past the window.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: JunoSpace.hairline) { leading() }
+                }
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                 Spacer(minLength: JunoSpace.snug)
                 trailing()
                 sendButton

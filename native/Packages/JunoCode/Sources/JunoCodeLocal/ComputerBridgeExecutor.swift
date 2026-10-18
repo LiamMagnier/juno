@@ -28,6 +28,11 @@ public protocol ScreenControlSessionHosting: ScreenControlling {
     /// A bridged call is in flight: the session's hold is never reclaimed as idle meanwhile.
     func beginCall(sessionID: String) async
     func endCall(sessionID: String) async
+    /// Whether nobody is watching the session's turn, and how long it may use
+    /// the screen from now (REA item 15).
+    func setAttendance(sessionID: String, unattended: Bool, limit: TimeInterval?) async
+    /// Which lock of the Mac this is, for one notice per lock.
+    func screenLockEpisode() async -> Int
 }
 
 extension ScreenControlService: ScreenControlSessionHosting {}
@@ -224,7 +229,9 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
             try await ready(request, screenID: screenID, mode: mode)
             let budget: ImageBudget = args.coordinateSpace == .normalized1000 ? .portableNormalized : .portable
             await service.setImageBudget(sessionID: screenID, budget: budget)
-            if let app = args.app { try await ensureGranted(app: app, screenID: screenID, title: request.title, mode: mode) }
+            if let app = args.app {
+                try await ensureGranted(app: app, screenID: screenID, title: request.title, mode: mode, unattended: request.unattended == true)
+            }
 
             let call = PortableComputerCall(
                 action: args.action.rawValue, app: args.app, x: args.x, y: args.y, toX: args.toX, toY: args.toY,
@@ -235,7 +242,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
             let plan = try PortableComputerVocabulary.plan(
                 call, frameConvention: frameConventions[screenID] ?? budget.coordinates, frameSize: frames[screenID]
             )
-            let (result, prepared, target) = try await run(plan, mode: mode, screenID: screenID, callID: callID)
+            let (result, prepared, target) = try await run(plan, mode: mode, screenID: screenID, callID: callID, unattended: request.unattended == true)
             if let size = result.frame?.size {
                 frames[screenID] = size
                 frameConventions[screenID] = budget.coordinates
@@ -251,9 +258,13 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
             case .appBusy, .lockHeld: true
             default: false
             }
+            // The Mac locked: the thread (and through it the paired phones)
+            // hears once per lock that the run is paused.
+            let notice = screen == .screenLocked ? await lockNotice(request) : nil
             return (failure(
                 request, callID: callID, action: args.action, started: started, text: text,
-                status: busy ? .declined : (screen.endsTurn ? .interrupted : .failed), endsTurn: screen.endsTurn, app: args.app
+                status: busy ? .declined : (screen.endsTurn ? .interrupted : .failed), endsTurn: screen.endsTurn, app: args.app,
+                notice: notice
             ), busy)
         } catch {
             let text = (error as? LocalizedError)?.errorDescription ?? "The screen action failed: \(error)"
@@ -283,7 +294,11 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
             stoppedCalls[screenID] = now()
             throw Refusal(text: reason.sentence + " Stop using the computer.", status: .interrupted, endsTurn: true)
         }
-        if await service.isActive(sessionID: screenID) { return }
+        let unattended = request.unattended == true
+        if await service.isActive(sessionID: screenID) {
+            await service.setAttendance(sessionID: screenID, unattended: unattended, limit: Self.unattendedLimit)
+            return
+        }
         guard !startedSessions.contains(screenID) else {
             stoppedCalls[screenID] = now()
             throw Refusal(text: "Screen control stopped. Stop using the computer until the reader starts a new task.", status: .interrupted, endsTurn: true)
@@ -292,6 +307,8 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         // Asked once per turn: a call that waits for a busy app does not ask again.
         if !allowedSessions.contains(screenID) {
             if mode != .full {
+                // Nobody is there to answer the card in an unattended turn.
+                guard !unattended else { throw Refusal(text: Self.unattendedNotAllowedSentence, endsTurn: true) }
                 guard await approver.allowAgent(sessionID: request.sessionId, title: title) else {
                     throw Refusal(text: "The reader did not let this agent use apps.", endsTurn: true)
                 }
@@ -301,11 +318,18 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         // The thread's own id names the conversation: one hold per thread,
         // re-entrant across its turns, never mistaken for "another session".
         try await service.activate(sessionID: screenID, title: title, kind: .connectedAgent, threadID: Self.conversationID(request.sessionId))
+        await service.setAttendance(sessionID: screenID, unattended: unattended, limit: Self.unattendedLimit)
         startedSessions.insert(screenID)
     }
 
+    /// How long an unattended turn may use the screen.
+    static let unattendedLimit: TimeInterval = ScreenUnattendedPolicy.defaultLimit
+
+    static let unattendedNotAllowedSentence =
+        "Nobody is watching this run, and the reader has not let this agent use apps on this Mac. Stop using the computer and leave this part for the reader."
+
     /// An app named in the call that is not granted yet gets a grant card.
-    private func ensureGranted(app: String, screenID: String, title: String?, mode: CodeV2.RuntimeMode) async throws {
+    private func ensureGranted(app: String, screenID: String, title: String?, mode: CodeV2.RuntimeMode, unattended: Bool = false) async throws {
         let listings = await service.listApps(sessionID: screenID)
         let lowered = app.lowercased()
         let listing = listings.first { $0.bundleID.lowercased() == lowered || $0.name.lowercased() == lowered }
@@ -319,6 +343,11 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         }
         // Full Access is standing app consent; the service still enforces caps.
         if mode != .full {
+            // An unattended turn never shows the grant card: skipped, recorded.
+            if unattended {
+                await service.recordSkipped(sessionID: screenID, summary: proposal.summary, reason: ScreenUnattendedPolicy.skipReason)
+                throw Refusal(text: ScreenUnattendedPolicy.skipSentence)
+            }
             guard await approver.approve(.grants(proposal), summary: proposal.summary, sessionID: screenID) else {
                 throw Refusal(text: "The reader did not grant \(app).")
             }
@@ -328,7 +357,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     }
 
     /// The mode's ladder, the floor and the allowlist, then one card when it asks.
-    private func authorize(_ prepared: PreparedScreenAction, mode: CodeV2.RuntimeMode, screenID: String) async throws {
+    private func authorize(_ prepared: PreparedScreenAction, mode: CodeV2.RuntimeMode, screenID: String, unattended: Bool = false) async throws {
         let decision = ComputerUseAccessPolicy.decide(
             mode: mode,
             isInput: prepared.isInput,
@@ -342,6 +371,13 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
             await service.discard(sessionID: screenID, preparedID: prepared.id)
             throw Refusal(text: sentence)
         case .ask:
+            // Unattended: nobody can answer, and nothing is approved on the
+            // reader's behalf. The step is skipped and recorded.
+            if unattended {
+                await service.discard(sessionID: screenID, preparedID: prepared.id)
+                await service.recordSkipped(sessionID: screenID, summary: prepared.summary, reason: ScreenUnattendedPolicy.skipReason)
+                throw Refusal(text: ScreenUnattendedPolicy.skipSentence)
+            }
             let digest = UUID().uuidString
             await service.publishApprovalDetail(.action(prepared), digest: digest)
             let yes = await approver.approve(.action(prepared), summary: prepared.summary, sessionID: screenID)
@@ -363,17 +399,17 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     }
 
     private func run(
-        _ plan: PortableComputerPlan, mode: CodeV2.RuntimeMode, screenID: String, callID: String
+        _ plan: PortableComputerPlan, mode: CodeV2.RuntimeMode, screenID: String, callID: String, unattended: Bool = false
     ) async throws -> (ScreenActionResult, PreparedScreenAction?, String?) {
         switch plan {
         case let .screen(action):
             let prepared = try await service.prepare(sessionID: screenID, action: action)
-            try await authorize(prepared, mode: mode, screenID: screenID)
+            try await authorize(prepared, mode: mode, screenID: screenID, unattended: unattended)
             try await abandonIfCancelled(prepared, screenID: screenID)
             let result = try await service.perform(sessionID: screenID, prepared: prepared, toolCallID: callID, attachFrame: true)
             return (result, prepared, prepared.target.element)
         case let .openApp(app):
-            try await ensureGranted(app: app, screenID: screenID, title: nil, mode: mode)
+            try await ensureGranted(app: app, screenID: screenID, title: nil, mode: mode, unattended: unattended)
             return (try await service.open(sessionID: screenID, app: app), nil, app)
         case let .axFind(app, query):
             let text = try await service.accessibility(sessionID: screenID, app: app, query: query, filter: .interactive, depth: 12)
@@ -391,13 +427,13 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
                 id = match
             }
             let prepared = try await service.prepare(sessionID: screenID, action: ScreenAction(kind: .leftClick, app: app, element: id))
-            try await authorize(prepared, mode: mode, screenID: screenID)
+            try await authorize(prepared, mode: mode, screenID: screenID, unattended: unattended)
             try await abandonIfCancelled(prepared, screenID: screenID)
             let result = try await service.perform(sessionID: screenID, prepared: prepared, toolCallID: callID, attachFrame: true)
             return (result, prepared, prepared.target.element)
         case let .menu(app, path):
             let prepared = try await service.prepareMenu(sessionID: screenID, app: app, path: path)
-            try await authorize(prepared, mode: mode, screenID: screenID)
+            try await authorize(prepared, mode: mode, screenID: screenID, unattended: unattended)
             try await abandonIfCancelled(prepared, screenID: screenID)
             let result = try await service.performMenu(sessionID: screenID, prepared: prepared, path: path, toolCallID: callID)
             return (result, prepared, path.joined(separator: " › "))
@@ -427,9 +463,22 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         return .init(id: request.id, ok: true, text: result.text, image: image, item: item)
     }
 
+    /// The thread notice for a run paused because the Mac locked. Its id is
+    /// the same for every call that runs into one lock.
+    private func lockNotice(_ request: CodeV2.ComputerBridgeRequest) async -> CodeV2.TurnItem {
+        let episode = await service.screenLockEpisode()
+        let sentence = ScreenLockNotice(
+            sessionID: request.sessionId, kind: .connectedAgent, title: request.title ?? "", locked: true, at: now()
+        ).sentence
+        return .systemNotice(CodeV2.SystemNotice(
+            id: "screen_locked_\(episode)", createdAt: ISO8601DateFormatter().string(from: now()), level: .warning,
+            text: sentence, code: CodeV2.SystemNotice.screenLockedCode
+        ))
+    }
+
     private func failure(
         _ request: CodeV2.ComputerBridgeRequest, callID: String, action: CodeV2.ComputerActionKind, started: Date,
-        text: String, status: CodeV2.ItemStatus, endsTurn: Bool, app: String? = nil
+        text: String, status: CodeV2.ItemStatus, endsTurn: Bool, app: String? = nil, notice: CodeV2.TurnItem? = nil
     ) -> CodeV2.ComputerBridgeResponse {
         let item = ComputerActionItems.item(
             callID: callID, action: action, status: status, at: started, app: app, summary: text, error: text,
@@ -438,7 +487,8 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         return .init(
             id: request.id, ok: false, text: text, item: item,
             missingPermissions: endsTurn ? Self.missing(permissions()) : nil,
-            endsTurn: endsTurn ? true : nil
+            endsTurn: endsTurn ? true : nil,
+            notice: notice
         )
     }
 }

@@ -1470,6 +1470,21 @@ export async function releaseComputerLease(
 export const YOUR_COMPUTER_PROMPT_SECTION =
   "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
 
+/**
+ * The same section for a run nobody started (a schedule or a trigger): there
+ * is nobody to take over the computer, so the agent is told never to ask, and
+ * to skip and report a step only the person can do rather than wait on it.
+ * A take-over prompt in an unattended run only parks the run until someone
+ * happens to look (docs/rea/designs/computer-use.md, unattended runs).
+ */
+export const UNATTENDED_COMPUTER_PROMPT_SECTION =
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
+
+/** The computer section for a run, by whether a person started it. */
+export function computerPromptSection(input: { attended: boolean }): string {
+  return input.attended ? YOUR_COMPUTER_PROMPT_SECTION : UNATTENDED_COMPUTER_PROMPT_SECTION;
+}
+
 export const BUSY_COMPUTER_FALLBACK_NOTE =
   "Your computer is busy with another task; you're using a temporary browser for this one.";
 

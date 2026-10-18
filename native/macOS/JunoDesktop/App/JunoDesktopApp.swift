@@ -147,8 +147,11 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             // below stay off for this run (safe mode).
             DesktopCrashRecovery.shared.launch()
             DesktopUpdateModel.shared.start()
-            // ⌥Space from anywhere. Installed at launch rather than on first
-            // use so the shortcut exists before any window does.
+            // ⌥Space (or the reader's shortcut) from anywhere, as a Carbon hot
+            // key: no Accessibility permission, and the key is consumed.
+            // Registered at launch so the shortcut exists before any window
+            // does; the panel itself is prewarmed two seconds later. Not in
+            // safe mode, which installs no global hotkey.
             if JunoSafeMode.allows(.quickEntryHotkey) {
                 DesktopQuickEntryController.shared.installHotkey()
             }
