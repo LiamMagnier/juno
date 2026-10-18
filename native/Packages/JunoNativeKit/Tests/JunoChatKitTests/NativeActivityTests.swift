@@ -3,6 +3,7 @@ import JunoAPI
 import JunoAuth
 import JunoCore
 import JunoSync
+import JunoDesignSystem
 import Testing
 @testable import JunoChatKit
 
@@ -40,6 +41,16 @@ import Testing
         #expect(page.items[1].runID == "run-2")
         #expect(page.items[1].canStop)
         #expect(page.items[2].verb == "Open")
+    }
+
+    @Test func anAgentsRunCarriesItsFaceAndState() throws {
+        let json = #"{"items":[{"id":"work:a","kind":"work","sourceId":"a","title":"Inbox","state":"needs_you","need":"question","status":"waiting_input","startedAt":"2026-10-18T10:00:00.000Z","updatedAt":"2026-10-18T11:00:00.000Z","href":"/work/a","canStop":false,"agent":{"id":"agent-1","name":"Maren","avatar":{"shape":"orb","tone":"teal","eyes":"round","mark":"ring"},"state":"waiting"}},{"id":"work:b","kind":"work","sourceId":"b","title":"Mine","state":"running","status":"running","startedAt":"2026-10-18T10:00:00.000Z","updatedAt":"2026-10-18T11:00:00.000Z","href":"/work/b","agent":null}],"counts":{"needs_you":1,"running":1,"ready":0,"blocked":0},"nextCursor":null}"#
+        let page = try NativeActivityPage.decode(Data(json.utf8))
+        let agent = try #require(page.items.first?.agent)
+        #expect(agent.name == "Maren")
+        #expect(agent.state == .waiting)
+        #expect(agent.avatar == JunoAgentAvatar(shape: "orb", tone: "teal", eyes: "round", mark: "ring", seed: "agent-1"))
+        #expect(page.items[1].agent == nil)
     }
 
     @Test func groupsReadNeedsYouFirstAndBlockedLast() throws {

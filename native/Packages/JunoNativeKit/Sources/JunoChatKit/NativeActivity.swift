@@ -2,6 +2,7 @@ import Foundation
 import JunoAPI
 import JunoAuth
 import JunoCore
+import JunoDesignSystem
 import JunoSync
 import Observation
 
@@ -72,6 +73,22 @@ public enum NativeActivityNeed: String, Sendable {
     }
 }
 
+/// The crew member behind an item: its 2D face (``JunoAgentFace``) in the
+/// state the item puts it in, never a plain status dot (owner direction).
+public struct NativeActivityAgent: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let avatar: JunoAgentAvatar
+    public let state: JunoAgentState
+
+    public init(id: String, name: String, avatar: JunoAgentAvatar, state: JunoAgentState) {
+        self.id = id
+        self.name = name
+        self.avatar = avatar
+        self.state = state
+    }
+}
+
 public struct NativeActivityItem: Equatable, Sendable, Identifiable {
     public let id: String
     public let kind: NativeActivityKind
@@ -88,6 +105,8 @@ public struct NativeActivityItem: Equatable, Sendable, Identifiable {
     public let conversationID: String?
     public let runID: String?
     public let canStop: Bool
+    /// The crew member running it, drawn as its face in `agent.state`.
+    public let agent: NativeActivityAgent?
 
     public init(
         id: String,
@@ -103,7 +122,8 @@ public struct NativeActivityItem: Equatable, Sendable, Identifiable {
         href: String,
         conversationID: String? = nil,
         runID: String? = nil,
-        canStop: Bool = false
+        canStop: Bool = false,
+        agent: NativeActivityAgent? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -119,6 +139,7 @@ public struct NativeActivityItem: Equatable, Sendable, Identifiable {
         self.conversationID = conversationID
         self.runID = runID
         self.canStop = canStop
+        self.agent = agent
     }
 
     /// The row's verb: what opening it is for.
@@ -189,6 +210,20 @@ public struct NativeActivityPage: Equatable, Sendable {
         let nextCursor: String?
     }
 
+    private struct AgentWire: Decodable {
+        struct AvatarWire: Decodable {
+            let shape: String?
+            let tone: String?
+            let eyes: String?
+            let mark: String?
+        }
+
+        let id: String
+        let name: String
+        let avatar: AvatarWire?
+        let state: String
+    }
+
     private struct CountsWire: Decodable {
         let needs_you: Int?
         let running: Int?
@@ -211,6 +246,7 @@ public struct NativeActivityPage: Equatable, Sendable {
         let conversationId: String?
         let runId: String?
         let canStop: Bool?
+        let agent: AgentWire?
 
         var item: NativeActivityItem? {
             guard
@@ -233,7 +269,15 @@ public struct NativeActivityPage: Equatable, Sendable {
                 href: href,
                 conversationID: conversationId,
                 runID: runId,
-                canStop: canStop ?? false
+                canStop: canStop ?? false,
+                agent: agent.map { wire in
+                    NativeActivityAgent(
+                        id: wire.id,
+                        name: wire.name,
+                        avatar: JunoAgentAvatar(shape: wire.avatar?.shape, tone: wire.avatar?.tone, eyes: wire.avatar?.eyes, mark: wire.avatar?.mark, seed: wire.id),
+                        state: JunoAgentState(rawValue: wire.state) ?? .idle
+                    )
+                }
             )
         }
     }

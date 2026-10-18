@@ -1,3 +1,4 @@
+import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import {
   ACTIVITY_SETTLED_WINDOW_MS,
   CODE_OPEN_STATUSES,
@@ -9,6 +10,7 @@ import {
   activityHref,
   activityTitle,
   afterCursor,
+  agentStateFor,
   canStop,
   classifyCode,
   classifyResearch,
@@ -62,6 +64,7 @@ export interface WorkSessionRow {
   title: string;
   status: string;
   needsAttention: boolean;
+  agentId: string | null;
   conversationId: string | null;
   createdAt: Date;
   lastActivityAt: Date;
@@ -77,6 +80,7 @@ export interface CodeTaskRow {
 export interface ResearchRunRow {
   id: string;
   goal: string;
+  agentId: string | null;
   state: string;
   conversationId: string | null;
   createdAt: Date;
@@ -90,6 +94,7 @@ export interface ActivityDb {
   researchRun: GroupDelegate<ResearchRunRow, { state: string; _count: { _all: number } }>;
   workRun: Delegate<{ id: string; sessionId: string }>;
   workApproval: Delegate<{ summary: string; run: { sessionId: string } }>;
+  agent: Delegate<{ id: string; name: string; avatar: unknown }>;
 }
 
 export interface ActivityQuery {
@@ -153,6 +158,8 @@ function withKeyset(scope: Args, clause: Args | null): Args {
 
 interface Candidate {
   item: ActivityItem;
+  /** The crew member that owns it, read once per page in `enrichAgents`. */
+  agentId: string | null;
 }
 
 function make(
@@ -178,6 +185,7 @@ function make(
     conversationId: row.conversationId,
     runId: null,
     canStop: canStop(kind, row.status),
+    agent: null,
   };
 }
 
@@ -214,7 +222,7 @@ export async function readActivityPage(db: ActivityDb, query: ActivityQuery): Pr
       where: withKeyset(workScope(userId, since), keyset("work", "lastActivityAt", cursor)),
       orderBy: [{ lastActivityAt: "desc" }, { id: "desc" }],
       take,
-      select: { id: true, title: true, status: true, needsAttention: true, conversationId: true, createdAt: true, lastActivityAt: true },
+      select: { id: true, title: true, status: true, needsAttention: true, conversationId: true, agentId: true, createdAt: true, lastActivityAt: true },
     }),
     db.codeTask.findMany({
       where: withKeyset(codeScope(userId, since), keyset("code", "updatedAt", cursor)),
@@ -226,7 +234,7 @@ export async function readActivityPage(db: ActivityDb, query: ActivityQuery): Pr
       where: withKeyset(researchScope(userId, since), keyset("research", "updatedAt", cursor)),
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       take,
-      select: { id: true, goal: true, state: true, conversationId: true, createdAt: true, startedAt: true, updatedAt: true },
+      select: { id: true, goal: true, state: true, conversationId: true, agentId: true, createdAt: true, startedAt: true, updatedAt: true },
     }),
     readActivityCounts(db, userId, now),
   ]);
@@ -234,23 +242,24 @@ export async function readActivityPage(db: ActivityDb, query: ActivityQuery): Pr
   const candidates: Candidate[] = [];
   for (const row of workRows) {
     const c = classifyWork(row.status, row.needsAttention);
-    if (c) candidates.push({ item: make("work", row, c, activityTitle(row.title, "Task"), row.createdAt, row.lastActivityAt) });
+    if (c) candidates.push({ item: make("work", row, c, activityTitle(row.title, "Task"), row.createdAt, row.lastActivityAt), agentId: row.agentId });
   }
   for (const row of codeRows) {
     const c = classifyCode(row.status);
-    if (c) candidates.push({ item: make("code", row, c, activityTitle(row.title, "Code task"), row.createdAt, row.updatedAt) });
+    if (c) candidates.push({ item: make("code", row, c, activityTitle(row.title, "Code task"), row.createdAt, row.updatedAt), agentId: null });
   }
   for (const row of researchRows) {
     const c = classifyResearch(row.state);
     const shaped = { id: row.id, status: row.state, conversationId: row.conversationId };
-    if (c) candidates.push({ item: make("research", shaped, c, activityTitle(row.goal, "Research"), row.startedAt ?? row.createdAt, row.updatedAt) });
+    if (c) candidates.push({ item: make("research", shaped, c, activityTitle(row.goal, "Research"), row.startedAt ?? row.createdAt, row.updatedAt), agentId: row.agentId });
   }
 
   candidates.sort((a, b) => compareActivity(a.item, b.item));
   const hasMore = candidates.length > limit;
-  const items = candidates.slice(0, limit).map((candidate) => candidate.item);
+  const page = candidates.slice(0, limit);
+  const items = page.map((candidate) => candidate.item);
 
-  await enrichWork(db, userId, items, now);
+  await Promise.all([enrichWork(db, userId, items, now), enrichAgents(db, userId, page)]);
 
   return {
     items,
@@ -304,5 +313,31 @@ async function enrichWork(db: ActivityDb, userId: string, items: ActivityItem[],
     if (runId) item.runId = runId;
     // A stop with no run to address would be a button that cannot work.
     if (item.canStop && !runId) item.canStop = false;
+  }
+}
+
+/**
+ * The crew members behind the page's rows, in one read by the page's own agent
+ * ids, so a row an agent owns draws that agent's face (owner direction: Activity
+ * shows agents as their 2D character, never as a plain dot). A retired agent
+ * keeps its face on the work it did; an id this account does not hold draws none.
+ */
+async function enrichAgents(db: ActivityDb, userId: string, page: Candidate[]): Promise<void> {
+  const ids = [...new Set(page.map((candidate) => candidate.agentId).filter((id): id is string => !!id))];
+  if (ids.length === 0) return;
+  const agents = await db.agent.findMany({
+    where: { userId, id: { in: ids } },
+    select: { id: true, name: true, avatar: true },
+  });
+  const byId = new Map(agents.map((agent) => [agent.id, agent]));
+  for (const candidate of page) {
+    const agent = candidate.agentId ? byId.get(candidate.agentId) : undefined;
+    if (!agent) continue;
+    candidate.item.agent = {
+      id: agent.id,
+      name: agent.name,
+      avatar: normalizeAgentAvatar(agent.avatar, agent.id),
+      state: agentStateFor(candidate.item.state),
+    };
   }
 }

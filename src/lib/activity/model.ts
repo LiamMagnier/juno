@@ -1,4 +1,5 @@
 import { isWorkStatus, statusNeedsAttention } from "@/lib/work/domain";
+import type { AgentAvatar } from "@/lib/agents/avatar";
 
 /*
  * ACTIVITY: ONE LIST OF WHAT IS LIVE, ACROSS EVERY PRODUCT (audit gap G70).
@@ -72,6 +73,35 @@ export interface ActivityItem {
   runId: string | null;
   /** Whether an existing endpoint can stop it from the list. */
   canStop: boolean;
+  /**
+   * The crew member running it, when one is (a Work task or research run an
+   * agent owns). Rows draw that agent's 2D face in `agentState` rather than a
+   * plain status mark. Null for the reader's own runs and for Code tasks.
+   */
+  agent: ActivityAgent | null;
+}
+
+export interface ActivityAgent {
+  id: string;
+  name: string;
+  /** `{shape, tone, eyes, mark}`, normalised (src/lib/agents/avatar.ts). */
+  avatar: AgentAvatar;
+  /** The face's state for this item (`AGENT_STATES`). */
+  state: "working" | "waiting" | "done" | "blocked";
+}
+
+/** The agent face's state for an activity state (docs/design/AGENTS.md §4.2). */
+export function agentStateFor(state: ActivityState): ActivityAgent["state"] {
+  switch (state) {
+    case "needs_you":
+      return "waiting";
+    case "running":
+      return "working";
+    case "ready":
+      return "done";
+    case "blocked":
+      return "blocked";
+  }
 }
 
 export interface ActivityCounts {

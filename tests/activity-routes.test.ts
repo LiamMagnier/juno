@@ -127,6 +127,7 @@ interface World {
   research: Row[];
   runs: Row[];
   approvals: Row[];
+  agents?: Row[];
 }
 
 function db(world: World, log: Queried[] = []): ActivityDb {
@@ -136,17 +137,18 @@ function db(world: World, log: Queried[] = []): ActivityDb {
     researchRun: table("researchRun", world.research, log),
     workRun: table("workRun", world.runs, log),
     workApproval: table("workApproval", world.approvals, log),
+    agent: table("agent", world.agents ?? [], log),
   } as unknown as ActivityDb;
 }
 
 function work(id: string, userId: string, status: string, at: Date, extra: Row = {}): Row {
-  return { id, userId, title: `Task ${id}`, status, needsAttention: false, conversationId: null, createdAt: ago(3 * HOUR), lastActivityAt: at, deletedAt: null, archived: false, ...extra };
+  return { id, userId, title: `Task ${id}`, status, needsAttention: false, conversationId: null, agentId: null, createdAt: ago(3 * HOUR), lastActivityAt: at, deletedAt: null, archived: false, ...extra };
 }
 function code(id: string, userId: string, status: string, at: Date, extra: Row = {}): Row {
   return { id, userId, title: `Code ${id}`, status, conversationId: `conv-${id}`, createdAt: ago(2 * HOUR), updatedAt: at, ...extra };
 }
 function research(id: string, userId: string, state: string, at: Date): Row {
-  return { id, userId, goal: `Research ${id}`, state, conversationId: null, createdAt: ago(HOUR), startedAt: ago(50 * MIN), updatedAt: at };
+  return { id, userId, goal: `Research ${id}`, state, conversationId: null, agentId: null, createdAt: ago(HOUR), startedAt: ago(50 * MIN), updatedAt: at };
 }
 
 const ME = "user-me";
@@ -323,4 +325,30 @@ test("the route files bind the real session and the guarded client", () => {
     assert.match(source, /from "@\/lib\/prisma"/);
     assert.doesNotMatch(source, /prismaUnguarded/);
   }
+});
+
+test("a row an agent owns carries that agent's face in the item's state, from the caller's crew only", async () => {
+  const world = sampleWorld();
+  world.work.push(work("w-agent", ME, "waiting_input", ago(30 * 1000), { agentId: "agent-1", needsAttention: true }));
+  world.research.push({ ...research("r-agent", ME, "investigating", ago(40 * 1000)), agentId: "agent-2" });
+  world.agents = [
+    { id: "agent-1", userId: ME, name: "Maren", avatar: { shape: "orb", tone: "teal", eyes: "round", mark: "ring" } },
+    // Another account's agent under the id this account's run points at: never read.
+    { id: "agent-2", userId: THEM, name: "Not yours", avatar: {} },
+  ];
+  const log: Queried[] = [];
+  const page = (await (await list(world, "", asMe, log)).json()) as ActivityPage;
+  const byId = new Map(page.items.map((i) => [i.id, i]));
+  assert.deepEqual(byId.get("work:w-agent")?.agent, {
+    id: "agent-1",
+    name: "Maren",
+    avatar: { shape: "orb", tone: "teal", eyes: "round", mark: "ring" },
+    state: "waiting",
+  });
+  assert.equal(byId.get("research:r-agent")?.agent, null);
+  assert.equal(byId.get("work:w-run")?.agent, null);
+  // One agent read for the whole page, scoped to the caller.
+  const agentQueries = log.filter((q) => q.model === "agent");
+  assert.equal(agentQueries.length, 1);
+  assert.equal(agentQueries[0].where.userId, ME);
 });

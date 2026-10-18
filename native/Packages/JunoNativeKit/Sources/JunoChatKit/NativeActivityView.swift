@@ -260,7 +260,14 @@ struct NativeActivityRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: JunoSpace.close) {
-            NativeActivityStatusMark(state: item.state, active: hovered)
+            if let agent = item.agent {
+                // An agent's run wears that agent's face in its state, never a
+                // plain dot; the state word rides in the line below.
+                JunoAgentFace(avatar: agent.avatar, state: agent.state, size: 22, live: hovered)
+                    .accessibilityHidden(true)
+            } else {
+                NativeActivityStatusMark(state: item.state, active: hovered)
+            }
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(verbatim: item.title)
                     .junoUI()
@@ -294,7 +301,12 @@ struct NativeActivityRow: View {
     }
 
     private var meta: String {
-        var parts = [String(localized: String.LocalizationValue(item.kind.label))]
+        var parts: [String] = []
+        if let agent = item.agent {
+            // The face carries the state, so the words beside it must too.
+            parts.append("\(agent.name) · \(String(localized: String.LocalizationValue(item.state.label)))")
+        }
+        parts.append(String(localized: String.LocalizationValue(item.kind.label)))
         if let need = item.need { parts.append(String(localized: String.LocalizationValue(need.label))) }
         if let summary = item.needSummary { parts.append(summary) }
         parts.append(NativeActivityGrouping.timeLabel(for: item, now: now))

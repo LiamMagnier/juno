@@ -11,6 +11,7 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmente
 import { Skeleton } from "@/components/ui/skeleton";
 import { StopCircle, type IconComponent } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
+import { AgentFace } from "@/components/agents/agent-face";
 import { PhraseWithArgs, usePhrase } from "@/lib/i18n-phrase";
 import type { PhraseSpec } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
@@ -261,9 +262,17 @@ export function ActivityRow({ item, now, onChanged }: { item: ActivityItem; now:
         onBlur={() => setActive(false)}
         className="flex min-w-0 flex-1 items-start gap-2.5 rounded-control outline-none after:absolute after:inset-0 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <span className="mt-[3px]">
-          <ActivityStatusMark state={item.state} active={active} />
-        </span>
+        {item.agent ? (
+          // An agent's run wears that agent's face in the item's state (owner
+          // direction), never a plain dot; the state word still rides beside it.
+          <span className="-my-0.5 shrink-0" data-activity-agent={item.agent.id}>
+            <AgentFace avatar={item.agent.avatar} state={item.agent.state} size={20} live={active} />
+          </span>
+        ) : (
+          <span className="mt-[3px]">
+            <ActivityStatusMark state={item.state} active={active} />
+          </span>
+        )}
         <span className="min-w-0 flex-1">
           <span
             translate="no"
@@ -272,6 +281,18 @@ export function ActivityRow({ item, now, onChanged }: { item: ActivityItem; now:
             {item.title}
           </span>
           <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro text-muted-foreground">
+            {item.agent && (
+              <>
+                <span translate="no" className="font-medium text-foreground">
+                  {item.agent.name}
+                </span>
+                <span className={cn("inline-flex items-center gap-1", STATUS_INK[item.state])}>
+                  <ActivityStatusMark state={item.state} size={10} />
+                  {ACTIVITY_COPY.states[item.state]}
+                </span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
             <span className="inline-flex items-center gap-1">
               <KindIcon motion="none" aria-hidden="true" className="size-3" />
               {ACTIVITY_COPY.kinds[item.kind]}

@@ -36,6 +36,7 @@ function item(partial: Partial<ActivityItem> & Pick<ActivityItem, "id" | "state"
     conversationId: null,
     runId: null,
     canStop: false,
+    agent: null,
     ...partial,
   };
 }
@@ -91,6 +92,20 @@ test("Stop is offered only where an endpoint can stop it", () => {
   assert.match(running, /aria-label="Stop: Item b"/);
   const ready = renderToStaticMarkup(React.createElement(ActivityRow, { item: ITEMS[2], now: NOW, onChanged: () => {} }));
   assert.doesNotMatch(ready, /Stop/);
+});
+
+test("an agent's run wears the agent's face with its state word, not a status dot", () => {
+  const owned = item({
+    id: "work:z",
+    state: "needs_you",
+    need: "question",
+    agent: { id: "agent-1", name: "Maren", avatar: { shape: "orb", tone: "teal", eyes: "round", mark: "none" }, state: "waiting" },
+  });
+  const html = renderToStaticMarkup(React.createElement(ActivityRow, { item: owned, now: NOW, onChanged: () => {} }));
+  assert.match(html, /data-activity-agent="agent-1"/);
+  assert.match(html, /<svg/);
+  assert.ok(html.includes("Maren"));
+  assert.ok(html.includes(ACTIVITY_COPY.states.needs_you));
 });
 
 test("a filter narrows to one group and says so when it is empty", () => {
