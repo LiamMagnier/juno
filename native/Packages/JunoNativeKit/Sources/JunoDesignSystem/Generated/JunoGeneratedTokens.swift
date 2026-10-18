@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 7146e8b119ad0a4c
+// tokens-digest: 3dd401a33af73367
 //
 
 import CoreGraphics
@@ -917,8 +917,6 @@ public enum JunoGeneratedTiming {
     public static let streamRateMin: Double = 20.0
     /// `--stream-tail-max`: 250ms
     public static let streamTailMax: TimeInterval = 0.25
-    /// `--stagger-fav`: 30ms
-    public static let staggerFav: TimeInterval = 0.03
     /// `--stagger-max`: 4
     public static let staggerMax: Double = 4.0
     /// `--stagger-onboarding`: 60ms
