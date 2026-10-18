@@ -13,6 +13,9 @@ import JunoDesignSystem
 /// The descriptors below are what `NativeChatModelOption.junoDescriptor`
 /// builds from the manifest's Haiku rows (the Chat side of this is
 /// `NativeModelManifestTests.testHaikuManifestEntriesYieldTheirOwnLaddersAndDefaults`).
+// The pickers' ladder helpers are main-actor isolated; Xcode 26.6 (CI) does not
+// infer the isolation the way the local 27 toolchain does.
+@MainActor
 final class CodeThinkingManifestTests: XCTestCase {
     private func stop(_ id: String, _ label: String) -> JunoThinkingStop {
         JunoThinkingStop(id: id, label: label, accessibilityLabel: label)
