@@ -35,7 +35,8 @@ import { toast } from "sonner";
 import type { ClientMessage, ConversationHistory } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
 import { readRepoSkills, useCodeSkills } from "./use-code-skills";
-import type { WorkspaceModel } from "./types";
+import type { AgentControlRequestInput, WorkspaceModel } from "./types";
+import { sendAgentControl } from "@/lib/code-v2/agent-control-client";
 import { CodeWorkspace } from "./workspace";
 import { cloudPermissionMode, composerModeOf, initialModePair, projectModeKey, threadPrefsKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
 import { createFirstPromptHandoff, firstPromptNeedsSkills, type PendingFirstPrompt } from "@/lib/code-v2/first-prompt";
@@ -505,14 +506,23 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
   }
 
   const actions: WorkspaceModel["actions"] = {
-    ...(useEnv && env.client && env.view && env.instances.some((i) => i.id === env.view!.selection.instanceId && (i.kind === "alevr" || i.kind === "byok")) ? {
-      messageAgent: async (agentId: string, text: string) => {
-        const result = await env.client!.request("agent.message", { sessionId: env.view!.id, agentId, text });
-        if (!result.accepted) throw new Error(result.message ?? "This agent cannot receive a message right now.");
-        return true;
-      },
-      stopAgent: (agentId: string) => { void env.client!.request("agent.interrupt", { sessionId: env.view!.id, agentId }).catch((e) => toast.error(e.message)); },
-    } : {}),
+    ...(useEnv && env.client && env.view && env.instances.some((i) => i.id === env.view!.selection.instanceId && (i.kind === "alevr" || i.kind === "byok")) ? (() => {
+      // Agents tree (REA backlog 10): every press goes through the audited
+      // agent-control route over the hosted link, or straight to the env
+      // server in the Mac app's own web view, under one request key.
+      const transport = { linkDeviceId: env.linkDeviceId, request: env.client!.request.bind(env.client!) };
+      const sessionId = env.view!.id;
+      const controlAgent = (input: AgentControlRequestInput) => sendAgentControl(transport, { ...input, sessionId });
+      return {
+        controlAgent,
+        messageAgent: async (agentId: string, text: string) => {
+          const result = await controlAgent({ agentId, action: "steer", text });
+          if (!result.accepted) throw new Error(result.message ?? "This agent cannot receive a message right now.");
+          return true;
+        },
+        stopAgent: (agentId: string) => { void controlAgent({ agentId, action: "stop" }).catch((e) => toast.error(e.message)); },
+      };
+    })() : {}),
     async send(text, attachments = []) {
       pinModeOnSend();
       if (useEnv && env.client) {

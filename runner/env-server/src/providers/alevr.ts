@@ -10,6 +10,7 @@
  * inject a fake engine.
  */
 import type {
+  AgentControlResult,
   ApprovalRequestItem,
   CompactionItem,
   ProviderCapabilities,
@@ -70,9 +71,41 @@ export interface EngineSession {
   abort(): void;
   messageAgent?(agentId: string, text: string): { ok: boolean; message: string };
   interruptAgent?(agentId: string): void;
+  /** Agents lane: a person's Pause / Resume (one child, or every child without an id) and bounded top-up. */
+  pauseAgent?(agentId?: string): EngineControlResult;
+  resumeAgent?(agentId?: string): EngineControlResult;
+  topUpAgent?(agentId: string | undefined, add: { tokens?: number; usd?: number }): EngineControlResult;
   setMode(mode: EnginePermissionMode): void;
   queueUserMessage(text: string): Promise<void>;
   rewindToTurn?(turnIndex: number): string[];
+}
+
+/** agent-core SubagentControlResult, structurally. */
+export interface EngineControlResult {
+  ok: boolean;
+  message: string;
+  count?: number;
+  tokenBudget?: number;
+  budget?: { tokens: number; costUsd: number; maxTokens?: number; maxUsd?: number };
+}
+
+function controlReply(result: EngineControlResult): AgentControlResult {
+  return {
+    accepted: result.ok,
+    ...(result.message ? { message: result.message } : {}),
+    ...(result.count === undefined ? {} : { count: result.count }),
+    ...(result.tokenBudget === undefined ? {} : { tokenBudget: result.tokenBudget }),
+    ...(result.budget
+      ? {
+          budget: {
+            tokens: result.budget.tokens,
+            costUsd: result.budget.costUsd,
+            ...(result.budget.maxTokens === undefined ? {} : { maxTokens: result.budget.maxTokens }),
+            ...(result.budget.maxUsd === undefined ? {} : { maxUsd: result.budget.maxUsd }),
+          },
+        }
+      : {}),
+  };
 }
 
 export interface EngineSessionOptions {
@@ -445,6 +478,24 @@ class EngineBackedSession implements ProviderSession {
     this.#session.interruptAgent(agentId);
   }
 
+  async pauseAgent(agentId?: string): Promise<AgentControlResult> {
+    if (!this.#session?.pauseAgent) return { accepted: false, message: "This runtime cannot pause agents." };
+    return controlReply(this.#session.pauseAgent(agentId));
+  }
+
+  async resumeAgent(agentId?: string): Promise<AgentControlResult> {
+    if (!this.#session?.resumeAgent) return { accepted: false, message: "This runtime cannot resume agents." };
+    return controlReply(this.#session.resumeAgent(agentId));
+  }
+
+  async topUpAgent(agentId: string | undefined, add: { tokens?: number; usd?: number }): Promise<AgentControlResult> {
+    if (!this.#session?.topUpAgent) return { accepted: false, message: "This runtime cannot raise an agent's budget." };
+    const reply = controlReply(this.#session.topUpAgent(agentId, add));
+    // A raised run budget is a fact every device following the thread should see, in the thread itself.
+    if (reply.accepted && !agentId && reply.message) this.#turn?.sink.notice("info", reply.message, "budget_top_up");
+    return reply;
+  }
+
   async interrupt(): Promise<void> {
     if (this.#turn) this.#turn.aborted = true;
     this.#session?.abort();
@@ -629,7 +680,7 @@ class EngineBackedSession implements ProviderSession {
           agentId,
           role: contractRoleOfEngine(str(a.contractRole) || str(a.role)),
           model: isSelection(a.selection) ? a.selection : { instanceId: this.instance.id, model: str(a.model) || this.#model || "default" },
-          status: st === "completed" || st === "done" ? "completed" : st === "failed" ? "failed" : st === "cancelled" || st === "interrupted" ? "interrupted" : st === "queued" ? "waiting" : "running",
+          status: st === "completed" || st === "done" ? "completed" : st === "failed" ? "failed" : st === "cancelled" || st === "interrupted" ? "interrupted" : st === "queued" || st === "waiting_approval" ? "waiting" : "running",
           task: str(a.task) || str(a.title),
           title: str(a.title),
           liveLine: str(a.currentActivity) || undefined,
@@ -637,6 +688,11 @@ class EngineBackedSession implements ProviderSession {
           ...(typeof a.summary === "string" ? { closingText: a.summary } : {}),
           ...(a.phase === "plan" || a.phase === "build" || a.phase === "verify" ? { phase: a.phase } : {}),
           ...(str(a.label) ? { label: str(a.label), title: str(a.title) } : {}),
+          // agents lane: what the Agents tree shows and controls.
+          ...(a.paused === true ? { paused: true } : {}),
+          ...(typeof a.tokenBudget === "number" && a.tokenBudget > 0 ? { tokenBudget: Math.round(a.tokenBudget) } : {}),
+          ...(str(a.parentId) ? { parentAgentId: str(a.parentId) } : {}),
+          ...(usageOf(a.usage) ?? {}),
         };
         sink.item(item);
         return;
@@ -656,6 +712,17 @@ class EngineBackedSession implements ProviderSession {
         return;
     }
   }
+}
+
+/** A child's engine usage as the wire's TokenCount, or nothing before its first request. */
+function usageOf(u: unknown): Pick<SubagentItem, "tokens"> | undefined {
+  if (!u || typeof u !== "object") return undefined;
+  const { inputTokens, outputTokens, cacheReadTokens } = u as { inputTokens?: unknown; outputTokens?: unknown; cacheReadTokens?: unknown };
+  const input = typeof inputTokens === "number" && inputTokens > 0 ? Math.round(inputTokens) : 0;
+  const output = typeof outputTokens === "number" && outputTokens > 0 ? Math.round(outputTokens) : 0;
+  if (input === 0 && output === 0) return undefined;
+  const cached = typeof cacheReadTokens === "number" && cacheReadTokens > 0 ? Math.round(cacheReadTokens) : 0;
+  return { tokens: { input, output, ...(cached ? { cachedInput: cached } : {}) } };
 }
 
 export function engineToolItem(name: string, input: Record<string, unknown>, callId: string, itemId: string, turnId: string, now: string): TurnItem | undefined {
