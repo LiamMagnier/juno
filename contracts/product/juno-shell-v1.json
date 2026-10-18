@@ -1020,6 +1020,36 @@
         "en": "Allow for this session",
         "fr": "Autoriser pour cette session"
       },
+      "recovery.restored": {
+        "comment": "Banner after a launch that follows an unclean exit (crash, force quit); the previous conversation, draft and selection are back.",
+        "en": "Alevr closed unexpectedly. Your conversation is restored.",
+        "fr": "Alevr s\u2019est ferm\u00e9 de fa\u00e7on inattendue. Votre conversation a \u00e9t\u00e9 restaur\u00e9e."
+      },
+      "recovery.dismiss": {
+        "comment": "Closes the recovery or safe mode banner.",
+        "en": "Dismiss",
+        "fr": "Ignorer"
+      },
+      "safeMode.title": {
+        "comment": "Safe mode banner title, after repeated unclean exits in a short time.",
+        "en": "Safe mode",
+        "fr": "Mode sans \u00e9chec"
+      },
+      "safeMode.body": {
+        "comment": "Safe mode banner body: optional features (computer use, extensions, the Quick Entry shortcut, background agents, custom motion) are off.",
+        "en": "Alevr closed unexpectedly more than once, so optional features are off for now.",
+        "fr": "Alevr s\u2019est ferm\u00e9 de fa\u00e7on inattendue plusieurs fois\u00a0: les fonctions facultatives sont d\u00e9sactiv\u00e9es pour l\u2019instant."
+      },
+      "safeMode.restartNormally": {
+        "comment": "Mac safe mode banner action: relaunches with every feature on.",
+        "en": "Restart normally",
+        "fr": "Red\u00e9marrer normalement"
+      },
+      "safeMode.leave": {
+        "comment": "iPhone safe mode banner action: turns the optional features back on without relaunching.",
+        "en": "Turn off safe mode",
+        "fr": "D\u00e9sactiver le mode sans \u00e9chec"
+      },
       "approval.armed": {
         "comment": "Screen-reader text while the verb is disarmed (500ms).",
         "en": "Available in a moment",

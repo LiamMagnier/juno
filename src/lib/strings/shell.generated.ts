@@ -2,7 +2,7 @@
 // Do not edit: change the contract and run `npm run shell:contract:generate`.
 // `npm run shell:contract:check` fails CI when this file is stale.
 //
-// shell-contract-digest: d923f6b6619db6ad3c30f2fc70d0d58719dc443b1d9723fb5de0e62065eeaa34
+// shell-contract-digest: b3aa72375ebf7eb5b933b06fa97ce00d5a3a8153e7b053add70586a18b56b486
 
 /** The languages the table carries. */
 export const SHELL_LOCALES = ["en","fr"] as const;
@@ -179,6 +179,18 @@ export const SHELL_STRINGS = {
   "approval.approveAndBuild": { en: "Approve and build", fr: "Approuver et construire" },
   /** Standing grant behind the verb's caret. */
   "approval.allowSession": { en: "Allow for this session", fr: "Autoriser pour cette session" },
+  /** Banner after a launch that follows an unclean exit (crash, force quit); the previous conversation, draft and selection are back. */
+  "recovery.restored": { en: "Alevr closed unexpectedly. Your conversation is restored.", fr: "Alevr s’est fermé de façon inattendue. Votre conversation a été restaurée." },
+  /** Closes the recovery or safe mode banner. */
+  "recovery.dismiss": { en: "Dismiss", fr: "Ignorer" },
+  /** Safe mode banner title, after repeated unclean exits in a short time. */
+  "safeMode.title": { en: "Safe mode", fr: "Mode sans échec" },
+  /** Safe mode banner body: optional features (computer use, extensions, the Quick Entry shortcut, background agents, custom motion) are off. */
+  "safeMode.body": { en: "Alevr closed unexpectedly more than once, so optional features are off for now.", fr: "Alevr s’est fermé de façon inattendue plusieurs fois\u00a0: les fonctions facultatives sont désactivées pour l’instant." },
+  /** Mac safe mode banner action: relaunches with every feature on. */
+  "safeMode.restartNormally": { en: "Restart normally", fr: "Redémarrer normalement" },
+  /** iPhone safe mode banner action: turns the optional features back on without relaunching. */
+  "safeMode.leave": { en: "Turn off safe mode", fr: "Désactiver le mode sans échec" },
   /** Screen-reader text while the verb is disarmed (500ms). */
   "approval.armed": { en: "Available in a moment", fr: "Disponible dans un instant" },
   /** Button inserted after the active input when an approval announces. */

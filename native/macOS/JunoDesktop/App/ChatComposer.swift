@@ -1363,6 +1363,13 @@ struct ChatComposer: View {
             conversationID: privateChat == nil && fixedProjectID == nil ? model.selectedConversationID : nil,
             text: $prompt
         ))
+        // The unsent draft also goes into this Mac's session snapshot, so an
+        // unclean exit gives it back (§3.3). Never a private chat's.
+        .modifier(DesktopRecoveryDraft(
+            isRecorded: privateChat == nil && fixedProjectID == nil,
+            conversationID: model.selectedConversationID,
+            text: $prompt
+        ))
         // A refused first send stays said until the reader edits the words or
         // moves to a chat with a transcript of its own — not when the store
         // quietly settles or drops the conversation it tried to create.

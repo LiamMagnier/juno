@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "d923f6b6619db6ad3c30f2fc70d0d58719dc443b1d9723fb5de0e62065eeaa34"
+    static let digest = "b3aa72375ebf7eb5b933b06fa97ce00d5a3a8153e7b053add70586a18b56b486"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -1361,6 +1361,60 @@ enum JunoShellStrings {
         }
     }
     static var approvalAllowSession: String { approvalAllowSession(in: .current) }
+
+    /// `recovery.restored`: Banner after a launch that follows an unclean exit (crash, force quit); the previous conversation, draft and selection are back.
+    static func recoveryRestored(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Alevr closed unexpectedly. Your conversation is restored."
+        case .fr: "Alevr s’est fermé de façon inattendue. Votre conversation a été restaurée."
+        }
+    }
+    static var recoveryRestored: String { recoveryRestored(in: .current) }
+
+    /// `recovery.dismiss`: Closes the recovery or safe mode banner.
+    static func recoveryDismiss(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Dismiss"
+        case .fr: "Ignorer"
+        }
+    }
+    static var recoveryDismiss: String { recoveryDismiss(in: .current) }
+
+    /// `safeMode.title`: Safe mode banner title, after repeated unclean exits in a short time.
+    static func safeModeTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Safe mode"
+        case .fr: "Mode sans échec"
+        }
+    }
+    static var safeModeTitle: String { safeModeTitle(in: .current) }
+
+    /// `safeMode.body`: Safe mode banner body: optional features (computer use, extensions, the Quick Entry shortcut, background agents, custom motion) are off.
+    static func safeModeBody(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Alevr closed unexpectedly more than once, so optional features are off for now."
+        case .fr: "Alevr s’est fermé de façon inattendue plusieurs fois\u{00A0}: les fonctions facultatives sont désactivées pour l’instant."
+        }
+    }
+    static var safeModeBody: String { safeModeBody(in: .current) }
+
+    /// `safeMode.restartNormally`: Mac safe mode banner action: relaunches with every feature on.
+    static func safeModeRestartNormally(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Restart normally"
+        case .fr: "Redémarrer normalement"
+        }
+    }
+    static var safeModeRestartNormally: String { safeModeRestartNormally(in: .current) }
+
+    /// `safeMode.leave`: iPhone safe mode banner action: turns the optional features back on without relaunching.
+    static func safeModeLeave(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Turn off safe mode"
+        case .fr: "Désactiver le mode sans échec"
+        }
+    }
+    static var safeModeLeave: String { safeModeLeave(in: .current) }
 
     /// `approval.armed`: Screen-reader text while the verb is disarmed (500ms).
     static func approvalArmed(in language: JunoShellLanguage = .current) -> String {

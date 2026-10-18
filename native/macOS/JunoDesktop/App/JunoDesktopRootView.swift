@@ -66,6 +66,9 @@ struct JunoDesktopRootView: View {
             // screen holds: the Studio approval card, over Chat or Code.
             .overlay(alignment: .top) { CodeV2ConnectedApprovalCard() }
             .preferredColorScheme(preferredColorScheme)
+            // Safe mode turns custom motion off: every view that honours
+            // Reduce Motion takes its reduced variant.
+            .junoSafeModeMotion(reduced: !JunoSafeMode.allows(.customMotion))
             // This Mac's text size (Phase 3, C5) and the first-run and Upgrade
             // sheets (C4, C6).
             .desktopTextScale()
@@ -185,6 +188,9 @@ struct JunoDesktopRootView: View {
                         Task { await configuration.authModel.retryRestore() }
                     }
                 }
+                // After an unclean exit: the work is back, and safe mode, if
+                // the app keeps closing (§3.3).
+                DesktopRecoveryBanner()
                 JunoDesktopWorkspaceView(
                     configuration: configuration,
                     session: session,
@@ -342,7 +348,11 @@ struct JunoDesktopRootView: View {
         // Work on used to leave the settings card saying this Mac had not
         // finished pairing for ever. Whether it then *claims* anything is the
         // master switch's decision, made in DesktopWorkHost.swift.
-        configuration.workHostModel?.start(for: accountID)
+        // Safe mode (§3.3) claims no background work: a task this Mac picked
+        // up on its own is one of the things that may have brought it down.
+        if JunoSafeMode.allows(.backgroundAgents) {
+            configuration.workHostModel?.start(for: accountID)
+        }
 
         if let runtime = configuration.runtime {
             let workbench = WorkbenchModel(
@@ -366,6 +376,10 @@ struct JunoDesktopRootView: View {
                     )
                 )
             )
+            // Safe mode never resumes an interrupted run by itself.
+            if !JunoSafeMode.allows(.backgroundAgents) {
+                workbench.resumesInterruptedRunsOnLaunch = { false }
+            }
             workbench.setGenerationModels(
                 Self.generationModels(from: configuration.conversationModel?.selectableModels ?? [])
             )
