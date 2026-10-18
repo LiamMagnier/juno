@@ -211,6 +211,17 @@ public struct TetherView: Sendable, Equatable {
         }
     }
 
+    /// The words without a countdown, for a place that does not redraw each
+    /// second.
+    public var phaseLabel: String {
+        switch phase {
+        case .connected: ""
+        case .reconnecting: String(localized: "Reconnecting…")
+        case .waiting: String(localized: "Waiting for network")
+        case .parked: String(localized: "Waiting for connection")
+        }
+    }
+
     /// What assistive tech hears: the phase, never a ticking number.
     public var accessibilityLabel: String {
         switch phase {
