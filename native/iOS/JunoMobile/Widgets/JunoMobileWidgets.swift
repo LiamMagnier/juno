@@ -10,6 +10,7 @@ struct JunoMobileWidgetsBundle: WidgetBundle {
     JunoMobileQuickActionsWidget()
     JunoMobileVoiceLiveActivity()
     JunoMobileCodeApprovalLiveActivity()
+    JunoMobileAgentRunLiveActivity()
   }
 }
 
@@ -270,6 +271,167 @@ struct JunoMobileCodeApprovalLiveActivity: Widget {
         )
       )
     }
+  }
+}
+
+/// A live agent run (REA 8): what it is doing, how long it has been at it,
+/// and what it needs. The elapsed clock is the system's own timer, so it keeps
+/// counting between the app's local updates. A tap opens the Runs screen on
+/// this run; Stop opens it with the Stop question up (never stops by itself).
+struct JunoMobileAgentRunLiveActivity: Widget {
+  var body: some WidgetConfiguration {
+    ActivityConfiguration(for: JunoAgentRunActivityAttributes.self) { context in
+      AgentRunActivityView(context: context)
+        .activityBackgroundTint(Color.junoCanvas)
+    } dynamicIsland: { context in
+      DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+          JunoIconView(context.state.usesComputer ? .monitor : .agents, size: 18)
+            .foregroundStyle(Color.junoAccent)
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+          AgentRunElapsed(context: context)
+            .font(.caption.monospacedDigit())
+        }
+        DynamicIslandExpandedRegion(.center) {
+          Text(context.attributes.title)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(context.state.statusLine)
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(context.state.needsYou ? Color.junoCaution : Color.junoMutedForeground)
+            if let action = context.state.currentAction {
+              Text(action).font(.caption).lineLimit(1)
+            }
+            if !context.state.finished {
+              AgentRunStopButton(runKey: context.attributes.runKey)
+            }
+          }
+        }
+      } compactLeading: {
+        JunoIconView(context.state.usesComputer ? .monitor : .agents, size: 16)
+          .foregroundStyle(context.state.needsYou ? Color.junoCaution : Color.junoAccent)
+      } compactTrailing: {
+        if context.state.needsYou {
+          JunoIconView(.permission, size: 15).foregroundStyle(Color.junoCaution)
+        } else {
+          Text("\(context.state.steps)")
+            .font(.caption2.monospacedDigit())
+        }
+      } minimal: {
+        JunoIconView(context.state.needsYou ? .permission : .agents, size: 15)
+      }
+      .widgetURL(JunoMobileWidgetRoute.runsURL(runKey: context.attributes.runKey))
+    }
+  }
+}
+
+private struct AgentRunElapsed: View {
+  let context: ActivityViewContext<JunoAgentRunActivityAttributes>
+
+  var body: some View {
+    if context.state.finished {
+      Text(context.state.statusLine)
+    } else {
+      Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
+        .multilineTextAlignment(.trailing)
+    }
+  }
+}
+
+private struct AgentRunStopButton: View {
+  let runKey: String
+
+  var body: some View {
+    Button(intent: JunoMobileRunStopIntent(runKey: runKey)) {
+      Label("Stop", image: JunoIcon.circleStop.assetName(.regular))
+        .font(.caption.weight(.semibold))
+        .frame(minWidth: 64, minHeight: 44)
+    }
+    .frame(minWidth: 64, minHeight: 44)
+    .contentShape(.rect)
+    .tint(Color.junoCaution)
+  }
+}
+
+private struct AgentRunActivityView: View {
+  let context: ActivityViewContext<JunoAgentRunActivityAttributes>
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        JunoIconView(context.state.usesComputer ? .monitor : .agents, size: 18)
+          .foregroundStyle(Color.junoAccent)
+        Text(context.attributes.title)
+          .font(.headline)
+          .lineLimit(1)
+        Spacer(minLength: 4)
+        AgentRunElapsed(context: context)
+          .font(.subheadline.monospacedDigit())
+          .foregroundStyle(Color.junoMutedForeground)
+          .frame(maxWidth: 90, alignment: .trailing)
+      }
+      Text(context.state.statusLine)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(context.state.needsYou ? Color.junoCaution : Color.junoMutedForeground)
+      if let action = context.state.currentAction {
+        Text(action)
+          .font(.subheadline)
+          .lineLimit(1)
+      }
+      HStack(spacing: 8) {
+        Text(meta)
+          .font(.caption2)
+          .foregroundStyle(Color.junoMutedForeground)
+          .lineLimit(1)
+        Spacer(minLength: 4)
+        if !context.state.finished {
+          if context.state.needsYou {
+            Link(destination: JunoMobileWidgetRoute.runsURL(runKey: context.attributes.runKey)) {
+              Text("Review")
+                .font(.caption.weight(.semibold))
+                .frame(minWidth: 64, minHeight: 44)
+            }
+          }
+          AgentRunStopButton(runKey: context.attributes.runKey)
+        }
+      }
+    }
+    .foregroundStyle(Color.junoForeground)
+    .padding(.horizontal)
+    .padding(.vertical, 10)
+  }
+
+  private var meta: String {
+    var parts: [String] = []
+    if let host = context.attributes.hostName { parts.append(host) }
+    parts.append(context.state.steps == 1 ? "1 step" : "\(context.state.steps) steps")
+    if let cost = context.state.costUSD {
+      parts.append(cost.formatted(.currency(code: "USD").precision(.fractionLength(2))))
+    }
+    return parts.joined(separator: " · ")
+  }
+}
+
+/// Opens the Runs screen with this run's Stop question up. The Lock Screen
+/// has no authenticated runtime to stop anything with, and a Stop stays a
+/// deliberate second tap in the app.
+struct JunoMobileRunStopIntent: AppIntent {
+  static let title: LocalizedStringResource = "Stop an Alevr run"
+  static let openAppWhenRun = true
+
+  @Parameter(title: "Run") var runKey: String
+
+  init() {}
+  init(runKey: String) {
+    self.runKey = runKey
+  }
+
+  func perform() async throws -> some IntentResult & OpensIntent {
+    .result(opensIntent: OpenURLIntent(JunoMobileWidgetRoute.runsURL(runKey: runKey, stop: true)))
   }
 }
 

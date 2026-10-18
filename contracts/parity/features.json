@@ -938,6 +938,18 @@
           "status": "web-only",
           "note": "As the approvals verb."
         },
+        "/api/runs/live": {
+          "status": "native",
+          "note": "REA 8: every live Code session and Work run on the account (steps, current action, elapsed, cost, pending approvals), as a JSON snapshot or an SSE feed. The iPhone's Runs screen and its Live Activity (NativeLiveRunsClient in JunoCodeKit/LiveRuns.swift)."
+        },
+        "/api/runs/stop": {
+          "status": "native",
+          "note": "REA 8: idempotent Stop for a live Code session or Work run, from the iPhone's Runs screen; the web's agents tree can share it."
+        },
+        "/api/runs/approval": {
+          "status": "native",
+          "note": "REA 8: answer a live run's pending approval from the iPhone; Code answers queue for the Mac, Work answers go through the Work decision route."
+        },
         "/api/code/environments": {
           "status": "planned",
           "note": "Cloud environments (/code/customize)."

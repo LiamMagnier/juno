@@ -151,6 +151,11 @@ struct JunoMobileApp: App {
             // Ask for a background check when the app goes away, so an
             // approval that lands while the phone is in a pocket still
             // reaches it.
+            switch phase {
+            case .active: JunoMobileRunsCoordinator.shared.sceneBecameActive()
+            case .background: JunoMobileRunsCoordinator.shared.sceneEnteredBackground()
+            default: break
+            }
             if phase == .background {
                 JunoMobileCodeNotifications.shared.scheduleRefresh()
                 // A research run this phone saw is still working: check back
@@ -239,6 +244,11 @@ struct JunoMobileApp: App {
                 accountDataPurger: RepositoryAccountDataPurger(
                     repository: localStore
                 )
+            )
+            // Live runs (REA 8): the same authenticated transport, for the
+            // Runs screen, its Live Activities and its Stop / approve calls.
+            JunoMobileRunsCoordinator.shared.configure(
+                client: NativeLiveRunsClient(sender: runtime, streamer: runtime)
             )
             let coordinator = NativeSyncCoordinator(
                 repository: localStore,

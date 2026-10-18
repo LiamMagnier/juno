@@ -1406,6 +1406,7 @@ export const WORK_AUDIT_KINDS = [
   "skill_security_scanned",
   "skill_permission_consent",
   "tier_downgrade_refused",
+  "run_stop_requested",
   // A person's Steer / Stop / Pause / Resume / Top-up of a Code run's agent
   // (src/lib/code-v2/agent-control.ts). Ids, verdicts and amounts only.
   "agent_control",

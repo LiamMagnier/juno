@@ -41,6 +41,9 @@ final class JunoMobileLaunchRequests {
     case openLinkSession(deviceID: String, sessionID: String)
     /// An approval answered from a notification's action.
     case respondToLinkApproval(deviceID: String, sessionID: String, requestID: String, approved: Bool)
+    /// The Runs screen (REA 8), optionally on one run and optionally with its
+    /// Stop question up. Only ever navigates: Stop is a second tap there.
+    case openRuns(runKey: String?, confirmStop: Bool)
   }
 
   /// The request waiting to be acted on. Cleared by whoever handles it.
@@ -77,6 +80,14 @@ final class JunoMobileLaunchRequests {
   /// can answer an approval — and the notification is marked read so the web
   /// inbox stops offering it.
   func handle(notification info: [String: String]) {
+    // A live run's approval notification (JunoMobileRunsCoordinator): opens
+    // the Runs screen on that run, where the answer is given.
+    if let runKey = info["runKey"],
+      case .openRuns(let key, _)? = Self.request(for: JunoMobileWidgetRoute.runsURL(runKey: runKey))
+    {
+      pending = .openRuns(runKey: key, confirmStop: false)
+      return
+    }
     if let deviceID = info["deviceID"], let sessionID = info["sessionID"] {
       pending = .openRemoteSession(deviceID: deviceID, sessionID: sessionID)
       return
@@ -130,6 +141,19 @@ final class JunoMobileLaunchRequests {
     case ["voice"]: return .voice
     case ["dictate"]: return .dictate
     case ["code"]: return .code
+    case ["runs"]:
+      let values = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+      let key = values.first(where: { $0.name == "run" })?.value
+      // A run key is `code:<device>:<session>` or `work:<run>`; anything
+      // else opens the list without a focus rather than a made-up run.
+      let valid = key.flatMap { candidate -> String? in
+        guard candidate.count <= 420, candidate.hasPrefix("code:") || candidate.hasPrefix("work:"),
+          candidate.allSatisfy({ !$0.isWhitespace && !$0.isNewline })
+        else { return nil }
+        return candidate
+      }
+      let stop = values.first(where: { $0.name == "stop" })?.value == "1"
+      return .openRuns(runKey: valid, confirmStop: stop && valid != nil)
     case ["pair"]:
       // A pairing offer from a Mac's QR, opened by the Camera through the web's
       // /pair page. It only opens the approve screen: nothing is approved
