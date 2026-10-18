@@ -30,6 +30,8 @@ export interface EnvLink {
   /** This browser holds no remote-control pair with the Mac: the server's words (docs/code-v2/REMOTE-CONTROL.md). */
   pairingRequired: string | null;
   client: EnvClient | null;
+  /** The Mac's device id while the page reaches it through the hosted link (agent controls go to their audited route); null on a direct socket. */
+  linkDeviceId: string | null;
   instances: ProviderInstance[];
   terminals: TerminalSession[];
   view: SessionView | null;
@@ -60,6 +62,7 @@ function explicitEnvUrl(): string | null {
 
 export function useEnvLink(device: { id: string; online: boolean } | null, initialSessionId: string | null): EnvLink {
   const [client, setClient] = React.useState<EnvClient | null>(null);
+  const [linkDeviceId, setLinkDeviceId] = React.useState<string | null>(null);
   const [ready, setReady] = React.useState(false);
   const [probed, setProbed] = React.useState(false);
   const [status, setStatus] = React.useState<TransportStatus | "none">("none");
@@ -140,6 +143,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       else if (e.type === "skills.updated") setSkillsRevision((n) => n + 1);
     });
     setClient(c);
+    setLinkDeviceId(endpoint.kind === "link" ? endpoint.deviceId : null);
     c.listProviders()
       .then((list) => {
         if (!live) return;
@@ -166,6 +170,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       sub.current = null;
       c.close();
       setClient(null);
+      setLinkDeviceId(null);
       setReady(false);
       setProbed(false);
       setPairingRequired(null);
@@ -258,5 +263,5 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
 
   const refreshSubscriptions = React.useCallback(() => refreshNow.current(), []);
 
-  return { refreshSubscriptions, ready, probed, status, pairingRequired, client, instances, terminals, view, sessionId, skillsRevision, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
+  return { refreshSubscriptions, ready, probed, status, pairingRequired, client, linkDeviceId, instances, terminals, view, sessionId, skillsRevision, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
 }
