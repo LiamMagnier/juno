@@ -955,6 +955,10 @@
         {
           "value": "tier_downgrade_refused",
           "summary": "A less precise tool was refused while a more precise one could serve the same intent."
+        },
+        {
+          "value": "agent_control",
+          "summary": "A person steered, stopped, paused, resumed or topped up an agent of a Code run."
         }
       ]
     },
