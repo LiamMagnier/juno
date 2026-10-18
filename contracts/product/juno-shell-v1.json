@@ -43,6 +43,14 @@
   ],
   "destinations": [
     {
+      "id": "activity",
+      "label": "Activity",
+      "href": "/activity",
+      "kind": "activity",
+      "icon": "AppIcons.activity",
+      "nativeIcon": "chartLine"
+    },
+    {
       "id": "library",
       "label": "Library",
       "href": "/library",
@@ -140,6 +148,7 @@
         }
       ],
       "destinations": [
+        "activity",
         "projects",
         "library",
         "accountCustomize"

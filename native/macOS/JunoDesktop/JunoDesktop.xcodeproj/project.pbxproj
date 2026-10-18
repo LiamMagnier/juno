@@ -236,6 +236,7 @@
 		DB3928BCB32445B4288D6165 /* DesktopDesignEditorHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 774077F2584C1A4709F9E8E2 /* DesktopDesignEditorHost.swift */; };
 		DBB5D3544F36C7AC5DEDC120 /* DesktopSettingsPersonalizationPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BF3D7309716618ED4E4875 /* DesktopSettingsPersonalizationPane.swift */; };
 		DD69FA1D993610F06891A56D /* CodeSidebarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1E66E3CC3E98693A46C9C1 /* CodeSidebarSnapshotTests.swift */; };
+		DD8CA46B37F23E177F1DF447 /* DesktopActivityScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AEBEFA83A376F10D7236B68 /* DesktopActivityScreen.swift */; };
 		DE3840780118FEF0D61AE228 /* DesktopCodeVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210FB11BEF4C90E7468F1467 /* DesktopCodeVoice.swift */; };
 		DF2A1897160CC8887E91F7D2 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 6A84BDBBCFA23EE700276267 /* index.html */; };
 		E1137EF861F13AA12CAF887E /* DesktopSkillSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42528E92FFAD4E5724D441E9 /* DesktopSkillSheets.swift */; };
@@ -370,6 +371,7 @@
 		38D06B737AB54EA2CBAFFD6F /* InlineArtifactCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineArtifactCard.swift; sourceTree = "<group>"; };
 		3937DD015DAB7C6F68939F1F /* DesktopProductMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProductMode.swift; sourceTree = "<group>"; };
 		3AA5EEB28DADD84C79D04CBC /* DesktopSettingsPlanPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSettingsPlanPane.swift; sourceTree = "<group>"; };
+		3AEBEFA83A376F10D7236B68 /* DesktopActivityScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopActivityScreen.swift; sourceTree = "<group>"; };
 		3C2DEC27706EA690DDCA97E5 /* InlineDesignPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineDesignPreview.swift; sourceTree = "<group>"; };
 		3CBAC5E3086D8DC63B3905E8 /* DesktopAutomationsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAutomationsScreen.swift; sourceTree = "<group>"; };
 		3D658E9E3017E93F2EEF6DDE /* DesktopSearchPanelModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSearchPanelModel.swift; sourceTree = "<group>"; };
@@ -714,6 +716,7 @@
 				A13ABB383477BA7CB9B43798 /* DesktopAccountFooter.swift */,
 				334726D8D4CB13D0C381C00F /* DesktopAccountPageParts.swift */,
 				50B52B2ED47181984DAA60FA /* DesktopAccountScreens.swift */,
+				3AEBEFA83A376F10D7236B68 /* DesktopActivityScreen.swift */,
 				698564635053439110E8EDCB /* DesktopAgentRoutes.swift */,
 				022FE0A66F702403EEF46FD2 /* DesktopAgentThread.swift */,
 				376EC9A197B61037CE44A70F /* DesktopAnnouncementSheet.swift */,
@@ -1201,6 +1204,7 @@
 				E4407E5E4CF2A63E8B1CF2EE /* DesktopAccountFooter.swift in Sources */,
 				5D20F339296EA52A71DEAE97 /* DesktopAccountPageParts.swift in Sources */,
 				04169127F49812FA944A751B /* DesktopAccountScreens.swift in Sources */,
+				DD8CA46B37F23E177F1DF447 /* DesktopActivityScreen.swift in Sources */,
 				460E3FB87BB1A088E4869483 /* DesktopAgentRoutes.swift in Sources */,
 				0FC692CC83DC15C69EF9F1E3 /* DesktopAgentThread.swift in Sources */,
 				0C900F0473B7FE6FE616BC75 /* DesktopAnnouncementSheet.swift in Sources */,

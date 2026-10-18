@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "ab6a3ad3d766bf6726cba987fb73df19fdf0da0321fe29164ec31b142c332173"
+    static let digest = "6acf775e1c7d88a2f6b5433d770398cdd74c87a936c6744635870dac624653c8"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -94,6 +94,7 @@ enum JunoShellProduct: String, CaseIterable, Sendable {
 
 /// Every place a sidebar row or a More item leads, in either product.
 enum JunoShellDestination: String, CaseIterable, Sendable {
+    case activity
     case library
     case projects
     case artifacts
@@ -109,6 +110,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
     /// The web's words.
     var label: String {
         switch self {
+        case .activity: "Activity"
         case .library: "Library"
         case .projects: "Projects"
         case .artifacts: "Made by Alevr"
@@ -126,6 +128,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
     /// The words in Title Case, for a menu.
     var title: String {
         switch self {
+        case .activity: "Activity"
         case .library: "Library"
         case .projects: "Projects"
         case .artifacts: "Made by Alevr"
@@ -142,6 +145,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
 
     var href: String {
         switch self {
+        case .activity: "/activity"
         case .library: "/library"
         case .projects: "/projects"
         case .artifacts: "/artifacts"
@@ -158,6 +162,7 @@ enum JunoShellDestination: String, CaseIterable, Sendable {
 
     var icon: JunoIcon {
         switch self {
+        case .activity: .chartLine
         case .library: .library
         case .projects: .projects
         case .artifacts: .artifacts
@@ -216,7 +221,7 @@ enum JunoShellChatSidebar {
     }
 
     /// The destination rows, in order.
-    static let destinations: [JunoShellDestination] = [.projects, .library, .accountCustomize]
+    static let destinations: [JunoShellDestination] = [.activity, .projects, .library, .accountCustomize]
 
     /// The More menu: its items, then a separator and the archive, which opens
     /// a dialog rather than a page.

@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-356 routes: 226 native, 58 planned, 57 web only, 15 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+358 routes: 227 native, 58 planned, 58 web only, 15 internal. 51 pages: on the Mac 38 native, 2 partial, 2 planned, 9 web only; on iOS 25 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -38,6 +38,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
 | [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
+| [Activity](#activity) | 1/1 | 1/1 | 1 | 0 | 1 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
@@ -360,6 +361,21 @@ Design is a type of artifact (register #73).
 | `/api/assistants/[id]` | GET, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/assistants/[id]/move-to-crew` | POST | Planned |  | Move to crew (D-007): the assistant becomes a crew member and leaves the list. The apps still read and open assistants; they have no Move action yet. |
 
+<a id="activity"></a>
+
+## Activity
+
+G70: one overview of everything live across Work tasks, Code tasks and Research runs, grouped Needs you / Running / Ready / Blocked. Rows open the surface that owns the item (its chat, Code session or research page), where approvals and questions are answered; Stop uses each product's own stop route.
+
+| Page | Mac | iOS | Native screen | Note |
+|---|---|---|---|---|
+| `/activity` | Native | Native | DesktopActivityScreen (Chat sidebar destination); JunoMobileActivityView (drawer) |  |
+
+| Route | Methods | Status | Called from | Note |
+|---|---|---|---|---|
+| `/api/activity` | GET | Native | JunoChatKit | NativeActivityClient and NativeActivityModel in JunoChatKit/NativeActivity.swift. |
+| `/api/activity/counts` | GET | Web only |  | The web sidebar's Needs you badge. The apps read the counts that ride on GET /api/activity. |
+
 <a id="tasks"></a>
 
 ## Tasks in chat
@@ -380,7 +396,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/work/artifacts/[id]` | GET | Native | JunoWorkKit |  |
 | `/api/work/artifacts/[id]/download` | GET | Native | JunoWorkKit |  |
 | `/api/work/artifacts/[id]/preview` | GET | Web only |  | A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58). |
-| `/api/work/runs/[id]/control` | POST | Native | JunoWorkKit |  |
+| `/api/work/runs/[id]/control` | POST | Native | JunoChatKit, JunoWorkKit |  |
 | `/api/work/runs/[id]/frames/[callId]` | GET | Planned |  | One step's screenshot from a cloud computer run, owner only, for the web filmstrip and the marked approval card (src/lib/computer/frames.ts). The apps do not draw the filmstrip or the approval frame yet. |
 | `/api/work/sessions` | GET, POST | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
@@ -542,7 +558,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/tasks` | GET, POST | Native | JunoCodeKit |  |
 | `/api/code/tasks/[id]` | GET | Planned |  | One cloud task's detail. |
 | `/api/code/tasks/[id]/auto-fix` | GET, PUT | Planned |  | A pull request's auto-fix switch. |
-| `/api/code/tasks/[id]/cancel` | POST | Native | JunoCodeKit |  |
+| `/api/code/tasks/[id]/cancel` | POST | Native | JunoChatKit, JunoCodeKit |  |
 | `/api/code/tasks/[id]/checks` | GET | Planned |  | CI checks on the pushed branch. |
 | `/api/code/tasks/[id]/claim` | POST | Native | JunoCodeKit |  |
 | `/api/code/tasks/[id]/events` | GET, POST | Native | JunoCodeKit |  |

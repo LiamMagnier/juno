@@ -18,6 +18,7 @@
  * should wear, and which shapes survive 14–18px — outlives any one set.
  */
 import {
+  Activity,
   AlertCircle,
   ArrowUpRight,
   BadgeCheck,
@@ -205,6 +206,11 @@ export const AppIcons = {
    *  `Inbox`'s tray: that was the Work inbox, the destination this replaced
    *  with a fold, and wearing its mark would say the old page came back. */
   notifications: Bell,
+  /** Activity (G70) — everything live across chats, Code and research. A
+   *  pulse line: things happening now, not a bell (that is the inbox of what
+   *  already happened). The native apps draw their `chartLine` case, the
+   *  nearest shipped drawing, stated as `nativeIcon` in the shell contract. */
+  activity: Activity,
   /** The web reaches Settings from the user menu rather than the rail, and draws
    *  it with this same mark (`user-menu.tsx`) — a six-toothed gear that turns
    *  a little under the pointer. It lives here because the native apps *do*

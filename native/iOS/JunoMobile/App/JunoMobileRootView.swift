@@ -1287,7 +1287,7 @@ struct JunoMobileRootView: View {
     case .chat, .code:
       if sizeClass == .compact { chatPath = [] }
       selection = destination
-    case .projects, .library, .artifacts, .agents, .tasks, .connections, .work, .search:
+    case .projects, .library, .artifacts, .agents, .tasks, .connections, .work, .search, .activity:
       // On the phone every destination but the two products pushes on the
       // one stack, over whichever product is showing.
       if sizeClass == .compact {
@@ -1620,6 +1620,13 @@ struct JunoMobileRootView: View {
       } else {
         unavailable
       }
+    case .activity:
+      JunoMobileActivityView(
+        session: currentSession,
+        requestSender: requestSender,
+        openConversation: openConversation,
+        startChat: { show(.chat) }
+      )
     case .tasks:
       if let scheduledTaskModel {
         JunoMobileTasksView(

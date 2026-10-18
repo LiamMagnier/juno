@@ -79,6 +79,8 @@ import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
 import { useCrossMessageInbox } from "@/components/chat/use-cross-messages";
 import { CrossMessagesMenuItem } from "@/components/chat/cross-messages-menu-item";
 import { useReducedMotion } from "@/lib/motion-preference";
+import { useActivityCounts } from "@/components/activity/use-activity";
+import { ActivityNeedsYouBadge } from "@/components/activity/activity-status-mark";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -642,6 +644,11 @@ export function AppSidebar({
    */
   const workRuns = useWorkRunsByConversation({ enabled: !isCode });
 
+  // Activity's Needs you count, across Work, Code and research (G70), for the
+  // badge on its row. One small GET on the sidebar's 30s visible-only cadence.
+  const activityCounts = useActivityCounts(!isCode);
+  const activityNeedsYou = activityCounts?.needs_you ?? 0;
+
   // Conversations messaging each other: unread titles, and the replies owed
   // by chats that are not open (src/components/chat/use-cross-messages.ts).
   const crossUnread = useCrossMessageInbox(activeConversationId ?? null);
@@ -1191,6 +1198,7 @@ export function AppSidebar({
                 { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
               ] as const)
             : ([
+                { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
                 { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: !!pathname?.startsWith("/projects") },
                 { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" || pathname === "/artifacts" },
                 { href: "/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
@@ -1204,6 +1212,8 @@ export function AppSidebar({
               onClick={() => setSidebarOpen(false)}
               icon={<SidebarMotionIcon kind={item.kind} />}
               label={item.label}
+              signal={item.kind === "activity" && activityNeedsYou > 0 ? <ActivityNeedsYouBadge count={activityNeedsYou} compact={collapsed} /> : undefined}
+              detail={item.kind === "activity" && activityNeedsYou > 0 ? `${activityNeedsYou} ${FEATURE_NAMES.needsYou.label.toLowerCase()}` : undefined}
               moves
               layoutId={`nav-${item.kind}`}
               transition={layoutTransition}
