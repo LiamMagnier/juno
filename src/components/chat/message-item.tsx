@@ -89,6 +89,7 @@ const ImageEditOverlay = nextDynamic(
   { ssr: false },
 );
 import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
+import { ConnectionStatus } from "@/components/chat/connection-status";
 import { TIMING } from "@/lib/interaction";
 import { AgentFace } from "@/components/agents/agent-face";
 import { useAgentThread } from "@/components/agents/agent-thread-context";
@@ -1253,7 +1254,7 @@ export const MessageItem = React.memo(function MessageItem({
         ) : null}
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
-        ) : showCursor && !hasRunTrace ? (
+        ) : showCursor && !hasRunTrace && !message.connection ? (
           // `errorMessage` set while still streaming and NOT errored is exactly
           // the shape `beginDropRecovery` leaves behind — it is the only state
           // that writes an explanation onto a turn it expects to complete.
@@ -1400,6 +1401,9 @@ export const MessageItem = React.memo(function MessageItem({
                 loudest thing on the page while a reply arrived, and it is
                 redundant now: the tail fade already says "still writing", and
                 the composer is showing its stop button throughout. */}
+            {/* The stream dropped and Tether is bringing it back: one calm,
+                worded line under whatever has arrived so far. */}
+            {message.streaming && message.connection ? <ConnectionStatus connection={message.connection} /> : null}
             {(view.errorMessage || finishNote || canContinue) && (
               // Same rung, same fill logic and same `text-ui` register as the
               // error notice above — these two are siblings in the same slot

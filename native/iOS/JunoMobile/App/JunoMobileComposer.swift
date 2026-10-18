@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoVoiceKit
@@ -1373,7 +1374,18 @@ struct JunoMobileComposer: View {
     prompt = existing.isEmpty ? text : "\(existing) \(text)"
   }
 
+  @ViewBuilder
   private var phaseIndicator: some View {
+    // A dropped turn coming back says which way it is coming back (Tether):
+    // no spinner while it is only waiting for the network or parked.
+    if model.chatPhase == .reconnecting, let connection = model.chatConnection {
+      NativeTetherStatusLine(connection: connection)
+    } else {
+      plainPhaseIndicator
+    }
+  }
+
+  private var plainPhaseIndicator: some View {
     HStack(spacing: JunoSpace.tight) {
       if isStreamingPhase {
         ProgressView().controlSize(.mini)

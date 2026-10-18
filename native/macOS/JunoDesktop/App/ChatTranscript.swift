@@ -322,6 +322,14 @@ struct DesktopTranscript: View {
                     .id(message.id)
                 }
 
+                // A dropped turn coming back (Tether): reconnecting, waiting
+                // for network, or parked — one calm, worded line.
+                if showsStoreState, model.chatPhase == .reconnecting, let connection = model.chatConnection {
+                    NativeTetherStatusLine(connection: connection)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, DesktopRunLine.textInset)
+                }
+
                 // A failure no reply is carrying — rare now that the store
                 // writes its error onto the reply it ended.
                 if showsStoreState, let error = orphanedError {

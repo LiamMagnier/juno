@@ -50,6 +50,10 @@ public final class NativeCodeModel {
     /// until the task is terminal; this value lets the UI say "reconnecting"
     /// instead of showing a stale spinner as if the stream were healthy.
     public private(set) var streamReconnectAttempt = 0
+    /// The open task's stream connection while Tether brings it back
+    /// (JunoCore/Tether.swift): reconnecting, waiting for network, or parked.
+    /// Nil while connected.
+    public private(set) var streamConnection: TetherView?
 
     /// The composer's target. Persisted so the reader's last choice survives a
     /// relaunch — picking "Cloud" every session because the app forgot is the
@@ -494,9 +498,27 @@ public final class NativeCodeModel {
         streamReconnectAttempt = 0
         streamTask = Task { [weak self] in
             guard let self else { return }
+            // When to retry is Tether's call: jittered backoff, an immediate
+            // attempt when the network returns, the app becomes active or the
+            // Mac wakes, and no give-up while the task is live — a long outage
+            // parks on "Waiting for connection" with the cursor kept.
+            let link = TetherLink(signals: TetherSignals.shared)
+            link.onChange = { [weak self] state in self?.streamConnection = state.view }
+            defer {
+                link.close()
+                streamConnection = nil
+            }
             var cursor = afterSeq
             var attempt = 0
+            var immediate = true
             while !Task.isCancelled, self.accountID == accountID, openTask?.id == taskID {
+                if !immediate {
+                    guard await link.nextAttempt() else { break }
+                    guard self.accountID == accountID, openTask?.id == taskID else { break }
+                }
+                immediate = false
+                let openedAt = Date()
+                var clean = false
                 do {
                     let stream = try await client.events(
                         taskID: taskID, afterSeq: cursor, for: accountID
@@ -504,6 +526,7 @@ public final class NativeCodeModel {
                     for try await frame in stream {
                         guard !Task.isCancelled, openTask?.id == taskID else { break }
                         attempt = 0
+                        link.connected()
                         switch frame {
                         case .snapshot(let task, let newEvents, let approval),
                             .events(let task, let newEvents, let approval):
@@ -524,6 +547,7 @@ public final class NativeCodeModel {
                             return
                         }
                     }
+                    clean = true
                 } catch is CancellationError {
                     return
                 } catch {
@@ -532,8 +556,7 @@ public final class NativeCodeModel {
                     // several proxy reconnects. Stopping after five failures
                     // silently turns a live task into a stale history row. Keep
                     // the cursor and retry until the task reaches a terminal
-                    // state; the bounded delay prevents a hot loop while the
-                    // service is unavailable.
+                    // state.
                     streamReconnectAttempt = attempt
                     if attempt >= 3 {
                         lastErrorDescription = NativeFailureMessage.presentable(error)
@@ -543,16 +566,19 @@ public final class NativeCodeModel {
                     isStreaming = false
                     return
                 }
-                // A short backoff before reconnecting. Zero would spin against a
-                // server that is refusing, and long would make a live run look
-                // stalled.
-                let delaySeconds: Double
-                if attempt == 0 {
-                    delaySeconds = 0.2
-                } else {
-                    delaySeconds = min(30, 0.5 * pow(2, Double(min(attempt - 1, 6))))
+                // The server closes its window every four minutes: a window
+                // that ran a while and ended cleanly is that rotation, so pick
+                // straight back up and say nothing. Anything shorter is a drop,
+                // so a server that closes at once cannot spin this loop.
+                if clean, link.state.phase == .connected, Date().timeIntervalSince(openedAt) >= 5 {
+                    immediate = true
+                    continue
                 }
-                try? await Task.sleep(for: .milliseconds(Int(delaySeconds * 1_000)))
+                if link.state.phase == .connected {
+                    link.drop()
+                } else {
+                    link.failed()
+                }
             }
             isStreaming = false
             streamReconnectAttempt = 0

@@ -1773,6 +1773,10 @@ private struct JunoMobileCodeSessionView: View {
         + String(
           localized: "code.session.stopped", defaultValue: "stopped \(stopped)"
         )
+    } else if let connection = model.streamConnection {
+      // Which way the stream is coming back (Tether): reconnecting, waiting
+      // for the network, or parked until a trigger.
+      line += " · " + connection.phaseLabel
     } else if model.streamReconnectAttempt > 0 {
       line +=
         " · "
