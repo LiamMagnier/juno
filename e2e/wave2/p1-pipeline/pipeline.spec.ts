@@ -11,6 +11,12 @@ import { expect, test, type Page } from "@playwright/test";
  * it measures, so a missing seed can never make it pass vacuously.
  */
 
+// Only the P0 runner (scripts/qa/run-prod-e2e.sh, which sets ALEVR_QA_RUNNER=1)
+// serves a production build. Without it (P0 not on this branch, or a plain
+// `playwright test` against a dev server) these checks skip instead of
+// measuring the wrong stylesheet.
+test.skip(process.env.ALEVR_QA_RUNNER !== "1", "needs the P0 runner (scripts/qa/run-prod-e2e.sh)");
+
 test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1440, height: 900 } });
 
 async function open(page: Page, attrs: Record<string, string> = {}) {
