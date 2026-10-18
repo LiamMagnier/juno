@@ -74,6 +74,8 @@
     "env-server:bundle:mac": "npm --prefix runner/env-server run bundle:mac && mkdir -p native/macOS/JunoDesktop/Resources/env-server && cp runner/env-server/dist/alevr-env.mjs native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs",
     "code:task-wire": "tsx scripts/generate-code-task-wire-fixtures.ts",
     "code:task-wire:check": "tsx scripts/generate-code-task-wire-fixtures.ts --check",
+    "stream-pacer:fixture": "tsx scripts/generate-stream-pacer-fixture.ts",
+    "stream-pacer:check": "tsx scripts/generate-stream-pacer-fixture.ts --check",
     "shell:contract:generate": "node scripts/generate-shell-contract.mjs",
     "shell:contract:check": "node scripts/generate-shell-contract.mjs --check",
     "shell:contract:test": "tsx --test tests/shell-contract.test.ts",

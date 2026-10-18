@@ -171,6 +171,10 @@ struct DesktopTranscript: View {
     /// The reader's hand is on the scroll view, so a change of position is
     /// theirs rather than the stream's.
     @State private var userScrolling = false
+    /// Bumped when the reader takes the scroll view: a paced reply shows
+    /// everything it has received at once rather than trickling on under
+    /// them (JunoPacedStream).
+    @State private var streamFlush = 0
     @State private var speechPlayback = DesktopSpeechPlayback()
     /// The reply a Branch ▸ Into a New Saved Chat is on its way from.
     @State private var branchingMessageID: String?
@@ -335,6 +339,7 @@ struct DesktopTranscript: View {
             .modifier(TranscriptColumn())
             .padding(.bottom, JunoSpace.section)
         }
+        .environment(\.junoStreamFlush, streamFlush)
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         #if DEBUG
@@ -374,6 +379,7 @@ struct DesktopTranscript: View {
         .onScrollPhaseChange { _, phase in
             switch phase {
             case .tracking, .interacting, .decelerating:
+                if !userScrolling { streamFlush &+= 1 }
                 userScrolling = true
             case .idle, .animating:
                 if userScrolling { follows = atBottom }

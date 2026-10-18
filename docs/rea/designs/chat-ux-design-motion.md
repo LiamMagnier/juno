@@ -65,6 +65,10 @@ The Alevr principle: **the reader's eyes win over the stream.** This is not a cl
 - Code, math, tables and citations never fade (same rule as web).
 - When the app is backgrounded (scenePhase not active), drain immediately.
 - Acceptance: identical shown-length curves on web and Swift for the same arrival trace (golden test).
+- **Built (REA 17).** `JunoStreamPacer` (`JunoDesignSystem/JunoStreamPacer.swift`) is the web pacer line for line; `JunoPacedStream` (`JunoStreamReveal.swift`) drives it from `TimelineView(.animation)` on Mac and iOS.
+  - Shared spec: `contracts/chat/stream-pacer.v1.json` holds the pacer constants, the five ink bands (35/52/68/82/92% over `--stream-band`) and recorded arrival traces with the web's shown length per 16ms tick. `scripts/generate-stream-pacer-fixture.ts` writes it from `src/lib/chat/stream-pacer.ts`; `tests/stream-pacer-contract.test.ts` and `JunoStreamPacerContractTests` replay it (T4), and `npm run stream-pacer:check` is a native-sync gate.
+  - Ink is a `TextRenderer` over the laid-out tail (opacity bands by age), so the fade never re-lays out. Finished paragraphs move into a settled prefix drawn once (`JunoStreamSettle` picks safe cuts outside fences, math, `:::` blocks and `<juno:…>` tags), so only the tail is re-parsed per frame; the reply settles into one ordinary render after the last fade.
+  - Flush: stream end, scenePhase not active, and the reader scrolling (both apps) or tapping (iOS) via `junoStreamFlush`. Reduce Motion keeps pacing and drops the bands (T5).
 
 ### 3.3 TurnStatus plus "Finish now" — closes gaps 4 and 5
 

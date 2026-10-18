@@ -628,6 +628,10 @@ private struct JunoMobileConversationDetail: View {
   /// The reader's finger is on the transcript, so a change of position is
   /// theirs rather than the stream's.
   @State private var userScrolling = false
+  /// Bumped when the reader takes the transcript — a drag, a tap — so a
+  /// paced reply shows everything it has received at once rather than
+  /// trickling on under their finger (JunoPacedStream).
+  @State private var streamFlush = 0
   /// When the run in flight began, and — once it settles — which answer it
   /// produced and how long it took.
   ///
@@ -1249,8 +1253,10 @@ private struct JunoMobileConversationDetail: View {
       .simultaneousGesture(
         TapGesture().onEnded {
           composerFocused = false
+          streamFlush &+= 1
         }
       )
+      .environment(\.junoStreamFlush, streamFlush)
       // The transcript opens at its end and stays aligned there; growth is
       // followed explicitly below, and only while the reader is following.
       // (A blanket `.defaultScrollAnchor(.bottom)` also anchors size changes,
@@ -1286,6 +1292,7 @@ private struct JunoMobileConversationDetail: View {
       .onScrollPhaseChange { _, phase in
         switch phase {
         case .tracking, .interacting, .decelerating:
+          if !userScrolling { streamFlush &+= 1 }
           userScrolling = true
         case .idle, .animating:
           if userScrolling { follows = isNearBottom }
