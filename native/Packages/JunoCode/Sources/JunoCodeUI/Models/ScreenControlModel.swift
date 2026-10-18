@@ -74,6 +74,7 @@ public final class ScreenControlModel {
     /// "Juno is using Safari" — the row's sentence.
     public var sentence: String? {
         guard isThisSessionActive, let holder = presence.holder else { return nil }
+        if presence.lockedPause { return "Paused: your Mac is locked. Alevr never unlocks it." }
         if presence.paused { return "You took over. Alevr is waiting." }
         let app = holder.appName.map { "Alevr is using \($0)" } ?? "Alevr can use the apps you grant"
         return presence.mode == .takeover ? app + " and has the whole screen" : app
@@ -260,6 +261,18 @@ public final class ScreenControlModel {
         grantChoiceUpdates = Task {
             await previous?.value
             await coordinator?.updateGrantChoices(proposalID: proposalID, offers: offers)
+        }
+    }
+
+    /// The reader's "whole display" tick on a take-over card, before Allow.
+    /// Chained with the grant choices, so ``settleGrantChoices()`` — awaited
+    /// by Allow — also waits for the last tick or untick to land.
+    public func updateTakeoverScope(sessionID: String, wholeDisplay: Bool) {
+        let previous = grantChoiceUpdates
+        let coordinator = self.coordinator
+        grantChoiceUpdates = Task {
+            await previous?.value
+            await coordinator?.setTakeoverScope(sessionID: sessionID, wholeDisplay: wholeDisplay)
         }
     }
 

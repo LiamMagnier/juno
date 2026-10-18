@@ -75,7 +75,7 @@ import { workTaskKey } from "@/lib/secrets/policy";
 import { redeemSecretGrant, secretRefsForTask } from "@/lib/secrets/store";
 import {
   BUSY_COMPUTER_FALLBACK_NOTE,
-  YOUR_COMPUTER_PROMPT_SECTION,
+  computerPromptSection,
   computerBlockedReason,
   computerTakeoverFence,
   resolveRunComputerSession,
@@ -937,6 +937,8 @@ async function openingContext(input: {
   /** The provider this run executes on — see `memorySource`. */
   provider: string;
   computerAttached?: boolean;
+  /** Whether a person started the run (false for a schedule or a trigger). */
+  computerAttended?: boolean;
   computerNote?: string | null;
 }): Promise<string> {
   const identityLines: string[] = [];
@@ -990,7 +992,8 @@ async function openingContext(input: {
   }
 
   if (input.computerAttached) {
-    identityLines.push(`## Your computer\n${YOUR_COMPUTER_PROMPT_SECTION}`);
+    // Nobody to take over the computer in a scheduled or triggered run.
+    identityLines.push(`## Your computer\n${computerPromptSection({ attended: input.computerAttended !== false })}`);
   } else if (input.computerNote) {
     identityLines.push(`## Your computer\n${input.computerNote}`);
   }
@@ -3748,6 +3751,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     runtime,
     provider: choice.provider,
     computerAttached: remoteComputer !== null,
+    computerAttended: isAttendedOrigin(run.origin),
     computerNote,
   });
 

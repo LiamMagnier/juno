@@ -38,8 +38,11 @@ struct StudioScreenApprovalDetail: View {
                     // In order, before Allow (see `settleGrantChoices`).
                     screen.updateGrantChoices(proposalID: proposal.id, offers: offers)
                 }
-            case let .takeover(_, display)?:
-                StudioScreenTakeoverCard(display: display)
+            case let .takeover(sessionID, display)?:
+                StudioScreenTakeoverCard(display: display) { wholeDisplay in
+                    // In order, before Allow (see `settleGrantChoices`).
+                    screen.updateTakeoverScope(sessionID: sessionID, wholeDisplay: wholeDisplay)
+                }
             case nil:
                 // Not EmptyView: a task on an empty view never runs.
                 Color.clear.frame(height: 0)
@@ -176,14 +179,35 @@ struct StudioScreenGrantSheet: View {
     }
 }
 
-/// What taking over the screen means, before the reader says yes.
+/// What taking over the screen means, before the reader says yes, and the
+/// one choice it offers: whether Alevr may see the whole display or only
+/// the apps it was granted. Unticked by default, every time.
 struct StudioScreenTakeoverCard: View {
     let display: String
+    var update: (Bool) -> Void = { _ in }
+
+    @State private var wholeDisplay = false
 
     var body: some View {
-        Text("Alevr would use all of \(display) with the real pointer and keyboard. Every app it touches must still be granted, and its own windows stay out of the picture. Using your mouse or keyboard pauses it; Esc stops it.")
-            .font(Studio.Font.meta)
-            .foregroundStyle(Studio.Ink.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text("Alevr would use \(display) with the real pointer and keyboard. Every app it touches must still be granted. Using your mouse or keyboard pauses it; Esc stops it.")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle(isOn: $wholeDisplay) {
+                Text("Let Alevr see the whole display")
+                    .font(Studio.Font.label)
+                    .foregroundStyle(Studio.Ink.primary)
+            }
+            .toggleStyle(.checkbox)
+            .accessibilityIdentifier("juno.code.takeover.whole-display")
+            Text(wholeDisplay
+                ? "Alevr's screenshots will show every window on \(display), except password managers, apps you denied and Alevr itself."
+                : "Alevr's screenshots will show only the windows of apps you granted. Everything else on \(display) stays out of the picture.")
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: wholeDisplay) { _, next in update(next) }
     }
 }
