@@ -262,7 +262,7 @@ export function Onboarding() {
                       size="lg"
                       role="radio"
                       aria-checked={selected}
-                      aria-label={a.id}
+                      aria-label={a.label}
                       onClick={() => pickAccent(a.id)}
                       // ring-offset-popover: the gap a ring-offset leaves is
                       // filled with a SOLID named colour, and these swatches sit

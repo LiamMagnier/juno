@@ -89,10 +89,9 @@ test("the twin generator is deterministic and ends at rest", () => {
   assert.equal(a.points[a.points.length - 1], 1);
 });
 
-test("retired springs alias their replacements, and reduced motion flattens every spring to out-soft at the base rung", () => {
-  assert.equal(root.get("spring-pop"), "var(--spring-reward)");
-  assert.equal(root.get("spring-pop-dur"), "var(--spring-reward-dur)");
-  assert.equal(root.get("stagger-fav"), "var(--stagger-row)");
+test("retired springs are gone, and reduced motion flattens every spring to out-soft at the base rung", () => {
+  // D28 / REA T12: `--spring-pop` moved to --spring-reward, `--stagger-fav` to --stagger-row.
+  for (const name of ["spring-pop", "spring-pop-dur", "stagger-fav"]) assert.equal(root.get(name), undefined, `--${name} is still declared`);
   const reduced = declsFor(parseBlocks(css), ":root", "@media (prefers-reduced-motion: reduce)");
   for (const name of Object.keys(SPEC)) {
     assert.equal(reduced.get(`spring-${name}`), "var(--ease-out-soft)", name);
