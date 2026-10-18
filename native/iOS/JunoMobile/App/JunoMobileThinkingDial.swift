@@ -133,6 +133,10 @@ struct JunoMobileComposerToken: View {
   let icon: JunoIcon
   let title: String
   let remove: () -> Void
+  /// What removing it does, said aloud, where "removes it from the next
+  /// message" is not the whole story — image mode's ✕ also gives the chat
+  /// model back ("Stop creating images").
+  var removeLabel: String? = nil
 
   var body: some View {
     Button(action: remove) {
@@ -149,6 +153,6 @@ struct JunoMobileComposerToken: View {
     }
     .buttonStyle(.junoQuietPress)
     .accessibilityLabel("\(title), armed")
-    .accessibilityHint("Removes it from the next message")
+    .accessibilityHint(removeLabel.map { Text(verbatim: $0) } ?? Text("Removes it from the next message"))
   }
 }

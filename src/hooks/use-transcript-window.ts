@@ -7,6 +7,7 @@ import {
   TRANSCRIPT_FOCUS_EVENT, type TranscriptAnchor,
 } from "@/lib/chat/transcript-window";
 import { prefersReducedMotion } from "@/lib/motion-preference";
+import { answerBed, followsEnd, nextFollowState, startedTurn, type FollowEvent, type FollowState } from "@/lib/chat/follow-machine";
 
 const GAP = 24;
 /**
@@ -19,6 +20,8 @@ const GAP = 24;
  */
 export const VIRTUALIZE_AFTER = 24;
 const BOTTOM_SLOP = 24;
+/** The content box's top padding (`pt-6` in message-list.tsx), for rows the window has not mounted. */
+const CONTENT_TOP = 24;
 
 /** Keep rich message renderers bounded; measurements include inline runs/media. */
 export function useTranscriptWindow(
@@ -40,6 +43,20 @@ export function useTranscriptWindow(
   const pendingAnchor = React.useRef<TranscriptAnchor | null>(null);
   const readerAnchorRef = React.useRef<TranscriptAnchor | null>(null);
   const followsRef = React.useRef(true);
+  /*
+   * Reading-first follow (lib/chat/follow-machine.ts). `followsRef` is the
+   * machine's answer to "may new content move the viewport toward the end";
+   * every change to it goes through `dispatch`. When a turn starts, its
+   * question is pinned near the top and the answer bed (a spacer after the
+   * content, `bedRef`) is sized so that the end of the scroll range IS the
+   * pin: following "to the end" places the question, and the bed shrinks as
+   * the answer fills it, so the viewport holds still until the answer passes
+   * the fold. The bed stays after the answer settles, until the next turn.
+   */
+  const followStateRef = React.useRef<FollowState>("following");
+  const pinnedKeyRef = React.useRef<string | null>(null);
+  const bedRef = React.useRef<HTMLDivElement>(null);
+  const bedHeightRef = React.useRef(0);
   const writtenTopRef = React.useRef<number | null>(null);
   const targetRef = React.useRef<string | null>(null);
   const widthRef = React.useRef(0);
@@ -62,12 +79,64 @@ export function useTranscriptWindow(
     return measurements.current.get(key) ?? Math.min(1400, 100 + Math.ceil(message.content.length / 85) * 24 + (message.attachments?.length ?? 0) * 180) + GAP;
   }), [keys, messages, revision]);
   const layoutRef = React.useRef(layout);
+  const dispatch = React.useCallback((event: FollowEvent) => {
+    followStateRef.current = nextFollowState(followStateRef.current, event);
+    followsRef.current = followsEnd(followStateRef.current);
+    // Read by e2e/transcript-pinned-turn.spec.ts; never styled.
+    scrollRef.current?.setAttribute("data-follow", followStateRef.current);
+  }, []);
+  /**
+   * Sizes the answer bed for the pinned question, before paint. Measured from
+   * the DOM when the question's row is mounted, else from the layout table.
+   * Reports `overflow` to the machine when the answer passes the fold.
+   */
+  const syncBed = React.useCallback(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    const bed = bedRef.current;
+    if (!el || !content || !bed) return;
+    const key = pinnedKeyRef.current;
+    let height = 0;
+    if (key) {
+      const box = content.getBoundingClientRect();
+      let turnTop: number | undefined;
+      let turnHeight = 0;
+      for (const [element, rowKey] of observedRows.current) {
+        if (rowKey !== key) continue;
+        const rect = element.getBoundingClientRect();
+        turnTop = rect.top - box.top;
+        turnHeight = rect.height;
+        break;
+      }
+      if (turnTop === undefined) {
+        const table = layoutRef.current;
+        const index = table.indexByKey.get(key);
+        if (index === undefined) {
+          // The question left the transcript (a branch or an edit above it).
+          pinnedKeyRef.current = null;
+        } else {
+          turnTop = table.offsets[index] + CONTENT_TOP;
+          turnHeight = table.offsets[index + 1] - table.offsets[index];
+        }
+      }
+      if (turnTop !== undefined) {
+        const result = answerBed({ viewportHeight: el.clientHeight, turnTop, turnHeight, contentEnd: box.height });
+        height = result.height;
+        if (result.overflow && followStateRef.current === "placed") dispatch("overflow");
+      }
+    }
+    if (Math.abs(bedHeightRef.current - height) >= 1 || (height === 0 && bedHeightRef.current !== 0)) {
+      bedHeightRef.current = height;
+      bed.style.height = `${height}px`;
+    }
+  }, [dispatch]);
   const syncViewport = React.useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     // While the transcript glides after a reply, the gap to the bottom is briefly larger than the
-    // slop; it is still following, so "Jump to latest" must not flash in and out.
-    const following = followsRef.current || el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
+    // slop; it is still following, so "Jump to latest" must not flash in and out. The answer bed
+    // is not content: an empty bed below the reader never asks them to jump.
+    const following = followsRef.current || el.scrollHeight - bedHeightRef.current - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
     setAtBottom(following);
     if (!pendingAnchor.current) {
       readerAnchorRef.current = null;
@@ -155,13 +224,15 @@ export function useTranscriptWindow(
       // drag must not be pulled back down by the glide. A clamp (content shrank under a view
       // pinned to the bottom) also moves up, but lands exactly on the bottom.
       const movedUp = el.scrollTop < lastSeenTopRef.current - 1 && gap > 1;
-      followsRef.current = !movedUp && gap < BOTTOM_SLOP;
+      // At the end of the scroll range, which with a bed is the pinned question.
+      if (!movedUp && gap < BOTTOM_SLOP) dispatch("near-end");
+      else if (movedUp || followsRef.current) dispatch("scroll-away");
       writtenTopRef.current = null;
       targetRef.current = null;
     }
     lastSeenTopRef.current = el.scrollTop;
     syncViewport();
-  }, [syncViewport]);
+  }, [syncViewport, dispatch]);
 
   const observeRow = React.useCallback((element: HTMLDivElement, key: string) => {
     observedRows.current.set(element, key);
@@ -199,6 +270,9 @@ export function useTranscriptWindow(
         if (!followsRef.current && !targetRef.current && !pendingAnchor.current) pendingAnchor.current = anchor;
         bump();
       } else {
+        // The scroller resized (a window, the on-screen keyboard): the bed
+        // is sized from its height.
+        syncBed();
         if (followsRef.current) follow();
         syncViewport();
       }
@@ -208,7 +282,7 @@ export function useTranscriptWindow(
     if (contentRef.current) observer.observe(contentRef.current);
     for (const element of observedRows.current.keys()) observer.observe(element);
     return () => { observer.disconnect(); observerRef.current = null; };
-  }, [syncViewport, writeTop, follow]);
+  }, [syncViewport, writeTop, follow, syncBed]);
 
   const last = messages[messages.length - 1];
   React.useLayoutEffect(() => {
@@ -226,6 +300,18 @@ export function useTranscriptWindow(
     if (prepended && !followsRef.current && !targetRef.current) {
       pendingAnchor.current ??= readerAnchorRef.current ?? transcriptAnchor(previous, el.scrollTop - 24);
     }
+    // A turn started (a send, a regenerate, a resend): pin its question. The
+    // follow below then travels to the end, which the bed makes the pin.
+    const started = mountedRef.current
+      ? startedTurn(previous.indexByKey, messages.slice(-3).map((m) => ({ key: m.renderKey ?? m.id, question: m.role === "USER", streaming: m.streaming })))
+      : null;
+    if (started) {
+      pinnedKeyRef.current = started;
+      dispatch("turn-start");
+      targetRef.current = null;
+      pendingAnchor.current = null;
+    }
+    syncBed();
     if (targetRef.current) {
       const target = contentRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(targetRef.current)}"]`);
       if (target) {
@@ -264,7 +350,28 @@ export function useTranscriptWindow(
       }
     }
     syncViewport();
-  }, [layout, last?.content, messages.length, showAll, viewport.height, syncViewport, writeTop, follow]);
+  }, [layout, last?.content, messages, showAll, viewport.height, syncViewport, writeTop, follow, syncBed, dispatch]);
+
+  // The answer finished: a short one that settled in its bed hands over to
+  // following, so a late card under it still comes into view.
+  const lastStreaming = Boolean(last?.streaming);
+  const wasStreamingRef = React.useRef(lastStreaming);
+  React.useEffect(() => {
+    if (wasStreamingRef.current && !lastStreaming) dispatch("settle");
+    wasStreamingRef.current = lastStreaming;
+  }, [lastStreaming, dispatch]);
+
+  // Selecting text in the transcript is reading: nothing moves under it.
+  React.useEffect(() => {
+    const onSelection = () => {
+      const selection = document.getSelection();
+      const content = contentRef.current;
+      if (!selection || selection.isCollapsed || !content || !content.contains(selection.anchorNode)) return;
+      if (followsRef.current) dispatch("select");
+    };
+    document.addEventListener("selectionchange", onSelection);
+    return () => document.removeEventListener("selectionchange", onSelection);
+  }, [dispatch]);
 
   /** Mounts a message and centres it; find, search links and the rail all come here. */
   const focusMessage = React.useCallback((messageId: string) => {
@@ -277,14 +384,14 @@ export function useTranscriptWindow(
     }
     if (index < 0 || !el) return;
     missingRef.current = null;
-    followsRef.current = false;
+    dispatch("scroll-away");
     pendingAnchor.current = null;
     targetRef.current = messageId;
     const top = Math.max(0, layout.offsets[index] + 24 - el.clientHeight / 2);
     writeTop(top);
     setViewport({ top, height: el.clientHeight });
     bump();
-  }, [messages, layout, writeTop]);
+  }, [messages, layout, writeTop, dispatch]);
 
   // The jump that was waiting on its message, once a page has brought it in.
   React.useEffect(() => {
@@ -343,25 +450,25 @@ export function useTranscriptWindow(
   const jumpToLatest = React.useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    followsRef.current = true;
+    dispatch("jump");
     pendingAnchor.current = null;
     targetRef.current = null;
     // Large virtual distances use an instant jump. Smooth scrolling traverses
     // hundreds of unmeasured rows and repeatedly invalidates the destination.
     follow(true);
     syncViewport();
-  }, [syncViewport, follow]);
+  }, [syncViewport, follow, dispatch]);
 
   const onKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget || (event.key !== "Home" && event.key !== "End")) return;
     event.preventDefault();
     if (event.key === "End") { jumpToLatest(); return; }
-    followsRef.current = false;
+    dispatch("scroll-away");
     pendingAnchor.current = null;
     targetRef.current = null;
     writeTop(0);
     syncViewport();
-  }, [jumpToLatest, syncViewport, writeTop]);
+  }, [jumpToLatest, syncViewport, writeTop, dispatch]);
 
-  return { scrollRef, contentRef, atBottom, onScroll, onKeyDown, onFocusCapture, onBlurCapture, layout, indices, observeRow, windowed, showAll, setShowAll, jumpToLatest, focusMessage, viewport };
+  return { scrollRef, contentRef, bedRef, atBottom, onScroll, onKeyDown, onFocusCapture, onBlurCapture, layout, indices, observeRow, windowed, showAll, setShowAll, jumpToLatest, focusMessage, viewport };
 }

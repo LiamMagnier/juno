@@ -626,6 +626,28 @@
       }
     },
     {
+      "id": "activity",
+      "title": "Activity",
+      "note": "G70: one overview of everything live across Work tasks, Code tasks and Research runs, grouped Needs you / Running / Ready / Blocked. Rows open the surface that owns the item (its chat, Code session or research page), where approvals and questions are answered; Stop uses each product's own stop route.",
+      "pages": {
+        "/activity": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopActivityScreen (Chat sidebar destination); JunoMobileActivityView (drawer)"
+        }
+      },
+      "routes": {
+        "/api/activity": {
+          "status": "native",
+          "note": "NativeActivityClient and NativeActivityModel in JunoChatKit/NativeActivity.swift."
+        },
+        "/api/activity/counts": {
+          "status": "web-only",
+          "note": "The web sidebar's Needs you badge. The apps read the counts that ride on GET /api/activity."
+        }
+      }
+    },
+    {
       "id": "tasks",
       "title": "Tasks in chat",
       "note": "The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks` is the older scheduled-task store the apps still read.",
@@ -937,6 +959,18 @@
         "/api/code/devices/[deviceId]/sessions/[sessionId]/stop": {
           "status": "web-only",
           "note": "As the approvals verb."
+        },
+        "/api/runs/live": {
+          "status": "native",
+          "note": "REA 8: every live Code session and Work run on the account (steps, current action, elapsed, cost, pending approvals), as a JSON snapshot or an SSE feed. The iPhone's Runs screen and its Live Activity (NativeLiveRunsClient in JunoCodeKit/LiveRuns.swift)."
+        },
+        "/api/runs/stop": {
+          "status": "native",
+          "note": "REA 8: idempotent Stop for a live Code session or Work run, from the iPhone's Runs screen; the web's agents tree can share it."
+        },
+        "/api/runs/approval": {
+          "status": "native",
+          "note": "REA 8: answer a live run's pending approval from the iPhone; Code answers queue for the Mac, Work answers go through the Work decision route."
         },
         "/api/code/environments": {
           "status": "planned",

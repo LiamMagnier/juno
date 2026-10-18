@@ -5,6 +5,8 @@ import { buildSemanticEditPrompt } from "@/lib/artifact-ops";
 import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { safeOutline } from "./semantic";
 import { backgroundWorkHint, detectBackgroundWork, recurringWorkHint } from "@/lib/chat/work-intent";
+import { detectImageIntent } from "@/lib/router/image-intent";
+import { IMAGE_INTENT_HINT } from "@/lib/tools/specs/generate-image.prompt";
 import { buildSystemPromptSections } from "@/lib/anthropic";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { buildArtifactEditPrompt, type ArtifactSourceForEdit } from "@/lib/artifact-edit";
@@ -48,6 +50,7 @@ export function composeTurnSystem({
   untrustedContentInTurn,
   taskToolOn,
   routineToolOn = false,
+  imageToolOn = false,
   useWebSearch,
   useAlevrSearch,
   attachmentToolToggles,
@@ -70,6 +73,8 @@ export function composeTurnSystem({
   taskToolOn: boolean;
   /** `propose_routine` is attached (src/lib/chat/routine-tool.ts). */
   routineToolOn?: boolean;
+  /** `generate_image` is attached (src/lib/chat/image-tool.ts). */
+  imageToolOn?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
@@ -103,6 +108,7 @@ export function composeTurnSystem({
     untrustedContent: untrustedContentInTurn,
     taskHandoff: taskToolOn,
     routineProposals: routineToolOn,
+    imageGeneration: imageToolOn,
     // An agent's thread sets its own routines up (`propose_setup_change`,
     // and its brief says so), so it is never told routines cannot be made here.
     agentThread: agentContext !== null && agentContext !== undefined,
@@ -159,7 +165,11 @@ export function composeTurnSystem({
     ),
     input
   );
-  const withHint = backgroundHint ? `${systemBase}\n\n${backgroundHint}` : systemBase;
+  // A clear picture request (Auto's intent detection, src/lib/router/image-intent.ts)
+  // gets one line saying so, only when the turn can actually make one.
+  const imageHint = imageToolOn && !input.regenerate && detectImageIntent(input.message) ? IMAGE_INTENT_HINT : null;
+  const hints = [backgroundHint, imageHint].filter((hint): hint is string => !!hint);
+  const withHint = hints.length > 0 ? `${systemBase}\n\n${hints.join("\n\n")}` : systemBase;
   const system = localFolder ? `${withHint}\n\n${localFolderPromptSection(localFolder)}` : withHint;
   return { baseSystemSections, system };
 }

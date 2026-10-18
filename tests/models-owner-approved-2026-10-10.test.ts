@@ -34,7 +34,10 @@ test("Mistral Large 4 is its own preview row at list price; mistral-large-latest
   assert.equal(large4.providerModel, "mistral-large-4", "an API name on the card");
   assert.equal(large4.status, "current");
   assert.equal(large4.vision, true);
-  assert.equal(large4.reasoning, false, "the card states no reasoning control");
+  // The card states no control, but Mistral's reasoning page lists Large 4
+  // as taking reasoning_effort (read 2026-10-18): the high|none toggle.
+  assert.equal(large4.reasoning, true);
+  assert.deepEqual(reasoningCaps(large4), { tiers: [], canDisable: true, onOff: true, defaultLevel: null });
   assert.equal(large4.contextWindow, 1_000_000);
   const rate = tokenRate(large4);
   assert.deepEqual([rate.input, rate.output, rate.cacheRead], [1.36, 4.18, 0.14]);
@@ -42,12 +45,15 @@ test("Mistral Large 4 is its own preview row at list price; mistral-large-latest
   assert.equal(getModel("mistral:mistral-large-latest")!.status, "current");
 });
 
-test("Qwen3.8 Omni Flash: official price and window, and no invented effort ladder", () => {
+test("Qwen3.8 Omni Flash: official price and window, and only the published effort ladder", () => {
   const omni = MODEL_LIST.find((m) => m.id === "qwen:qwen3.8-omni-flash");
   assert.ok(omni);
   assert.equal(omni.vision, true);
-  assert.equal(omni.reasoning, false);
-  assert.deepEqual(reasoningCaps(omni).tiers, [], "no slider: the levels are not published");
+  // Unpublished on 2026-10-10; Model Studio's Chat Completions reference lists
+  // none|minimal|low|medium|high|xhigh|max (default xhigh) as of 2026-10-18.
+  assert.equal(omni.reasoning, true);
+  assert.deepEqual(reasoningCaps(omni).tiers, ["minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.equal(reasoningCaps(omni).canDisable, true);
   assert.equal(omni.contextWindow, 1_000_000);
   const rate = tokenRate(omni);
   assert.deepEqual([rate.input, rate.output, rate.cacheRead], [0.15, 0.47, 0.016]);
@@ -58,7 +64,10 @@ test("Nano Banana 2.1 leads the Flash image line, priced per image, and the reti
   assert.ok(nb);
   assert.equal(nb.modality, "image");
   assert.equal(nb.status, "current");
-  assert.equal(getModel("google:gemini-3.1-flash-image")!.status, "legacy", "Nano Banana 2 steps down, still callable");
+  // Stepped down to legacy on 2026-10-10; Google deprecated it on Oct 6
+  // (changelog, read 2026-10-18), so it is deprecated now, still callable.
+  assert.equal(getModel("google:gemini-3.1-flash-image")!.status, "deprecated", "Nano Banana 2 steps down, still callable");
+  assert.equal(getModel("google:gemini-3.1-flash-image")!.replacedBy, nb.id);
   assert.equal(nb.family, getModel("google:gemini-3.1-flash-image")!.family);
   assert.equal(mediaRequestCost(nb.id, "image"), 33_600, "$0.0336 a 1K image");
   const caps = capabilitiesFor(nb.id);

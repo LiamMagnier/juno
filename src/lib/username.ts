@@ -102,6 +102,7 @@ export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
   "apple-icon",
   "icon",
   // Top-level routes under src/app (route groups flattened).
+  "activity",
   "admin",
   "agents",
   "app-auth",

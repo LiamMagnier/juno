@@ -1,98 +1,58 @@
 import Foundation
 import SwiftUI
 
-// MARK: - The pacer
-
-/// Releases streamed text at a steady cadence, whatever the network does.
-///
-/// Tokens arrive in bursts — twenty characters, nothing for 90ms, forty more —
-/// and painting each burst as it lands is what made streamed answers look
-/// jerky. The pacer sits between the stream and the screen: the screen shows
-/// `shown` characters of the `target`, and every frame `shown` moves toward
-/// the target at a velocity that is itself smoothed.
-///
-/// - **Adaptive.** The desired velocity is the backlog over ``lag`` (a
-///   quarter second): a fast model builds a larger backlog and is released
-///   faster, a slow one slower, and a burst is spread across the gap that
-///   follows it instead of popping in. The velocity eases toward that desire
-///   over ``smoothing``, so a burst never lurches the text.
-/// - **Catches up.** A floor of ``floor`` characters a second drains a small
-///   tail, and a backlog past ``maxBacklog`` (a reply loaded half-written, a
-///   network stall releasing at once) jumps to within ``maxBacklog`` / 2.
-/// - **Flushes at the end.** When the stream stops, the caller shows the whole
-///   text at once: nothing is held back from a finished answer.
-///
-/// Pure value logic, so it is tested as a function of time.
-public struct JunoStreamPacer: Equatable, Sendable {
-    public static let lag: Double = 0.25
-    public static let smoothing: Double = 0.12
-    public static let floor: Double = 40
-    public static let maxBacklog: Int = 900
-
-    /// Characters released (UTF-16 units).
-    public private(set) var shown: Double
-    /// The current release velocity, characters per second.
-    public private(set) var velocity: Double = 0
-
-    public init(shown: Int = 0) {
-        self.shown = Double(shown)
-    }
-
-    /// Advances by `dt` seconds toward `target` characters and returns the
-    /// whole number of characters to show.
-    @discardableResult
-    public mutating func step(target: Int, dt: Double) -> Int {
-        let goal = Double(target)
-        if goal < shown {
-            // The text was replaced (a retry, an edit): follow it down.
-            shown = goal
-            velocity = 0
-            return target
-        }
-        if goal - shown > Double(Self.maxBacklog) {
-            shown = goal - Double(Self.maxBacklog / 2)
-        }
-        let backlog = goal - shown
-        guard backlog > 0, dt > 0 else {
-            velocity = 0
-            return Int(shown)
-        }
-        let desired = max(backlog / Self.lag, Self.floor)
-        velocity += (desired - velocity) * min(1, dt / Self.smoothing)
-        shown = min(goal, shown + max(velocity, Self.floor) * dt)
-        return Int(shown)
-    }
-
-    /// How many trailing characters are still fading in: what the release
-    /// velocity covers in ``JunoStreamReveal/fadeDuration``.
-    public var fadeSpan: Double {
-        min(max(velocity * JunoStreamReveal.fadeDuration, 10), 56)
-    }
-}
-
 // MARK: - What the screen is told
 
-/// The live writing state a paced reply hands down to its prose: how many
-/// trailing characters of the run being written are still fading in.
+/// The live writing state a paced reply hands down to its prose: how much of
+/// the trailing text sits in each ink band.
 ///
 /// Set by ``JunoPacedStream`` and scoped by the views beneath it to the *last*
 /// thing being written — the last segment, the last block, the last list item
 /// — so earlier paragraphs never fade.
 public struct JunoStreamReveal: Equatable, Sendable {
-    /// Fresh words fade in over this long (the web's `--dur-base`).
-    public static let fadeDuration: Double = JunoMotion.Duration.base
+    /// Trailing glyphs in each ink band, cumulative from the end and newest
+    /// first (``JunoStreamInkClock/bands(now:)``). Empty when all is solid.
+    public var bands: [Int]
+    /// Whether this text is being written right now. The settled prefix of a
+    /// live reply says `false`: solid, and its blocks are simply there.
+    public var isLive: Bool
 
-    /// Trailing characters still fading in; 0 when everything is solid.
-    public var span: Double
+    public init(bands: [Int], isLive: Bool = true) {
+        self.bands = bands
+        self.isLive = isLive
+    }
 
+    /// A tail of `span` glyphs spread evenly over the five bands — for a
+    /// snapshot posing a mid-stream fade.
     public init(span: Double) {
-        self.span = span
+        let count = JunoStreamInk.bands
+        self.init(bands: (0..<count).map { Int((span * Double($0 + 1) / Double(count)).rounded(.up)) })
+    }
+
+    /// Text that belongs to a live reply but is no longer being written.
+    public static let settled = JunoStreamReveal(bands: [], isLive: false)
+
+    /// Glyphs still fading in.
+    public var span: Int { bands.last ?? 0 }
+
+    /// The ink of the glyph `fromEnd` places from the end (1 is the last).
+    public func ink(fromEnd: Int) -> Double {
+        for (band, reach) in bands.enumerated() where fromEnd <= reach {
+            return JunoStreamInk.opacity[min(band, JunoStreamInk.opacity.count - 1)]
+        }
+        return 1
     }
 }
 
 public extension EnvironmentValues {
     /// The reply being written, or nil for text that is not streaming.
     @Entry var junoStreamReveal: JunoStreamReveal? = nil
+    /// Bumped by a transcript when the reader takes over — a scroll, a copy —
+    /// so every paced reply shows what it has at once.
+    @Entry var junoStreamFlush: Int = 0
+    /// This prose continues a run drawn above it (the live tail under a
+    /// settled prefix): its first block is not the reply's first block.
+    @Entry var junoProseContinuesRun: Bool = false
 }
 
 // MARK: - The paced stream
@@ -105,30 +65,38 @@ public extension EnvironmentValues {
 /// }
 /// ```
 ///
-/// While `live`, the text shown runs a little behind the text received (see
-/// ``JunoStreamPacer``), is tidied so half-written Markdown never flashes as
-/// syntax (``JunoStreamTidy``), and the environment carries a
-/// ``JunoStreamReveal`` so the newest words fade in and new blocks rise. When
-/// `live` ends the whole text shows at once and the last fade settles.
+/// While `live`, on every display frame (`TimelineView(.animation)`):
 ///
-/// Under Reduce Motion the text is still paced — it is how text arrives, not a
-/// decoration — but nothing fades or rises.
+/// - **Pacing.** The text shown runs a beat behind the text received
+///   (``JunoStreamPacer``, the web's pacer), released a whole word at a time
+///   and tidied so half-written Markdown never flashes as syntax
+///   (``JunoStreamTidy``).
+/// - **Ink.** The newest words fade in over five bands (``JunoStreamInk``),
+///   drawn by a `TextRenderer` over the text already laid out — no per-word
+///   views, no re-layout for the fade.
+/// - **Append-only.** Finished paragraphs move into a settled prefix that is
+///   drawn once (an `Equatable` view over its text) and never re-parsed or
+///   re-laid out; only the tail being written is (``JunoStreamSettle``).
+/// - **Flush.** Everything received shows at once when the reader scrolls or
+///   copies (``EnvironmentValues/junoStreamFlush``), when the app is not
+///   active, and when the stream ends. Then the last fade finishes and the
+///   reply settles into one ordinary render of its whole text.
+///
+/// Under Reduce Motion the text is still paced — it is how text arrives, not
+/// movement (REA test T5, and the web's rule) — but nothing fades or rises.
 public struct JunoPacedStream<Content: View>: View {
     private let source: String
     private let live: Bool
     private let content: (String) -> Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pacer: JunoStreamPacer?
-    @State private var span: Double = 0
-    @State private var paced = false
-    /// The source's current length, mirrored into state. The pacing loop runs
-    /// in a `.task` that captured this view's value when it started, so its
-    /// own `source` is the text as it was *then* — empty, for a reply that
-    /// began streaming after its row was built. Reading the target through
-    /// state is what lets the loop see the reply grow; reading `source`
-    /// directly left every live answer blank until its `done` frame.
-    @State private var liveLength = 0
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.junoStreamFlush) private var flush
+    @Environment(\.junoProseStyle) private var style
+    @Environment(\.junoTextScale) private var textScale
+    @State private var engine = JunoPacedStreamEngine()
+    /// The fade still finishing after the stream ended.
+    @State private var settling = false
 
     public init(_ source: String, live: Bool, @ViewBuilder content: @escaping (String) -> Content) {
         self.source = source
@@ -136,71 +104,186 @@ public struct JunoPacedStream<Content: View>: View {
         self.content = content
     }
 
-    private var sourceLength: Int { (source as NSString).length }
-
     public var body: some View {
-        content(displayed)
-            // Only a stream this view is pacing says so; otherwise whatever
-            // the surroundings set stands (an offscreen snapshot can pose a
-            // mid-stream fade that way).
-            .transformEnvironment(\.junoStreamReveal) { reveal in
-                if paced { reveal = reduceMotion ? nil : JunoStreamReveal(span: span) }
+        TimelineView(.animation(paused: !(live || settling))) { context in
+            let frame = engine.frame(
+                source: source,
+                live: live,
+                now: context.date.timeIntervalSinceReferenceDate,
+                drain: scenePhase != .active,
+                flush: flush,
+                reduceMotion: reduceMotion
+            )
+            draw(frame)
+        }
+        .onChange(of: live) { wasLive, isLive in
+            if wasLive, !isLive { settling = true }
+        }
+        .task(id: settling) {
+            guard settling else { return }
+            // The last fade's life, and one band of slack, then one final
+            // render of the whole reply.
+            try? await Task.sleep(for: .seconds(JunoGeneratedTiming.streamBand + JunoStreamInk.bandDuration))
+            settling = false
+        }
+    }
+
+    private func draw(_ frame: JunoPacedStreamEngine.Frame) -> some View {
+        VStack(alignment: .leading, spacing: gap) {
+            if !frame.prefix.isEmpty {
+                JunoSettledRun(text: frame.prefix, content: content)
+                    .equatable()
+                    .environment(\.junoStreamReveal, .settled)
             }
-            .onChange(of: sourceLength, initial: true) { _, length in
-                liveLength = length
-            }
-            .task(id: live) {
-                guard live else {
-                    finish()
-                    return
+            content(frame.tail)
+                .environment(\.junoProseContinuesRun, !frame.prefix.isEmpty)
+                // Only a stream this view is pacing says so; otherwise
+                // whatever the surroundings set stands (an offscreen snapshot
+                // can pose a mid-stream fade that way).
+                .transformEnvironment(\.junoStreamReveal) { reveal in
+                    if frame.paced { reveal = frame.reveal }
                 }
-                await run()
-            }
-    }
-
-    /// What the children draw.
-    private var displayed: String {
-        guard live, let pacer else { return source }
-        let cut = JunoStreamTidy.boundary(in: source, at: Int(pacer.shown))
-        return JunoStreamTidy.tidy(String((source as NSString).substring(to: cut)))
-    }
-
-    private func run() async {
-        // A reply that was already part-written when its row was built (a
-        // lazy stack rebuilding it, a conversation opened mid-stream) starts
-        // near its end rather than replaying everything it has.
-        if pacer == nil {
-            pacer = JunoStreamPacer(shown: max(0, liveLength - 24))
-        }
-        paced = true
-        var last = Date()
-        while !Task.isCancelled {
-            let now = Date()
-            let dt = min(now.timeIntervalSince(last), 0.1)
-            last = now
-            var next = pacer ?? JunoStreamPacer()
-            let target = liveLength
-            let before = Int(next.shown)
-            let after = next.step(target: target, dt: dt)
-            if after != before || next.velocity != pacer?.velocity {
-                pacer = next
-                span = next.fadeSpan
-            }
-            // A frame while there is something to release; a slower poll while
-            // caught up, waiting for the next burst. Long replies re-lay out
-            // their Markdown on every release, so they step at half rate.
-            let caughtUp = after >= target
-            let interval: Duration = caughtUp ? .milliseconds(40) : (target > 6000 ? .milliseconds(33) : .milliseconds(16))
-            try? await Task.sleep(for: interval)
         }
     }
 
-    private func finish() {
-        guard paced else { return }
-        pacer = nil
-        withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint)) {
-            span = 0
+    /// The gap the prose itself puts between blocks, so the seam between the
+    /// settled prefix and the tail is invisible.
+    private var gap: CGFloat {
+        style == .reading ? JunoProseMetrics.blockGap * textScale : JunoMarkdownText.blockSpacing
+    }
+}
+
+/// The settled prefix: redrawn only when its text changes, which is once per
+/// finished paragraph rather than once per frame.
+private struct JunoSettledRun<Content: View>: View, Equatable {
+    let text: String
+    let content: (String) -> Content
+
+    var body: some View { content(text) }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.text == rhs.text }
+}
+
+/// The paced stream's clock-driven state. A plain class read and advanced from
+/// the timeline's content, deliberately not observable: a frame is a function
+/// of the display clock, and publishing it would invalidate the view a second
+/// time per frame.
+@MainActor
+final class JunoPacedStreamEngine {
+    struct Frame: Equatable {
+        /// The settled prefix, drawn once; empty when there is none.
+        var prefix: String
+        /// The text being written (or the whole reply, once settled).
+        var tail: String
+        /// What the tail's prose is told; nil under Reduce Motion.
+        var reveal: JunoStreamReveal?
+        /// Whether this view is pacing (live, or finishing its last fade).
+        var paced: Bool
+    }
+
+    private var pacer: JunoStreamPacer?
+    private var lastTick: Double?
+    private var ink = JunoStreamInkClock()
+    private var wasLive = false
+    private var flushSeen: Int?
+    /// The settled prefix and its UTF-16 length.
+    private var prefix = ""
+    private var committed = 0
+    /// Safe cuts seen in the tail, and when each was first seen. One commits
+    /// once the text before it has finished its fade.
+    private var candidates: [(offset: Int, seenAt: TimeInterval)] = []
+
+    init() {}
+
+    func frame(source: String, live: Bool, now: TimeInterval, drain: Bool, flush: Int, reduceMotion: Bool) -> Frame {
+        let length = source.utf16.count
+        defer { flushSeen = flush }
+
+        // Text replaced under the prefix (a retry, an edit): start over.
+        if committed > 0, length < committed || !Self.extends(source, prefix) {
+            resetPrefix()
         }
+
+        var cut = length
+        if live {
+            wasLive = true
+            let ms = now * 1000
+            var next = pacer ?? JunoStreamPacer(length: length, now: ms)
+            let dt = max(0, ms - (lastTick ?? ms))
+            lastTick = ms
+            next.arrive(length: length, now: ms)
+            next.step(length: length, dtMs: dt)
+            if drain || (flushSeen.map { $0 != flush } ?? false) { next.flush(to: length) }
+            pacer = next
+            cut = JunoStreamTidy.boundary(in: source, at: JunoStreamPacer.revealCut(in: source, shown: next.shown))
+        } else {
+            pacer = nil
+            lastTick = nil
+        }
+
+        guard wasLive else {
+            return Frame(prefix: "", tail: source, reveal: nil, paced: false)
+        }
+        ink.record(length: cut, now: now)
+        let bands = ink.bands(now: now)
+        if !live, bands.isEmpty || drain {
+            // Finished, and the last fade is done: one ordinary render.
+            wasLive = false
+            ink = JunoStreamInkClock()
+            resetPrefix()
+            return Frame(prefix: "", tail: source, reveal: nil, paced: false)
+        }
+
+        settle(source: source, upTo: cut, now: now)
+        let tailText = Self.slice(source, from: committed, to: cut)
+        return Frame(
+            prefix: prefix,
+            tail: live ? JunoStreamTidy.tidy(tailText) : tailText,
+            reveal: reduceMotion ? nil : JunoStreamReveal(bands: bands),
+            paced: true
+        )
+    }
+
+    /// Moves finished paragraphs into the prefix: the newest safe cut whose
+    /// text has been shown for a whole fade, so nothing still fading moves.
+    private func settle(source: String, upTo cut: Int, now: TimeInterval) {
+        let known = candidates.last?.offset ?? committed
+        for offset in JunoStreamSettle.boundaries(in: source, from: committed, to: cut) where offset > known {
+            candidates.append((offset, now))
+        }
+        guard let ready = candidates.last(where: { now - $0.seenAt >= JunoGeneratedTiming.streamBand }) else { return }
+        committed = ready.offset
+        prefix = Self.slice(source, from: 0, to: committed)
+        candidates.removeAll { $0.offset <= committed }
+    }
+
+    private func resetPrefix() {
+        prefix = ""
+        committed = 0
+        candidates = []
+    }
+
+    /// A native slice between two UTF-16 offsets that sit on character
+    /// boundaries (a reveal cut, a line start). Native rather than bridged
+    /// through NSString, so the Markdown parser downstream walks UTF-8.
+    static func slice(_ text: String, from start: Int, to end: Int) -> String {
+        let lower = String.Index(utf16Offset: start, in: text)
+        let upper = String.Index(utf16Offset: max(start, end), in: text)
+        return String(text[lower..<upper])
+    }
+
+    /// Whether `text` still begins with `prefix`. Checks the prefix's last
+    /// stretch, where the settled text meets the tail: a reply replaced
+    /// under a settled prefix (a retry) restarts shorter, and is caught by
+    /// length first, so the whole prefix is not compared on every frame.
+    static func extends(_ text: String, _ prefix: String) -> Bool {
+        let window = 256
+        let bytes = prefix.utf8.count
+        guard text.utf8.count >= bytes else { return false }
+        let from = max(0, bytes - window)
+        let a = text.utf8.index(text.utf8.startIndex, offsetBy: from)
+        let b = prefix.utf8.index(prefix.utf8.startIndex, offsetBy: from)
+        return text.utf8[a...].starts(with: prefix.utf8[b...])
     }
 }
 
@@ -295,29 +378,28 @@ public enum JunoStreamTidy {
 
 // MARK: - Fresh words fade in
 
-/// Draws a text run with its newest glyphs fading in: the last `span` glyphs
-/// ramp from transparent and slightly blurred to solid, so a word arrives as
-/// ink settling rather than as a block appearing.
+/// Draws a text run with its newest glyphs inking in: each glyph in the
+/// trailing bands is drawn at its band's ink (``JunoStreamInk/opacity``), so a
+/// word arrives faint and reaches full ink over ~280ms — the web's five
+/// `::highlight(stream-f*)` bands, without wrapping a single word.
 ///
-/// Position stands in for time. The pacer releases text at a steady rate, so
-/// a glyph `k` from the end was released `k / velocity` seconds ago, and a
-/// ramp over the last `velocity × 250ms` glyphs *is* a 250ms fade — with no
-/// per-glyph clocks, and nothing to store between frames. When the stream
-/// ends `span` animates to zero and the tail settles.
-public struct JunoStreamRevealRenderer: TextRenderer, Animatable {
-    public var span: Double
+/// The renderer only changes how already-laid-out glyphs are painted: the
+/// text's layout, and so the transcript's scroll geometry, is the same as the
+/// settled text's on every frame.
+public struct JunoStreamRevealRenderer: TextRenderer {
+    public var reveal: JunoStreamReveal
 
-    public init(span: Double) {
-        self.span = span
+    public init(reveal: JunoStreamReveal) {
+        self.reveal = reveal
     }
 
-    public var animatableData: Double {
-        get { span }
-        set { span = newValue }
+    public init(span: Double) {
+        self.init(reveal: JunoStreamReveal(span: span))
     }
 
     public func draw(layout: Text.Layout, in context: inout GraphicsContext) {
-        guard span >= 1 else {
+        let fading = reveal.span
+        guard fading > 0 else {
             for line in layout { context.draw(line) }
             return
         }
@@ -325,7 +407,6 @@ public struct JunoStreamRevealRenderer: TextRenderer, Animatable {
         for line in layout {
             for run in line { total += run.count }
         }
-        let fading = Int(span.rounded(.up))
         var index = 0
         for line in layout {
             for run in line {
@@ -337,18 +418,12 @@ public struct JunoStreamRevealRenderer: TextRenderer, Animatable {
                     continue
                 }
                 for slice in run {
-                    let fromEnd = Double(total - index)
-                    let progress = min(max(fromEnd / span, 0), 1)
-                    if progress >= 1 {
+                    let ink = reveal.ink(fromEnd: total - index)
+                    if ink >= 1 {
                         context.draw(slice)
                     } else {
-                        // smoothstep, so the ramp has no visible front edge.
-                        let eased = progress * progress * (3 - 2 * progress)
                         var glyph = context
-                        glyph.opacity = eased
-                        let blur = (1 - eased) * 2.2
-                        if blur > 0.15 { glyph.addFilter(.blur(radius: blur)) }
-                        glyph.translateBy(x: 0, y: (1 - eased) * 1.5)
+                        glyph.opacity = ink
                         glyph.draw(slice)
                     }
                     index += 1
@@ -373,7 +448,8 @@ public extension View {
 
     /// A block that appears while its reply is being written fades and rises
     /// in (``JunoMotion/riseIn``, 6pt) instead of popping; a block in a
-    /// finished reply, or one rebuilt by a lazy stack, is simply there.
+    /// finished reply, in the settled part of a live one, or one rebuilt by a
+    /// lazy stack, is simply there.
     func junoStreamBlockReveal() -> some View {
         modifier(JunoStreamBlockReveal())
     }
@@ -383,8 +459,8 @@ private struct JunoStreamRevealTextModifier: ViewModifier {
     @Environment(\.junoStreamReveal) private var reveal
 
     func body(content: Content) -> some View {
-        if let reveal {
-            content.textRenderer(JunoStreamRevealRenderer(span: reveal.span))
+        if let reveal, reveal.isLive {
+            content.textRenderer(JunoStreamRevealRenderer(reveal: reveal))
         } else {
             content
         }
@@ -406,9 +482,10 @@ private struct JunoStreamBlockReveal: ViewModifier {
     @State private var risen = false
 
     func body(content: Content) -> some View {
-        // Only a block on screen while its reply is live waits to rise: a
-        // finished reply (no reveal) and Reduce Motion draw it at once.
-        let shown = risen || reveal == nil || reduceMotion
+        // Only a block on screen while its reply is being written waits to
+        // rise: a finished reply (no reveal), the settled prefix and Reduce
+        // Motion draw it at once.
+        let shown = risen || reveal?.isLive != true || reduceMotion
         content
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : JunoMotion.riseDistance)

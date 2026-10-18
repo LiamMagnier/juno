@@ -28,6 +28,7 @@ export function createAssistantTurnWriter({
   activityLog,
   roomTurnId,
   routingReceipt,
+  generatedAttachmentIds = [],
 }: {
   user: TurnUser;
   conversationId: string;
@@ -39,6 +40,14 @@ export function createAssistantTurnWriter({
   activityLog: ClientActivityEvent[];
   roomTurnId: string | null;
   routingReceipt: RoutingReceipt | null;
+  /**
+   * Pictures `generate_image` made this turn (src/lib/chat/image-tool.ts). They
+   * already belong to the conversation and the Library; sealing the answer
+   * links them to it, so the `done` frame and every reload carry them as the
+   * answer's attachments. Read when sealing, so a call that finished after the
+   * row was written is still linked.
+   */
+  generatedAttachmentIds?: readonly string[];
 }) {
   // Metadata for the pager rides along on the done chunk.
   const include = {
@@ -133,6 +142,20 @@ export function createAssistantTurnWriter({
    * position included, so a regenerated answer arrives already reading "2/2".
    */
   const sealActivity = async (assistantId: string) => {
+    if (generatedAttachmentIds.length > 0) {
+      // Only this account's unlinked generated files in this conversation: a
+      // stale or forged id links nothing.
+      await prisma.attachment.updateMany({
+        where: {
+          id: { in: [...generatedAttachmentIds] },
+          userId: user.id,
+          conversationId,
+          origin: "generated",
+          messageId: null,
+        },
+        data: { messageId: assistantId },
+      });
+    }
     const row = await prisma.message.update({
       where: { id: assistantId },
       data: { activity: encryptJsonField(activityLog) as unknown as Prisma.InputJsonValue },

@@ -50,6 +50,10 @@ struct ComposerPlusMenuModel {
     var skillSlug: Binding<String?> = .constant(nil)
     /// "Manage Skills…": the Skills page. Nil leaves the row out.
     var manageSkills: (() -> Void)? = nil
+    /// "Create Image" (G04): on whenever the selected model makes pictures;
+    /// turning it on picks one, off gives the chat model back. Nil hides the
+    /// row — no usable image model, a private chat, a call.
+    var createImage: Binding<Bool>? = nil
     /// Nil hides Research (private mode). One feature, no levels (Tool calls
     /// & research SPEC §9.9).
     var deepResearch: Binding<Bool>?
@@ -277,6 +281,18 @@ struct ComposerPlusMenu: View {
                 }
             }
 
+            // First of the contract's third group (`JunoShellPlusMenu.chat`):
+            // what the message makes comes before what it reaches for.
+            if let createImage = menu.createImage {
+                Toggle(isOn: createImage) {
+                    Label {
+                        Text(JunoShellPlusRow.image.title)
+                    } icon: {
+                        Image(JunoShellPlusRow.image.icon.assetName)
+                    }
+                }
+            }
+
             if let deepResearch = menu.deepResearch {
                 Toggle(isOn: deepResearch) {
                     Label {
@@ -414,6 +430,7 @@ struct ChatComposerMark: Identifiable, Equatable {
     /// window's sentence a third of its own line.
     static let labelMinimumWidth: CGFloat = 480
 
+    static let imageID = "image"
     static let skillID = "skill"
     static let researchID = "research"
     static let webSearchID = "web"
@@ -428,6 +445,7 @@ struct ChatComposerMark: Identifiable, Equatable {
     /// to stop reading the row. Research has no levels and so no detail
     /// (SPEC §9.9).
     static func marks(
+        image: Bool = false,
         skill: (slug: String, name: String?, description: String?)? = nil,
         research: Bool,
         webSearch: Bool,
@@ -435,6 +453,19 @@ struct ChatComposerMark: Identifiable, Equatable {
         documentCount: Int?
     ) -> [ChatComposerMark] {
         var marks: [ChatComposerMark] = []
+        // Image mode leads (G04): it changes what the message is — a picture,
+        // through `/api/generate` — so the reader must see it before anything
+        // that qualifies a chat turn. Its ✕ gives the chat model back.
+        if image {
+            marks.append(ChatComposerMark(
+                id: imageID,
+                glyph: .icon(JunoShellPlusRow.image.icon),
+                label: JunoShellStrings.imageCreate,
+                detail: nil,
+                help: JunoShellStrings.imageCreate,
+                removeLabel: JunoShellStrings.imageModeExit
+            ))
+        }
         // The skill, first: it decides how the message is answered. The web's
         // mark (`composer.tsx`): the skill's name, its description as the
         // tooltip, "Sent under /slug." without one.

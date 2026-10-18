@@ -876,22 +876,35 @@ struct StudioModelChip: View {
 
     /// The ladder Code can actually send for this model, which is not always
     /// the catalog's (see ``ModelOption/thinkingLadder``).
+    /// A model the catalog has not described offers no control rather than a
+    /// made-up low/medium/high ladder: depths come only from the manifest.
     private var ladder: JunoThinkingLadder {
-        selected?.thinkingLadder ?? .code(efforts: ModelOption.contractReasoningEfforts)
+        selected?.thinkingLadder ?? .unavailable
     }
 
     private var stopID: Binding<String?> {
         Binding(
-            get: { effort?.rawValue ?? JunoThinkingLadder.instantStopID },
+            get: {
+                selected?.thinkingStopID(for: effort)
+                    ?? effort?.rawValue ?? JunoThinkingLadder.instantStopID
+            },
             set: { value in
-                guard let value else { return }
-                if value == JunoThinkingLadder.instantStopID {
-                    selectEffort(nil)
-                } else if let effort = ReasoningEffort(rawValue: value) {
-                    selectEffort(effort)
-                }
+                guard let value, let effort = ModelOption.reasoningEffort(forStopID: value) else { return }
+                selectEffort(effort)
             }
         )
+    }
+
+    /// Switching model fits the session's depth to the new model's tiers —
+    /// the web's clampReasoningEffort — so a depth one model takes (GPT's
+    /// `minimal`) is never sent to one that does not (Claude Haiku 5.5).
+    private func choose(_ id: String) {
+        selectModel(id)
+        if let model = models.first(where: { $0.modelID == id }),
+           let refitted = model.refittingEffort(effort)
+        {
+            selectEffort(refitted)
+        }
     }
 
     var body: some View {
@@ -904,7 +917,7 @@ struct StudioModelChip: View {
             isEnabled: isEnabled,
             accessibilityID: "juno.code.composer.model",
             stage: $stage,
-            select: { selectModel($0.id) }
+            select: { choose($0.id) }
         )
         .background {
             // The two shortcuts, as hidden buttons so they work wherever the

@@ -1,4 +1,5 @@
 import { chatSearchAvailable } from "@/lib/web/search";
+import { providerHealthy } from "@/lib/provider-health";
 import { apiV1Json } from "@/lib/api-v1";
 import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
 import { sortModelsForDisplay } from "@/lib/model-metrics";
@@ -20,7 +21,7 @@ export async function GET() {
     getUserPlan(user.id),
   ]);
   const capabilityProbes = await loadModelCapabilityMap(models.map((model) => model.id));
-  const catalog = nativeModelCatalog(models, plan, nativeModelCapabilityVerdicts(models, capabilityProbes), { alevrSearch: chatSearchAvailable() });
+  const catalog = nativeModelCatalog(models, plan, nativeModelCapabilityVerdicts(models, capabilityProbes), { alevrSearch: chatSearchAvailable(), providerHealthy });
   return apiV1Json({ ...catalog, generatedAt: new Date().toISOString() }, {
     // The digest now varies with the account's plan; the cache was already
     // private, which is what keeps that per-account ETag correct.

@@ -243,7 +243,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     useProMode,
     skill: { skillOutcome, appliedSkill },
     untrustedContentInTurn,
-    approvals: { taskToolOn, routineToolOn, agentConfigToolsOn, agentContext, localFolder },
+    approvals: { taskToolOn, routineToolOn, imageToolOn, agentConfigToolsOn, agentContext, localFolder },
     tools: { toolProviderSessions },
     system,
     baseSystemSections,
@@ -350,6 +350,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     let targetedArtifactContent: string | null = null;
     let spendRecorded = false;
 
+    /** Pictures `generate_image` made this turn, linked to the answer when it is saved. */
+    const generatedAttachmentIds: string[] = [];
     const { persistAssistantTurn, sealActivity } = createAssistantTurnWriter({
       user,
       conversationId,
@@ -360,6 +362,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       activityLog,
       roomTurnId,
       routingReceipt,
+      generatedAttachmentIds,
     });
     /** Routing telemetry for this turn, filled by whichever terminal path runs. */
     const turnStartedAt = Date.now();
@@ -561,7 +564,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       conversationId,
       conversation,
       userMessageId,
-      approvals: { taskToolOn, routineToolOn, agentConfigToolsOn, agentContext },
+      approvals: { taskToolOn, routineToolOn, imageToolOn, agentConfigToolsOn, agentContext },
       appliedSkill,
       conversationModelId,
       requestedEffort,
@@ -579,6 +582,13 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       preflightVisibleContent,
       crossConversation: turn.crossConversation ?? null,
       localFolder,
+      plan,
+      generatedAttachmentIds,
+      // Auto's receipt says which image model made the picture (G04). The
+      // receipt object is the one the writer persists with the answer.
+      onImageModel: (image) => {
+        if (routingReceipt) routingReceipt.image = { model: image.id, name: image.name, auto: image.auto };
+      },
     });
 
     try {

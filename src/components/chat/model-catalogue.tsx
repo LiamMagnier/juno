@@ -326,13 +326,15 @@ function DetailPanel({
         <Button
           type="button"
           variant={selected ? "secondary" : "default"}
-          disabled={selected || !!model.comingSoon}
+          disabled={selected || !!model.comingSoon || !!model.unavailableReason}
           onClick={onUse}
           className="h-9 min-w-0 flex-1"
         >
           {selected
             ? "Selected"
-            : model.comingSoon
+            : model.unavailableReason
+              ? "Temporarily unavailable"
+              : model.comingSoon
               ? "Not available yet"
               : locked
                 ? `Get ${PLANS[modelRequiredPlan(model)].name}`
@@ -707,7 +709,8 @@ export function ModelCatalogue({
     const key = rowKeyFor(prefix, m.id);
     const auto = isAutoModelId(m.id);
     const active = auto ? autoSelected : value === m.id;
-    const soon = !!m.comingSoon;
+    // Inert either way: not yet callable, or its route is failing right now.
+    const soon = !!m.comingSoon || !!m.unavailableReason;
     const locked = isLocked(m);
     const cursor = cursorKey === key;
     const starred = !auto && favorites.has(m.id);

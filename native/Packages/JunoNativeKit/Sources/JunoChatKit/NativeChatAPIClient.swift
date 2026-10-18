@@ -530,6 +530,9 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
     public var tool: NativeToolDetail?
     /// The saved facts about the reader this turn used.
     public var memory: [NativeMemoryReceipt]
+    /// A picture the model made on this row (G04), re-sent in place as the
+    /// call moves from generating to done or failed.
+    public var imageGeneration: NativeImageGeneration?
 
     public init(
         id: String,
@@ -546,7 +549,8 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
         notice: NativeRunNotice? = nil,
         fact: NativeRunFact? = nil,
         tool: NativeToolDetail? = nil,
-        memory: [NativeMemoryReceipt] = []
+        memory: [NativeMemoryReceipt] = [],
+        imageGeneration: NativeImageGeneration? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -563,6 +567,7 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
         self.fact = fact
         self.tool = tool
         self.memory = memory
+        self.imageGeneration = imageGeneration
     }
 }
 

@@ -41,8 +41,8 @@ import Testing
     @Test func chatsRowsAreTheContractsWithNoneDropped() {
         #expect(DesktopDestination.sidebarCases.count == JunoShellChatSidebar.destinations.count)
         #expect(DesktopDestination.sidebarCases.compactMap(\.shell) == JunoShellChatSidebar.destinations)
-        // Contract v2 (the V3 shell): Projects, Library, Customize.
-        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
+        // Contract v2 (the V3 shell): Activity (G70), Projects, Library, Customize.
+        #expect(DesktopDestination.sidebarCases == [.activity, .projects, .library, .connections])
         #expect(DesktopDestination.sidebarCases.map(\.label) == JunoShellChatSidebar.destinations.map(\.label))
         #expect(DesktopDestination.sidebarCases.map(\.junoIcon) == JunoShellChatSidebar.destinations.map(\.icon))
     }
@@ -100,13 +100,13 @@ import Testing
         #expect(JunoShellPlusMenu.chat == [
             [.files, .screenshot, .sketch, .library],
             [.mention, .skill],
-            [.research, .search, .memory],
+            [.image, .research, .search, .memory],
             [.project, .connectors],
         ])
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
             "Add Photos and Files", "Take a Screenshot", "Sketch", "Add from Library",
             "Mention a File, App or Agent", "Run a Skill",
-            "Deep Research", "Web Search", "Memory",
+            "Create Image", "Deep Research", "Web Search", "Memory",
             "Add to Project", "Apps",
         ])
         #expect(JunoShellPlusMenu.label == "Add")

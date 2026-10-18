@@ -281,6 +281,13 @@ struct DesktopDestinationView: View {
                 openAgent: openAgent,
                 openAgentThread: openAgentThread
             )
+        case .activity:
+            DesktopActivityScreen(
+                configuration: configuration,
+                session: session,
+                openConversation: openAgentThread,
+                startChat: { destination = .chat }
+            )
         case .projects:
             if let model = configuration.projectModel {
                 DesktopProjectsScreen(

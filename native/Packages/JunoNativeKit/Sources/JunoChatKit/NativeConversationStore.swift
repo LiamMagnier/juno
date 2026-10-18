@@ -875,6 +875,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
     public private(set) var chatPhase: NativeChatGenerationPhase = .idle
     public private(set) var chatErrorDescription: String?
+    /// The dropped turn's connection while Tether brings it back
+    /// (JunoCore/Tether.swift): reconnecting, waiting for network, or parked.
+    /// Nil while connected. Only meaningful while ``chatPhase`` is
+    /// `.reconnecting`.
+    public private(set) var chatConnection: TetherView?
     public private(set) var activeChatConversationID: String?
     /// Approval receipts raised by chat connector calls, keyed by conversation.
     ///
@@ -3029,6 +3034,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             guard accountID == context.accountID,
                 activeGenerationID == generationID
             else { return .abandoned }
+            // Any frame, a heartbeat included, proves the connection is back.
+            activeTetherLink?.connected()
             // Frames are flowing again: the reconnect is over.
             if chatPhase == .reconnecting, event.carriesTurn {
                 chatPhase = .submitting
@@ -3133,17 +3140,55 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         throw NativeChatAPIError.streamEndedWithoutTerminalEvent
     }
 
-    /// Picks a dropped stream up after its last handled frame, retrying on a
-    /// widening interval while the network comes back. The "Reconnecting…"
-    /// rung shows meanwhile (``chatPhase`` is `.reconnecting`).
+    /// The Tether link of the reconnect in progress: ``consume`` tells it when
+    /// frames flow again, and ``reconnectNow()`` nudges it.
+    @ObservationIgnored private var activeTetherLink: TetherLink?
+
+    /// Try a dropped turn's reconnect now rather than at its next scheduled
+    /// attempt (a person pressed something). No-op when nothing is reconnecting.
+    public func reconnectNow() {
+        activeTetherLink?.trigger(.manual)
+    }
+
+    /// Picks a dropped stream up after its last handled frame, on Tether's
+    /// schedule (JunoCore/Tether.swift): jittered backoff, an immediate attempt
+    /// when the network returns, the app becomes active or the Mac wakes, and
+    /// no give-up while the generation is this client's — a long outage parks
+    /// the turn ("Waiting for connection") with `lastSequence` kept. It ends on
+    /// the turn's end, on the server saying the log cannot serve it, or on the
+    /// account, the generation or the task moving on. The "Reconnecting…" rung
+    /// shows meanwhile (``chatPhase`` is `.reconnecting`, ``chatConnection``
+    /// says which state).
     private func resumeDroppedGeneration(
         _ context: inout RetryContext,
         generationID: String,
         needsAppend: Bool,
-        lastSequence: inout Int
+        lastSequence: inout Int,
+        immediate: Bool = false
     ) async -> ResumeOutcome {
         guard let chatClient else { return .unavailable }
-        for delay in [0.5, 1, 2, 4, 8, 15] as [Double] {
+        let link = TetherLink(signals: TetherSignals.shared)
+        link.onChange = { [weak self] state in
+            guard let self, self.activeGenerationID == generationID else { return }
+            self.chatConnection = state.view
+        }
+        activeTetherLink = link
+        defer {
+            link.close()
+            if activeTetherLink === link {
+                activeTetherLink = nil
+                chatConnection = nil
+            }
+        }
+        // A conversation just opened goes now; a stream that just dropped
+        // waits out a jittered backoff like every other client's.
+        if !immediate { link.drop() }
+        var first = immediate
+        while true {
+            if !first {
+                guard await link.nextAttempt() else { return .abandoned }
+            }
+            first = false
             guard !resumeUnavailable else { return .unavailable }
             guard !Task.isCancelled, accountID == context.accountID,
                 activeGenerationID == generationID
@@ -3174,14 +3219,25 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 {
                     return .unavailable
                 }
+                // A stream that ended without its terminal frame is the
+                // ordinary drop (shouldRecover says so); anything else not
+                // worth retrying ends here.
                 guard shouldRecover(error) else { return .unavailable }
             } catch {
                 // The network is still down; try again.
             }
+            guard !Task.isCancelled, accountID == context.accountID,
+                activeGenerationID == generationID
+            else { return .abandoned }
             chatPhase = .reconnecting
-            try? await Task.sleep(for: .seconds(delay))
+            // Frames flowed and then stopped: a fresh drop. Nothing came: a
+            // failed attempt.
+            if link.state.phase == .connected {
+                link.drop()
+            } else {
+                link.failed()
+            }
         }
-        return .unavailable
     }
 
     /// What a finished generation does, however its stream reached the end.
@@ -3281,7 +3337,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             &context,
             generationID: generationID,
             needsAppend: false,
-            lastSequence: &lastSequence
+            lastSequence: &lastSequence,
+            immediate: true
         ) {
         case .completed:
             await finishGeneration(context)

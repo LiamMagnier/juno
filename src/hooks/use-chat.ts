@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { readChatStream, type StreamFrameInfo } from "@/lib/chat-stream";
 import { announceResearchStarted } from "@/components/research/research-discovery";
 import { createFrameSequencer } from "@/lib/chat/stream-replay";
+import { TetherLink, browserTetherSignals, staleGuard, tetherView, type TetherView } from "@/lib/net/tether";
 import {
   applyTurnArtifacts,
   serverTranscriptRevision,
@@ -90,6 +91,12 @@ export type ChatMessage = ClientMessage & {
    * and what the "Retry send" affordance on the bubble calls.
    */
   unsent?: boolean;
+  /**
+   * The turn's stream dropped and Tether is bringing it back
+   * (src/lib/net/tether.ts): reconnecting, waiting for network, or parked.
+   * Absent while connected — the bubble says nothing then.
+   */
+  connection?: TetherView;
 };
 
 export type SendResult = {
@@ -158,31 +165,25 @@ const RESUME_MAX_AGE_MS = 2 * 60_000;
 const RESUME_POLL_WINDOW_MS = 6_000;
 
 /*
- * Reconnecting to a generation whose frames the server is logging.
- *
- * The backoff is 1s → 2s → 4s and then every 4s, for three minutes. The window
- * is generous on purpose: the thing on the other end is an answer the user has
- * already paid for, and the alternative to waiting for it is a regenerate that
- * charges them a second time for the same reply. Three minutes covers a train
- * tunnel, a laptop lid, and a server restart; past it the conversation is the
- * source of truth and the answer is either in it or was never written.
+ * Reconnecting to a generation whose frames the server is logging follows
+ * Tether (src/lib/net/tether.ts): jittered backoff, an immediate attempt when
+ * the network returns, the tab comes back or the machine wakes, and no give-up
+ * while the turn is in flight — past the active window the turn parks ("Waiting
+ * for connection") with its seq cursor kept. The thing on the other end is an
+ * answer the user has already paid for; the alternative to waiting for it is a
+ * regenerate that charges them a second time for the same reply.
  */
-const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000] as const;
-const RECONNECT_WINDOW_MS = 3 * 60_000;
-
-function reconnectDelayMs(attempt: number): number {
-  return RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)];
-}
 
 /**
  * How a reconnect ended.
  *  - `terminal`  the turn's `done`/`error` frame arrived; the transcript is settled.
  *  - `refetch`   the server says the log cannot finish this turn — load the conversation.
  *  - `gone`      404: no log (private, swept, or never written).
- *  - `exhausted` the window ran out with the generation still apparently alive.
- *  - `stale`     the user moved on; this attempt no longer owns the view.
+ *  - `stale`     the user moved on (or pressed Stop); this attempt no longer owns the view.
+ *
+ * There is no "gave up": a turn that cannot reconnect parks and waits.
  */
-type ReconnectOutcome = "terminal" | "refetch" | "gone" | "exhausted" | "stale";
+type ReconnectOutcome = "terminal" | "refetch" | "gone" | "stale";
 
 /** One turn's frame handler, plus what a reconnect needs to know about it. */
 interface StreamApplier {
@@ -884,52 +885,122 @@ export function useChat(opts: UseChatOptions) {
   }, []);
 
   /**
+   * The Tether link of the reconnect in progress, if one is. A press of
+   * Reconnect (or a regenerate on a dropped turn) nudges it rather than
+   * starting a second reader.
+   */
+  const activeLinkRef = React.useRef<TetherLink | null>(null);
+
+  /** Show (or clear) a turn's connection line. */
+  const setTurnConnection = React.useCallback((assistantTempId: string, connection: TetherView | undefined) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== assistantTempId) return m;
+        if (m.connection?.phase === connection?.phase && m.connection?.retryAt === connection?.retryAt) return m;
+        if (!connection) {
+          const rest = { ...m };
+          delete rest.connection;
+          return rest;
+        }
+        return { ...m, connection };
+      })
+    );
+  }, []);
+
+  /**
    * Reattach to a generation's frame log and keep trying until it ends.
    *
    * Each attempt asks for everything after the last seq this client actually
    * applied, so a reconnect that itself drops mid-answer simply resumes from
    * wherever it got to. Frames are fed through the applier that rendered the
    * original stream, which is what makes the overlap harmless.
+   *
+   * When to try is Tether's call (src/lib/net/tether.ts), and it never says
+   * stop: the loop ends on the turn's terminal frame, on the server saying the
+   * log cannot serve it, or on the user moving on.
    */
   const reconnectFromLog = React.useCallback(
     async (args: {
       applier: StreamApplier;
       generationId: string;
+      assistantTempId: string;
       seq: number;
       signal?: AbortSignal;
       immediate?: boolean;
     }): Promise<ReconnectOutcome> => {
-      const deadline = Date.now() + RECONNECT_WINDOW_MS;
-      let attempt = 0;
+      const owns = () =>
+        generationSeqRef.current === args.seq && !detachedRef.current && !stopRequestedRef.current && !args.signal?.aborted;
+      const link = new TetherLink({
+        signals: browserTetherSignals(),
+        onChange: (state) => {
+          if (generationSeqRef.current === args.seq) setTurnConnection(args.assistantTempId, tetherView(state));
+          // Parked: anything that would retry this turn reconnects instead.
+          if (state.phase === "parked") {
+            reconnectRef.current = {
+              generationId: args.generationId,
+              assistantTempId: args.assistantTempId,
+              lastSeq: args.applier.lastSeq,
+            };
+            setCanReconnect(true);
+          } else if (state.phase === "connected" && reconnectRef.current?.assistantTempId === args.assistantTempId) {
+            reconnectRef.current = null;
+            setCanReconnect(false);
+          }
+        },
+      });
+      activeLinkRef.current = link;
+      // A person pressed something, or a chat was just opened: the first
+      // attempt goes now. Otherwise the stream just dropped, and the first
+      // attempt waits out a jittered backoff like everyone else's.
+      if (!args.immediate) link.drop();
       let first = args.immediate === true;
-      while (Date.now() < deadline) {
-        if (!first) await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs(attempt++)));
-        first = false;
-        // The user started another turn, switched chat, or pressed Stop: this
-        // attempt no longer owns the bubble it would write into.
-        if (generationSeqRef.current !== args.seq || detachedRef.current) return "stale";
-        if (stopRequestedRef.current || args.signal?.aborted) return "stale";
-        try {
-          const res = await fetch(
-            `/api/chat/stream/${encodeURIComponent(args.generationId)}?after=${args.applier.lastSeq}`,
-            { signal: args.signal }
-          );
-          // 404 is deliberately every "there is nothing here" at once: an
-          // unknown id, another account's, a private turn (never logged), a
-          // log already swept. None of them are worth retrying.
-          if (res.status === 404) return "gone";
-          if (res.ok && res.body) await readChatStream(res.body, args.applier.apply);
-        } catch {
-          // A reconnect that drops is the ordinary case, not an exception —
-          // it is the reason this is a loop. Try again after the backoff.
+      try {
+        for (;;) {
+          if (!first && !(await link.nextAttempt(args.signal))) return "stale";
+          first = false;
+          // The user started another turn, switched chat, or pressed Stop: this
+          // attempt no longer owns the bubble it would write into.
+          if (!owns()) return "stale";
+          const guard = staleGuard(args.signal);
+          try {
+            const res = await fetch(
+              `/api/chat/stream/${encodeURIComponent(args.generationId)}?after=${args.applier.lastSeq}`,
+              { signal: guard.signal }
+            );
+            // 404 is deliberately every "there is nothing here" at once: an
+            // unknown id, another account's, a private turn (never logged), a
+            // log already swept. None of them are worth retrying.
+            if (res.status === 404) return "gone";
+            if (res.ok && res.body) {
+              const apply = args.applier.apply;
+              const onFrame: typeof apply = (chunk, frame) => {
+                guard.beat();
+                link.connected();
+                apply(chunk, frame);
+              };
+              await readChatStream(res.body, onFrame);
+            }
+          } catch {
+            // A reconnect that drops is the ordinary case, not an exception —
+            // it is the reason this is a loop. A silent socket the stale
+            // guard aborted lands here too.
+          } finally {
+            guard.dispose();
+          }
+          if (!owns()) return "stale";
+          if (args.applier.sawTerminal) return "terminal";
+          if (args.applier.refetch) return "refetch";
+          // Frames flowed and then stopped: a fresh drop. Nothing came: a failed attempt.
+          if (link.state.phase === "connected") link.drop();
+          else link.failed();
         }
-        if (generationSeqRef.current !== args.seq || detachedRef.current) return "stale";
-        if (args.applier.sawTerminal) return "terminal";
-        if (args.applier.refetch) return "refetch";
+      } finally {
+        link.dispose();
+        if (activeLinkRef.current === link) activeLinkRef.current = null;
+        if (generationSeqRef.current === args.seq) setTurnConnection(args.assistantTempId, undefined);
       }
-      return "exhausted";
     },
-    []
+    [setTurnConnection]
   );
 
   /** Reconnect, then settle the transcript on whichever way it ended. */
@@ -947,37 +1018,6 @@ export function useChat(opts: UseChatOptions) {
       if (outcome === "terminal") {
         clearReconnect();
         setStatus((cur) => (cur === "error" ? "error" : "idle"));
-        return outcome;
-      }
-      if (outcome === "exhausted") {
-        // Still apparently alive, just not within the window we are willing to
-        // hold the UI for. Offer the reconnect again rather than a retry: the
-        // answer is (or was) being written, and asking for a new one would
-        // charge for a second copy of it.
-        reconnectRef.current = {
-          generationId: args.generationId,
-          assistantTempId: args.assistantTempId,
-          lastSeq: args.applier.lastSeq,
-        };
-        setCanReconnect(true);
-        setStatus("error");
-        const message =
-          "The connection to this answer dropped. Reconnect to pick it up where it left off — it is still being written, and reconnecting does not use another message.";
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === args.assistantTempId
-              ? {
-                  ...m,
-                  streaming: false,
-                  error: true,
-                  progress: null,
-                  finishReason: "error" as const,
-                  errorMessage: message,
-                  content: m.content || message,
-                }
-              : m
-          )
-        );
         return outcome;
       }
       // `refetch` / `gone`: the log cannot finish this turn. The conversation
@@ -1046,6 +1086,11 @@ export function useChat(opts: UseChatOptions) {
 
   /** Pick up a dropped answer. Never charges: it reads the log, it does not generate. */
   const reconnect = React.useCallback(async () => {
+    // A reconnect already running (parked, or between attempts): try now.
+    if (activeLinkRef.current) {
+      activeLinkRef.current.trigger("manual");
+      return;
+    }
     const target = reconnectRef.current;
     if (!target || !convoIdRef.current) return;
     await attachAndReconnect(target);

@@ -928,6 +928,11 @@ struct ChatComposer: View {
     /// what ``configureSelection()`` resolves — "this model because I said so"
     /// and "this model because it was first" are the same string.
     @State private var modelChosenByReader = false
+    /// "Create Image" (G04): the chat model to give back when it is turned off.
+    @State private var imageMode = NativeImageMode()
+    /// The picture model the reader last made something with, so the switch
+    /// reopens on it while it is still usable. Empty until the first one.
+    @AppStorage("juno.desktop.composer.last-image-model") private var lastImageModelID = ""
     @State private var selectedProjectID: String?
     @State private var selectedConnectors: Set<String> = []
     @State private var showingFileImporter = false
@@ -1180,8 +1185,44 @@ struct ChatComposer: View {
         return (skillSlug, choice?.name, choice?.description)
     }
 
+    /// The selected model makes pictures: "Create Image" is on.
+    private var inImageMode: Bool {
+        NativeImageMode.isImageModel(selectedModel)
+    }
+
+    /// Whether "Create Image" is offered: a picture model this account can
+    /// use, and a turn that goes through the chat composer's own route — not
+    /// a private chat, not a call.
+    private var imageModeAvailable: Bool {
+        !isPrivate && !voiceActive && !NativeImageMode.usableImageModels(in: model.composerCatalog).isEmpty
+    }
+
+    private var createImageBinding: Binding<Bool> {
+        Binding(
+            get: { inImageMode },
+            set: { isOn in if isOn { enterImageMode() } else { exitImageMode() } }
+        )
+    }
+
+    private func enterImageMode() {
+        guard let id = imageMode.enter(
+            currentModelID: selectedModelID,
+            catalog: model.composerCatalog,
+            lastUsedImageModelID: lastImageModelID.isEmpty ? nil : lastImageModelID
+        ) else { return }
+        selectedModelID = id
+        modelChosenByReader = true
+    }
+
+    private func exitImageMode() {
+        guard let id = imageMode.exit(catalog: model.composerCatalog) else { return }
+        selectedModelID = id
+        modelChosenByReader = true
+    }
+
     private var marks: [ChatComposerMark] {
         ChatComposerMark.marks(
+            image: inImageMode && !isPrivate && !voiceActive,
             skill: armedSkill,
             research: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
@@ -1220,6 +1261,10 @@ struct ChatComposer: View {
             if let schema = model.model(withID: id)?.mediaParams, !schema.isEmpty {
                 model.mediaParamsMemory.activate(id, schema: schema)
             }
+            // Image mode remembers the chat model to give back, and the
+            // picture model to reopen on, whichever control chose them.
+            imageMode.observe(selectedModelID: id, catalog: model.composerCatalog)
+            if NativeImageMode.isImageModel(model.model(withID: id)) { lastImageModelID = id }
         }
         .task(id: isGenerating) {
             streamedPastBeat = false
@@ -1979,6 +2024,7 @@ struct ChatComposer: View {
 
     private func disarm(_ id: String) {
         switch id {
+        case ChatComposerMark.imageID: exitImageMode()
         case ChatComposerMark.skillID: skillSlug = nil
         case ChatComposerMark.researchID: deepResearch = false
         case ChatComposerMark.webSearchID: webSearch = false
@@ -2022,6 +2068,7 @@ struct ChatComposer: View {
             skillsLoading: skillLibrary?.isLoading == true,
             skillSlug: $skillSlug,
             manageSkills: manageSkills,
+            createImage: imageModeAvailable ? createImageBinding : nil,
             deepResearch: researchAvailable ? gated($deepResearch, by: .research) : nil,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent

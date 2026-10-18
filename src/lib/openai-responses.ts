@@ -382,8 +382,10 @@ export async function* streamOpenAIResponses(
   const usePro = !xai && !!proMode && supportsProMode(model);
   // xAI: an effort only for a model that lists one, moved onto its own ladder
   // (grok-4.5 tops out at "high"); a model without a ladder is left to xAI.
+  // Instant (no effort) becomes "none" on the one Grok that lists it (4.3,
+  // whose API default is `low`): leaving it out made Instant reason anyway.
   const requestedEffort = xai
-    ? model.reasoning && reasoningEffort && rcSearch.tiers.length > 0
+    ? model.reasoning && rcSearch.tiers.length > 0
       ? mapResponsesEffort(model, reasoningEffort)
       : undefined
     : mapResponsesEffort(model, reasoningEffort);

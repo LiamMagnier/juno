@@ -1249,6 +1249,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// replaced it at integration, and ``DesktopNavigationState/normalized(_:)``
     /// turns a restored `.search` into Chat.
     case search
+    /// Everything live across Work, Code and research, grouped Needs you,
+    /// Running, Ready, Blocked (G70, `/activity`). Chat's first destination row.
+    case activity
     case projects
     case library
     case artifacts
@@ -1312,7 +1315,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .permissions: "Permissions"
         case .profile: "Profile"
         case .instructions: "Instructions"
-        case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
+        case .activity, .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
             shell?.label ?? rawValue
         }
     }
@@ -1329,7 +1332,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .permissions: .permissions
         case .profile: .user
         case .instructions: .file
-        case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
+        case .activity, .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
             shell?.icon ?? .home
         }
     }
