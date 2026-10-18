@@ -541,6 +541,600 @@
         }
       }
     },
+    "image.aiGenerated" : {
+      "comment" : "AI Act label under every generated picture.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI-generated"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Générée par IA"
+          }
+        }
+      }
+    },
+    "image.autoPicked" : {
+      "comment" : "Under a picture made in chat when Auto chose the image model.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto picked %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto a choisi %@"
+          }
+        }
+      }
+    },
+    "image.copied" : {
+      "comment" : "Toast after the picture was copied.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image copied"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image copiée"
+          }
+        }
+      }
+    },
+    "image.copy" : {
+      "comment" : "Image action: copy the picture to the clipboard.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier"
+          }
+        }
+      }
+    },
+    "image.copyFailed" : {
+      "comment" : "Toast when the clipboard refused the picture; the link was copied instead.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t copy the image, so its link was copied"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de copier l’image : son lien a été copié"
+          }
+        }
+      }
+    },
+    "image.create" : {
+      "comment" : "The composer's image mode: its + menu row, its chip and the chat card's heading.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create image"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Créer une image"
+          }
+        }
+      }
+    },
+    "image.download" : {
+      "comment" : "Image action: save the file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Télécharger"
+          }
+        }
+      }
+    },
+    "image.edit" : {
+      "comment" : "Image action: edit a region or the whole picture.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier"
+          }
+        }
+      }
+    },
+    "image.failedTitle" : {
+      "comment" : "Heading of the chat card when no picture was made.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t create the image"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de créer l’image"
+          }
+        }
+      }
+    },
+    "image.failureBudget" : {
+      "comment" : "Failure: the account's spending limit is reached.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’ve reached your spending limit for now."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous avez atteint votre limite de dépenses pour le moment."
+          }
+        }
+      }
+    },
+    "image.failureEdit" : {
+      "comment" : "Failure: the image model can't work from a reference picture.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can’t work from a reference image."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne peut pas partir d’une image de référence."
+          }
+        }
+      }
+    },
+    "image.failureLibraryFull" : {
+      "comment" : "Failure: the Library has no room for the picture.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Library is full. Free some space to save new images."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre bibliothèque est pleine. Libérez de l’espace pour enregistrer de nouvelles images."
+          }
+        }
+      }
+    },
+    "image.failureNoModel" : {
+      "comment" : "Failure: no image model passes the plan and data settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No image model is available on your plan and data settings."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun modèle d’image n’est disponible avec votre forfait et vos réglages de données."
+          }
+        }
+      }
+    },
+    "image.failureNotConfigured" : {
+      "comment" : "Failure: the image model has no key on this server.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ isn’t set up on this server yet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas encore configuré sur ce serveur."
+          }
+        }
+      }
+    },
+    "image.failureNotRequested" : {
+      "comment" : "Failure: a document or page asked for a picture, not the person.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Images are only made when you ask for one in your own message."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les images ne sont créées que si vous en demandez une dans votre propre message."
+          }
+        }
+      }
+    },
+    "image.failurePlan" : {
+      "comment" : "Failure: the image model needs a higher plan.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ needs the %2$@ plan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ nécessite le forfait %2$@."
+          }
+        }
+      }
+    },
+    "image.failurePolicy" : {
+      "comment" : "Failure: the request breaks the acceptable use policy.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request goes against our acceptable use policy."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette demande enfreint notre politique d’utilisation acceptable."
+          }
+        }
+      }
+    },
+    "image.failureProvider" : {
+      "comment" : "Failure: the image model returned an error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ couldn’t make this image."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas pu créer cette image."
+          }
+        }
+      }
+    },
+    "image.failureQuota" : {
+      "comment" : "Failure: the plan's messages are used up.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’ve used all your messages for this period."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous avez utilisé tous vos messages pour cette période."
+          }
+        }
+      }
+    },
+    "image.failureRateLimited" : {
+      "comment" : "Failure: too many generations in a short time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’re generating a lot. Give it a minute."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous générez beaucoup. Patientez une minute."
+          }
+        }
+      }
+    },
+    "image.failureReference" : {
+      "comment" : "Failure: the reference picture could not be found.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The reference image couldn’t be found."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’image de référence est introuvable."
+          }
+        }
+      }
+    },
+    "image.failureTooMany" : {
+      "comment" : "Failure: one reply asked for pictures too many times.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One reply can make images three times at most."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une réponse peut créer des images trois fois au maximum."
+          }
+        }
+      }
+    },
+    "image.failureUnavailable" : {
+      "comment" : "Failure: the image provider is down or refusing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can’t be reached right now. Try again shortly or choose another image model."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est injoignable pour le moment. Réessayez bientôt ou choisissez un autre modèle d’image."
+          }
+        }
+      }
+    },
+    "image.failureWorkspace" : {
+      "comment" : "Failure: the project's assistant has media generation turned off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image generation is turned off for this project."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La génération d’images est désactivée pour ce projet."
+          }
+        }
+      }
+    },
+    "image.generating" : {
+      "comment" : "The chat card while a picture is being made.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating image"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Création de l’image"
+          }
+        }
+      }
+    },
+    "image.madeWith" : {
+      "comment" : "Under a picture made in chat: the image model that made it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Made with %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Créée avec %@"
+          }
+        }
+      }
+    },
+    "image.modeExit" : {
+      "comment" : "Leaves the composer's image mode (the chip's close button, read aloud).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop creating images"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne plus créer d’images"
+          }
+        }
+      }
+    },
+    "image.openLibrary" : {
+      "comment" : "Image action: open the Library's files.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Library"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir dans la bibliothèque"
+          }
+        }
+      }
+    },
+    "image.placeholder" : {
+      "comment" : "The composer field in image mode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe an image to generate…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Décrivez l’image à générer…"
+          }
+        }
+      }
+    },
+    "image.savedToLibrary" : {
+      "comment" : "Under a picture made in chat: where it was saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved to your Library"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrée dans votre bibliothèque"
+          }
+        }
+      }
+    },
+    "image.tryAgain" : {
+      "comment" : "Failure card action: ask again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer"
+          }
+        }
+      }
+    },
+    "image.vary" : {
+      "comment" : "Image action: make a variation from this picture.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vary"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varier"
+          }
+        }
+      }
+    },
+    "image.varyPrompt" : {
+      "comment" : "The prompt a Vary press sends with the picture as its reference.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Make a variation of this image, keeping its subject and style"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crée une variante de cette image en gardant son sujet et son style"
+          }
+        }
+      }
+    },
     "incognito.confirmBody" : {
       "comment" : "Body of the incognito confirmation.",
       "extractionState" : "manual",

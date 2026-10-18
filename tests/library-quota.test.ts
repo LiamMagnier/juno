@@ -7,7 +7,12 @@ const ROUTES = new Map([
   ["web upload", readFileSync(new URL("../src/app/api/upload/route.ts", import.meta.url), "utf8")],
   ["native upload", readFileSync(new URL("../src/app/api/v1/attachments/route.ts", import.meta.url), "utf8")],
   ["replacement upload", readFileSync(new URL("../src/app/api/attachments/[id]/versions/route.ts", import.meta.url), "utf8")],
-  ["generated media", readFileSync(new URL("../src/app/api/generate/route.ts", import.meta.url), "utf8")],
+  // The route persists inside the quota lock; the shared pipeline compensates storage.
+  [
+    "generated media",
+    readFileSync(new URL("../src/app/api/generate/route.ts", import.meta.url), "utf8") +
+      readFileSync(new URL("../src/lib/media/generation-pipeline.ts", import.meta.url), "utf8"),
+  ],
   ["history import", readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8")],
 ]);
 

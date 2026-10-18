@@ -167,7 +167,8 @@ test("each fixed route asks before it spends and records after", () => {
     assert.match(code, /admitMeteredCall\(/, `${route} has no pre-call admission`);
     assert.match(code, /recordSpend\(|meteredWebSearch\(/, `${route} records nothing`);
   }
-  const generate = src("src/app/api/generate/route.ts");
+  // The route and the media pipeline it shares with the chat image tool.
+  const generate = src("src/app/api/generate/route.ts") + src("src/lib/media/generation-pipeline.ts");
   assert.match(generate, /reserveSpend\(/);
   assert.match(generate, /settleSpend\(/);
   assert.match(generate, /releaseSpend\(/);

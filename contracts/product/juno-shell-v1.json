@@ -301,6 +301,13 @@
           "optional": true
         },
         {
+          "id": "image",
+          "label": "Create image",
+          "kind": "toggle",
+          "icon": "ComposerIcons.image",
+          "optional": true
+        },
+        {
           "id": "research",
           "label": "Deep research",
           "kind": "toggle",
@@ -333,6 +340,7 @@
             "skill"
           ],
           [
+            "image",
             "research",
             "search",
             "memory"
@@ -1343,6 +1351,171 @@
         "comment": "A rebind that failed.",
         "en": "That shortcut is in use by another app.",
         "fr": "Ce raccourci est d\u00e9j\u00e0 utilis\u00e9 par une autre app."
+      },
+      "image.create": {
+        "comment": "The composer's image mode: its + menu row, its chip and the chat card's heading.",
+        "en": "Create image",
+        "fr": "Cr\u00e9er une image"
+      },
+      "image.modeExit": {
+        "comment": "Leaves the composer's image mode (the chip's close button, read aloud).",
+        "en": "Stop creating images",
+        "fr": "Ne plus cr\u00e9er d\u2019images"
+      },
+      "image.placeholder": {
+        "comment": "The composer field in image mode.",
+        "en": "Describe an image to generate\u2026",
+        "fr": "D\u00e9crivez l\u2019image \u00e0 g\u00e9n\u00e9rer\u2026"
+      },
+      "image.generating": {
+        "comment": "The chat card while a picture is being made.",
+        "en": "Creating image",
+        "fr": "Cr\u00e9ation de l\u2019image"
+      },
+      "image.madeWith": {
+        "comment": "Under a picture made in chat: the image model that made it.",
+        "en": "Made with {model}",
+        "fr": "Cr\u00e9\u00e9e avec {model}"
+      },
+      "image.autoPicked": {
+        "comment": "Under a picture made in chat when Auto chose the image model.",
+        "en": "Auto picked {model}",
+        "fr": "Auto a choisi {model}"
+      },
+      "image.savedToLibrary": {
+        "comment": "Under a picture made in chat: where it was saved.",
+        "en": "Saved to your Library",
+        "fr": "Enregistr\u00e9e dans votre biblioth\u00e8que"
+      },
+      "image.aiGenerated": {
+        "comment": "AI Act label under every generated picture.",
+        "en": "AI-generated",
+        "fr": "G\u00e9n\u00e9r\u00e9e par IA"
+      },
+      "image.download": {
+        "comment": "Image action: save the file.",
+        "en": "Download",
+        "fr": "T\u00e9l\u00e9charger"
+      },
+      "image.copy": {
+        "comment": "Image action: copy the picture to the clipboard.",
+        "en": "Copy",
+        "fr": "Copier"
+      },
+      "image.copied": {
+        "comment": "Toast after the picture was copied.",
+        "en": "Image copied",
+        "fr": "Image copi\u00e9e"
+      },
+      "image.copyFailed": {
+        "comment": "Toast when the clipboard refused the picture; the link was copied instead.",
+        "en": "Couldn\u2019t copy the image, so its link was copied",
+        "fr": "Impossible de copier l\u2019image : son lien a \u00e9t\u00e9 copi\u00e9"
+      },
+      "image.vary": {
+        "comment": "Image action: make a variation from this picture.",
+        "en": "Vary",
+        "fr": "Varier"
+      },
+      "image.edit": {
+        "comment": "Image action: edit a region or the whole picture.",
+        "en": "Edit",
+        "fr": "Modifier"
+      },
+      "image.openLibrary": {
+        "comment": "Image action: open the Library's files.",
+        "en": "Open in Library",
+        "fr": "Ouvrir dans la biblioth\u00e8que"
+      },
+      "image.varyPrompt": {
+        "comment": "The prompt a Vary press sends with the picture as its reference.",
+        "en": "Make a variation of this image, keeping its subject and style",
+        "fr": "Cr\u00e9e une variante de cette image en gardant son sujet et son style"
+      },
+      "image.failedTitle": {
+        "comment": "Heading of the chat card when no picture was made.",
+        "en": "Couldn\u2019t create the image",
+        "fr": "Impossible de cr\u00e9er l\u2019image"
+      },
+      "image.failureNoModel": {
+        "comment": "Failure: no image model passes the plan and data settings.",
+        "en": "No image model is available on your plan and data settings.",
+        "fr": "Aucun mod\u00e8le d\u2019image n\u2019est disponible avec votre forfait et vos r\u00e9glages de donn\u00e9es."
+      },
+      "image.failureNotConfigured": {
+        "comment": "Failure: the image model has no key on this server.",
+        "en": "{model} isn\u2019t set up on this server yet.",
+        "fr": "{model} n\u2019est pas encore configur\u00e9 sur ce serveur."
+      },
+      "image.failureUnavailable": {
+        "comment": "Failure: the image provider is down or refusing.",
+        "en": "{model} can\u2019t be reached right now. Try again shortly or choose another image model.",
+        "fr": "{model} est injoignable pour le moment. R\u00e9essayez bient\u00f4t ou choisissez un autre mod\u00e8le d\u2019image."
+      },
+      "image.failurePlan": {
+        "comment": "Failure: the image model needs a higher plan.",
+        "en": "{model} needs the {plan} plan.",
+        "fr": "{model} n\u00e9cessite le forfait {plan}."
+      },
+      "image.failureBudget": {
+        "comment": "Failure: the account's spending limit is reached.",
+        "en": "You\u2019ve reached your spending limit for now.",
+        "fr": "Vous avez atteint votre limite de d\u00e9penses pour le moment."
+      },
+      "image.failureRateLimited": {
+        "comment": "Failure: too many generations in a short time.",
+        "en": "You\u2019re generating a lot. Give it a minute.",
+        "fr": "Vous g\u00e9n\u00e9rez beaucoup. Patientez une minute."
+      },
+      "image.failureQuota": {
+        "comment": "Failure: the plan's messages are used up.",
+        "en": "You\u2019ve used all your messages for this period.",
+        "fr": "Vous avez utilis\u00e9 tous vos messages pour cette p\u00e9riode."
+      },
+      "image.failurePolicy": {
+        "comment": "Failure: the request breaks the acceptable use policy.",
+        "en": "This request goes against our acceptable use policy.",
+        "fr": "Cette demande enfreint notre politique d\u2019utilisation acceptable."
+      },
+      "image.failureWorkspace": {
+        "comment": "Failure: the project's assistant has media generation turned off.",
+        "en": "Image generation is turned off for this project.",
+        "fr": "La g\u00e9n\u00e9ration d\u2019images est d\u00e9sactiv\u00e9e pour ce projet."
+      },
+      "image.failureEdit": {
+        "comment": "Failure: the image model can't work from a reference picture.",
+        "en": "{model} can\u2019t work from a reference image.",
+        "fr": "{model} ne peut pas partir d\u2019une image de r\u00e9f\u00e9rence."
+      },
+      "image.failureReference": {
+        "comment": "Failure: the reference picture could not be found.",
+        "en": "The reference image couldn\u2019t be found.",
+        "fr": "L\u2019image de r\u00e9f\u00e9rence est introuvable."
+      },
+      "image.failureLibraryFull": {
+        "comment": "Failure: the Library has no room for the picture.",
+        "en": "Your Library is full. Free some space to save new images.",
+        "fr": "Votre biblioth\u00e8que est pleine. Lib\u00e9rez de l\u2019espace pour enregistrer de nouvelles images."
+      },
+      "image.failureTooMany": {
+        "comment": "Failure: one reply asked for pictures too many times.",
+        "en": "One reply can make images three times at most.",
+        "fr": "Une r\u00e9ponse peut cr\u00e9er des images trois fois au maximum."
+      },
+      "image.failureNotRequested": {
+        "comment": "Failure: a document or page asked for a picture, not the person.",
+        "en": "Images are only made when you ask for one in your own message.",
+        "fr": "Les images ne sont cr\u00e9\u00e9es que si vous en demandez une dans votre propre message."
+      },
+      "image.failureProvider": {
+        "comment": "Failure: the image model returned an error.",
+        "en": "{model} couldn\u2019t make this image.",
+        "fr": "{model} n\u2019a pas pu cr\u00e9er cette image."
+      },
+      "image.tryAgain": {
+        "comment": "Failure card action: ask again.",
+        "en": "Try again",
+        "fr": "R\u00e9essayer"
       }
     }
   }

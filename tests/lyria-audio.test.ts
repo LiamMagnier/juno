@@ -232,7 +232,10 @@ test("audio is metered at Google's per-song price", () => {
 // ---- Route wiring ---------------------------------------------------------
 
 test("/api/generate dispatches audio, stores a FILE with lyrics, records audio spend and refunds on failure", () => {
-  const route = readFileSync(new URL("../src/app/api/generate/route.ts", import.meta.url), "utf8");
+  // The route and the media pipeline it delegates the provider call to.
+  const route =
+    readFileSync(new URL("../src/app/api/generate/route.ts", import.meta.url), "utf8") +
+    readFileSync(new URL("../src/lib/media/generation-pipeline.ts", import.meta.url), "utf8");
   assert.match(route, /if \(media === "audio"\) \{/);
   // The prompt carries any prompt-steered choice (instrumental); the wire carries WAV.
   assert.match(route, /await generateAudio\(model, providerPrompt, genPlan\.wire\)/);

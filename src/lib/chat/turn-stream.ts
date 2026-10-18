@@ -139,6 +139,7 @@ const FALLBACK_TOOL_TITLES: Readonly<Record<CanonicalToolId, string>> = {
   provider_web_search: "Web search",
   provider_x_search: "X search",
   local_folder: "Folder on your Mac",
+  generate_image: "Image generation",
   mcp: "Connector tool",
 };
 

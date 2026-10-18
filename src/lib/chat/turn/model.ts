@@ -8,6 +8,8 @@ import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId, pickAutoModel, 
 import { receiptFromDecision, type RoutingReceipt } from "@/lib/router/receipt";
 import { NoAutoCandidateError, ROUTER_VERSION, isAutoPreference, type RouteDecision } from "@/lib/router/decide";
 import { autoDataUseVerdict, isAutoDataBoundary } from "@/lib/router/data-policy";
+import { detectImageIntent } from "@/lib/router/image-intent";
+import { imageModelAvailable } from "@/lib/router/image-route";
 import { providerRetryPressure } from "@/lib/router/provider-pressure";
 import { autoBudgetRoom, autoRoutingContext, autoPaidTierProviders, classifyTaskForTelemetry } from "@/lib/router/chat-inputs";
 import { loadRoutingEvidence } from "@/lib/router/telemetry-store";
@@ -164,6 +166,13 @@ export async function resolveModel({
         lowBudget: autoBudget ? isBudgetLow(autoBudget.remainingMicroUsd, autoBudget.budgetMicroUsd) : false,
         context: {
           toolsOffered: input.connectors?.length ?? 0,
+          // A clear picture request lands on a model that can call
+          // `generate_image` (G04), when this turn could carry it at all.
+          wantsImage:
+            !input.privateMode &&
+            !input.voiceMode &&
+            detectImageIntent(routingMessage) &&
+            imageModelAvailable(plan),
           contextTokens: routingContext.contextTokens,
           preference: isAutoPreference(settings?.autoPreference) ? settings.autoPreference : undefined,
           boundary: isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined,

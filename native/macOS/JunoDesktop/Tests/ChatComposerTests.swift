@@ -192,6 +192,19 @@ struct ChatComposerTests {
         #expect(ChatComposerMark.marks(research: false, webSearch: false, connectors: [], documentCount: nil).isEmpty)
     }
 
+    /// Image mode (G04) leads the marks, in the shell table's words, and its
+    /// ✕ is read as leaving the mode.
+    @Test
+    func theImageMarkLeadsAndSaysHowToLeave() {
+        let marks = ChatComposerMark.marks(
+            image: true, research: false, webSearch: true, connectors: [], documentCount: nil
+        )
+        #expect(marks.map(\.id) == [ChatComposerMark.imageID, "web"])
+        #expect(marks[0].label == JunoShellStrings.imageCreate)
+        #expect(marks[0].removeLabel == JunoShellStrings.imageModeExit)
+        #expect(marks[0].glyph == .icon(.image))
+    }
+
     /// The model starts tasks (Phase 5 A3): there is no task mark to arm,
     /// and nothing in the `+` menu's marks names one.
     @Test
