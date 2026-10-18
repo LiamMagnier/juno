@@ -41,8 +41,8 @@ import Testing
     @Test func chatsRowsAreTheContractsWithNoneDropped() {
         #expect(DesktopDestination.sidebarCases.count == JunoShellChatSidebar.destinations.count)
         #expect(DesktopDestination.sidebarCases.compactMap(\.shell) == JunoShellChatSidebar.destinations)
-        // Contract v2 (the V3 shell): Projects, Library, Customize.
-        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
+        // Contract v2 (the V3 shell): Activity (G70), Projects, Library, Customize.
+        #expect(DesktopDestination.sidebarCases == [.activity, .projects, .library, .connections])
         #expect(DesktopDestination.sidebarCases.map(\.label) == JunoShellChatSidebar.destinations.map(\.label))
         #expect(DesktopDestination.sidebarCases.map(\.junoIcon) == JunoShellChatSidebar.destinations.map(\.icon))
     }

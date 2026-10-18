@@ -1274,6 +1274,7 @@ function CommandMenu() {
          "frame" on one row would still find "frames" on another. */
       { id: "design", group: "Actions", label: "Open Designs", icon: AppIcons.design, keywords: "canvas frames screens figma", run: () => go("/artifacts?type=DESIGN") },
       { id: "artifacts", group: "Actions", label: FEATURE_NAMES.artifacts.label, icon: AppIcons.artifacts, keywords: "documents generated made", run: () => go("/artifacts") },
+      { id: "activity", group: "Actions", label: `Open ${FEATURE_NAMES.activity.label}`, icon: AppIcons.activity, keywords: "running needs you approvals tasks runs research code status ready blocked", run: () => go("/activity") },
       { id: "library", group: "Actions", label: `Open ${FEATURE_NAMES.library.label}`, icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
       { id: "connections", group: "Actions", label: `Open ${FEATURE_NAMES.apps.label}`, icon: AppIcons.connections, keywords: "apps connections plugins integrations github mcp connectors", run: () => go("/connections") },
       /* The three rooms Work's tab row used to hold. They are destinations in

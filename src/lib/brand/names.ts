@@ -92,6 +92,8 @@ export const FEATURE_NAMES = {
    */
   research: { label: "Deep research", description: "Deep Field", accessibleLabel: "Deep research, Deep Field" },
   needsYou: { label: "Needs you" },
+  /** Activity (G70): everything live across chats, Code and research, grouped by what it needs. */
+  activity: { label: "Activity" },
   createAgent: { label: "Create agent" },
   /**
    * What Alevr makes (stored and routed as artifacts). The collection is

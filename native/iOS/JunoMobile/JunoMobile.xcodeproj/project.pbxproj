@@ -35,6 +35,7 @@
 		205A984F50F0CFC64A89C3AC /* JunoMobilePhoneShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DE7D3C92A9F4EA4BA96801 /* JunoMobilePhoneShell.swift */; };
 		29F71526F437042E69DDFF9D /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C74D91D5196F23A97F497B6 /* WidgetKit.framework */; };
 		2B8B96306959C296FDBAD808 /* JunoMobileProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E714BCA9EB083B723037EE7D /* JunoMobileProfileView.swift */; };
+		A7C1E0F2B3D4A5C6E7F80911 /* JunoMobileActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C1E0F2B3D4A5C6E7F80922 /* JunoMobileActivityView.swift */; };
 		2B964020C068E0E99BA85438 /* JunoMobileVoiceCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD00607CFE9A780BFE6C2C9 /* JunoMobileVoiceCamera.swift */; };
 		2D24E96BC15510EB52714DCF /* JunoMobileThinkingDial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DD0ADEA6CED4B11406B589 /* JunoMobileThinkingDial.swift */; };
 		311C57E3DAEA4ACD8F7FCE7F /* JunoMobilePromptEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D9AB179B805B61A360D4D68 /* JunoMobilePromptEditorTests.swift */; };
@@ -366,6 +367,7 @@
 		E5E60351845ADEB7D48BABC6 /* JunoMobileMessageMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileMessageMenu.swift; sourceTree = "<group>"; };
 		E6242455B1658D2EAB9BBBF5 /* JunoMobileResearchProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileResearchProgress.swift; sourceTree = "<group>"; };
 		E714BCA9EB083B723037EE7D /* JunoMobileProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileProfileView.swift; sourceTree = "<group>"; };
+		A7C1E0F2B3D4A5C6E7F80922 /* JunoMobileActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileActivityView.swift; sourceTree = "<group>"; };
 		E9D9BB8A7C4B4204E5398695 /* JunoMobileDesignArtifact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileDesignArtifact.swift; sourceTree = "<group>"; };
 		EB11B6BD2080F4A2135D07F4 /* JunoMobileDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileDictation.swift; sourceTree = "<group>"; };
 		EE4AD8F3CE30432D98FA0683 /* JunoMobileTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JunoMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -562,6 +564,7 @@
 				5CF636EA464783EB010A904C /* JunoMobilePlans.swift */,
 				F3A4BAA8A66B5E72F33799E1 /* JunoMobilePremium.swift */,
 				E714BCA9EB083B723037EE7D /* JunoMobileProfileView.swift */,
+				A7C1E0F2B3D4A5C6E7F80922 /* JunoMobileActivityView.swift */,
 				9B4E4435E498A09E7FDAA796 /* JunoMobileProjectFolders.swift */,
 				F40FB858C874ED44B5522AA0 /* JunoMobileProjectPage.swift */,
 				5663AF5BA35805AB4D4584E2 /* JunoMobileProjectTiles.swift */,
@@ -972,6 +975,7 @@
 				CDC9D9534B2BE9512FA2128E /* JunoMobilePlans.swift in Sources */,
 				C6E02C498B5AD4D9A46CD1EC /* JunoMobilePremium.swift in Sources */,
 				2B8B96306959C296FDBAD808 /* JunoMobileProfileView.swift in Sources */,
+				A7C1E0F2B3D4A5C6E7F80911 /* JunoMobileActivityView.swift in Sources */,
 				BF030CEF7863676560F8798E /* JunoMobileProjectFolders.swift in Sources */,
 				C2F512B2D213A2FE866D720D /* JunoMobileProjectPage.swift in Sources */,
 				65FE9797A02FBFAE3F7531CF /* JunoMobileProjectTiles.swift in Sources */,
