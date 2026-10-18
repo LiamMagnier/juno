@@ -959,6 +959,10 @@
         {
           "value": "run_stop_requested",
           "summary": "Someone asked a live run to stop, from the web, the Mac or the phone."
+        },
+        {
+          "value": "agent_control",
+          "summary": "A person steered, stopped, paused, resumed or topped up an agent of a Code run."
         }
       ]
     },

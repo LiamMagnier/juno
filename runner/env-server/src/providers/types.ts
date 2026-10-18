@@ -27,6 +27,7 @@ import type {
   UserInputRequestItem,
   EnvBackendConfig,
   ByokKey,
+  AgentControlResult,
 } from "../contracts/code-v2.js";
 import type { Logger } from "../util.js";
 
@@ -109,6 +110,11 @@ export interface ProviderSession {
   steer?(input: UserInput): Promise<boolean>;
   messageAgent?(agentId: string, text: string): Promise<{ accepted: boolean; message?: string }>;
   interruptAgent?(agentId: string): Promise<void>;
+  /** Agents lane (REA backlog 10): a person's Pause / Resume, one child or (no id) every child, between steps. */
+  pauseAgent?(agentId?: string): Promise<AgentControlResult>;
+  resumeAgent?(agentId?: string): Promise<AgentControlResult>;
+  /** A person's bounded top-up: one child's token cap, or (no id) the run budget. The engine enforces the bounds. */
+  topUpAgent?(agentId: string | undefined, add: { tokens?: number; usd?: number }): Promise<AgentControlResult>;
   interrupt(): Promise<void>;
   /**
    * The thread's mode changed while a turn may be running (the composer's

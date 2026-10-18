@@ -1049,6 +1049,10 @@
           "status": "native",
           "note": "Remove a paired device on the Mac."
         },
+        "/api/code/v2/link/[deviceId]/agents": {
+          "status": "planned",
+          "note": "A person's Steer, Stop, Pause, Resume and bounded Top-up of one agent of a Mac-hosted Code run (REA backlog 10), from the web Agents tree. Rate-limited, idempotent and audited; the generic link route refuses these commands. The iPhone's remote can adopt it with its native bearer."
+        },
         "/api/code/v2/link/[deviceId]/stream": {
           "status": "native",
           "swift": "CodeLinkClient.swift opens /api/code/v2/link/<device>/stream, the iPhone's server-sent event stream, and falls back to the long poll."

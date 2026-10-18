@@ -771,3 +771,72 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 }
 .cv2-phase-head { padding: 8px 0 2px 22px; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
 .cv2-send[data-mode="voice"] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+
+/* ── The Agents tree (REA backlog 10, agents-tree.tsx) ──────────────────
+   The tree on top (its own scroll, at most about half the pane), the
+   selected node's detail below. Status is always a word as well as a mark;
+   the only motion is the meter's fill and the caret, both Tier A/B. */
+.cv2-agents { container: cv2agents / inline-size; }
+.cv2-atree-wrap { flex: 0 1 auto; max-height: 46%; min-height: 96px; overflow: auto; border-bottom: 1px solid hsl(var(--border)); padding: 4px 0; overscroll-behavior: contain; }
+.cv2-atree, .cv2-agroup { list-style: none; margin: 0; padding: 0; }
+.cv2-aitem { outline: none; }
+.cv2-aitem:focus-visible > .cv2-anode { box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0.7); }
+.cv2 .cv2-aitem:focus-visible { outline: none; }
+.cv2-anode { display: grid; grid-template-columns: 16px 14px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 44px; margin: 0 6px; padding-block: 4px; padding-inline-end: 10px; border-radius: 8px; cursor: default; transition: background-color 80ms var(--cv2-ease); }
+.cv2-anode:hover { background: hsl(var(--accent) / 0.6); }
+.cv2-anode[data-selected] { background: hsl(var(--accent)); }
+.cv2-atwisty { width: 16px; height: 16px; display: grid; place-items: center; color: hsl(var(--muted-foreground)); border-radius: 4px; }
+.cv2-atwisty .cv2-ic { transition: transform var(--dur-fast, 120ms) var(--cv2-ease); }
+.cv2-atwisty[data-open] .cv2-ic { transform: rotate(90deg); }
+[dir="rtl"] .cv2-atwisty:not([data-open]) .cv2-ic { transform: rotate(180deg); }
+.cv2-acol { display: flex; flex-direction: column; min-width: 0; }
+.cv2-acol .nm { color: hsl(var(--foreground)); font-weight: 500; line-height: 18px; }
+.cv2-acol .st { font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-aside { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.cv2-aside .t { font-size: 12px; line-height: 14px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cv2-adot { width: 8px; height: 8px; border-radius: 50%; justify-self: center; background: hsl(var(--status-running, var(--presence))); }
+.cv2-adot[data-state="queued"] { background: none; box-shadow: inset 0 0 0 1.5px hsl(var(--muted-foreground)); }
+.cv2-amark { color: hsl(var(--muted-foreground)); justify-self: center; }
+[data-state="waiting"] > .cv2-anode .cv2-amark, .cv2-achip[data-state="waiting"] .cv2-amark { color: hsl(var(--signal-ink)); }
+[data-state="failed"] > .cv2-anode .cv2-amark, .cv2-achip[data-state="failed"] .cv2-amark, [data-state="failed"] > .cv2-anode .st { color: hsl(var(--destructive)); }
+[data-state="done"] > .cv2-anode .cv2-amark, .cv2-achip[data-state="done"] .cv2-amark { color: hsl(var(--foreground)); }
+.cv2-ameter { display: block; width: 40px; height: 4px; border-radius: 2px; background: hsl(var(--border)); overflow: hidden; }
+.cv2-ameter > span { display: block; height: 100%; border-radius: inherit; background: hsl(var(--foreground) / 0.55); transition: inline-size 220ms var(--cv2-ease); }
+.cv2-ameter[data-warn] > span { background: hsl(var(--signal)); }
+.cv2-astats .cv2-ameter { display: inline-block; vertical-align: middle; margin-inline-start: 8px; width: 56px; }
+
+.cv2-adetail-wrap { padding: 0; }
+.cv2-adetail { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 0; min-height: 100%; }
+.cv2-adetail-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cv2-adetail-head h3 { margin: 0; font-size: 14px; line-height: 20px; flex: 1; min-width: 0; }
+.cv2-adetail-step { margin: -6px 0 0; overflow-wrap: anywhere; }
+.cv2-achip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 12px; font-size: 12px; white-space: nowrap; background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.cv2-achip.cv2-sig { background: hsl(var(--signal) / 0.12); }
+.cv2-astats { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px 16px; margin: 0; }
+.cv2-astats > div { min-width: 0; }
+.cv2-astats dt { font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-astats dd { margin: 2px 0 0; white-space: nowrap; display: flex; align-items: center; min-width: 0; }
+.cv2-acontrols { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cv2-btn.danger { color: hsl(var(--destructive)); box-shadow: inset 0 0 0 1px hsl(var(--destructive) / 0.5); }
+.cv2-atopup { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cv2-atopup-menu { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.cv2-anotice { margin: 0; min-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-anotice[data-error] { color: hsl(var(--destructive)); }
+.cv2-alog { display: flex; flex-direction: column; gap: 12px; padding-bottom: 12px; min-width: 0; }
+.cv2-atask > summary { cursor: default; }
+.cv2-atask[open] > summary { margin-bottom: 6px; }
+.cv2-adigest { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cv2-adigest li { display: grid; grid-template-columns: minmax(0, auto) auto minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 16px; align-items: baseline; }
+.cv2-adigest .nm { font-weight: 500; color: hsl(var(--foreground)); }
+.cv2-asteer { position: sticky; bottom: 0; margin: auto -16px 0; background: hsl(var(--background)); }
+@container cv2agents (max-width: 360px) {
+  .cv2-aside .cv2-ameter { display: none; }
+  .cv2-anode { column-gap: 6px; }
+}
+@media (pointer: coarse) {
+  .cv2-anode { min-height: 48px; }
+  .cv2-acontrols .cv2-btn { height: 40px; padding: 0 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-atwisty .cv2-ic { transition-duration: var(--dur-fast, 120ms); }
+}

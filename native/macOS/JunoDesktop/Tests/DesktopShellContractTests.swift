@@ -106,7 +106,7 @@ import Testing
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
             "Add Photos and Files", "Take a Screenshot", "Sketch", "Add from Library",
             "Mention a File, App or Agent", "Run a Skill",
-            "Deep Field", "Web Search", "Memory",
+            "Deep Research", "Web Search", "Memory",
             "Add to Project", "Apps",
         ])
         #expect(JunoShellPlusMenu.label == "Add")

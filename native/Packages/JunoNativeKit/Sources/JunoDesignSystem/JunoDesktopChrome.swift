@@ -46,7 +46,7 @@ import SwiftUI
 public enum JunoSidebarMetrics {
     // The web's numbers (round 2): 260 by default, as the web shell opens.
     public static let minimum: CGFloat = 220
-    public static let ideal: CGFloat = 260
+    public static let ideal: CGFloat = JunoGeneratedShell.sidebarDefault
     public static let maximum: CGFloat = 360
 }
 
