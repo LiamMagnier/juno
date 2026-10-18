@@ -100,8 +100,18 @@ export function stricterMode(a: RuntimeMode, b: RuntimeMode): RuntimeMode {
   return MODE_ORDER.indexOf(a) <= MODE_ORDER.indexOf(b) ? a : b;
 }
 
+/** How many agent-control request ids the env server remembers (a retry after a relay timeout lands well inside it). */
+const CONTROL_REPLY_MEMORY = 512;
+
 export class SessionManager {
   #live = new Map<string, LiveSession>();
+  /**
+   * A person's agent controls by request id (agents lane, REA backlog 10):
+   * the hosted relay can time out on an answer that did arrive, and the
+   * retry must not steer twice or top up twice. A repeated id gets the first
+   * call's answer; a call that failed is forgotten, so a retry runs again.
+   */
+  #controlReplies = new Map<string, Promise<unknown>>();
   readonly sessionsDir: string;
   readonly checkpoints: GitCheckpoints;
   readonly #o: SessionManagerOptions;
@@ -244,18 +254,75 @@ export class SessionManager {
     return out.slice(0, params.limit ?? 200);
   }
 
-  async messageAgent(sessionId: string, agentId: string, text: string): Promise<{ accepted: boolean; message?: string }> {
+  async messageAgent(sessionId: string, agentId: string, text: string, requestId?: string): Promise<{ accepted: boolean; message?: string }> {
     const live = this.#get(sessionId);
     if (!live.provider?.messageAgent) throw new WireError("unsupported", "This provider does not support messaging individual agents.");
     if (!agentId || !text.trim() || text.length > 100_000) throw new WireError("bad_request", "An agent and a nonempty message are required.");
-    return live.provider.messageAgent(agentId, text);
+    const provider = live.provider;
+    return this.#once("agent.message", sessionId, requestId, () => provider.messageAgent!(agentId, text));
   }
 
-  async interruptAgent(sessionId: string, agentId: string): Promise<void> {
+  async interruptAgent(sessionId: string, agentId: string, requestId?: string): Promise<void> {
     const live = this.#get(sessionId);
     if (!live.provider?.interruptAgent) throw new WireError("unsupported", "This provider does not support stopping individual agents.");
     if (!agentId.trim()) throw new WireError("bad_request", "An agent is required.");
-    await live.provider.interruptAgent(agentId);
+    const provider = live.provider;
+    await this.#once("agent.interrupt", sessionId, requestId, () => provider.interruptAgent!(agentId));
+  }
+
+  /** A person's Pause: one agent, or every agent when `agentId` is absent. Cooperative, between steps. */
+  async pauseAgent(params: ClientCommandParams["agent.pause"]): Promise<ClientCommandResults["agent.pause"]> {
+    const live = this.#get(params.sessionId);
+    if (!live.provider?.pauseAgent) throw new WireError("unsupported", "This provider does not support pausing agents.");
+    const agentId = this.#agentIdOf(params.agentId);
+    const provider = live.provider;
+    return this.#once("agent.pause", params.sessionId, params.requestId, () => provider.pauseAgent!(agentId));
+  }
+
+  async resumeAgent(params: ClientCommandParams["agent.resume"]): Promise<ClientCommandResults["agent.resume"]> {
+    const live = this.#get(params.sessionId);
+    if (!live.provider?.resumeAgent) throw new WireError("unsupported", "This provider does not support resuming agents.");
+    const agentId = this.#agentIdOf(params.agentId);
+    const provider = live.provider;
+    return this.#once("agent.resume", params.sessionId, params.requestId, () => provider.resumeAgent!(agentId));
+  }
+
+  /** A person's bounded top-up. The shape is checked here; the engine enforces the amounts. */
+  async topUpAgent(params: ClientCommandParams["agent.topUp"]): Promise<ClientCommandResults["agent.topUp"]> {
+    const live = this.#get(params.sessionId);
+    if (!live.provider?.topUpAgent) throw new WireError("unsupported", "This provider does not support raising an agent's budget.");
+    const agentId = this.#agentIdOf(params.agentId);
+    const { tokens, usd } = params;
+    if (tokens !== undefined && (!Number.isInteger(tokens) || tokens <= 0 || tokens > 10_000_000)) throw new WireError("bad_request", "Tokens must be a whole positive number.");
+    if (usd !== undefined && (typeof usd !== "number" || !Number.isFinite(usd) || usd <= 0 || usd > 1_000)) throw new WireError("bad_request", "Dollars must be a positive amount.");
+    if (tokens === undefined && usd === undefined) throw new WireError("bad_request", "Say how much to add.");
+    const provider = live.provider;
+    return this.#once("agent.topUp", params.sessionId, params.requestId, () =>
+      provider.topUpAgent!(agentId, { ...(tokens === undefined ? {} : { tokens }), ...(usd === undefined ? {} : { usd }) }),
+    );
+  }
+
+  #agentIdOf(agentId: string | undefined): string | undefined {
+    if (agentId === undefined) return undefined;
+    if (typeof agentId !== "string" || !agentId.trim() || agentId.length > 200) throw new WireError("bad_request", "That agent id is not valid.");
+    return agentId;
+  }
+
+  #once<T>(kind: string, sessionId: string, requestId: string | undefined, run: () => Promise<T>): Promise<T> {
+    if (requestId === undefined) return run();
+    if (typeof requestId !== "string" || !requestId || requestId.length > 200) throw new WireError("bad_request", "That request id is not valid.");
+    const key = `${kind}\u0000${sessionId}\u0000${requestId}`;
+    const prior = this.#controlReplies.get(key);
+    if (prior) return prior as Promise<T>;
+    const reply = run();
+    this.#controlReplies.set(key, reply);
+    reply.catch(() => this.#controlReplies.delete(key));
+    while (this.#controlReplies.size > CONTROL_REPLY_MEMORY) {
+      const oldest = this.#controlReplies.keys().next().value;
+      if (oldest === undefined) break;
+      this.#controlReplies.delete(oldest);
+    }
+    return reply;
   }
 
   /**
