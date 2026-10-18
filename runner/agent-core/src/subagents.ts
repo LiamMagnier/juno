@@ -159,6 +159,45 @@ export interface SubagentPublicState {
   applied?: boolean;
   startedAt?: string;
   completedAt?: string;
+  /** A person paused it: it holds at its next step boundary until resumed. */
+  paused?: boolean;
+  /** Its own token cap (input + output), top-ups included; absent when uncapped. */
+  tokenBudget?: number;
+  /** Tokens a person added to its cap with top-ups. */
+  tokenTopUp?: number;
+}
+
+/**
+ * Bounds on a person's budget top-up (web Agents tree, REA backlog 10). A
+ * top-up is a deliberate act by the session's owner, never the model's: no
+ * tool reaches these methods. The bounds keep one tap, or a retried request,
+ * from turning a capped run into an uncapped one.
+ */
+export const SUBAGENT_TOP_UP_LIMITS = {
+  /** One agent: tokens per top-up. */
+  minTokens: 10_000,
+  maxTokensPerTopUp: 400_000,
+  /** One agent: tokens added over its whole life. */
+  maxTokensTotal: 1_200_000,
+  /** The run's budget: tokens per top-up, and over the session. */
+  maxRunTokensPerTopUp: 2_000_000,
+  maxRunTokensTotal: 10_000_000,
+  /** The run's budget: dollars per top-up, and over the session. */
+  minUsd: 0.5,
+  maxUsdPerTopUp: 20,
+  maxUsdTotal: 100,
+} as const;
+
+/** What a person's pause, resume or top-up did, in words a surface can show. */
+export interface SubagentControlResult {
+  ok: boolean;
+  message: string;
+  /** Top-up of one agent: its new token cap. */
+  tokenBudget?: number;
+  /** Top-up of the run: the run budget after it. */
+  budget?: BudgetSnapshot;
+  /** Pause or resume of every agent: how many changed. */
+  count?: number;
 }
 
 export interface SubagentConfig {
@@ -486,6 +525,12 @@ interface SubagentTask {
   ledger: BudgetLedger;
   files: FileStateGuard;
   repeats: RepeatCallGuard;
+  /** Held at its next step boundary (a person's Pause). */
+  paused: boolean;
+  /** Resolvers of the step boundary it is held at. */
+  resumeWaiters: Array<() => void>;
+  /** Tokens a person added to its own cap. */
+  tokenTopUp: number;
 }
 
 function isTerminal(status: SubagentStatus): boolean {
@@ -686,6 +731,10 @@ export class SubagentManager {
   private currentTurn = -1;
   private spawnedThisTurn = 0;
   private turnUsage: Usage = { inputTokens: 0, outputTokens: 0 };
+  /** Tokens top-ups added to this turn's shared allowance. */
+  private turnTopUp = 0;
+  /** What top-ups added to the run budget over the session. */
+  private runTopUp = { tokens: 0, usd: 0 };
   /** Session-wide hard budget over every child. */
   readonly budget: BudgetLedger;
   private notices: string[] = [];
@@ -743,6 +792,7 @@ export class SubagentManager {
       this.currentTurn = turnIndex;
       this.spawnedThisTurn = 0;
       this.turnUsage = { inputTokens: 0, outputTokens: 0 };
+      this.turnTopUp = 0;
     }
   }
 
@@ -1153,6 +1203,153 @@ export class SubagentManager {
     task.error = 'Interrupted';
     if (task.status === 'queued') this.settle(task, 'interrupted');
     else task.aborter.abort();
+  }
+
+  // MARK: A person's controls (pause, resume, top-up)
+  //
+  // Surfaces only: no tool reaches these, so a model can never pause, resume
+  // or fund an agent. Pausing is cooperative: a running child finishes the
+  // request (and any tool call) in flight and holds at its next step
+  // boundary, its approvals still pending exactly as they were. Nothing here
+  // changes a child's permission mode or answers an approval.
+
+  /** Hold a child at its next step boundary; a queued child waits to start. */
+  pause(id: string): SubagentControlResult {
+    const task = this.tasks.get(id);
+    if (!task) return { ok: false, message: `Unknown agent id ${id}.` };
+    if (isTerminal(task.status)) return { ok: false, message: `Agent ${id} is not running (${task.status}).` };
+    if (task.paused) return { ok: true, message: `Agent ${id} is already paused.` };
+    task.paused = true;
+    if (task.status === 'queued') task.currentActivity = 'Paused';
+    this.emitUpdate(task);
+    return {
+      ok: true,
+      message: task.status === 'queued' ? `Agent ${id} is paused and will not start until resumed.` : `Agent ${id} pauses after its current step.`,
+    };
+  }
+
+  /** Let a paused child carry on from the step it held at. */
+  resume(id: string): SubagentControlResult {
+    const task = this.tasks.get(id);
+    if (!task) return { ok: false, message: `Unknown agent id ${id}.` };
+    if (!task.paused) return { ok: true, message: `Agent ${id} is not paused.` };
+    task.paused = false;
+    if (task.status === 'queued' && task.currentActivity === 'Paused') task.currentActivity = 'Waiting to start';
+    for (const release of task.resumeWaiters.splice(0)) release();
+    this.emitUpdate(task);
+    if (task.status === 'queued') this.startEligible();
+    return { ok: true, message: `Agent ${id} resumed.` };
+  }
+
+  /** Pause every child that is still live. */
+  pauseAll(): SubagentControlResult {
+    let count = 0;
+    for (const id of this.order) {
+      const task = this.tasks.get(id)!;
+      if (isTerminal(task.status) || task.paused) continue;
+      this.pause(id);
+      count += 1;
+    }
+    return { ok: true, count, message: count === 0 ? 'No running agents to pause.' : `Paused ${count} agent${count === 1 ? '' : 's'}.` };
+  }
+
+  /** Resume every paused child. */
+  resumeAll(): SubagentControlResult {
+    let count = 0;
+    for (const id of this.order) {
+      const task = this.tasks.get(id)!;
+      if (!task.paused) continue;
+      this.resume(id);
+      count += 1;
+    }
+    return { ok: true, count, message: count === 0 ? 'No paused agents.' : `Resumed ${count} agent${count === 1 ? '' : 's'}.` };
+  }
+
+  /**
+   * Raise one child's token cap. The turn's shared allowance grows by the
+   * same amount, or the turn's cap would stop the child the top-up meant to
+   * keep going. A child already stopped by its cap stays settled; a message
+   * continues it under the new cap.
+   */
+  topUp(id: string, tokens: number): SubagentControlResult {
+    const task = this.tasks.get(id);
+    if (!task) return { ok: false, message: `Unknown agent id ${id}.` };
+    const limits = SUBAGENT_TOP_UP_LIMITS;
+    if (!Number.isInteger(tokens) || tokens < limits.minTokens || tokens > limits.maxTokensPerTopUp) {
+      return {
+        ok: false,
+        message: `A top-up adds between ${limits.minTokens.toLocaleString('en-US')} and ${limits.maxTokensPerTopUp.toLocaleString('en-US')} tokens.`,
+      };
+    }
+    const cap = this.config.childTokenBudget;
+    if (cap === null) return { ok: false, message: `Agent ${id} has no token cap to raise.` };
+    if (task.status === 'cancelled') return { ok: false, message: `Agent ${id} was cancelled and cannot be continued.` };
+    if (task.tokenTopUp + tokens > limits.maxTokensTotal) {
+      return {
+        ok: false,
+        message: `Agent ${id} has already been given ${task.tokenTopUp.toLocaleString('en-US')} extra tokens; the most is ${limits.maxTokensTotal.toLocaleString('en-US')}.`,
+      };
+    }
+    task.tokenTopUp += tokens;
+    if (this.config.turnTokenBudget !== null) this.turnTopUp += tokens;
+    this.emitUpdate(task);
+    const tokenBudget = cap + task.tokenTopUp;
+    const note = isTerminal(task.status) ? ' Send it a message to continue.' : '';
+    return { ok: true, tokenBudget, message: `Agent ${id} can now use up to ${tokenBudget.toLocaleString('en-US')} tokens.${note}` };
+  }
+
+  /** Raise the run's own budget (the routing budget every child is charged to). */
+  topUpRun(add: { tokens?: number; usd?: number }): SubagentControlResult {
+    const limits = SUBAGENT_TOP_UP_LIMITS;
+    const current = this.budget.limits;
+    if (current.maxTokens === undefined && current.maxUsd === undefined) return { ok: false, message: 'This run has no budget to raise.' };
+    const tokens = add.tokens ?? 0;
+    const usd = add.usd ?? 0;
+    if (tokens === 0 && usd === 0) return { ok: false, message: 'Say how much to add.' };
+    if (tokens !== 0 && (!Number.isInteger(tokens) || tokens < limits.minTokens || tokens > limits.maxRunTokensPerTopUp)) {
+      return {
+        ok: false,
+        message: `A run top-up adds between ${limits.minTokens.toLocaleString('en-US')} and ${limits.maxRunTokensPerTopUp.toLocaleString('en-US')} tokens.`,
+      };
+    }
+    if (usd !== 0 && (!Number.isFinite(usd) || usd < limits.minUsd || usd > limits.maxUsdPerTopUp)) {
+      return { ok: false, message: `A run top-up adds between $${limits.minUsd.toFixed(2)} and $${limits.maxUsdPerTopUp.toFixed(2)}.` };
+    }
+    if (tokens !== 0 && current.maxTokens === undefined) return { ok: false, message: 'This run has no token budget to raise.' };
+    if (usd !== 0 && current.maxUsd === undefined) return { ok: false, message: 'This run has no cost budget to raise.' };
+    if (this.runTopUp.tokens + tokens > limits.maxRunTokensTotal || this.runTopUp.usd + usd > limits.maxUsdTotal) {
+      return { ok: false, message: 'This run has reached the most its budget can be raised.' };
+    }
+    this.runTopUp = { tokens: this.runTopUp.tokens + tokens, usd: this.runTopUp.usd + usd };
+    const budget = this.budget.raise({ ...(tokens ? { maxTokens: tokens } : {}), ...(usd ? { maxUsd: usd } : {}) });
+    const parts = [
+      budget.maxTokens === undefined ? null : `${budget.maxTokens.toLocaleString('en-US')} tokens`,
+      budget.maxUsd === undefined ? null : `$${budget.maxUsd.toFixed(2)}`,
+    ].filter(Boolean);
+    queueMicrotask(() => this.startEligible());
+    return { ok: true, budget, message: `The run budget is now ${parts.join(' and ')}.` };
+  }
+
+  /** The step boundary a paused child holds at; settles on resume or abort. */
+  private holdWhilePaused(task: SubagentTask): Promise<void> {
+    const signal = task.aborter.signal;
+    if (!task.paused || signal.aborted) return Promise.resolve();
+    const before = task.currentActivity;
+    task.currentActivity = 'Paused';
+    this.emitUpdate(task);
+    return new Promise<void>((resolve) => {
+      const release = () => {
+        signal.removeEventListener('abort', release);
+        task.resumeWaiters = task.resumeWaiters.filter((w) => w !== release);
+        resolve();
+      };
+      task.resumeWaiters.push(release);
+      signal.addEventListener('abort', release, { once: true });
+    }).then(() => {
+      if (signal.aborted) return;
+      task.currentActivity = before === 'Paused' ? 'Thinking' : before;
+      this.emitUpdate(task);
+    });
   }
 
   private listAgents(respond: (content: string, isError?: boolean) => UserContent): UserContent {
@@ -1726,6 +1923,9 @@ export class SubagentManager {
       ledger: options.ledger ?? this.budget,
       files: new FileStateGuard(this.host.cwd),
       repeats: new RepeatCallGuard(),
+      paused: false,
+      resumeWaiters: [],
+      tokenTopUp: 0,
     };
     task.done = new Promise<void>((resolve) => {
       task.finish = resolve;
@@ -1770,13 +1970,14 @@ export class SubagentManager {
   private turnBudgetExhausted(): boolean {
     const limit = this.config.turnTokenBudget;
     if (limit === null) return false;
-    return this.turnUsage.inputTokens + this.turnUsage.outputTokens >= limit;
+    return this.turnUsage.inputTokens + this.turnUsage.outputTokens >= limit + this.turnTopUp;
   }
 
   private startEligible(): void {
     for (const id of this.order) {
       const task = this.tasks.get(id)!;
       if (task.status !== 'queued') continue;
+      if (task.paused) continue;
       if (this.runningCount() >= this.config.maxConcurrent) break;
       if (this.turnBudgetExhausted() || task.ledger.exhausted) {
         task.error = task.ledger.exhausted
@@ -1799,6 +2000,8 @@ export class SubagentManager {
 
   private settle(task: SubagentTask, status: SubagentStatus): void {
     task.status = status;
+    task.paused = false;
+    for (const release of task.resumeWaiters.splice(0)) release();
     task.completedAt = Date.now();
     task.currentActivity = status;
     this.emitUpdate(task);
@@ -1946,6 +2149,7 @@ export class SubagentManager {
         // the parent's cache.
         cacheKey: `agent-${task.id}`,
         ...(task.route.effort ?? this.host.reasoningEffort ? { reasoningEffort: task.route.effort ?? this.host.reasoningEffort } : {}),
+        beforeStep: () => this.holdWhilePaused(task),
         takeQueuedUserText: () => task.steer.splice(0),
         executeToolCall: async (call) => {
           // Structural no-nesting guard on top of the tool-set guard.
@@ -1967,7 +2171,7 @@ export class SubagentManager {
             return 'stop';
           }
           const budget = this.config.childTokenBudget;
-          if (budget !== null && task.usage.inputTokens + task.usage.outputTokens >= budget) {
+          if (budget !== null && task.usage.inputTokens + task.usage.outputTokens >= budget + task.tokenTopUp) {
             budgetExhausted = true;
             return 'stop';
           }
@@ -2599,6 +2803,9 @@ ${isolation}
       applied: task.applied,
       startedAt: task.startedAt ? new Date(task.startedAt).toISOString() : undefined,
       completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : undefined,
+      ...(task.paused ? { paused: true } : {}),
+      ...(this.config.childTokenBudget === null ? {} : { tokenBudget: this.config.childTokenBudget + task.tokenTopUp }),
+      ...(task.tokenTopUp > 0 ? { tokenTopUp: task.tokenTopUp } : {}),
     };
   }
 
