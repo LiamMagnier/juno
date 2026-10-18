@@ -230,8 +230,9 @@ public enum JunoMotion {
     // (`JunoGeneratedDuration` × `JunoGeneratedEasing`), so the Mac runs the
     // web's own `transition: <dur> <ease>` pairs rather than SwiftUI's stock
     // `.easeOut`/`.easeIn`, which are neither of the web's curves. The springs
-    // keep SwiftUI's duration/bounce form — the web has no spring token to
-    // project — and are the only rungs ``platformFactor`` touches.
+    // keep SwiftUI's duration/bounce form, read from `JunoGeneratedSprings`
+    // (the web's `--spring-<name>-params`, framer's `{ visualDuration, bounce }`),
+    // and are the only rungs ``platformFactor`` touches.
 
     /// A press: `--dur-press` (70ms) on `--ease-out-soft`, for the 0.97 dip.
     ///
@@ -261,12 +262,14 @@ public enum JunoMotion {
     /// Standard transitions: selection, the composer growing, tiles, the
     /// segmented thumb. A 0.22s spring with a 0.05 bounce, × ``platformFactor``.
     public static let standard = Animation.spring(
-        duration: Duration.base * platformFactor, bounce: 0.05
+        duration: JunoGeneratedSprings.standard.visualDuration * platformFactor,
+        bounce: JunoGeneratedSprings.standard.bounce
     )
     /// Emphasized transitions: the composer handoff from the empty state to a
     /// conversation. A 0.36s spring with a 0.10 bounce, × ``platformFactor``.
     public static let emphasized = Animation.spring(
-        duration: Duration.slow * platformFactor, bounce: 0.10
+        duration: JunoGeneratedSprings.emphasized.visualDuration * platformFactor,
+        bounce: JunoGeneratedSprings.emphasized.bounce
     )
     /// The composer handoff (§10.1 of the Mac redesign) as the one transaction
     /// it is: ``emphasized``, or under Reduce Motion a 160ms cross-fade.
@@ -284,7 +287,8 @@ public enum JunoMotion {
     /// ``emphasized``'s duration with no bounce, because an edge that bounces
     /// past its resting place drags the content beside it along twice.
     public static let layout = Animation.spring(
-        duration: Duration.slow * platformFactor, bounce: 0
+        duration: JunoGeneratedSprings.layout.visualDuration * platformFactor,
+        bounce: JunoGeneratedSprings.layout.bounce
     )
     /// Interactive, gesture-following spring for anything tracking a held
     /// finger or a dragged pointer.
@@ -301,12 +305,16 @@ public enum JunoMotion {
     /// strongest toy-versus-tool dial, which is why the ceiling is 0.18 and why
     /// it is spent on the two moments a person has genuinely been waiting for.
     /// Not scaled by ``platformFactor``: a reward is the same size everywhere.
-    public static let reward = Animation.spring(duration: Duration.slow, bounce: 0.18)
+    public static let reward = Animation.spring(
+        duration: JunoGeneratedSprings.reward.visualDuration,
+        bounce: JunoGeneratedSprings.reward.bounce
+    )
     /// A glyph's hover gesture (``JunoIconGesture``): `--dur-base` with the
     /// small settle the web's `--ease-out-back` gives the same pose (~3%), so
     /// a tilt or a lift lands with weight instead of stopping. × ``platformFactor``.
     public static let articulate = Animation.spring(
-        duration: Duration.base * platformFactor, bounce: 0.15
+        duration: JunoGeneratedSprings.articulate.visualDuration * platformFactor,
+        bounce: JunoGeneratedSprings.articulate.bounce
     )
 
     // ── The chat shell's spring vocabulary (native redesign, Oct 2026) ──────
@@ -513,12 +521,12 @@ public enum JunoMotion {
         /// `status-glow`: the live status dot's breathe.
         public static let statusBreathe: TimeInterval = 2.8
         /// `skeleton-breathe`: a loading placeholder's rise and settle.
-        public static let skeletonBreathe: TimeInterval = 1.8
+        public static let skeletonBreathe: TimeInterval = JunoGeneratedTiming.loopBreathe
         /// `--loop`: the run signature and its label's shimmer — every loop in
         /// the run family is a multiple of the 1.2s `--loop-beat`.
-        public static let run: TimeInterval = 2.4
+        public static let run: TimeInterval = JunoGeneratedTiming.loopPeriod
         /// `--loop-calm`: the run after 20s of continuous work, at half pace.
-        public static let runCalm: TimeInterval = 4.8
+        public static let runCalm: TimeInterval = JunoGeneratedTiming.loopCalm
     }
 
     /// One of the ``Loop`` periods as a running breathe: half the period out on
