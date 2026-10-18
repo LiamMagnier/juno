@@ -2,7 +2,7 @@
 // Do not edit: change the contract and run `npm run shell:contract:generate`.
 // `npm run shell:contract:check` fails CI when this file is stale.
 //
-// shell-contract-digest: 5f533a535189f554372de43e904e47ab628bf1f6bde59821f869bc629f795466
+// shell-contract-digest: b2ef973e04939bee6c7f5e6b6a18b4bd41b3e110d4ac30a23f126e025a0b335e
 
 /** The languages the table carries. */
 export const SHELL_LOCALES = ["en","fr"] as const;
@@ -83,8 +83,16 @@ export const SHELL_STRINGS = {
   "turn.sources": { en: {"one":"{k} source","other":"{k} sources"}, fr: {"one":"{k} source","other":"{k} sources"}, plural: "k" },
   /** Summary part, only when true. Lower case: it follows a middle dot. */
   "turn.ranCode": { en: "ran code", fr: "code exécuté" },
-  /** Stream dropped, retrying for up to 15s. */
+  /** Stream dropped; a reconnect attempt is under way now (Tether). */
   "turn.reconnecting": { en: "Reconnecting…", fr: "Reconnexion…" },
+  /** Stream dropped; the next attempt is {s} seconds away (Tether backoff). */
+  "turn.reconnectingIn": { en: "Reconnecting in {s}s", fr: "Reconnexion dans {s}\u00a0s" },
+  /** Stream dropped and the device reports no network; retries when it returns. */
+  "turn.waitingForNetwork": { en: "Waiting for network", fr: "En attente du réseau" },
+  /** Stream dropped long ago; the turn is parked and resumes on the next reconnect trigger. */
+  "turn.parked": { en: "Waiting for connection", fr: "En attente de connexion" },
+  /** Accessible description of a parked turn. */
+  "turn.parkedDetail": { en: "The answer will continue where it left off when the connection is back.", fr: "La réponse reprendra là où elle s’est arrêtée dès le retour de la connexion." },
   /** Summary after a failed reconnect or a mid-stream failure. */
   "turn.stopped": { en: "Stopped", fr: "Arrêté" },
   /** Failure box. */

@@ -114,10 +114,12 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
     // gemini-3-flash-preview thinks by default when it is omitted.
     case "google":
       return offSwitch;
-    // DeepSeek V4 Pro and V4.1 Flash think by default and take "none" as the
-    // off switch (gap-provider §2.5). deepseek-reasoner has no off switch.
+    // DeepSeek V4 Pro and V4.1 Flash think by default; their documented off
+    // switch on Chat Completions is `thinking: {type: "disabled"}`
+    // (guides/thinking_mode, read 2026-10-18), sent below — the same body the
+    // production adapter (openai-compat.ts) sends.
     case "deepseek":
-      return offSwitch;
+      return false;
     case "openai":
       if (/gpt-5(\.\d)?-pro/.test(id)) return false; // always reason
       // Codex and GPT-6 are split per snapshot; the caps carry each one's enum.
@@ -186,6 +188,10 @@ export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort 
   if (model.provider === "zhipu" && model.reasoning && !glmEffortOnly) {
     // The on/off GLMs: an effort means enabled, its absence means off.
     out.thinking = { type: effort ? "enabled" : "disabled" };
+  }
+
+  if (model.provider === "deepseek" && model.reasoning && !effort && caps.canDisable) {
+    out.thinking = { type: "disabled" };
   }
 
   const usesThinkingObject =

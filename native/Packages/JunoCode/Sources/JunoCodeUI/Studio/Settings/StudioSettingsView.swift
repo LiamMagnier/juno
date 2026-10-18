@@ -380,9 +380,25 @@ struct StudioGeneralSettings: View {
         )
     }
 
+    /// The model new sessions start on: the chosen one, else the first coding
+    /// model ("First available").
+    private var defaultModel: ModelOption? {
+        models.first { $0.modelID == defaults.modelID }
+            ?? models.first(where: CodeV2AlevrCatalog.isCodingModel)
+    }
+
+    /// The depths that model offers — the manifest's, never a fixed ladder.
     private var efforts: [ReasoningEffort] {
-        models.first { $0.modelID == defaults.modelID }?.supportedReasoningEfforts
-            ?? ModelOption.contractReasoningEfforts
+        defaultModel?.supportedReasoningEfforts ?? []
+    }
+
+    /// Instant only where the model can switch thinking off.
+    private var offersInstant: Bool {
+        defaultModel?.canDisableThinking ?? true
+    }
+
+    private func label(for effort: ReasoningEffort) -> String {
+        defaultModel?.isOnOffThinking == true ? "Thinking" : effort.junoLabel
     }
 
     var body: some View {
@@ -403,9 +419,11 @@ struct StudioGeneralSettings: View {
                 }
             }
             Picker("Thinking", selection: $defaults.reasoningEffort) {
-                Text("Instant").tag(ReasoningEffort?.none)
+                if offersInstant {
+                    Text("Instant").tag(ReasoningEffort?.none)
+                }
                 ForEach(efforts, id: \.self) { effort in
-                    Text(effort.junoLabel).tag(Optional(effort))
+                    Text(label(for: effort)).tag(Optional(effort))
                 }
             }
             Picker("Runs in", selection: $defaults.environment) {

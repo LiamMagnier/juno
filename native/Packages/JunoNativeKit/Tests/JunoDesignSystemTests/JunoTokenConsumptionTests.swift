@@ -483,7 +483,7 @@ final class JunoTokenConsumptionTests: XCTestCase {
         "loopBeat", "loopGalaxy", "loopGalaxyCalm",
         "settleMin", "settleMax",
         "staggerMax", "staggerOnboarding", "staggerRow", "staggerTile",
-        "streamBand", "streamDrainTick", "streamRateMax", "streamRateMin", "streamTailMax",
+        "streamDrainTick", "streamRateMax", "streamRateMin", "streamTailMax",
     ]
 
     func testEveryGeneratedTokenIsReadOrDeclaredUnread() throws {

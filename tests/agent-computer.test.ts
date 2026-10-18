@@ -49,6 +49,8 @@ const {
   restComputer,
   setComputerStorePersistenceForTest,
   sleepComputer,
+  computerPromptSection,
+  YOUR_COMPUTER_PROMPT_SECTION,
 } = req("../src/lib/computer/store") as typeof import("@/lib/computer/store");
 const { guardBrowserForTakeover } = req(
   "../src/lib/computer/takeover"
@@ -56,6 +58,18 @@ const { guardBrowserForTakeover } = req(
 const { sweepAgentComputers, resetOrphanTrackingForTest } = req(
   "../src/lib/computer/sweep"
 ) as typeof import("@/lib/computer/sweep");
+
+describe("agent-computer prompt for unattended runs", () => {
+  it("a scheduled or triggered run is never told to ask for a take-over", () => {
+    assert.equal(computerPromptSection({ attended: true }), YOUR_COMPUTER_PROMPT_SECTION);
+    const unattended = computerPromptSection({ attended: false });
+    assert.match(YOUR_COMPUTER_PROMPT_SECTION, /ask them to take over/);
+    assert.doesNotMatch(unattended, /ask them to take over/);
+    assert.match(unattended, /Never ask the person to take over your computer/);
+    assert.match(unattended, /skip that step/);
+    assert.match(unattended, /never type one you were told in the chat/, "the secret rule stays");
+  });
+});
 
 describe("agent-computer provider and lifecycle", () => {
   const prevProvider = process.env.AGENT_COMPUTER_PROVIDER;

@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-357 routes: 226 native, 59 planned, 57 web only, 15 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+360 routes: 229 native, 59 planned, 57 web only, 15 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 16 | 6 | 1 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -531,6 +531,9 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/devices/[deviceId]/sessions/[sessionId]/events` | GET, POST | Native | JunoCodeKit |  |
 | `/api/code/devices/[deviceId]/sessions/[sessionId]/messages` | POST | Web only |  | As the approvals verb. |
 | `/api/code/devices/[deviceId]/sessions/[sessionId]/stop` | POST | Web only |  | As the approvals verb. |
+| `/api/runs/live` | GET | Native | JunoCodeKit | REA 8: every live Code session and Work run on the account (steps, current action, elapsed, cost, pending approvals), as a JSON snapshot or an SSE feed. The iPhone's Runs screen and its Live Activity (NativeLiveRunsClient in JunoCodeKit/LiveRuns.swift). |
+| `/api/runs/stop` | POST | Native | JunoCodeKit | REA 8: idempotent Stop for a live Code session or Work run, from the iPhone's Runs screen; the web's agents tree can share it. |
+| `/api/runs/approval` | POST | Native | JunoCodeKit | REA 8: answer a live run's pending approval from the iPhone; Code answers queue for the Mac, Work answers go through the Work decision route. |
 | `/api/code/environments` | GET, POST | Planned |  | Cloud environments (/code/customize). |
 | `/api/code/environments/[id]` | GET, PATCH, DELETE | Planned |  | As /api/code/environments. |
 | `/api/code/github/branches` | GET | Planned |  | The base-branch list for a cloud run. |

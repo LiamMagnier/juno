@@ -69,6 +69,26 @@ export async function loadSelectableModels(): Promise<ModelInfo[]> {
 }
 
 /**
+ * Mark each model the deployment cannot serve right now with
+ * `unavailableReason`, using the same two signals the native manifest turns
+ * into `health_check_failed`: the lab's cached health verdict and the model's
+ * own capability probe. Listed, not removed (see `loadAvailableModels` for why
+ * a lab must never silently vanish); the web picker renders these disabled.
+ */
+export function withAvailability(
+  models: ModelInfo[],
+  verdicts: ReadonlyMap<string, { allowed: boolean }>,
+  isProviderHealthy: (provider: ModelInfo["provider"]) => boolean,
+): ModelInfo[] {
+  return models.map((model) => {
+    if (model.comingSoon) return model;
+    if (!isProviderHealthy(model.provider)) return { ...model, unavailableReason: "provider_unhealthy" as const };
+    if (verdicts.get(model.id)?.allowed === false) return { ...model, unavailableReason: "model_health_check" as const };
+    return model;
+  });
+}
+
+/**
  * The backend model catalog in the shape `@juno/agent-core`'s proxy provider
  * expects (BackendConfig.models — see runner/agent-core/src/providers/proxy.ts).
  * Built from the SAME server source the Mac app consumes (loadAvailableModels),

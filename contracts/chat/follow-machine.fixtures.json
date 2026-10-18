@@ -1,0 +1,579 @@
+{
+  "$comment": "Reading-first follow (G18). The TypeScript (src/lib/chat/follow-machine.ts) and Swift (JunoChatKit/JunoFollowMachine.swift) machines are both held to this file: every state against every event, which states follow the end, and the answer-bed geometry.",
+  "states": [
+    "following",
+    "placed",
+    "reading",
+    "free"
+  ],
+  "events": [
+    "turn-start",
+    "overflow",
+    "scroll-away",
+    "select",
+    "near-end",
+    "jump",
+    "settle",
+    "reset"
+  ],
+  "transitions": [
+    {
+      "from": "following",
+      "event": "turn-start",
+      "to": "placed"
+    },
+    {
+      "from": "following",
+      "event": "overflow",
+      "to": "following"
+    },
+    {
+      "from": "following",
+      "event": "scroll-away",
+      "to": "free"
+    },
+    {
+      "from": "following",
+      "event": "select",
+      "to": "free"
+    },
+    {
+      "from": "following",
+      "event": "near-end",
+      "to": "following"
+    },
+    {
+      "from": "following",
+      "event": "jump",
+      "to": "following"
+    },
+    {
+      "from": "following",
+      "event": "settle",
+      "to": "following"
+    },
+    {
+      "from": "following",
+      "event": "reset",
+      "to": "following"
+    },
+    {
+      "from": "placed",
+      "event": "turn-start",
+      "to": "placed"
+    },
+    {
+      "from": "placed",
+      "event": "overflow",
+      "to": "reading"
+    },
+    {
+      "from": "placed",
+      "event": "scroll-away",
+      "to": "free"
+    },
+    {
+      "from": "placed",
+      "event": "select",
+      "to": "free"
+    },
+    {
+      "from": "placed",
+      "event": "near-end",
+      "to": "placed"
+    },
+    {
+      "from": "placed",
+      "event": "jump",
+      "to": "following"
+    },
+    {
+      "from": "placed",
+      "event": "settle",
+      "to": "following"
+    },
+    {
+      "from": "placed",
+      "event": "reset",
+      "to": "following"
+    },
+    {
+      "from": "reading",
+      "event": "turn-start",
+      "to": "placed"
+    },
+    {
+      "from": "reading",
+      "event": "overflow",
+      "to": "reading"
+    },
+    {
+      "from": "reading",
+      "event": "scroll-away",
+      "to": "free"
+    },
+    {
+      "from": "reading",
+      "event": "select",
+      "to": "free"
+    },
+    {
+      "from": "reading",
+      "event": "near-end",
+      "to": "following"
+    },
+    {
+      "from": "reading",
+      "event": "jump",
+      "to": "following"
+    },
+    {
+      "from": "reading",
+      "event": "settle",
+      "to": "reading"
+    },
+    {
+      "from": "reading",
+      "event": "reset",
+      "to": "following"
+    },
+    {
+      "from": "free",
+      "event": "turn-start",
+      "to": "placed"
+    },
+    {
+      "from": "free",
+      "event": "overflow",
+      "to": "free"
+    },
+    {
+      "from": "free",
+      "event": "scroll-away",
+      "to": "free"
+    },
+    {
+      "from": "free",
+      "event": "select",
+      "to": "free"
+    },
+    {
+      "from": "free",
+      "event": "near-end",
+      "to": "following"
+    },
+    {
+      "from": "free",
+      "event": "jump",
+      "to": "following"
+    },
+    {
+      "from": "free",
+      "event": "settle",
+      "to": "free"
+    },
+    {
+      "from": "free",
+      "event": "reset",
+      "to": "following"
+    }
+  ],
+  "follows": {
+    "following": true,
+    "placed": true,
+    "reading": false,
+    "free": false
+  },
+  "bed": [
+    {
+      "name": "a fresh turn: the bed fills the viewport below the question",
+      "input": {
+        "viewportHeight": 800,
+        "turnTop": 1200,
+        "turnHeight": 80,
+        "contentEnd": 1340
+      },
+      "expect": {
+        "height": 636,
+        "anchorTop": 1200,
+        "overflow": false
+      }
+    },
+    {
+      "name": "the answer half way down: the bed has shrunk by what it filled",
+      "input": {
+        "viewportHeight": 800,
+        "turnTop": 1200,
+        "turnHeight": 80,
+        "contentEnd": 1700
+      },
+      "expect": {
+        "height": 276,
+        "anchorTop": 1200,
+        "overflow": false
+      }
+    },
+    {
+      "name": "the answer meets the bottom: no bed, no overflow yet",
+      "input": {
+        "viewportHeight": 800,
+        "turnTop": 1200,
+        "turnHeight": 80,
+        "contentEnd": 1976
+      },
+      "expect": {
+        "height": 0,
+        "anchorTop": 1200,
+        "overflow": false
+      }
+    },
+    {
+      "name": "the answer past the bottom: overflow",
+      "input": {
+        "viewportHeight": 800,
+        "turnTop": 1200,
+        "turnHeight": 80,
+        "contentEnd": 2100
+      },
+      "expect": {
+        "height": 0,
+        "anchorTop": 1200,
+        "overflow": true
+      }
+    },
+    {
+      "name": "a long question is pinned by its foot, keeping half the view for the answer",
+      "input": {
+        "viewportHeight": 800,
+        "turnTop": 1000,
+        "turnHeight": 900,
+        "contentEnd": 1960
+      },
+      "expect": {
+        "height": 328,
+        "anchorTop": 1512,
+        "overflow": false
+      }
+    },
+    {
+      "name": "the keyboard opens: a shorter viewport, a shorter bed",
+      "input": {
+        "viewportHeight": 420,
+        "turnTop": 1200,
+        "turnHeight": 80,
+        "contentEnd": 1340
+      },
+      "expect": {
+        "height": 256,
+        "anchorTop": 1200,
+        "overflow": false
+      }
+    },
+    {
+      "name": "a custom inset",
+      "input": {
+        "viewportHeight": 600,
+        "turnTop": 0,
+        "turnHeight": 40,
+        "contentEnd": 100,
+        "inset": 48
+      },
+      "expect": {
+        "height": 452,
+        "anchorTop": 0,
+        "overflow": false
+      }
+    },
+    {
+      "name": "fractional geometry rounds the bed to whole pixels",
+      "input": {
+        "viewportHeight": 733.5,
+        "turnTop": 412.25,
+        "turnHeight": 61.5,
+        "contentEnd": 600.5
+      },
+      "expect": {
+        "height": 521,
+        "anchorTop": 412.25,
+        "overflow": false
+      }
+    }
+  ],
+  "startedTurn": [
+    {
+      "name": "a send: a new question and its answer being written",
+      "previous": [
+        "u1",
+        "a1"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        },
+        {
+          "key": "a2",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": "u2"
+    },
+    {
+      "name": "a regenerate: the same question, a new answer",
+      "previous": [
+        "u1",
+        "a1",
+        "u2",
+        "a2"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        },
+        {
+          "key": "a3",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": "u2"
+    },
+    {
+      "name": "the question arrived on its own first",
+      "previous": [
+        "u1",
+        "a1",
+        "u2"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        },
+        {
+          "key": "a2",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": "u2"
+    },
+    {
+      "name": "tokens growing the answer are not a new turn",
+      "previous": [
+        "u1",
+        "a1",
+        "u2",
+        "a2"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        },
+        {
+          "key": "a2",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": null
+    },
+    {
+      "name": "a conversation switch carries nothing over",
+      "previous": [
+        "x1",
+        "y1"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        },
+        {
+          "key": "a2",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": null
+    },
+    {
+      "name": "an older page landing above",
+      "previous": [
+        "u5",
+        "a5"
+      ],
+      "rows": [
+        {
+          "key": "u3",
+          "question": true
+        },
+        {
+          "key": "a3",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u4",
+          "question": true
+        },
+        {
+          "key": "a4",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u5",
+          "question": true
+        },
+        {
+          "key": "a5",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": null
+    },
+    {
+      "name": "a second speaker in a room answers under an answer",
+      "previous": [
+        "u1",
+        "a1"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "b1",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": null
+    },
+    {
+      "name": "the first turn of a new chat",
+      "previous": [],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": true
+        }
+      ],
+      "expect": null
+    },
+    {
+      "name": "a branch switch brings settled rows",
+      "previous": [
+        "u1",
+        "a1",
+        "u2",
+        "a2"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        },
+        {
+          "key": "a2b",
+          "question": false,
+          "streaming": false
+        }
+      ],
+      "expect": null
+    },
+    {
+      "name": "the question alone, before its answer",
+      "previous": [
+        "u1",
+        "a1"
+      ],
+      "rows": [
+        {
+          "key": "u1",
+          "question": true
+        },
+        {
+          "key": "a1",
+          "question": false,
+          "streaming": false
+        },
+        {
+          "key": "u2",
+          "question": true
+        }
+      ],
+      "expect": null
+    }
+  ]
+}

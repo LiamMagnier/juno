@@ -1,4 +1,5 @@
 import Foundation
+import JunoCodeBridge
 import JunoCodeCore
 import JunoDesignSystem
 
@@ -140,6 +141,7 @@ public extension ModelOption {
             !published.stops.isEmpty,
             published.stops.allSatisfy({
                 $0.id == JunoThinkingLadder.instantStopID
+                    || $0.id == JunoThinkingLadder.onStopID
                     || ReasoningEffort(rawValue: $0.id) != nil
             })
         {
@@ -154,6 +156,63 @@ public extension ModelOption {
         catalog?.thinking.canDisableThinking ?? false
     }
 
+    /// Whether this model has a bare on/off switch rather than depths. Its
+    /// "on" stop is sent as `high`.
+    var isOnOffThinking: Bool {
+        catalog?.thinking.stops.contains { $0.id == JunoThinkingLadder.onStopID } ?? false
+    }
+
+    /// The model's own default depth (`reasoning.defaultEffort`), when the
+    /// manifest declares one the session can send.
+    var defaultReasoningEffort: ReasoningEffort? {
+        guard let id = catalog?.thinking.defaultStopID,
+              let effort = ReasoningEffort(rawValue: id),
+              supportedReasoningEfforts.contains(effort)
+        else { return nil }
+        return effort
+    }
+
+    /// The stop id the shared control shows for a stored effort: Instant for
+    /// none, the on stop for any depth on an on/off model, the depth otherwise.
+    func thinkingStopID(for effort: ReasoningEffort?) -> String {
+        guard let effort else { return JunoThinkingLadder.instantStopID }
+        return isOnOffThinking ? JunoThinkingLadder.onStopID : effort.rawValue
+    }
+
+    /// The effort a stop id sends; `.some(nil)` is Instant, nil an unknown id.
+    static func reasoningEffort(forStopID id: String) -> ReasoningEffort?? {
+        switch id {
+        case JunoThinkingLadder.instantStopID: return .some(nil)
+        case JunoThinkingLadder.onStopID: return .some(.high)
+        default: return ReasoningEffort(rawValue: id).map { .some($0) }
+        }
+    }
+
+    /// The manifest's thinking capabilities for this model, for the request
+    /// layer (``CodeReasoningCaps``). Nil without a catalog entry.
+    var reasoningCaps: CodeReasoningCaps? {
+        guard let catalog else { return nil }
+        return CodeReasoningCaps(
+            supported: catalog.capabilities.contains(.reasoning) && !catalog.choosesThinkingAutomatically,
+            canDisable: canDisableThinking,
+            onOffOnly: isOnOffThinking,
+            tiers: isOnOffThinking ? [] : supportedReasoningEfforts,
+            defaultEffort: defaultReasoningEffort
+        )
+    }
+
+    /// Publishes these models' caps to the request layer.
+    static func registerReasoningCaps(
+        _ models: [ModelOption],
+        registry: CodeReasoningCapsRegistry = .shared
+    ) {
+        var caps: [String: CodeReasoningCaps] = [:]
+        for model in models {
+            if let entry = model.reasoningCaps { caps[model.modelID] = entry }
+        }
+        registry.replace(caps)
+    }
+
     /// Re-fits a stored effort onto this model, including the off state.
     ///
     /// Returns `.some(nil)` to mean "change it to Instant" and `nil` to mean "it
@@ -163,8 +222,11 @@ public extension ModelOption {
     func refittingEffort(_ effort: ReasoningEffort?) -> ReasoningEffort?? {
         guard let effort else {
             // Instant is only valid where the model publishes it. A model that
-            // always reasons has to be given a depth back.
-            return canDisableThinking ? nil : .some(supportedReasoningEfforts.first)
+            // always reasons is given its declared default back (the web's
+            // clampReasoningEffort), else its shallowest depth.
+            if canDisableThinking { return nil }
+            let fallback = defaultReasoningEffort ?? supportedReasoningEfforts.first
+            return fallback == nil ? nil : .some(fallback)
         }
         guard let clamped = clampingReasoningEffort(effort) else { return nil }
         return .some(clamped)
@@ -179,14 +241,18 @@ public extension ModelOption {
         !supportedReasoningEfforts.isEmpty
     }
 
-    /// Re-fits a stored effort onto this model: the deepest supported depth at
-    /// or below the requested one, or the shallowest if none qualifies.
+    /// Re-fits a stored effort onto this model: its declared default when it
+    /// publishes one — the web's `clampReasoningEffort`, which resets a value
+    /// from another model rather than mapping Max to High and making a saved
+    /// preference look preserved — else the deepest supported depth at or
+    /// below the requested one, or the shallowest if none qualifies.
     ///
     /// Returns nil when the value already fits, so a caller can tell "no change
     /// needed" from "changed to the same thing" and avoid a pointless write.
     func clampingReasoningEffort(_ effort: ReasoningEffort) -> ReasoningEffort? {
         let supported = supportedReasoningEfforts.sorted { $0.junoDepth < $1.junoDepth }
         guard !supported.isEmpty, !supported.contains(effort) else { return nil }
+        if let declared = defaultReasoningEffort { return declared }
         return supported.last { $0.junoDepth <= effort.junoDepth } ?? supported[0]
     }
 }

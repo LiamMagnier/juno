@@ -20,7 +20,9 @@ import {
   buildLinkApprovalPayload,
   noteHostEvents,
   resetRemotePushMemory,
+  screenLockFacts,
   APNS_CATEGORY_CODE_APPROVAL,
+  SCREEN_LOCKED_NOTICE_CODE,
   type HostEventDeps,
   type PushDelivery,
 } from "@/lib/code-v2/remote-push";
@@ -194,6 +196,37 @@ test("approvals: answered anywhere, the notification is withdrawn and needs-you 
   assert.equal((await threads.get("u", "code:mac1:s1"))?.needsYou, false);
   const late = await noteHostEvents(deps, "u", "mac1", [approval("r2", "pending", 1)]);
   assert.equal(late.announced, 0, "a stale replay after the answer never rings again");
+});
+
+const lockNotice = (sessionId: string, id: string, sequence: number): ServerEventEnvelope => ({
+  type: "event",
+  stream: "session",
+  sessionId,
+  sequence,
+  at: "2026-10-10T12:00:00Z",
+  event: {
+    type: "item.added",
+    item: { id, kind: "system_notice", createdAt: "2026-10-10T12:00:00Z", level: "warning", code: SCREEN_LOCKED_NOTICE_CODE, text: "Alevr paused “Tidy”. It never unlocks your Mac; unlock it to let Alevr carry on." },
+  },
+});
+
+test("screen lock: a run paused by a locked Mac tells the paired phones once per lock", async () => {
+  resetRemotePushMemory();
+  const { deps, sent } = hostDeps(["phone-session"]);
+  const first = await noteHostEvents(deps, "u", "mac1", [lockNotice("s1", "screen_locked_100", 1)]);
+  assert.equal(first.announced, 1);
+  // Another session, and a repeat, running into the same lock: no second ring.
+  await noteHostEvents(deps, "u", "mac1", [lockNotice("s2", "screen_locked_100", 1), lockNotice("s1", "screen_locked_100", 2)]);
+  assert.equal(sent.length, 1);
+  const payload = sent[0].payload as { aps: { alert: { title: string; body: string }; category?: string }; sessionID: string };
+  assert.equal(payload.aps.alert.title, "Studio Mac locked");
+  assert.match(payload.aps.alert.body, /never unlocks/);
+  assert.equal(payload.aps.category, undefined, "nothing to answer: no actions");
+  assert.deepEqual(sent[0].delivery, { deviceSessionIds: ["phone-session"], platform: "ios" });
+  // The next lock rings again.
+  await noteHostEvents(deps, "u", "mac1", [lockNotice("s1", "screen_locked_200", 3)]);
+  assert.equal(sent.length, 2);
+  assert.equal(screenLockFacts([lockNotice("s1", "x", 1), approval("r", "pending", 1)]).length, 1);
 });
 
 test("approvals: with no paired phone nothing rings (the same account is not enough)", async () => {

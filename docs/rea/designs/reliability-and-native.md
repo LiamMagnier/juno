@@ -54,16 +54,16 @@ This note covers plan rows 4 and 7. The evidence is in `docs/rea/evidence/reliab
 
 One spec, implemented twice: `src/lib/net/tether.ts` and `JunoNativeKit/Sources/JunoCore/Tether.swift`. It is pinned by shared fixture vectors in `tests/fixtures/tether-vectors.json`.
 
-- **Delay.** Use decorrelated jitter: `delay = min(cap, random(base, prev*3))`, with base 750 ms and cap 20 s. Under a full outage this spreads the herd better than a deterministic hash.
+- **Delay.** Use full jitter: retry *n* waits `random(floor, min(cap, base * 2^n))`, with floor 250 ms, base 1 s and cap 30 s. Under a full outage this spreads the herd better than a deterministic hash. (Built this way in place of the decorrelated jitter first sketched here, so both platforms can pin every delay with a shared vector rather than a running `prev`.)
 - **Reconnect triggers** (any one starts an attempt at once and resets the backoff):
   - the network comes back (web `online` event; Swift `NWPathMonitor` reaching `.satisfied`);
   - the app returns to the foreground (`visibilitychange` to visible, `scenePhase == .active`, `NSApplication.didBecomeActive`);
   - the system wakes (`NSWorkspace.didWakeNotification`; iOS background app refresh);
   - a stale connection: no frame and no heartbeat for twice `HEARTBEAT_MS`, so we fail the socket instead of trusting it.
 - **No hard give-up.**
-  - After the 3-minute active window, the turn is **parked**, not "exhausted". It shows "Paused — will continue when you're back" and resumes on the next trigger, for as long as the server log exists.
+  - After the 3-minute active window, the turn is **parked**, not "exhausted". It shows "Waiting for connection" and resumes on the next trigger (with a quiet 60 s probe meanwhile), for as long as the server log exists.
   - The server tells the client how long it keeps a log via a new `retainUntil` field on the `resume` frame. Past that, fall back to `refetch`.
-- **Visible state.** The bubble's status line shows these states in order: "Reconnecting…" (with an attempt count), "Waiting for network", "Paused", "Caught up". No spinner without words.
+- **Visible state.** The bubble's status line shows "Reconnecting in 4s" / "Reconnecting…", "Waiting for network" (the device reports no network) and "Waiting for connection" (parked). Connected says nothing. No spinner without words; assistive tech hears the phase, not a ticking number.
 
 ### 3.2 Durable outbox for sends ("Pending shelf")
 - The client writes each send to the outbox first, keyed by the request key that `submission-recovery.ts` already uses:

@@ -143,8 +143,10 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             }
             #endif
             DesktopUpdateModel.shared.start()
-            // ⌥Space from anywhere. Installed at launch rather than on first
-            // use so the shortcut exists before any window does.
+            // ⌥Space (or the reader's shortcut) from anywhere, as a Carbon hot
+            // key: no Accessibility permission, and the key is consumed.
+            // Registered at launch so the shortcut exists before any window
+            // does; the panel itself is prewarmed two seconds later.
             DesktopQuickEntryController.shared.installHotkey()
             // Juno Code's notifications, answered for the life of the app
             // rather than while a Code window happens to be on screen. A click

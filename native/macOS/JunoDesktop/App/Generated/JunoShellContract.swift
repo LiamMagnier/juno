@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "5f533a535189f554372de43e904e47ab628bf1f6bde59821f869bc629f795466"
+    static let digest = "b2ef973e04939bee6c7f5e6b6a18b4bd41b3e110d4ac30a23f126e025a0b335e"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -936,7 +936,7 @@ enum JunoShellStrings {
     }
     static var turnRanCode: String { turnRanCode(in: .current) }
 
-    /// `turn.reconnecting`: Stream dropped, retrying for up to 15s.
+    /// `turn.reconnecting`: Stream dropped; a reconnect attempt is under way now (Tether).
     static func turnReconnecting(in language: JunoShellLanguage = .current) -> String {
         switch language {
         case .en: "Reconnecting…"
@@ -944,6 +944,41 @@ enum JunoShellStrings {
         }
     }
     static var turnReconnecting: String { turnReconnecting(in: .current) }
+
+    /// `turn.reconnectingIn`: Stream dropped; the next attempt is {s} seconds away (Tether backoff).
+    static func turnReconnectingIn(s: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Reconnecting in \(s)s"
+        case .fr: "Reconnexion dans \(s)\u{00A0}s"
+        }
+    }
+
+    /// `turn.waitingForNetwork`: Stream dropped and the device reports no network; retries when it returns.
+    static func turnWaitingForNetwork(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Waiting for network"
+        case .fr: "En attente du réseau"
+        }
+    }
+    static var turnWaitingForNetwork: String { turnWaitingForNetwork(in: .current) }
+
+    /// `turn.parked`: Stream dropped long ago; the turn is parked and resumes on the next reconnect trigger.
+    static func turnParked(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Waiting for connection"
+        case .fr: "En attente de connexion"
+        }
+    }
+    static var turnParked: String { turnParked(in: .current) }
+
+    /// `turn.parkedDetail`: Accessible description of a parked turn.
+    static func turnParkedDetail(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "The answer will continue where it left off when the connection is back."
+        case .fr: "La réponse reprendra là où elle s’est arrêtée dès le retour de la connexion."
+        }
+    }
+    static var turnParkedDetail: String { turnParkedDetail(in: .current) }
 
     /// `turn.stopped`: Summary after a failed reconnect or a mid-stream failure.
     static func turnStopped(in language: JunoShellLanguage = .current) -> String {
