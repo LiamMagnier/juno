@@ -45,7 +45,8 @@ public struct ModelOption: Identifiable, Hashable, Sendable {
     /// Empty is a real answer, not a gap to fill. It is what the manifest sends
     /// for a model that does not reason at all (`gpt-4o`, `qwen-long`,
     /// `codestral`), one that always reasons with no exposed control
-    /// (`magistral`, Kimi K2.7), and one with a bare on/off switch. Substituting
+    /// (`magistral`, Kimi K2.7). (A bare on/off switch is `[.high]`: its one
+    /// "on" stop.) Substituting
     /// low/medium/high for those — which this used to do — did two visible kinds
     /// of damage: it drew a depth slider for a model that has no depths, and it
     /// put a thinking parameter on the wire for a model that rejects one. The
@@ -57,8 +58,12 @@ public struct ModelOption: Identifiable, Hashable, Sendable {
             modelID: catalog.id,
             displayName: catalog.displayName,
             catalog: catalog,
+            // An on/off model's single "on" stop is sent as `high` (the web's
+            // clampReasoningEffort), so that is the one depth it takes. It
+            // used to map to nothing, which left Claude Haiku 4.5 with no
+            // control in Code and a stale stored depth on the wire.
             supportedReasoningEfforts: catalog.thinking.stops.compactMap {
-                ReasoningEffort(rawValue: $0.id)
+                $0.id == JunoThinkingLadder.onStopID ? .high : ReasoningEffort(rawValue: $0.id)
             }
         )
     }
@@ -332,6 +337,7 @@ public final class WorkbenchModel {
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
         self.availableModels = dependencies.availableModels
+        ModelOption.registerReasoningCaps(dependencies.availableModels)
         self.sessionStore = CodeSessionStore(
             directoryURL: dependencies.storageRootURL.appendingPathComponent("sessions-store")
         )
@@ -838,6 +844,11 @@ public final class WorkbenchModel {
                     .first(where: { $0.modelID == modelID })?
                     .takesThinkingParameter == true
             },
+            refitReasoningEffort: { [weak self] modelID, effort in
+                self?.availableModels
+                    .first(where: { $0.modelID == modelID })?
+                    .refittingEffort(effort)
+            },
             modelContextWindowTokens: { [weak self] modelID in
                 self?.availableModels
                     .first(where: { $0.modelID == modelID })?
@@ -956,6 +967,7 @@ public final class WorkbenchModel {
 
     public func setAvailableModels(_ models: [ModelOption]) async {
         availableModels = models
+        ModelOption.registerReasoningCaps(models)
         let currentControllers = Array(controllers.values)
         for controller in currentControllers {
             await controller.reconcileModelCapabilities()

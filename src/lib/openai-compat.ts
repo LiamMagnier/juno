@@ -452,12 +452,13 @@ export async function* streamOpenAICompat(
       ];
     }
   }
-  if (isZhipuThinking) {
+  if (isZhipuThinking && !modelId.includes("glm-5.3")) {
     // Instant (no effort) turns GLM thinking off; any effort turns it on.
-    // GLM-5.2/5.3 additionally take reasoning_effort (handled above). GLM-5.3
-    // cannot think "disabled" — that request fails — so it is always enabled.
-    const glmAlwaysThinks = modelId.includes("glm-5.3");
-    params.thinking = { type: effectiveReasoningEffort || glmAlwaysThinks ? "enabled" : "disabled" };
+    // GLM-5.2 additionally takes reasoning_effort (handled above). GLM-5.3
+    // always thinks and its depth is the effort enum alone (docs.z.ai
+    // guides/llm/glm-5.3: disabling "will cause an error"), so it gets no
+    // `thinking` object at all — the same body llm/compat-loop.ts sends.
+    params.thinking = { type: effectiveReasoningEffort ? "enabled" : "disabled" };
   }
   if (model.provider === "deepseek" && model.reasoning && !effectiveReasoningEffort && reasoningCaps(model).canDisable) {
     // DeepSeek V4/V4.1 think by DEFAULT (effort high), so Instant has to be

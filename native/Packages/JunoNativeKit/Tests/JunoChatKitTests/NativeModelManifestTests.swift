@@ -295,6 +295,52 @@ final class NativeModelManifestTests: XCTestCase {
         }
     }
 
+    /// The Haikus as the manifest publishes them (`reasoningCaps` on the web):
+    /// Haiku 5.5 is adaptive with all five depths, Instant, and a declared
+    /// default of medium; Haiku 4.5 is a bare on/off switch. The ladder comes
+    /// from those fields alone — and a depth stored for another model (GPT's
+    /// `minimal`) resets to the declared default rather than being sent.
+    func testHaikuManifestEntriesYieldTheirOwnLaddersAndDefaults() async throws {
+        let haiku55 = fullModel
+            .replacingOccurrences(of: "\"id\": \"moonshot:kimi-k3\"", with: "\"id\": \"anthropic:claude-haiku-5-5\"")
+            .replacingOccurrences(of: "\"displayName\": \"Kimi K3\"", with: "\"displayName\": \"Claude Haiku 5.5\"")
+            .replacingOccurrences(
+                of: "\"supportedReasoningEfforts\": [\"low\",\"high\",\"max\"]",
+                with: "\"supportedReasoningEfforts\": [\"low\",\"medium\",\"high\",\"xhigh\",\"max\"]"
+            )
+            .replacingOccurrences(
+                of: "\"reasoning\": {\"supported\":true,\"canDisable\":false,\"onOffOnly\":false,",
+                with: "\"reasoning\": {\"supported\":true,\"canDisable\":true,\"onOffOnly\":false,\"defaultEffort\":\"medium\","
+            )
+        let haiku45 = fullModel
+            .replacingOccurrences(of: "\"id\": \"moonshot:kimi-k3\"", with: "\"id\": \"anthropic:claude-haiku-4-5\"")
+            .replacingOccurrences(of: "\"displayName\": \"Kimi K3\"", with: "\"displayName\": \"Claude Haiku 4.5\"")
+            .replacingOccurrences(
+                of: "\"supportedReasoningEfforts\": [\"low\",\"high\",\"max\"]",
+                with: "\"supportedReasoningEfforts\": []"
+            )
+            .replacingOccurrences(
+                of: "\"reasoning\": {\"supported\":true,\"canDisable\":false,\"onOffOnly\":false,",
+                with: "\"reasoning\": {\"supported\":true,\"canDisable\":true,\"onOffOnly\":true,\"defaultEffort\":null,"
+            )
+        let catalog = try await client(body: manifest(models: [haiku55, haiku45])).modelCatalog(for: accountID)
+
+        let scale55 = NativeThinkingScale(model: catalog.models[0])
+        XCTAssertEqual(
+            scale55.stops.map(\.label),
+            ["Instant", "Low", "Medium", "High", "Extra high", "Max"]
+        )
+        XCTAssertEqual(scale55.defaultStop, .effort(.medium))
+        XCTAssertEqual(scale55.junoLadder.defaultStopID, "medium")
+        XCTAssertEqual(scale55.adjusting(.minimal).effort, .medium, "GPT's minimal is never sent to Haiku 5.5")
+        XCTAssertNil(scale55.adjusting(nil).effort, "Instant is valid on Haiku 5.5")
+
+        let scale45 = NativeThinkingScale(model: catalog.models[1])
+        XCTAssertEqual(scale45.stops.map(\.label), ["Instant", "Thinking"])
+        XCTAssertEqual(scale45.defaultStop, .instant)
+        XCTAssertEqual(scale45.adjusting(.minimal).effort, .high, "on is sent as high")
+    }
+
     private func client(body: String) -> NativeChatAPIClient {
         NativeChatAPIClient(
             sender: RecordingModelSender(body: body),

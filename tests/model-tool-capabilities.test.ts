@@ -159,6 +159,8 @@ const TABLE = [
   "qwen:qwen3.7-max tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
   "qwen:qwen3.7-plus tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
   "qwen:qwen3.8-omni-flash tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
+  "qwen:qwen3.8-27b tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
+  "qwen:qwen3.8-2.4t-a95b tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
   "qwen:qwen3.8-flash tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
   "qwen:qwen3.7-flash tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",
   "qwen:qwen3.6-flash tools cc parallel:opt_in final:none replay:should/reasoning_content search max:128",

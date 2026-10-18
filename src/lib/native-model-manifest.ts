@@ -94,6 +94,15 @@ export interface NativeModelCatalogOptions {
   alevrSearch?: boolean;
   /** The pre-Alevr name of `alevrSearch`, still read. */
   keyedSearchEngine?: boolean;
+  /**
+   * The cached provider-health verdict (`providerHealthy` in provider-health.ts).
+   * A model whose lab is failing its probe stays LISTED — removing a whole lab
+   * reads as a bug (model-catalog-api.ts) — but comes back as
+   * `health_check_failed` / `provider_unhealthy`, so every picker shows it
+   * disabled with a reason rather than offering a request that cannot succeed.
+   * Absent = every provider counts as healthy.
+   */
+  providerHealthy?: (provider: ModelInfo["provider"]) => boolean;
 }
 
 /**
@@ -134,10 +143,12 @@ export function nativeModelCatalog(
       : usable(model, plan)
         ? "available"
         : "requires_plan";
+    const providerDown = !auto && options.providerHealthy ? !options.providerHealthy(model.provider) : false;
     const effectiveAvailability =
-      availability === "available" && capability && !capability.allowed
+      availability === "available" && ((capability && !capability.allowed) || providerDown)
         ? "health_check_failed"
         : availability;
+    const unavailableReason = providerDown ? "provider_unhealthy" : capability?.reason ?? "model_health_check";
     return {
       id: model.id,
       // Auto is Juno's own routing product, not the fallback provider its
@@ -158,7 +169,7 @@ export function nativeModelCatalog(
       released: auto ? null : model.released ?? null,
       availability: effectiveAvailability,
       availabilityReason:
-        effectiveAvailability === "health_check_failed" ? capability?.reason ?? "model_health_check" : null,
+        effectiveAvailability === "health_check_failed" ? unavailableReason : null,
       minimumPlan: model.minPlan.toLowerCase(),
       // The plan `canUseModel` actually enforces (paid models are Pro-floored).
       // Auto is exempt — the router only ever picks models the plan can call.

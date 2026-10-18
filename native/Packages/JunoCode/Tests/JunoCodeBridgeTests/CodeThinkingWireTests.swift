@@ -178,13 +178,16 @@ final class CodeThinkingWireTests: XCTestCase {
     /// 4.7/4.8 default OFF when omitted, and Fable/Mythos/Opus 5.5 are
     /// always-on and REJECT `disabled` — sending it would 400 them.
     func testOnlyDefaultOnAdaptiveModelsAreExplicitlyDisabled() {
-        for model in ["claude-opus-4-8", "claude-fable-5", "claude-mythos-1", "claude-opus-5-5"] {
-            XCTAssertNil(
-                CodeThinkingWire.anthropicBits(
-                    providerModelID: model, maxTokens: 8_192, effort: nil
-                ).thinking,
-                "\(model) must not be sent an explicit disable"
-            )
+        XCTAssertNil(
+            CodeThinkingWire.anthropicBits(
+                providerModelID: "claude-opus-4-8", maxTokens: 8_192, effort: nil
+            ).thinking
+        )
+        // The always-on models are sent adaptive at the API's own default
+        // effort, as the website does — never `disabled`.
+        for model in ["claude-fable-5", "claude-mythos-1", "claude-opus-5-5"] {
+            let bits = CodeThinkingWire.anthropicBits(providerModelID: model, maxTokens: 8_192, effort: nil)
+            XCTAssertEqual(bits.thinking?["type"], .string("adaptive"), "\(model) must not be sent an explicit disable")
         }
         // Manual-thinking families were never affected: omitting `thinking` is
         // genuinely off for them.
@@ -392,6 +395,292 @@ final class CodeThinkingWireTests: XCTestCase {
         XCTAssertEqual(
             CodeThinkingWire.anthropicThinkingKind(providerModelID: "claude-opus-9"),
             .adaptive
+        )
+    }
+
+    // MARK: - Claude Haiku 5.5 (the owner's report)
+
+    /// Haiku 5.5 is adaptive-only: `type: "enabled"` is a 400 on it. It used to
+    /// be caught by a bare "haiku" match and sent the manual shape.
+    func testHaiku55IsAdaptiveAndHaiku45StaysManual() {
+        XCTAssertEqual(CodeThinkingWire.anthropicThinkingKind(providerModelID: "claude-haiku-5-5"), .adaptive)
+        XCTAssertEqual(CodeThinkingWire.anthropicThinkingKind(providerModelID: "claude-haiku-4-5"), .manual)
+        XCTAssertEqual(CodeThinkingWire.anthropicThinkingKind(providerModelID: "claude-haiku-4-5-20251001"), .manual)
+        XCTAssertEqual(CodeThinkingWire.anthropicThinkingKind(providerModelID: "claude-3-haiku-20240307"), .manual)
+    }
+
+    /// Every depth Haiku 5.5 publishes goes out as adaptive + output_config,
+    /// with the summarized display (it defaults to omitted) and the 128k
+    /// adaptive output cap.
+    func testHaiku55SendsAdaptiveAtEveryEffort() {
+        let headroom: [ReasoningEffort: Int] = [.low: 8_192, .medium: 16_384, .high: 32_000, .xhigh: 48_000, .max: 56_000]
+        for effort in [ReasoningEffort.low, .medium, .high, .xhigh, .max] {
+            let body = AnthropicRequestBuilder.body(
+                for: request(model: "anthropic:claude-haiku-5-5", effort: effort),
+                providerModelID: "claude-haiku-5-5",
+                maxTokens: 8_192
+            )
+            let fields = object(body)
+            XCTAssertEqual(
+                fields["thinking"],
+                .object([
+                    "type": .string("adaptive"),
+                    "display": .string("summarized"),
+                    "block_binding": .object(["prefix_mismatch_behavior": .string("drop_block")]),
+                ]),
+                "\(effort)"
+            )
+            XCTAssertEqual(fields["output_config"], .object(["effort": .string(effort.rawValue)]), "\(effort)")
+            XCTAssertEqual(fields["max_tokens"], .number(Double(8_192 + headroom[effort]!)), "\(effort)")
+        }
+        // The 128k cap applies, not Haiku 4.5's 64k.
+        let big = CodeThinkingWire.anthropicBits(providerModelID: "claude-haiku-5-5", maxTokens: 128_000, effort: .max)
+        XCTAssertEqual(big.maxTokens, 128_000)
+    }
+
+    /// Haiku 5.5 thinks by default, so Instant must say `disabled` (accepted at
+    /// effort high or below; Instant sends no effort, so the API default
+    /// medium applies).
+    func testHaiku55InstantSendsDisabledAndNoEffort() {
+        let body = AnthropicRequestBuilder.body(
+            for: request(model: "anthropic:claude-haiku-5-5", effort: nil),
+            providerModelID: "claude-haiku-5-5",
+            maxTokens: 8_192
+        )
+        let fields = object(body)
+        XCTAssertEqual(fields["thinking"], .object(["type": .string("disabled")]))
+        XCTAssertNil(fields["output_config"])
+        XCTAssertEqual(fields["max_tokens"], .number(8_192))
+    }
+
+    func testHaiku45SendsTheManualBudget() {
+        let bits = CodeThinkingWire.anthropicBits(providerModelID: "claude-haiku-4-5", maxTokens: 8_192, effort: .high)
+        XCTAssertEqual(bits.thinking, .object(["type": .string("enabled"), "budget_tokens": .number(16_000)]))
+        XCTAssertNil(bits.outputConfig)
+        XCTAssertEqual(bits.maxTokens, 8_192 + 16_000)
+    }
+
+    func testSonnet55InstantSendsBetweenTools() {
+        let body = AnthropicRequestBuilder.body(
+            for: request(model: "anthropic:claude-sonnet-5-5", effort: nil),
+            providerModelID: "claude-sonnet-5-5",
+            maxTokens: 8_192
+        )
+        XCTAssertEqual(object(body)["thinking"], .object(["type": .string("between_tools")]))
+        XCTAssertNil(object(body)["output_config"])
+    }
+
+    /// Opus 5.5 is always on: no effort means adaptive at its API default
+    /// (medium), said explicitly; Fable's default is high.
+    func testAlwaysOnModelsWithNoEffortRunAtTheirAPIDefault() {
+        let opus = CodeThinkingWire.anthropicBits(providerModelID: "claude-opus-5-5", maxTokens: 8_192, effort: nil)
+        XCTAssertEqual(opus.thinking, .object(["type": .string("adaptive"), "display": .string("summarized")]))
+        XCTAssertEqual(opus.outputConfig, .object(["effort": .string("medium")]))
+        XCTAssertEqual(opus.maxTokens, 8_192 + 16_384)
+
+        let fable = CodeThinkingWire.anthropicBits(providerModelID: "claude-fable-5-1", maxTokens: 8_192, effort: nil)
+        XCTAssertEqual(fable.outputConfig, .object(["effort": .string("high")]))
+    }
+
+    /// The default-on set is the website's regex exactly.
+    func testDefaultOnSetMatchesTheWebsite() {
+        for id in ["claude-opus-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5"] {
+            XCTAssertTrue(CodeThinkingWire.adaptiveDefaultsOn(id), id)
+        }
+        for id in ["claude-opus-5-5", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"] {
+            XCTAssertFalse(CodeThinkingWire.adaptiveDefaultsOn(id), id)
+        }
+    }
+
+    // MARK: - Fitting a stored depth to the model (manifest caps)
+
+    private let haiku55Caps = CodeReasoningCaps(
+        supported: true, canDisable: true,
+        tiers: [.low, .medium, .high, .xhigh, .max], defaultEffort: .medium
+    )
+
+    /// GPT's `minimal` carried to Haiku 5.5 resets to its declared default.
+    func testAStoredForeignDepthIsFittedBeforeTheBodyIsBuilt() {
+        let fitted = BackendCodeModelClient.fittingReasoning(
+            request(model: "anthropic:claude-haiku-5-5", effort: .minimal),
+            caps: haiku55Caps
+        )
+        XCTAssertEqual(fitted.reasoningEffort, .medium)
+        XCTAssertEqual(
+            BackendCodeModelClient.fittingReasoning(request(model: "x", effort: .minimal), caps: nil).reasoningEffort,
+            .minimal,
+            "no caps, no change"
+        )
+    }
+
+    func testCapsClampMirrorsTheWebsite() {
+        XCTAssertNil(haiku55Caps.clamp(nil))
+        XCTAssertEqual(haiku55Caps.clamp(.xhigh), .xhigh)
+        let onOff = CodeReasoningCaps(supported: true, canDisable: true, onOffOnly: true)
+        XCTAssertEqual(onOff.clamp(.low), .high)
+        XCTAssertNil(onOff.clamp(nil))
+        let alwaysOn = CodeReasoningCaps(supported: true, canDisable: false, tiers: [.low, .high, .max], defaultEffort: .max)
+        XCTAssertEqual(alwaysOn.clamp(nil), .max)
+        XCTAssertEqual(alwaysOn.clamp(.medium), .max)
+        let noControl = CodeReasoningCaps(supported: true, canDisable: false)
+        XCTAssertNil(noControl.clamp(.high))
+        XCTAssertNil(CodeReasoningCaps(supported: false, canDisable: false).clamp(.high))
+    }
+
+    func testTheRegistryIsReadByCanonicalIdOrRoute() {
+        let registry = CodeReasoningCapsRegistry()
+        registry.replace(["anthropic:claude-haiku-5-5": haiku55Caps])
+        XCTAssertEqual(
+            BackendCodeModelClient.reasoningCaps(
+                for: "anthropic:claude-haiku-5-5", resolver: .default, registry: registry
+            ),
+            haiku55Caps
+        )
+        XCTAssertEqual(
+            BackendCodeModelClient.reasoningCaps(for: "claude-haiku-5-5", resolver: .default, registry: registry),
+            haiku55Caps,
+            "a bare Claude id resolves to the same entry"
+        )
+        XCTAssertNil(BackendCodeModelClient.reasoningCaps(for: "openai:gpt-5.6", resolver: .default, registry: registry))
+    }
+
+    // MARK: - OpenAI-compatible: compatReasoningFields parity
+
+    private func caps(_ canDisable: Bool, supported: Bool = true) -> CodeReasoningCaps {
+        CodeReasoningCaps(supported: supported, canDisable: canDisable)
+    }
+
+    func testQwen38TakesEnableThinkingAndReasoningEffortNotABudget() {
+        let on = CodeThinkingWire.chatParameters(
+            providerID: "qwen", providerModelID: "qwen3.8-max", effort: .xhigh, caps: caps(true)
+        )
+        XCTAssertEqual(on, ["enable_thinking": .bool(true), "reasoning_effort": .string("xhigh")])
+        let instant = CodeThinkingWire.chatParameters(
+            providerID: "qwen", providerModelID: "qwen3.8-max", effort: nil, caps: caps(true)
+        )
+        XCTAssertEqual(instant, ["enable_thinking": .bool(false)])
+        // Unknown caps: still the 3.8 spelling, never the off state.
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "qwen", providerModelID: "qwen3.8-flash", effort: .low),
+            ["enable_thinking": .bool(true), "reasoning_effort": .string("low")]
+        )
+        XCTAssertTrue(CodeThinkingWire.chatParameters(providerID: "qwen", providerModelID: "qwen3.8-max", effort: nil).isEmpty)
+    }
+
+    func testQwenThinkingOnlyModelAlwaysGetsItOn() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "qwen", providerModelID: "qwq-plus", effort: nil, caps: caps(false)),
+            ["enable_thinking": .bool(true), "thinking_budget": .number(24_000)]
+        )
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(
+                providerID: "qwen", providerModelID: "qwen-long", effort: nil, caps: caps(false, supported: false)
+            ).isEmpty
+        )
+    }
+
+    func testGLM53TakesReasoningEffortOnlyAndNeverAThinkingObject() {
+        for effort in [ReasoningEffort.low, .high, .max] {
+            XCTAssertEqual(
+                CodeThinkingWire.chatParameters(providerID: "zhipu", providerModelID: "glm-5.3", effort: effort, caps: caps(false)),
+                ["reasoning_effort": .string(effort.rawValue)]
+            )
+        }
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(providerID: "zhipu", providerModelID: "glm-5.3", effort: nil, caps: caps(false)).isEmpty
+        )
+    }
+
+    func testGLMOnOffInstantSendsDisabledOnlyWithCaps() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "zhipu", providerModelID: "glm-4.7", effort: nil, caps: caps(true)),
+            ["thinking": .object(["type": .string("disabled")])]
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "zhipu", providerModelID: "glm-5.2", effort: nil, caps: caps(true)),
+            ["thinking": .object(["type": .string("disabled")])]
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "zhipu", providerModelID: "glm-5.2", effort: .max, caps: caps(true)),
+            ["reasoning_effort": .string("max"), "thinking": .object(["type": .string("enabled")])]
+        )
+    }
+
+    func testMetaAndMiniMaxM31TakeReasoningEffort() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "meta", providerModelID: "muse-spark-1.3", effort: .xhigh, caps: caps(false)),
+            ["reasoning_effort": .string("xhigh")]
+        )
+        let m31 = CodeThinkingWire.chatParameters(
+            providerID: "minimax", providerModelID: "minimax-m3.1-flash-preview", effort: .max, caps: caps(false)
+        )
+        XCTAssertEqual(m31, ["reasoning_effort": .string("max"), "reasoning_split": .bool(true)])
+        // Without caps M3.1 still gets no thinking object.
+        XCTAssertNil(
+            CodeThinkingWire.chatParameters(providerID: "minimax", providerModelID: "minimax-m3.1-flash-preview", effort: .max)["thinking"]
+        )
+    }
+
+    /// DeepSeek V4's off switch is the thinking object, not "none"
+    /// (compat-loop.ts, guides/thinking_mode 2026-10-18).
+    func testDeepSeekV4InstantDisablesThinkingWithCaps() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "deepseek", providerModelID: "deepseek-v4-pro", effort: nil, caps: caps(true)),
+            ["thinking": .object(["type": .string("disabled")])]
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "deepseek", providerModelID: "deepseek-v4-pro", effort: .max, caps: caps(true)),
+            ["reasoning_effort": .string("max")]
+        )
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(providerID: "deepseek", providerModelID: "deepseek-v4-pro", effort: nil).isEmpty,
+            "no caps, no off switch"
+        )
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(providerID: "deepseek", providerModelID: "deepseek-reasoner", effort: nil, caps: caps(false)).isEmpty
+        )
+    }
+
+    func testGoogleAndMistralInstantFollowTheCaps() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "google", providerModelID: "gemini-3.1-flash-lite", effort: nil, caps: caps(true)),
+            ["reasoning_effort": .string("none")]
+        )
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(providerID: "google", providerModelID: "gemini-3.7-flash", effort: nil, caps: caps(false)).isEmpty
+        )
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(providerID: "mistral", providerModelID: "magistral-medium-2509", effort: nil, caps: caps(false)).isEmpty
+        )
+    }
+
+    func testThinkingObjectLabsSwitchOnlyWhereTheCapsSayCanDisable() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "moonshot", providerModelID: "kimi-k2.6", effort: nil, caps: caps(true)),
+            ["thinking": .object(["type": .string("disabled")])]
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "minimax", providerModelID: "minimax-m3", effort: nil, caps: caps(true)),
+            ["thinking": .object(["type": .string("disabled")]), "reasoning_split": .bool(true)]
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "mimo", providerModelID: "mimo-v2.5", effort: .high, caps: caps(true)),
+            ["thinking": .object(["type": .string("enabled")])]
+        )
+        // Kimi K2.7 rejects disabled: always reasons, nothing sent.
+        XCTAssertTrue(
+            CodeThinkingWire.chatParameters(providerID: "moonshot", providerModelID: "kimi-k2.7-code", effort: nil, caps: caps(false)).isEmpty
+        )
+    }
+
+    func testOpenAIInstantNoneFollowsTheCapsOnSplitLines() {
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "openai", providerModelID: "gpt-6-astra", effort: nil, caps: caps(false)),
+            [:]
+        )
+        XCTAssertEqual(
+            CodeThinkingWire.chatParameters(providerID: "openai", providerModelID: "gpt-5.6", effort: nil, caps: caps(true)),
+            ["reasoning_effort": .string("none")]
         )
     }
 

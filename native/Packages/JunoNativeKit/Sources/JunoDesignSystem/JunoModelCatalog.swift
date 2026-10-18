@@ -213,6 +213,12 @@ public struct JunoThinkingLadder: Equatable, Sendable {
     /// than half the catalog.
     public static let instantStopID = "instant"
 
+    /// The id of the single "on" stop of an on/off model (Claude Haiku 4.5,
+    /// the on/off GLMs, Kimi K2.6, MiniMax M3, MiMo, LongCat). It carries no
+    /// depth of its own; the request sends it as `high`, the value the website
+    /// reads as "on" for those models (`clampReasoningEffort`).
+    public static let onStopID = "thinking"
+
     /// Whether this model can have thinking turned off entirely.
     public var canDisableThinking: Bool {
         stops.contains { $0.id == Self.instantStopID }
