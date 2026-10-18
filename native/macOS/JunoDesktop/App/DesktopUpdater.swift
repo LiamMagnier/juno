@@ -2,6 +2,7 @@ import AppKit
 import CryptoKit
 import Foundation
 import JunoCore
+import Network
 import Observation
 import Security
 
@@ -40,6 +41,17 @@ import Security
 /// — so this never claims a manifest was verified. The signature check on the
 /// downloaded bundle is what actually stops a substituted download, and it is
 /// enforced with no way to skip it.
+///
+/// **It checks its own work** (`JunoUpdateLedger`, at `updater.json` beside
+/// the staging directory). Each staged build and each hand-off to the swap
+/// script is written down; the next launch compares that with the build that
+/// is running. A swap that did not land counts as a failed apply, and after
+/// ``JunoUpdateLedger/failureLimit`` failures of one version the updater stops
+/// installing it and points at the download page instead of failing forever.
+/// While a build is staged, every check asks the same feed stream again,
+/// bypassing caches: a release that was pulled (the stream now offers nothing,
+/// or something older) is unstaged and deleted, and never offered again. A
+/// Mac that is offline skips its checks rather than reporting a failure.
 @MainActor
 @Observable
 final class DesktopUpdateModel {
@@ -67,6 +79,21 @@ final class DesktopUpdateModel {
     /// The staged bundle waiting to replace the running one, if any.
     private(set) var stagedBundle: URL?
     private(set) var stagedVersion: String?
+    /// The feed stream the staged build came from: nil for stable, "next" for
+    /// the prerelease stream. Only that stream can withdraw it.
+    private var stagedChannel: String?
+
+    /// The version this launch found freshly installed by the updater, for
+    /// "Updated to 1.13" in Settings.
+    private(set) var justUpdatedTo: String?
+
+    /// What the updater has attempted and how it went, mirrored to disk.
+    @ObservationIgnored private var ledger = JunoUpdateLedger()
+    @ObservationIgnored private var ledgerStore: JunoUpdateLedgerStore?
+
+    /// Whether the network path is usable. Checks are skipped while it is not.
+    @ObservationIgnored private var isOnline = true
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
 
     /// The offered release's notes, when the feed carries them, for the
     /// Software Update window's "What's new".
@@ -109,10 +136,15 @@ final class DesktopUpdateModel {
             phase = .unsupported(reason)
             return
         }
+        reconcileLedger()
+        startPathMonitor()
         poller = Task { [weak self] in
+            // An explicit clock: Swift 6.2's cross-module
+            // `Task.sleep(for:)` specialization can crash.
+            let clock = ContinuousClock()
             while !Task.isCancelled {
                 await self?.check()
-                try? await Task.sleep(for: Self.interval)
+                try? await clock.sleep(until: clock.now.advanced(by: Self.interval))
             }
         }
     }
@@ -122,7 +154,84 @@ final class DesktopUpdateModel {
         poller = nil
         work?.cancel()
         work = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
     }
+
+    // MARK: - Ledger and network
+
+    /// Settles what the previous run left staged against the running build,
+    /// before the first check. Runs once per launch.
+    private func reconcileLedger() {
+        guard ledgerStore == nil, let directory = try? stagingDirectory() else { return }
+        let store = JunoUpdateLedgerStore(
+            fileURL: directory.deletingLastPathComponent().appending(path: "updater.json")
+        )
+        ledgerStore = store
+        ledger = store.load()
+        let outcome = ledger.reconcileLaunch(runningVersion: build.version, runningBuild: build.build, at: Date())
+        saveLedger()
+        switch outcome {
+        case .applied(let version):
+            justUpdatedTo = version
+        case .failed(let version, let attempts, let blocked):
+            phase = .failed(
+                blocked
+                    ? blockedMessage(version)
+                    : "Alevr \(version) didn’t install (attempt \(attempts) of \(JunoUpdateLedger.failureLimit)). Alevr will try again."
+            )
+        case .nothingPending, .discardedUnattempted:
+            break
+        }
+    }
+
+    private func updateLedger(_ change: (inout JunoUpdateLedger) -> Void) {
+        change(&ledger)
+        saveLedger()
+    }
+
+    private func saveLedger() {
+        // A ledger that cannot be written costs at most a repeated attempt;
+        // it must never stop an update.
+        try? ledgerStore?.save(ledger)
+    }
+
+    private func blockedMessage(_ version: String) -> String {
+        var message = "Alevr \(version) didn’t install after \(JunoUpdateLedger.failureLimit) tries, so Alevr stopped retrying. Download it and install it by hand."
+        if let tail = installerLogTail() { message += " The installer said: \(tail)" }
+        return message
+    }
+
+    /// The swap script's last line, for a blocked update's message.
+    private func installerLogTail() -> String? {
+        guard let log = try? stagingDirectory().appending(path: "install.log"),
+              let text = try? String(contentsOf: log, encoding: .utf8)
+        else { return nil }
+        return text.split(whereSeparator: \.isNewline).last.map(String.init)
+    }
+
+    /// Follows the network path, so a check is skipped while offline and runs
+    /// as soon as the Mac is back online.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let online = path.status == .satisfied
+            Task { @MainActor in self?.networkChanged(online: online) }
+        }
+        monitor.start(queue: .main)
+        pathMonitor = monitor
+    }
+
+    private func networkChanged(online: Bool) {
+        let cameBack = online && !isOnline
+        isOnline = online
+        if cameBack, poller != nil {
+            Task { [weak self] in await self?.check() }
+        }
+    }
+
+    private static let offlineMessage = "This Mac is offline. Alevr checks again when it’s back online."
 
     /// The menu's "Check for Updates…". Identical to the timed check, except
     /// that it reports being up to date instead of staying quiet — a manual
@@ -171,59 +280,127 @@ final class DesktopUpdateModel {
 
     // MARK: - Check
 
-    private func check(forceRefresh: Bool = false) async {
+    /// `manual` is the menu's check: it bypasses caches, and it reports being
+    /// offline instead of staying quiet.
+    private func check(forceRefresh manual: Bool = false) async {
         guard work == nil, ineligibilityReason == nil else { return }
-        // An update already staged is the answer to the next check too; asking
-        // again would re-download the same DMG every ten minutes.
-        if stagedBundle != nil { return }
+        // The swap script is already waiting on this process; the staged
+        // bundle is spoken for.
+        guard !installerLaunched else { return }
+        // Offline is not a failed update. A scheduled check waits for the
+        // network to come back (`networkChanged`); a manual one says why.
+        guard isOnline else {
+            if manual { phase = .failed(Self.offlineMessage) }
+            return
+        }
 
-        phase = .checking
+        let previous = phase
+        // With a build staged, the check only confirms it is still offered;
+        // the "ready" line stays up meanwhile rather than flickering.
+        if stagedBundle == nil { phase = .checking }
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.runCheck(forceRefresh: forceRefresh)
+            await self.runCheck(manual: manual, previous: previous)
         }
         work = task
         await task.value
         work = nil
     }
 
-    private func runCheck(forceRefresh: Bool) async {
+    private func runCheck(manual: Bool, previous: Phase) async {
         do {
-            var candidate = try await fetchCandidate(
-                channel: build.channel == "next" ? "next" : nil,
-                forceRefresh: forceRefresh
-            )
-
-            // Development-signed installs follow the prerelease stream their
-            // releases are published to; a Developer ID build asks it only
-            // while it is ahead of stable. The rule, and why an equal version
-            // is not enough, is in `JunoUpdateFeed.asksPrereleaseStream`. A
-            // failed prerelease fetch leaves the stable answer standing.
-            if build.channel != "next",
-               JunoUpdateFeed.asksPrereleaseStream(
-                   installed: build.version,
-                   stable: candidate,
-                   developmentSigned: isDevelopmentSigned
-               )
-            {
-                let prerelease = try? await fetchCandidate(channel: "next", forceRefresh: forceRefresh)
-                candidate = JunoUpdateFeed.preferred(stable: candidate, prerelease: prerelease)
+            if let version = stagedVersion, stagedBundle != nil {
+                // Only the stream that offered the staged build can withdraw
+                // it, and only a fresh answer counts: a cached feed from
+                // before the release would look like a rollback.
+                let offered = try await fetchCandidate(channel: stagedChannel, forceRefresh: true)
+                let verdict = JunoUpdateLedger.verdict(staged: version, offered: offered?.version)
+                switch verdict {
+                case .keep:
+                    phase = .ready(version: version)
+                    return
+                case .withdrawn:
+                    unstage(verdict)
+                    phase = .failed("Alevr \(version) was withdrawn, so it won’t be installed. You’re still on \(build.version).")
+                    return
+                case .superseded:
+                    // The newer build is found and staged below.
+                    unstage(verdict)
+                }
             }
 
-            guard let candidate else {
+            let offer = try await fetchOffer(forceRefresh: manual)
+            switch ledger.decision(offered: offer.candidate?.version, installed: build.version) {
+            case .current, .withdrawn:
+                // A pulled release is never offered again, even if a stale
+                // answer still names it.
                 phase = .current(checkedAt: Date())
-                return
+            case .blocked(let version):
+                phase = .failed(blockedMessage(version))
+            case .install:
+                guard let candidate = offer.candidate else { return }
+                try await download(candidate, channel: offer.channel)
             }
-            guard JunoUpdateFeed.isNewer(candidate.version, than: build.version) else {
-                phase = .current(checkedAt: Date())
-                return
-            }
-            try await download(candidate)
         } catch is CancellationError {
-            phase = .idle
+            phase = stagedVersion.map { .ready(version: $0) } ?? .idle
+        } catch let error where JunoUpdateLedger.isOffline(error) {
+            if manual {
+                phase = .failed(Self.offlineMessage)
+            } else {
+                phase = stagedVersion.map { .ready(version: $0) } ?? previous
+            }
         } catch {
-            phase = .failed((error as? UpdateError)?.message ?? error.localizedDescription)
+            if let version = stagedVersion, stagedBundle != nil {
+                // A feed that failed to answer cannot withdraw anything; the
+                // verified bundle stays staged.
+                phase = .ready(version: version)
+            } else {
+                phase = .failed((error as? UpdateError)?.message ?? error.localizedDescription)
+            }
         }
+    }
+
+    /// A build the feed offers, and the stream it came from.
+    private struct Offer {
+        var candidate: JunoUpdateFeed.Candidate?
+        var channel: String?
+    }
+
+    private func fetchOffer(forceRefresh: Bool) async throws -> Offer {
+        let primaryChannel: String? = build.channel == "next" ? "next" : nil
+        let stable = try await fetchCandidate(channel: primaryChannel, forceRefresh: forceRefresh)
+        var offer = Offer(candidate: stable, channel: primaryChannel)
+
+        // Development-signed installs follow the prerelease stream their
+        // releases are published to; a Developer ID build asks it only
+        // while it is ahead of stable. The rule, and why an equal version
+        // is not enough, is in `JunoUpdateFeed.asksPrereleaseStream`. A
+        // failed prerelease fetch leaves the stable answer standing.
+        if build.channel != "next",
+           JunoUpdateFeed.asksPrereleaseStream(
+               installed: build.version,
+               stable: stable,
+               developmentSigned: isDevelopmentSigned
+           )
+        {
+            let prerelease = try? await fetchCandidate(channel: "next", forceRefresh: forceRefresh)
+            if let prerelease,
+               JunoUpdateFeed.preferred(stable: stable, prerelease: prerelease) == prerelease,
+               prerelease != stable
+            {
+                offer = Offer(candidate: prerelease, channel: "next")
+            }
+        }
+        return offer
+    }
+
+    /// Deletes the staged bundle and records why.
+    private func unstage(_ verdict: JunoUpdateLedger.FeedVerdict) {
+        if let stagedBundle { try? FileManager.default.removeItem(at: stagedBundle) }
+        stagedBundle = nil
+        stagedVersion = nil
+        stagedChannel = nil
+        updateLedger { $0.recordUnstaged(verdict, at: Date()) }
     }
 
     private func fetchCandidate(channel: String?, forceRefresh: Bool) async throws -> JunoUpdateFeed.Candidate? {
@@ -249,7 +426,7 @@ final class DesktopUpdateModel {
 
     // MARK: - Download, verify, stage
 
-    private func download(_ candidate: JunoUpdateFeed.Candidate) async throws {
+    private func download(_ candidate: JunoUpdateFeed.Candidate, channel: String?) async throws {
         releaseNotes = candidate.notes
         downloadSize = candidate.sizeBytes
         phase = .downloading(version: candidate.version, fraction: nil)
@@ -274,10 +451,20 @@ final class DesktopUpdateModel {
         defer { try? FileManager.default.removeItem(at: image) }
 
         try verify(image, against: candidate)
-        let staged = try await extractAndVerifyApp(from: image, into: staging, expecting: candidate.version)
+        let (staged, stagedBuild) = try await extractAndVerifyApp(from: image, into: staging, expecting: candidate.version)
 
         stagedBundle = staged
         stagedVersion = candidate.version
+        stagedChannel = channel
+        updateLedger {
+            $0.recordStaged(
+                version: candidate.version,
+                build: stagedBuild,
+                channel: channel,
+                from: build.version,
+                at: Date()
+            )
+        }
         phase = .ready(version: candidate.version)
     }
 
@@ -310,7 +497,7 @@ final class DesktopUpdateModel {
         from image: URL,
         into staging: URL,
         expecting version: String
-    ) async throws -> URL {
+    ) async throws -> (bundle: URL, build: String) {
         let mountPoint = try await DiskImage.attach(image)
         defer { Task.detached { await DiskImage.detach(mountPoint) } }
 
@@ -328,6 +515,7 @@ final class DesktopUpdateModel {
         // copy that drops them.
         try await Shell.run("/usr/bin/ditto", [source.path, destination.path])
 
+        let stagedBuild: String
         do {
             try CodeSignature.verify(destination, matches: bundleURL)
             try await CodeSignature.assessWithGatekeeper(destination, running: bundleURL)
@@ -338,13 +526,14 @@ final class DesktopUpdateModel {
             guard JunoUpdateFeed.isNewer(staged.version, than: build.version) else {
                 throw UpdateError.notNewer
             }
+            stagedBuild = staged.build
         } catch {
             // A bundle that failed any check does not get to sit on disk waiting
             // for a future bug to install it.
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
-        return destination
+        return (destination, stagedBuild)
     }
 
     private func stagingDirectory() throws -> URL {
@@ -406,8 +595,13 @@ final class DesktopUpdateModel {
             return false
         }
 
+        // `$6` is a log the next launch reads back when an update keeps
+        // failing (the ledger's "install by hand" message quotes its last
+        // line). Each failing branch says why before it exits.
         let script = """
         #!/bin/sh
+        exec >>"$6" 2>&1
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) installing $2"
         while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done
         # Re-verify immediately before the swap, not only at download time.
         #
@@ -424,11 +618,12 @@ final class DesktopUpdateModel {
         # ("no such file or directory"), and the rm -rf below then deleted the
         # staged update — auto-update could never install anything.
         if ! /usr/bin/codesign --verify --deep --strict -R="$5" "$2" >/dev/null 2>&1; then
+          echo "The staged update failed its signature check and was deleted."
           rm -rf "$2"
           exit 1
         fi
         rm -rf "$3"
-        if ! /bin/mv "$1" "$3"; then exit 1; fi
+        if ! /bin/mv "$1" "$3"; then echo "The installed app could not be moved aside."; exit 1; fi
         if /usr/bin/ditto "$2" "$1"; then
           rm -rf "$3"
           # Verified above by signature and by Gatekeeper; clearing the download
@@ -437,23 +632,30 @@ final class DesktopUpdateModel {
           /usr/bin/xattr -d -r com.apple.quarantine "$1" 2>/dev/null
           rm -rf "$2"
         else
+          echo "Copying the update failed; the previous app was put back."
           rm -rf "$1"
           /bin/mv "$3" "$1"
           exit 1
         fi
+        echo "Installed."
         if [ "$4" = "relaunch" ]; then /usr/bin/open "$1"; fi
         """
 
         do {
-            let scriptURL = try stagingDirectory().appending(path: "install.sh")
+            let staging = try stagingDirectory()
+            let scriptURL = staging.appending(path: "install.sh")
             try script.write(to: scriptURL, atomically: true, encoding: .utf8)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = [
                 scriptURL.path, target.path, staged.path, backup.path,
                 relaunch ? "relaunch" : "quiet", requirement,
+                staging.appending(path: "install.log").path,
             ]
             try process.run()
+            // Written before the app quits, so the next launch can tell a
+            // swap that never landed from one that was never started.
+            updateLedger { _ = $0.recordInstallAttempt(at: Date()) }
             // Latched, not cleared. Without the latch, "Install Update and
             // Relaunch" would spawn the installer, call `terminate`, and the
             // termination hook would spawn a SECOND one racing the first over

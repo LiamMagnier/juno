@@ -80,6 +80,8 @@ interface LiveSession {
   generation?: number;
   /** Resolves each time a turn ends (subagent waiters). */
   idleWaiters: (() => void)[];
+  /** The running turn was started by a timer, not a person (a resume at the usage reset). */
+  unattendedTurn?: boolean;
 }
 
 export interface SessionManagerOptions {
@@ -121,6 +123,8 @@ export class SessionManager {
   #closed = new Set<(sessionId: string) => void | Promise<void>>();
   /** Armed resume-at-reset timers, by session. */
   #scheduleTimers = new Map<string, { id: string; timer: NodeJS.Timeout }>();
+  /** Queued entries a timer put there: the turn they start has nobody watching. */
+  #unattendedEntries = new Set<string>();
   #engineTools: ((sessionId: string) => unknown[]) | undefined;
 
   constructor(options: SessionManagerOptions) {
@@ -427,8 +431,22 @@ export class SessionManager {
   }
 
   queue(params: ClientCommandParams["turn.queue"]): ClientCommandResults["turn.queue"] {
+    return this.#enqueue(params, false);
+  }
+
+  /**
+   * Whether the session's running turn has nobody watching it: a resume a
+   * timer started. Computer use on the Mac then refuses take-over and skips
+   * (and records) whatever would need the person's approval.
+   */
+  isUnattended(sessionId: string): boolean {
+    return this.#live.get(sessionId)?.unattendedTurn === true;
+  }
+
+  #enqueue(params: ClientCommandParams["turn.queue"], unattended: boolean): ClientCommandResults["turn.queue"] {
     const live = this.#get(params.sessionId);
     const entry: QueuedInput = { id: newId("q"), input: params.input, queuedAt: nowIso() };
+    if (unattended) this.#unattendedEntries.add(entry.id);
     const queue = [...live.log.snapshot.queue, entry];
     live.log.emit({ type: "queue.updated", queue });
     if (!live.active) this.#drainQueue(live);
@@ -698,7 +716,7 @@ export class SessionManager {
     this.#notice(sessionId, "info", "The usage window reset, so the paused turn is starting again.", "resume_at_reset");
     // Through the queue: if a turn is somehow running it waits its turn, and a still-limited
     // provider leaves the message queued with a notice instead of losing it.
-    this.queue({ sessionId, input: schedule.input ?? { text: RESUME_TEXT } });
+    this.#enqueue({ sessionId, input: schedule.input ?? { text: RESUME_TEXT } }, true);
   }
 
   #clearSchedule(live: LiveSession): void {
@@ -1062,6 +1080,9 @@ export class SessionManager {
         /* listener errors never break the session */
       }
     }
+    // After the listeners, so they can still tell whether the turn that ended
+    // had anybody watching.
+    live.unattendedTurn = false;
     if (result.outcome === "completed") this.#drainQueue(live);
     if (!live.active) {
       for (const w of live.idleWaiters.splice(0)) w();
@@ -1075,6 +1096,7 @@ export class SessionManager {
     const [next, ...rest] = queue;
     live.log.emit({ type: "queue.updated", queue: rest });
     const meta = live.log.meta;
+    const unattended = this.#unattendedEntries.delete(next.id);
     try {
       this.startTurn({
         sessionId: live.log.id,
@@ -1084,7 +1106,9 @@ export class SessionManager {
         runtimeMode: meta.runtimeMode,
         interactionMode: meta.interactionMode,
       });
+      if (unattended && live.active) live.unattendedTurn = true;
     } catch (error) {
+      if (unattended) this.#unattendedEntries.add(next.id);
       // Put it back; the user decides what to do once the provider is ready again.
       live.log.emit({ type: "queue.updated", queue: [next, ...rest] });
       this.#notice(live.log.id, "warning", `The queued message is waiting: ${describeError(error)}`, "queue_blocked");
