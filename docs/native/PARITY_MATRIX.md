@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-358 routes: 227 native, 58 planned, 58 web only, 15 internal. 51 pages: on the Mac 38 native, 2 partial, 2 planned, 9 web only; on iOS 25 native, 9 partial, 8 planned, 9 web only.
+359 routes: 227 native, 59 planned, 58 web only, 15 internal. 51 pages: on the Mac 38 native, 2 partial, 2 planned, 9 web only; on iOS 25 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 15 | 6 | 1 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 16 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -580,6 +580,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/pairing/deny` | POST | Native | JunoCodeKit | Deny on the iPhone, or in the browser at /pair. |
 | `/api/code/pairing/pairs` | GET | Native | JunoCodeKit | The Mac's paired devices (?deviceId=), or the Macs this iPhone may control. |
 | `/api/code/pairing/pairs/[pairId]` | DELETE | Native | JunoCodeKit | Remove a paired device on the Mac. |
+| `/api/code/v2/link/[deviceId]/agents` | POST | Planned |  | A person's Steer, Stop, Pause, Resume and bounded Top-up of one agent of a Mac-hosted Code run (REA backlog 10), from the web Agents tree. Rate-limited, idempotent and audited; the generic link route refuses these commands. The iPhone's remote can adopt it with its native bearer. |
 | `/api/code/v2/link/[deviceId]/stream` | POST | Native | CodeLinkClient.swift opens /api/code/v2/link/<device>/stream, the iPhone's server-sent event stream, and falls back to the long poll. |  |
 | `/api/code/v2/link/[deviceId]/host` | POST | Native | JunoCodeLocal |  |
 | `/api/provider-keys` | GET, POST | Native | JunoCodeLocal |  |

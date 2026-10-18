@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "47437c0f0baa6311c4713bcb1b920938f1543bede42fb1faf0e1fc2862f921ba"
+    public static let digest = "548c494c0d0b7bee087c77410d4eec85b6de9a084251ba5d76053676a8c3fc15"
 }
 
 /// Every state a Work session or run can be in.
@@ -749,6 +749,8 @@ public enum JunoWorkAuditKind: String, CaseIterable, Codable, Sendable {
     case skillPermissionConsent = "skill_permission_consent"
     /// A less precise tool was refused while a more precise one could serve the same intent.
     case tierDowngradeRefused = "tier_downgrade_refused"
+    /// A person steered, stopped, paused, resumed or topped up an agent of a Code run.
+    case agentControl = "agent_control"
 }
 
 /// How much an audit entry matters.
