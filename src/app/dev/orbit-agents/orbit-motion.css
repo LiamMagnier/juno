@@ -1,0 +1,119 @@
+/*
+ * PROPOSAL (dev only): how an Orbit agent moves — the flat 2D icon (orbit-icon.tsx)
+ * and the 3D portrait (orbit-portrait.tsx) share these state behaviours.
+ *
+ * Layers (outermost first), one job each:
+ *   .oi-pose   hover and press: lean toward the pointer, 1.04 on the standard spring, press squish
+ *   .oi-react  a change of state: anticipation -> overshoot -> settle (once)
+ *   .oi-move   the state's behaviour: breathe, ponder, work, call, hop, shake
+ *   .oi-gaze   eyes toward the pointer (--gx, --gy from the page)
+ *   .oi-lids   the blink
+ * Timing comes from the token pipeline (src/lib/design/tokens.generated.ts), set as
+ * custom properties on .orbit-motion by the page: --sp-standard, --sp-reward, --sp-snap
+ * (+ -dur), --dur-*, --loop-*. Only transform, opacity and filter move.
+ * Reduced motion: no loops and no hover motion; the eyes' shape still says the state.
+ */
+
+.oi { overflow: visible; display: block; -webkit-tap-highlight-color: transparent; }
+.oi :is(.oi-pose, .oi-react, .oi-move) { transform-box: view-box; transform-origin: 32px 62px; }
+.oi :is(.oi-lids, .oi-gaze) { transform-box: fill-box; transform-origin: center; }
+.oi [data-role] { transform-box: view-box; transform-origin: 32px 34px; transition: transform var(--sp-reward-dur) var(--sp-reward), filter var(--dur-base) ease-out; }
+
+/* ---------- Hover and press: it notices you ---------- */
+.oi-pose { transition: transform var(--sp-standard-dur) var(--sp-standard); }
+.oi[data-hover] .oi-pose { transform: rotate(calc(var(--lean, 0) * 1deg)) scale(1.04); }
+.oi[data-press] .oi-pose { transform: rotate(calc(var(--lean, 0) * 1deg)) scale(1.07, 0.9); transition-duration: var(--dur-press); }
+.oi-gaze { transform: translate(calc(var(--gx, 0) * 2.4px), calc(var(--gy, 0) * 1.8px)); transition: transform var(--dur-base) var(--ease-out-soft, ease-out); }
+
+/* Cosmic parts react to the pointer. */
+.oi[data-hover] [data-role^="orbit"] { transform: rotate(-14deg); }
+.oi[data-hover] :is([data-role^="accretion"], [data-role^="photon"]) { filter: brightness(1.25) saturate(1.25); }
+.oi[data-hover] :is([data-role^="panel0"], [data-role^="seam0"], [data-role="arm0"]) { transform: rotate(-9deg); }
+.oi[data-hover] :is([data-role^="panel1"], [data-role^="seam1"], [data-role="arm1"]) { transform: rotate(9deg); }
+.oi[data-hover] :is([data-role^="cup"], [data-role^="band"]) { transform: translateY(-1.8px); }
+.oi[data-hover] :is([data-role^="nightcap"], [data-role^="pom"], [data-role^="cap"], [data-role^="brim"]) { transform: rotate(4deg) translateY(-0.8px); }
+.oi[data-hover] [data-role^="tail"] { transform: translateX(-1.2px) scaleX(1.04); }
+.oi[data-hover] [data-role^="disc"] { transform: translate(0.6px, -0.8px) rotate(-6deg); }
+
+/* ---------- A change of state is a reaction, not a cut ---------- */
+.oi-react { animation: oi-react var(--sp-reward-dur) var(--sp-reward) both; }
+@keyframes oi-react {
+  0% { transform: scale(1, 1); }
+  30% { transform: scale(1.05, 0.93); }
+  70% { transform: scale(0.98, 1.03); }
+  100% { transform: none; }
+}
+
+/* ---------- The states ---------- */
+/* Ready: a tiny breathing squash and an occasional blink. */
+.oi[data-state="ready"] .oi-move { animation: oi-breathe var(--loop-calm) var(--ease-breathe) infinite; }
+.oi[data-state="ready"] .oi-lids { animation: oi-blink var(--loop-calm) linear infinite; }
+/* Thinking: eyes drift up and aside; three small Alevr-blue dots orbit the head. */
+.oi[data-state="thinking"] .oi-move { animation: oi-sway var(--loop-calm) var(--ease-breathe) infinite; }
+.oi[data-state="thinking"] .oi-lids { animation: oi-ponder var(--loop-default) var(--ease-breathe) infinite; }
+.oi-dots { opacity: 0; transition: opacity var(--dur-base) ease-out; }
+.oi[data-state="thinking"] .oi-dots { opacity: 1; }
+.oi-dots circle { transform-box: view-box; transform-origin: 48px 10px; animation: oi-orbit var(--loop-default) linear infinite; }
+.oi-dots circle:nth-child(2) { animation-delay: calc(var(--loop-default) / -3); }
+.oi-dots circle:nth-child(3) { animation-delay: calc(var(--loop-default) / -1.5); }
+/* Working: eyes down (drawn), a steady focused bob and tilt. */
+.oi[data-state="working"] .oi-move { animation: oi-work var(--loop-beat) var(--ease-in-out) infinite; }
+/* Needs your answer: one lift and lean toward you with a pulse, then it holds. */
+.oi[data-state="waiting"] .oi-move { animation: oi-call var(--dur-emphasis) var(--sp-reward) both; }
+/* Paused: eyes closed (drawn), slow breathing. */
+.oi[data-state="paused"] .oi-move { animation: oi-breathe-slow var(--loop-calm) var(--ease-breathe) infinite; }
+/* Finished: one happy hop with squash, then settle. */
+.oi[data-state="finished"] .oi-move { animation: oi-hop 900ms var(--ease-out-soft, ease-out) both; }
+/* Blocked: one small shake. */
+.oi[data-state="blocked"] .oi-move { animation: oi-shake var(--dur-slow) var(--ease-out-soft, ease-out) both; }
+
+@keyframes oi-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(0.994, 1.016); } }
+@keyframes oi-breathe-slow { 0%, 100% { transform: translateY(0.4px) scale(1, 1); } 50% { transform: translateY(0.4px) scale(0.992, 1.022); } }
+@keyframes oi-blink { 0%, 60%, 64%, 100% { transform: scaleY(1); } 62% { transform: scaleY(0.12); } }
+@keyframes oi-sway { 0%, 100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+@keyframes oi-ponder { 0%, 100% { transform: translate(0, 0); } 40% { transform: translate(1.1px, -0.6px); } 70% { transform: translate(-0.4px, 0.3px); } }
+@keyframes oi-orbit { from { transform: scale(1, 0.5) rotate(0deg) translateX(7px) rotate(0deg) scale(1, 2); } to { transform: scale(1, 0.5) rotate(360deg) translateX(7px) rotate(-360deg) scale(1, 2); } }
+@keyframes oi-work { 0%, 100% { transform: translateY(0) rotate(-1.2deg) scale(1.006, 0.992); } 50% { transform: translateY(-1px) rotate(1deg) scale(0.996, 1.008); } }
+@keyframes oi-call {
+  0% { transform: none; }
+  55% { transform: translateY(-3px) rotate(-3deg) scale(1.06); }
+  80% { transform: translateY(-2px) rotate(-2.4deg) scale(0.99); }
+  100% { transform: translateY(-2.2px) rotate(-2.6deg) scale(1.02); }
+}
+@keyframes oi-hop {
+  0% { transform: none; }
+  14% { transform: scale(1.07, 0.88); }
+  42% { transform: translateY(-7px) scale(0.95, 1.07); }
+  64% { transform: translateY(0) scale(1.08, 0.9); }
+  80% { transform: scale(0.98, 1.02); }
+  100% { transform: none; }
+}
+@keyframes oi-shake { 0%, 100% { transform: none; } 20% { transform: rotate(-4deg); } 45% { transform: rotate(3deg); } 70% { transform: rotate(-1.5deg); } }
+
+/* Capped: only a few characters loop at once; the rest hold their pose. */
+.oi[data-still] :is(.oi-move, .oi-lids, .oi-dots circle) { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .oi :is(.oi-pose, .oi-react, .oi-move, .oi-lids, .oi-gaze, .oi-dots circle, [data-role]) { animation: none !important; transition: none !important; }
+  .oi[data-hover] .oi-pose, .oi[data-press] .oi-pose { transform: none; }
+}
+.orbit-motion[data-rm] .oi :is(.oi-pose, .oi-react, .oi-move, .oi-lids, .oi-gaze, .oi-dots circle, [data-role]) { animation: none !important; transition: none !important; }
+.orbit-motion[data-rm] .oi[data-hover] .oi-pose { transform: none; }
+
+/* ---------- 3D portraits share the pose and the state behaviours ---------- */
+.op { position: relative; display: inline-block; -webkit-tap-highlight-color: transparent; }
+.op img { display: block; width: 100%; height: 100%; }
+.op .oi-pose, .op .oi-react, .op .oi-move { transform-origin: 50% 82%; width: 100%; height: 100%; }
+.op[data-hover] .oi-pose { transform: rotate(calc(var(--lean, 0) * 1deg)) scale(1.04); }
+.op[data-press] .oi-pose { transform: scale(1.06, 0.92); transition-duration: var(--dur-press); }
+/* Sequenced portraits carry their own state motion; the others borrow the CSS one. */
+.op[data-seq] .oi-move { animation: none !important; }
+.op:not([data-seq])[data-state="ready"] .oi-move { animation: oi-breathe var(--loop-calm) var(--ease-breathe) infinite; }
+.op:not([data-seq])[data-state="thinking"] .oi-move { animation: oi-sway var(--loop-calm) var(--ease-breathe) infinite; }
+.op:not([data-seq])[data-state="working"] .oi-move { animation: oi-work var(--loop-beat) var(--ease-in-out) infinite; }
+.op:not([data-seq])[data-state="waiting"] .oi-move { animation: oi-call var(--dur-emphasis) var(--sp-reward) both; }
+.op:not([data-seq])[data-state="paused"] .oi-move { animation: oi-breathe-slow var(--loop-calm) var(--ease-breathe) infinite; }
+.op:not([data-seq])[data-state="finished"] .oi-move { animation: oi-hop 900ms ease-out both; }
+.op:not([data-seq])[data-state="blocked"] .oi-move { animation: oi-shake var(--dur-slow) ease-out both; }
+.op .oi-pose { transition: transform var(--sp-standard-dur) var(--sp-standard); }
+.op[data-still] .oi-move { animation: none; }

@@ -27,9 +27,17 @@ const listeners = new Set<() => void>();
 const visibleOf = new Map<Element, (visible: boolean) => void>();
 let observer: IntersectionObserver | null = null;
 
-function recompute() {
-  const next = new Set([...wanting].sort((a, b) => a - b).slice(0, FACE_MOTION_SLOTS));
-  if (next.size === granted.size && [...next].every((t) => granted.has(t))) return;
+let slots: number = FACE_MOTION_SLOTS;
+
+/** Dev galleries only: review more characters moving than the product's cap allows. */
+export function setFaceMotionSlots(n: number) {
+  slots = Math.max(0, Math.floor(n));
+  recompute(true);
+}
+
+function recompute(force = false) {
+  const next = new Set([...wanting].sort((a, b) => a - b).slice(0, slots));
+  if (!force && next.size === granted.size && [...next].every((t) => granted.has(t))) return;
   granted = next;
   version++;
   for (const l of listeners) l();

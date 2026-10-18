@@ -48,22 +48,103 @@ _MATS = {}
 # ---------------------------------------------------------------- materials
 
 
-def vinyl(name, hexc):
-    """Soft matte vinyl: a broad soft highlight, a faint satin coat, no sparkle."""
-    key = ("vinyl", hexc)
-    if key in _MATS:
-        return _MATS[key]
+def _bump(mat, scale, strength, distortion=0.0, kind="noise", wave=None):
+    """A fine surface texture through the bump (object space, so every body shares the grain)."""
+    nt = mat.node_tree
+    b = nt.nodes.get("Principled BSDF")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    if kind == "wave":
+        tex = nt.nodes.new("ShaderNodeTexWave")
+        tex.inputs["Scale"].default_value = scale
+        tex.inputs["Distortion"].default_value = distortion
+        tex.bands_direction = wave or "X"
+    else:
+        tex = nt.nodes.new("ShaderNodeTexNoise")
+        tex.inputs["Scale"].default_value = scale
+        tex.inputs["Detail"].default_value = 6.0
+        tex.inputs["Roughness"].default_value = 0.62
+        tex.inputs["Distortion"].default_value = distortion
+    nt.links.new(tc.outputs["Object"], tex.inputs["Vector"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = strength
+    bump.inputs["Distance"].default_value = 0.002
+    nt.links.new(tex.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    try:
+        nt.links.new(bump.outputs["Normal"], b.inputs["Coat Normal"])
+    except Exception:
+        pass
+
+
+def _principled(name, hexc, rough, spec=0.32, coat=0.0, coat_rough=0.4, sss=0.0, sheen=0.0):
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     b = mat.node_tree.nodes.get("Principled BSDF")
     b.inputs["Base Color"].default_value = (*B.hex_lin(hexc), 1)
-    b.inputs["Roughness"].default_value = float(os.environ.get("VROUGH", 0.5))
-    b.inputs["Specular IOR Level"].default_value = 0.32
-    b.inputs["Coat Weight"].default_value = float(os.environ.get("VCOAT", 0.18))
-    b.inputs["Coat Roughness"].default_value = 0.42
-    b.inputs["Subsurface Weight"].default_value = 0.04
-    b.inputs["Subsurface Radius"].default_value = (0.06, 0.04, 0.03)
-    b.inputs["Subsurface Scale"].default_value = 0.05
+    b.inputs["Roughness"].default_value = rough
+    b.inputs["Specular IOR Level"].default_value = spec
+    b.inputs["Coat Weight"].default_value = coat
+    b.inputs["Coat Roughness"].default_value = coat_rough
+    if sss:
+        b.inputs["Subsurface Weight"].default_value = sss
+        b.inputs["Subsurface Radius"].default_value = (0.08, 0.05, 0.035)
+        b.inputs["Subsurface Scale"].default_value = 0.06
+    if sheen:
+        b.inputs["Sheen Weight"].default_value = sheen
+        b.inputs["Sheen Roughness"].default_value = 0.45
+    return mat
+
+
+def vinyl(name, hexc):
+    """Premium soft vinyl: a broad soft highlight under a faint satin coat, a soft
+    subsurface glow at thin edges, and a very fine micro-texture (no sparkle)."""
+    key = ("vinyl", hexc)
+    if key in _MATS:
+        return _MATS[key]
+    mat = _principled(name, hexc, float(os.environ.get("VROUGH", 0.48)), 0.32, float(os.environ.get("VCOAT", 0.16)), 0.45, sss=0.08)
+    _bump(mat, 520.0, 0.035)
+    _MATS[key] = mat
+    return mat
+
+
+def fabric(name, hexc):
+    """Cotton twill for caps, beanies and nightcaps: dead matte, a soft sheen, a fine weave."""
+    key = ("fabric", hexc)
+    if key in _MATS:
+        return _MATS[key]
+    mat = _principled(name, hexc, 0.86, 0.18, sheen=0.55)
+    _bump(mat, 700.0, 0.035, distortion=0.4, kind="wave", wave="DIAGONAL")
+    _MATS[key] = mat
+    return mat
+
+
+def lacquer(name, hexc):
+    """Lacquered acetate for glasses: a clean soft gloss."""
+    key = ("lacquer", hexc)
+    if key in _MATS:
+        return _MATS[key]
+    mat = _principled(name, hexc, 0.3, 0.45, coat=0.7, coat_rough=0.12)
+    _MATS[key] = mat
+    return mat
+
+
+def softtouch(name, hexc):
+    """Soft-touch rubberised plastic for headphones and the satellite's mast."""
+    key = ("soft", hexc)
+    if key in _MATS:
+        return _MATS[key]
+    mat = _principled(name, hexc, 0.72, 0.2)
+    _bump(mat, 900.0, 0.04)
+    _MATS[key] = mat
+    return mat
+
+
+def ceramic(name, hexc):
+    """Glazed ceramic for Mira's badge: a little brighter and smoother than the body."""
+    key = ("ceramic", hexc)
+    if key in _MATS:
+        return _MATS[key]
+    mat = _principled(name, hexc, 0.36, 0.4, coat=0.35, coat_rough=0.25, sss=0.05)
     _MATS[key] = mat
     return mat
 
@@ -129,9 +210,24 @@ def material_for(part):
     col = part["color"]
     if kind == "glow":
         return glow(f"glow_{part['name']}", *part["glow"][:2], *part["glow"][2:4], *part["glow"][4:])
+    name = part["name"]
+    if kind == "decal" and (name.startswith("eye") or name.startswith("pupil") or name.startswith("white")):
+        return matte(f"m_{col}", col)
+    if name in FABRIC or name.startswith("leaf"):
+        return fabric(f"f_{name}_{col}", col)
+    if name.startswith("frames") or name.startswith("temple"):
+        return lacquer(f"l_{col}", col)
+    if name in SOFT or name.startswith("cup") or name.startswith("seam"):
+        return softtouch(f"s_{name}_{col}", col)
+    if name == "disc":
+        return ceramic("c_disc", col)
     if kind in ("decal", "matte"):
         return matte(f"m_{col}", col)
-    return vinyl(f"v_{part['name']}_{col}", col)
+    return vinyl(f"v_{name}_{col}", col)
+
+
+FABRIC = {"cap", "brim", "button", "beanie", "pom", "nightcap", "hat"}
+SOFT = {"band", "mast", "arm0", "arm1"}
 
 
 # ---------------------------------------------------------------- build
@@ -188,7 +284,7 @@ def scene(res):
     sc = B.reset_scene()
     _MATS.clear()
     B.setup_render(sc, res, res, SPP)
-    B.studio(sc, floor=True)
+    B.studio(sc, floor=True, rim=float(os.environ.get('RIM', 1.6)))
     # One soft contact shadow: the key goes high and big, the fill casts none.
     key = bpy.data.objects.get("key")
     if key:
@@ -217,10 +313,29 @@ def frame(sc, objs, fill, yaw=YAW, elev=ELEV):
     B.camera(sc, target=(0.5 * (lo.x + hi.x), 0, h * 0.48), dist=dist, lens=70, elev=elev, yaw=yaw)
 
 
+def clean_alpha(path, floor=0.1):
+    """The shadow catcher leaves a faint wash over the whole floor (indirect light it
+    'misses'), which shows as a grey box on the page. Keep only the real contact
+    shadow: alpha below the floor goes to zero, the rest is rescaled."""
+    im = bpy.data.images.load(path)
+    w, h = im.size
+    a = np.zeros(w * h * 4, np.float32)
+    im.pixels.foreach_get(a)
+    a = a.reshape(-1, 4)
+    al = a[:, 3]
+    a[:, 3] = np.clip((al - floor) / (1 - floor), 0, 1)
+    im.pixels.foreach_set(a.ravel())
+    im.filepath_raw = path
+    im.file_format = "PNG"
+    im.save()
+    bpy.data.images.remove(im)
+
+
 def render(sc, path):
     t0 = time.time()
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
+    clean_alpha(path)
     print("WROTE", path, f"{time.time() - t0:.1f}s", flush=True)
 
 
@@ -245,7 +360,12 @@ if mode in ("states", "all"):
     for st in O.STATES:
         shot(O.with_state(base, st), os.path.join(out_dir, f"mira_{st}.png"), RES)
 
-if mode in ("sprites", "all"):
+if mode in ("custom", "all"):
+    base = O.BY_ID["mira"]
+    for k in range(len(O.CUSTOM)):
+        shot(O.with_state(O.custom_spec(base, k), "ready"), os.path.join(out_dir, f"mira_custom{k}.png"), RES)
+
+if mode in ("sprites",):
     # The pairs the board's product rows use, at 3x their display size.
     want = os.environ.get("SPRITES")
     pairs = [tuple(x.split(":")) for x in want.split(",")] if want else [

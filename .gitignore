@@ -146,3 +146,6 @@ __pycache__/
 
 # Alevr Code env server bundle for the Mac app (npm run env-server:bundle:mac)
 native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
+
+# Dev-only renders (tools/crew/blender orbit_*.py); regenerate, never commit
+/public/dev-assets/

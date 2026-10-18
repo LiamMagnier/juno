@@ -88,9 +88,9 @@ def b_comet():
     """The comet's head (the tail is its own part, in a paler tone)."""
 
     def f(p):
-        return S.sphere(p, (0.16, 0, 0.4), 0.38)
+        return S.sphere(p, (0.22, 0, 0.36), 0.34)
 
-    return flat(f, 0.08), dict(z=0.38, gap=0.2, w=0.054, h=0.09, dx=0.18)
+    return flat(f, 0.08), dict(z=0.33, gap=0.19, w=0.054, h=0.09, dx=0.24)
 
 
 def b_pulsar():
@@ -129,7 +129,7 @@ for _k, _f in {
 # ---------------------------------------------------------------- parts
 
 
-def acc_disc(c, color, x=0.37, z=0.25, r=0.21, t=0.07, yaw=-24, sink=0.35):
+def acc_disc(c, color, x=0.43, z=0.25, r=0.22, t=0.09, yaw=-56, sink=0.95):
     """Mira's cream disc: a thick soft coin held against her lower right side,
     partly sunk into the body so it sits in it rather than floating on it."""
     y0 = float(S.ray_front(c.f, [x], [z])[0])
@@ -163,7 +163,7 @@ def acc_orbit_arcs(c, color, R=0.68, zc=0.42, tilt=26, roll=-14, tube=0.062):
     c.add("orbit", f, 0.005, "part", color, lo=(-R - 0.2, -R - 0.2, zc - 0.5), hi=(R + 0.2, R + 0.2, zc + 0.5))
 
 
-def acc_ring(c, color, R0=0.56, R1=0.88, zc=0.46, tilt=30, roll=-16, t=0.05):
+def acc_ring(c, color, R0=0.57, R1=0.88, zc=0.46, tilt=24, roll=-4, t=0.05):
     """A planet's ring: a broad soft band with thickness (lens-shaped section)."""
     pitch = math.radians(tilt)
     rl = math.radians(roll)
@@ -182,7 +182,7 @@ def acc_ring(c, color, R0=0.56, R1=0.88, zc=0.46, tilt=30, roll=-16, t=0.05):
     c.add("ring", f, 0.005, "part", color, lo=(-R1 - 0.1, -R1 - 0.1, zc - 0.45), hi=(R1 + 0.1, R1 + 0.1, zc + 0.45))
 
 
-def acc_disc_glow(c, inner, outer, R0=0.5, R1=0.86, zc=0.4, tilt=13, roll=-12):
+def acc_disc_glow(c, inner, outer, R0=0.52, R1=0.74, zc=0.44, tilt=11, roll=-8):
     """A black hole's accretion disc: a thick, soft, glowing torus-like disc,
     hottest at the inner edge (an emissive gradient, set up in orbit_render)."""
     pitch = math.radians(tilt)
@@ -195,29 +195,33 @@ def acc_disc_glow(c, inner, outer, R0=0.5, R1=0.86, zc=0.4, tilt=13, roll=-12):
         mid = 0.5 * (R0 + R1)
         half = 0.5 * (R1 - R0)
         u = np.clip((rho - R0) / (R1 - R0), 0, 1)
-        th = 0.085 * (1 - u) ** 0.8 + 0.022
+        th = 0.045 * (1 - u) ** 0.8 + 0.014
         return smax(np.abs(rho - mid) - half, np.abs(q[:, 2] - zc) - th, 0.03)
 
+    # The photon ring: a thin bright hoop round the body, facing the viewer.
+    c.add("photon", lambda p: S.torus(S.rot(p, (0, 0, 0.46), "z", math.radians(18)), (0, 0, 0.46), 0.5, 0.026, axis="y"), 0.004, "glow", inner, glow=(inner, inner, 0.0, 1.0, zc, tilt, roll))
     c.add("accretion", f, 0.005, "glow", inner, lo=(-R1 - 0.1, -R1 - 0.1, zc - 0.45), hi=(R1 + 0.1, R1 + 0.1, zc + 0.45), glow=(inner, outer, R0, R1, zc, tilt, roll))
 
 
 def acc_tail(c, color):
     """The comet's swept tail: soft overlapping lobes thinning to a point, curving up and back."""
-    head = np.array([0.16, 0.06, 0.42])
+    head = np.array([0.22, 0.06, 0.36])
     pts = []
-    for i in range(9):
-        t = i / 8
-        pts.append((head + np.array([-0.9 * t, 0.1 + 0.08 * t, 0.38 * t * t]), 0.33 * (1 - t) ** 1.05 + 0.045))
+    for i in range(13):
+        t = i / 12
+        pts.append((head + np.array([-1.18 * t, 0.12 + 0.06 * t, 0.62 * t ** 1.6]), 0.3 * (1 - t) ** 1.35 + 0.018))
 
     def f(p):
         g = None
         for (a, ra), (b, rb) in zip(pts[:-1], pts[1:]):
             s = S.round_cone(p, a, b, ra, rb)
             g = s if g is None else smin(g, s, 0.06)
-        q = p / np.array([1.0, 0.7, 1.0])
-        return smax(g, -S.sphere(q, head / np.array([1, 0.7, 1]), 0.33), 0.04)
+        q = p / np.array([1.0, 0.62, 1.0])
+        g = g / 1.0
+        g = np.maximum(g, (np.abs(p[:, 1] - 0.14) - 0.22))  # a flattened, swept ribbon of a tail
+        return smax(g, -S.sphere(p, head, 0.3), 0.04)
 
-    c.add("tail", f, 0.006, "part", color, lo=(-1.0, -0.4, 0.0), hi=(0.6, 0.6, 1.05))
+    c.add("tail", f, 0.006, "part", color, lo=(-1.1, -0.3, 0.0), hi=(0.6, 0.5, 1.2))
 
 
 def acc_panels(c, color, frame=PAL["silver"]):
@@ -228,7 +232,10 @@ def acc_panels(c, color, frame=PAL["silver"]):
         b = np.array([s * 0.48, 0.06, zc])
         c.add(f"arm{i}", lambda p, a=a, b=b: S.capsule(p, a, b, 0.045), 0.004, "part", frame)
         k = np.array([s * 0.7, 0.06, zc])
-        c.add(f"panel{i}", lambda p, k=k: S.round_box(S.rot(p, k, "z", math.radians(-14 * s)), k, (0.22, 0.05, 0.17), 0.04), 0.004, "part", color)
+        c.add(f"panel{i}", lambda p, k=k, s=s: S.round_box(S.rot(p, k, "z", math.radians(-14 * s)), k, (0.22, 0.05, 0.17), 0.04), 0.004, "part", color)
+        # the cell seams: two chalk bars across the wing's face
+        for j, dz in enumerate((-0.06, 0.06)):
+            c.add(f"seam{i}{j}", lambda p, k=k, s=s, dz=dz: S.round_box(S.rot(p, k, "z", math.radians(-14 * s)), k + np.array([0, -0.05, dz]), (0.21, 0.012, 0.011), 0.008), 0.0035, "part", PAL["chalk"])
 
 
 def acc_dish(c, color):
@@ -262,12 +269,12 @@ CAST = [
     dict(id="dew", name="Io", role="Data", kind="simple", shape="drop", color=PAL["aqua"], eyes=dict(EYES), acc=[]),
     dict(id="rhea", name="Lyra", role="Support", kind="simple", shape="gumdrop", color=PAL["emerald"], eyes=dict(EYES), acc=[dict(id="headphones", color=PAL["graphite"], cup=PAL["graphite"], r=0.2)]),
     dict(id="ori", name="Elli", role="Orchestration", kind="cosmic", shape="orb", color=PAL["sunflower"], eyes=dict(style="dot", z=0.52), acc=[dict(id="orbit_arcs", color=PAL["alevr"])]),
-    dict(id="vanta", name="Umbra", role="Deep research", kind="cosmic", shape="planet2", color=PAL["night"], eyes=dict(style="dot", color=WHITE, z=0.6), acc=[dict(id="accretion")]),
+    dict(id="vanta", name="Umbra", role="Deep research", kind="cosmic", shape="planet2", color=PAL["night"], eyes=dict(style="dot", color=WHITE, z=0.58), acc=[dict(id="accretion")]),
     dict(id="sato", name="Cass", role="Planning", kind="cosmic", shape="planet2", color=PAL["tangerine"], eyes=dict(style="dot", z=0.56), acc=[dict(id="ring2", color=PAL["lilac"])]),
     dict(id="luna", name="Lune", role="Overnight runs", kind="cosmic", shape="moon2", color=PAL["periwinkle"], eyes=dict(style="dot"), acc=[dict(id="nightcap", color=PAL["sky"], pom=WHITE)]),
-    dict(id="kip", name="Hale", role="Quick tasks", kind="cosmic", shape="comet", color=PAL["bubblegum"], eyes=dict(EYES), acc=[dict(id="tail", color="#ffb0d5")]),
+    dict(id="kip", name="Hale", role="Quick tasks", kind="cosmic", shape="comet", color=PAL["bubblegum"], eyes=dict(EYES), acc=[dict(id="tail", color="#ffbcd9")]),
     dict(id="vela", name="Vela", role="Monitoring", kind="cosmic", shape="pulsar", color=PAL["chartreuse"], eyes=dict(EYES), acc=[]),
-    dict(id="sputnik", name="Echo", role="Integrations", kind="cosmic", shape="satellite", color=PAL["silver"], eyes=dict(EYES), acc=[dict(id="panels", color=PAL["alevr"]), dict(id="dish", color=PAL["graphite"])]),
+    dict(id="sputnik", name="Echo", role="Integrations", kind="cosmic", shape="satellite", color=PAL["chalk"], eyes=dict(EYES), acc=[dict(id="band", color=PAL["alevr"], z0=0.6, z1=0.68), dict(id="panels", color=PAL["alevr"]), dict(id="dish", color=PAL["graphite"])]),
 ]
 
 BY_ID = {m["id"]: m for m in CAST}
@@ -304,7 +311,7 @@ def with_state(spec, state):
 
 # Parts a 20-28 px sprite leaves out (too fine to read), and how much bigger its eyes are.
 SPRITE_DROP = {"pom", "button", "temple0", "temple1", "tip", "mast", "arm0", "arm1"}
-SPRITE_EYES = 1.32
+SPRITE_EYES = 1.55
 
 
 def sprite_spec(spec):
@@ -322,3 +329,56 @@ def character(spec):
     if spec.get("sprite"):
         c.parts = [p for p in c.parts if p["name"] not in SPRITE_DROP]
     return c
+
+
+# ---------------------------------------------------------------- customization
+# A character is body shape + colour + accessory + eye style. Accessories are
+# separate parts fitted to any body from its own field (top, front, sides).
+
+SWATCHES = [
+    ("Alevr blue", PAL["alevr"]), ("Tomato", PAL["tomato"]), ("Tangerine", PAL["tangerine"]), ("Sunflower", PAL["sunflower"]),
+    ("Chartreuse", PAL["chartreuse"]), ("Emerald", PAL["emerald"]), ("Aqua", PAL["aqua"]), ("Violet", PAL["violet"]),
+    ("Bubblegum", PAL["bubblegum"]), ("Graphite", PAL["graphite"]),
+]
+
+ACCESSORY_CHOICES = {
+    "none": [],
+    "badge": [dict(id="disc", color=PAL["cream"])],
+    "cap": [dict(id="cap", color=PAL["sunflower"])],
+    "glasses": [dict(id="frames", color=INK)],
+    "headphones": [dict(id="headphones", color=PAL["graphite"], cup=PAL["graphite"], r=0.2)],
+    "nightcap": [dict(id="nightcap", color=PAL["sky"], pom=WHITE)],
+    "beanie": [dict(id="beanie", color=PAL["butter"], pom=WHITE)],
+    "orbit": [dict(id="orbit_arcs", color=PAL["alevr"])],
+}
+
+EYE_CHOICES = {"dots": dict(style="dot"), "pills": dict(style="pill"), "stickers": dict(style="sticker"), "happy": dict(style="arc")}
+
+CUSTOM = [
+    ("Alevr blue · badge · dots", dict(color=PAL["alevr"], acc="badge", eyes="dots")),
+    ("Tomato · no accessory · pills", dict(color=PAL["tomato"], acc="none", eyes="pills")),
+    ("Emerald · headphones · pills", dict(color=PAL["emerald"], acc="headphones", eyes="pills")),
+    ("Sunflower · glasses · dots", dict(color=PAL["sunflower"], acc="glasses", eyes="dots")),
+    ("Violet · nightcap · happy", dict(color=PAL["violet"], acc="nightcap", eyes="happy")),
+    ("Aqua · orbit ring · stickers", dict(color=PAL["aqua"], acc="orbit", eyes="stickers")),
+]
+
+
+def custom_spec(base, k):
+    title, o = CUSTOM[k]
+    m = copy.deepcopy(base)
+    m["color"] = o["color"]
+    m["acc"] = copy.deepcopy(ACCESSORY_CHOICES[o["acc"]])
+    m["eyes"] = dict(EYE_CHOICES[o["eyes"]])
+    m["id"] = f"{base['id']}_custom{k}"
+    return m
+
+
+def icon_spec(spec, eyes=1.22):
+    """The flat 48 px icon: every part kept, eyes a little bigger than the portrait's."""
+    m = copy.deepcopy(spec)
+    e = dict(m.get("eyes", {}))
+    e["size"] = e.get("size", 1.0) * eyes
+    m["eyes"] = e
+    m["id"] = spec["id"] + "_icon"
+    return m
