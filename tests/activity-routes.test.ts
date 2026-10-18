@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createActivityCountsHandler, createActivityListHandler } from "@/lib/activity/handler";
+import { createActivityCountsHandler, createActivityListHandler, type ActivityDeps } from "@/lib/activity/handler";
 import type { ActivityDb } from "@/lib/activity/store";
 import {
   ACTIVITY_SETTLED_WINDOW_MS,
@@ -151,8 +151,8 @@ function research(id: string, userId: string, state: string, at: Date): Row {
 
 const ME = "user-me";
 const THEM = "user-them";
-const asMe = async () => ({ user: { id: ME } });
-const signedOut = async () => ({ user: null });
+const asMe: ActivityDeps["authenticate"] = async () => ({ user: { id: ME } });
+const signedOut: ActivityDeps["authenticate"] = async () => ({ user: null });
 
 function sampleWorld(): World {
   return {

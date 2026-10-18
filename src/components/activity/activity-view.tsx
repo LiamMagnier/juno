@@ -249,7 +249,7 @@ export function ActivityRow({ item, now, onChanged }: { item: ActivityItem; now:
 
   return (
     <li
-      className="group relative flex flex-col gap-2 px-3 py-2.5 transition-colors duration-150 hover:bg-accent/50 focus-within:bg-accent/50 sm:flex-row sm:items-center sm:gap-3 motion-safe:animate-rise-in"
+      className="group relative flex flex-col gap-2 px-3 py-2.5 transition-colors duration-fast hover:bg-accent/50 focus-within:bg-accent/50 sm:flex-row sm:items-center sm:gap-3 motion-safe:animate-rise-in"
       onPointerEnter={() => setActive(true)}
       onPointerLeave={() => setActive(false)}
     >

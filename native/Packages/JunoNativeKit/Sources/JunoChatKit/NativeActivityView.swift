@@ -65,22 +65,26 @@ public struct NativeActivityView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel("Loading your activity")
         case .failed(let message):
-            JunoEmptyState(
-                title: "Couldn’t load your activity",
-                message: message,
-                icon: .circleX,
-                actionLabel: "Try again",
-                action: { Task { await model.retry() } }
-            )
+            // ContentUnavailableView rather than JunoEmptyState, which is
+            // Mac-only: this view compiles for the phone too.
+            ContentUnavailableView {
+                Label("Couldn’t load your activity", image: JunoIcon.circleX.assetName)
+            } description: {
+                Text(verbatim: message)
+            } actions: {
+                Button("Try again") { Task { await model.retry() } }
+            }
         case .loaded:
             if model.isEmpty {
-                JunoEmptyState(
-                    title: "Nothing is running",
-                    message: "Tasks, Code sessions and research you start show up here while they work, and stay for a day after they finish.",
-                    icon: .chartLine,
-                    actionLabel: onStartChat == nil ? nil : "Start a chat",
-                    action: onStartChat
-                )
+                ContentUnavailableView {
+                    Label("Nothing is running", image: JunoIcon.chartLine.assetName)
+                } description: {
+                    Text("Tasks, Code sessions and research you start show up here while they work, and stay for a day after they finish.")
+                } actions: {
+                    if let onStartChat {
+                        Button("Start a chat", action: onStartChat)
+                    }
+                }
             } else {
                 list
             }

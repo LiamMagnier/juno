@@ -25,11 +25,11 @@ struct JunoMobileActivityView: View {
       if let model {
         NativeActivityView(model: model, onOpen: open, onStartChat: startChat)
       } else {
-        JunoEmptyState(
-          title: "Activity unavailable",
-          message: "Sign in again to see what is running.",
-          icon: .chartLine
-        )
+        ContentUnavailableView {
+          Label("Activity unavailable", icon: .chartLine, size: 44)
+        } description: {
+          Text("Sign in again to see what is running.")
+        }
       }
     }
     .onAppear {

@@ -14,7 +14,7 @@ struct DesktopStageCPagesTests {
     @Test
     func moreIsTheWebsOrder() {
         #expect(DesktopDestination.moreCases == [])
-        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
+        #expect(DesktopDestination.sidebarCases == [.activity, .projects, .library, .connections])
     }
 
     /// Pages outside the sidebar column stay destinations, reachable through
