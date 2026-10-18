@@ -72,7 +72,13 @@ public struct NativeActivityView: View {
             } description: {
                 Text(verbatim: message)
             } actions: {
-                Button("Try again") { Task { await model.retry() } }
+                Button {
+                    Task { await model.retry() }
+                } label: {
+                    Text("Try again")
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
+                }
             }
         case .loaded:
             if model.isEmpty {
@@ -82,7 +88,11 @@ public struct NativeActivityView: View {
                     Text("Tasks, Code sessions and research you start show up here while they work, and stay for a day after they finish.")
                 } actions: {
                     if let onStartChat {
-                        Button("Start a chat", action: onStartChat)
+                        Button(action: onStartChat) {
+                            Text("Start a chat")
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(.rect)
+                        }
                     }
                 }
             } else {
