@@ -227,8 +227,9 @@ final class JunoTokenConsumptionTests: XCTestCase {
         let web: [JunoAccent: (light: (Double, Double, Double), dark: (Double, Double, Double))] = [
             // Graphite keeps the historical persisted key for compatibility.
             .coral: ((216, 0.09, 0.11), (220, 0.07, 0.91)),
-            // Ultramarine is presence as a control colour: the same pair as --presence.
-            .ultramarine: ((229.231, 0.63415, 0.48235), (228.608, 0.61240, 0.74706)),
+            // Ultramarine is retuned to Cobalt (spec D26 / S7): presence never
+            // doubles as an accent, so it is no longer the --presence pair.
+            .ultramarine: ((205, 0.78, 0.36), (205, 0.70, 0.60)),
             .juniper: ((152, 0.44, 0.31), (152, 0.42, 0.54)),
             .teal: ((180, 0.63, 0.315), (187, 0.58, 0.49)),
             .violet: ((249, 0.59, 0.60), (249, 0.66, 0.71)),
@@ -373,7 +374,16 @@ final class JunoTokenConsumptionTests: XCTestCase {
         let perSurfaceInk = "The web's ink for one ground; the apps draw junoForeground on every ground."
         let canvas = "Design canvas chrome, drawn by the web editor bundle the Mac hosts (Resources/DesignEditor)."
         let signal = "The web Code sidebar's working / needs-you ink; the Mac draws that state in Code's own Studio.Signal coral (StudioTheme.swift)."
-        return [
+        let p3Colour = "A wave-2 role colour (spec §3.1). P3-native-foundations maps it into JunoColors; until then no native surface paints it."
+        let p3Status = "A status role colour. P3's JunoStatus (ink, glyph, word) consumes it; the shipped native status inks are still JunoStatus.swift's own."
+        let composer = "The web composer's wells and second ink (moved into globals.css by P1). The native composer is JunoComposerShell on system materials."
+        let bubble = "The one bubble shape (12 with an 8 tuck, S3). P3's JunoUserBubble consumes it; the shipped Mac bubble is still MessageRow's own shape."
+        let macSidebar = "The web's sidebar resize range (224 to 352). The Mac keeps its own 220 to 360 range in JunoSidebarMetrics (it reads sidebarDefault); aligning the ends is a visible change for P3."
+        let webShell = "A web shell metric (dock panes, header edge and snap zones, transcript fade). The apps have no equivalent surface."
+        let measure = "The stored transcript widths. P3 adds narrow 640 and transcriptWide 992 to JunoReadingMeasure (spec §P3 (2)); not read yet."
+        let p3Timing = "A named timing (spec §4: delay, hold, loop, settle, stream, stagger). P3 maps these into JunoMotion; native motion still reads only the duration ladder."
+        let p3Gesture = "A wave-1 gesture constant. The phone drawer still settles on predicted-end-past-half; P3 moves its gestures onto these (spec §P3 (2), JunoLayout)."
+        var entries: [String: String] = [
             "JunoGeneratedColors.signal": signal,
             "JunoGeneratedColors.signalInk": signal,
             "JunoGeneratedColors.accentForeground": perSurfaceInk,
@@ -410,8 +420,71 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedColors.attention": "V3's needs-you text ink (attention is words, never a pill). Not adopted natively yet: needs-you lines keep their current ink until the native V3 shell pass.",
             "JunoGeneratedColors.faintForeground": "V3's faint text. Not adopted natively yet: the quietest native ink is still junoTertiaryInk (muted-foreground at 70%).",
             "JunoGeneratedColors.userBubble": "V3's user-message fill. Not adopted natively yet: the Mac bubble still fills with junoSecondary (MessageRow.swift).",
+            // Wave-2 tokens (spec P1-pipeline). P1 only projects them; the native
+            // mappings are P3-native-foundations' scope (spec §P3 (2) and (5)),
+            // which has not landed. Each entry is a real gap; delete it in the
+            // change that consumes it.
+            "JunoGeneratedColors.mutedForegroundOnFill": p3Colour,
+            "JunoGeneratedColors.inkTertiary": p3Colour,
+            "JunoGeneratedColors.userBubbleHover": "The user bubble's hover fill. P3's JunoUserBubble consumes it; the Mac bubble has no hover state yet.",
+            "JunoGeneratedColors.presenceWash": p3Colour,
+            "JunoGeneratedColors.signalWash": p3Colour,
+            "JunoGeneratedColors.toneEdge": "The web's tone-step border (foreground/0.32 under high contrast). P3 maps the high-contrast appearance natively; not consumed yet.",
+            "JunoGeneratedColors.statusRunning": p3Status,
+            "JunoGeneratedColors.statusNeedsYou": p3Status,
+            "JunoGeneratedColors.statusNeedsYouInk": p3Status,
+            "JunoGeneratedColors.statusReady": p3Status,
+            "JunoGeneratedColors.statusBlocked": p3Status,
+            "JunoGeneratedColors.cmpInk2": composer,
+            "JunoGeneratedColors.cmpWell": composer,
+            "JunoGeneratedColors.cmpWell2": composer,
+            "JunoGeneratedColors.cmpWell3": composer,
+            "JunoGeneratedRadius.bubble": bubble,
+            "JunoGeneratedRadius.bubbleTuck": bubble,
+            "JunoGeneratedType.homeTitle": "The web home's h1 rung. The apps open on the greeting (JunoType.display); no native home title exists yet.",
+            "JunoGeneratedType.kbd": "The web's keycap and count-badge rung (Kbd and Badge only). Native shortcuts are drawn by the system menus and .keyboardShortcut.",
+            "JunoGeneratedSprings.snap": "The web's snap spring. No native surface moves on it yet; P3 adds it to JunoMotion with the rest of the spring set.",
+            "JunoGeneratedShell.sidebarMin": macSidebar,
+            "JunoGeneratedShell.sidebarMax": macSidebar,
+            "JunoGeneratedShell.edgeZone": webShell,
+            "JunoGeneratedShell.snapZone": webShell,
+            "JunoGeneratedShell.headerH": "The web header's height; the Mac title bar is the system toolbar and the phone's is the navigation bar.",
+            "JunoGeneratedShell.transcriptFade": webShell,
+            "JunoGeneratedShell.edgeStripNative": "The phone drawer's edge strip. JunoMobilePhoneShell still pulls from a 22pt strip; P3 moves it to this 16pt value (spec §P3 (2), JunoLayout).",
+            "JunoGeneratedShell.drawerDimLight": "The drawer dim in light (0.12, owner decision S4). The phone still dims at 0.04 in light; the visible change lands with P3, not in a CI fix.",
+            "JunoGeneratedShell.galaxyMaxAnimating": "The cap on animating galaxy marks; P3's JunoGalaxyMark registry consumes it (spec §P3 (4)).",
+            "JunoGeneratedShell.dockPanesMax": webShell,
+            "JunoGeneratedShell.dockPaneEvict": webShell,
+            "JunoGeneratedShell.transcriptNarrow": measure,
+            "JunoGeneratedShell.transcriptMedium": measure,
+            "JunoGeneratedShell.transcriptWide": measure,
         ]
+        // `slop` is read: the phone drawer's drag starts after it.
+        let gestures = [
+            "dismissVelocity", "dismissFraction", "openVelocity", "openFraction",
+            "edgeZone", "rubberBandLimit", "rubberBandC", "settleMin", "settleMax",
+        ]
+        for name in gestures {
+            entries["JunoGeneratedGesture.\(name)"] = p3Gesture
+        }
+        for name in timingUnread {
+            entries["JunoGeneratedTiming.\(name)"] = p3Timing
+        }
+        return entries
     }()
+
+    /// The named timing families (`--delay-*`, `--hold-*`, `--loop-*`,
+    /// `--settle-*`, `--stream-*`, `--stagger-*`) the apps do not read yet.
+    private static let timingUnread = [
+        "delayActionRow", "delayGreeting", "delayHairline", "delayInsertFlush", "delayShow",
+        "delayTooltip", "delayTooltipSkip",
+        "holdArm", "holdCheck", "holdComposerIdle", "holdInsertMax", "holdNeedsYouMax",
+        "holdPhase", "holdReasoning", "holdSkeleton",
+        "loopBeat", "loopGalaxy", "loopGalaxyCalm",
+        "settleMin", "settleMax",
+        "staggerMax", "staggerOnboarding", "staggerRow", "staggerTile",
+        "streamBand", "streamDrainTick", "streamRateMax", "streamRateMin", "streamTailMax",
+    ]
 
     func testEveryGeneratedTokenIsReadOrDeclaredUnread() throws {
         let generated = try Self.generatedMembers()
