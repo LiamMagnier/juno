@@ -294,8 +294,9 @@ jobs:
     runs-on: macos-26
     # JunoNativeKit can finish compiling and then leave xctest parked forever on
     # a hosted runner. The package runner below bounds that state and retries it
-    # once with a clean scratch path; this outer limit remains the final fuse.
-    timeout-minutes: 22
+    # once in a fresh process. Build and test have separate bounded deadlines;
+    # this outer limit remains the final fuse.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -318,9 +319,10 @@ jobs:
           sudo xcode-select -s "$newest/Contents/Developer"
           xcodebuild -version
 
+      - name: Verify the Swift test runner
+        run: python3 scripts/test-swift-package-runner.py
+
       - name: Test ${{ matrix.package }}
-        env:
-          SWIFT_BACKTRACE: enable=yes,interactive=no,color=no
         run: >-
           python3 scripts/run-swift-package-tests.py
           --package "${{ matrix.package }}"
@@ -408,6 +410,27 @@ jobs:
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      # A Stable build must carry the env server bundle: JunoDesktop's "Env
+      # server bundle" phase fails it without one, on purpose, so a release
+      # can never ship the app without its sidecar. The bundle is gitignored,
+      # so it is built here the way release-macos.sh builds it: esbuild from
+      # the root install, agent-core bundled from source, the env server's own
+      # dependencies. Without it the phase finds no installed toolchain to
+      # bundle with and fails the Stable build before any Swift compiles.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Bundle the env server
+        run: |
+          set -euo pipefail
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+          npm run env-server:bundle:mac
+          test -s native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
 
       - name: Build JunoDesktop (Stable, strict)
         run: |

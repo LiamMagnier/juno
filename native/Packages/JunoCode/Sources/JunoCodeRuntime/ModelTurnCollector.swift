@@ -58,10 +58,16 @@ public enum ModelTurnCollector {
         _ request: ModelTurnRequest,
         model: any AgentModelClient,
         policy: ModelRetryPolicy = .standard,
-        sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
         jitter: @Sendable () -> Double = { Double.random(in: 0..<1) },
         onRetry: @Sendable (Retry) async -> Void = { _ in }
     ) async throws -> Turn {
+        // A public async default closure can acquire incompatible frames in
+        // client modules on Xcode 26 (Swift #92017). Construct it here instead.
+        let wait = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
         var retries = 0
         var waited = Duration.zero
         while true {
@@ -84,7 +90,7 @@ public enum ModelTurnCollector {
                 retries += 1
                 waited += delay
                 await onRetry(Retry(attempt: retries, limit: limit, delay: delay, sentence: failure.sentence))
-                try await sleep(delay)
+                try await wait(delay)
             }
         }
     }

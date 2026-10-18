@@ -488,7 +488,7 @@ struct StudioScreenControlSettings: View {
 
     var body: some View {
         Section {
-            Text("Alevr can choose computer use for Mac app and browser tasks, including chats with no project. It asks for access to each app when needed. Browsers support navigation, clicks and typing; terminals and editors allow clicks. Password managers, protected system prompts and Alevr itself are excluded. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. Press Esc anywhere to stop.")
+            Text("Alevr can choose computer use for Mac app and browser tasks, including chats with no project. Full access opens permitted apps and performs ordinary clicks, typing and keys without another approval. Other modes ask for each app. Browsers support navigation, clicks and typing; terminals and editors allow clicks. Password managers, protected system prompts and Alevr itself are excluded. Sending, buying, deleting, signing in and changes in System Settings still ask. Use the floating controls to view the app, pause or stop. Press Esc anywhere to stop.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .fixedSize(horizontal: false, vertical: true)

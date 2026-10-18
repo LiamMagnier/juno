@@ -66,13 +66,14 @@ public final class ScreenPresenceCenter {
         CGRect(x: rect.x, y: mainDisplayHeight() - rect.y - rect.height, width: rect.width, height: rect.height)
     }
 
-    /// The floating preview's explicit handoff; uses the same service as the thread.
-    public func togglePause(sessionID requested: String? = nil) {
-        guard let sessionID = requested ?? sessionID else { return }
+    /// Explicit intent survives reader-input auto-pause arriving before the click.
+    @discardableResult
+    public func setPaused(_ paused: Bool, sessionID requested: String? = nil) -> Task<Void, Never>? {
+        guard let sessionID = requested ?? sessionID else { return nil }
         let service = self.service
-        Task {
-            if case .paused = await service.state(sessionID: sessionID) { await service.resume(sessionID: sessionID) }
-            else { await service.pause(sessionID: sessionID) }
+        return Task {
+            if paused { await service.pause(sessionID: sessionID) }
+            else { await service.resume(sessionID: sessionID) }
         }
     }
 

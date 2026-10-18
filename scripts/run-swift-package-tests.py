@@ -16,6 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--package", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=480)
     parser.add_argument("--attempts", type=int, default=2)
+    parser.add_argument("--build-timeout-seconds", type=int, default=600)
     return parser.parse_args()
 
 
@@ -42,23 +43,31 @@ def main() -> int:
     if not package_path.is_dir():
         print(f"Package directory does not exist: {package_path}", file=sys.stderr)
         return 2
-    if args.timeout_seconds <= 0 or args.attempts <= 0:
+    if min(args.timeout_seconds, args.build_timeout_seconds, args.attempts) <= 0:
         print("Timeout and attempts must be positive.", file=sys.stderr)
         return 2
 
+    # Compilation is not a stalled test. JunoCode's cold build takes 5–6
+    # minutes on CI; charging it to the test deadline killed progressing tests.
+    scratch_path = runner_temp / f"{args.package}-tests"
+    common = [
+        "--package-path", str(package_path),
+        "--scratch-path", str(scratch_path),
+        "-Xswiftc", "-warnings-as-errors",
+    ]
+    print(f"Building {args.package} tests (timeout {args.build_timeout_seconds}s).", flush=True)
+    build = subprocess.Popen(["swift", "build", "--build-tests", *common], start_new_session=True)
+    try:
+        build_code = build.wait(timeout=args.build_timeout_seconds)
+    except subprocess.TimeoutExpired:
+        print(f"{args.package} test build exceeded its deadline.", file=sys.stderr, flush=True)
+        stop_process_group(build)
+        return 124
+    if build_code != 0:
+        return build_code
+
     for attempt in range(1, args.attempts + 1):
-        scratch_path = runner_temp / f"{args.package}-tests-attempt-{attempt}"
-        command = [
-            "swift",
-            "test",
-            "--package-path",
-            str(package_path),
-            "--scratch-path",
-            str(scratch_path),
-            "--no-parallel",
-            "-Xswiftc",
-            "-warnings-as-errors",
-        ]
+        command = ["swift", "test", "--skip-build", "--no-parallel", *common]
         print(
             f"Running {args.package} tests (attempt {attempt}/{args.attempts}, "
             f"timeout {args.timeout_seconds}s).",
@@ -76,7 +85,7 @@ def main() -> int:
             )
             stop_process_group(process)
             if attempt < args.attempts:
-                print("Retrying with a clean SwiftPM scratch path.", flush=True)
+                print("Retrying the built tests in a fresh process.", flush=True)
                 continue
             return 124
 

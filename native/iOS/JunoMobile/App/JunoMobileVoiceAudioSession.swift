@@ -43,9 +43,10 @@ final class JunoMobileVoiceAudioSession {
       ) { [weak self] notification in
         let raw = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
         let options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
+        let reason = notification.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt
+        let suspended = JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: reason)
         Task { @MainActor [weak self] in
-          // Supported iOS versions no longer deliver legacy suspension interruptions.
-          self?.handleInterruption(typeRaw: raw, optionsRaw: options, wasSuspended: false)
+          self?.handleInterruption(typeRaw: raw, optionsRaw: options, wasSuspended: suspended)
         }
       }
     )
@@ -148,6 +149,21 @@ enum JunoMobileVoiceInterruptionPolicy {
     /// Re-activate the session and rebuild the graph; unmute if the
     /// interruption was what muted it.
     case resume(unmute: Bool)
+  }
+
+  /// `AVAudioSession.InterruptionReason.appWasSuspended`, by value.
+  ///
+  /// The reason key is where iOS 14.5 moved the old `wasSuspended` flag
+  /// (`AVAudioSessionInterruptionWasSuspendedKey`, deprecated since). The case
+  /// itself is deprecated in the 16.0 SDK, below this app's deployment floor,
+  /// so naming it would fail a warnings-as-errors build; its value is fixed
+  /// API and reads the same.
+  static let appWasSuspendedReason: UInt = 1
+
+  /// Whether a "began" notification's reason says the interruption happened
+  /// while the app was suspended. No reason means it did not.
+  static func wasSuspended(reasonRaw: UInt?) -> Bool {
+    reasonRaw == appWasSuspendedReason
   }
 
   static func action(

@@ -1203,7 +1203,7 @@ struct ChatComposer: View {
 
     // MARK: Body
 
-    var body: some View {
+    private var composerSurface: some View {
         JunoComposerShell(
             captionAbove: { captionsAbove },
             above: { aboveSlot },
@@ -1268,6 +1268,10 @@ struct ChatComposer: View {
                 }
             }
         }
+    }
+
+    private var mountedComposer: some View {
+        composerSurface
         .onAppear {
             // Project before model, and the order is load-bearing: a project's
             // preferred model is part of what `configureSelection()` answers, so
@@ -1320,6 +1324,10 @@ struct ChatComposer: View {
         .onChange(of: model.selectedConversationID) { _, selected in
             if let selected, !model.messages(for: selected).isEmpty { firstTurnError = nil }
         }
+    }
+
+    private var synchronizedComposer: some View {
+        mountedComposer
         .onChange(of: voiceActive) { _, active in
             isInCall = active
             armPasteMonitor()
@@ -1382,6 +1390,10 @@ struct ChatComposer: View {
             queuedTurn = nil
             dispatch(queued, restoreOnRefusal: true)
         }
+    }
+
+    var body: some View {
+        synchronizedComposer
         .onChange(of: request?.id) { _, _ in
             guard let request else { return }
             switch request.kind {

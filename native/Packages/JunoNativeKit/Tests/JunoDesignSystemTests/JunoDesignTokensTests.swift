@@ -155,6 +155,42 @@ final class JunoDesignTokensTests: XCTestCase {
             ConcentricRectangle(corners: .concentric(minimum: .fixed(6)), isUniform: true)
                 .path(in: rect)
         )
+        // With no container declared, a concentric child falls back to its
+        // floor — it never draws square. Judged on the drawn picture, because
+        // that is where the floor applies: a bare `path(in:)`, outside any
+        // view, has no container to resolve against, and on the macOS 26 CI
+        // runners it comes back as the plain rectangle (macOS 27 already
+        // applies the floor there).
+        let concentric = try Self.cornerAlpha(JunoRadius.concentric(), size: rect.size)
+        let square = try Self.cornerAlpha(Rectangle(), size: rect.size)
+        XCTAssertEqual(concentric.centre, 255, "the shape is drawn")
+        XCTAssertEqual(concentric.corner, 0, "a 10pt floor leaves the corner pixel empty")
+        XCTAssertEqual(square.corner, 255, "a square fills it")
+    }
+
+    /// The alpha of the top-left pixel and of the centre of `shape`, filled
+    /// and drawn offscreen at 1x.
+    @MainActor
+    private static func cornerAlpha<S: Shape>(_ shape: S, size: CGSize) throws -> (corner: UInt8, centre: UInt8) {
+        let renderer = ImageRenderer(content: shape.fill(Color.black).frame(width: size.width, height: size.height))
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage, "the shape did not render")
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+            context?.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        func alpha(_ x: Int, _ y: Int) -> UInt8 { pixels[(y * width + x) * 4 + 3] }
+        return (alpha(0, 0), alpha(width / 2, height / 2))
+    }
+
+    @MainActor
+    func testConcentricChildrenResolveTheHostedContainer() throws {
         // SDK 26 resolves concentric corners during layout; a bare path has
         // no container environment. Exercise the actual hosted shape instead.
         let renderer = ImageRenderer(content:

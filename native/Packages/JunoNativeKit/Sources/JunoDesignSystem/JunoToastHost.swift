@@ -144,10 +144,22 @@ public final class JunoToastCenter {
     /// The selection bar, while a page has something selected.
     public private(set) var selection: JunoToastSelection?
 
-    @ObservationIgnored private var timer: Task<Void, Never>?
+    @ObservationIgnored private(set) var timer: Task<Void, Never>?
+    @ObservationIgnored private let sleep: @MainActor (Duration) async throws -> Void
     @ObservationIgnored private var isHovering = false
 
-    public init() {}
+    public init() {
+        // Construct the suspending closure here, never in a public default
+        // argument (Xcode 26 can link mismatched cross-module async frames).
+        sleep = { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
+    }
+
+    init(sleep: @escaping @MainActor (Duration) async throws -> Void) {
+        self.sleep = sleep
+    }
 
     public func post(_ toast: JunoToast) {
         current = toast
@@ -184,8 +196,9 @@ public final class JunoToastCenter {
         timer = nil
         guard let duration = toast.duration, !isHovering else { return }
         let instance = toast.instance
+        let wait = sleep
         timer = Task { [weak self] in
-            try? await Task.sleep(for: duration)
+            try? await wait(duration)
             guard !Task.isCancelled, let self, self.current?.instance == instance else { return }
             self.current = nil
         }

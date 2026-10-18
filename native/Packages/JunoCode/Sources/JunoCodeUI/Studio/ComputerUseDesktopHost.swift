@@ -103,6 +103,7 @@ final class ComputerActionOverlayWindow {
 
     private func observe() {
         withObservationTracking {
+            _ = model.isPreviewExpanded
             render(model.mark)
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.observe() }
@@ -141,10 +142,10 @@ final class ComputerActionOverlayWindow {
     }
 
     private func showPreview() {
-        guard model.mark?.thumbnail != nil else { previewPanel?.orderOut(nil); return }
+        guard model.mark != nil else { previewPanel?.orderOut(nil); return }
         if previewPanel == nil {
             let panel = NSPanel(
-                contentRect: CGRect(x: 0, y: 0, width: 336, height: 282),
+                contentRect: CGRect(x: 0, y: 0, width: ComputerUsePreviewView.width, height: ComputerUsePreviewView.collapsedHeight),
                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true
             )
             panel.level = .floating
@@ -161,9 +162,17 @@ final class ComputerActionOverlayWindow {
             panel.contentView?.layer?.cornerRadius = 16
             panel.contentView?.layer?.masksToBounds = true
             if let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame {
-                panel.setFrameOrigin(CGPoint(x: frame.maxX - 356, y: frame.minY + 20))
+                panel.setFrameOrigin(CGPoint(x: frame.maxX - ComputerUsePreviewView.width - 20, y: frame.minY + 20))
             }
             previewPanel = panel
+        }
+        if let panel = previewPanel {
+            let height = model.isPreviewExpanded ? ComputerUsePreviewView.expandedHeight : ComputerUsePreviewView.collapsedHeight
+            if panel.frame.height != height {
+                var frame = panel.frame
+                frame.size.height = height
+                panel.setFrame(frame, display: true, animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            }
         }
         previewPanel?.orderFrontRegardless()
     }
@@ -196,8 +205,8 @@ struct ComputerActionOverlayView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let ring: CGFloat = 22
-    private static let labelWidth: CGFloat = 66
+    private static let ring: CGFloat = 20
+    private static let labelWidth: CGFloat = 54
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -206,15 +215,11 @@ struct ComputerActionOverlayView: View {
                 if let local = local(mark.point) {
                     ring(mark)
                         .position(local)
-                        .animation(reduceMotion ? nil : JunoMotion.standard, value: local)
+                        .animation(reduceMotion ? nil : JunoMotion.fast, value: local)
                     label(mark)
                         .frame(width: Self.labelWidth, alignment: .leading)
                         .position(labelPosition(for: local))
-                        .animation(reduceMotion ? nil : JunoMotion.standard, value: local)
-                } else {
-                    label(mark)
-                        .frame(width: Self.labelWidth, alignment: .leading)
-                        .position(x: screenFrame.width / 2, y: 64)
+                        .animation(reduceMotion ? nil : JunoMotion.fast, value: local)
                 }
             }
         }
@@ -227,11 +232,11 @@ struct ComputerActionOverlayView: View {
             Circle()
                 .fill(Color.white.opacity(mark.live ? 0.12 : 0))
                 .overlay(Circle().strokeBorder(Color.white.opacity(mark.live ? 0.7 : 0), lineWidth: 1))
-                .frame(width: 22, height: 22)
+                .frame(width: Self.ring, height: Self.ring)
                 .animation(reduceMotion ? nil : JunoMotion.fast, value: mark.live)
             AgentCursorGlyph()
-                .frame(width: 22, height: 30)
-                .offset(x: 11, y: 15)
+                .frame(width: 16, height: 22)
+                .offset(x: 8, y: 11)
         }
         .accessibilityHidden(true)
     }
@@ -239,14 +244,11 @@ struct ComputerActionOverlayView: View {
     private func label(_ mark: ComputerActionOverlayModel.Mark) -> some View {
         Text("Alevr")
             .font(.caption2.weight(.semibold))
-            .fontDesign(.rounded)
-            .tracking(0.1)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Color.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.16), radius: 3, y: 2)
+            .foregroundStyle(JunoAccentSelection.shared.onAccent)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.micro)
+            .background(Color.junoAccent, in: RoundedRectangle(cornerRadius: 5))
+            .shadow(color: .black.opacity(0.16), radius: 2, y: 1)
             .accessibilityLabel("Alevr: \(mark.label)")
     }
 
@@ -297,6 +299,10 @@ struct AgentCursorGlyph: View {
 /// A movable, nonactivating view of the actual captured app. Images remain
 /// memory-only and the panel is excluded from the agent's own captures.
 struct ComputerUsePreviewView: View {
+    static let width: CGFloat = 380
+    static let collapsedHeight: CGFloat = 62
+    static let expandedHeight: CGFloat = 294
+
     let model: ComputerActionOverlayModel
     let presence: ScreenPresenceCenter
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -304,52 +310,93 @@ struct ComputerUsePreviewView: View {
     private var isPaused: Bool { model.mark?.paused == true }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                JunoIconView(.monitorUp, size: 14)
-                    .foregroundStyle(Color.junoAccent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.mark?.appName ?? "Computer use")
-                        .font(.caption.weight(.semibold))
-                    Text(isPaused ? "Paused · you're in control" : "Alevr is working")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .lineLimit(1)
-                .help("Drag this preview to move it")
-                Spacer(minLength: 4)
-                Button { presence.togglePause(sessionID: model.sessionID) } label: {
-                    Text(isPaused ? "Resume" : "Pause")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, JunoSpace.snug)
-                        .frame(minWidth: JunoLayout.pointerTarget, minHeight: JunoLayout.pointerTarget)
-                        .contentShape(.rect)
-                }
-                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
-                    .accessibilityLabel(isPaused ? "Resume computer use" : "Pause computer use")
-                Button { presence.stop() } label: {
-                    JunoIconView(.stop, size: 11)
-                        .frame(minWidth: JunoLayout.pointerTarget, minHeight: JunoLayout.pointerTarget)
-                        .contentShape(.rect)
-                }
-                .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
-                .accessibilityLabel("Stop computer use")
-                .help("Stop computer use · Esc")
+        VStack(spacing: 0) {
+            statusBar
+            if model.isPreviewExpanded {
+                appPreview
+                    .transition(.opacity)
             }
-            .buttonStyle(StudioQuietButtonStyle())
-            .controlSize(.small)
-            .padding(12)
+        }
+        .frame(width: Self.width, height: model.isPreviewExpanded ? Self.expandedHeight : Self.collapsedHeight, alignment: .top)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .animation(reduceMotion ? nil : JunoMotion.fast, value: model.isPreviewExpanded)
+        .onChange(of: model.mark?.thumbnail, initial: true) { _, data in
+            // The collapsed control never decodes screenshots it does not show.
+            image = model.isPreviewExpanded ? data.flatMap { NSImage(data: $0) } : nil
+        }
+        .onChange(of: model.isPreviewExpanded) { _, expanded in
+            image = expanded ? model.mark?.thumbnail.flatMap { NSImage(data: $0) } : nil
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Alevr computer use")
+    }
+
+    private var statusBar: some View {
+        let paused = isPaused
+        return HStack(spacing: JunoSpace.cozy) {
+            AgentCursorGlyph()
+                .frame(width: 13, height: 18)
+                .frame(width: 28, height: 28)
+                .background(Color.junoAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                Text(isPaused ? "Paused" : (model.mark?.appName ?? "Computer use"))
+                    .font(.caption.weight(.semibold))
+                Text(isPaused ? "You're in control" : (model.mark?.label ?? "Looking at the app"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+            }
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(model.mark?.label ?? "Drag to move computer use controls")
+            HStack(spacing: JunoSpace.hairline) {
+                control(model.isPreviewExpanded ? "Hide" : "View",
+                        label: model.isPreviewExpanded ? "Hide preview" : "Show preview") {
+                    model.isPreviewExpanded.toggle()
+                }
+                .accessibilityValue(model.isPreviewExpanded ? "Expanded" : "Collapsed")
+                control(paused ? "Resume" : "Pause", label: paused ? "Resume computer use" : "Pause computer use") {
+                    presence.setPaused(!paused, sessionID: model.sessionID)
+                }
+                .id(paused)
+                control("Stop", label: "Stop computer use · Esc") { presence.stop() }
+            }
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(height: Self.collapsedHeight)
+    }
+
+    private func control(_ title: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, JunoSpace.tight)
+                .frame(minWidth: JunoLayout.pointerTarget, minHeight: JunoLayout.pointerTarget)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(StudioQuietButtonStyle())
+        .accessibilityLabel(label)
+        .help(label)
+    }
+
+    private var appPreview: some View {
+        VStack(spacing: 0) {
             GeometryReader { geometry in
                 ZStack(alignment: .topLeading) {
-                    Color.black.opacity(0.12)
+                    Color.black.opacity(0.08)
                     if let image {
                         Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                         if let point = previewPoint(in: geometry.size, image: image) {
                             AgentCursorGlyph()
-                                .frame(width: 16, height: 22)
-                                .position(x: point.x + 8, y: point.y + 11)
-                                .animation(reduceMotion ? nil : JunoMotion.standard, value: point)
+                                .frame(width: 13, height: 18)
+                                .position(x: point.x + 6.5, y: point.y + 9)
+                                .animation(reduceMotion ? nil : JunoMotion.fast, value: point)
                                 .accessibilityHidden(true)
                         }
                     } else {
@@ -360,24 +407,16 @@ struct ComputerUsePreviewView: View {
                 }
                 .clipped()
             }
-            .frame(height: 180)
-            HStack(alignment: .top, spacing: 7) {
-                JunoIconView(isPaused ? .pause : (model.mark?.live == true ? .scan : .eye), size: 11)
-                    .foregroundStyle(Color.junoAccent)
-                Text(isPaused ? "Resume when you're ready." : (model.mark?.label ?? "Observing the app"))
-                    .font(.caption).lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 200)
+            HStack {
+                Text(isPaused ? "Resume when you're ready." : "Latest app view")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text("Esc to stop").font(.caption2).foregroundStyle(.secondary)
             }
-            .padding(12)
-            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: 32)
         }
-        .frame(width: 336, height: 282)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .onChange(of: model.mark?.thumbnail, initial: true) { _, data in
-            image = data.flatMap { NSImage(data: $0) }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Alevr computer use preview")
     }
 
     private func previewPoint(in size: CGSize, image: NSImage) -> CGPoint? {

@@ -18,7 +18,8 @@ import Foundation
 /// | full       | yes  | yes                   | yes             | ask   |
 ///
 /// The floor — sending, buying, deleting, signing in, System Settings — asks
-/// in every mode and no allowlist silences it. Granting an app always asks.
+/// in every mode and no allowlist silences it. Full Access supplies app
+/// consent; supervised modes ask before granting each app.
 public enum ComputerUseAccessPolicy {
     public enum Decision: Hashable, Sendable {
         case allow

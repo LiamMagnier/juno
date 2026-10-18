@@ -49,13 +49,16 @@ final class ComputerActionOverlayModelTests: XCTestCase {
         observation.thumbnail = Data([1, 2, 3])
         observation.windowFrame = ScreenRect(x: 100, y: 100, width: 600, height: 400)
         model.apply(observation)
-        XCTAssertEqual(model.mark?.point, CGPoint(x: 400, y: 600))
+        XCTAssertNil(model.mark?.point, "looking at a window does not invent a cursor target")
+        XCTAssertFalse(model.isPreviewExpanded, "the floating control starts compact")
+        model.isPreviewExpanded = true
         model.apply(cue(.acting))
         model.apply(cue(.settled(succeeded: true)))
         try await Task.sleep(for: .milliseconds(1_300))
         XCTAssertNotNil(model.mark, "the agent stays visible while thinking")
         XCTAssertEqual(model.mark?.thumbnail, observation.thumbnail)
         model.apply(cue(.cleared))
+        XCTAssertFalse(model.isPreviewExpanded, "a new session starts compact again")
         model.apply(cue(.settled(succeeded: false)))
         XCTAssertNil(model.mark, "a suspended action cannot restore stopped content")
     }
