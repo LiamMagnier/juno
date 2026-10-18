@@ -431,6 +431,14 @@ export function MessageList(props: MessageListProps) {
           {runsByMessage.get(-1)}
           <div />
         </div>
+        {/*
+          The answer bed (reading-first follow, use-transcript-window.ts):
+          reserved space under a just-sent question, sized so the end of the
+          scroll range is the question pinned near the top. The hook writes
+          its height before paint; React never sets it, so a re-render cannot
+          snap it back. Outside the log, so it is never content.
+        */}
+        <div ref={transcript.bedRef} aria-hidden data-answer-bed="" className="pointer-events-none" />
       </div>
 
       {hasRail && (

@@ -163,11 +163,24 @@ struct DesktopTranscript: View {
     /// Where the transcript is scrolled. It starts at the newest turn and
     /// follows the stream only while the reader is there (spec §6.13).
     @State private var position = ScrollPosition(edge: .bottom)
-    /// The reader is within 24pt of the end.
+    /// No transcript content lies more than 24pt below the visible area (an
+    /// empty answer bed is not content).
     @State private var atBottom = true
-    /// New content keeps the view at the end: true until the reader scrolls
-    /// away, and again when they come back or send.
-    @State private var follows = true
+    /// The reader is within 24pt of the end of the scroll range, which with
+    /// an answer bed is the pinned question.
+    @State private var atEnd = true
+    /// Reading-first follow (audit G18, ``JunoPinnedTurn``): a send pins its
+    /// question near the top and the answer grows into the bed below it; the
+    /// viewport holds once the answer passes the fold, until the reader comes
+    /// back to the end or jumps.
+    @State private var pin = JunoPinnedTurn()
+    /// The pinned question's frame in the content stack, and that stack's
+    /// height: what the bed is sized from.
+    @State private var pinnedFrame: CGRect?
+    @State private var contentHeight: CGFloat = 0
+    @State private var viewportHeight: CGFloat = 0
+    /// New content keeps the view at the end: the machine's answer.
+    private var follows: Bool { pin.follows }
     /// The reader's hand is on the scroll view, so a change of position is
     /// theirs rather than the stream's.
     @State private var userScrolling = false
@@ -226,6 +239,10 @@ struct DesktopTranscript: View {
                 ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
                     index, message in
                     storeRow(message)
+                        .junoPinnedTurnFrame(isPinned: message.id == pin.pinnedID) { frame in
+                            pinnedFrame = frame
+                            measureBed()
+                        }
                         .modifier(DesktopMessageRise(rises: index >= animateFrom))
                         .environment(\.junoFindHighlight, find?.highlight(for: message.id))
                         .id(message.id)
@@ -333,7 +350,16 @@ struct DesktopTranscript: View {
             }
             .scrollTargetLayout()
             .modifier(TranscriptColumn())
-            .padding(.bottom, JunoSpace.section)
+            // The content stack's own space and height: the pinned question's
+            // frame and the content's end, for the answer bed.
+            .coordinateSpace(.named(JunoPinnedTurn.contentSpace))
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                contentHeight = height
+                measureBed()
+            }
+            // The answer bed rides on the foot padding: sized so the end of
+            // the scroll range is the pinned question.
+            .padding(.bottom, JunoSpace.section + pin.bedHeight)
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
@@ -343,7 +369,7 @@ struct DesktopTranscript: View {
         .task {
             guard CommandLine.arguments.contains("--juno-preview-scroll-top") else { return }
             try? await Task.sleep(for: .seconds(3))
-            follows = false
+            pin.send(.scrollAway)
             position.scrollTo(edge: .top)
         }
         #endif
@@ -356,17 +382,23 @@ struct DesktopTranscript: View {
         }
         .contentMargins(.top, JunoSpace.section, for: .scrollContent)
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            Self.isAtBottom(geometry)
-        } action: { _, isAtBottom in
-            atBottom = isAtBottom
-            if userScrolling { follows = isAtBottom }
+        .onScrollGeometryChange(for: JunoTranscriptScrollState.self) { geometry in
+            JunoTranscriptScrollState(geometry, bedHeight: pin.bedHeight, slop: Self.endSlop)
+        } action: { _, state in
+            atBottom = !state.contentBelow
+            atEnd = state.atEnd
+            if userScrolling { pin.send(state.atEnd ? .nearEnd : .scrollAway) }
+            if state.viewportHeight != viewportHeight {
+                viewportHeight = state.viewportHeight
+                measureBed()
+            }
         }
         // The stream growing the reply: kept in view only while following,
         // and glided rather than snapped — the paced reply grows a line at a
-        // time, and a 26pt jump per line read as the page twitching.
+        // time, and a 26pt jump per line read as the page twitching. Not while
+        // a turn is placed: its bed absorbs the growth, and the end is the pin.
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
-            guard follows, !userScrolling, new > old else { return }
+            guard pin.state == .following, !userScrolling, new > old else { return }
             withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) {
                 position.scrollTo(edge: .bottom)
             }
@@ -376,7 +408,7 @@ struct DesktopTranscript: View {
             case .tracking, .interacting, .decelerating:
                 userScrolling = true
             case .idle, .animating:
-                if userScrolling { follows = atBottom }
+                if userScrolling { pin.send(atEnd ? .nearEnd : .scrollAway) }
                 userScrolling = false
             @unknown default:
                 userScrolling = false
@@ -386,7 +418,7 @@ struct DesktopTranscript: View {
             // Only once the reader has left: while following, the glide can
             // trail the growing reply by a line, which is not "away".
             ScrollToLatestButton(isShown: !atBottom && !follows && !model.selectedMessages.isEmpty) {
-                follows = true
+                pin.send(.jump)
                 withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                     position.scrollTo(edge: .bottom)
                 }
@@ -396,11 +428,30 @@ struct DesktopTranscript: View {
         }
         .onChange(of: model.selectedMessages, initial: true) { previous, current in
             noteMessages(from: previous.count, to: current.count)
-            // A turn arriving is the reader's own send, or its reply's
-            // placeholder: back to the end, animated. Tokens growing a reply
-            // are the geometry handler's.
+            // The store swapping a local question for the server's copy keeps
+            // the pin on the same turn.
+            if let pinned = pin.pinnedID, !current.contains(where: { $0.id == pinned }) {
+                pin.reconcile(ids: current.map(\.id), latestQuestionID: current.last(where: { $0.role == .user })?.id)
+                pinnedFrame = nil
+            }
+            // A turn starting (a send, a regenerate): pin its question. The
+            // placement scroll waits for the bed (``measureBed()``).
+            if current.last?.id != previous.last?.id,
+                let question = JunoFollowMachine.startedTurn(
+                    previousKeys: Set(previous.map(\.id)),
+                    rows: current.suffix(3).map {
+                        JunoFollowMachine.Row(key: $0.id, isQuestion: $0.role == .user, isStreaming: $0.role == .assistant && $0.isPending)
+                    }
+                )
+            {
+                pinnedFrame = nil
+                pin.startTurn(pinning: question)
+                return
+            }
+            // Any other turn arriving (history landing, a sync catching up):
+            // back to the end. Tokens growing a reply are the geometry handler's.
             guard current.count != previous.count else { return }
-            follows = true
+            pin.send(.jump)
             // History landing — a conversation opening, a sync catching up —
             // is placed at its end at once; travelling through it from a
             // position the reader never saw reads as the page moving on its
@@ -414,7 +465,8 @@ struct DesktopTranscript: View {
             }
         }
         .onChange(of: model.selectedConversationID) { _, _ in
-            follows = true
+            pin.reset()
+            pinnedFrame = nil
             position.scrollTo(edge: .bottom)
         }
         // Conversations messaging each other: this Chat's rows, and the app's
@@ -436,7 +488,7 @@ struct DesktopTranscript: View {
         .onChange(of: localMessages) { previous, current in
             if current.count != previous.count {
                 localAnimateFrom = current.count < previous.count ? current.count : previous.count
-                follows = true
+                pin.send(.jump)
                 withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                     position.scrollTo(edge: .bottom)
                 }
@@ -445,7 +497,7 @@ struct DesktopTranscript: View {
         // ⌘F's current match, brought into view.
         .onChange(of: find?.currentMatch) { _, match in
             guard let match else { return }
-            follows = false
+            pin.send(.scrollAway)
             withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                 position.scrollTo(id: match.messageID, anchor: .center)
             }
@@ -454,6 +506,7 @@ struct DesktopTranscript: View {
         // the web's announcer.
         .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
             announcedPhases = []
+            if wasGenerating, !isGenerating { pin.send(.settle) }
             guard wasGenerating, !isGenerating,
                 let last = model.selectedMessages.last, last.role == .assistant,
                 last.errorDescription == nil
@@ -480,10 +533,26 @@ struct DesktopTranscript: View {
         .onDisappear { speechPlayback.stop() }
     }
 
-    /// Within 24pt of the end of the content, above the composer's inset.
-    static func isAtBottom(_ geometry: ScrollGeometry) -> Bool {
-        let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
-        return visibleBottom >= geometry.contentSize.height - 24
+    /// "At the end" means within this of it, above the composer's inset.
+    static let endSlop: CGFloat = JunoSpace.section
+
+    /// Sizes the answer bed from the latest measurements and, once per turn,
+    /// places the pinned question: with the bed in place, the end of the
+    /// scroll range is the pin, so placing it is scrolling to the end.
+    private func measureBed() {
+        let place = pin.measure(
+            viewportHeight: viewportHeight,
+            turnFrame: pinnedFrame,
+            contentEnd: contentHeight + JunoSpace.section,
+            // The scroll view's top content margin is already the pin's
+            // `JunoSpace.section` gap below the toolbar, and it is part of
+            // the insets the viewport height leaves out.
+            inset: 0
+        )
+        guard place else { return }
+        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+            position.scrollTo(edge: .bottom)
+        }
     }
 
     /// The store's error, when no reply on screen carries it and it is not a
