@@ -307,14 +307,23 @@ struct ScreenActionRunner: Sendable {
 
     /// One approval, with the whole card, bound to the frame.
     func approve(_ prepared: PreparedScreenAction, toolName: String, input: JSONValue, sessionID: String) async throws {
+        let risk: ActionRisk = prepared.floor == nil ? .critical : .destructive
+        let policy: ApprovalPolicy = prepared.floor == nil ? .byRisk : .alwaysRequiresApproval
+        // Nobody is there to answer a card in an unattended run.
+        if let skipped = await ScreenUnattendedRule.skip(
+            computer: computer, permissions: permissions, sessionID: sessionID,
+            summary: prepared.summary, risk: risk, approvalPolicy: policy
+        ) {
+            throw ScreenToolDenial(reason: skipped)
+        }
         let digest = Self.digest(prepared, toolName: toolName, input: input)
         await computer.publishApprovalDetail(.action(prepared), digest: digest)
         let outcome = await permissions.authorize(
             toolName: toolName,
             actionDigest: digest,
-            risk: prepared.floor == nil ? .critical : .destructive,
+            risk: risk,
             summary: prepared.summary,
-            approvalPolicy: prepared.floor == nil ? .byRisk : .alwaysRequiresApproval,
+            approvalPolicy: policy,
             subject: nil
         )
         await computer.clearApprovalDetail(digest: digest)
@@ -361,6 +370,30 @@ struct ScreenActionRunner: Sendable {
 /// The reader (or the ladder) said no.
 struct ScreenToolDenial: Error {
     let reason: String
+}
+
+/// Unattended runs (docs/rea/designs/computer-use.md §3.1, item 15): a step
+/// that would show the reader a card is skipped and recorded, never approved
+/// on their behalf — not by the mode, not by the auto reviewer. What the
+/// ladder already allows (ordinary input in Full Access) still runs; the
+/// always-confirm floor never does.
+enum ScreenUnattendedRule {
+    /// The refusal when `sessionID` is unattended and the ladder would ask,
+    /// after recording the skip; nil when the step may go to `authorize`.
+    static func skip(
+        computer: any ScreenControlling,
+        permissions: PermissionCoordinator,
+        sessionID: String,
+        summary: String,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy
+    ) async -> String? {
+        guard await computer.isUnattended(sessionID: sessionID) else { return nil }
+        let mode = await permissions.permissionMode
+        guard PermissionPolicy.ruling(mode: mode, risk: risk, approvalPolicy: approvalPolicy) == .requireApproval else { return nil }
+        await computer.recordSkipped(sessionID: sessionID, summary: summary, reason: ScreenUnattendedPolicy.skipReason)
+        return ScreenUnattendedPolicy.skipSentence
+    }
 }
 
 /// How every screen tool answers a refusal: a sentence the model can act on,
@@ -782,6 +815,13 @@ public struct ComputerAppsTool: CodeTool {
         }
         // Full Access already supplies app consent. Supervised modes still
         // show the exact app and its cap; protected apps remain service-denied.
+        // An unattended run never shows the card: the grant is skipped.
+        if let skipped = await ScreenUnattendedRule.skip(
+            computer: computer, permissions: permissions, sessionID: sessionID,
+            summary: proposal.summary, risk: .critical, approvalPolicy: .asksUnlessFullAccess
+        ) {
+            return ToolResult(content: "Not granted: \(skipped)", isError: true)
+        }
         let digest = Digests.sha256Hex(JSONValue.object([
             "tool": .string(name), "proposal": .string(proposal.id), "session": .string(sessionID),
         ]).canonicalJSONString())

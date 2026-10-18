@@ -68,6 +68,13 @@ final class FakeCapture: ScreenCapturing, @unchecked Sendable {
     }
 
     private(set) var excludedApps: [Set<String>] = []
+    /// Every granted-only display capture's include list.
+    private(set) var includedApps: [Set<String>] = []
+
+    func capture(display: DisplayInfo, excluding own: OwnProcess, showingOnly bundleIDs: Set<String>) async throws -> CapturedImage {
+        lock.withLock { includedApps.append(bundleIDs) }
+        return try await capture(display: display, excluding: own)
+    }
 
     func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding bundleIDs: Set<String>) async throws -> CapturedImage {
         lock.withLock { excludedApps.append(bundleIDs) }
@@ -226,7 +233,12 @@ struct ScreenFixture {
     static let saveButton = ScreenRect(x: 900, y: 620, width: 80, height: 30)
     static let nameField = ScreenRect(x: 300, y: 200, width: 300, height: 24)
 
-    init(layout: KeyboardLayout = .usANSI, encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) }) {
+    init(
+        layout: KeyboardLayout = .usANSI,
+        encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) },
+        sessionLock: (any ScreenSessionLockMonitoring)? = nil,
+        displayAwake: (any DisplayAwakeAsserting)? = nil
+    ) {
         environment.apps = [Self.textEdit, Self.terminal, Self.safari, Self.mail, Self.juno]
         environment.front = Self.juno
         for app in [Self.textEdit, Self.terminal, Self.safari, Self.mail] {
@@ -264,7 +276,9 @@ struct ScreenFixture {
                 settleTimeout: 0.5,
                 settleInterval: .milliseconds(1),
                 minimumInputGap: 0,
-                encode: encode
+                encode: encode,
+                sessionLock: sessionLock,
+                displayAwake: displayAwake
             ),
             lock: ScreenControlLock(now: { clock.now })
         )

@@ -29,6 +29,15 @@ public actor ScreenControlService: ScreenControlling {
         /// of the next. Screenshots and zoom are exempt (CU-06).
         public var minimumInputGap: TimeInterval
         public var encode: @Sendable (CGImage) -> EncodedFrame?
+        /// Lock and session-switch state. Nil: never locked (tests, previews).
+        public var sessionLock: (any ScreenSessionLockMonitoring)?
+        /// Keeps the display awake while a run works. Nil: no assertion.
+        public var displayAwake: (any DisplayAwakeAsserting)?
+        /// How long after the last action the display assertion is let go.
+        public var displayAwakeIdle: TimeInterval
+        /// The sleep the idle release waits with: real time, never the
+        /// injected `pause`, which tests use to move their clock.
+        public var idleSleep: @Sendable (Duration) async throws -> Void
 
         public init(
             capture: any ScreenCapturing,
@@ -44,7 +53,11 @@ public actor ScreenControlService: ScreenControlling {
             settleTimeout: TimeInterval = 0.5,
             settleInterval: Duration = .milliseconds(120),
             minimumInputGap: TimeInterval = 0.25,
-            encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) }
+            encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) },
+            sessionLock: (any ScreenSessionLockMonitoring)? = nil,
+            displayAwake: (any DisplayAwakeAsserting)? = nil,
+            displayAwakeIdle: TimeInterval = 60,
+            idleSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
         ) {
             self.capture = capture
             self.environment = environment
@@ -63,6 +76,10 @@ public actor ScreenControlService: ScreenControlling {
             self.settleInterval = settleInterval
             self.minimumInputGap = minimumInputGap
             self.encode = encode
+            self.sessionLock = sessionLock
+            self.displayAwake = displayAwake
+            self.displayAwakeIdle = displayAwakeIdle
+            self.idleSleep = idleSleep
         }
     }
 
@@ -91,6 +108,23 @@ public actor ScreenControlService: ScreenControlling {
     /// the reader taking the Mac back.
     private var answeringCard: [String: Date] = [:]
     static let answerGrace: TimeInterval = 1.5
+    /// The reader's "whole display" tick on an open take-over card, by
+    /// session. Only the card sets it; a take-over without it shows the
+    /// model granted apps only.
+    private var takeoverChoices: [String: Bool] = [:]
+    /// Whether the Mac is locked (or its session is not on the console).
+    private var screenLocked = false
+    /// Names the current lock (when it began, in seconds, and always higher
+    /// than the last), so one lock is told about once however often it is hit.
+    private var lockEpisode = 0
+    private var watchingSessionLock = false
+    private var lockNoticeContinuations: [UUID: AsyncStream<ScreenLockNotice>.Continuation] = [:]
+    /// When a run last did something, for the display assertion's idle release.
+    private var lastWork: Date?
+    private var displayAwakeHeld = false
+    private var idleRelease: Task<Void, Never>?
+    /// Skipped steps an unattended session keeps, at most.
+    static let maximumSkipped = 50
 
     public init(
         dependencies: Dependencies,
@@ -175,6 +209,20 @@ public actor ScreenControlService: ScreenControlling {
         /// A left button `left_mouse_down` pressed and nothing has released:
         /// where, and where its events went. A stop lets it go.
         var heldButton: (point: ScreenPoint, target: EventTarget)?
+        /// The conversation a connected agent's session belongs to.
+        var threadID: String?
+        /// Paused because the Mac locked. Cleared by the unlock, never by
+        /// anything the model does.
+        var lockPaused = false
+        /// The take-over frame shows the whole display (the reader ticked it
+        /// on the card) instead of granted apps only.
+        var wholeDisplay = false
+        /// Nobody is watching: no take-over, nothing approved by default,
+        /// and a time limit.
+        var unattended = false
+        var unattendedDeadline: Date?
+        /// What an unattended run skipped instead of asking.
+        var skipped: [ScreenSkippedStep] = []
 
         var isRunning: Bool { claim != nil }
     }
@@ -192,8 +240,12 @@ public actor ScreenControlService: ScreenControlling {
         session.generation &+= 1
         session.stopNotice = nil
         session.paused = false
+        session.threadID = threadID
+        session.lockPaused = screenLocked
         sessions[sessionID] = session
         startTapIfNeeded()
+        await watchSessionLockIfNeeded()
+        noteWork()
         await publishPresence()
     }
 
@@ -216,10 +268,16 @@ public actor ScreenControlService: ScreenControlling {
         session.mode = .background
         session.takeoverDisplayID = nil
         session.paused = false
+        session.lockPaused = false
+        session.wholeDisplay = false
+        session.unattended = false
+        session.unattendedDeadline = nil
         session.target = nil
         sessions[sessionID] = session
+        takeoverChoices[sessionID] = nil
         dropProposals(sessionID: sessionID)
         stopTapIfIdle()
+        updateDisplayAwake()
         await publishPresence()
     }
 
@@ -321,19 +379,28 @@ public actor ScreenControlService: ScreenControlling {
             session.mode = .background
             session.takeoverDisplayID = nil
             session.paused = false
+            session.lockPaused = false
+            session.wholeDisplay = false
+            session.unattended = false
+            session.unattendedDeadline = nil
             session.target = nil
             sessions[id] = session
         }
         proposals = [:]
         proposalOrder = []
+        takeoverChoices = [:]
         deps.stopTap?.stop()
         tapRunning = false
+        updateDisplayAwake()
     }
 
     /// The reader's Resume after taking over.
     public func resume(sessionID: String) async {
         guard sessions[sessionID]?.isRunning == true else { return }
+        // A locked Mac is not resumed from anywhere: only the unlock clears it.
+        guard sessions[sessionID]?.lockPaused != true, !screenLocked else { return }
         sessions[sessionID]?.paused = false
+        noteWork()
         sessions[sessionID]?.frame = nil
         feed.post(ComputerActionCue(sessionID: sessionID, label: "Resuming", point: nil, appName: sessions[sessionID]?.target?.name, phase: .paused(false)))
         await publishPresence()
@@ -345,6 +412,7 @@ public actor ScreenControlService: ScreenControlling {
         sessions[sessionID]?.paused = true
         sessions[sessionID]?.generation &+= 1
         feed.post(ComputerActionCue(sessionID: sessionID, label: "Paused", point: nil, appName: sessions[sessionID]?.target?.name, phase: .paused(true)))
+        updateDisplayAwake()
         await publishPresence()
     }
 
@@ -394,10 +462,14 @@ public actor ScreenControlService: ScreenControlling {
         session.mode = .background
         session.takeoverDisplayID = nil
         session.paused = false
+        session.lockPaused = false
+        session.wholeDisplay = false
         session.target = nil
         sessions[sessionID] = session
+        takeoverChoices[sessionID] = nil
         dropProposals(sessionID: sessionID)
         stopTapIfIdle()
+        updateDisplayAwake()
         await publishPresence()
     }
 
@@ -472,7 +544,10 @@ public actor ScreenControlService: ScreenControlling {
                 changed = true
             }
         }
-        if changed { await publishPresence() }
+        if changed {
+            updateDisplayAwake()
+            await publishPresence()
+        }
     }
 
     // MARK: - Streams
@@ -523,9 +598,10 @@ public actor ScreenControlService: ScreenControlling {
         return ScreenPresenceState(
             holder: holder,
             mode: session.mode,
-            paused: session.paused,
+            paused: session.paused || session.lockPaused,
             targetWindowFrame: windowFrame,
-            displayFrame: displayFrame
+            displayFrame: displayFrame,
+            lockedPause: session.lockPaused
         )
     }
 
@@ -544,7 +620,7 @@ public actor ScreenControlService: ScreenControlling {
         guard let session = sessions[sessionID] else { return .off }
         if let notice = session.stopNotice { return .stopped(notice) }
         guard session.isRunning else { return .off }
-        if session.paused { return .paused }
+        if session.paused || session.lockPaused { return .paused }
         return .running(mode: session.mode, app: session.target?.name)
     }
 
@@ -562,8 +638,15 @@ public actor ScreenControlService: ScreenControlling {
             sessions[sessionID]?.claim = nil
             throw ScreenControlError.stoppedByReader
         }
+        if sessions[sessionID]?.unattended == true, let deadline = sessions[sessionID]?.unattendedDeadline, deps.now() >= deadline {
+            throw ScreenControlError.unattendedDeadline
+        }
+        // The live read as well as the notification: a lock that landed
+        // before its notification arrived still stops this action.
+        try await requireUnlocked(sessionID)
         if sessions[sessionID]?.paused == true { throw ScreenControlError.readerTookOver }
         await lock.touch(sessionID)
+        noteWork()
         return sessions[sessionID]?.generation ?? 0
     }
 
@@ -575,6 +658,7 @@ public actor ScreenControlService: ScreenControlling {
             sessions[sessionID]?.stopNotice = nil
             throw ScreenControlError.stoppedByReader
         }
+        if session.lockPaused { throw ScreenControlError.screenLocked }
         if session.paused { throw ScreenControlError.readerTookOver }
         guard session.isRunning, session.generation == generation else {
             throw ScreenControlError.stoppedByReader
@@ -912,7 +996,18 @@ public actor ScreenControlService: ScreenControlling {
                 ?? displays.first(where: \.isMain) ?? displays.first
             else { throw ScreenControlError.driverFailed("No display is available to capture.") }
             try checkpoint(sessionID, generation)
-            captured = try await deps.capture.capture(display: display, excluding: own, alsoExcluding: await neverShown())
+            let hidden = await neverShown()
+            if session.wholeDisplay {
+                // The reader ticked "whole display" on the take-over card:
+                // everything except Juno, refused, denied and finance apps.
+                captured = try await deps.capture.capture(display: display, excluding: own, alsoExcluding: hidden)
+            } else {
+                // Granted apps only: what the model sees is what the reader
+                // let it use, not everything else they have open.
+                captured = try await deps.capture.capture(
+                    display: display, excluding: own, showingOnly: grantedVisible(sessionID, hiding: hidden)
+                )
+            }
             bundleID = session.target?.bundleID ?? ""
             appName = session.target?.name ?? display.name
             pid = session.target?.pid ?? 0
@@ -942,6 +1037,24 @@ public actor ScreenControlService: ScreenControlling {
             fingerprint: Self.fingerprint(scaled.image),
             capturedAt: deps.now()
         )
+    }
+
+    /// The bundle ids a granted-only take-over frame shows: the session's
+    /// live grants, minus refused, denied and unallowed finance apps and
+    /// Juno itself. Lowercased.
+    private func grantedVisible(_ sessionID: String, hiding hidden: Set<String>) -> Set<String> {
+        guard var book = sessions[sessionID]?.grants else { return [] }
+        let live = book.live(now: deps.now())
+        sessions[sessionID]?.grants = book
+        let own = deps.environment.ownProcess
+        return Set(live.compactMap { grant -> String? in
+            let key = grant.bundleID.lowercased()
+            guard !hidden.contains(key),
+                  AppCategories.category(bundleID: grant.bundleID) != .refused,
+                  !own.owns(pid: -1, bundleID: grant.bundleID)
+            else { return nil }
+            return key
+        })
     }
 
     /// Running apps a takeover frame leaves out: refused ones, ones the
@@ -1544,6 +1657,9 @@ public actor ScreenControlService: ScreenControlling {
                 try checkpoint(sessionID, generation)
             }
         }
+        // The last look before anything is posted: a locked Mac gets no input.
+        try await requireUnlocked(sessionID)
+        try checkpoint(sessionID, generation)
         let mode = sessions[sessionID]?.mode ?? .background
         let eventTarget: EventTarget = mode == .takeover ? .global : .process(pid: target.pid)
         let frontPID = mode == .takeover ? (await deps.environment.frontmostApp())?.pid : nil
@@ -1998,6 +2114,7 @@ public actor ScreenControlService: ScreenControlling {
         {
             throw ScreenControlError.systemPromptInFront(app: front.name)
         }
+        try await requireUnlocked(sessionID)
         try checkpoint(sessionID, generation)
         let pressed = try await deps.accessibility.pressMenu(pid: target.pid, path: path)
         try checkpoint(sessionID, generation)
@@ -2017,35 +2134,63 @@ public actor ScreenControlService: ScreenControlling {
         await deps.environment.displays()
     }
 
+    /// The sentence an unattended run gets for a take-over.
+    static let unattendedTakeoverRefusal =
+        "Nobody is watching this run, so \(ScreenControlBrand.productName) cannot take over the screen: a take-over needs the reader there to say yes and to stop it. Work one granted app at a time, or leave this step for the reader."
+
     public func requestTakeover(sessionID: String, displayID: UInt32?) async throws -> ScreenApprovalDetail {
         _ = try await requireRunning(sessionID)
+        if sessions[sessionID]?.unattended == true {
+            throw ScreenControlError.unattendedRefused(Self.unattendedTakeoverRefusal)
+        }
         let displays = await deps.environment.displays()
         guard let display = displays.first(where: { $0.id == displayID }) ?? displays.first(where: \.isMain) ?? displays.first else {
             throw ScreenControlError.driverFailed("No display is available.")
         }
+        // Every card starts unticked: granted apps only.
+        takeoverChoices[sessionID] = false
         return .takeover(sessionID: sessionID, display: display.name)
+    }
+
+    /// The reader's "whole display" tick on the take-over card, before they
+    /// press Allow. Never reachable from a tool.
+    public func setTakeoverScope(sessionID: String, wholeDisplay: Bool) {
+        guard takeoverChoices[sessionID] != nil else { return }
+        takeoverChoices[sessionID] = wholeDisplay
     }
 
     public func beginTakeover(sessionID: String, displayID: UInt32?) async throws -> String {
         _ = try await requireRunning(sessionID)
+        if sessions[sessionID]?.unattended == true {
+            takeoverChoices[sessionID] = nil
+            throw ScreenControlError.unattendedRefused(Self.unattendedTakeoverRefusal)
+        }
         let displays = await deps.environment.displays()
         guard let display = displays.first(where: { $0.id == displayID }) ?? displays.first(where: \.isMain) ?? displays.first else {
             throw ScreenControlError.driverFailed("No display is available.")
         }
         // The whole display: every other conversation must have finished.
         try await lock.setExclusive(true, for: sessionID)
+        let wholeDisplay = takeoverChoices.removeValue(forKey: sessionID) ?? false
         sessions[sessionID]?.mode = .takeover
         sessions[sessionID]?.takeoverDisplayID = display.id
+        sessions[sessionID]?.wholeDisplay = wholeDisplay
         sessions[sessionID]?.frame = nil
         startTapIfNeeded()
         await publishPresence()
-        return "\(ScreenControlBrand.productName) now has the whole of \(display.name). Every app you act on must still be granted; \(ScreenControlBrand.productName)'s own windows are never in the frame. Take a screenshot to see the display."
+        let product = ScreenControlBrand.productName
+        let seen = wholeDisplay
+            ? "The reader chose to show you the whole display; password managers, apps they denied and \(product)'s own windows are still left out."
+            : "Your screenshots show only the windows of apps the reader granted; everything else on the display is left out."
+        return "\(product) now has the pointer and keyboard on \(display.name). Every app you act on must still be granted. \(seen) Take a screenshot to see the display."
     }
 
     public func endTakeover(sessionID: String) async -> String {
         try? await lock.setExclusive(false, for: sessionID)
+        takeoverChoices[sessionID] = nil
         sessions[sessionID]?.mode = .background
         sessions[sessionID]?.takeoverDisplayID = nil
+        sessions[sessionID]?.wholeDisplay = false
         sessions[sessionID]?.frame = nil
         startTapIfNeeded()
         await publishPresence()
@@ -2075,6 +2220,202 @@ public actor ScreenControlService: ScreenControlling {
 
     public func approvalDetail(digest: String) -> ScreenApprovalDetail? {
         approvalDetails[digest]
+    }
+
+    // MARK: - Lock policy
+
+    /// Lock and unlock as they happen, for the app to tell the reader and
+    /// their phone.
+    public func lockNotices() -> AsyncStream<ScreenLockNotice> {
+        AsyncStream { continuation in
+            let id = UUID()
+            lockNoticeContinuations[id] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeLockNotices(id) }
+            }
+        }
+    }
+
+    private func removeLockNotices(_ id: UUID) { lockNoticeContinuations[id] = nil }
+
+    /// Starts following the Mac's lock state, once.
+    private func watchSessionLockIfNeeded() async {
+        guard !watchingSessionLock, let monitor = deps.sessionLock else { return }
+        watchingSessionLock = true
+        let changes = monitor.changes()
+        Task { [weak self] in
+            for await locked in changes {
+                guard let self else { return }
+                await self.sessionLockChanged(locked)
+            }
+        }
+        if await monitor.isLocked() { await sessionLockChanged(true) }
+    }
+
+    /// Refuses when the Mac is locked, reading the live state as well.
+    private func requireUnlocked(_ sessionID: String) async throws {
+        if !screenLocked, let monitor = deps.sessionLock, await monitor.isLocked() {
+            await sessionLockChanged(true)
+        }
+        if screenLocked || sessions[sessionID]?.lockPaused == true { throw ScreenControlError.screenLocked }
+    }
+
+    /// The Mac locked or unlocked.
+    ///
+    /// On lock every running session pauses at once: the generation moves,
+    /// so an action suspended mid-way ends at its next checkpoint, and a held
+    /// button is let go. Nothing unlocks the Mac or waits for the password;
+    /// the run sits paused until the reader unlocks it themselves.
+    ///
+    /// On unlock a background session carries on (it never had the pointer).
+    /// One that had the whole display stays paused until the reader presses
+    /// Resume: the person at the Mac now is the one deciding.
+    func sessionLockChanged(_ locked: Bool) async {
+        guard locked != screenLocked else { return }
+        screenLocked = locked
+        if locked { lockEpisode = max(lockEpisode &+ 1, Int(deps.now().timeIntervalSince1970)) }
+        var notices: [ScreenLockNotice] = []
+        let now = deps.now()
+        for id in sessions.keys {
+            guard var session = sessions[id], session.isRunning else { continue }
+            if locked {
+                guard !session.lockPaused else { continue }
+                releaseHeldButton(&session)
+                session.lockPaused = true
+                session.generation &+= 1
+                session.frame = nil
+                session.snapshot = nil
+                sessions[id] = session
+                feed.post(ComputerActionCue(
+                    sessionID: id, label: "Paused: your Mac is locked", point: nil,
+                    appName: session.target?.name, phase: .paused(true), at: now
+                ))
+                notices.append(ScreenLockNotice(
+                    sessionID: id, kind: session.kind, title: session.title, threadID: session.threadID,
+                    appName: session.target?.name, locked: true, at: now
+                ))
+            } else {
+                guard session.lockPaused else { continue }
+                session.lockPaused = false
+                session.frame = nil
+                let waits = session.mode == .takeover
+                if waits {
+                    session.paused = true
+                    session.generation &+= 1
+                }
+                sessions[id] = session
+                notices.append(ScreenLockNotice(
+                    sessionID: id, kind: session.kind, title: session.title, threadID: session.threadID,
+                    appName: session.target?.name, locked: false, waitsForResume: waits, at: now
+                ))
+            }
+        }
+        for notice in notices {
+            for continuation in lockNoticeContinuations.values { continuation.yield(notice) }
+        }
+        updateDisplayAwake()
+        await publishPresence()
+    }
+
+    /// Whether the Mac is locked, as screen control last saw it.
+    public func isScreenLocked() -> Bool { screenLocked }
+
+    /// Which lock this is (it goes up on every lock), so a notice about it
+    /// can carry one id however many calls run into it.
+    public func screenLockEpisode() -> Int { lockEpisode }
+
+    // MARK: - Display awake
+
+    /// A run did something: the display assertion holds for another idle span.
+    private func noteWork() {
+        lastWork = deps.now()
+        updateDisplayAwake()
+        guard deps.displayAwake != nil else { return }
+        idleRelease?.cancel()
+        let idle = deps.displayAwakeIdle
+        let sleep = deps.idleSleep
+        idleRelease = Task { [weak self] in
+            do { try await sleep(.milliseconds(Int(idle * 1_000) + 50)) } catch { return }
+            await self?.reviewDisplayAwake()
+        }
+    }
+
+    /// What the idle timer runs: lets the assertion go once the run has been
+    /// quiet for the idle span.
+    func reviewDisplayAwake() {
+        updateDisplayAwake()
+    }
+
+    /// Holds the display awake while some run is working: running, not
+    /// paused, the Mac unlocked, and an action within the idle span. Lets it
+    /// go otherwise, so a paused or finished run never keeps a display lit.
+    private func updateDisplayAwake() {
+        guard let awake = deps.displayAwake else { return }
+        let working = sessions.values.contains { $0.isRunning && !$0.paused && !$0.lockPaused }
+        let recent = lastWork.map { deps.now().timeIntervalSince($0) < deps.displayAwakeIdle } ?? false
+        let hold = working && recent && !screenLocked
+        guard hold != displayAwakeHeld else { return }
+        displayAwakeHeld = hold
+        if hold {
+            awake.hold(reason: "\(ScreenControlBrand.productName) is using apps on this Mac")
+        } else {
+            awake.release()
+        }
+    }
+
+    /// Whether the display assertion is held, for tests.
+    func isHoldingDisplayAwake() -> Bool { displayAwakeHeld }
+
+    // MARK: - Unattended runs
+
+    /// Marks a session as running with nobody watching (a scheduled or
+    /// resumed turn), and how long from now it may use the screen.
+    ///
+    /// Unattended sessions never take over the screen, and the tools skip and
+    /// record any step that would need the reader's approval rather than
+    /// approving it. Only the host that started the run sets this. Marking an
+    /// already unattended session again keeps its first deadline, so a run
+    /// cannot extend its own time by calling again.
+    public func setAttendance(sessionID: String, unattended: Bool, limit: TimeInterval? = ScreenUnattendedPolicy.defaultLimit) {
+        guard sessions[sessionID] != nil else { return }
+        if unattended, sessions[sessionID]?.unattended == true { return }
+        sessions[sessionID]?.unattended = unattended
+        sessions[sessionID]?.unattendedDeadline = unattended ? limit.map { deps.now().addingTimeInterval($0) } : nil
+        if unattended, sessions[sessionID]?.mode == .takeover {
+            // No one is there to hold a take-over: back to one window.
+            sessions[sessionID]?.mode = .background
+            sessions[sessionID]?.takeoverDisplayID = nil
+            sessions[sessionID]?.wholeDisplay = false
+            sessions[sessionID]?.frame = nil
+            sessions[sessionID]?.generation &+= 1
+            takeoverChoices[sessionID] = nil
+            let lock = self.lock
+            Task { try? await lock.setExclusive(false, for: sessionID) }
+        }
+    }
+
+    public func isUnattended(sessionID: String) -> Bool {
+        sessions[sessionID]?.unattended == true
+    }
+
+    /// A step an unattended run did not take because it needed someone's
+    /// say-so. Kept for the run's report and shown as a step row.
+    public func recordSkipped(sessionID: String, summary: String, reason: String) {
+        guard sessions[sessionID] != nil else { return }
+        let now = deps.now()
+        let step = ScreenSkippedStep(summary: summary, reason: reason, at: now)
+        sessions[sessionID]?.skipped.append(step)
+        if let count = sessions[sessionID]?.skipped.count, count > Self.maximumSkipped {
+            sessions[sessionID]?.skipped.removeFirst(count - Self.maximumSkipped)
+        }
+        emit(ScreenActivity(
+            sessionID: sessionID, toolCallID: nil, kind: nil, summary: "Skipped: \(summary)",
+            appName: sessions[sessionID]?.target?.name, thumbnail: nil, markedPoint: nil, succeeded: false, at: now
+        ))
+    }
+
+    public func skippedSteps(sessionID: String) -> [ScreenSkippedStep] {
+        sessions[sessionID]?.skipped ?? []
     }
 
     /// The latest frame a session's agent was sent, for the reader's

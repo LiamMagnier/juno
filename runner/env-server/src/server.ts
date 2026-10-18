@@ -329,6 +329,8 @@ export function computerSessionFor(sessions: SessionManager, scope: ComputerMcpS
     runtimeMode: meta.runtimeMode,
     coordinateSpace: coordinateSpaceForModel(model),
     images: true,
+    // A resume a timer started has nobody watching: no take-over, no cards.
+    ...(sessions.isUnattended(scope.sessionId) ? { unattended: true } : {}),
   };
 }
 

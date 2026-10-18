@@ -116,6 +116,77 @@ final class FakeScreen: ScreenControlling, @unchecked Sendable {
     func approvalDetail(digest: String) async -> ScreenApprovalDetail? { lock.withLock { published[digest] } }
     func updateGrantChoices(proposalID: String, offers: [AppGrantOffer]) async {}
     func isGranted(sessionID: String, bundleID: String) async -> Bool { lock.withLock { granted.contains(bundleID) } }
+    /// Set to run the session as nobody-watching.
+    var unattended = false
+    private(set) var skipped: [String] = []
+    private(set) var takeoverScopes: [Bool] = []
+    func setTakeoverScope(sessionID: String, wholeDisplay: Bool) async {
+        lock.withLock { takeoverScopes.append(wholeDisplay) }
+    }
+    func isUnattended(sessionID: String) async -> Bool { lock.withLock { unattended } }
+    func recordSkipped(sessionID: String, summary: String, reason: String) async {
+        lock.withLock { skipped.append(summary) }
+    }
+}
+
+/// Unattended runs (REA item 15): what would ask is skipped and recorded,
+/// never approved, in every mode; what the mode already allows still runs.
+final class ComputerUseUnattendedTests: XCTestCase {
+    private let sessionID = CodeSessionID()
+
+    private func context(_ call: String = "call") -> ToolContext {
+        ToolContext(sessionID: sessionID, toolCallID: call, emitOutput: { _, _ in })
+    }
+
+    func testAFloorActionIsSkippedAndRecordedEvenInFullAccess() async throws {
+        let screen = FakeScreen()
+        screen.unattended = true
+        screen.floor = .sendsMessage
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let asked = LockedRequests()
+        await permissions.addObserver { update in
+            if case let .requested(request) = update { asked.append(request) }
+        }
+        let tool = ComputerTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "left_click", "coordinate": [5, 5]], context: context())
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.content.contains("nobody is watching"), result.content)
+        XCTAssertTrue(screen.performed.isEmpty, "the floor action was not taken")
+        XCTAssertEqual(screen.skipped, ["Click the “Send” button in TextEdit"])
+        XCTAssertTrue(asked.requests.isEmpty, "no card was raised for nobody to answer")
+        XCTAssertEqual(screen.discarded.count, 1, "its frame was let go")
+    }
+
+    func testOrdinaryInputTheModeAllowsStillRuns() async throws {
+        let screen = FakeScreen()
+        screen.unattended = true
+        let tool = ComputerTool(computer: screen, permissions: PermissionCoordinator(sessionID: sessionID, mode: .fullAccess), budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "left_click", "coordinate": [5, 5]], context: context())
+        XCTAssertFalse(result.isError, result.content)
+        XCTAssertEqual(screen.performed, [.leftClick])
+        XCTAssertTrue(screen.skipped.isEmpty)
+    }
+
+    func testInputThatWouldAskIsSkippedInASupervisedMode() async throws {
+        let screen = FakeScreen()
+        screen.unattended = true
+        let tool = ComputerTool(computer: screen, permissions: PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite), budget: .anthropicHighResolution)
+        let result = try await tool.execute(input: ["action": "type", "text": "hello"], context: context())
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(screen.performed.isEmpty)
+        XCTAssertEqual(screen.skipped.count, 1)
+    }
+
+    func testAGrantCardIsSkippedWhenNobodyIsWatching() async throws {
+        let screen = FakeScreen()
+        screen.unattended = true
+        let tool = ComputerAppsTool(computer: screen, permissions: PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges), budget: .anthropicStandard)
+        let result = try await tool.execute(input: ["action": "request", "apps": ["com.apple.Notes"]], context: context())
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.content.hasPrefix("Not granted: Skipped"), result.content)
+        XCTAssertEqual(screen.skipped.count, 1)
+        XCTAssertTrue(screen.published.isEmpty, "no card was published")
+    }
 }
 
 /// The computer tools against a fake screen and the real permission ladder.
