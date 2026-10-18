@@ -1183,6 +1183,25 @@ export class AgentSession {
     this.subagents?.interrupt(agentId);
   }
 
+  /** A person's Pause: one child, or every child when `agentId` is absent. Held between steps. */
+  pauseAgent(agentId?: string): ReturnType<SubagentManager['pause']> {
+    if (!this.subagents) return { ok: false, message: 'Subagents are disabled.' };
+    return agentId ? this.subagents.pause(agentId) : this.subagents.pauseAll();
+  }
+
+  resumeAgent(agentId?: string): ReturnType<SubagentManager['resume']> {
+    if (!this.subagents) return { ok: false, message: 'Subagents are disabled.' };
+    return agentId ? this.subagents.resume(agentId) : this.subagents.resumeAll();
+  }
+
+  /** A person's bounded top-up: one child's token cap, or the run budget when `agentId` is absent. */
+  topUpAgent(agentId: string | undefined, add: { tokens?: number; usd?: number }): ReturnType<SubagentManager['topUp']> {
+    if (!this.subagents) return { ok: false, message: 'Subagents are disabled.' };
+    if (!agentId) return this.subagents.topUpRun(add);
+    if (add.usd !== undefined) return { ok: false, message: 'An agent is topped up in tokens.' };
+    return this.subagents.topUp(agentId, add.tokens ?? 0);
+  }
+
   agents(): SubagentPublicState[] {
     return this.subagents?.states() ?? [];
   }
