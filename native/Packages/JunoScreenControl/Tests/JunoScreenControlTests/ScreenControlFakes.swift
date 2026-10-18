@@ -237,7 +237,8 @@ struct ScreenFixture {
         layout: KeyboardLayout = .usANSI,
         encode: @escaping @Sendable (CGImage) -> EncodedFrame? = { CaptureScaler.encode($0) },
         sessionLock: (any ScreenSessionLockMonitoring)? = nil,
-        displayAwake: (any DisplayAwakeAsserting)? = nil
+        displayAwake: (any DisplayAwakeAsserting)? = nil,
+        idleTimer: (any IdleTimerScheduling)? = nil
     ) {
         environment.apps = [Self.textEdit, Self.terminal, Self.safari, Self.mail, Self.juno]
         environment.front = Self.juno
@@ -278,7 +279,8 @@ struct ScreenFixture {
                 minimumInputGap: 0,
                 encode: encode,
                 sessionLock: sessionLock,
-                displayAwake: displayAwake
+                displayAwake: displayAwake,
+                idleTimer: idleTimer
             ),
             lock: ScreenControlLock(now: { clock.now })
         )

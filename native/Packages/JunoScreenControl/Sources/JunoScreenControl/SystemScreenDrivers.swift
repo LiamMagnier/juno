@@ -37,7 +37,8 @@ extension ScreenControlService.Dependencies {
             // A locked Mac pauses every run; the display stays awake only
             // while one is working. Neither ever unlocks anything.
             sessionLock: SystemSessionLockMonitor(),
-            displayAwake: SystemDisplayAwakeAssertion()
+            displayAwake: SystemDisplayAwakeAssertion(),
+            idleTimer: SystemIdleTimer()
         )
     }
 }

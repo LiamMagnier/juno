@@ -57,6 +57,27 @@ final class FakeDisplayAwake: DisplayAwakeAsserting, @unchecked Sendable {
     var isHeld: Bool { lock.withLock { held } }
 }
 
+/// An idle timer the test fires by hand: nothing sleeps, nothing is cancelled.
+final class ManualIdleTimer: IdleTimerScheduling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [(seconds: TimeInterval, fire: @Sendable () async -> Void)] = []
+
+    func schedule(after seconds: TimeInterval, _ fire: @escaping @Sendable () async -> Void) {
+        lock.withLock { pending.append((seconds, fire)) }
+    }
+
+    var waiting: [TimeInterval] { lock.withLock { pending.map(\.seconds) } }
+
+    /// Runs every wake scheduled so far (the ones they schedule wait for the next call).
+    func fire() async {
+        let due = lock.withLock { () -> [(seconds: TimeInterval, fire: @Sendable () async -> Void)] in
+            defer { pending = [] }
+            return pending
+        }
+        for entry in due { await entry.fire() }
+    }
+}
+
 final class GrantedOnlyFrameTests: XCTestCase {
     private func screenshot(_ fixture: ScreenFixture) async throws {
         let prepared = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot))
@@ -153,9 +174,9 @@ final class GrantedOnlyFrameTests: XCTestCase {
 
 final class ScreenLockPolicyTests: XCTestCase {
     private func waitUntil(_ condition: @escaping () async -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
-        for _ in 0..<400 {
+        for _ in 0..<20_000 {
             if await condition() { return }
-            try? await Task.sleep(nanoseconds: 5_000_000)
+            await Task.yield()
         }
         XCTFail("timed out", file: file, line: line)
     }
@@ -282,17 +303,30 @@ final class ScreenLockPolicyTests: XCTestCase {
 
     func testAnIdleRunLetsTheDisplaySleepAndTheNextActionHoldsItAgain() async throws {
         let awake = FakeDisplayAwake()
-        let fixture = ScreenFixture(displayAwake: awake)
+        let timer = ManualIdleTimer()
+        let fixture = ScreenFixture(displayAwake: awake, idleTimer: timer)
         try await fixture.start()
         XCTAssertTrue(awake.isHeld)
+        XCTAssertEqual(timer.waiting.count, 1, "one idle check waits, never more")
+
+        // More work before the timer fires does not stack timers.
+        _ = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot))
+        XCTAssertEqual(timer.waiting.count, 1)
+
         fixture.clock.advance(30)
-        await fixture.service.reviewDisplayAwake()
+        await timer.fire()
         XCTAssertTrue(awake.isHeld, "half a minute of thinking keeps it")
+        XCTAssertEqual(timer.waiting.count, 1, "the timer waits again for the rest of the span")
+        XCTAssertLessThan(timer.waiting[0], 31)
+
         fixture.clock.advance(31)
-        await fixture.service.reviewDisplayAwake()
+        await timer.fire()
         XCTAssertFalse(awake.isHeld, "a minute with no action lets the display sleep")
+        XCTAssertTrue(timer.waiting.isEmpty, "nothing waits once it is let go")
+
         _ = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot))
         XCTAssertTrue(awake.isHeld, "the next action holds it again")
+        XCTAssertEqual(timer.waiting.count, 1)
     }
 
     /// Acceptance test 5: no code path can unlock a Mac.

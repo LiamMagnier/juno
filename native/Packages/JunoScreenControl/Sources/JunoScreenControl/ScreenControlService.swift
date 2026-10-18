@@ -35,9 +35,10 @@ public actor ScreenControlService: ScreenControlling {
         public var displayAwake: (any DisplayAwakeAsserting)?
         /// How long after the last action the display assertion is let go.
         public var displayAwakeIdle: TimeInterval
-        /// The sleep the idle release waits with: real time, never the
-        /// injected `pause`, which tests use to move their clock.
-        public var idleSleep: @Sendable (Duration) async throws -> Void
+        /// Wakes the display assertion's idle check. Nil: no idle timer (the
+        /// assertion still goes on pause, lock, stop and end). Production
+        /// passes ``SystemIdleTimer``; tests pass a manual one they fire.
+        public var idleTimer: (any IdleTimerScheduling)?
 
         public init(
             capture: any ScreenCapturing,
@@ -57,7 +58,7 @@ public actor ScreenControlService: ScreenControlling {
             sessionLock: (any ScreenSessionLockMonitoring)? = nil,
             displayAwake: (any DisplayAwakeAsserting)? = nil,
             displayAwakeIdle: TimeInterval = 60,
-            idleSleep: @escaping @Sendable (Duration) async throws -> Void = ScreenControlService.sleepNanoseconds
+            idleTimer: (any IdleTimerScheduling)? = nil
         ) {
             self.capture = capture
             self.environment = environment
@@ -79,20 +80,10 @@ public actor ScreenControlService: ScreenControlling {
             self.sessionLock = sessionLock
             self.displayAwake = displayAwake
             self.displayAwakeIdle = displayAwakeIdle
-            self.idleSleep = idleSleep
+            self.idleTimer = idleTimer
         }
     }
 
-    /// The idle release's real-time sleep. Not the generic
-    /// `Task.sleep(for:)`: Xcode 26 leaves that one's task allocations behind
-    /// when it is cancelled (every action cancels the last idle timer), and
-    /// the next deallocation aborts with "freed pointer was not the last
-    /// allocation".
-    @Sendable public static func sleepNanoseconds(_ duration: Duration) async throws {
-        let (seconds, attoseconds) = duration.components
-        let nanoseconds = max(0, seconds) * 1_000_000_000 + max(0, attoseconds) / 1_000_000_000
-        try await Task.sleep(nanoseconds: UInt64(nanoseconds))
-    }
 
     /// The untrusted-data line on every frame and tree (§3.8 rule 2).
     public static let untrustedLine =
@@ -2350,13 +2341,11 @@ public actor ScreenControlService: ScreenControlling {
 
     /// Wakes once the idle span since the last work has passed.
     private func scheduleIdleCheck() {
-        guard deps.displayAwake != nil, displayAwakeHeld, !idleTimerWaiting else { return }
+        guard deps.displayAwake != nil, let timer = deps.idleTimer, displayAwakeHeld, !idleTimerWaiting else { return }
         idleTimerWaiting = true
         let quiet = lastWork.map { deps.now().timeIntervalSince($0) } ?? 0
         let wait = max(0.05, deps.displayAwakeIdle - quiet + 0.05)
-        let sleep = deps.idleSleep
-        Task { [weak self] in
-            try? await sleep(.milliseconds(Int(wait * 1_000)))
+        timer.schedule(after: wait) { [weak self] in
             await self?.idleTimerFired()
         }
     }

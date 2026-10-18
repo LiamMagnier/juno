@@ -29,6 +29,28 @@ public protocol DisplayAwakeAsserting: Sendable {
     func release()
 }
 
+/// Runs the display assertion's idle check later. One wake at a time and
+/// never cancelled; the service re-checks on waking and asks again for what
+/// is left of the idle span. Injected so tests fire it by hand and never
+/// sleep or cancel a real task.
+public protocol IdleTimerScheduling: Sendable {
+    func schedule(after seconds: TimeInterval, _ fire: @escaping @Sendable () async -> Void)
+}
+
+/// Real time. `Task.sleep(nanoseconds:)`, not the generic `Task.sleep(for:)`,
+/// which Xcode 26 mishandles (#98), and the task is never cancelled.
+public struct SystemIdleTimer: IdleTimerScheduling {
+    public init() {}
+
+    public func schedule(after seconds: TimeInterval, _ fire: @escaping @Sendable () async -> Void) {
+        let nanoseconds = UInt64(max(0, seconds) * 1_000_000_000)
+        Task.detached {
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            await fire()
+        }
+    }
+}
+
 /// The rules for a run nobody is watching (docs/rea/designs/computer-use.md
 /// §3.1, "Unattended runs").
 public enum ScreenUnattendedPolicy {
