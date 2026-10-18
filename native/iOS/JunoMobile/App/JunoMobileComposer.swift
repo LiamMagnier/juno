@@ -133,9 +133,49 @@ struct JunoMobileComposer: View {
   /// system font's at 17pt, scaled with Dynamic Type as the field's font is.
   @State private var fieldHeight: CGFloat = 0
   @ScaledMetric(relativeTo: .body) private var fieldLineHeight: CGFloat = 20.29
+  /// "Create image" (G04): the chat model to give back when it is turned off.
+  @State private var imageMode = NativeImageMode()
+  /// The picture model the reader last made something with, so the switch
+  /// reopens on it while it is still usable. Empty until the first one.
+  @AppStorage("juno.mobile.composer.last-image-model") private var lastImageModelID = ""
 
   private var selectedModel: NativeChatModelOption? {
     model.model(withID: selectedModelID)
+  }
+
+  // MARK: Image mode
+
+  /// The selected model makes pictures: "Create image" is on.
+  private var inImageMode: Bool {
+    NativeImageMode.isImageModel(selectedModel)
+  }
+
+  /// Whether "Create image" is offered: a picture model this account can use,
+  /// outside a call. (A private chat has its own composer, which never
+  /// offers it.)
+  private var imageModeAvailable: Bool {
+    voiceSession == nil && !NativeImageMode.usableImageModels(in: model.composerCatalog).isEmpty
+  }
+
+  private var createImageBinding: Binding<Bool> {
+    Binding(
+      get: { inImageMode },
+      set: { isOn in if isOn { enterImageMode() } else { exitImageMode() } }
+    )
+  }
+
+  private func enterImageMode() {
+    guard let id = imageMode.enter(
+      currentModelID: selectedModelID,
+      catalog: model.composerCatalog,
+      lastUsedImageModelID: lastImageModelID.isEmpty ? nil : lastImageModelID
+    ) else { return }
+    selectedModelID = id
+  }
+
+  private func exitImageMode() {
+    guard let id = imageMode.exit(catalog: model.composerCatalog) else { return }
+    selectedModelID = id
   }
 
   /// The "/" commands this composer can honour. Rows whose surface the
@@ -430,7 +470,7 @@ struct JunoMobileComposer: View {
                 HStack(spacing: JunoSpace.cozy) {
                   ForEach(armedTokens) { token in
                     JunoMobileComposerToken(
-                      icon: token.icon, title: token.title, remove: token.remove
+                      icon: token.icon, title: token.title, remove: token.remove, removeLabel: token.removeLabel
                     )
                   }
                 }
@@ -696,6 +736,10 @@ struct JunoMobileComposer: View {
       if let schema = model.model(withID: id)?.mediaParams, !schema.isEmpty {
         model.mediaParamsMemory.activate(id, schema: schema)
       }
+      // Image mode remembers the chat model to give back, and the picture
+      // model to reopen on, whichever control chose them.
+      imageMode.observe(selectedModelID: id, catalog: model.composerCatalog)
+      if NativeImageMode.isImageModel(model.model(withID: id)) { lastImageModelID = id }
     }
     .sheet(isPresented: $showingModelPicker) {
       JunoMobileModelSelectorView(
@@ -882,11 +926,23 @@ struct JunoMobileComposer: View {
     let id: String
     let icon: JunoIcon
     let title: String
+    var removeLabel: String? = nil
     let remove: () -> Void
   }
 
   private var armedTokens: [ArmedToken] {
     var tokens: [ArmedToken] = []
+    // Image mode leads (G04): it changes what the message is, so it is read
+    // before anything that qualifies a chat turn. Its ✕ gives the chat model
+    // back.
+    if inImageMode {
+      tokens.append(ArmedToken(
+        id: "image",
+        icon: .image,
+        title: JunoMobileShellStrings.text("image.create"),
+        removeLabel: JunoMobileShellStrings.text("image.modeExit")
+      ) { exitImageMode() })
+    }
     if tools.deepResearch {
       tokens.append(ArmedToken(id: "research", icon: .research, title: String(localized: "Deep research")) {
         tools.deepResearch = false
@@ -930,7 +986,9 @@ struct JunoMobileComposer: View {
           ScrollView(.horizontal) {
             HStack(spacing: JunoSpace.cozy) {
               ForEach(armedTokens) { token in
-                JunoMobileComposerToken(icon: token.icon, title: token.title, remove: token.remove)
+                JunoMobileComposerToken(
+                  icon: token.icon, title: token.title, remove: token.remove, removeLabel: token.removeLabel
+                )
               }
             }
           }
@@ -1222,6 +1280,7 @@ struct JunoMobileComposer: View {
       // "no" here would hide the switch while the catalog loads.
       modelSupportsWebSearch: selectedModel?.supportsWebSearch ?? true,
       memoryEnabled: memoryEnabled,
+      createImage: imageModeAvailable ? createImageBinding : nil,
       setMemoryEnabled: setMemoryEnabled,
       connectors: connectors,
       setProject: { projectID in

@@ -2,7 +2,7 @@
 // Do not edit: change the contract and run `npm run shell:contract:generate`.
 // `npm run shell:contract:check` fails CI when this file is stale.
 //
-// shell-contract-digest: ab6a3ad3d766bf6726cba987fb73df19fdf0da0321fe29164ec31b142c332173
+// shell-contract-digest: 5f533a535189f554372de43e904e47ab628bf1f6bde59821f869bc629f795466
 
 /** The languages the table carries. */
 export const SHELL_LOCALES = ["en","fr"] as const;
@@ -303,6 +303,72 @@ export const SHELL_STRINGS = {
   "quickEntry.conflict": { en: "{shortcut} is used by another app", fr: "{shortcut} est utilisé par une autre app" },
   /** A rebind that failed. */
   "quickEntry.rebindFailed": { en: "That shortcut is in use by another app.", fr: "Ce raccourci est déjà utilisé par une autre app." },
+  /** The composer's image mode: its + menu row, its chip and the chat card's heading. */
+  "image.create": { en: "Create image", fr: "Créer une image" },
+  /** Leaves the composer's image mode (the chip's close button, read aloud). */
+  "image.modeExit": { en: "Stop creating images", fr: "Ne plus créer d’images" },
+  /** The composer field in image mode. */
+  "image.placeholder": { en: "Describe an image to generate…", fr: "Décrivez l’image à générer…" },
+  /** The chat card while a picture is being made. */
+  "image.generating": { en: "Creating image", fr: "Création de l’image" },
+  /** Under a picture made in chat: the image model that made it. */
+  "image.madeWith": { en: "Made with {model}", fr: "Créée avec {model}" },
+  /** Under a picture made in chat when Auto chose the image model. */
+  "image.autoPicked": { en: "Auto picked {model}", fr: "Auto a choisi {model}" },
+  /** Under a picture made in chat: where it was saved. */
+  "image.savedToLibrary": { en: "Saved to your Library", fr: "Enregistrée dans votre bibliothèque" },
+  /** AI Act label under every generated picture. */
+  "image.aiGenerated": { en: "AI-generated", fr: "Générée par IA" },
+  /** Image action: save the file. */
+  "image.download": { en: "Download", fr: "Télécharger" },
+  /** Image action: copy the picture to the clipboard. */
+  "image.copy": { en: "Copy", fr: "Copier" },
+  /** Toast after the picture was copied. */
+  "image.copied": { en: "Image copied", fr: "Image copiée" },
+  /** Toast when the clipboard refused the picture; the link was copied instead. */
+  "image.copyFailed": { en: "Couldn’t copy the image, so its link was copied", fr: "Impossible de copier l’image : son lien a été copié" },
+  /** Image action: make a variation from this picture. */
+  "image.vary": { en: "Vary", fr: "Varier" },
+  /** Image action: edit a region or the whole picture. */
+  "image.edit": { en: "Edit", fr: "Modifier" },
+  /** Image action: open the Library's files. */
+  "image.openLibrary": { en: "Open in Library", fr: "Ouvrir dans la bibliothèque" },
+  /** The prompt a Vary press sends with the picture as its reference. */
+  "image.varyPrompt": { en: "Make a variation of this image, keeping its subject and style", fr: "Crée une variante de cette image en gardant son sujet et son style" },
+  /** Heading of the chat card when no picture was made. */
+  "image.failedTitle": { en: "Couldn’t create the image", fr: "Impossible de créer l’image" },
+  /** Failure: no image model passes the plan and data settings. */
+  "image.failureNoModel": { en: "No image model is available on your plan and data settings.", fr: "Aucun modèle d’image n’est disponible avec votre forfait et vos réglages de données." },
+  /** Failure: the image model has no key on this server. */
+  "image.failureNotConfigured": { en: "{model} isn’t set up on this server yet.", fr: "{model} n’est pas encore configuré sur ce serveur." },
+  /** Failure: the image provider is down or refusing. */
+  "image.failureUnavailable": { en: "{model} can’t be reached right now. Try again shortly or choose another image model.", fr: "{model} est injoignable pour le moment. Réessayez bientôt ou choisissez un autre modèle d’image." },
+  /** Failure: the image model needs a higher plan. */
+  "image.failurePlan": { en: "{model} needs the {plan} plan.", fr: "{model} nécessite le forfait {plan}." },
+  /** Failure: the account's spending limit is reached. */
+  "image.failureBudget": { en: "You’ve reached your spending limit for now.", fr: "Vous avez atteint votre limite de dépenses pour le moment." },
+  /** Failure: too many generations in a short time. */
+  "image.failureRateLimited": { en: "You’re generating a lot. Give it a minute.", fr: "Vous générez beaucoup. Patientez une minute." },
+  /** Failure: the plan's messages are used up. */
+  "image.failureQuota": { en: "You’ve used all your messages for this period.", fr: "Vous avez utilisé tous vos messages pour cette période." },
+  /** Failure: the request breaks the acceptable use policy. */
+  "image.failurePolicy": { en: "This request goes against our acceptable use policy.", fr: "Cette demande enfreint notre politique d’utilisation acceptable." },
+  /** Failure: the project's assistant has media generation turned off. */
+  "image.failureWorkspace": { en: "Image generation is turned off for this project.", fr: "La génération d’images est désactivée pour ce projet." },
+  /** Failure: the image model can't work from a reference picture. */
+  "image.failureEdit": { en: "{model} can’t work from a reference image.", fr: "{model} ne peut pas partir d’une image de référence." },
+  /** Failure: the reference picture could not be found. */
+  "image.failureReference": { en: "The reference image couldn’t be found.", fr: "L’image de référence est introuvable." },
+  /** Failure: the Library has no room for the picture. */
+  "image.failureLibraryFull": { en: "Your Library is full. Free some space to save new images.", fr: "Votre bibliothèque est pleine. Libérez de l’espace pour enregistrer de nouvelles images." },
+  /** Failure: one reply asked for pictures too many times. */
+  "image.failureTooMany": { en: "One reply can make images three times at most.", fr: "Une réponse peut créer des images trois fois au maximum." },
+  /** Failure: a document or page asked for a picture, not the person. */
+  "image.failureNotRequested": { en: "Images are only made when you ask for one in your own message.", fr: "Les images ne sont créées que si vous en demandez une dans votre propre message." },
+  /** Failure: the image model returned an error. */
+  "image.failureProvider": { en: "{model} couldn’t make this image.", fr: "{model} n’a pas pu créer cette image." },
+  /** Failure card action: ask again. */
+  "image.tryAgain": { en: "Try again", fr: "Réessayer" },
 } as const;
 
 export type ShellStringKey = keyof typeof SHELL_STRINGS;

@@ -74,6 +74,12 @@ export interface RouteInput {
   lowBudget?: boolean;
   /** Connectors / client tools offered to the model this turn. */
   toolsOffered?: number;
+  /**
+   * The message is a clear request for a picture (image-intent.ts) and the
+   * turn can carry `generate_image`: the answer is a tool call, so only a
+   * model that calls tools can give it (G04).
+   */
+  wantsImage?: boolean;
   /** Tokens already in the context (history + attachments), when known. */
   contextTokens?: number;
   preferCurrent?: boolean;
@@ -109,7 +115,8 @@ export type ExclusionReason =
   | "context_too_small"
   | "superseded"
   | "over_budget"
-  | "provider_unavailable";
+  | "provider_unavailable"
+  | "needs_image_tool";
 
 export interface CandidateScore {
   modelId: string;
@@ -259,9 +266,14 @@ export function routeAuto(input: RouteInput): RouteDecision {
     complexity,
     hasImages: input.hasImages,
     wantsWebSearch: input.wantsWebSearch,
-    toolsOffered: input.toolsOffered,
+    // The image tool is a tool offered, and the turn's whole answer is a call to it.
+    toolsOffered: (input.toolsOffered ?? 0) + (input.wantsImage ? 1 : 0),
     contextTokens: input.contextTokens,
   });
+  if (input.wantsImage) {
+    profile.needs.toolReliability = true;
+    profile.signals = ["an image request", ...profile.signals.filter((signal) => signal !== "an image request")];
+  }
   const preference = input.preference ?? DEFAULT_AUTO_PREFERENCE;
   const weights = PREFERENCE_WEIGHTS[preference];
   const catalogue = input.catalogue ?? MODEL_LIST;
@@ -292,6 +304,17 @@ export function routeAuto(input: RouteInput): RouteDecision {
   });
 
   if (pool.length === 0) throw new NoAutoCandidateError(excluded);
+
+  // A picture is made by calling `generate_image`: a model that cannot call
+  // tools would answer an image request with a description of one. Kept only
+  // when some model can, so a catalogue without one still answers in words.
+  if (input.wantsImage) {
+    const tooled = pool.filter((m) => m.agenticTools);
+    if (tooled.length > 0 && tooled.length < pool.length) {
+      excluded.needs_image_tool = pool.length - tooled.length;
+      pool = tooled;
+    }
+  }
 
   if (input.preferCurrent !== false) {
     const current = pool.filter((m) => m.status === "current" || !m.status);

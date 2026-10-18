@@ -26,6 +26,11 @@ export interface RoutingReceipt {
   degraded?: "all_providers_unavailable" | "over_budget" | null;
   /** Set when the pick was replaced after routing (provider down, platform budget). */
   rerouted?: string | null;
+  /**
+   * The image model that made this answer's picture (`generate_image`, G04),
+   * and whether Auto chose it or the person named it.
+   */
+  image?: { model: string; name: string; auto: boolean } | null;
 }
 
 const EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -55,7 +60,12 @@ export function parseRoutingReceipt(raw: unknown): RoutingReceipt | null {
   const degraded =
     r.degraded === "all_providers_unavailable" || r.degraded === "over_budget" ? r.degraded : null;
   const rerouted = typeof r.rerouted === "string" ? r.rerouted : null;
-  return { v: 1, effort, taskClass: r.taskClass, reasons, degraded, rerouted };
+  const imageRaw = r.image && typeof r.image === "object" && !Array.isArray(r.image) ? (r.image as Record<string, unknown>) : null;
+  const image =
+    imageRaw && typeof imageRaw.model === "string" && typeof imageRaw.name === "string"
+      ? { model: imageRaw.model, name: imageRaw.name, auto: imageRaw.auto !== false }
+      : null;
+  return { v: 1, effort, taskClass: r.taskClass, reasons, degraded, rerouted, ...(image ? { image } : {}) };
 }
 
 const EFFORT_LABEL: Record<Exclude<ReasoningEffort, null>, string> = {

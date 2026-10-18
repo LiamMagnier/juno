@@ -8,6 +8,7 @@ import { personalitySystemPrompt } from "@/lib/personalities";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ROUTINE_SECTION, ROUTINE_UNAVAILABLE_LINE } from "@/lib/tools/specs/propose-routine.prompt";
+import { IMAGE_SECTION } from "@/lib/tools/specs/generate-image.prompt";
 
 export interface SystemPromptOptions {
   userName?: string | null;
@@ -56,6 +57,12 @@ export interface SystemPromptOptions {
    * to a task that runs once.
    */
   routineProposals?: boolean;
+  /**
+   * `generate_image` is attached to this turn (src/lib/chat/image-tool.ts):
+   * adds IMAGE_SECTION, which says when to make a picture and how to answer
+   * around it. Only with the tool, like every tool section.
+   */
+  imageGeneration?: boolean;
   /**
    * The reply is an agent's, in its own thread or a room. Its routines are set
    * up through `propose_setup_change` (and its brief tells it to suggest
@@ -340,6 +347,8 @@ You write the content; the USER picks the download format. Never say you attache
   // task, which runs once.
   if (opts.routineProposals && !opts.voiceMode) parts.push(ROUTINE_SECTION);
   else if (opts.taskHandoff && !opts.voiceMode && !opts.agentThread) parts.push(ROUTINE_UNAVAILABLE_LINE);
+  // Pictures in chat (G04): only with the tool, never on voice.
+  if (opts.imageGeneration && !opts.voiceMode) parts.push(IMAGE_SECTION);
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.

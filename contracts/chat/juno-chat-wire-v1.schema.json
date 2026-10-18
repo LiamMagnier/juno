@@ -10,8 +10,8 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 199,
-    "planned": 235,
+    "native": 217,
+    "planned": 239,
     "web-only": 67,
     "unclassified": 0
   },
@@ -1113,6 +1113,7 @@
         "calculate",
         "current_time",
         "find_in_page",
+        "generate_image",
         "inspect_image",
         "local_folder",
         "mcp",
@@ -1441,6 +1442,11 @@
           "$ref": "#/$defs/ClientRoutineProposal",
           "x-native": "web-only",
           "x-native-note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
+        },
+        "imageGeneration": {
+          "$ref": "#/$defs/ClientImageGeneration",
+          "x-native": "native",
+          "x-native-note": "A picture the chat model made (generate_image, G04): generating, then done with the files or failed with the cause, re-sent in place by id. Both native apps decode it (NativeActivityWire) to draw the placeholder and the named failure; the finished files also arrive as the answer's attachments, which every build draws."
         },
         "contextReceipt": {
           "type": "object",
@@ -2279,6 +2285,104 @@
         "mimeType",
         "size",
         "url"
+      ]
+    },
+    "ClientImageGeneration": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1,
+          "x-native": "native"
+        },
+        "callId": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "status": {
+          "$ref": "#/$defs/ImageGenerationStatus",
+          "x-native": "native"
+        },
+        "prompt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "modelId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "modelName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "auto": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "aspect": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "count": {
+          "type": "number",
+          "x-native": "native"
+        },
+        "referenceAttachmentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "native"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientAttachment"
+          },
+          "x-native": "native",
+          "x-native-note": "Live only: the finished files before the done frame carries them as the answer's attachments. Never present after a reload."
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImageGenerationFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "native",
+          "x-native-note": "The real cause: a code each client words itself (shell strings image.failure*), plus the server's sentence for an unknown code."
+        }
+      },
+      "required": [
+        "v",
+        "callId",
+        "status",
+        "prompt",
+        "modelId",
+        "modelName",
+        "auto",
+        "aspect",
+        "count",
+        "referenceAttachmentId",
+        "attachmentIds"
       ]
     },
     "ClientLocalToolCall": {
@@ -3372,6 +3476,62 @@
         "uploading"
       ]
     },
+    "ImageGenerationFailure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "budget_exceeded",
+            "edit_unsupported",
+            "library_full",
+            "no_image_model",
+            "not_configured",
+            "not_requested",
+            "plan_required",
+            "policy_violation",
+            "provider_error",
+            "provider_unavailable",
+            "quota_exhausted",
+            "rate_limited",
+            "reference_missing",
+            "too_many_calls",
+            "workspace_disabled"
+          ],
+          "x-native": "native"
+        },
+        "message": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "ImageGenerationStatus": {
+      "type": "string",
+      "enum": [
+        "done",
+        "failed",
+        "generating"
+      ]
+    },
     "JsonObject": {
       "type": "object",
       "properties": {},
@@ -3534,6 +3694,36 @@
           "type": [
             "string",
             "null"
+          ],
+          "x-native": "planned"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "x-native": "planned"
+                },
+                "name": {
+                  "type": "string",
+                  "x-native": "planned"
+                },
+                "auto": {
+                  "type": "boolean",
+                  "x-native": "planned"
+                }
+              },
+              "required": [
+                "model",
+                "name",
+                "auto"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ],
           "x-native": "planned"
         }

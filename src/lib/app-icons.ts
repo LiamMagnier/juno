@@ -331,6 +331,9 @@ export const ComposerIcons = {
   artifactsTool: LayoutTemplate,
   /** Memory: what Juno keeps about you between conversations. */
   memory: NotebookPen,
+  /** Create image: the composer's image mode (G04). A plain picture, not
+   *  `photos`' picture-with-a-plus, which means bringing one in. */
+  image: ImageIcon,
 } as const satisfies Record<string, IconComponent>;
 
 export type ComposerIconName = keyof typeof ComposerIcons;

@@ -12,6 +12,7 @@ import { HAND_OFF_TOOL_ID, isHandoffApproval } from "@/lib/chat/handoff-tool";
 import { chatAgentConfigToolsEnabled } from "@/lib/chat/agent-config-tools";
 import { LOCAL_FOLDER_FEATURE, localFolderToolsEnabled } from "@/lib/chat/local-folder";
 import { chatRoutineToolEnabled } from "@/lib/chat/routine-tool";
+import { GENERATE_IMAGE_TOOL_ID, chatImageToolEnabled, imageModelAvailable } from "@/lib/chat/image-tool";
 import { PROPOSE_ROUTINE_TOOL_ID } from "@/lib/work/routine-proposal";
 import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import type { ChatRequestBody } from "@/lib/chat/request";
@@ -178,7 +179,27 @@ export async function resolveApprovals({
     plan,
   });
 
-  return { taskGate, taskToolOn, routineToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext, localFolder };
+  /*
+   * Whether the model may make a picture (src/lib/chat/image-tool.ts, G04).
+   * Any client: the pictures are attachments of the answer, which every
+   * client draws. Not incognito (files are stored), voice, research or a
+   * targeted artifact edit, and only when some image model could run.
+   */
+  const imageToolOn = chatImageToolEnabled({
+    privateMode: taskGate.privateMode,
+    voiceMode: taskGate.voiceMode,
+    userMessageId,
+    researchActive,
+    artifactEdit,
+    conversationKind: conversation.kind,
+    agenticTools: !!modelInfo.agenticTools,
+    functionToolsReachModel: taskGate.functionToolsReachModel,
+    skillPermits: narrowRuntimeToolsForSkill([GENERATE_IMAGE_TOOL_ID], appliedSkill).length > 0,
+    lockdown: taskGate.lockdown,
+    imageModelAvailable: imageModelAvailable(plan),
+  });
+
+  return { taskGate, taskToolOn, routineToolOn, imageToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext, localFolder };
 }
 
 export type TurnApprovals = Awaited<ReturnType<typeof resolveApprovals>>;

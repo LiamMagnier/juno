@@ -61,6 +61,10 @@ struct JunoMobileComposerActions: View {
     /// Account-level, unlike everything else in Tools — this is the same switch
     /// as Settings › Memory, surfaced where the web surfaces it.
     var memoryEnabled: Bool = true
+    /// "Create image" (G04): checked whenever the selected model makes
+    /// pictures; turning it on picks one, off gives the chat model back. Nil
+    /// hides the row — no usable image model, or a call.
+    var createImage: Binding<Bool>? = nil
     /// `@MainActor @Sendable` because it is called from inside a `Binding`'s
     /// setter, whose accessors are `@Sendable` in the iOS 26 SDK — a plain
     /// closure there "may introduce data races" under Swift 6. The toggle is
@@ -162,15 +166,28 @@ struct JunoMobileComposerActions: View {
 
             groupGap
 
+            // First of the contract's third group (`[image, research, search,
+            // memory]`): what the message makes before what it reaches for.
+            if let imageToggle = createImage {
+                row(
+                    text: Text(verbatim: JunoMobileShellStrings.text("image.create")),
+                    icon: .image,
+                    checked: imageToggle.wrappedValue
+                ) {
+                    imageToggle.wrappedValue.toggle()
+                }
+                .accessibilityIdentifier("juno.mobile.composer-create-image")
+                .junoMobileBloomRow(4, shown: rowsIn)
+            }
             row("composer.deep-research", icon: .research, checked: tools.deepResearch) {
                 tools.deepResearch.toggle()
             }
-            .junoMobileBloomRow(4, shown: rowsIn)
+            .junoMobileBloomRow(5, shown: rowsIn)
             if modelSupportsWebSearch {
                 row("composer.web-search", icon: .web, checked: tools.webSearch) {
                     tools.webSearch.toggle()
                 }
-                .junoMobileBloomRow(5, shown: rowsIn)
+                .junoMobileBloomRow(6, shown: rowsIn)
             }
 
             groupGap
@@ -182,10 +199,10 @@ struct JunoMobileComposerActions: View {
                     menuRow(connectorLabel, icon: .connections) { connectorRows }
                 }
             }
-            .junoMobileBloomRow(6, shown: rowsIn)
+            .junoMobileBloomRow(7, shown: rowsIn)
             menuRow(String(localized: "More"), icon: .ellipsis) { moreRows }
                 .accessibilityIdentifier("juno.mobile.composer-tools")
-                .junoMobileBloomRow(7, shown: rowsIn)
+                .junoMobileBloomRow(8, shown: rowsIn)
         }
         .padding(.vertical, JunoSpace.close)
         .frame(width: JunoMobileComposerPanelMetrics.plusWidth)
@@ -212,6 +229,20 @@ struct JunoMobileComposerActions: View {
         closes: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
+        row(text: Text(title), icon: icon, detail: detail, checked: checked, enabled: enabled, closes: closes, action: action)
+    }
+
+    /// A row whose words are already resolved — the shared string table's,
+    /// which is not the app's default catalog.
+    private func row(
+        text title: Text,
+        icon: JunoIcon,
+        detail: String? = nil,
+        checked: Bool? = nil,
+        enabled: Bool = true,
+        closes: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             pickHaptic.fire()
             // A toggle stays open so a second tool can be armed; anything
@@ -228,7 +259,7 @@ struct JunoMobileComposerActions: View {
                 // are drawn — the glass popover's one texture.
                 JunoIconView(icon, size: 20)
                     .frame(width: 24)
-                Text(title)
+                title
                     .junoFont(size: 17, relativeTo: .body)
                     .lineLimit(1)
                 Spacer(minLength: 8)

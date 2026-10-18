@@ -42,6 +42,7 @@ const JUNO_TOOL_IDS: ReadonlySet<string> = new Set<CanonicalToolId>([
   "calculate",
   "start_task",
   "suggest_research",
+  "generate_image",
 ]);
 
 /** The canonical id of a stored call: a namespaced name (`github__create_issue`) is a connector. */

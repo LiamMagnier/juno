@@ -2312,6 +2312,23 @@ private struct JunoMobileMessageRow: View {
         .padding(.top, JunoSpace.hairline)
       }
 
+      // Pictures the model made mid-answer (G04): the wait, then who made
+      // them under the pictures above, or why none came back. A row left
+      // generating on a finished answer reads as failed.
+      let answerAttachmentIDs = Set(message.attachments.map(\.id))
+      ForEach(NativeChatActivity.imageGenerations(in: message.activity, live: message.isPending), id: \.callID) { generation in
+        NativeImageGenerationCard(
+          generation: generation,
+          answerAttachmentIDs: answerAttachmentIDs,
+          copy: JunoMobileImageGenerationCopy.copy(for: generation)
+        ) { images in
+          if let imageLoader {
+            JunoMobileMessageImages(attachments: images, loader: imageLoader, alignment: .leading)
+          }
+        }
+        .padding(.top, JunoSpace.hairline)
+      }
+
       // A music model's track: a player with its waveform.
       let tracks = message.attachments.filter { $0.viewerKind == .audio }
       if !tracks.isEmpty {
