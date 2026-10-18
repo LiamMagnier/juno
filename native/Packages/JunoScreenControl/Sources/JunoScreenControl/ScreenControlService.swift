@@ -133,7 +133,11 @@ public actor ScreenControlService: ScreenControlling {
     /// When a run last did something, for the display assertion's idle release.
     private var lastWork: Date?
     private var displayAwakeHeld = false
-    private var idleRelease: Task<Void, Never>?
+    /// Whether an idle check is already waiting. One at a time, never
+    /// cancelled: Xcode 26's runtime aborts when a cancelled sleep's task
+    /// allocations are freed, so a newer action does not cancel the timer;
+    /// the timer, on waking, waits again for whatever is left of the span.
+    private var idleTimerWaiting = false
     /// Skipped steps an unattended session keeps, at most.
     static let maximumSkipped = 50
 
@@ -2341,14 +2345,27 @@ public actor ScreenControlService: ScreenControlling {
     private func noteWork() {
         lastWork = deps.now()
         updateDisplayAwake()
-        guard deps.displayAwake != nil else { return }
-        idleRelease?.cancel()
-        let idle = deps.displayAwakeIdle
+        scheduleIdleCheck()
+    }
+
+    /// Wakes once the idle span since the last work has passed.
+    private func scheduleIdleCheck() {
+        guard deps.displayAwake != nil, displayAwakeHeld, !idleTimerWaiting else { return }
+        idleTimerWaiting = true
+        let quiet = lastWork.map { deps.now().timeIntervalSince($0) } ?? 0
+        let wait = max(0.05, deps.displayAwakeIdle - quiet + 0.05)
         let sleep = deps.idleSleep
-        idleRelease = Task { [weak self] in
-            do { try await sleep(.milliseconds(Int(idle * 1_000) + 50)) } catch { return }
-            await self?.reviewDisplayAwake()
+        Task { [weak self] in
+            try? await sleep(.milliseconds(Int(wait * 1_000)))
+            await self?.idleTimerFired()
         }
+    }
+
+    private func idleTimerFired() {
+        idleTimerWaiting = false
+        reviewDisplayAwake()
+        // Work since the timer started: wait out the rest of the span.
+        scheduleIdleCheck()
     }
 
     /// What the idle timer runs: lets the assertion go once the run has been
