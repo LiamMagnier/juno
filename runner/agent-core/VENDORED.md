@@ -168,6 +168,14 @@ with the Swift runtime; each has tests in `src/test/`.
   keys it on the provider's call id, and Stop reaches a running program.
   `src/test/exec-tools.test.ts` covers both. Re-apply when re-syncing.
 
+## Cloud executor heartbeat (October 2026)
+
+- `src/work/types.ts` (`WORK_TERMINAL_REASONS`): adds `executor_unavailable`,
+  mirroring `src/lib/work/domain.ts`. The web app ends a cloud run that sat
+  `queued` past its TTL with no executor heartbeat with this reason (status
+  `interrupted`); the runner never writes it. `tests/work-security.test.ts`
+  keeps the two lists equal. Re-apply when re-syncing.
+
 ## Build
 
 ```sh

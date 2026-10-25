@@ -25,12 +25,18 @@ import { canUseModel } from "@/lib/plans";
 import { getUserPlan } from "@/lib/usage";
 import { isUserMcpConnectorId, userMcpConnectorId, userMcpRowId } from "@/lib/user-mcp";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { resolveAgentDispatchTarget } from "@/lib/agents/run-context";
 import {
   AGENT_ROUTINE_CADENCE_LABEL,
   MAX_AGENTS_PER_ACCOUNT,
   MAX_AGENT_GOALS,
   MAX_AGENT_NOTES,
   agentApprovalMode,
+  agentExecutionTarget,
+  agentRoutineHost,
+  agentWorkTarget,
   AGENT_BLOCKED_WINDOW_MS,
   agentStateSentence,
   agentTaskKeys,
@@ -293,8 +299,14 @@ const NO_DERIVED: AgentDerived = {
 };
 
 export async function serializeAgents(userId: string, agents: readonly Agent[], now = new Date()): Promise<ClientAgent[]> {
-  const derived = await deriveForAgents(userId, agents, now);
-  return agents.map((agent) => serializeAgent(agent, derived.get(agent.id) ?? NO_DERIVED));
+  const [derived, cloudAvailable] = await Promise.all([
+    deriveForAgents(userId, agents, now),
+    agents.length > 0 ? cloudWorkAvailable(now) : Promise.resolve(true),
+  ]);
+  return agents.map((agent) => ({
+    ...serializeAgent(agent, derived.get(agent.id) ?? NO_DERIVED),
+    cloudWorkAvailable: cloudAvailable,
+  }));
 }
 
 export async function listAgentsForUser(userId: string, now = new Date()): Promise<ClientAgent[]> {
@@ -675,9 +687,129 @@ async function ownedProjectId(userId: string, projectId: string | null | undefin
   return project ? project.id : undefined;
 }
 
+/** A Mac (WorkHost) id the account owns, null for "any Mac", or undefined when it is not theirs. */
+async function ownedHostId(userId: string, hostId: string | null | undefined): Promise<string | null | undefined> {
+  if (hostId === undefined) return undefined;
+  if (hostId === null) return null;
+  const host = await prisma.workHost.findFirst({ where: { id: hostId, userId }, select: { id: true } });
+  return host ? host.id : undefined;
+}
+
+const HOST_NOT_FOUND = "That Mac is not connected to your account any more. Pick another, or let it use any Mac.";
+
+/** The account's Macs that can take a routine: switched on for Work and not revoked. */
+async function enabledWorkHostIds(userId: string): Promise<string[]> {
+  const hosts = await prisma.workHost.findMany({
+    where: { userId, revokedAt: null, enabled: true },
+    select: { id: true },
+  });
+  return hosts.map((host) => host.id);
+}
+
+/** One of an agent's routines moving to where the agent now runs. */
+interface RoutineMove {
+  scheduleId: string;
+  sessionId: string;
+  target: "cloud" | "local";
+  hostId: string | null;
+  /** Where it was, recorded on the change event so Undo can put it back. */
+  from: { target: string; hostId: string | null };
+}
+
+/**
+ * Where each of an agent's routines goes when where the agent runs changes.
+ *
+ * The scheduler, the trigger poller and "Run now" all read the routine's own
+ * `target` and `hostId`, so a "Runs on" change that left them alone kept a
+ * routine firing in the cloud for an agent moved to the Mac (or pinned to a
+ * Mac for one moved to the cloud). They follow the agent here, placed by
+ * `agentRoutineHost` exactly as `createAgentRoutine` places a new one; when a
+ * Mac routine has no Mac to name, the whole change is refused in words rather
+ * than half made. `previousHostIds` (from an undone change) is where each
+ * routine was before, preferred over where it is now.
+ */
+async function planAgentRoutineMoves(
+  userId: string,
+  agent: { id: string; name: string },
+  next: { executionTarget: string | null | undefined; preferredHostId: string | null | undefined },
+  previousHostIds?: ReadonlyMap<string, string | null>
+): Promise<{ ok: true; moves: RoutineMove[] } | { ok: false; refusal: AgentResult<never> }> {
+  const routines = await prisma.workSchedule.findMany({
+    where: { userId, runKind: "work", session: { agentId: agent.id, userId, deletedAt: null } },
+    select: { id: true, sessionId: true, target: true, hostId: true },
+  });
+  if (routines.length === 0) return { ok: true, moves: [] };
+
+  const dispatch = await resolveAgentDispatchTarget(userId, next);
+  const enabledHostIds = dispatch.requestedTarget === "local" ? await enabledWorkHostIds(userId) : [];
+  const moves: RoutineMove[] = [];
+  for (const routine of routines) {
+    const placed = agentRoutineHost({
+      target: dispatch.requestedTarget,
+      preferredHostId: dispatch.preferredHostId ?? null,
+      enabledHostIds,
+      currentHostId: previousHostIds?.has(routine.id)
+        ? previousHostIds.get(routine.id)
+        : routine.target === "local"
+          ? routine.hostId
+          : null,
+    });
+    if (!placed.ok) {
+      const routinesWord = routines.length === 1 ? "a routine" : "routines";
+      return {
+        ok: false,
+        refusal: refusal(
+          409,
+          "host_required",
+          placed.reason === "pick_mac"
+            ? `${agent.name} has ${routinesWord}, and a routine on a Mac has to name its Mac. Pick which Mac ${agent.name} uses. Nothing was changed.`
+            : `${agent.name} has ${routinesWord}, and no Mac is switched on for ${PRODUCT_NAME} Work to run ${routines.length === 1 ? "it" : "them"}. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first. Nothing was changed.`
+        ),
+      };
+    }
+    if (routine.target !== dispatch.requestedTarget || routine.hostId !== placed.hostId) {
+      moves.push({
+        scheduleId: routine.id,
+        sessionId: routine.sessionId,
+        target: dispatch.requestedTarget,
+        hostId: placed.hostId,
+        from: { target: routine.target, hostId: routine.hostId },
+      });
+    }
+  }
+  return { ok: true, moves };
+}
+
+/** Writes the moves inside the caller's transaction: the schedule, and its session's target to match. */
+async function applyRoutineMoves(tx: Prisma.TransactionClient, userId: string, moves: readonly RoutineMove[]): Promise<void> {
+  for (const move of moves) {
+    await tx.workSchedule.updateMany({
+      where: { id: move.scheduleId, userId },
+      data: { target: move.target, hostId: move.hostId },
+    });
+    await tx.workSession.updateMany({
+      where: { id: move.sessionId, userId },
+      data: { requestedTarget: move.target, preferredHostId: move.hostId },
+    });
+  }
+}
+
+/** Whether a change to these two settings changes where the agent's work goes. */
+function placementChanges(
+  agent: { executionTarget: string; preferredHostId: string | null },
+  next: { executionTarget: string; preferredHostId: string | null }
+): boolean {
+  const target = agentWorkTarget(next.executionTarget);
+  if (target !== agentWorkTarget(agent.executionTarget)) return true;
+  return target === "local" && next.preferredHostId !== agent.preferredHostId;
+}
+
 export async function createAgentForUser(user: AgentActor, input: CreateAgentInput): Promise<AgentResult<ClientAgent>> {
   const projectId = await ownedProjectId(user.id, input.projectId);
   if (input.projectId && projectId === undefined) return refusal(404, "project_not_found", "That project no longer exists.");
+  const preferredHostId = await ownedHostId(user.id, input.preferredHostId);
+  if (input.preferredHostId && preferredHostId === undefined) return refusal(404, "host_not_found", HOST_NOT_FOUND);
+  input = { ...input, preferredHostId: preferredHostId ?? null };
   if (!(await modelInPlan(user.id, input.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = await linkedConnectorIds(user.id, input.connectorIds);
   const settings = await prisma.settings.findFirst({ where: { userId: user.id }, select: { defaultModel: true } });
@@ -771,6 +903,22 @@ export async function updateAgentForUser(
   const modelChanged = patch.model !== undefined && patch.model !== agent.model;
   if (modelChanged && !(await modelInPlan(user.id, patch.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = patch.connectorIds ? await linkedConnectorIds(user.id, patch.connectorIds) : undefined;
+  const preferredHostId = await ownedHostId(user.id, patch.preferredHostId);
+  if (patch.preferredHostId && preferredHostId === undefined) return refusal(404, "host_not_found", HOST_NOT_FOUND);
+
+  // "Runs on" governs its routines as well as its tasks: they move with it, in
+  // the same transaction as the agent, or the change is refused before
+  // anything is written (a Mac routine with no Mac to name).
+  const nextPlacement = {
+    executionTarget: patch.executionTarget ?? agent.executionTarget,
+    preferredHostId: preferredHostId !== undefined ? preferredHostId : agent.preferredHostId,
+  };
+  let routineMoves: RoutineMove[] = [];
+  if (placementChanges(agent, nextPlacement)) {
+    const planned = await planAgentRoutineMoves(user.id, agent, nextPlacement);
+    if (!planned.ok) return planned.refusal;
+    routineMoves = planned.moves;
+  }
 
   const rawAgent = agent as Agent & { notify?: string | null; pinnedAt?: Date | null };
   const before: Record<string, unknown> = {};
@@ -831,6 +979,14 @@ export async function updateAgentForUser(
     before.budgetMicroUsd = agent.budgetMicroUsd;
     after.budgetMicroUsd = patch.budgetMicroUsd;
   }
+  if (patch.executionTarget !== undefined && patch.executionTarget !== agent.executionTarget) {
+    before.executionTarget = agent.executionTarget;
+    after.executionTarget = patch.executionTarget;
+  }
+  if (preferredHostId !== undefined && preferredHostId !== agent.preferredHostId) {
+    before.preferredHostId = agent.preferredHostId;
+    after.preferredHostId = preferredHostId;
+  }
   if (patch.pinned !== undefined && Boolean(rawAgent.pinnedAt) !== patch.pinned) {
     before.pinnedAt = rawAgent.pinnedAt ? rawAgent.pinnedAt.toISOString() : null;
     after.pinnedAt = patch.pinned ? new Date().toISOString() : null;
@@ -843,27 +999,41 @@ export async function updateAgentForUser(
         ? rawAgent.pinnedAt ?? new Date()
         : null;
 
-  const updated = await prisma.agent.update({
-    where: { id: agent.id, userId: user.id },
-    data: {
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.role !== undefined ? { role: patch.role } : {}),
-      ...(patch.avatar !== undefined ? { avatar: { ...patch.avatar } } : {}),
-      ...(patch.style !== undefined ? { style: patch.style } : {}),
-      ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
-      ...(patch.model !== undefined ? { model: patch.model } : {}),
-      ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
-      ...(patch.approvalMode !== undefined ? { approvalMode: patch.approvalMode } : {}),
-      ...(connectorIds !== undefined ? { connectorIds } : {}),
-      ...(projectId !== undefined ? { projectId } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-      ...(patch.proactive !== undefined ? { proactive: patch.proactive } : {}),
-      ...(patch.notify !== undefined ? { notify: patch.notify } : {}),
-      ...(nextPinnedAt !== undefined ? { pinnedAt: nextPinnedAt } : {}),
-      ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
-      ...(patch.budgetMicroUsd !== undefined ? { budgetMicroUsd: patch.budgetMicroUsd } : {}),
-    },
-  });
+  const agentWhere = { id: agent.id, userId: user.id };
+  const agentData = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    ...(patch.avatar !== undefined ? { avatar: { ...patch.avatar } } : {}),
+    ...(patch.style !== undefined ? { style: patch.style } : {}),
+    ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
+    ...(patch.model !== undefined ? { model: patch.model } : {}),
+    ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
+    ...(patch.approvalMode !== undefined ? { approvalMode: patch.approvalMode } : {}),
+    ...(connectorIds !== undefined ? { connectorIds } : {}),
+    ...(projectId !== undefined ? { projectId } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
+    ...(patch.proactive !== undefined ? { proactive: patch.proactive } : {}),
+    ...(patch.notify !== undefined ? { notify: patch.notify } : {}),
+    ...(nextPinnedAt !== undefined ? { pinnedAt: nextPinnedAt } : {}),
+    ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+    ...(patch.budgetMicroUsd !== undefined ? { budgetMicroUsd: patch.budgetMicroUsd } : {}),
+    ...(patch.executionTarget !== undefined ? { executionTarget: patch.executionTarget } : {}),
+    ...(preferredHostId !== undefined ? { preferredHostId } : {}),
+  };
+  const updated =
+    routineMoves.length === 0
+      ? await prisma.agent.update({ where: agentWhere, data: agentData })
+      : await prisma.$transaction(async (tx) => {
+          const client = tx as unknown as Prisma.TransactionClient;
+          const row = await client.agent.update({ where: agentWhere, data: agentData });
+          await applyRoutineMoves(client, user.id, routineMoves);
+          return row;
+        });
+  // Where each moved routine was, so Undo puts it back rather than re-placing it.
+  const movedDetail =
+    routineMoves.length > 0
+      ? { routinesMoved: routineMoves.map((move) => ({ scheduleId: move.scheduleId, from: move.from })) }
+      : {};
 
   // The thread follows the agent it belongs to: its title is the agent's name,
   // the apps switched on in it are the apps the agent may use, and its picker
@@ -924,7 +1094,7 @@ export async function updateAgentForUser(
             agentId: agent.id,
             kind: "paused",
             title: `${updated.name} was paused`,
-            detail: { routineIds, before, after },
+            detail: { routineIds, before, after, ...movedDetail },
           },
         })
         .catch(() => null);
@@ -938,7 +1108,7 @@ export async function updateAgentForUser(
             agentId: agent.id,
             kind: "resumed",
             title: `${updated.name} is back`,
-            detail: { before, after },
+            detail: { before, after, ...movedDetail },
           },
         })
         .catch(() => null);
@@ -954,7 +1124,7 @@ export async function updateAgentForUser(
             agentId: agent.id,
             kind: "updated",
             title: "Profile updated",
-            detail: { fields: changed, before, after },
+            detail: { fields: changed, before, after, ...movedDetail },
           },
         })
         .catch(() => null);
@@ -969,6 +1139,25 @@ export async function updateAgentForUser(
     value: serialized,
     eventId,
   };
+}
+
+/**
+ * Where each routine a change moved had been, read back off the change event
+ * (`routinesMoved`, written by `updateAgentForUser`). Tolerant: an entry it
+ * cannot read is left out, and that routine is placed by the restored setting.
+ */
+function routinesMovedBy(detail: Record<string, unknown>): Map<string, string | null> {
+  const previous = new Map<string, string | null>();
+  if (!Array.isArray(detail.routinesMoved)) return previous;
+  for (const entry of detail.routinesMoved) {
+    if (!entry || typeof entry !== "object") continue;
+    const { scheduleId, from } = entry as { scheduleId?: unknown; from?: unknown };
+    if (typeof scheduleId !== "string" || !from || typeof from !== "object") continue;
+    const hostId = (from as { target?: unknown; hostId?: unknown }).hostId;
+    const target = (from as { target?: unknown }).target;
+    previous.set(scheduleId, target === "local" && typeof hostId === "string" ? hostId : null);
+  }
+  return previous;
 }
 
 export async function undoAgentEventForUser(
@@ -1061,11 +1250,48 @@ export async function undoAgentEventForUser(
     if ("pinnedAt" in before) {
       agentUpdate.pinnedAt = typeof before.pinnedAt === "string" ? new Date(before.pinnedAt) : null;
     }
+    // Where it runs. The Mac it preferred is checked again, as on any edit: a
+    // Mac revoked since then is not restored as a dangling id, it becomes "any
+    // of your Macs", which is what dispatch would make of it anyway.
+    if ("executionTarget" in before) {
+      agentUpdate.executionTarget = agentExecutionTarget(
+        typeof before.executionTarget === "string" ? before.executionTarget : null
+      );
+    }
+    if ("preferredHostId" in before) {
+      const previous = typeof before.preferredHostId === "string" ? before.preferredHostId : null;
+      agentUpdate.preferredHostId = (await ownedHostId(user.id, previous)) ?? null;
+    }
+    // Its routines go back with it: to where each one was before the change
+    // when that is still possible, else wherever the restored setting places
+    // them. Refused, before anything is written, when a Mac routine would have
+    // no Mac to name.
+    let routineMoves: RoutineMove[] = [];
+    if ("executionTarget" in agentUpdate || "preferredHostId" in agentUpdate) {
+      const restored = {
+        executionTarget: (agentUpdate.executionTarget as string | undefined) ?? agent.executionTarget,
+        preferredHostId:
+          "preferredHostId" in agentUpdate ? (agentUpdate.preferredHostId as string | null) : agent.preferredHostId,
+      };
+      if (placementChanges(agent, restored)) {
+        const planned = await planAgentRoutineMoves(user.id, agent, restored, routinesMovedBy(detail));
+        if (!planned.ok) return planned.refusal;
+        routineMoves = planned.moves;
+      }
+    }
     if (Object.keys(agentUpdate).length > 0) {
-      await prisma.agent.update({
-        where: { id: agent.id, userId: user.id },
-        data: agentUpdate,
-      });
+      if (routineMoves.length === 0) {
+        await prisma.agent.update({
+          where: { id: agent.id, userId: user.id },
+          data: agentUpdate,
+        });
+      } else {
+        await prisma.$transaction(async (tx) => {
+          const client = tx as unknown as Prisma.TransactionClient;
+          await client.agent.update({ where: { id: agent.id, userId: user.id }, data: agentUpdate });
+          await applyRoutineMoves(client, user.id, routineMoves);
+        });
+      }
     }
   }
 
@@ -1133,6 +1359,8 @@ export async function duplicateAgentForUser(
       proactive: source.proactive,
       notify: rawSource.notify ?? "results",
       template: source.template,
+      executionTarget: source.executionTarget,
+      preferredHostId: source.preferredHostId,
       sortOrder: count,
     },
   });
@@ -1244,10 +1472,15 @@ export async function startAgentTask(
   const connectorIds = await linkedConnectorIds(user.id, agent.connectorIds);
   const keys = agentTaskKeys(agent.id, input.idempotencyKey);
 
+  // Where the person set this member to run: the cloud, or their Mac through
+  // the relay. A Mac that is offline is the dispatcher's honest 409, returned
+  // to the caller as-is; it is never moved to the cloud instead. A preferred
+  // Mac that has since been removed is dropped (any Mac), not a 404.
+  const target = await resolveAgentDispatchTarget(user.id, agent);
   const body = protocol.createSessionSchema.safeParse({
     goal: input.goal,
     title: input.title,
-    requestedTarget: "cloud",
+    ...target,
     ...(agent.projectId ? { projectId: agent.projectId } : {}),
     conversationId,
     ...(agent.model ? { model: agent.model } : {}),
@@ -1280,7 +1513,7 @@ export async function startAgentTask(
 
   const runBody = protocol.startRunSchema.parse({
     origin: "manual",
-    requestedTarget: "cloud",
+    requestedTarget: target.requestedTarget,
     idempotencyKey: keys.run,
     ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
   });
@@ -1338,9 +1571,12 @@ export async function discardAgentTaskDraft(userId: string, sessionId: string): 
  * the project defaults and the connector ownership check all apply) and the
  * schedule is written with the parser's own trigger output and bounds
  * (`createScheduleSchema`, `normalizeTriggerDrafts`), as
- * `POST /api/work/schedules` writes one. It is a cloud routine: an agent's
- * page offers the clocks, and a routine on a Mac or on an event is one step
- * away in Automations, where the full editor already lives.
+ * `POST /api/work/schedules` writes one. It runs where the agent is set to
+ * run: the cloud, or (for a `mac` agent) its preferred Mac, or the one Mac the
+ * account has switched on for Work. A local schedule has to name its Mac, so
+ * with several and no preference the person is asked to pick one rather than
+ * one being picked for them. An agent's page offers the clocks; a routine on
+ * an event is one step away in Automations, where the full editor lives.
  */
 export async function createAgentRoutine(
   user: AgentActor,
@@ -1356,11 +1592,31 @@ export async function createAgentRoutine(
   if (!schedule.isValidTimeZone(input.timezone)) {
     return refusal(400, "invalid_timezone", `Unknown timezone "${input.timezone}".`);
   }
+  const target = await resolveAgentDispatchTarget(user.id, agent);
+  let hostId: string | null = null;
+  if (target.requestedTarget === "local") {
+    const placed = agentRoutineHost({
+      target: "local",
+      preferredHostId: target.preferredHostId ?? null,
+      enabledHostIds: await enabledWorkHostIds(user.id),
+    });
+    if (!placed.ok) {
+      return refusal(
+        409,
+        "host_required",
+        placed.reason === "no_mac"
+          ? `${agent.name} runs on your Mac. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first.`
+          : `${agent.name} runs on your Mac. Pick which Mac in its settings first.`
+      );
+    }
+    hostId = placed.hostId;
+  }
   const parsed = schedule.createScheduleSchema.safeParse({
     name: input.name,
     instructions: input.instructions,
     timezone: input.timezone,
-    target: "cloud",
+    target: target.requestedTarget,
+    hostId,
     triggers: [routineTrigger(input)],
     ...(agent.model ? { model: agent.model } : {}),
   });
@@ -1373,7 +1629,7 @@ export async function createAgentRoutine(
   const sessionBody = protocol.createSessionSchema.safeParse({
     goal: parsed.data.instructions,
     title: parsed.data.name,
-    requestedTarget: "cloud",
+    ...target,
     ...(agent.projectId ? { projectId: agent.projectId } : {}),
     conversationId,
     ...(agent.model ? { model: agent.model } : {}),
@@ -1400,7 +1656,7 @@ export async function createAgentRoutine(
       enabled: agent.status === "active",
       instructions: body.instructions,
       target: body.target,
-      hostId: null,
+      hostId,
       timezone: body.timezone,
       runKind: "work",
       codeConfig: {},

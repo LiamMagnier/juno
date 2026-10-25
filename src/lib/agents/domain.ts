@@ -107,6 +107,73 @@ export type AgentIdeaStatus = (typeof AGENT_IDEA_STATUSES)[number];
 export const AGENT_NOTE_SOURCES = ["user", "agent", "reflection"] as const;
 export type AgentNoteSource = (typeof AGENT_NOTE_SOURCES)[number];
 
+/**
+ * Where an agent's work runs. `cloud`: the cloud executor, which keeps going
+ * with the laptop closed. `mac`: the person's own Mac through the Work relay
+ * (Work's `local` target), refused rather than moved to the cloud when that
+ * Mac is offline.
+ */
+export const AGENT_EXECUTION_TARGETS = ["cloud", "mac"] as const;
+export type AgentExecutionTarget = (typeof AGENT_EXECUTION_TARGETS)[number];
+
+/** A stored value read back; anything unknown is the default, `cloud`. */
+export function agentExecutionTarget(value: string | null | undefined): AgentExecutionTarget {
+  return value === "mac" ? "mac" : "cloud";
+}
+
+/**
+ * The Work target vocabulary (`WORK_TARGETS`) for an agent's setting. Never
+ * `automatic`: an agent's work goes where its person put it, and `automatic`
+ * is what lets work move between machines on its own.
+ */
+export function agentWorkTarget(value: string | null | undefined): "cloud" | "local" {
+  return agentExecutionTarget(value) === "mac" ? "local" : "cloud";
+}
+
+/**
+ * The Work dispatch fields for an agent's task: its target, and its preferred
+ * Mac when it runs on one and has named one. Cloud agents never carry a host.
+ */
+export function agentDispatchTarget(agent: {
+  executionTarget?: string | null;
+  preferredHostId?: string | null;
+}): { requestedTarget: "cloud" | "local"; preferredHostId?: string } {
+  const requestedTarget = agentWorkTarget(agent.executionTarget);
+  return requestedTarget === "local" && agent.preferredHostId
+    ? { requestedTarget, preferredHostId: agent.preferredHostId }
+    : { requestedTarget };
+}
+
+/**
+ * The Mac an agent's routine is pinned to, for where the agent runs.
+ *
+ * A routine is a `WorkSchedule`, and a local schedule has to name its Mac
+ * (`hostId`), where a task only carries a preference. So: a cloud routine
+ * names none; a Mac routine takes the agent's preferred Mac when that Mac is
+ * switched on for Work, else the Mac it is already pinned to when that one
+ * still is (`currentHostId`), else the only switched-on Mac. With several and
+ * no way to choose, it is `pick_mac`, and with none (or a preferred Mac that is
+ * switched off) it is `no_mac`: a Mac is never picked for the person, and the
+ * routine is never left in the cloud instead. Used by `createAgentRoutine` and
+ * by every change to where an agent runs, so its routines go where it goes.
+ */
+export function agentRoutineHost(input: {
+  target: "cloud" | "local";
+  preferredHostId?: string | null;
+  /** The account's Macs that are switched on for Work and not revoked. */
+  enabledHostIds: readonly string[];
+  currentHostId?: string | null;
+}): { ok: true; hostId: string | null } | { ok: false; reason: "no_mac" | "pick_mac" } {
+  if (input.target === "cloud") return { ok: true, hostId: null };
+  const enabled = new Set(input.enabledHostIds);
+  if (input.preferredHostId) {
+    return enabled.has(input.preferredHostId) ? { ok: true, hostId: input.preferredHostId } : { ok: false, reason: "no_mac" };
+  }
+  if (input.currentHostId && enabled.has(input.currentHostId)) return { ok: true, hostId: input.currentHostId };
+  if (input.enabledHostIds.length === 1) return { ok: true, hostId: input.enabledHostIds[0]! };
+  return { ok: false, reason: input.enabledHostIds.length === 0 ? "no_mac" : "pick_mac" };
+}
+
 export const AGENT_NOTIFY_LEVELS = ["needs_you", "results", "all"] as const;
 export type AgentNotifyLevel = (typeof AGENT_NOTIFY_LEVELS)[number];
 
@@ -181,6 +248,9 @@ export const AGENT_EVENT_KINDS = [
   "goal_achieved",
   // Teams (src/lib/agents/team.ts): a temporary specialist team ran a request.
   "team_run",
+  // Work it started on its own (a routine or a goal step) was refused, e.g.
+  // its Mac was offline. Never moved to another machine instead.
+  "task_refused",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 
@@ -526,6 +596,8 @@ export const createAgentSchema = z.object({
   projectId: z.string().trim().min(1).max(200).nullable().optional(),
   proactive: z.boolean().default(true),
   notify: z.enum(AGENT_NOTIFY_LEVELS).default("results"),
+  executionTarget: z.enum(AGENT_EXECUTION_TARGETS).default("cloud"),
+  preferredHostId: z.string().trim().min(1).max(200).nullable().optional(),
   template: z.string().trim().min(1).max(40).nullable().optional(),
   firstGoal: z.string().trim().min(1).max(MAX_GOAL_TITLE_CHARS).optional(),
 });
@@ -550,6 +622,10 @@ export const patchAgentSchema = z
     sortOrder: z.int().min(0).max(10_000).optional(),
     /** Its own weekly cap in micro-USD, or null for none (src/lib/agents/budget.ts). */
     budgetMicroUsd: z.int().min(0).max(MAX_MEMBER_BUDGET_MICRO_USD).nullable().optional(),
+    /** Where its work runs. The person's choice only; no agent tool sets it. */
+    executionTarget: z.enum(AGENT_EXECUTION_TARGETS).optional(),
+    /** The Mac it prefers (a WorkHost id), or null for any switched-on Mac. */
+    preferredHostId: z.string().trim().min(1).max(200).nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 export type PatchAgentInput = z.infer<typeof patchAgentSchema>;

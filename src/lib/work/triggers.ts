@@ -22,6 +22,7 @@
 import { isFirstPartyId } from "@/lib/first-party-connectors/providers";
 import {
   LOCAL_ONLY_TRIGGER_KINDS,
+  refusedForAbsentCloudExecutor,
   selectTarget,
   type HostCapabilityView,
   type WorkCapability,
@@ -1074,7 +1075,9 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
         return {
           outcome: "skip",
           cause: "host_offline",
-          reason: "host_offline",
+          // The run written down for it says which machine was missing: a
+          // cloud routine with no cloud worker running never involved a Mac.
+          reason: refusedForAbsentCloudExecutor(selection) ? "executor_unavailable" : "host_offline",
           explanation: `${selection.explanation} This schedule is set to skip rather than wait.`,
         };
       case "cloud_subset": {
@@ -1092,7 +1095,7 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
           return {
             outcome: "skip",
             cause: "host_offline",
-            reason: "host_offline",
+            reason: refusedForAbsentCloudExecutor(selection) ? "executor_unavailable" : "host_offline",
             explanation: `${selection.explanation} There is no part of this the cloud can do on its own.`,
           };
         }

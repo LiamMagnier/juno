@@ -163,9 +163,20 @@ enum ChatWorkVocabulary {
     /// The web's `statusSentence(status, actor)`: only a sentence that opens
     /// with "Juno " is re-voiced with the agent's name.
     static func sentence(_ status: JunoWorkStatus, actor: String?) -> String {
-        let sentence = sentence(status)
-        guard let actor, !actor.isEmpty, sentence.hasPrefix("Alevr ") else { return sentence }
-        return actor + sentence.dropFirst("Alevr".count)
+        sentence(status, actor: actor, terminalReason: nil)
+    }
+
+    /// The web's `statusSentence(status, actor, terminalReason)`: the run's
+    /// reason picks the sentence for an ending its status alone would
+    /// describe untruly (``JunoWorkVocabulary/endingSentence(status:terminalReason:)``)
+    /// — a queued cloud run that expired unclaimed is `interrupted`, but it
+    /// never began, so the header must not warn that it may have changed
+    /// something above a detail that says nothing was done.
+    static func sentence(_ status: JunoWorkStatus, actor: String?, terminalReason: String?) -> String {
+        let words = JunoWorkVocabulary.endingSentence(status: status, terminalReason: terminalReason)
+            ?? sentence(status)
+        guard let actor, !actor.isEmpty, words.hasPrefix("Alevr ") else { return words }
+        return actor + words.dropFirst("Alevr".count)
     }
 
     /// Where Try Again is offered: an end that was not the task finishing.
@@ -366,7 +377,9 @@ struct ChatWorkRunCard: View {
     }
 
     private var statusSentence: some View {
-        Text(ChatWorkVocabulary.sentence(state.status, actor: state.actor))
+        // The run's reason as well as its status: the finished body leads with
+        // `terminalDetail`, and the header must not contradict it.
+        Text(ChatWorkVocabulary.sentence(state.status, actor: state.actor, terminalReason: state.run?.terminalReason))
             .junoFont(size: 13, relativeTo: .callout)
             .foregroundStyle(Color.junoSecondaryInk)
             .fixedSize(horizontal: false, vertical: true)

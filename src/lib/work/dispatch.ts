@@ -15,6 +15,7 @@ import { serializeRun, serializeSession } from "@/lib/work/serializers";
 import {
   createRun,
   createWorkSession,
+  expireUnclaimedCloudRuns,
   reconcileSessionAttachments,
   recordRunInputsFromGrants,
   WorkSpendAdmissionError,
@@ -56,6 +57,8 @@ import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import { planRunCommand, refusalBody, startCommandPayload } from "@/lib/work/relay";
+import { cloudWorkAvailable, readExecutorPresence } from "@/lib/work/executor-heartbeat";
+import { executorKnownAbsent } from "@/lib/work/executor-presence";
 import { estimateWorkRunCost, type WorkCostEstimate } from "@/lib/work/preflight-cost";
 import {
   effectiveHostState,
@@ -664,6 +667,20 @@ export async function createWorkSessionForUser(
 const WORK_RUN_RATE_LIMIT = 10;
 /** Max simultaneously live runs per user, across every session. */
 const WORK_RUN_CONCURRENCY_CAP = 3;
+
+/*
+ * The live runs a `WORK_RUN_CONCURRENCY_CAP` check leaves out, both times it
+ * is read in `startWorkRunForUser`: when `deadCloudQueue` says the cloud
+ * executor is known to be absent (a heartbeat read that lapsed, not a failed
+ * read and not the kill switch over a live runner), the cloud runs still
+ * `queued` and unclaimed. Nothing is going to start them, and counting them is
+ * how three dead cloud runs used to refuse a task sent to a Mac that was
+ * online. Subtracted from the live count rather than folded into it as a `NOT`
+ * over three columns, so a nullable `effectiveTarget` cannot drop a row out of
+ * the total under three-valued logic. Every one of them is also in the live
+ * count (`queued` is live).
+ */
+
 /**
  * How many previous failures a retry looks back over when choosing a model.
  *
@@ -674,16 +691,14 @@ const WORK_RUN_CONCURRENCY_CAP = 3;
  */
 const MAX_FAILOVER_HISTORY = 4;
 
-/**
- * Whether cloud Work is accepting runs.
- *
- * A constant because there is one cloud executor and no kill switch in front of
- * it today. It is named and passed to `selectTarget` rather than assumed at the
- * call site so that turning cloud off — a paused executor, a provider outage —
- * is one edit here that produces the honest refusal `selectTarget` already
- * writes, instead of a queue of runs that nothing will ever claim.
+/*
+ * Whether cloud Work is accepting runs is `cloudWorkAvailable()`
+ * (src/lib/work/executor-heartbeat.ts): an executor reported in within the
+ * last two minutes. It used to be a constant `true`, which accepted cloud runs
+ * with no runner alive to claim them; they sat `queued` for ever and filled the
+ * concurrency cap. Passed to `selectTarget`, so no executor produces the
+ * honest refusal it already writes instead of a queue nothing will claim.
  */
-const CLOUD_WORK_AVAILABLE = true;
 
 /*
  * What bounds a run is `runBudgetForWindow` in src/lib/work/budget.ts, fed by
@@ -1061,6 +1076,15 @@ export async function startWorkRunForUser(
         select: { id: true },
       })) !== null
     : false;
+  const cloudAvailable = await cloudWorkAvailable(now);
+  // Cloud is closed. Whatever this dispatch targets, runs this account queued
+  // for a cloud worker that is not there must not block it: past the TTL they
+  // are ended here (a no-op unless the executor has been gone that long), and
+  // until then the cap below does not count them while the executor is known
+  // to be absent. Before selection, so a task sent to an online Mac is not
+  // refused "3 runs in progress" by cloud runs nothing is going to claim.
+  const deadCloudQueue = !cloudAvailable && executorKnownAbsent(await readExecutorPresence(now), now);
+  if (!cloudAvailable) await expireUnclaimedCloudRuns({ now, userId: user.id }).catch(() => []);
   const requestedTarget =
     hasAgentComputer && (body.requestedTarget ?? targetOf(session.requestedTarget)) === "automatic"
       ? "cloud"
@@ -1077,13 +1101,13 @@ export async function startWorkRunForUser(
           requested: requestedTarget,
           required,
           hosts: offers,
-          cloudAvailable: CLOUD_WORK_AVAILABLE,
+          cloudAvailable,
         })
       : selectForInferred({
           requested: requestedTarget,
           inferred: required,
           hosts: offers,
-          cloudAvailable: CLOUD_WORK_AVAILABLE,
+          cloudAvailable,
           hasAgentComputer,
         });
 
@@ -1170,9 +1194,15 @@ export async function startWorkRunForUser(
     // below is still what enforces it; this only keeps a caller from asking a
     // person to approve a run the cap would refuse the moment they said yes,
     // which for somebody with three tasks going is the common case, not a race.
-    const live = await prisma.workRun.count({
-      where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
-    });
+    const live =
+      (await prisma.workRun.count({
+        where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+      })) -
+      (deadCloudQueue
+        ? await prisma.workRun.count({
+            where: { userId: user.id, status: "queued", claimedBy: null, effectiveTarget: "cloud" },
+          })
+        : 0);
     if (live >= WORK_RUN_CONCURRENCY_CAP) {
       return refused(
         429,
@@ -1286,6 +1316,9 @@ export async function startWorkRunForUser(
             goal: session.goal,
             model: model.effective,
             permissionPolicy: mode.policy,
+            // No `agentContext` here: this payload is stored. A crew member's
+            // persona and notes are added when the Mac claims the command
+            // (`serializeClaimedCommand`), so it still opens as that member.
           }),
         }
       : undefined;
@@ -1312,9 +1345,15 @@ export async function startWorkRunForUser(
       `;
       if (!lock?.locked) throw new Error("dispatch_in_flight");
 
-      const live = await tx.workRun.count({
-        where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
-      });
+      const live =
+        (await tx.workRun.count({
+          where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+        })) -
+        (deadCloudQueue
+          ? await tx.workRun.count({
+              where: { userId: user.id, status: "queued", claimedBy: null, effectiveTarget: "cloud" },
+            })
+          : 0);
       if (live >= WORK_RUN_CONCURRENCY_CAP) {
         throw Object.assign(new Error("run_cap_exceeded"), { liveCount: live });
       }

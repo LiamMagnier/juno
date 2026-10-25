@@ -42,6 +42,12 @@ import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ce
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { dependenciesSatisfied } from "@/lib/work/board";
 import { PARKED_RUN_TTL_MS } from "@/lib/work/schedule-health";
+import { readExecutorPresence } from "@/lib/work/executor-heartbeat";
+import {
+  EXECUTOR_UNAVAILABLE_DETAIL,
+  EXECUTOR_UNAVAILABLE_RESUME_DETAIL,
+  unclaimedCloudRunCutoff,
+} from "@/lib/work/executor-presence";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -1270,6 +1276,13 @@ export interface FinishRunInput {
   usage?: WorkRunUsage;
   /** Expiry must still match the parked wait read by the sweep. */
   parkedBefore?: Date;
+  /**
+   * Only end it if it is still `queued`, unclaimed, and has not been touched
+   * since this instant, so an executor that claims the run between the
+   * sweep's read and this write keeps it, and so does a run a resume put back
+   * into `queued` in between.
+   */
+  queuedBefore?: Date;
 }
 
 export type FinishRunResult =
@@ -1308,6 +1321,11 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
           status: "paused",
           pauseReason: "waiting",
           updatedAt: { lt: input.parkedBefore },
+        } : {}),
+        ...(input.queuedBefore ? {
+          status: "queued",
+          claimedBy: null,
+          updatedAt: { lt: input.queuedBefore },
         } : {}),
       },
       data: {
@@ -1497,6 +1515,90 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
       reason: "interrupted",
       detail: PARKED_ROUTINE_RUN_EXPIRED_DETAIL,
       parkedBefore: cutoff,
+      now,
+    }).catch(() => null);
+    if (ended?.finished) expired.push(run.id);
+  }
+  return expired;
+}
+
+/**
+ * Ends cloud runs queued past their TTL while no cloud executor is alive.
+ *
+ * A queued run is not leased, so `reclaimStalledRuns` never sees it: with no
+ * runner at all it stayed `queued` for ever, drawn as live in the chat and
+ * counted against the account's concurrency cap. This is the other half of the
+ * heartbeat gate in dispatch: runs queued before the executor died (or by a
+ * scheduler that does not ask) end as `executor_unavailable`.
+ *
+ * It ends runs for good, so it acts only on positive evidence of a long outage
+ * (`unclaimedCloudRunCutoff`): the heartbeat row read directly, with no cache
+ * and no WORK_CLOUD_AVAILABLE override, the last beat older than the TTL, and
+ * the run in `queued` for longer than the TTL. A failed read ends nothing. A
+ * live runner owns its queue, and a run queued behind a dependency
+ * (src/lib/work/board.ts) or a full slot can legitimately wait longer than the
+ * TTL; so can one queued an hour before a runner restart, which is why a lapse
+ * of a few minutes is ridden out rather than measured from `createdAt`.
+ *
+ * "In `queued` for longer than the TTL" is `updatedAt`, not `createdAt`: the
+ * control route's resume puts a paused run back to `queued` on the same row,
+ * and its `createdAt` is from before the pause. A run that comes back with a
+ * checkpoint has already worked, so it ends `interrupted` (resumable) with its
+ * checkpoint kept, never `executor_unavailable`, whose ending drops it.
+ *
+ * A team's lead run is left alone, as the runner's `findQueuedRuns` leaves it:
+ * it is coordinated by `advanceTeams`, not claimed like a task.
+ *
+ * Hosted by the scheduler (scripts/work-scheduler.ts) because the runner is
+ * the process whose absence this is about, and called scoped to one account by
+ * dispatch while cloud is closed, so a cap filled by dead runs frees itself.
+ */
+export async function expireUnclaimedCloudRuns(
+  input: { now?: Date; userId?: string; limit?: number; ttlMs?: number } = {}
+): Promise<string[]> {
+  const now = input.now ?? new Date();
+  const cutoff = unclaimedCloudRunCutoff(await readExecutorPresence(now), now, input.ttlMs);
+  if (!cutoff) return [];
+  const query = {
+    where: {
+      status: "queued",
+      claimedBy: null,
+      effectiveTarget: "cloud",
+      updatedAt: { lt: cutoff },
+      session: { OR: [{ teamRole: null }, { teamRole: { not: "lead" } }] },
+      ...(input.userId ? { userId: input.userId } : {}),
+    },
+    select: { id: true, userId: true },
+    orderBy: { updatedAt: "asc" },
+    take: Math.min(Math.max(input.limit ?? 100, 1), 1_000),
+  } satisfies Prisma.WorkRunFindManyArgs;
+  // Two monomorphic calls, for the reason `reclaimStalledRuns` gives.
+  const stale = input.userId ? await prisma.workRun.findMany(query) : await prismaUnguarded.workRun.findMany(query);
+  if (stale.length === 0) return [];
+  // Which of them carry a checkpoint, by id rather than by selecting the
+  // column: a checkpoint is a whole provider transcript.
+  const ids = stale.map((run) => run.id);
+  const checkpointed = new Set(
+    (input.userId
+      ? await prisma.workRun.findMany({
+          where: { id: { in: ids }, userId: input.userId, checkpoint: { not: Prisma.DbNull } },
+          select: { id: true },
+        })
+      : await prismaUnguarded.workRun.findMany({
+          where: { id: { in: ids }, checkpoint: { not: Prisma.DbNull } },
+          select: { id: true },
+        })
+    ).map((run) => run.id)
+  );
+  const expired: string[] = [];
+  for (const run of stale) {
+    const resumed = checkpointed.has(run.id);
+    const ended = await finishRun({
+      runId: run.id,
+      userId: run.userId,
+      reason: resumed ? "interrupted" : "executor_unavailable",
+      detail: resumed ? EXECUTOR_UNAVAILABLE_RESUME_DETAIL : EXECUTOR_UNAVAILABLE_DETAIL,
+      queuedBefore: cutoff,
       now,
     }).catch(() => null);
     if (ended?.finished) expired.push(run.id);

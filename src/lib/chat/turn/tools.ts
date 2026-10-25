@@ -241,6 +241,8 @@ export async function buildNativeTools({
                 id: agentContext.agent.id,
                 approvalMode: agentApprovalMode(agentContext.agent.approvalMode),
                 status: agentContext.agent.status,
+                executionTarget: agentContext.agent.executionTarget,
+                preferredHostId: agentContext.agent.preferredHostId,
               }
             : null,
           // The composer's mode for this chat: what this request carried, else

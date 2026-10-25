@@ -131,6 +131,7 @@ import { maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { scheduleRunKindOf } from "@/lib/work/code-routine";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
 
 /**
  * How often to look for triggers whose next poll is due.
@@ -156,12 +157,14 @@ const MAX_TRIGGERS_PER_TICK = 10;
  */
 const POLL_LOCK_MS = 3 * 60_000;
 
-/**
- * Whether cloud Work is accepting runs. Matches the constant the scheduler and
- * the run-dispatch route hold, and for the same reason: turning cloud off should
- * produce an honest refusal rather than a queue nothing will ever claim.
+/*
+ * Whether cloud Work is accepting runs is the executor heartbeat
+ * (`cloudWorkAvailable()`, src/lib/work/executor-heartbeat.ts), read per fire:
+ * with no runner alive the planner holds or skips the fire with an honest
+ * outcome instead of queueing a run nothing will claim. It used to be a
+ * constant `true` here, as in the dispatcher. `WORK_CLOUD_AVAILABLE=0` is the
+ * kill switch for a paused executor or a provider outage.
  */
-const CLOUD_WORK_AVAILABLE = true;
 
 /**
  * How many recently-started runs are read back to fill `recentEventKeys`.
@@ -1015,7 +1018,9 @@ async function offer(
     userConcurrencyCap: DEFAULT_USER_CONCURRENCY_CAP,
     hosts: views,
     requiredCapabilities: runConfig.requiredCapabilities,
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
+    // The executor heartbeat: with no runner alive a cloud fire is held by the
+    // planner rather than queued for nobody.
+    cloudAvailable: await cloudWorkAvailable(context.now),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
 

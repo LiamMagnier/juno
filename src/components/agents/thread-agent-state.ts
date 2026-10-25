@@ -53,3 +53,55 @@ export function threadAgentState(
   if (serverTaskElsewhere && local !== "sleeping") return "waiting";
   return local;
 }
+
+/** Shown in a cloud agent's thread and profile while no cloud executor is running. */
+export const CLOUD_WORKER_DOWN_MESSAGE = "No cloud worker is running, so tasks can't start.";
+
+/**
+ * The one line a thread shows when its agent's work cannot start where it is
+ * set to run, or null when nothing is wrong (or nothing is known).
+ *
+ * Only the cloud is judged here: the roster carries the executor heartbeat
+ * (`cloudWorkAvailable`), and a Mac agent's Mac is shown, with its own online
+ * state, on the profile. Ignored while the agent is visibly busy, because a
+ * task already running proves nothing new and the face says what it is doing.
+ */
+export function threadWorkNotice(
+  agent: Pick<ClientAgent, "executionTarget" | "cloudWorkAvailable" | "status">,
+  state: AgentState
+): string | null {
+  if (agent.status === "paused") return null;
+  if (state === "working" || state === "thinking" || state === "listening") return null;
+  if ((agent.executionTarget ?? "cloud") !== "cloud") return null;
+  return agent.cloudWorkAvailable === false ? CLOUD_WORKER_DOWN_MESSAGE : null;
+}
+
+/** How a Mac reads in an agent's "Runs on" list. */
+export const RUNS_ON_HOST_LABELS = {
+  online: "Online",
+  notResponding: "Not responding",
+  offline: "Offline",
+  switchedOff: "Work is switched off on this Mac",
+} as const;
+
+/**
+ * A Mac's line in "Runs on", in the words a refused task uses for the same
+ * state (`hostStateWords` in src/lib/work/domain.ts): a heartbeat gone quiet is
+ * "Not responding", never "stale", and only a Mac that is actually gone is
+ * "Offline". Ready means what dispatch means: switched on, not revoked, awake.
+ */
+export function runsOnHostLabel(host: { enabled: boolean; revokedAt: string | null; state: string }): string {
+  if (!host.enabled || host.revokedAt !== null) return RUNS_ON_HOST_LABELS.switchedOff;
+  if (host.state === "online" || host.state === "idle") return RUNS_ON_HOST_LABELS.online;
+  if (host.state === "stale") return RUNS_ON_HOST_LABELS.notResponding;
+  return RUNS_ON_HOST_LABELS.offline;
+}
+
+/**
+ * True when an agent names a preferred Mac that is no longer among the
+ * account's Macs (revoked and removed). Its tasks then go to any Mac, and the
+ * profile says so rather than showing no choice at all.
+ */
+export function preferredHostGone(preferredHostId: string | null | undefined, hosts: readonly { id: string }[]): boolean {
+  return Boolean(preferredHostId) && !hosts.some((host) => host.id === preferredHostId);
+}

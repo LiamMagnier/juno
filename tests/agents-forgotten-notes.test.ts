@@ -95,12 +95,17 @@ test("every read of an agent's notes leaves out the ones it was told to forget",
 
 test("the Work runner's identity block reads only notes that are still kept", () => {
   // Named on its own because it is the reader that got it wrong: the notes an
-  // agent's autonomous run opens with, next to its brief and goals.
+  // agent's autonomous run opens with, next to its brief and goals. The read
+  // now lives in src/lib/agents/run-context.ts, shared by the cloud runner and
+  // the relay's Mac payload, and the runner reads notes nowhere else.
   const runner = noteReads().filter((read) => read.file === "scripts/work-runner.ts");
-  assert.equal(runner.length, 1, "expected exactly one AgentNote read in the runner");
-  assert.match(runner[0].args, /userId: input\.userId/);
-  assert.match(runner[0].args, /agentId: input\.session\.agentId/);
-  assert.match(runner[0].args, /deletedAt: null/);
+  assert.equal(runner.length, 0, "the runner reads notes through run-context.ts only");
+  assert.match(source("scripts/work-runner.ts"), /loadAgentRunPersona\(\{ userId: input\.userId, agentId: input\.session\.agentId \}\)/);
+  const shared = noteReads().filter((read) => read.file === "src/lib/agents/run-context.ts");
+  assert.equal(shared.length, 1, "expected exactly one AgentNote read in run-context.ts");
+  assert.match(shared[0].args, /userId: input\.userId/);
+  assert.match(shared[0].args, /agentId: input\.agentId/);
+  assert.match(shared[0].args, /deletedAt: null/);
 });
 
 test("forgetting stays a soft delete that every reader has to honour", () => {

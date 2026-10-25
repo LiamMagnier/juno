@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { serializeCommand } from "@/lib/work/serializers";
+import { serializeClaimedCommand, serializeCommand } from "@/lib/work/serializers";
+import { claimedCommandAgentContext } from "@/lib/agents/run-context";
 import {
   HOST_NOT_FOUND,
   HOST_POLL_INTERVAL_MS,
@@ -191,7 +192,13 @@ export async function GET(req: Request, { params }: RouteParams) {
               protocolVersion,
             },
           });
-          return NextResponse.json({ command: serializeCommand(command) });
+          // A crew member's start or resume opens as that member on the Mac.
+          // Built now, for the Mac that claimed it, from the agent's live
+          // brief, goals and kept notes: never stored on the command row,
+          // where decrypted notes would sit in plaintext and outlive "Forget
+          // this". A failed read costs the persona, not the command.
+          const agentContext = await claimedCommandAgentContext({ userId: user.id, command }).catch(() => null);
+          return NextResponse.json({ command: serializeClaimedCommand(command, { agentContext }) });
         }
       }
       // Lost the race, or the row settled underneath us. Falling through to the

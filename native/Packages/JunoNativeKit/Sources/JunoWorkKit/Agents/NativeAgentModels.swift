@@ -181,6 +181,32 @@ public struct NativeAgentRoutineGlance: Equatable, Sendable {
     }
 }
 
+/// Where an agent's work runs. `AGENT_EXECUTION_TARGETS` in
+/// src/lib/agents/domain.ts. `mac` goes through the Work relay to the
+/// person's own Mac and is refused, never moved to the cloud, while that Mac
+/// is offline.
+public enum NativeAgentExecutionTarget: String, CaseIterable, Sendable {
+    case cloud
+    case mac
+}
+
+/// This Mac, as an agent's "Runs on" control needs it: whether it takes Work
+/// at all, its host id once paired, and the way to the switch that allows
+/// it (Settings, Devices, "Allow Alevr Work on this Mac"). Set by the Mac app
+/// through `EnvironmentValues.nativeAgentThisMac`; nil on the
+/// iPhone, which offers the choice without the shortcut.
+public struct NativeAgentThisMac: Sendable {
+    public let hostID: String?
+    public let workAllowed: Bool
+    public let allowWork: @MainActor @Sendable () -> Void
+
+    public init(hostID: String?, workAllowed: Bool, allowWork: @escaping @MainActor @Sendable () -> Void) {
+        self.hostID = hostID
+        self.workAllowed = workAllowed
+        self.allowWork = allowWork
+    }
+}
+
 /// One agent, with the state the server derived for it. `ClientAgent`.
 public struct NativeAgent: Identifiable, Equatable, Sendable {
     public let id: String
@@ -214,6 +240,13 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
     /// When the person pinned it, nil when they have not. Pinned agents sort
     /// ahead of the rest in their state on the team page.
     public let pinnedAt: Date?
+    /// Where its tasks run. Cloud for a server that predates the field.
+    public let executionTarget: NativeAgentExecutionTarget
+    /// The Mac (WorkHost id) it prefers, nil for any Mac switched on for Work.
+    public let preferredHostID: String?
+    /// False while no cloud Work executor is running, so cloud tasks would be
+    /// refused. Nil when the server did not say.
+    public let cloudWorkAvailable: Bool?
 
     public init(
         id: String,
@@ -241,7 +274,10 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
         needsYou: Int,
         nextRoutine: NativeAgentRoutineGlance?,
         newIdeas: Int,
-        pinnedAt: Date? = nil
+        pinnedAt: Date? = nil,
+        executionTarget: NativeAgentExecutionTarget = .cloud,
+        preferredHostID: String? = nil,
+        cloudWorkAvailable: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -269,6 +305,9 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
         self.nextRoutine = nextRoutine
         self.newIdeas = newIdeas
         self.pinnedAt = pinnedAt
+        self.executionTarget = executionTarget
+        self.preferredHostID = preferredHostID
+        self.cloudWorkAvailable = cloudWorkAvailable
     }
 
     public var isPaused: Bool { status == .paused }
@@ -694,6 +733,11 @@ public struct NativeAgentPatch: Equatable, Sendable {
     public var status: NativeAgentStatus?
     public var proactive: Bool?
     public var pinned: Bool?
+    /// Person-only, like the web's "Runs on": no agent tool sends it.
+    public var executionTarget: NativeAgentExecutionTarget?
+    /// The Mac it should prefer (a WorkHost id). Set-only here: nil sends
+    /// nothing, so it never clears a preference made on the web.
+    public var preferredHostID: String?
 
     public init(
         name: String? = nil,
@@ -705,7 +749,9 @@ public struct NativeAgentPatch: Equatable, Sendable {
         connectorIDs: [String]? = nil,
         status: NativeAgentStatus? = nil,
         proactive: Bool? = nil,
-        pinned: Bool? = nil
+        pinned: Bool? = nil,
+        executionTarget: NativeAgentExecutionTarget? = nil,
+        preferredHostID: String? = nil
     ) {
         self.name = name
         self.role = role
@@ -717,13 +763,15 @@ public struct NativeAgentPatch: Equatable, Sendable {
         self.status = status
         self.proactive = proactive
         self.pinned = pinned
+        self.executionTarget = executionTarget
+        self.preferredHostID = preferredHostID
     }
 
     /// The server refuses an empty patch ("Nothing to change").
     public var isEmpty: Bool {
         name == nil && role == nil && avatar == nil && style == nil && instructions == nil
             && approvalMode == nil && connectorIDs == nil && status == nil && proactive == nil
-            && pinned == nil
+            && pinned == nil && executionTarget == nil && preferredHostID == nil
     }
 }
 

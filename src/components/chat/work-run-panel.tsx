@@ -143,7 +143,7 @@ export function WorkRunPanel({
   // The one line of progress. A count changes in place; a new step changes the words.
   const stepWords = position ? `step ${position.at} of ${position.total}` : null;
   const progress = finished ? (
-    statusSentence(session.status, actor)
+    statusSentence(session.status, actor, run?.terminalReason)
   ) : needsYou ? (
     `Waiting for your ${asking ? "answer" : "approval"}${stepWords ? ` at ${stepWords}` : ""}`
   ) : action ? (
@@ -158,7 +158,7 @@ export function WorkRunPanel({
       )}
     </>
   ) : (
-    `${statusSentence(session.status, actor)}${stepWords ? ` At ${stepWords}.` : ""}`
+    `${statusSentence(session.status, actor, run?.terminalReason)}${stepWords ? ` At ${stepWords}.` : ""}`
   );
   const hasDetails = work.plan.length > 0 || run !== null;
 

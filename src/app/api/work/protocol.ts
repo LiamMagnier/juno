@@ -1056,11 +1056,19 @@ export function parseSessionRunListQuery(params: URLSearchParams): SessionRunLis
   };
 }
 
-/** Matches the constant the run-dispatch route and the scheduler each hold, for
- *  the same reason: turning cloud off should produce an honest refusal rather
- *  than schedules accepted for an executor that will never exist. */
-const CLOUD_WORK_AVAILABLE = true;
-
+/**
+ * Whether a schedule can be served by anything, asked when it is saved.
+ *
+ * Cloud counts as available here whatever the executor heartbeat says. A
+ * schedule is a promise about its next fire, not about this second: the
+ * runner being down while somebody saves a weekly routine (a restart, or a
+ * dev machine with no runner, the usual case) says nothing about Monday at
+ * nine. Refusing on it made an existing cloud routine impossible to rename,
+ * retime or even pause from the editor, which re-sends `target` on every
+ * save. A fire that finds no cloud worker is skipped honestly instead, as
+ * `executor_unavailable` ("Last run skipped: no cloud worker"), and dispatch
+ * still refuses a task started by hand.
+ */
 export function admissionRefusal(
   target: WorkTarget,
   named: WorkHostRow | undefined,
@@ -1077,7 +1085,7 @@ export function admissionRefusal(
       requested: target,
       required,
       hosts: ordered.map((host) => hostCapabilityView(host, "idle")),
-      cloudAvailable: CLOUD_WORK_AVAILABLE,
+      cloudAvailable: true,
     })
   );
   if (!refusal || !named) return refusal;

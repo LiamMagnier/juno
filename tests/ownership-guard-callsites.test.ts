@@ -41,6 +41,8 @@ const REVIEWED: Record<string, string> = {
     "`where` is typed `{ userId: string; ... }` by assertNotTakenDown's signature.",
   "src/lib/work/store.ts|WorkRun.findMany|{ status: { in: [...WORK_LEASED_STATUSES] }, leaseExpiresAt: { lt: now }, ...(input.userId ? { userId: input.userId } : {}), }":
     "Guarded branch runs only when input.userId is set; the cross-account sweep uses prismaUnguarded.",
+  "src/lib/work/store.ts|WorkRun.findMany|{ status: \"queued\", claimedBy: null, effectiveTarget: \"cloud\", updatedAt: { lt: cutoff }, session: { OR: [{ teamRole: null }, { teamRole: { not: \"lead\" } }] }, ...(input.userId ? { userId: input.userId } : {}), }":
+    "expireUnclaimedCloudRuns: the guarded branch runs only when input.userId is set; the cross-account sweep uses prismaUnguarded.",
   "src/lib/artifact-trash.ts|Artifact.deleteMany|ownerId ? { id: { in: group }, userId: ownerId } : { id: { in: group }, userId: null }":
     "The guarded caller (purgeTrashedArtifact) always passes userId, so every locked row has that owner; the null branch is the unguarded sweep's.",
   "src/lib/artifact-writes.ts|Artifact.update|{ id: locked.id, ...(locked.userId ? { userId: locked.userId } : {}) }":

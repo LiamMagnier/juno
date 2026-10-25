@@ -346,6 +346,38 @@ export const THREAD_SETUP_PARAMS = [
  */
 export const MEMBER_BUDGET_ARGS = ["budgetMicroUsd", "budgetUsd", "noBudget", "budget"] as const;
 
+/**
+ * Argument names that would move where a member's work runs (its "Runs on":
+ * the cloud or the person's Mac, and which Mac). The person's choice only, on
+ * the agent's profile: no config tool declares them, and `update_agent`
+ * refuses a call carrying one (see `guardAndApprove`). The agent patch accepts
+ * both for the person's own edits and has no approval rule or change-card line
+ * for them, so a model passing one through would move the member silently.
+ */
+export const AGENT_PLACEMENT_ARGS = ["executionTarget", "preferredHostId"] as const;
+
+/**
+ * The `update_agent` arguments that pass straight into the agent patch. An
+ * allowlist rather than "everything else", so an argument the patch accepts
+ * for the person (a budget, where it runs, its sort order, its project) never
+ * rides along because a model sent it undeclared. The rest are derived below
+ * (`autonomy`, `addToInstructions`, the face, `addApps`/`removeApps`).
+ */
+export const UPDATE_AGENT_PATCH_ARGS = [
+  "name",
+  "role",
+  "style",
+  "instructions",
+  "approvalMode",
+  "notify",
+  "proactive",
+  "pinned",
+  "status",
+  "model",
+  "reasoningEffort",
+  "connectorIds",
+] as const;
+
 /** A declaration without the named parameters. */
 export function withoutParameters(tool: ToolDefinition, names: readonly string[]): ToolDefinition {
   const parameters = tool.function.parameters as { properties?: Record<string, unknown> } & Record<string, unknown>;
@@ -900,6 +932,20 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         }),
       };
     }
+    // Where a member runs (cloud or Mac, and which Mac) is the person's own
+    // setting, in any chat. Refused rather than dropped, so the model says so
+    // instead of reporting a move that did not happen.
+    if (toolName === UPDATE_AGENT_TOOL_NAME && AGENT_PLACEMENT_ARGS.some((name) => rawArgs[name] !== undefined)) {
+      return {
+        ok: false,
+        response: jsonExecution({
+          status: "refused",
+          reason: "placement_not_editable_here",
+          message:
+            "Where an agent runs (the cloud or a Mac) is set by the person, under Runs on in the agent's profile. Nothing was changed.",
+        }),
+      };
+    }
     // In a member's own thread, setup changes go through propose_setup_change,
     // which records them with a direction and Undo. Refused here rather than
     // quietly applied, so the model uses the tool that gives the person a card.
@@ -1259,23 +1305,14 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
                 ? "off"
                 : null;
 
-        const {
-          computer: _ignoredComputer,
-          agent: _ignoredAgent,
-          // Refused above; never passed on, whatever reaches here.
-          budgetMicroUsd: _ignoredBudget,
-          autonomy,
-          addToInstructions,
-          faceShape,
-          faceTone,
-          faceEyes,
-          faceMark,
-          addApps,
-          removeApps,
-          ...restPatch
-        } = rawArgs;
+        const { autonomy, addToInstructions, faceShape, faceTone, faceEyes, faceMark, addApps, removeApps } = rawArgs;
 
-        const agentPatchFields: Record<string, unknown> = { ...restPatch };
+        // Only the declared patch arguments, by name. Budgets and placement are
+        // refused above; anything else undeclared is dropped here.
+        const agentPatchFields: Record<string, unknown> = {};
+        for (const name of UPDATE_AGENT_PATCH_ARGS) {
+          if (rawArgs[name] !== undefined) agentPatchFields[name] = rawArgs[name];
+        }
         if (agentPatchFields.approvalMode === undefined && typeof autonomy === "string") {
           agentPatchFields.approvalMode = autonomy;
         }

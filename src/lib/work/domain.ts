@@ -1,5 +1,6 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { hardFloorCategories, mayGrant, tierOf } from "@/lib/permissions/taxonomy";
+import { CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE } from "@/lib/work/executor-presence";
 
 /**
  * The Juno Work vocabulary.
@@ -108,6 +109,12 @@ export const WORK_TERMINAL_REASONS = [
   "interrupted",
   /** A newer run for the same session took over. */
   "superseded",
+  /**
+   * A cloud run sat queued past its TTL with no cloud executor reporting in,
+   * so nothing was ever going to claim it. Lands in `interrupted`: nobody
+   * decided this one either, and nothing ran.
+   */
+  "executor_unavailable",
 ] as const;
 
 export type WorkTerminalReason = (typeof WORK_TERMINAL_REASONS)[number];
@@ -127,6 +134,7 @@ export function statusForTerminalReason(reason: WorkTerminalReason): WorkTermina
     case "host_offline":
       return "host_offline";
     case "interrupted":
+    case "executor_unavailable":
       return "interrupted";
     case "failed":
       return "failed";
@@ -168,6 +176,8 @@ export function isResumableTerminalReason(reason: WorkTerminalReason): boolean {
     case "completed":
     case "cancelled":
     case "superseded":
+    // Never started, so there is no checkpoint to keep: a retry starts fresh.
+    case "executor_unavailable":
       return false;
     case "failed":
     case "interrupted":
@@ -327,6 +337,22 @@ export interface TargetSelection {
   explanation: string;
 }
 
+/**
+ * A Mac's state as a person reads it in a refusal. "Stale" is the heartbeat's
+ * word, not theirs: a Mac that has gone quiet "isn't responding", and the
+ * agent's "Runs on" list says "Not responding" for the same state.
+ */
+export function hostStateWords(state: string): string {
+  switch (state) {
+    case "stale":
+      return "isn't responding";
+    case "offline":
+      return "is offline";
+    default:
+      return `is ${state}`;
+  }
+}
+
 function hostIsUsable(host: HostCapabilityView): boolean {
   return host.enabled && !host.revoked && (host.state === "online" || host.state === "idle");
 }
@@ -388,10 +414,15 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
     const cloudOnly = required.filter(cloudCovers);
     const offlineHost = input.hosts.find((h) => h.enabled && !h.revoked);
     const why = offlineHost
-      ? `${offlineHost.displayName} is ${offlineHost.state}.`
+      ? `${offlineHost.displayName} ${hostStateWords(offlineHost.state)}.`
       : input.hosts.length === 0
         ? `No Mac has been switched on for ${PRODUCT_NAME} Work.`
         : `No Mac is both switched on for ${PRODUCT_NAME} Work and reachable.`;
+    // What the person can do about it, when the Mac is simply not answering.
+    const reach =
+      offlineHost && (offlineHost.state === "offline" || offlineHost.state === "stale")
+        ? ` Open the ${PRODUCT_NAME} Mac app on it, then try again.`
+        : "";
 
     if (input.requested === "local" || cloudOnly.length === 0 || !input.cloudAvailable) {
       return {
@@ -409,8 +440,8 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
         // that instead and says what did not happen.
         explanation:
           localNeeded.length === 0
-            ? `${why} This task was set to run on a Mac, so nothing has been started.`
-            : `${why} This task needs ${localNeeded.map(describeCapability).join(", ")}, which only a Mac can do.`,
+            ? `${why} This task was set to run on a Mac, so nothing has been started.${reach}`
+            : `${why} This task needs ${localNeeded.map(describeCapability).join(", ")}, which only a Mac can do.${reach}`,
       };
     }
 
@@ -437,9 +468,9 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
       available: [],
       missing: required,
       degradation: [
-        { kind: "capability_unavailable", explanation: "Cloud Work is not accepting tasks right now." },
+        { kind: "capability_unavailable", explanation: CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE },
       ],
-      explanation: "Cloud Work is not accepting tasks right now.",
+      explanation: CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE,
     };
   }
 
@@ -460,6 +491,24 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
         ? "Runs in the cloud and keeps going when your devices are offline."
         : "Runs in the cloud. Some steps need a Mac and will not run.",
   };
+}
+
+/**
+ * Whether `selectTarget` refused only because no cloud worker is running.
+ *
+ * Read off the shape of the refusal rather than its sentence (which will be
+ * reworded): that branch, and only that branch, refuses with one
+ * `capability_unavailable` naming no capability. A Mac that is offline refuses
+ * with `host_offline`. A routine refused this way is recorded as
+ * `executor_unavailable`, not as a Mac that could not be reached: no Mac was
+ * involved.
+ */
+export function refusedForAbsentCloudExecutor(selection: TargetSelection): boolean {
+  return (
+    selection.target === null &&
+    selection.degradation.length > 0 &&
+    selection.degradation.every((entry) => entry.kind === "capability_unavailable" && entry.subject === undefined)
+  );
 }
 
 export function describeCapability(capability: string): string {

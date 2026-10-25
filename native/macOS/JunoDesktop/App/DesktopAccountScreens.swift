@@ -61,6 +61,9 @@ struct DesktopDestinationView: View {
         // gives every page a fresh stack: leaving a page forgets what was
         // pushed on it.
         routed
+            // An agent's "Runs on" (its page here, its profile in the chat):
+            // whether this Mac takes Work, and the way to the switch.
+            .environment(\.nativeAgentThisMac, thisMacForAgents)
             .id(destination.pageIdentity)
             .transition(.junoPage)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
@@ -577,6 +580,19 @@ struct DesktopDestinationView: View {
     private func openAgent(_ id: String) {
         selectedAgentID = id
         destination = .agents
+    }
+
+    /// This Mac, for an agent's "Runs on" control: its host id, whether it
+    /// takes Work at all, and Settings, Devices, where "Allow Alevr Work on
+    /// this Mac" is. The control only leads there; it never flips the switch.
+    /// Nil where this Mac hosts no Work.
+    private var thisMacForAgents: NativeAgentThisMac? {
+        guard let hostModel = configuration.workHostModel else { return nil }
+        return NativeAgentThisMac(
+            hostID: hostModel.pairedHostID,
+            workAllowed: hostModel.allowWorkOnThisMac,
+            allowWork: { DesktopSettingsRouter.open(.devices) }
+        )
     }
 
     /// What a run executing on this Mac has stopped to ask, for an agent's

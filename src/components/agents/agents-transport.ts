@@ -163,6 +163,10 @@ export interface AgentPatch {
   reasoningEffort?: string | null;
   /** Its own weekly cap in micro-USD, or null for none (src/lib/agents/budget.ts). */
   budgetMicroUsd?: number | null;
+  /** Where its work runs (src/lib/agents/domain.ts `AGENT_EXECUTION_TARGETS`). */
+  executionTarget?: "cloud" | "mac";
+  /** Its preferred Mac (WorkHost id), or null for any switched-on Mac. */
+  preferredHostId?: string | null;
 }
 
 export function updateAgent(id: string, patch: AgentPatch): Promise<AgentOutcome<ClientAgent>> {

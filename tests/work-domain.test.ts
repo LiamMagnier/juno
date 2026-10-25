@@ -30,6 +30,7 @@ import {
   requiresExplicitApproval,
   requiresLocalHost,
   selectTarget,
+  hostStateWords,
   statusForTerminalReason,
   statusNeedsAttention,
   toolTier,
@@ -122,6 +123,25 @@ test("a Mac whose heartbeat has gone stale is not treated as present", () => {
   const selection = select("local", ["local_files"], [mac({ state: "stale" })]);
 
   assert.equal(selection.target, null, "a stale heartbeat means nobody is listening for the command");
+});
+
+test("a Mac agent's refusal says the Mac isn't responding, never that it is stale, and what to do", () => {
+  // This is the main refusal for every Mac agent's task, and "stale" is the
+  // heartbeat's word, not the person's.
+  const stale = select("local", [], [mac({ state: "stale" })]);
+  assert.equal(stale.target, null);
+  assert.doesNotMatch(stale.explanation, /stale/);
+  assert.match(stale.explanation, /^Mac Studio isn't responding\. This task was set to run on a Mac, so nothing has been started\./);
+  assert.match(stale.explanation, /Open the Alevr Mac app on it, then try again\.$/);
+
+  const offline = select("local", [], [mac({ state: "offline" })]);
+  assert.match(offline.explanation, /^Mac Studio is offline\. /);
+  assert.match(offline.explanation, /Open the Alevr Mac app on it/);
+  assert.equal(hostStateWords("stale"), "isn't responding");
+  assert.equal(hostStateWords("offline"), "is offline");
+
+  // A Mac switched off for Work is not told to open the app: that is not the fix.
+  assert.doesNotMatch(select("local", [], [mac({ enabled: false })]).explanation, /Open the Alevr Mac app/);
 });
 
 test("an offline Mac produces no target at all, not a silent cloud run", () => {
@@ -495,11 +515,15 @@ test("a run replaced by a newer one is cancelled, not failed", () => {
   assert.equal(
     statusForTerminalReason("superseded"),
     "cancelled",
-    "superseded is the only reason with no status of its own, and failed is the wrong place to put it"
+    "superseded has no status of its own, and failed is the wrong place to put it"
   );
 
+  // Nothing ran, and nobody decided it: a cloud run expired for want of an
+  // executor lands in `interrupted` beside one whose executor died.
+  assert.equal(statusForTerminalReason("executor_unavailable"), "interrupted");
+
   for (const reason of WORK_TERMINAL_REASONS) {
-    if (reason === "superseded") continue;
+    if (reason === "superseded" || reason === "executor_unavailable") continue;
     assert.equal(
       statusForTerminalReason(reason),
       reason,

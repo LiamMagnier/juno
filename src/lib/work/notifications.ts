@@ -290,6 +290,17 @@ export function describeNotification(input: {
   const title = input.title.trim() || `Your ${PRODUCT_NAME} task`;
   const actor = input.actorName?.trim() || PRODUCT_NAME;
 
+  // Lands in `interrupted`, whose words below say the task "may already have
+  // changed something". A queued run no cloud worker ever claimed did nothing,
+  // and the person's next move is to run it again, not to review it.
+  if (input.terminalReason === "executor_unavailable") {
+    return {
+      subject: `${title} did not start`,
+      summary: "No cloud worker was running to pick this task up, so it never began. Nothing was done.",
+      action: "Run it again when cloud work is back",
+    };
+  }
+
   switch (input.status) {
     case "waiting_input":
       return {

@@ -145,3 +145,83 @@ Next:
 - Not yet run on the WIP: `npm test`, lint, `native:sync:check` and the Prisma drift
   check. `native:wire:check` is expected to fail until `request.roomTurn` is
   classified.
+
+## 4. Where an agent's work runs (cloud or your Mac)
+
+2026-10-25.
+
+Done:
+- Executor heartbeat. `scripts/work-runner.ts` records one each tick (at most
+  every 20 s) in the existing `RateLimit` key/expiry table, key
+  `work-executor:heartbeat` (`src/lib/work/executor-heartbeat.ts`, rules in
+  `src/lib/work/executor-presence.ts`). Dispatch, Run now, the scheduler, the
+  trigger poller and saving a schedule (`admissionRefusal`) treat cloud as
+  available only while that heartbeat is under two minutes old;
+  otherwise the dispatcher returns its existing `no_executor_available` 409
+  ("No cloud worker is running, so Cloud Work is not accepting tasks right
+  now.") instead of queueing. `WORK_CLOUD_AVAILABLE=1|0` overrides it.
+- Queued cloud runs end as `executor_unavailable` (status `interrupted`) once
+  the executor's last heartbeat is over ten minutes old AND the run has sat in
+  `queued` (its `updatedAt`, which a resume moves) for over ten minutes. The
+  sweep reads the heartbeat row itself (no cache, no `WORK_CLOUD_AVAILABLE`
+  override, a failed read ends nothing). A resumed run with a checkpoint ends
+  `interrupted` and keeps it; team leads are left to `advanceTeams`. Swept by
+  the Work scheduler every minute, and for one account by dispatch while cloud
+  is closed. Until then, dispatch leaves unclaimed queued cloud runs out of the
+  concurrency cap while the executor is known to be absent. Resume of a paused
+  cloud run returns the same 409 when no worker is running.
+- A cloud routine skipped because no cloud worker was running is recorded as
+  `executor_unavailable` ("Last run skipped: no cloud worker"), not as a Mac
+  that could not be reached.
+- `Agent.executionTarget` (`cloud` | `mac`, default `cloud`) and
+  `Agent.preferredHostId`, migration
+  `prisma/migrations/20261025120000_agent_execution_target`. Tasks, routines,
+  goal steps and goal retries use it (`agentDispatchTarget`, through
+  `resolveAgentDispatchTarget`, which drops a preferred Mac that was removed
+  to "any Mac"); `mac` maps to Work's `local`. An offline Mac is refused,
+  never moved to the cloud; routine skips and goal refusals are recorded as
+  the `task_refused` agent event. Specialist teams stay cloud-only and are
+  refused for a Mac agent.
+- Existing routines follow a "Runs on" change: `updateAgentForUser` moves the
+  agent's Work schedules (target and Mac, placed by `agentRoutineHost` as
+  `createAgentRoutine` places a new one) in the same transaction, or refuses
+  the change when a Mac routine would have no Mac to name. Undo restores the
+  setting (re-checking the Mac) and moves the routines back.
+- Only the person sets it: `update_agent` refuses `executionTarget` and
+  `preferredHostId`, and builds its patch from a named list of arguments.
+- A Mac run of an agent's task gets `agentContext` (persona, brief, goals,
+  kept notes; `src/lib/agents/run-context.ts`) on its start and resume
+  commands. It is built when the Mac claims the command
+  (`serializeClaimedCommand`, GET `/api/work/hosts/[id]/commands`) from the
+  live agent and never stored on the command row, so decrypted notes are not
+  kept in plaintext and a forgotten note does not reach a resume. The Mac
+  prepends it to the system prompt as context only.
+- Saving a cloud routine does not consult the executor heartbeat; a fire with
+  no cloud worker is skipped as `executor_unavailable`.
+- Web: "Runs on" on the agent profile, with each Mac's name and state
+  ("Online", "Not responding", "Offline") from `/api/work/hosts`, refreshed
+  while open, with loading and error states and a line when its Mac is gone;
+  the thread says when no cloud worker is running.
+- Mac: "Runs on" on the agent page (Cloud / This Mac, or "Another Mac" when
+  pinned elsewhere, with "Use this Mac instead"), which leads to Settings,
+  Devices, "Allow Alevr Work on this Mac" when its tasks would run here.
+
+Dev: cloud tasks need the runner. There is no process manager in the
+dependencies, so run it in a second terminal beside `npm run dev`, and the
+scheduler in a third (it hosts the queued-run expiry sweep as well as
+routines; without it, runs queued while the runner was down only end when a
+dispatch for that account comes in):
+
+```bash
+npm run work:runner
+npm run work:scheduler
+```
+
+(or set `WORK_CLOUD_AVAILABLE=1` only if something else claims queued runs).
+
+Still to do:
+- Build and test the Swift changes on a Mac (`npm run native:test`); they were
+  written without a Swift toolchain.
+
+Gates run: `prisma validate`, `prisma generate`, and the drift check against a
+throwaway Postgres 16 ("No difference detected").

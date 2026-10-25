@@ -34,13 +34,17 @@ import {
   updateRoutine,
 } from "@/components/agents/agents-transport";
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
+import { AGENT_EXECUTION_TARGETS, type AgentExecutionTarget } from "@/lib/agents/domain";
+import { CLOUD_WORKER_DOWN_MESSAGE, preferredHostGone, runsOnHostLabel } from "@/components/agents/thread-agent-state";
+import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
+import type { ClientWorkHost } from "@/lib/work/serializers";
 import { Input } from "@/components/ui/input";
 import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { describeBudgetLine, type BudgetLine } from "@/lib/budgets";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
 import { AGENT_MEMORY_ACCESS, AGENT_MEMORY_ACCESS_META, DEFAULT_AGENT_MEMORY_ACCESS } from "@/lib/memory-scope";
-import { AGENT_STATE_NAMES } from "@/lib/brand/names";
+import { AGENT_STATE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * `profile` is the agent's profile in the chat's side slot; `computer` is its
@@ -353,6 +357,12 @@ export function AgentProfile({
           <p className="mt-1 text-ui text-muted-foreground">Ask {agent.name} to change this.</p>
         </Section>
 
+        <RunsOnSection
+          agent={agent}
+          busy={busy === "runs-on"}
+          onSave={(patch) => act("runs-on", () => updateAgent(agent.id, patch))}
+        />
+
         <Section title="What it may remember about you">
           {/* Set here and only here: the agent's own tools cannot widen this. */}
           <div role="radiogroup" aria-label={`What ${agent.name} may read of your memory`} className="flex flex-col gap-1">
@@ -531,6 +541,213 @@ function BudgetSection({
           ? `${name} stops when this or your account’s own limit runs out, whichever comes first.`
           : "Leave it empty, or enter an amount up to $2,000."}
       </p>
+    </Section>
+  );
+}
+
+const RUNS_ON_COPY: Record<AgentExecutionTarget, { label: string; description: string }> = {
+  cloud: { label: "Cloud", description: "Works with your laptop closed." },
+  mac: { label: "Your Mac", description: `Needs the ${PRODUCT_NAME} Mac app open. If your Mac is offline, tasks don’t start.` },
+};
+
+const RUNS_ON_MESSAGE = {
+  noMac: `No Mac is set up yet. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac.`,
+  anyMac: "Any of your Macs",
+  checking: "Checking your Macs…",
+  loadFailed: "Couldn’t check your Macs.",
+  retry: "Try again",
+  goneMac: "The Mac it used is no longer connected, so its tasks go to any of your Macs. Pick one to keep them on it.",
+  pickMac: "Pick the Mac it should use.",
+} as const;
+
+type WorkHostsState =
+  | { kind: "loading" }
+  | { kind: "ok"; hosts: ClientWorkHost[] }
+  | { kind: "failed"; message: string };
+
+/**
+ * The account's Macs for "Runs on", kept fresh while the profile is open: the
+ * shared Work poll, the Work sync event and a re-read when the tab comes back,
+ * as Settings, Devices does, so a Mac waking up shows as online without a
+ * reload. A dropped poll after a good read keeps the list rather than blanking
+ * it; a failure before one is said, with a retry.
+ */
+function useRunsOnHosts(active: boolean): { state: WorkHostsState; retry: () => void } {
+  const [state, setState] = React.useState<WorkHostsState>({ kind: "loading" });
+  const load = React.useCallback(async () => {
+    const res = await fetchWorkHosts();
+    if (res.kind === "ok") {
+      setState({ kind: "ok", hosts: res.value.filter((host) => host.revokedAt === null) });
+      return;
+    }
+    const message = res.kind === "failed" ? res.message : res.explanation;
+    setState((prev) => (prev.kind === "ok" ? prev : { kind: "failed", message: message || RUNS_ON_MESSAGE.loadFailed }));
+  }, []);
+
+  React.useEffect(() => {
+    if (!active) return;
+    let live = true;
+    const tick = () => {
+      if (live && !document.hidden) void load();
+    };
+    void load();
+    const interval = window.setInterval(tick, WORK_POLL_MS);
+    window.addEventListener(WORK_SYNC_EVENT, tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      live = false;
+      window.clearInterval(interval);
+      window.removeEventListener(WORK_SYNC_EVENT, tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [active, load]);
+
+  const retry = React.useCallback(() => {
+    setState({ kind: "loading" });
+    void load();
+  }, [load]);
+  return { state, retry };
+}
+
+/**
+ * Where its tasks, routines and goal steps run: the cloud, or the person's Mac
+ * through the Work relay. Set here and only here: no agent tool can move it.
+ * Its routines move with it (the server refuses the change in words when a
+ * Mac routine would have no Mac to name, and then the Mac list opens so one
+ * can be picked). A Mac that is offline makes a task refuse with the
+ * dispatcher's own sentence; nothing quietly moves to the cloud.
+ */
+function RunsOnSection({
+  agent,
+  busy,
+  onSave,
+}: {
+  agent: ClientAgentDetail["agent"];
+  busy: boolean;
+  onSave: (patch: { executionTarget?: AgentExecutionTarget; preferredHostId?: string | null }) => Promise<boolean>;
+}) {
+  const target: AgentExecutionTarget = agent.executionTarget ?? "cloud";
+  // Opened when a move to the Mac was refused for want of a named Mac: the
+  // list then shows under "Your Mac" so the person can pick one, and picking
+  // sends the target and the Mac together.
+  const [choosingMac, setChoosingMac] = React.useState(false);
+  const showMacs = target === "mac" || choosingMac;
+  const { state: hostsState, retry } = useRunsOnHosts(showMacs);
+  const preferredHostId = agent.preferredHostId ?? null;
+
+  const chooseMac = (id: string | null) => {
+    if (target === "mac") {
+      if (id !== preferredHostId) void onSave({ preferredHostId: id });
+      return;
+    }
+    void onSave({ executionTarget: "mac", preferredHostId: id }).then((saved) => {
+      if (saved) setChoosingMac(false);
+    });
+  };
+
+  return (
+    <Section title="Runs on">
+      <div role="radiogroup" aria-label={`Where ${agent.name}’s tasks run`} className="flex flex-col gap-1">
+        {AGENT_EXECUTION_TARGETS.map((option) => {
+          const current = target === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={current}
+              disabled={busy}
+              data-execution-target={option}
+              onClick={() => {
+                if (current) return;
+                void onSave({ executionTarget: option }).then((saved) => {
+                  setChoosingMac(!saved && option === "mac");
+                });
+              }}
+              className={cn(
+                "-mx-2 rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                current && "bg-secondary/60"
+              )}
+            >
+              <span className={cn("block text-body", current ? "font-medium text-foreground" : "text-foreground")}>
+                {RUNS_ON_COPY[option].label}
+              </span>
+              <span className="block text-ui text-muted-foreground">{RUNS_ON_COPY[option].description}</span>
+            </button>
+          );
+        })}
+      </div>
+      {target === "cloud" && agent.cloudWorkAvailable === false ? (
+        <p className="mt-2 text-ui font-medium text-[hsl(var(--attention))]" role="status">
+          {CLOUD_WORKER_DOWN_MESSAGE}
+        </p>
+      ) : null}
+      {showMacs ? (
+        hostsState.kind === "loading" ? (
+          <p className="mt-2 text-ui text-muted-foreground" role="status" aria-live="polite">
+            {RUNS_ON_MESSAGE.checking}
+          </p>
+        ) : hostsState.kind === "failed" ? (
+          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-ui text-[hsl(var(--attention))]" role="alert">
+            <span>{hostsState.message}</span>
+            <button
+              type="button"
+              onClick={retry}
+              className="rounded-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {RUNS_ON_MESSAGE.retry}
+            </button>
+          </p>
+        ) : hostsState.hosts.length === 0 ? (
+          <p className="mt-2 text-ui text-[hsl(var(--attention))]" role="status">
+            {RUNS_ON_MESSAGE.noMac}
+          </p>
+        ) : (
+          <>
+            {target === "mac" && preferredHostGone(preferredHostId, hostsState.hosts) ? (
+              <p className="mt-2 text-ui text-[hsl(var(--attention))]" role="status">
+                {RUNS_ON_MESSAGE.goneMac}
+              </p>
+            ) : null}
+            {target !== "mac" ? <p className="mt-2 text-ui text-muted-foreground">{RUNS_ON_MESSAGE.pickMac}</p> : null}
+            <div role="radiogroup" aria-label={`Which Mac ${agent.name} uses`} className="mt-2 flex flex-col gap-1">
+              {[null, ...hostsState.hosts].map((host) => {
+                const id = host?.id ?? null;
+                // A preference that no longer resolves is "any Mac" in practice,
+                // and is shown as that. Nothing is checked until it runs on a Mac.
+                const effective = preferredHostGone(preferredHostId, hostsState.hosts) ? null : preferredHostId;
+                const current = target === "mac" && effective === id;
+                const state = host ? runsOnHostLabel(host) : null;
+                // "Any Mac" earns a row when there is a choice to make, or when
+                // it is what is in force.
+                if (host === null && hostsState.hosts.length < 2 && !current) return null;
+                return (
+                  <button
+                    key={id ?? "any"}
+                    type="button"
+                    role="radio"
+                    aria-checked={current}
+                    disabled={busy}
+                    data-preferred-host={id ?? "any"}
+                    onClick={() => {
+                      if (!current) chooseMac(id);
+                    }}
+                    className={cn(
+                      "-mx-2 flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                      current && "bg-secondary/60"
+                    )}
+                  >
+                    <span className={cn("min-w-0 flex-1 truncate text-body text-foreground", current && "font-medium")} translate={host ? "no" : undefined}>
+                      {host ? host.displayName : RUNS_ON_MESSAGE.anyMac}
+                    </span>
+                    {state ? <span className="shrink-0 text-ui text-muted-foreground">{state}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )
+      ) : null}
     </Section>
   );
 }

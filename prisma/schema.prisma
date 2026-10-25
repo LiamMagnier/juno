@@ -4678,6 +4678,13 @@ model Agent {
   memoryAccess String @default("profile")
   /// The starting point it was hired from. Copy and defaults only.
   template  String?
+  /// cloud | mac. Where its tasks, routines and goal steps run. Mac work goes
+  /// through the Work relay to the person's own Mac and is refused, never
+  /// moved to the cloud, when that Mac is offline. Set by the person only.
+  executionTarget String  @default("cloud")
+  /// The Mac (WorkHost id) a `mac` agent prefers. Null: any Mac switched on
+  /// for Work. Re-checked against the account at every dispatch.
+  preferredHostId String?
 
   /// needs_you | results | all. Which notifications this agent sends.
   notify            String    @default("results")

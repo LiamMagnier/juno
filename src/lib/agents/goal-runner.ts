@@ -21,6 +21,8 @@ import "server-only";
 import type { Agent, AgentGoal, Prisma } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { recordAgentEvent, startAgentTask, type AgentActor } from "@/lib/agents/store";
+import { agentWorkTarget } from "@/lib/agents/domain";
+import { WORK_TARGETS, type WorkTarget } from "@/lib/work/domain";
 import {
   GOAL_ACTING_EVENT_KINDS,
   GOAL_ADVANCE_LEASE_MS,
@@ -35,6 +37,11 @@ import {
   type GoalTaskView,
   type GoalView,
 } from "@/lib/agents/goals";
+
+/** A session's stored target, read back; anything unknown is `cloud`. */
+function targetOfSession(value: string): WorkTarget {
+  return (WORK_TARGETS as readonly string[]).includes(value) ? (value as WorkTarget) : "cloud";
+}
 
 export type StartStepResult =
   | { ok: true; sessionId: string }
@@ -62,7 +69,19 @@ export const defaultGoalRunnerDeps: GoalRunnerDeps = {
     const [dispatch, protocol] = await Promise.all([import("@/lib/work/dispatch"), import("@/app/api/work/protocol")]);
     const session = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id, deletedAt: null } });
     if (!session) return { ok: false, message: "That step's task no longer exists." };
-    const body = protocol.startRunSchema.parse({ origin: "retry", requestedTarget: "cloud", idempotencyKey });
+    // The agent's setting as it stands now, so a member moved to the Mac retries
+    // there; a Mac that is offline refuses, and the refusal becomes a blocker.
+    const agent = session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: session.agentId, userId: user.id },
+          select: { executionTarget: true },
+        })
+      : null;
+    const body = protocol.startRunSchema.parse({
+      origin: "retry",
+      requestedTarget: agent ? agentWorkTarget(agent.executionTarget) : targetOfSession(session.requestedTarget),
+      idempotencyKey,
+    });
     const started = await dispatch.startWorkRunForUser(user, session, body);
     if (!started.run) return { ok: false, message: typeof started.body.message === "string" ? started.body.message : "The retry could not start." };
     return { ok: true };
@@ -222,8 +241,14 @@ export async function advanceGoal(input: {
             data.blockers = [];
             await recordAgentEvent({ userId, agentId: agent.id, kind: "goal_step", title: step.nextAction, sessionId: step.sessionId, detail: { goalId: goal.id, stepKey: step.stepKey, attempt: step.attempt } });
           } else {
+            const known = parseBlockers(goal.blockers).some((b) => b.kind === "needs_decision" && b.text === result.message);
             data.blockers = withBlocker(goal.blockers, { kind: "needs_decision", text: result.message, at: now.toISOString() }) as unknown as Prisma.InputJsonValue;
             data.nextAction = "Waiting for you: the retry could not start";
+            // Refused (its Mac offline, no cloud worker): said on the member's
+            // page once, never retried somewhere else.
+            if (!known) {
+              await recordAgentEvent({ userId, agentId: agent.id, kind: "task_refused", title: result.message.slice(0, 200), sessionId: step.sessionId, detail: { goalId: goal.id, stepKey: step.stepKey } });
+            }
           }
           break;
         }
@@ -246,9 +271,13 @@ export async function advanceGoal(input: {
             data.blockers = [];
             await recordAgentEvent({ userId, agentId: agent.id, kind: "goal_step", title: `Started "${step.stepTitle}" for ${goal.title}`, sessionId: result.sessionId, detail: { goalId: goal.id, stepKey: step.stepKey } });
           } else {
+            const known = parseBlockers(goal.blockers).some((b) => b.kind === "needs_decision" && b.text === result.message);
             const blocker: GoalBlocker = { kind: "needs_decision", text: result.message, at: now.toISOString() };
             data.blockers = withBlocker(goal.blockers, blocker) as unknown as Prisma.InputJsonValue;
             data.nextAction = result.needsConfirmation ? "Waiting for your OK to spend on the next step" : "Waiting for you: the next step could not start";
+            if (!known && !result.needsConfirmation) {
+              await recordAgentEvent({ userId, agentId: agent.id, kind: "task_refused", title: result.message.slice(0, 200), detail: { goalId: goal.id, stepKey: step.stepKey } });
+            }
           }
           break;
         }

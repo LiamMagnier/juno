@@ -14,8 +14,10 @@ import { normalizeAgentAvatar, type AgentAvatar } from "@/lib/agents/avatar";
 import { agentMemoryAccessOf, type AgentMemoryAccess } from "@/lib/memory-scope";
 import {
   agentApprovalMode,
+  agentExecutionTarget,
   agentNotifyLevel,
   agentStyle,
+  type AgentExecutionTarget,
   type AgentGoalCadence,
   type AgentGoalStatus,
   type AgentIdeaStatus,
@@ -95,6 +97,20 @@ export interface ClientAgent {
    * Optional for clients written before it; the server always sends it.
    */
   memoryAccess?: AgentMemoryAccess;
+  /**
+   * Where its work runs: `cloud` (keeps going with the laptop closed) or `mac`
+   * (the person's Mac, through the Work relay). Optional for clients written
+   * before it; the server always sends it.
+   */
+  executionTarget?: AgentExecutionTarget;
+  /** The Mac (WorkHost id) a `mac` agent prefers, or null for any switched-on Mac. */
+  preferredHostId?: string | null;
+  /**
+   * Whether a cloud Work executor is running right now (its heartbeat is
+   * fresh). False means a cloud task would be refused, so a cloud agent's
+   * thread says so instead of looking ready. Optional; absent means unknown.
+   */
+  cloudWorkAvailable?: boolean;
 }
 
 export interface ClientAgentGoal {
@@ -244,6 +260,8 @@ export function serializeAgent(agent: Agent, derived: AgentDerived): ClientAgent
     computer: derived.computer ?? null,
     budgetMicroUsd: agent.budgetMicroUsd ?? null,
     memoryAccess: agentMemoryAccessOf((agent as Agent & { memoryAccess?: string }).memoryAccess),
+    executionTarget: agentExecutionTarget(agent.executionTarget),
+    preferredHostId: agent.preferredHostId ?? null,
   };
 }
 

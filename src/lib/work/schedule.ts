@@ -32,6 +32,7 @@ import {
   WORK_TARGETS,
   WORK_TRIGGER_KINDS,
   WORK_UNATTENDED_POLICIES,
+  refusedForAbsentCloudExecutor,
   requiresExplicitApproval,
   selectTarget,
   type HostCapabilityView,
@@ -979,7 +980,12 @@ export interface ScheduleDispatchInput {
  * record by looking for the word "Mac" in it would break silently that day.
  */
 export type ScheduleDelayCause = "schedule_concurrency" | "account_concurrency" | "host_offline";
-export type ScheduleSkipCause = "host_offline" | "missed_run_policy";
+/**
+ * `executor_unavailable` is the cloud's twin of `host_offline`: the routine
+ * runs in the cloud and no cloud worker was running. Kept apart so the run is
+ * not recorded as a Mac that could not be reached when no Mac was involved.
+ */
+export type ScheduleSkipCause = "host_offline" | "executor_unavailable" | "missed_run_policy";
 
 export type ScheduleDispatchDecision =
   | {
@@ -1130,7 +1136,7 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
       case "skip":
         return {
           outcome: "skipped",
-          cause: "host_offline",
+          cause: refusedForAbsentCloudExecutor(selection) ? "executor_unavailable" : "host_offline",
           nextRunAt: nextFireAfter(input.spec, now),
           dropped: 1,
           explanation: `${selection.explanation} This schedule is set to skip rather than wait.`,
@@ -1149,7 +1155,10 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
         if (fallback.target === null) {
           return {
             outcome: "skipped",
-            cause: "host_offline",
+            // The first refusal names the cause: a cloud routine with no cloud
+            // worker is not a Mac that went missing, while a Mac routine whose
+            // cloud fallback also had no worker still failed on its Mac first.
+            cause: refusedForAbsentCloudExecutor(selection) ? "executor_unavailable" : "host_offline",
             nextRunAt: nextFireAfter(input.spec, now),
             dropped: 1,
             explanation: `${selection.explanation} There is no part of this the cloud can do on its own.`,

@@ -27,6 +27,7 @@ public struct NativeAgentProfileView: View {
     @State private var costQuestion: NativeAgentCostQuestion?
     @State private var customizing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nativeAgentThisMac) private var thisMac
 
     enum Confirm: Identifiable {
         case retire, computerOn, computerOff
@@ -190,6 +191,7 @@ public struct NativeAgentProfileView: View {
                         .foregroundStyle(Color.junoSecondaryInk)
                         .padding(.top, JunoSpace.hairline)
                 }
+                runsOn(agent)
             }
             .padding(.top, JunoSpace.expanse)
             footer(agent)
@@ -466,6 +468,118 @@ public struct NativeAgentProfileView: View {
         }
     }
 
+    /// "Run on": the cloud, or a Mac through the Work relay. The web's
+    /// `RunsOnSection`. Set by the person only; the agent's own tools cannot
+    /// move it. Read against the Mac it is pinned to (`preferredHostID`), not
+    /// just "a Mac": an agent pinned to another of the person's Macs is not
+    /// labelled "This Mac", and this Mac's Work switch is only raised when its
+    /// tasks would actually run here. Choosing this Mac points at the one
+    /// switch that lets work run here, rather than granting anything itself.
+    private func runsOn(_ agent: NativeAgent) -> some View {
+        let placement = NativeAgentMacPlacement.of(
+            preferredHostID: agent.preferredHostID,
+            thisMacHostID: thisMac?.hostID
+        )
+        return NativeAgentProfileSection(title: "Runs on") {
+            Picker(
+                "Runs on",
+                selection: Binding(
+                    get: { agent.executionTarget },
+                    set: { target in chooseTarget(target, for: agent) }
+                )
+            ) {
+                Text("Cloud").tag(NativeAgentExecutionTarget.cloud)
+                Text(
+                    Self.macSegmentTitle(
+                        target: agent.executionTarget,
+                        placement: placement,
+                        onMac: thisMac != nil,
+                        thisMacHostID: thisMac?.hostID
+                    )
+                )
+                .tag(NativeAgentExecutionTarget.mac)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 260, alignment: .leading)
+            .disabled(busy == "runs-on")
+            .accessibilityIdentifier("juno.agents.profile.runs-on")
+            Text(Self.runsOnWords(agent.executionTarget))
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, JunoSpace.cozy)
+            if agent.executionTarget == .cloud, agent.cloudWorkAvailable == false {
+                Text("No cloud worker is running, so tasks can't start.")
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoWarningInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, JunoSpace.hairline)
+            }
+            if agent.executionTarget == .mac, let thisMac {
+                if placement == .anotherMac {
+                    // Its tasks go to the Mac it is pinned to, wherever this
+                    // profile is open; this Mac's Work switch has no bearing.
+                    Text("\(agent.name) runs on another of your Macs.")
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, JunoSpace.hairline)
+                    if let hostID = thisMac.hostID {
+                        NativeAgentQuietLink(title: "Use this Mac instead") {
+                            useThisMac(hostID, for: agent, thisMac: thisMac)
+                        }
+                            .disabled(busy == "runs-on")
+                            .padding(.top, JunoSpace.hairline)
+                            .accessibilityIdentifier("juno.agents.profile.use-this-mac")
+                    }
+                } else if !thisMac.workAllowed {
+                    Text("Work is switched off on this Mac, so \(agent.name)'s tasks can't start here yet.")
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoWarningInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, JunoSpace.hairline)
+                    NativeAgentQuietLink(title: "Allow work on this Mac") {
+                        Task { @MainActor in thisMac.allowWork() }
+                    }
+                        .padding(.top, JunoSpace.hairline)
+                        .accessibilityIdentifier("juno.agents.profile.allow-work")
+                }
+            }
+        }
+    }
+
+    private func chooseTarget(_ target: NativeAgentExecutionTarget, for agent: NativeAgent) {
+        guard target != agent.executionTarget else { return }
+        // On this Mac, prefer this Mac; elsewhere any Mac switched on for Work.
+        // A nil host sends nothing, so a Mac chosen on the web stays chosen.
+        let host = target == .mac ? thisMac?.hostID : nil
+        // Whether its tasks will run here once saved: pinned here now, or
+        // pinned nowhere and so free to.
+        let runsHere = host != nil || agent.preferredHostID == nil
+        act("runs-on") {
+            let saved = await model.update(
+                id: agent.id,
+                NativeAgentPatch(executionTarget: target, preferredHostID: host)
+            )
+            // The switch is the person's to press, so this only takes them to it.
+            if saved, target == .mac, runsHere, let thisMac, !thisMac.workAllowed {
+                await thisMac.allowWork()
+            }
+        }
+    }
+
+    /// Points an agent already set to run on a Mac at this one, leaving where
+    /// it runs alone: only `preferredHostID` is sent.
+    private func useThisMac(_ hostID: String, for agent: NativeAgent, thisMac: NativeAgentThisMac) {
+        act("runs-on") {
+            let saved = await model.update(id: agent.id, NativeAgentPatch(preferredHostID: hostID))
+            if saved, !thisMac.workAllowed {
+                await thisMac.allowWork()
+            }
+        }
+    }
+
     private func footer(_ agent: NativeAgent) -> some View {
         HStack(spacing: JunoSpace.snug) {
             Button(agent.isPaused ? "Resume" : "Pause") {
@@ -533,6 +647,34 @@ public struct NativeAgentProfileView: View {
     }
 
     // MARK: Words
+
+    /// The Mac segment's title, for the Mac it would mean. On the iPhone (no
+    /// `thisMac`) it is always "Your Mac". For a cloud agent it names what
+    /// choosing it does: "This Mac" once this Mac is paired (it pins the agent
+    /// here). For a Mac agent it names the Mac it is pinned to: this one,
+    /// another one, or none ("Your Mac", any switched-on Mac).
+    static func macSegmentTitle(
+        target: NativeAgentExecutionTarget,
+        placement: NativeAgentMacPlacement,
+        onMac: Bool,
+        thisMacHostID: String?
+    ) -> String {
+        guard onMac else { return "Your Mac" }
+        if target == .cloud { return thisMacHostID == nil ? "Your Mac" : "This Mac" }
+        switch placement {
+        case .thisMac: return "This Mac"
+        case .anotherMac: return "Another Mac"
+        case .anyMac: return "Your Mac"
+        }
+    }
+
+    /// `RUNS_ON_COPY`.
+    static func runsOnWords(_ target: NativeAgentExecutionTarget) -> String {
+        switch target {
+        case .cloud: "Works with your laptop closed."
+        case .mac: "Needs the Alevr Mac app open. If your Mac is offline, tasks don't start."
+        }
+    }
 
     /// `ASKS_COPY`.
     static func asks(_ policy: JunoWorkPermissionPolicy) -> String {
@@ -754,4 +896,22 @@ private struct NativeAgentFaceSheet: View {
         .frame(minWidth: 420)
         .junoAgentGazeField()
     }
+}
+
+/// Which Mac an agent set to run on a Mac uses, seen from the Mac showing its
+/// profile: none named (any Mac switched on for Work), this one, or another.
+enum NativeAgentMacPlacement: Equatable {
+    case anyMac
+    case thisMac
+    case anotherMac
+
+    static func of(preferredHostID: String?, thisMacHostID: String?) -> NativeAgentMacPlacement {
+        guard let preferredHostID else { return .anyMac }
+        return preferredHostID == thisMacHostID ? .thisMac : .anotherMac
+    }
+}
+
+public extension EnvironmentValues {
+    /// This Mac, for an agent's "Runs on" control. Nil off the Mac.
+    @Entry var nativeAgentThisMac: NativeAgentThisMac? = nil
 }

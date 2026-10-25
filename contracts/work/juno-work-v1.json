@@ -145,6 +145,11 @@
           "value": "superseded",
           "summary": "A newer run for the same session took over; the old one is cancelled rather than failed, because nothing went wrong.",
           "status": "cancelled"
+        },
+        {
+          "value": "executor_unavailable",
+          "summary": "A cloud run waited past its limit with no cloud executor running to claim it; nothing ran.",
+          "status": "interrupted"
         }
       ]
     },

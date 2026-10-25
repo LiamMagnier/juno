@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Prisma, WorkRun } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
 import { getUserPlan } from "@/lib/usage";
 import {
   WORK_LIVE_STATUSES,
@@ -252,7 +253,7 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     requested: scheduleTargetOf(schedule.target),
     required: runConfig.requiredCapabilities,
     hosts: ordered.map((host) => hostCapabilityView(host, effectiveHostState(host, now))),
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
+    cloudAvailable: await cloudWorkAvailable(now),
   });
 
   // A fire refuses rather than falling back on `hostOfflinePolicy`. That policy
@@ -381,7 +382,6 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
   return { outcome: "work_run", run: created.run, replay: created.replay, selection };
 }
 
-/** Matches the constant the dispatchers hold, and for the same reason: turning
- *  cloud off should produce an honest refusal rather than a queue of runs
- *  nothing will ever claim. */
-const CLOUD_WORK_AVAILABLE = true;
+/* Cloud availability is the executor heartbeat (src/lib/work/executor-heartbeat.ts),
+ * read at fire time, so no runner means an honest refusal rather than a queue
+ * of runs nothing will ever claim. */

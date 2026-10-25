@@ -409,6 +409,12 @@ public struct NativeAgentsClient: Sendable {
         if let status = patch.status { body["status"] = .string(status.rawValue) }
         if let proactive = patch.proactive { body["proactive"] = .bool(proactive) }
         if let pinned = patch.pinned { body["pinned"] = .bool(pinned) }
+        if let executionTarget = patch.executionTarget {
+            body["executionTarget"] = .string(executionTarget.rawValue)
+        }
+        if let preferredHostID = patch.preferredHostID {
+            body["preferredHostId"] = .string(preferredHostID)
+        }
         return body
     }
 
@@ -613,7 +619,13 @@ public struct NativeAgentsClient: Sendable {
             needsYou: integer(root["needsYou"]),
             nextRoutine: root["nextRoutine"].flatMap { try? decodeRoutineGlance($0) },
             newIdeas: integer(root["newIdeas"]),
-            pinnedAt: root["pinnedAt"]?.date
+            pinnedAt: root["pinnedAt"]?.date,
+            // Optional keys: an older server sends neither, and that agent
+            // runs in the cloud as every agent did before the field existed.
+            executionTarget: optionalString(root["executionTarget"])
+                .flatMap(NativeAgentExecutionTarget.init(rawValue:)) ?? .cloud,
+            preferredHostID: optionalString(root["preferredHostId"]),
+            cloudWorkAvailable: root["cloudWorkAvailable"]?.boolValue
         )
     }
 

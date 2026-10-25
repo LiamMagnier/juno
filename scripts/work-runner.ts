@@ -83,7 +83,8 @@ import {
   type RunComputerAttachment,
 } from "@/lib/computer/store";
 import { sweepAgentComputers } from "@/lib/computer/sweep";
-import { decryptField } from "@/lib/field-crypto";
+import { loadAgentRunPersona } from "@/lib/agents/run-context";
+import { recordExecutorHeartbeat } from "@/lib/work/executor-heartbeat";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
@@ -945,49 +946,12 @@ async function openingContext(input: {
   const sources: UntrustedSource[] = [];
 
   if (input.session.agentId) {
-    const [agent, goals, notes] = await Promise.all([
-      prisma.agent.findFirst({
-        where: { id: input.session.agentId, userId: input.userId, deletedAt: null },
-        select: { name: true, role: true, style: true, instructions: true },
-      }),
-      prisma.agentGoal.findMany({
-        where: { userId: input.userId, agentId: input.session.agentId, status: "active" },
-        orderBy: { createdAt: "asc" },
-        take: 8,
-        select: { title: true },
-      }),
-      // `deletedAt: null`: "Forget this" is a soft delete, and a note the
-      // person asked the agent to forget must not reach its runs either.
-      prisma.agentNote.findMany({
-        where: { userId: input.userId, agentId: input.session.agentId, deletedAt: null },
-        orderBy: { updatedAt: "desc" },
-        take: 24,
-        select: { content: true },
-      }),
-    ]);
-
-    if (agent) {
-      const whoParts: string[] = [`## Who you are working as`, `You are ${agent.name}${agent.role ? ` (${agent.role})` : ""}.`];
-      if (agent.instructions.trim()) {
-        whoParts.push(`Brief:\n${agent.instructions.trim()}`);
-      }
-      if (agent.style.trim()) {
-        whoParts.push(`Style: ${agent.style.trim()}`);
-      }
-      if (goals.length > 0) {
-        whoParts.push(`Active goals:\n${goals.map((g) => `- ${g.title}`).join("\n")}`);
-      }
-      identityLines.push(whoParts.join("\n\n"));
-
-      const decryptedNotes = notes
-        .map((n) => decryptField(n.content).trim())
-        .filter((text) => text.length > 0);
-      if (decryptedNotes.length > 0) {
-        sources.push({
-          label: `agent notes — ${agent.name}`,
-          body: decryptedNotes.map((text) => `- ${text}`).join("\n"),
-        });
-      }
+    // Who the run works as: src/lib/agents/run-context.ts, shared with the
+    // relay so a run on the person's Mac opens as the same member.
+    const persona = await loadAgentRunPersona({ userId: input.userId, agentId: input.session.agentId });
+    if (persona) {
+      identityLines.push(persona.identity);
+      if (persona.notes) sources.push(persona.notes);
     }
   }
 
@@ -2888,6 +2852,11 @@ let lastComputerSweepAtMs = 0;
 
 /** Returns true when this tick found something to do, so the loop can wait. */
 async function tick(): Promise<boolean> {
+  // "An executor is alive" is what lets dispatch accept a cloud run at all
+  // (src/lib/work/executor-heartbeat.ts). First, so a tick that throws below
+  // still counts as a live runner; throttled inside, never throws.
+  await recordExecutorHeartbeat();
+
   if (Date.now() - lastComputerSweepAtMs >= 60_000) {
     lastComputerSweepAtMs = Date.now();
     await sweepAgentComputers().catch((error: unknown) => {

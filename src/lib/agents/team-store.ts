@@ -106,6 +106,10 @@ export async function createTeamForLead(input: {
           // when the member starts (`advanceTeam`).
           goal: `${info.brief}\n\n${input.request}`,
           status: "draft",
+          // Cloud by construction, not by default: the cloud runner coordinates
+          // a team and claims its members itself, with no relay command that
+          // could reach a Mac. A crew member set to run on the Mac is refused a
+          // team before one is drafted (`team_needs_cloud`, task-tool.ts).
           requestedTarget: "cloud",
           requestedModel: input.lead.requestedModel,
           reasoningEffort: input.lead.reasoningEffort,
@@ -181,8 +185,16 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
     where: { userId, parentSessionId: leadId, teamRole: { in: [...TEAM_ROLES] }, deletedAt: null },
   });
 
+  // A lead run that ended `interrupted` is picked up again below, whatever the
+  // reason that put it there: `interrupted` itself (its coordinator died) or
+  // `executor_unavailable` (no runner claimed it in time). Keyed on the status
+  // rather than one reason because `advanceTeams` selects leads by the session
+  // status `interrupted`, so a lead in that status this pass neither resumes
+  // nor moves is re-polled on every tick, oldest first, for ever.
+  const leadResumable = leadRun.status === "interrupted";
+
   // The person stopped the team (or it already ended): stop every member still going.
-  if ((WORK_TERMINAL_STATUSES as readonly string[]).includes(leadRun.status) && leadRun.terminalReason !== "interrupted") {
+  if ((WORK_TERMINAL_STATUSES as readonly string[]).includes(leadRun.status) && !leadResumable) {
     const runs = await latestRuns(userId, members.map((m) => m.id));
     for (const run of runs.values()) {
       if ((WORK_LIVE_STATUSES as readonly string[]).includes(run.status)) {
@@ -199,7 +211,7 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
     await prisma.workRun.updateMany({ where: { id: leadRun.id, userId, claimedBy: executorId }, data: { status: "running" } });
     await prisma.workSession.updateMany({ where: { id: leadId, userId }, data: { status: "running" } });
     leadRun = claim.run;
-  } else if (leadRun.terminalReason === "interrupted") {
+  } else if (leadResumable) {
     if (leadRun.attempt >= MAX_LEAD_ATTEMPTS) {
       // Out of attempts: the team ends here. Left "interrupted" it was picked
       // up every tick for ever, oldest first, until such teams filled the

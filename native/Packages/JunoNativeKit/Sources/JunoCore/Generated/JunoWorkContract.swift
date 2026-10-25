@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "be92b609d3f267f09689e5f61b20bc3d1593b4eda86688c13e681ae328e2b5eb"
+    public static let digest = "bcdf98685b329bf8f7f775505ffbf26c142a3cea627d841e9eecfe333c0ae06d"
 }
 
 /// Every state a Work session or run can be in.
@@ -103,6 +103,8 @@ public enum JunoWorkTerminalReason: String, CaseIterable, Codable, Sendable {
     case interrupted = "interrupted"
     /// A newer run for the same session took over; the old one is cancelled rather than failed, because nothing went wrong.
     case superseded = "superseded"
+    /// A cloud run waited past its limit with no cloud executor running to claim it; nothing ran.
+    case executorUnavailable = "executor_unavailable"
 
     /// The status the run lands in for this reason.
     public var status: JunoWorkStatus {
@@ -115,6 +117,7 @@ public enum JunoWorkTerminalReason: String, CaseIterable, Codable, Sendable {
         case .hostOffline: return .hostOffline
         case .interrupted: return .interrupted
         case .superseded: return .cancelled
+        case .executorUnavailable: return .interrupted
         }
     }
 }

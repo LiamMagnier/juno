@@ -90,6 +90,7 @@ export const WORK_TERMINAL_REASONS = [
   'host_offline',
   'interrupted',
   'superseded',
+  'executor_unavailable',
 ] as const;
 
 export type WorkTerminalReason = (typeof WORK_TERMINAL_REASONS)[number];

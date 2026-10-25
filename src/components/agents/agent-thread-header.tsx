@@ -37,6 +37,8 @@ import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 
+import { threadWorkNotice } from "@/components/agents/thread-agent-state";
+
 export { threadAgentState } from "@/components/agents/thread-agent-state";
 
 /**
@@ -129,6 +131,9 @@ export function AgentThreadHeader({
   };
 
   const attention = state === "waiting" || state === "blocked" || agent.needsYou > 0;
+  // Cloud work cannot start right now: said in words where the state goes,
+  // rather than a thread that looks ready and then refuses every task.
+  const workNotice = attention ? null : threadWorkNotice(agent, state);
   const profileOpen = activePanelTab === "profile";
 
   return (
@@ -143,7 +148,7 @@ export function AgentThreadHeader({
           onClick={() => onTogglePanel?.("profile")}
           data-face-trigger
           className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-0.5 pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`${agent.name}. ${sentence}. Open profile`}
+          aria-label={`${agent.name}. ${workNotice ?? sentence}. Open profile`}
           aria-expanded={profileOpen}
         >
           <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
@@ -152,6 +157,10 @@ export function AgentThreadHeader({
             {attention ? (
               <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite">
                 {sentence}
+              </span>
+            ) : workNotice ? (
+              <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite" data-work-notice="cloud">
+                {workNotice}
               </span>
             ) : (
               <AgentStatusLine text={sentence} state={state} className="text-caption text-muted-foreground" />

@@ -182,7 +182,7 @@ function sections(input: WorkVoiceBriefingInput): string[] {
       `I am looking at one of my ${PRODUCT_NAME} Work tasks and I want to talk it through out loud.`,
       "",
       `The task, in my own words: "${oneLine(session.goal, MAX_QUOTE_CHARS)}"`,
-      `Where it stands: ${statusSentence(session.status)}`,
+      `Where it stands: ${statusSentence(session.status, null, run?.terminalReason)}`,
       attemptLine(run),
       "",
       "Everything I tell you in this briefing is a snapshot of the task as it was when I " +
@@ -446,7 +446,7 @@ export function workVoiceCatchUp(input: WorkVoiceBriefingInput): string {
   return block(
     [
       "An update from the app, not from me — the task has moved on since you were briefed.",
-      `Where it stands now: ${statusSentence(session.status)}`,
+      `Where it stands now: ${statusSentence(session.status, null, run?.terminalReason)}`,
       plan.length > 0 ? `Plan: ${done} of ${plan.length} steps done.` : null,
       current ? `Right now it is: ${oneLine(current.title, 160)}` : null,
       questions.length > 0 ? `It is asking me: "${oneLine(questions[0].question, 240)}"` : null,

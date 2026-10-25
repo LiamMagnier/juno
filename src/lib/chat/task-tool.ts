@@ -344,6 +344,8 @@ export const TASK_REFUSALS = {
   stopped: "The reply was stopped before the task started, so nothing was started.",
   already_tried: "This message already tried to start a task and it did not start. Nothing new was started.",
   agent_paused: "This agent is paused. Resume it before starting a task. Nothing was started.",
+  team_needs_cloud:
+    "Specialist teams run in the cloud, and this agent is set to run on your Mac. Ask for the task without a team, or switch the agent to Cloud. Nothing was started.",
   internal_error: `${PRODUCT_NAME} could not start the task because of a problem on its side. Nothing was started.`,
 } as const;
 
@@ -536,7 +538,14 @@ export interface StartTaskToolContext {
    * that agent instead of the default a model-started task otherwise gets —
    * a mode somebody chose on the agent's page is a decision, not a default.
    */
-  agent?: { id: string; approvalMode: WorkPermissionPolicy; status?: string } | null;
+  agent?: {
+    id: string;
+    approvalMode: WorkPermissionPolicy;
+    status?: string;
+    /** cloud | mac (src/lib/agents/domain.ts `AGENT_EXECUTION_TARGETS`). Absent: cloud. */
+    executionTarget?: string | null;
+    preferredHostId?: string | null;
+  } | null;
   /**
    * How often the task stops to ask, as chosen in this chat's composer
    * (src/lib/chat/task-approval-mode.ts), or null for the default. In an
@@ -627,14 +636,18 @@ async function startTask(
     import("@/lib/action-approval-store"),
   ]);
   const { user } = ctx;
+  // Read fresh: whether it is still active, and where it runs now (a "Runs on"
+  // change made after this turn began is the one that counts).
+  let agentPlacement: { executionTarget: string; preferredHostId: string | null } | null = null;
   if (ctx.agent) {
     const agentRow = await prisma.agent.findFirst({
       where: { id: ctx.agent.id, userId: user.id, deletedAt: null },
-      select: { status: true },
+      select: { status: true, executionTarget: true, preferredHostId: true },
     });
     if (!agentRow || agentRow.status !== "active") {
       return taskRefusal("agent_paused");
     }
+    agentPlacement = { executionTarget: agentRow.executionTarget, preferredHostId: agentRow.preferredHostId };
   }
   const keys = taskIdempotencyKeys(ctx.userMessageId);
   const ownSessionId = dispatch.sessionIdForKey(user, keys.session);
@@ -674,7 +687,18 @@ async function startTask(
 
   // Built through the route's own schema, so the task is bounded exactly like
   // one a person creates.
-  const requestedTarget = ctx.agent ? "cloud" : "automatic";
+  // An agent's task goes where its person set it to run: the cloud, or their
+  // Mac (Work's `local`) with its preferred host. Never `automatic`, which
+  // could move it. An offline Mac is the dispatcher's 409, told to the user.
+  // A preferred Mac removed since it was chosen is dropped (any Mac), not a
+  // "Host not found" refusal (`resolveAgentDispatchTarget`).
+  const agentTarget = agentPlacement
+    ? await (await import("@/lib/agents/run-context")).resolveAgentDispatchTarget(user.id, agentPlacement)
+    : null;
+  const requestedTarget = agentTarget ? agentTarget.requestedTarget : "automatic";
+  // A team is coordinated by the cloud runner (src/lib/agents/team-store.ts),
+  // so a Mac agent's team would quietly run somewhere it was not set to.
+  if (args.team && requestedTarget === "local") return taskRefusal("team_needs_cloud");
   const createBody = protocol.createSessionSchema.safeParse({
     goal: composeTaskGoal({
       request: ctx.userRequest,
@@ -684,6 +708,7 @@ async function startTask(
     }),
     title: args.title,
     requestedTarget,
+    ...(agentTarget?.preferredHostId ? { preferredHostId: agentTarget.preferredHostId } : {}),
     ...(ctx.conversation.projectId ? { projectId: ctx.conversation.projectId } : {}),
     conversationId: ctx.conversation.id,
     model: ctx.model,
@@ -888,7 +913,10 @@ async function startTask(
  * through for a reason on Juno's side, which the model should not dress up as
  * the user's choice.
  */
-export function approvalRefusalReason(brokerReason: string, status?: ActionReceiptStatus): TaskRefusalReason {
+export function approvalRefusalReason(
+  brokerReason: string,
+  status?: ActionReceiptStatus
+): Extract<TaskRefusalReason, "declined" | "approval_expired" | "approval_blocked" | "approval_failed"> {
   if (status === "denied") return "declined";
   if (status === "expired") return "approval_expired";
   if (status === "blocked") return "approval_blocked";
