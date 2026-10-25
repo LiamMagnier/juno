@@ -1,0 +1,26 @@
+{
+  "tool": "calculate",
+  "steps": [
+    {
+      "expression": "floor(1240 * 1.15)",
+      "value": 1426
+    },
+    {
+      "expression": "floor(1426 * 1.15)",
+      "value": 1639
+    },
+    {
+      "expression": "floor(1639 * 1.15)",
+      "value": 1884
+    },
+    {
+      "expression": "floor(1884 * 1.15)",
+      "value": 2166
+    },
+    {
+      "expression": "1240 + 1426 + 1639 + 1884 + 2166",
+      "value": 8355
+    }
+  ],
+  "answer": 8355
+}

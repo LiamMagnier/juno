@@ -115,6 +115,7 @@
     "backup:verify": "node scripts/verify-backup.mjs",
     "backup:drill": "node scripts/restore-drill.mjs",
     "eval:juno": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/eval-juno.ts",
+    "bench:workflows": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/workflow-bench.ts",
     "domain:checks": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/domain-checks.ts",
     "backup:restore": "node scripts/restore-production.mjs",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
