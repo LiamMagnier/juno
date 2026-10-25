@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -311,7 +311,7 @@ test("with --wait-minutes, checks still running on main are waited for and then 
     assert.equal(run.status, 0, run.stdout + run.stderr);
     assert.match(run.stdout, /wait {2}1 check\(s\) on main at [0-9a-f]{9} still queued or running/);
     assert.match(run.stdout, /pass {2}main CI is green for main at [0-9a-f]{9} \(2 checks\)/);
-    assert.equal(execFileSync("cat", [counter], { encoding: "utf8" }).trim(), "3", "two pending reads, then the settled one");
+    assert.equal(readFileSync(counter, "utf8").trim(), "3", "two pending reads, then the settled one");
   } finally {
     repo.cleanup();
   }
