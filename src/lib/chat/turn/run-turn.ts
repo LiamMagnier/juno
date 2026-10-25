@@ -7,7 +7,13 @@ import { loadOpsTarget } from "./semantic";
 import type { TurnModel } from "./model";
 import { classifyProviderError } from "@/lib/provider-error";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
-import { completionStateFor, recordRoutingOutcome } from "@/lib/router/telemetry-store";
+import {
+  completionStateFor,
+  endingSaysNothingAboutModel,
+  outcomeTimings,
+  recordRoutingOutcome,
+  type PlatformEnding,
+} from "@/lib/router/telemetry-store";
 import { createAlevrSearchTurn } from "@/lib/search/alevr/turn";
 import type { Plan } from "@prisma/client";
 import type { EffectiveBudget } from "@/lib/spend-ceiling";
@@ -371,6 +377,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       finishReason: string | null;
       persistedPartial: boolean;
       costMicroUsd: number | null;
+      /** Set when the platform (a drain, a lost lease, the budget guard) ended the turn. */
+      platformEnding?: PlatformEnding;
     } | null = null;
 
     send({
@@ -972,7 +980,12 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         leaseLost: receipt.leaseLost || err instanceof DurableReceiptLeaseLostError,
       };
       // Overwritten below if the partial answer is saved.
-      turnOutcome = { messageId: null, finishReason: reason, persistedPartial: false, costMicroUsd: null };
+      const platformEnding: PlatformEnding = {
+        shutdown: cancellation.shutdown,
+        leaseLost: cancellation.leaseLost,
+        budgetHalted: cancellation.budgetHalted,
+      };
+      turnOutcome = { messageId: null, finishReason: reason, persistedPartial: false, costMicroUsd: null, platformEnding };
       /*
        * What the provider billed is spent however the turn ends. A turn that
        * ran four tool rounds and then hit a provider error, a Stop or the
@@ -1047,6 +1060,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             finishReason: reason,
             persistedPartial: true,
             costMicroUsd: researchNotice ? null : partialUsage.costMicroUsd || null,
+            platformEnding,
           };
           // Only finished artifacts, as on the success path. A Stop inside a
           // block leaves it unfinished: the partial answer is still saved,
@@ -1186,17 +1200,34 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         });
       }
     } finally {
+      // The trace first: it measured the first token and the turn's length
+      // from one start, which the outcome row records (`outcomeTimings`).
+      // Guarded so observability can never skip the cleanup below.
+      let finishedTrace: ReturnType<typeof trace.finish> = null;
+      try {
+        finishedTrace = trace.finish(
+          traceEnd ?? { finishReason: "error", outcome: "failed", failureCode: INTERNAL_ERROR_FAILURE_CODE }
+        );
+      } catch (traceError) {
+        console.warn("[chat] turn trace failed", traceError instanceof Error ? traceError.message : traceError);
+      }
       // Auto's feedback loop: one content-free row per saved-chat turn
       // (src/lib/router/telemetry-store.ts). Research notices are not model
-      // turns; the smoke provider is not a model at all.
-      if (turnOutcome && !researchNotice && !deterministicSmokeProviderEnabled) {
+      // turns; the smoke provider is not a model at all; and an ending the
+      // platform caused (a drain, a lost lease, the budget guard) says nothing
+      // about the model, so it writes no row rather than a failure.
+      if (
+        turnOutcome &&
+        !researchNotice &&
+        !deterministicSmokeProviderEnabled &&
+        !endingSaysNothingAboutModel(turnOutcome.platformEnding)
+      ) {
         const outcome = turnOutcome;
         void recordRoutingOutcome({
           ...routingTelemetryBase,
           messageId: outcome.messageId,
           effort: (autoReasoningEffort !== undefined ? autoReasoningEffort : requestedEffort) ?? null,
-          latencyMs: Date.now() - turnStartedAt,
-          firstTokenMs: null,
+          ...outcomeTimings(finishedTrace, turnStartedAt),
           toolRounds: acc.currentRound,
           retryCount: 0,
           completionState: completionStateFor(outcome.finishReason, outcome.persistedPartial),
@@ -1209,7 +1240,6 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       if (alevrSearchTurn) {
         await recordToolFees(alevrSearchTurn.fees, recordSpend, { userId: user.id, source: legacyClient }).catch(() => 0);
       }
-      trace.finish(traceEnd ?? { finishReason: "error", outcome: "failed", failureCode: INTERNAL_ERROR_FAILURE_CODE });
       toolWatch.releaseAll();
       stallWatchdog.stop();
       stopGenerationTimers();

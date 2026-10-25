@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 217,
-    "planned": 239,
+    "planned": 272,
     "web-only": 67,
     "unclassified": 0
   },
@@ -3627,6 +3627,47 @@
         "offset"
       ]
     },
+    "ReceiptChoice": {
+      "type": "string",
+      "enum": [
+        "better_odds",
+        "lowest_cost",
+        "only_option"
+      ]
+    },
+    "ReceiptComplexity": {
+      "type": "string",
+      "enum": [
+        "expert",
+        "hard",
+        "medium",
+        "simple"
+      ]
+    },
+    "ReceiptEvidenceSource": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "prior",
+        "reliability"
+      ]
+    },
+    "ReceiptLatencyTier": {
+      "type": "string",
+      "enum": [
+        "fast",
+        "slow",
+        "standard"
+      ]
+    },
+    "ReceiptTier": {
+      "type": "string",
+      "enum": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
     "RoutineProposalApp": {
       "type": "object",
       "properties": {
@@ -3642,6 +3683,206 @@
       "required": [
         "id",
         "label"
+      ]
+    },
+    "RoutingFactors": {
+      "type": "object",
+      "properties": {
+        "selected": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "complexity": {
+          "$ref": "#/$defs/ReceiptComplexity",
+          "x-native": "planned"
+        },
+        "modality": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string",
+              "enum": [
+                "text",
+                "text_image"
+              ],
+              "x-native": "planned"
+            },
+            "output": {
+              "type": "string",
+              "enum": [
+                "image",
+                "text"
+              ],
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "input",
+            "output"
+          ],
+          "x-native": "planned"
+        },
+        "tools": {
+          "type": "object",
+          "properties": {
+            "webSearch": {
+              "type": "boolean",
+              "x-native": "planned"
+            },
+            "imageGeneration": {
+              "type": "boolean",
+              "x-native": "planned"
+            },
+            "connectors": {
+              "type": "number",
+              "x-native": "planned"
+            },
+            "reliable": {
+              "type": "boolean",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "webSearch",
+            "imageGeneration",
+            "connectors",
+            "reliable"
+          ],
+          "x-native": "planned"
+        },
+        "contextTokens": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "providerHealth": {
+          "type": "object",
+          "properties": {
+            "down": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "planned"
+            },
+            "retryPressure": {
+              "type": "number",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "down",
+            "retryPressure"
+          ],
+          "x-native": "planned"
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "tier": {
+              "$ref": "#/$defs/ReceiptTier",
+              "x-native": "planned"
+            },
+            "expectedMicroUsd": {
+              "type": "number",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "tier",
+            "expectedMicroUsd"
+          ],
+          "x-native": "planned"
+        },
+        "latency": {
+          "type": "object",
+          "properties": {
+            "tier": {
+              "$ref": "#/$defs/ReceiptLatencyTier",
+              "x-native": "planned"
+            },
+            "expectedS": {
+              "type": "number",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "tier",
+            "expectedS"
+          ],
+          "x-native": "planned"
+        },
+        "plan": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "preference": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "candidates": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "choice": {
+          "$ref": "#/$defs/ReceiptChoice",
+          "x-native": "planned"
+        },
+        "pSuccess": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "evidence": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/ReceiptEvidenceSource",
+              "x-native": "planned"
+            },
+            "samples": {
+              "type": "number",
+              "x-native": "planned"
+            },
+            "shiftedFrom": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "source",
+            "samples",
+            "shiftedFrom"
+          ],
+          "x-native": "planned"
+        },
+        "budgetSaver": {
+          "type": "boolean",
+          "x-native": "planned"
+        },
+        "routerVersion": {
+          "type": "number",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "selected",
+        "complexity",
+        "modality",
+        "tools",
+        "contextTokens",
+        "providerHealth",
+        "cost",
+        "latency",
+        "plan",
+        "preference",
+        "candidates",
+        "choice",
+        "pSuccess",
+        "evidence",
+        "budgetSaver",
+        "routerVersion"
       ]
     },
     "RoutingReceipt": {
@@ -3697,6 +3938,18 @@
           ],
           "x-native": "planned"
         },
+        "rerouteReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "capacity",
+            "unreachable",
+            null
+          ],
+          "x-native": "planned"
+        },
         "image": {
           "anyOf": [
             {
@@ -3720,6 +3973,17 @@
                 "name",
                 "auto"
               ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "planned"
+        },
+        "factors": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingFactors"
             },
             {
               "type": "null"

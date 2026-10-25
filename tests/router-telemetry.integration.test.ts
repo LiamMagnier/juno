@@ -69,6 +69,10 @@ if (!URL) {
       base({ modelId, completionState: "failed", finishReason: "error", costMicroUsd: null, latencyMs: null }),
       base({ modelId }),
       base({ modelId, toolRounds: 2, retryCount: 1 }),
+      // An error and a dropped connection, each with a latency the aggregate must ignore.
+      base({ modelId, completionState: "failed", finishReason: "sensitive", latencyMs: 90 }),
+      base({ modelId, completionState: "partial", finishReason: "network_error", latencyMs: 40_000 }),
+      base({ modelId, completionState: "stopped", finishReason: "user_stopped", latencyMs: 700 }),
     ];
     for (const i of inputs) await recordRoutingOutcome(i);
     await markRoutingSignal(inputs[0].messageId, { regenerated: true, switchedModel: true });
@@ -81,10 +85,20 @@ if (!URL) {
     ).get(evidenceKey(modelId, "everyday"));
     const sql = (await aggregateRoutingEvidence(new Date(Date.now() - 60_000))).get(evidenceKey(modelId, "everyday"));
     assert.deepEqual(sql, pure);
-    assert.equal(sql?.n, 5);
+    assert.equal(sql?.n, 8);
     assert.equal(sql?.successes, 1, "only the untouched completed turn with tools counts");
+    assert.equal(sql?.errors, 3, "failed and partial are errors; a Stop is not");
     assert.equal(sql?.toolRoundsSum, 2);
-    assert.equal(sql?.latencyN, 4);
+    assert.equal(sql?.latencyN, 4, "latency from completed turns only");
+    assert.equal(sql?.latencyMsSum, 4 * 1200);
+  });
+
+  test("the first-token time is stored when measured", async () => {
+    const { prisma, recordRoutingOutcome } = await load();
+    const input = base({ firstTokenMs: 640.4 });
+    await recordRoutingOutcome(input);
+    const row = await prisma.routingOutcome.findUnique({ where: { messageId: input.messageId } });
+    assert.equal(row?.firstTokenMs, 640);
   });
 
   test("a thumbs-down's reason is mirrored as a category, and cleared with the rating", async () => {
