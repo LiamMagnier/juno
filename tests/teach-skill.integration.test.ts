@@ -1,7 +1,8 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import * as serverNavigation from "next/dist/client/components/navigation.react-server";
 
 /**
  * Teach Juno against real PostgreSQL: a taught skill is saved switched off
@@ -12,7 +13,11 @@ import { PrismaClient } from "@prisma/client";
  * of it, and provenance never points at another account's chat.
  *
  *   TEACH_TEST_DATABASE_URL=postgresql://juno@127.0.0.1:55471/juno_teach_test \
- *   NODE_OPTIONS=--conditions=react-server npx tsx --test tests/teach-skill.integration.test.ts
+ *   NODE_OPTIONS=--conditions=react-server \
+ *   npx tsx --test --experimental-test-module-mocks tests/teach-skill.integration.test.ts
+ *
+ * The route cases (the API as the page calls it, signed in as one account)
+ * need --experimental-test-module-mocks and skip without it.
  *
  * The database needs the schema (`prisma migrate deploy` against it).
  */
@@ -28,6 +33,24 @@ if (!DB_URL) {
   delete process.env.DATA_ENCRYPTION_KEYRING;
   process.env.AUTH_SECRET ??= "teach-local-test";
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+  const canMockModules = typeof (mock as { module?: unknown }).module === "function";
+  let signedIn: { id: string; email: string } | null = null;
+
+  test.before(() => {
+    if (!canMockModules) return;
+    mock.module("next/navigation", { namedExports: { ...serverNavigation } });
+    mock.module("@/lib/session", {
+      namedExports: {
+        getCurrentUser: async () => signedIn,
+        getCurrentDeviceSessionId: async () => null,
+        getSessionBan: async () => null,
+        requireUser: async () => {
+          if (!signedIn) throw new Error("signed out");
+          return signedIn;
+        },
+      },
+    });
+  });
 
   const body = (overrides: Record<string, unknown> = {}) => ({
     name: "File the monthly invoices",
@@ -49,7 +72,6 @@ if (!DB_URL) {
     t.after(async () => {
       await prisma.workAuditEvent.deleteMany({ where: { userId: { in: [me.id, other.id] } } });
       await prisma.user.deleteMany({ where: { id: { in: [me.id, other.id] } } });
-      await prisma.$disconnect();
     });
     const myChat = await prisma.conversation.create({ data: { userId: me.id, title: "Invoices" } });
     const theirChat = await prisma.conversation.create({ data: { userId: other.id, title: "Theirs" } });
@@ -196,4 +218,67 @@ if (!DB_URL) {
     assert.equal(blocked.ok && blocked.skill.enabled, false, "the scanner's block wins over any confirmation");
     assert.equal(blocked.ok && blocked.reason, "blocked");
   });
+
+  test(
+    "the routes, as the Teach page calls them: signed in, scoped to the account, off until confirmed",
+    { skip: !canMockModules && "needs --experimental-test-module-mocks" },
+    async (t) => {
+      const teach = await import("@/lib/skills/teach");
+      const suffix = randomUUID();
+      const me = await prisma.user.create({ data: { email: `teach-route-${suffix}@example.invalid` } });
+      const other = await prisma.user.create({ data: { email: `teach-route-other-${suffix}@example.invalid` } });
+      t.after(async () => {
+        signedIn = null;
+        await prisma.workAuditEvent.deleteMany({ where: { userId: { in: [me.id, other.id] } } });
+        await prisma.user.deleteMany({ where: { id: { in: [me.id, other.id] } } });
+        await prisma.$disconnect();
+      });
+      await prisma.project.create({ data: { userId: me.id, name: "Finance" } });
+      const route = await import("@/app/api/skills/teach/route");
+      const contextRoute = await import("@/app/api/skills/teach/context/route");
+      const editRoute = await import("@/app/api/skills/teach/[id]/route");
+      const revokeRoute = await import("@/app/api/skills/teach/[id]/revoke/route");
+      const post = (payload: unknown) =>
+        route.POST(new Request("http://localhost/api/skills/teach", { method: "POST", body: JSON.stringify(payload) }));
+      const params = (id: string) => ({ params: Promise.resolve({ id }) });
+
+      signedIn = null;
+      assert.equal((await post(body())).status, 401, "signed out is refused");
+
+      signedIn = { id: me.id, email: me.email! };
+      const invalid = await post({ name: "No steps", steps: [] });
+      assert.equal(invalid.status, 400);
+      assert.match((await invalid.json()).message, /at least one step/);
+
+      const key = `skill-draft:route-${suffix}:0`;
+      const payload = body({ key, source: { via: "conversation", conversationId: null } });
+      const fingerprint = teach.taughtPermissionFingerprint(teach.formFromSave(teach.taughtSkillSaveSchema.parse(payload)));
+      const created = await post({ ...payload, enable: true, acknowledged: fingerprint });
+      assert.equal(created.status, 201);
+      const saved = await created.json();
+      assert.equal(saved.outcome, "created");
+      assert.equal(saved.skill.enabled, true, "confirmed with the fingerprint being saved: on");
+
+      const byKey = await route.GET(new Request(`http://localhost/api/skills/teach?key=${encodeURIComponent(key)}`));
+      assert.equal((await byKey.json()).skill.id, saved.skill.id);
+      const context = await (await contextRoute.GET()).json();
+      assert.deepEqual(context.projects.map((p: { name: string }) => p.name), ["Finance"]);
+      assert.ok(Array.isArray(context.apps));
+
+      const edit = await (await editRoute.GET(new Request("http://localhost"), params(saved.skill.id))).json();
+      assert.deepEqual(edit.form.steps, payload.steps);
+      assert.equal(edit.origin.via, "conversation");
+
+      // Another account: the draft key, the skill and its revoke are all unknown.
+      signedIn = { id: other.id, email: other.email! };
+      assert.equal((await (await route.GET(new Request(`http://localhost/api/skills/teach?key=${encodeURIComponent(key)}`))).json()).skill, null);
+      assert.equal((await editRoute.GET(new Request("http://localhost"), params(saved.skill.id))).status, 404);
+      assert.equal((await revokeRoute.POST(new Request("http://localhost", { method: "POST" }), params(saved.skill.id))).status, 404);
+
+      signedIn = { id: me.id, email: me.email! };
+      const revoked = await revokeRoute.POST(new Request("http://localhost", { method: "POST" }), params(saved.skill.id));
+      assert.equal(revoked.status, 200);
+      assert.equal((await revoked.json()).skill.enabled, false);
+    }
+  );
 }
