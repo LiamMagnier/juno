@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 217,
-    "planned": 239,
+    "planned": 243,
     "web-only": 67,
     "unclassified": 0
   },
@@ -2038,6 +2038,47 @@
         "to"
       ]
     },
+    "ClientAppliedConditions": {
+      "type": "object",
+      "properties": {
+        "reasoningEffort": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "high",
+            "low",
+            "max",
+            "medium",
+            "minimal",
+            "xhigh",
+            null
+          ],
+          "x-native": "planned",
+          "x-native-note": "As ClientMessage.applied: the effort sent to the provider, null when none was sent."
+        },
+        "webSearch": {
+          "type": "boolean",
+          "x-native": "planned",
+          "x-native-note": "As ClientMessage.applied: provider web search was offered on the turn."
+        },
+        "usageBasis": {
+          "type": "string",
+          "enum": [
+            "estimated",
+            "reported"
+          ],
+          "x-native": "planned",
+          "x-native-note": "As ClientMessage.applied: \"reported\" (the provider's usage report) or \"estimated\" (characters / 4)."
+        }
+      },
+      "required": [
+        "reasoningEffort",
+        "webSearch",
+        "usageBasis"
+      ]
+    },
     "ClientArtifact": {
       "type": "object",
       "properties": {
@@ -2706,6 +2747,11 @@
           ],
           "x-native": "planned",
           "x-native-note": "Auto's routing receipt (which model it picked and why, src/lib/router/receipt.ts). The web shows it under an Auto reply; the Swift apps ignore the key until they draw the same receipt."
+        },
+        "applied": {
+          "$ref": "#/$defs/ClientAppliedConditions",
+          "x-native": "planned",
+          "x-native-note": "What a PRIVATE turn actually ran with (effort sent, web search offered, whether usage is reported or estimated), sent on private done frames only; saved turns omit it. The web's /compare panes read it; native /compare is planned (contracts/parity/features.json), and the Swift decoders ignore the key until then."
         }
       },
       "required": [

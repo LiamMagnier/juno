@@ -254,6 +254,22 @@
       "status": "planned",
       "note": "Auto's routing receipt (which model it picked and why, src/lib/router/receipt.ts). The web shows it under an Auto reply; the Swift apps ignore the key until they draw the same receipt."
     },
+    "ClientMessage.applied": {
+      "status": "planned",
+      "note": "What a PRIVATE turn actually ran with (effort sent, web search offered, whether usage is reported or estimated), sent on private done frames only; saved turns omit it. The web's /compare panes read it; native /compare is planned (contracts/parity/features.json), and the Swift decoders ignore the key until then."
+    },
+    "ClientAppliedConditions.reasoningEffort": {
+      "status": "planned",
+      "note": "As ClientMessage.applied: the effort sent to the provider, null when none was sent."
+    },
+    "ClientAppliedConditions.webSearch": {
+      "status": "planned",
+      "note": "As ClientMessage.applied: provider web search was offered on the turn."
+    },
+    "ClientAppliedConditions.usageBasis": {
+      "status": "planned",
+      "note": "As ClientMessage.applied: \"reported\" (the provider's usage report) or \"estimated\" (characters / 4)."
+    },
     "ClientAttachment.id": "native",
     "ClientAttachment.kind": "native",
     "ClientAttachment.fileName": "native",
