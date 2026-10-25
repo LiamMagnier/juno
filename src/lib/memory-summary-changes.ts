@@ -70,3 +70,48 @@ export function summaryInvalidations<P>(
       : db.projectMemorySummary.deleteMany({ where: { userId, projectId: scope } }),
   );
 }
+
+/**
+ * Take out of service the summaries a set of conversations' digests went into,
+ * before those conversations are deleted.
+ *
+ * A chat's one-line digest (ConversationMemory.digest) is a source of the
+ * summary of its scope — the account's for an unfiled chat, its project's for a
+ * filed one (gatherMemorySources / consolidateProjectMemory). Deleting the chat
+ * cascades the digest away and left the prose built from it: a deleted chat's
+ * topic went on being injected, as "top of mind", into every conversation of
+ * that scope until something unrelated forced a rebuild. Removing the summary
+ * with the delete makes the next turn read the facts, and the next
+ * consolidation rebuilds without the deleted chat.
+ *
+ * Facts learned in the chat are NOT deleted: they are the person's memory,
+ * listed and deletable on their own, and their provenance now says "from a
+ * chat you've since deleted" (memory-provenance.ts). Only chats that were ever
+ * digested invalidate anything, so deleting an unread chat costs no rebuild.
+ *
+ * Must run before the delete, in the same transaction: afterwards the digest
+ * rows, and with them the scopes, are gone.
+ */
+export async function invalidateSummariesForDeletedConversations(
+  db: {
+    conversationMemory: {
+      findMany(args: {
+        where: { userId: string; conversationId: { in: string[] }; digest: { not: null } };
+        select: { conversation: { select: { projectId: true } } };
+      }): Promise<{ conversation: { projectId: string | null } }[]>;
+    };
+    memorySummary: { deleteMany(args: { where: { userId: string } }): Promise<unknown> };
+    projectMemorySummary: { deleteMany(args: { where: { userId: string; projectId: string } }): Promise<unknown> };
+  },
+  userId: string,
+  conversationIds: readonly string[],
+): Promise<number> {
+  if (conversationIds.length === 0) return 0;
+  const digested = await db.conversationMemory.findMany({
+    where: { userId, conversationId: { in: [...conversationIds] }, digest: { not: null } },
+    select: { conversation: { select: { projectId: true } } },
+  });
+  const scopes = [...new Set(digested.map((row) => row.conversation.projectId ?? null))];
+  await Promise.all(summaryInvalidations(db, userId, scopes));
+  return scopes.length;
+}

@@ -2,7 +2,15 @@ import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { embedMemoryEntries, getSuppressions, refreshSummaries } from "@/lib/memory";
+import {
+  deleteMemoryEntries,
+  embedMemoryEntries,
+  getSuppressions,
+  refreshSummaries,
+  settleRewrittenFact,
+} from "@/lib/memory";
+import { memoryHistory } from "@/lib/memory-provenance";
+import { MEMORY_ENTRY_SELECT, loadProvenanceConversations, serializeMemoryEntry } from "@/lib/memory-view";
 import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
@@ -205,11 +213,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // The summary of the scope this fact was in quotes its old text (or, moved
   // into a project, quotes it to every chat outside that project). Out of
   // service with the write, not after a rebuild that may never land.
-  const staleSummaries =
-    existing.kind === "FACT" && (rewritten || moved) ? summaryInvalidations(prisma, user.id, [existing.projectId]) : [];
-  await prisma.$transaction([
-    ...staleSummaries,
-    prisma.memoryEntry.update({
+  const replaced = await prisma.$transaction(async (tx) => {
+    if (existing.kind === "FACT" && (rewritten || moved)) {
+      await Promise.all(summaryInvalidations(tx, user.id, [existing.projectId]));
+    }
+    await tx.memoryEntry.update({
       where: { id, userId: user.id },
       data: {
         ...(body.content !== undefined ? { content: body.content } : {}),
@@ -238,15 +246,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           : {}),
         lastVerifiedAt: new Date(),
       },
-    }),
-  ]);
+    });
+    // The new wording is something the person just said: whatever it now
+    // duplicates, contradicts or ends in its scope is retired in its favour,
+    // with a reason — the same rule as a typed add (writeManualFact). A move
+    // alone asserts nothing new, so it settles nothing.
+    return rewritten && existing.kind === "FACT" ? settleRewrittenFact(tx, user.id, id) : [];
+  });
   if (rewritten) {
     await embedMemoryEntries({ userId: user.id, rows: [{ id, content: body.content! }] });
   }
   if (rewritten || moved) {
     refreshSummariesLater(user.id, [existing.projectId, moved ? body.projectId ?? null : existing.projectId]);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, replaced });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -257,17 +270,50 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const existing = await prisma.memoryEntry.findFirst({ where: { id, userId: user.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.$transaction([
-    // Rows that pointed at this one as their replacement would otherwise keep a
-    // dangling id and render as "replaced by" nothing.
-    prisma.memoryEntry.updateMany({
-      where: { userId: user.id, supersededById: id },
-      data: { supersededById: null },
-    }),
-    prisma.memoryEntry.delete({ where: { id, userId: user.id } }),
-    // A summary that quotes the deleted fact must not be injected again.
-    ...(existing.kind === "FACT" ? summaryInvalidations(prisma, user.id, [existing.projectId]) : []),
-  ]);
+  // One implementation for every delete path (deleteMemoryEntries): the row,
+  // the pointers at it, every reason that quotes it, and the summaries of its
+  // scope — so a deleted fact is gone from memory, not only from its own row.
+  await prisma.$transaction((tx) => deleteMemoryEntries(tx, user.id, [id]));
   refreshSummariesLater(user.id, [existing.projectId]);
   return NextResponse.json({ ok: true });
+}
+
+/**
+ * "How do you know that?" — one memory with its provenance (why, when, from
+ * where, in what scope) and its history: what it replaced and what replaced
+ * it, each with the reason it changed.
+ */
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const row = await prisma.memoryEntry.findFirst({ where: { id, userId: user.id }, select: MEMORY_ENTRY_SELECT });
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // The trail lives in the reader's own FACT rows; a block-list row has none.
+  const trail =
+    row.kind === "FACT"
+      ? await prisma.memoryEntry.findMany({
+          where: { userId: user.id, kind: "FACT" },
+          select: {
+            id: true,
+            content: true,
+            status: true,
+            reason: true,
+            source: true,
+            kind: true,
+            supersededById: true,
+            createdAt: true,
+            observedAt: true,
+          },
+        })
+      : [];
+  const conversations = await loadProvenanceConversations(user.id, [row]);
+  const memory = serializeMemoryEntry(row, conversations);
+  return NextResponse.json({
+    memory,
+    provenance: memory.provenance,
+    history: row.kind === "FACT" ? memoryHistory(trail, id) : null,
+  });
 }

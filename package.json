@@ -23,7 +23,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
-    "test:memory:db": "NODE_OPTIONS=--conditions=react-server tsx --test --experimental-test-module-mocks tests/memory-persistence-db.test.ts",
+    "test:memory:db": "NODE_OPTIONS=--conditions=react-server tsx --test --experimental-test-module-mocks tests/memory-persistence-db.test.ts tests/memory-transparency-db.test.ts tests/memory-scope-db.test.ts tests/memory-clear-project-db.test.ts tests/chat-memory-sources-db.test.ts",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:native-auth": "tsx --test tests/native-auth-core.test.ts",
     "phase2:recovery:check": "node scripts/check-phase2-recovery.mjs",

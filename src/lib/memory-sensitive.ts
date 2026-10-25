@@ -204,3 +204,16 @@ const REFUSAL = {
 export function sensitiveRefusalMessage(topic: SensitiveTopic): string {
   return `${REFUSAL.lead} ${SENSITIVE_TOPIC_META[topic].label.toLowerCase()} ${REFUSAL.tail}`;
 }
+
+/**
+ * The topics an update turns OFF: allowed before, not after. Turning a topic
+ * on changes nothing already written; turning one off has to reach the prose a
+ * summary built while it was on — see the settings route.
+ */
+export function revokedSensitiveTopics(
+  before: readonly string[] | null | undefined,
+  after: readonly string[] | null | undefined
+): SensitiveTopic[] {
+  const next = new Set(normalizeSensitiveTopics(after));
+  return normalizeSensitiveTopics(before).filter((topic) => !next.has(topic));
+}

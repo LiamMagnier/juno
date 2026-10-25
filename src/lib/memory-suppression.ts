@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { contentMatchesTopic, topicOfStatement, topicRefusalMessage } from "@/lib/memory-topics";
 
 /**
  * The one door every MemoryEntry write goes through.
@@ -60,10 +61,48 @@ export function findSuppression(
   const c = normalizeStatement(candidate);
   if (!c) return null;
   for (const suppression of suppressions) {
+    // A TOPIC exclusion ("Anything about my divorce") is matched by the topic
+    // rule — every word of the topic present in the candidate as a word — not
+    // by containment of its own sentence, which no fact about the topic would
+    // ever contain. See memory-topics.ts. It is still one block-list, read by
+    // every writer through this one function.
+    const topic = topicOfStatement(suppression);
+    if (topic !== null) {
+      if (contentMatchesTopic(candidate, topic)) return suppression;
+      continue;
+    }
     const n = normalizeStatement(suppression);
     if (n.length > 0 && (c === n || c.includes(n) || n.includes(c))) return suppression;
   }
   return null;
+}
+
+/**
+ * Whether one sentence of GENERATED prose (a consolidated summary) says
+ * something on the block-list — the check run over a summary before it is
+ * stored, so a model that ignored "never include this" cannot put it back
+ * into every chat's context.
+ *
+ * Narrower than `findSuppression` on purpose. A topic is matched by the topic
+ * rule as everywhere else. A statement only when the sentence CONTAINS the
+ * whole forgotten statement: the reverse containment that `findSuppression`
+ * also accepts (a short candidate inside a long suppression) is right for a
+ * terse extracted fact and wrong for prose, where a one-word sentence ("Yes.")
+ * would be inside some suppression by accident and a paragraph would lose it.
+ */
+export function proseCoveredBySuppression(sentence: string, suppressions: readonly string[]): boolean {
+  const c = normalizeStatement(sentence);
+  if (!c) return false;
+  for (const suppression of suppressions) {
+    const topic = topicOfStatement(suppression);
+    if (topic !== null) {
+      if (contentMatchesTopic(sentence, topic)) return true;
+      continue;
+    }
+    const n = normalizeStatement(suppression);
+    if (n.length > 0 && c.includes(n)) return true;
+  }
+  return false;
 }
 
 /**
@@ -82,6 +121,11 @@ const REFUSAL_MESSAGE = {
 };
 
 export function suppressionRefusalMessage(suppression: string): string {
+  // A topic exclusion is refused in its own words: "not anything about my
+  // divorce" tells the person which switch to look for, where quoting the
+  // stored "Anything about my divorce" back as a forgotten statement does not.
+  const topic = topicOfStatement(suppression);
+  if (topic !== null) return topicRefusalMessage(topic);
   const quoted =
     suppression.length > QUOTED_SUPPRESSION_LIMIT
       ? `${suppression.slice(0, QUOTED_SUPPRESSION_LIMIT - 1)}…`

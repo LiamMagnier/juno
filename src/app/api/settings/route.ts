@@ -9,7 +9,7 @@ import { PERSONALITY_IDS } from "@/lib/personalities";
 import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
 import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
-import { SENSITIVE_TOPICS } from "@/lib/memory-sensitive";
+import { SENSITIVE_TOPICS, revokedSensitiveTopics } from "@/lib/memory-sensitive";
 import { AUTO_PREFERENCES } from "@/lib/router/decide";
 import { AUTO_DATA_BOUNDARIES } from "@/lib/router/data-policy";
 import { activeTtsProvider } from "@/lib/env";
@@ -153,6 +153,25 @@ export async function PATCH(req: Request) {
   }
 
   await ensureUserDefaults(user.id);
+  // Turning a sensitive topic OFF stops new facts on it at the write gate and
+  // stops the inferred ones already stored at the read gate — but a summary
+  // written while it was on still says them, in prose, to every chat. Those
+  // summaries go now; the next turn reads the facts (which the read gate
+  // filters) and the next consolidation rebuilds without the topic.
+  const revoked =
+    d.memorySensitiveTopics !== undefined
+      ? revokedSensitiveTopics(
+          (await prisma.settings.findUnique({ where: { userId: user.id }, select: { memorySensitiveTopics: true } }))
+            ?.memorySensitiveTopics,
+          d.memorySensitiveTopics
+        )
+      : [];
+  if (revoked.length > 0) {
+    await prisma.$transaction([
+      prisma.memorySummary.deleteMany({ where: { userId: user.id } }),
+      prisma.projectMemorySummary.deleteMany({ where: { userId: user.id } }),
+    ]);
+  }
   if (d.name !== undefined) {
     await prisma.user.update({ where: { id: user.id }, data: { name: d.name || null } });
   }

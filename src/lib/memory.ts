@@ -19,6 +19,11 @@ import {
 } from "@/lib/background-provider-policy";
 import {
   DEFAULT_MEMORY_TOKEN_BUDGET,
+  planDeletionEffects,
+  planRewriteEffects,
+  observedAtOf,
+  consolidationMayUse,
+  scrubSummaryForSuppressions,
   factsCoveredByForget,
   memoryForgetActivity,
   normalizeFact,
@@ -36,14 +41,24 @@ import {
   type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
 import { readerMayUse, readerMayUseSummary, type AgentMemoryAccess, type MemoryReader } from "@/lib/memory-scope";
-import { readMemorySummaryChanges } from "@/lib/memory-summary-changes";
+import { readMemorySummaryChanges, summaryInvalidations } from "@/lib/memory-summary-changes";
 import {
   SENSITIVE_TOPICS,
   SENSITIVE_TOPIC_META,
   normalizeSensitiveTopics,
   type SensitiveTopic,
 } from "@/lib/memory-sensitive";
-import { MEMORY_CONTENT_LIMIT, normalizeStatement } from "@/lib/memory-suppression";
+import {
+  MEMORY_CONTENT_LIMIT,
+  findSuppression,
+  normalizeStatement,
+  proseCoveredBySuppression,
+  screenMemoryWrite,
+  type MemoryWriteRefusal,
+} from "@/lib/memory-suppression";
+import { TOPIC_EXCLUSION_CATEGORY, topicOfStatement, topicStatement } from "@/lib/memory-topics";
+import type { MemoryCategory } from "@/lib/memory-categories";
+import type { Prisma } from "@prisma/client";
 import {
   budgetProjectFacts,
   projectConsolidationPrompt,
@@ -595,6 +610,21 @@ export async function newestSuppressionAt(userId: string): Promise<Date | null> 
   return row?.createdAt ?? null;
 }
 
+/**
+ * The block-list and its newest entry in one indexed read — what a chat turn
+ * needs both of (the statements to filter facts, the time to bench a summary
+ * written before the latest forget).
+ */
+export async function getSuppressionState(userId: string): Promise<{ statements: string[]; newestAt: Date | null }> {
+  const rows = await prisma.memoryEntry.findMany({
+    where: { userId, kind: "SUPPRESSION" },
+    select: { content: true, createdAt: true },
+  });
+  let newestAt: Date | null = null;
+  for (const row of rows) if (!newestAt || row.createdAt > newestAt) newestAt = row.createdAt;
+  return { statements: rows.map((row) => row.content), newestAt };
+}
+
 export interface ForgetOutcome {
   /** The statements recorded as suppressions (new ones only). */
   statements: string[];
@@ -634,6 +664,14 @@ export async function forgetStatements(
     ...new Map(
       statements
         .map((statement) => statement.trim().slice(0, MEMORY_CONTENT_LIMIT))
+        // "Never remember anything about my divorce", "topic: my divorce" and
+        // "Anything about my divorce" are one exclusion: stored in the one
+        // canonical phrasing, so the same topic asked twice is one row, and
+        // every surface that lists the block-list reads it the same way.
+        .map((statement) => {
+          const topic = topicOfStatement(statement);
+          return topic !== null ? topicStatement(topic) : statement;
+        })
         .filter((statement) => normalizeStatement(statement))
         .map((statement) => [normalizeStatement(statement), statement] as const)
     ).values(),
@@ -679,7 +717,9 @@ export async function forgetStatements(
           source: "MANUAL",
           kind: "SUPPRESSION",
           sourceRef: opts.conversationId ?? "forget",
-          category: "suppression",
+          // A whole topic, or one statement — the memory page lists the first
+          // as "topics not remembered", the second stays the block-list.
+          category: topicOfStatement(statement) !== null ? TOPIC_EXCLUSION_CATEGORY : "suppression",
           confidence: 1,
           // The column holds the LIFECYCLE's comparable form on every row,
           // suppressions included — that is what the page's Forget and the
@@ -1094,6 +1134,263 @@ export async function sweepExpiredMemories(userId: string, now: Date = new Date(
     data: { status: "expired", reason: "This was only true for a while, and that while has passed." },
   });
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// The person's own hand: manual writes, rewrites and deletes
+// ---------------------------------------------------------------------------
+
+/**
+ * A guarded interactive transaction or a plain one. Every manual write path
+ * runs inside one — the web routes on the guarded client, the native mutation
+ * route on the raw client — and the writes below must land atomically with
+ * whatever else that path does.
+ */
+type GuardedMemoryTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+export type MemoryTx = GuardedMemoryTransaction | Prisma.TransactionClient;
+
+export type ManualWriteOutcome =
+  | MemoryWriteRefusal
+  | {
+      ok: true;
+      /**
+       * created — a new row. confirmed — the same fact was already believed;
+       * it is now one you said yourself. reinstated — Juno had stopped
+       * believing it, and believes it again because you wrote it.
+       */
+      action: "created" | "confirmed" | "reinstated";
+      id: string;
+      content: string;
+      /** The row's status after the write — "active" in every case today; reported, not assumed. */
+      status: string;
+      /** Older beliefs this write retired, with the reason each now carries. */
+      replaced: { id: string; content: string; reason: string }[];
+      /** Whether the row needs a vector (new, or written before embedding existed). */
+      needsEmbedding: boolean;
+    };
+
+/** Retire `effects` in favour of `byId` — only rows still believed, so a race never un-retires anything. */
+async function retireInFavourOf(
+  db: Prisma.TransactionClient,
+  userId: string,
+  byId: string,
+  effects: readonly { entryId: string; reason: string }[],
+  entries: LifecycleEntry[],
+  replaced: { id: string; content: string; reason: string }[]
+): Promise<void> {
+  for (const effect of effects) {
+    if (effect.entryId === byId) continue;
+    const { count } = await db.memoryEntry.updateMany({
+      where: { id: effect.entryId, userId, status: "active" },
+      data: { status: "superseded", supersededById: byId, reason: effect.reason },
+    });
+    const row = entries.find((entry) => entry.id === effect.entryId);
+    if (row && count > 0) {
+      row.status = "superseded";
+      row.supersededById = byId;
+      replaced.push({ id: row.id, content: row.content, reason: effect.reason });
+    }
+  }
+}
+
+/**
+ * THE MANUAL WRITE DOOR: a fact the person typed — on the memory page, in an
+ * applied edit, on another device — written through the same lifecycle the
+ * extractor uses, so it supersedes what it contradicts, confirms what it
+ * repeats, and never sits beside a stale twin.
+ *
+ * Every manual path used to `create` its row and stop. The block-list was the
+ * only rule they shared (guardedMemoryWrite), so typing "I live in Porto"
+ * left "lives in Lisbon" believed beside it, and typing a fact Juno already
+ * knew made a second copy. Now: the block-list first (same refusal shapes as
+ * guardedMemoryWrite, so the routes' error handling is unchanged), then
+ * `planFactIngestion` as MANUAL, then `planRewriteEffects` for whatever else
+ * in the scope the written fact settles.
+ *
+ * The sensitive-topic switch does not apply: it governs what a background
+ * model may write down, not what the person may record themselves (the same
+ * exception planFactIngestion makes). The row is still flagged as sensitive
+ * wherever it is shown.
+ */
+export async function writeManualFact(
+  tx: MemoryTx,
+  opts: {
+    userId: string;
+    content: string;
+    projectId?: string | null;
+    /** The person filed it themselves; overrides the classifier. */
+    category?: MemoryCategory | null;
+    /** "manual" (memory page), "edit" (applied edit), "native" (another device). */
+    sourceRef: string;
+    now?: Date;
+  }
+): Promise<ManualWriteOutcome> {
+  const db = tx as Prisma.TransactionClient;
+  const now = opts.now ?? new Date();
+  const projectId = opts.projectId ?? null;
+  const rows = await db.memoryEntry.findMany({ where: { userId: opts.userId }, select: LIFECYCLE_SELECT });
+  const suppressions = rows.filter((row) => row.kind === "SUPPRESSION").map((row) => row.content);
+  const screened = screenMemoryWrite({ content: opts.content, kind: "FACT", suppressions });
+  if (!screened.ok) return screened;
+  const content = screened.content;
+  const entries: LifecycleEntry[] = rows.filter((row) => row.kind === "FACT");
+
+  const plan = planFactIngestion(
+    { content, source: "MANUAL", projectId, observedAt: now },
+    { entries, suppressions, now, allowedSensitiveTopics: SENSITIVE_TOPICS }
+  );
+  if (plan.action === "skip") {
+    // Screened above; a skip here is the empty case or a rule drift — refuse
+    // in the door's own words rather than writing anything.
+    if (plan.reason === "suppressed") {
+      const suppression = findSuppression(content, suppressions) ?? content;
+      return screenMemoryWrite({ content, kind: "FACT", suppressions: [suppression] }) as MemoryWriteRefusal;
+    }
+    return { ok: false, reason: "empty" };
+  }
+
+  const replaced: { id: string; content: string; reason: string }[] = [];
+  let id: string;
+  let action: "created" | "confirmed" | "reinstated";
+  let needsEmbedding: boolean;
+  let status: string;
+
+  if (plan.action === "refresh") {
+    const known = entries.find((entry) => entry.id === plan.entryId)!;
+    const believedAgain = plan.revive || !!plan.reinstate || known.status !== "active";
+    // Typed by the person: it is theirs now, whatever wrote it first. A
+    // retired row typed again is believed again unless the plan says the
+    // restating lost to something that outranks it.
+    const nextStatus = plan.revive || plan.reinstate ? "active" : known.status;
+    await db.memoryEntry.updateMany({
+      where: { id: known.id, userId: opts.userId },
+      data: {
+        source: "MANUAL",
+        confidence: Math.max(known.confidence, 0.9),
+        lastVerifiedAt: now,
+        observedAt: now,
+        status: nextStatus,
+        ...(nextStatus === "active" && known.status !== "active"
+          ? { supersededById: null, reason: plan.reinstate?.reason ?? `You wrote this again, so ${PRODUCT_NAME} believes it again.` }
+          : {}),
+        ...(plan.expiresAt !== undefined ? { expiresAt: plan.expiresAt } : {}),
+        ...(opts.category ? { category: opts.category } : {}),
+      },
+    });
+    known.status = nextStatus;
+    known.source = "MANUAL";
+    known.observedAt = now;
+    if (nextStatus === "active") known.supersededById = null;
+    id = known.id;
+    status = nextStatus;
+    action = believedAgain && nextStatus === "active" ? "reinstated" : "confirmed";
+    needsEmbedding = !known.embeddingModel;
+    if (plan.supersedes) await retireInFavourOf(db, opts.userId, id, [plan.supersedes], entries, replaced);
+    if (plan.resolves) await retireInFavourOf(db, opts.userId, id, plan.resolves, entries, replaced);
+  } else {
+    const created = await db.memoryEntry.create({
+      data: {
+        userId: opts.userId,
+        content: plan.content,
+        source: "MANUAL",
+        kind: "FACT",
+        sourceRef: opts.sourceRef,
+        category: opts.category ?? plan.category,
+        projectId,
+        confidence: plan.confidence,
+        status: plan.status,
+        reason: plan.reason ?? null,
+        expiresAt: plan.expiresAt,
+        observedAt: plan.observedAt,
+        supersededById: plan.supersededById ?? null,
+        normalized: plan.normalized,
+        lastVerifiedAt: now,
+      },
+      select: LIFECYCLE_SELECT,
+    });
+    entries.push(created);
+    id = created.id;
+    status = created.status;
+    action = "created";
+    needsEmbedding = true;
+    if (plan.supersedes) await retireInFavourOf(db, opts.userId, id, [plan.supersedes], entries, replaced);
+    if (plan.resolves) await retireInFavourOf(db, opts.userId, id, plan.resolves, entries, replaced);
+  }
+
+  // Whatever else in the scope the written fact settles — a second copy, a
+  // second conflicting value left by older data — beyond the one conflict
+  // ingestion resolves per fact.
+  if (status === "active") {
+    const effects = planRewriteEffects({ id, content, projectId }, entries, { now });
+    await retireInFavourOf(db, opts.userId, id, effects, entries, replaced);
+  }
+  return { ok: true, action, id, content, status, replaced, needsEmbedding };
+}
+
+/**
+ * After a fact was REWRITTEN in place (the pencil on the memory page, an
+ * applied edit's update, a native update): retire what the new wording
+ * duplicates, contradicts or ends in its scope. The rewrite itself is the
+ * caller's write; this is its consequence. Returns what was retired.
+ */
+export async function settleRewrittenFact(
+  tx: MemoryTx,
+  userId: string,
+  id: string,
+  now: Date = new Date()
+): Promise<{ id: string; content: string; reason: string }[]> {
+  const db = tx as Prisma.TransactionClient;
+  const rows = await db.memoryEntry.findMany({ where: { userId, kind: "FACT" }, select: LIFECYCLE_SELECT });
+  const written = rows.find((row) => row.id === id);
+  if (!written || written.status !== "active") return [];
+  const effects = planRewriteEffects({ id, content: written.content, projectId: written.projectId }, rows, { now });
+  const replaced: { id: string; content: string; reason: string }[] = [];
+  await retireInFavourOf(db, userId, id, effects, rows, replaced);
+  return replaced;
+}
+
+/**
+ * Delete memory rows for good, and everything in memory that still carries
+ * them: pointers at them, reasons that quote them (planDeletionEffects), and
+ * the summaries of every scope a deleted FACT was in — removed in the same
+ * transaction, so the next turn reads the facts themselves instead of prose
+ * that still says the deleted thing.
+ *
+ * The one implementation behind the memory page's delete, an applied edit's
+ * removal and the native `memory.delete`. Returns what was deleted, so the
+ * caller can schedule summary rebuilds for those scopes.
+ */
+export async function deleteMemoryEntries(
+  tx: MemoryTx,
+  userId: string,
+  ids: readonly string[]
+): Promise<{ id: string; kind: string; projectId: string | null; content: string }[]> {
+  if (ids.length === 0) return [];
+  const db = tx as Prisma.TransactionClient;
+  const doomed = await db.memoryEntry.findMany({
+    where: { userId, id: { in: [...ids] } },
+    select: { id: true, kind: true, projectId: true, content: true },
+  });
+  if (doomed.length === 0) return [];
+  const doomedIds = doomed.map((row) => row.id);
+  const survivors = await db.memoryEntry.findMany({
+    where: {
+      userId,
+      id: { notIn: doomedIds },
+      OR: [{ supersededById: { in: doomedIds } }, { reason: { not: null } }],
+    },
+    select: { id: true, supersededById: true, reason: true, status: true },
+  });
+  for (const effect of planDeletionEffects(doomed, survivors)) {
+    await db.memoryEntry.updateMany({
+      where: { id: effect.id, userId },
+      data: { ...(effect.clearSupersededBy ? { supersededById: null } : {}), reason: effect.reason },
+    });
+  }
+  await db.memoryEntry.deleteMany({ where: { userId, id: { in: doomedIds } } });
+  const scopes = doomed.filter((row) => row.kind === "FACT").map((row) => row.projectId);
+  if (scopes.length > 0) await Promise.all(summaryInvalidations(db, userId, scopes));
+  return doomed;
 }
 
 // ---------------------------------------------------------------------------
@@ -1674,11 +1971,18 @@ export async function getMemoryProfile(
   // reads in isolation, the account's otherwise. Never the account's inside a
   // project — that is the isolation.
   const summaryScope = isolate && projectId ? projectId : null;
-  const [storedSummary, forgottenAt, changes] = await Promise.all([
+  const [storedSummary, blockList, changes, allowedSensitiveTopics] = await Promise.all([
     summaryScope ? getProjectMemorySummary(userId, summaryScope) : getMemorySummary(userId),
-    newestSuppressionAt(userId),
+    // The read side of the block-list (a fact it covers is never context,
+    // whatever its status says — see selectMemoriesForContext) and the time of
+    // the newest forget, in one read of a handful of rows.
+    getSuppressionState(userId),
     readMemorySummaryChanges({ userId, projectId: summaryScope, now }, (args) => prisma.memoryEntry.findFirst(args)),
+    // And the sensitive switches as they stand now.
+    loadAllowedSensitiveTopics(userId),
   ]);
+  const forgottenAt = blockList.newestAt;
+  const suppressions = blockList.statements;
   // A summary written before the newest "forget" still says the forgotten
   // thing, in prose, and would be injected whole — so it sits this turn out and
   // the ranked facts, which already exclude everything retired, stand in. The
@@ -1744,6 +2048,8 @@ export async function getMemoryProfile(
     isolateProjectMemory: isolate,
     now,
     budgetTokens: opts.budgetTokens ?? DEFAULT_MEMORY_TOKEN_BUDGET,
+    suppressions,
+    allowedSensitiveTopics,
     ...(semantic ? { semantic } : {}),
   });
 
@@ -1859,11 +2165,20 @@ async function gatherGithubContext(userId: string): Promise<string[]> {
 }
 
 export async function gatherMemorySources(userId: string): Promise<MemorySources> {
-  const [entries, digestRows, projectRows, githubLines] = await Promise.all([
+  const [entries, digestRows, projectRows, githubLines, allowedSensitiveTopics] = await Promise.all([
     prisma.memoryEntry.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
-      select: { content: true, createdAt: true, kind: true, status: true, projectId: true, expiresAt: true },
+      select: {
+        content: true,
+        createdAt: true,
+        observedAt: true,
+        source: true,
+        kind: true,
+        status: true,
+        projectId: true,
+        expiresAt: true,
+      },
     }),
     // Digests of chats OUTSIDE projects only. A project chat's digest is part
     // of that project's memory and goes into that project's summary; here it
@@ -1882,7 +2197,9 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
       select: { name: true, instructions: true },
     }),
     gatherGithubContext(userId),
+    loadAllowedSensitiveTopics(userId),
   ]);
+  const suppressions = entries.filter((e) => e.kind === "SUPPRESSION").map((e) => e.content);
 
   // Newest facts always make the budget; drop the OLDEST when over.
   //
@@ -1893,26 +2210,41 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
   // excluded for the same reason in time rather than space: they are what Juno
   // used to believe.
   const now = new Date();
-  const factRows = entries.filter(
-    (e) =>
-      e.kind === "FACT" &&
-      e.status === "active" &&
-      e.projectId === null &&
-      (e.expiresAt === null || e.expiresAt > now)
-  );
+  //
+  // And only what the chat itself may use (consolidationMayUse): never a fact
+  // the block-list covers, never an inferred fact on a sensitive topic the
+  // account has switched off. The summary is the densest copy of memory there
+  // is; it must not hold what the facts themselves are kept from saying.
+  const factRows = entries
+    .filter(
+      (e) =>
+        e.kind === "FACT" &&
+        e.status === "active" &&
+        e.projectId === null &&
+        (e.expiresAt === null || e.expiresAt > now)
+    )
+    .filter((e) => consolidationMayUse(e, suppressions, allowedSensitiveTopics))
+    // Dated, and ordered, by when each was SAID: "most recent wins" in the
+    // prompt has to mean the most recently said, not the most recently read.
+    .sort((a, b) => observedAtOf(a).getTime() - observedAtOf(b).getTime());
   const facts: MemorySources["facts"] = [];
   let used = 0;
   for (let i = factRows.length - 1; i >= 0; i--) {
     const f = factRows[i];
     if (used + f.content.length > FACT_CHAR_BUDGET) break;
-    facts.unshift({ content: f.content, createdAt: f.createdAt });
+    facts.unshift({ content: f.content, createdAt: observedAtOf(f) });
     used += f.content.length;
   }
 
   return {
     facts,
-    suppressions: entries.filter((e) => e.kind === "SUPPRESSION").map((e) => e.content),
-    digests: digestRows.map((d) => d.digest!).filter(Boolean),
+    suppressions,
+    // A digest is a one-line topic of a chat; one that names a forgotten
+    // statement or an excluded topic is not shown to the summariser at all.
+    digests: digestRows
+      .map((d) => d.digest!)
+      .filter(Boolean)
+      .filter((digest) => !proseCoveredBySuppression(digest, suppressions)),
     projectLines: projectRows.map(
       (p) => `${p.name}${p.instructions ? ` — instructions: ${p.instructions.replace(/\s+/g, " ").slice(0, 300)}` : ""}`
     ),
@@ -2027,7 +2359,13 @@ Rules:
   // better than none, and the next run replaces it.
   if (!result) return { status: "failed", transient };
 
-  const content = result;
+  // Checked, not trusted: a sentence the block-list covers is cut before the
+  // summary is stored, whatever the model made of the instruction.
+  const content = scrubSummaryForSuppressions(result, sources.suppressions);
+  if (!content.trim()) {
+    await prisma.memorySummary.deleteMany({ where: { userId: opts.userId } });
+    return { status: "empty" };
+  }
   // Account-wide facts only: the count is what `maybeConsolidate` compares to
   // decide the summary is stale, and a fact learned in a project changes that
   // project's summary, never this one.
@@ -2202,7 +2540,7 @@ export async function consolidateProjectMemory(opts: {
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
       orderBy: { createdAt: "asc" },
-      select: { content: true, createdAt: true },
+      select: { content: true, createdAt: true, observedAt: true, source: true },
     }),
     getSuppressions(userId),
     prisma.conversationMemory.findMany({
@@ -2212,6 +2550,7 @@ export async function consolidateProjectMemory(opts: {
       select: { digest: true },
     }),
   ]);
+  const allowedSensitiveTopics = await loadAllowedSensitiveTopics(userId);
   if (!project) {
     await removeSummary();
     return { status: "empty" };
@@ -2220,8 +2559,18 @@ export async function consolidateProjectMemory(opts: {
   const sources = {
     projectName: project.name,
     instructions: project.instructions,
-    facts: budgetProjectFacts(factRows),
-    digests: digestRows.map((row) => row.digest!).filter(Boolean),
+    // The account's read gates, and dates by when each fact was said — as for
+    // the account summary (gatherMemorySources).
+    facts: budgetProjectFacts(
+      factRows
+        .filter((row) => consolidationMayUse(row, suppressions, allowedSensitiveTopics))
+        .map((row) => ({ content: row.content, createdAt: observedAtOf(row) }))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    ),
+    digests: digestRows
+      .map((row) => row.digest!)
+      .filter(Boolean)
+      .filter((digest) => !proseCoveredBySuppression(digest, suppressions)),
     suppressions,
   };
   if (projectSummaryIsEmpty(sources)) {
@@ -2251,7 +2600,11 @@ export async function consolidateProjectMemory(opts: {
   // As for the account: a failure leaves the previous summary in place.
   if (!result) return { status: "failed", transient };
 
-  const content = result;
+  const content = scrubSummaryForSuppressions(result, suppressions);
+  if (!content.trim()) {
+    await removeSummary();
+    return { status: "empty" };
+  }
   // Every FACT in the project, whatever its status — the change detector
   // `maybeConsolidateProject` compares against, exactly as for the account.
   const factCount = await prisma.memoryEntry.count({ where: { userId, projectId, kind: "FACT" } });

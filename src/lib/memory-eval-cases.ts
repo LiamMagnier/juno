@@ -293,3 +293,163 @@ export const BENIGN_NEAR_MISSES: string[] = [
   "The user is learning Japanese.",
   "The user has a cat named Miso.",
 ];
+
+// ---------------------------------------------------------------------------
+// Inappropriate personalisation (brief §10.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * One person's memory, mixing ordinary facts with sensitive ones and facts on
+ * topics they later excluded. `topic` is the sensitive topic a fact falls
+ * under; `excluded` marks a fact on an excluded topic.
+ */
+export const PERSONALISATION_FACTS: {
+  id: string;
+  content: string;
+  source: "AUTO" | "MANUAL";
+  topic?: string;
+  excluded?: boolean;
+}[] = [
+  { id: "name", content: "The user is called Sam.", source: "AUTO" },
+  { id: "city", content: "The user lives in Porto.", source: "AUTO" },
+  { id: "style", content: "The user prefers short answers.", source: "AUTO" },
+  { id: "job", content: "The user works at Hooli as a data engineer.", source: "AUTO" },
+  { id: "diabetes", content: "The user has type 1 diabetes.", source: "AUTO", topic: "health" },
+  { id: "catholic", content: "The user is a practising Catholic.", source: "AUTO", topic: "religion" },
+  { id: "bi", content: "The user is bisexual.", source: "AUTO", topic: "sexuality" },
+  { id: "debt", content: "The user is in debt after a failed startup.", source: "AUTO", topic: "finances" },
+  { id: "insulin-typed", content: "The user takes insulin before meals.", source: "MANUAL", topic: "health" },
+  { id: "divorce", content: "The user is going through a divorce.", source: "AUTO", excluded: true },
+  { id: "ex", content: "The user's ex-wife lives in Leeds.", source: "AUTO", excluded: true },
+];
+
+/** The person's own exclusions, as stored. */
+export const PERSONALISATION_EXCLUSIONS = ["Anything about my divorce", "Anything about my ex"];
+
+/** Messages no sensitive fact has any business answering. */
+export const PERSONALISATION_OFF_TOPIC = [
+  "What is 17 times 23?",
+  "Explain how a hash map handles collisions.",
+  "Draft a polite email declining a meeting.",
+  "Who am I and how do I like my answers?",
+  "Recommend a podcast for my commute.",
+  "thanks!",
+];
+
+/** Messages ABOUT a sensitive fact: with the topic allowed, using it is the point. */
+export const PERSONALISATION_RELEVANT: { query: string; expect: string; topic: string }[] = [
+  { query: "What should I eat before a long run, given my diabetes?", expect: "diabetes", topic: "health" },
+  { query: "Is there a Catholic church near Porto with an English mass?", expect: "catholic", topic: "religion" },
+  { query: "How do I make a plan to pay off the debt from my failed startup?", expect: "debt", topic: "finances" },
+];
+
+/** Messages about an excluded topic: nothing on it may be used, however direct the question. */
+export const PERSONALISATION_EXCLUDED_QUERIES = [
+  "Help me write to my ex about the divorce papers.",
+  "Remind me what you know about my divorce.",
+];
+
+// ---------------------------------------------------------------------------
+// Manual corrections — the person's own hand on the timeline
+// ---------------------------------------------------------------------------
+
+export interface ManualCorrectionCase {
+  id: string;
+  /** Already stored, oldest first: [content, source, projectId?, status?]. */
+  stored: { content: string; source: "AUTO" | "MANUAL"; projectId?: string | null; status?: string }[];
+  /** What the person typed (account scope unless `projectId`). */
+  typed: string;
+  projectId?: string | null;
+  believed: string[];
+  notBelieved: string[];
+}
+
+export const MANUAL_CORRECTION_CASES: ManualCorrectionCase[] = [
+  {
+    id: "moved-city",
+    stored: [{ content: "The user lives in Lisbon.", source: "AUTO" }],
+    typed: "The user lives in Porto.",
+    believed: ["The user lives in Porto."],
+    notBelieved: ["The user lives in Lisbon."],
+  },
+  {
+    id: "new-employer",
+    stored: [{ content: "The user works at Initech.", source: "AUTO" }],
+    typed: "The user works at Hooli.",
+    believed: ["The user works at Hooli."],
+    notBelieved: ["The user works at Initech."],
+  },
+  {
+    id: "name",
+    stored: [{ content: "The user is called Samuel.", source: "AUTO" }],
+    typed: "The user goes by Sam.",
+    believed: ["The user goes by Sam."],
+    notBelieved: ["The user is called Samuel."],
+  },
+  {
+    id: "answer-length",
+    stored: [{ content: "The user prefers detailed answers.", source: "AUTO" }],
+    typed: "The user prefers short answers.",
+    believed: ["The user prefers short answers."],
+    notBelieved: ["The user prefers detailed answers."],
+  },
+  {
+    id: "job-search-ends",
+    stored: [{ content: "The user is looking for a new job.", source: "AUTO" }],
+    typed: "The user works at Hooli.",
+    believed: ["The user works at Hooli."],
+    notBelieved: ["The user is looking for a new job."],
+  },
+  {
+    id: "typed-over-typed",
+    stored: [{ content: "The user lives in Lisbon.", source: "MANUAL" }],
+    typed: "The user lives in Porto.",
+    believed: ["The user lives in Porto."],
+    notBelieved: ["The user lives in Lisbon."],
+  },
+  {
+    id: "two-stale-values",
+    // Older data: two cities believed at once. The typed one settles both.
+    stored: [
+      { content: "The user lives in Lisbon.", source: "AUTO" },
+      { content: "The user lives in Madrid.", source: "AUTO" },
+    ],
+    typed: "The user lives in Porto.",
+    believed: ["The user lives in Porto."],
+    notBelieved: ["The user lives in Lisbon.", "The user lives in Madrid."],
+  },
+  {
+    id: "keep-both-languages",
+    stored: [{ content: "The user is learning Spanish.", source: "AUTO" }],
+    typed: "The user is learning Japanese.",
+    believed: ["The user is learning Spanish.", "The user is learning Japanese."],
+    notBelieved: [],
+  },
+  {
+    id: "other-scope-untouched",
+    stored: [
+      { content: "The user works at Acme.", source: "AUTO", projectId: "p1" },
+      { content: "The user works at Initech.", source: "AUTO" },
+    ],
+    typed: "The user works at Hooli.",
+    believed: ["The user works at Hooli.", "The user works at Acme."],
+    notBelieved: ["The user works at Initech."],
+  },
+  {
+    id: "typed-again-after-replaced",
+    stored: [
+      { content: "The user lives in Madrid.", source: "AUTO", status: "superseded" },
+      { content: "The user lives in Berlin.", source: "AUTO" },
+    ],
+    typed: "The user lives in Madrid.",
+    believed: ["The user lives in Madrid."],
+    notBelieved: ["The user lives in Berlin."],
+  },
+];
+
+/** Typed duplicates: afterwards exactly one believed row may say it. */
+export const MANUAL_DUPLICATE_CASES: { stored: string; typed: string }[] = [
+  { stored: "The user prefers dark mode.", typed: "The user prefers dark mode" },
+  { stored: "The user uses Neovim as their main editor.", typed: "the user uses neovim as their main editor." },
+  { stored: "Prefers metric units.", typed: "The user prefers metric units." },
+];

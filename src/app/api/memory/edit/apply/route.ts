@@ -2,12 +2,21 @@ import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { consolidateWithFallback, embedMemoryEntries, getMemorySummary, refreshSummaries } from "@/lib/memory";
+import {
+  consolidateWithFallback,
+  deleteMemoryEntries,
+  embedMemoryEntries,
+  getMemorySummary,
+  refreshSummaries,
+  settleRewrittenFact,
+  writeManualFact,
+} from "@/lib/memory";
+import { TOPIC_EXCLUSION_CATEGORY, topicOfStatement, topicStatement } from "@/lib/memory-topics";
 import { checkProjectAccess } from "@/lib/project-collaboration";
 import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 import { factFields } from "@/lib/memory-lifecycle";
 import { summaryInvalidations } from "@/lib/memory-summary-changes";
-import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
+import { MEMORY_ENTRY_SELECT, loadProvenanceConversations, serializeMemoryEntry } from "@/lib/memory-view";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -86,6 +95,8 @@ export async function POST(req: Request) {
   }
 
   const inverse: Operation[] = [];
+  // Scopes in which an added fact replaced older beliefs: their summaries rebuild after.
+  const replacedScopes: (string | null)[] = [];
   // Facts this edit wrote or rewrote, owed a vector once the transaction holds.
   const touched: { id: string; content: string }[] = [];
   // A refused write aborts the whole edit rather than applying the rest of it:
@@ -108,31 +119,58 @@ export async function POST(req: Request) {
         ).map((r) => r.content);
 
       for (const op of ops) {
-        if (op.op === "add") {
+        if (op.op === "add" && !op.suppress) {
+          // A fact: through the manual write door, so an edit that says "I
+          // moved to Porto" replaces "lives in Lisbon" rather than adding a
+          // second city, and one that restates a known fact confirms it
+          // rather than copying it (writeManualFact).
+          const outcome = await writeManualFact(tx, {
+            userId: user.id,
+            content: op.content,
+            projectId: op.projectId ?? null,
+            sourceRef: "edit",
+          });
+          if (!outcome.ok) {
+            refusal = outcome;
+            throw new SuppressedWrite();
+          }
+          if (outcome.needsEmbedding) touched.push({ id: outcome.id, content: outcome.content });
+          // Undo removes what this created — never a fact that was already
+          // believed and merely confirmed — and puts back what it replaced:
+          // re-adding a replaced belief reinstates its own row, which in turn
+          // retires this one with its history intact. A row brought back that
+          // replaced nothing has nothing to be retired by, so it is removed.
+          const removable =
+            outcome.action === "created" || (outcome.action === "reinstated" && outcome.replaced.length === 0);
+          if (removable) inverse.push({ op: "remove", id: outcome.id, before: outcome.content });
+          for (const old of outcome.replaced) inverse.push({ op: "add", content: old.content, ...(op.projectId ? { projectId: op.projectId } : {}) });
+          replacedScopes.push(op.projectId ?? null);
+        } else if (op.op === "add") {
           // Applied edits wrote straight to the table, so "forget my old job"
           // followed by any instruction that re-stated it put it right back.
+          // A whole topic ("Anything about my divorce") is stored in its one
+          // canonical phrasing, like a forget said in chat (forgetStatements).
+          const topic = topicOfStatement(op.content);
+          const statement = topic !== null ? topicStatement(topic) : op.content;
           const outcome = await guardedMemoryWrite({
-            content: op.content,
-            kind: op.suppress ? "SUPPRESSION" : "FACT",
+            content: statement,
+            kind: "SUPPRESSION",
             loadSuppressions: suppressions,
             write: (content) => {
-              // Classified and normalized on the same path as every other write:
-              // a fact added by an edit that carried no category would show up as
-              // "Uncategorised" and, worse, be invisible to duplicate detection.
               const fields = factFields(content, { source: "MANUAL" });
               return tx.memoryEntry.create({
                 data: {
                   userId: user.id,
                   content,
                   source: "MANUAL",
-                  kind: op.suppress ? "SUPPRESSION" : "FACT",
+                  kind: "SUPPRESSION",
                   sourceRef: "edit",
-                  category: op.suppress ? "suppression" : fields.category,
+                  category: topic !== null ? TOPIC_EXCLUSION_CATEGORY : "suppression",
                   // Suppressions are account-wide by definition.
-                  projectId: op.suppress ? null : op.projectId ?? null,
+                  projectId: null,
                   confidence: fields.confidence,
                   normalized: fields.normalized,
-                  expiresAt: op.suppress ? null : fields.expiresAt,
+                  expiresAt: null,
                   observedAt: new Date(),
                   lastVerifiedAt: new Date(),
                 },
@@ -145,8 +183,7 @@ export async function POST(req: Request) {
             throw new SuppressedWrite();
           }
           // Suppressions are matched by their normalized text, never by vector.
-          if (!op.suppress) touched.push({ id: outcome.value.id, content: outcome.content });
-          inverse.push({ op: "remove", id: outcome.value.id, before: op.content });
+          inverse.push({ op: "remove", id: outcome.value.id, before: outcome.content });
         } else if (op.op === "update") {
           const row = byId.get(op.id)!;
           const outcome = await guardedMemoryWrite({
@@ -183,22 +220,22 @@ export async function POST(req: Request) {
             refusal = outcome;
             throw new SuppressedWrite();
           }
+          inverse.push({ op: "update", id: op.id, before: op.content, content: row.content });
           if (row.kind === "FACT") {
             touched.push({ id: op.id, content: outcome.content });
             // The summary quoting the old text is out of service until rebuilt.
             await Promise.all(summaryInvalidations(tx, user.id, [row.projectId]));
+            // The new wording settles its scope like a typed fact does; Undo
+            // puts back whatever it replaced.
+            for (const old of await settleRewrittenFact(tx, user.id, op.id)) {
+              inverse.push({ op: "add", content: old.content, ...(row.projectId ? { projectId: row.projectId } : {}) });
+            }
           }
-          inverse.push({ op: "update", id: op.id, before: op.content, content: row.content });
         } else {
           const row = byId.get(op.id)!;
-          // Clear the back-pointers first: a row deleted while another names it
-          // as its replacement leaves a "replaced by" that resolves to nothing.
-          await tx.memoryEntry.updateMany({
-            where: { userId: user.id, supersededById: op.id },
-            data: { supersededById: null },
-          });
-          await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
-          if (row.kind === "FACT") await Promise.all(summaryInvalidations(tx, user.id, [row.projectId]));
+          // The row, the pointers at it, the reasons quoting it and its
+          // scope's summary — the one delete every path shares.
+          await deleteMemoryEntries(tx, user.id, [op.id]);
           // Undoing the removal must restore the same KIND (a deleted suppression
           // comes back as a suppression, not as a fact).
           inverse.push({
@@ -240,6 +277,7 @@ export async function POST(req: Request) {
     ...new Set([
       ...referenced.flatMap((row) => (row.projectId ? [row.projectId] : [])),
       ...addScopes,
+      ...replacedScopes.filter((scope): scope is string => scope !== null),
     ]),
   ];
   if (projectScopes.length > 0) {
@@ -255,8 +293,9 @@ export async function POST(req: Request) {
     getMemorySummary(user.id),
   ]);
 
+  const conversations = await loadProvenanceConversations(user.id, memories);
   return NextResponse.json({
-    memories: memories.map(serializeMemoryEntry),
+    memories: memories.map((row) => serializeMemoryEntry(row, conversations)),
     summary: summary
       ? { content: summary.content, updatedAt: summary.updatedAt.toISOString(), entryCount: summary.entryCount }
       : null,

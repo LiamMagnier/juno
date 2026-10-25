@@ -114,7 +114,7 @@
     }
   },
   "current": {
-    "recordedAt": "2026-10-14",
+    "recordedAt": "2026-10-25",
     "results": {
       "lifecycle": {
         "live": {
@@ -196,13 +196,40 @@
         "hitAt1": 6,
         "hitAt5": 6,
         "legacyWindowHitAt5": 1
+      },
+      "personalisation": {
+        "checks": 18,
+        "inappropriate": 0,
+        "sensitiveOffTopic": 0,
+        "revokedTopic": 0,
+        "excludedTopic": 0,
+        "legacyInappropriate": 20,
+        "appropriate": 3,
+        "appropriateUsed": 3,
+        "typed": 1,
+        "typedKept": 1
+      },
+      "deletion": {
+        "checks": 14,
+        "leaks": 0,
+        "legacyLeaks": 9,
+        "leakDetail": []
+      },
+      "manual": {
+        "cases": 10,
+        "passed": 10,
+        "legacyPassed": 1,
+        "duplicates": 3,
+        "duplicatesLeft": 0,
+        "legacyDuplicatesLeft": 3,
+        "failures": []
       }
     },
     "latency": {
-      "factSelectP50Ms": 2.42,
-      "factSelectP95Ms": 2.92,
-      "recallRankP50Ms": 0.01,
-      "recallRankP95Ms": 0.16
+      "factSelectP50Ms": 5.48,
+      "factSelectP95Ms": 11.13,
+      "recallRankP50Ms": 0.02,
+      "recallRankP95Ms": 0.38
     }
   }
 }

@@ -9,6 +9,8 @@
  * What remains local is a one-time migration of any stranded ledger.
  */
 
+import type { MemoryProvenance } from "@/lib/memory-provenance";
+
 export interface Memory {
   id: string;
   content: string;
@@ -45,6 +47,18 @@ export interface Memory {
    * recognise renders as a generic "Sensitive" chip, never as a crash.
    */
   sensitive: string | null;
+  /**
+   * When the person SAID it — the source message's time — as opposed to
+   * `createdAt`, when Juno wrote it down. Null on rows older than the column,
+   * and absent from fixtures: read `createdAt` then.
+   */
+  observedAt?: string | null;
+  /**
+   * Why, when and from where, resolved server-side so the page, the native
+   * app and the export give one answer (src/lib/memory-provenance.ts).
+   * Optional: a fixture or an older server may not send it.
+   */
+  provenance?: MemoryProvenance;
 }
 
 export interface SummaryData {
