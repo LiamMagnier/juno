@@ -186,6 +186,8 @@ export async function mcpConnector(ctx: ExecutionContext): Promise<void> {
   const port = await listen(http);
   const mcpUrl = `http://localhost:${port}/mcp`;
   const client: Record<string, unknown> = {};
+  // A product error is recorded in the trace rather than thrown, so the
+  // validators can say which step broke (probe, sign-in, list or call).
   try {
     const probe = await probeCustomMcpServer(mcpUrl);
     client.probeOk = probe.ok;
@@ -206,6 +208,8 @@ export async function mcpConnector(ctx: ExecutionContext): Promise<void> {
     const content = (result.content as Array<{ type: string; text?: string }>) ?? [];
     client.callResult = content.map((c) => c.text ?? "").join("");
     await mcp.close();
+  } catch (error) {
+    client.error = (error as Error).message ?? String(error);
   } finally {
     await close(http);
     env.NODE_ENV = previousEnv;
@@ -557,8 +561,13 @@ export async function stallWatchdog(ctx: ExecutionContext): Promise<void> {
   let lastEventAt = 0;
   let stalledAt = -1;
   const stalled = await new Promise<boolean>((resolve) => {
+    // A referenced guard: the watchdog's own timer is unref'd (it must never
+    // hold a server open), so without this the process could exit mid-wait.
+    // It also bounds the wait when the watchdog never fires.
+    const guard = setTimeout(() => resolve(false), 3_000);
     const watchdog = createStallWatchdog(() => {
       stalledAt = now();
+      clearTimeout(guard);
       resolve(true);
     }, idleMs, 2_000);
     let i = 0;
@@ -572,15 +581,6 @@ export async function stallWatchdog(ctx: ExecutionContext): Promise<void> {
       // …then the provider goes silent.
     };
     tick();
-    // A referenced guard: the watchdog's own timer is unref'd (it must never
-    // hold a server open), so without this the process could exit mid-wait.
-    const guard = setTimeout(() => resolve(false), 3_000);
-    const clear = setInterval(() => {
-      if (stalledAt >= 0) {
-        clearTimeout(guard);
-        clearInterval(clear);
-      }
-    }, 20);
   });
   // Second scenario: a tool runs longer than the idle window under a hold.
   const holdStalled = await new Promise<boolean>((resolve) => {

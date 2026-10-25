@@ -234,6 +234,8 @@ describe("runner", () => {
     const reviewed = await rescoreRecord(record, wf, out, opts);
     assert.equal(reviewed.state, "passed");
     assert.equal(reviewed.firstAttemptPassed, true);
+    const overBudget = await rescoreRecord({ ...record, cost: { ...record.cost, usd: 1 } }, wf, out, opts);
+    assert.equal(overBudget.state, "failed", "the budget rule applies on rescore too");
     writeFileSync(path.join(attemptDir, "outputs/answer.md"), "ANSWER: 42 (edited after review)\n");
     assert.equal((await rescoreRecord(record, wf, out, opts)).state, "failed");
   });

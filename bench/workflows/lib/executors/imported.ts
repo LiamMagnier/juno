@@ -131,6 +131,7 @@ export function importedExecutor(options: { dir: string; product: ProductInfo; s
           ? ({ kind: "completed" } as const)
           : ({ kind: result.status === "timeout" ? "timeout" : "errored", error: result.error || result.reason || result.status } as const);
       const interventions = (result.humanInterventions ?? []).filter((h) => !/^approval\b/i.test(h));
+      const usd = typeof result.costUsd === "number" && Number.isFinite(result.costUsd) && result.costUsd >= 0 ? result.costUsd : null;
       return {
         outcome,
         executorIdentity: result.executorIdentity ?? "imported",
@@ -142,8 +143,8 @@ export function importedExecutor(options: { dir: string; product: ProductInfo; s
         model: result.model,
         settings: { ...(result.settings ?? {}), attempt: result.attempt, humanInterventions: result.humanInterventions ?? [] },
         cost: {
-          usd: typeof result.costUsd === "number" && Number.isFinite(result.costUsd) && result.costUsd >= 0 ? result.costUsd : null,
-          source: typeof result.costUsd === "number" ? "reported_by_executor" : "unobserved",
+          usd,
+          source: usd === null ? "unobserved" : "reported_by_executor",
           inputTokens: result.inputTokens ?? null,
           outputTokens: result.outputTokens ?? null,
         },

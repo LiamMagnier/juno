@@ -359,6 +359,11 @@ export async function rescoreRecord(
     ...options,
   });
   const verdict = deriveVerdict({ kind: "completed" }, validated.checks);
+  // The budget rule applies on rescore exactly as on the original run.
+  if (verdict.state === "passed" && record.cost.usd !== null && record.cost.usd > workflow.limits.budgetUsd) {
+    verdict.state = "failed";
+    verdict.reason = `observed cost $${record.cost.usd.toFixed(4)} exceeds the $${workflow.limits.budgetUsd} budget`;
+  }
   const attempts = record.attempts.map((a, i) => (i === record.attempts.length - 1 ? { ...a, state: verdict.state } : a));
   const excluded = record.settings.firstAttemptExcluded !== undefined || (typeof record.settings.attempt === "number" && record.settings.attempt !== 1);
   return {
