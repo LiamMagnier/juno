@@ -266,17 +266,44 @@ export function extractNumbers(text: string, skip: ReadonlyArray<{ start: number
  * contradicted by it, and calling that a contradiction puts a false accusation
  * in the inspector.
  */
-function numberContext(text: string, n: NumericFact): { unit: string | null; before: Set<string> } {
-  const after = text.slice(n.end, n.end + 28);
-  const unit = [...contentTokens(after)][0] ?? null;
-  return { unit, before: contentTokens(text.slice(Math.max(0, n.start - 48), n.start)) };
+function numberContext(
+  text: string,
+  n: NumericFact
+): { unit: string | null; next: string | null; before: Set<string> } {
+  /*
+   * The unit is the first WORD after the figure, stopwords aside. Read from
+   * the raw words rather than `contentTokens`, which drops anything under
+   * three letters as noise — and with it exactly the units figures are
+   * measured in: "16.5 GW" and "15.1 GW" had no unit at all, so two totals
+   * for the same fleet read as unrelated numbers and a real disagreement was
+   * filed as a figure merely "absent".
+   */
+  const words = normalizeText(text.slice(n.end, n.end + 40))
+    .split(/[^a-z]+/)
+    .filter((w) => w && !STOPWORDS.has(w));
+  const stem = (w: string | undefined) => (w ? (w.length > 4 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w) : null);
+  return {
+    unit: stem(words[0]),
+    next: stem(words[1]),
+    before: contentTokens(text.slice(Math.max(0, n.start - 48), n.start)),
+  };
 }
+
+/** Units that say how long, not what: "30-day version history" and "14-day trial" share one and measure different things. */
+const PERIOD_UNITS = new Set(["second", "minute", "hour", "day", "week", "month", "year", "quarter"]);
 
 /** Whether two figures are plausibly measuring the same quantity. */
 function measuresSameThing(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
   const ca = numberContext(claim, a);
   const cb = numberContext(passage, b);
-  if (ca.unit && cb.unit && ca.unit === cb.unit) return true;
+  if (ca.unit && cb.unit && ca.unit === cb.unit) {
+    // A bare count of days (or months, or years) is only the same quantity
+    // when it is the same thing being counted: the word after the unit has to
+    // agree too. Currency and percentages are not affected — "$18 per month"
+    // and "$15 per month" are rival prices whatever follows them.
+    if (a.kind === "plain" && PERIOD_UNITS.has(ca.unit)) return !!ca.next && ca.next === cb.next;
+    return true;
+  }
   // A percentage or a currency amount carries its own unit, so for those the
   // introducing phrase is enough ("The settlement was $50m" / "$500m").
   if (a.kind === "plain") return false;
@@ -468,6 +495,33 @@ const SUPERLATIVES =
 const CAUSAL = /\b(?:because|caused|causing|due to|led to|leading to|as a result of|resulted in|drove|driven by|triggered|thanks to|blamed on)\b/i;
 
 const ATTRIBUTION = /\b(?:according to|as reported by|citing|cited by|sources? said|spokesperson said|in a statement)\b/i;
+
+/*
+ * A sentence that states the PRESENT: what is true now, not what was true when
+ * some page was written. "Plus costs $20 a month" cited to a 2022 review is the
+ * failure — the page supports the figure as of 2022 and says nothing about
+ * today, and a reader takes the sentence as today's price. Only explicit
+ * present-state markers count; an undated present-tense sentence is too common
+ * in reported prose to treat every one of them as a freshness claim.
+ */
+const PRESENT_STATE =
+  /\b(?:currently|current|now|nowadays|today|at present|presently|right now|still|remains?|latest|newest|most recent|up[- ]to[- ]date|as of (?:today|now|this year)|this year)\b/i;
+
+/**
+ * How old a dated source may be and still stand behind a sentence that says
+ * something is true NOW. A year: prices, limits, versions and policies move on
+ * about that cadence, and the gap audit's 540-day window is for figures on a
+ * question where recency merely matters, not for a sentence that says "today".
+ */
+export const STALE_FOR_PRESENT_DAYS = 365;
+
+const DAY_MS = 86_400_000;
+
+function describeAge(days: number): string {
+  if (days >= 730) return `${Math.floor(days / 365)} years`;
+  const months = Math.max(1, Math.round(days / 30.44));
+  return months === 1 ? "a month" : `${months} months`;
+}
 
 // ---------------------------------------------------------------------------
 // Claim extraction
@@ -801,12 +855,33 @@ export function claimsForAudit(claims: readonly ExtractedClaim[], cap: number): 
 export interface RepairableClaim extends ExtractedClaim {
   status: ClaimStatus;
   supportStrength: number | null;
+  /**
+   * `[n]` markers on this claim that name no source in the corpus. They are
+   * stripped from the sentence whatever its verdict: a citation to nothing is
+   * an invented citation, and leaving it in place is the one repair this
+   * function must never skip.
+   */
+  unresolvedCitations?: readonly number[];
+  /**
+   * The publication date (YYYY-MM-DD) of the source behind a present-tense
+   * claim that the freshness check held to "partly supported". The generic
+   * "supports only part of this statement" would name the wrong defect: the
+   * source supports all of it, as of a date that is no longer now.
+   */
+  staleSince?: string | null;
 }
 
 export interface ReportRepairResult {
   report: string;
   repaired: boolean;
   repairedClaims: number;
+}
+
+/** `text` with the given `[n]` markers removed, along with the space in front of each. */
+function stripCitationMarkers(text: string, numbers: readonly number[] | undefined): string {
+  if (!numbers?.length) return text;
+  const drop = new Set(numbers);
+  return text.replace(/\s*\[(\d{1,3})\]/g, (marker, n: string) => (drop.has(Number(n)) ? "" : marker));
 }
 
 /**
@@ -820,27 +895,48 @@ export interface ReportRepairResult {
  * and prose rewritten on that basis told the reader the evidence failed when
  * nobody had read it. The reader's support mark says "not checked" instead,
  * and since nothing changed, no paid revision follows either.
+ *
+ * The one exception to "verdict decides" is an invented citation: a marker
+ * pointing past the end of the corpus is removed from supported and unchecked
+ * claims too, because no verdict makes `[9]` in a nine-source-short corpus
+ * mean anything.
  */
 export function repairReportFromClaims(report: string, claims: readonly RepairableClaim[]): ReportRepairResult {
   const replacements = claims
-    .filter((claim) => claim.status !== "supported" && claim.status !== "unverified")
     .map((claim) => {
       const span = parseAnswerSpan(claim.answerSpan);
       if (!span) return null;
+      const original = report.slice(span.start, span.end);
+      const text = stripCitationMarkers(original, claim.unresolvedCitations);
+      const rewrite = claim.status !== "supported" && claim.status !== "unverified";
+      if (!rewrite) return text === original ? null : { ...span, replacement: text };
       const label = supportLabel(claim.status, claim.supportStrength);
+      // Every marker it carried named nothing: there was never a cited passage
+      // for "the cited passage does not establish this" to be about.
+      const unsourced =
+        !!claim.unresolvedCitations?.length && claim.citations.every((n) => claim.unresolvedCitations!.includes(n));
+      const stale = label === "partially supported" && !!claim.staleSince;
       if (claim.form === "table") {
         // A cell is annotated in place: the table keeps its pipes and its shape.
         const note =
           claim.status === "contradicted"
             ? "conflicting evidence"
+            : unsourced
+            ? "cites no source in this research"
+            : stale
+            ? `source dated ${claim.staleSince}`
             : label === "partially supported"
             ? "only partly supported"
             : "not established by the cited source";
-        return { ...span, replacement: `${report.slice(span.start, span.end).trim()} (${note})` };
+        return { ...span, replacement: `${text.trim()} (${note})` };
       }
       const prefix =
         claim.status === "contradicted"
           ? "Conflicting evidence: "
+          : unsourced
+          ? "Unsourced: "
+          : stale
+          ? "Possibly out of date: "
           : label === "partially supported"
           ? "Evidence is incomplete: "
           : claim.status === "unverified"
@@ -849,12 +945,16 @@ export function repairReportFromClaims(report: string, claims: readonly Repairab
       const suffix =
         claim.status === "contradicted"
           ? " (the cited source reports conflicting evidence.)"
+          : unsourced
+          ? " (the citation it carried names no source in this research.)"
+          : stale
+          ? ` (the cited source dates from ${claim.staleSince} and may no longer be current.)`
           : label === "partially supported"
           ? " (the cited source supports only part of this statement.)"
           : claim.status === "unverified"
           ? " (this claim could not be checked within the run limits.)"
           : " (the cited passage does not establish this.)";
-      return { ...span, replacement: `${prefix}${report.slice(span.start, span.end).trim()}${suffix}` };
+      return { ...span, replacement: `${prefix}${text.trim()}${suffix}` };
     })
     .filter((value): value is { start: number; end: number; replacement: string } => !!value)
     .sort((a, b) => b.start - a.start);
@@ -1066,6 +1166,8 @@ export interface AuditReason {
     | "causation_unstated"
     | "passage_hedged"
     | "attribution_dropped"
+    | "source_stale"
+    | "stated_by_other_citation"
     | "off_topic"
     | "thin_overlap";
   detail: string;
@@ -1101,8 +1203,47 @@ const CEILING = {
   entityThin: 0.5,
   unstatedLeap: 0.55,
   hedged: 0.6,
+  /*
+   * The same weight as a hedge, for the same reason: the passage is real
+   * evidence for the figure, and what it cannot carry is the sentence's claim
+   * that the figure is still true. Under the supported bar, over the partial
+   * floor — "partly supported", never "unsupported".
+   */
+  stale: 0.6,
   attribution: 0.75,
 } as const;
+
+/*
+ * Where one clause of a sentence ends and the next begins, for the polarity
+ * check: commas, semicolons, dashes, and the conjunctions that start a new
+ * predicate. Crude, and deliberately so — it only has to stop a negation in
+ * a trailing clause ("…, a difference the authors described as not
+ * significant") from flipping the sentence it is attached to.
+ */
+const CLAUSE_BREAK = /\s*[,;:]\s+|\s+[-–—]\s+|\s+(?=(?:and|but|while|whereas|although|though|which|who)\s)/i;
+
+/**
+ * The clause of `sentence` the claim is about: the one sharing the most of
+ * its content words, the first on a tie. Negation parity is read here rather
+ * than over the whole sentence, because a "not" in another clause negates a
+ * different predicate — and a whole-sentence parity check read "Serious
+ * adverse events occurred in 3% …, a difference described as not
+ * significant" as the passage denying the 3%.
+ */
+export function bestMatchingClause(claim: string, sentence: string): string {
+  const clauses = sentence.split(CLAUSE_BREAK).map((c) => c.trim()).filter((c) => c.length > 0);
+  if (clauses.length <= 1) return sentence;
+  let best = clauses[0]!;
+  let bestScore = -1;
+  for (const clause of clauses) {
+    const score = tokenCoverage(claim, clause);
+    if (score > bestScore) {
+      bestScore = score;
+      best = clause;
+    }
+  }
+  return best;
+}
 
 /** The sentence in the passage the claim is actually about. */
 export function bestMatchingSentence(claim: string, passage: string): string {
@@ -1122,6 +1263,55 @@ export function bestMatchingSentence(claim: string, passage: string): string {
   return best;
 }
 
+/*
+ * Capitalised words that open sentences without naming anything. A short list
+ * on purpose: what is left over after it is a NAMED subject for the
+ * corroboration rule, and a common noun that slips through ("Revenue") only
+ * makes that rule stricter, never looser.
+ */
+const SENTENCE_STARTERS = new Set(
+  ("this that these those it its there here some most many all every each both our we they you he she his her " +
+    "however meanwhile overall today yesterday since until unless although though because while when where after before " +
+    "during under over above below between among across against about around per via plus versus")
+    .split(" ")
+);
+
+/** Title-case words of a text, lowercased: the named subjects it talks about (Northwind, Alpha, Plus). */
+export function namedSubjects(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const match of text.matchAll(/\b[A-Z][a-z][A-Za-z'’-]*/g)) {
+    const word = match[0].toLowerCase().replace(/['’]s$/, "");
+    if (word.length < 3 || STOPWORDS.has(word) || SENTENCE_STARTERS.has(word)) continue;
+    out.add(word);
+  }
+  return out;
+}
+
+/**
+ * The figures and dates of the other cited sources that may stand in for this
+ * passage — only those sources that cover a named subject of the claim this
+ * passage does not mention (see `corroborating` on `auditEvidence`).
+ */
+function corroboratingFacts(
+  claim: string,
+  passage: string,
+  others: readonly string[] | undefined
+): Array<{ numbers: NumericFact[]; dates: DateMention[] }> {
+  if (!others?.length) return [];
+  const passageNames = namedSubjects(passage);
+  const missing = [...namedSubjects(claim)].filter((name) => !passageNames.has(name));
+  if (missing.length === 0) return [];
+  return others
+    .filter((text) => {
+      const names = namedSubjects(text);
+      return missing.some((name) => names.has(name));
+    })
+    .map((text) => {
+      const dates = extractDates(text);
+      return { numbers: extractNumbers(text, dates), dates };
+    });
+}
+
 /**
  * Everything about this claim/passage pair that can be decided without
  * judgement. The result only ever caps the judge's score — it never raises it —
@@ -1133,6 +1323,26 @@ export function auditEvidence(opts: {
   passage: string;
   /** The source's publication date, for the publication-vs-event check. */
   publishedAt?: Date | null;
+  /**
+   * When the audit is being run — "now" for a sentence that says something is
+   * true now. Absent: no freshness check at all, which is what keeps every
+   * audit recorded before this existed reading back exactly as it was judged
+   * (the inspector recomputes reasons, and must not invent a finding the
+   * stored strength never paid for).
+   */
+  asOf?: Date | null;
+  /**
+   * The text of the OTHER sources this same claim cites. A comparison —
+   * "Alpha has 100 GB against Beta's 50 GB [1][2]" — takes one figure from
+   * each source, and judged one passage at a time it read as source [1]
+   * contradicting the 50 GB (it gives Alpha Free's 5 GB, same unit) and
+   * source [2] contradicting the 100. A figure or date the passage lacks is
+   * accepted from another cited source when that source covers a named
+   * subject of the claim THIS passage does not: so a second subject's figure
+   * is found where the claim says it is, while two sources disagreeing about
+   * the SAME subject still read as the contradiction they are.
+   */
+  corroborating?: readonly string[];
 }): EvidenceAudit {
   const { claim, passage } = opts;
   const claimType = opts.claimType ?? classify(claim);
@@ -1181,9 +1391,19 @@ export function auditEvidence(opts: {
   const passageDates = extractDates(passage);
   const claimNums = extractNumbers(claim, claimDates);
   const passageNums = extractNumbers(passage, passageDates);
+  const elsewhere = corroboratingFacts(claim, passage, opts.corroborating);
+  const statedElsewhere = (raw: string) =>
+    cap(1, {
+      code: "stated_by_other_citation",
+      detail: `${raw} is not in this passage; another source cited for this sentence states it.`,
+    });
   for (const n of claimNums) {
     const sameKind = passageNums.filter((p) => p.kind === n.kind);
     if (sameKind.some((p) => numbersAgree(p.value, n.value))) continue;
+    if (elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))) {
+      statedElsewhere(n.raw);
+      continue;
+    }
     const rival = sameKind.filter((p) => measuresSameThing(claim, n, passage, p));
     if (rival.length > 0) {
       // The passage measures the same thing and says something else. That is a
@@ -1206,6 +1426,10 @@ export function auditEvidence(opts: {
   const pubYear = opts.publishedAt?.getUTCFullYear();
   for (const d of claimDates) {
     if (passageDates.some((p) => datesAgree(p, d))) continue;
+    if (elsewhere.some((facts) => facts.dates.some((p) => datesAgree(p, d)))) {
+      statedElsewhere(d.raw);
+      continue;
+    }
     if (pubYear != null && d.year === pubYear) {
       cap(CEILING.dateWrong, {
         code: "date_is_publication_date",
@@ -1223,7 +1447,7 @@ export function auditEvidence(opts: {
   // Only meaningful where the two sentences are about the same thing; on an
   // unrelated passage a negation difference says nothing.
   const focus = bestMatchingSentence(claim, passage);
-  if (tokenCoverage(claim, focus) >= 0.45 && negationParity(claim) !== negationParity(focus)) {
+  if (tokenCoverage(claim, focus) >= 0.45 && negationParity(claim) !== negationParity(bestMatchingClause(claim, focus))) {
     contradicted = true;
     cap(0, {
       code: "polarity_mismatch",
@@ -1283,7 +1507,65 @@ export function auditEvidence(opts: {
     });
   }
 
+  // ── Freshness: a sentence about NOW, resting on a page from THEN ─────────
+  const stale = staleForPresent({
+    claim,
+    claimType,
+    claimDates,
+    passageDates,
+    publishedAt: opts.publishedAt ?? null,
+    asOf: opts.asOf ?? null,
+  });
+  if (stale) {
+    cap(CEILING.stale, {
+      code: "source_stale",
+      detail: `This source was published ${stale.published}, ${describeAge(stale.days)} before this check, so it cannot show the claim is still true today.`,
+    });
+  }
+
   return { ceiling, contradicted, reasons };
+}
+
+/**
+ * Whether a present-tense claim rests on a source too old to say anything
+ * about the present. Null when the check does not apply or passes.
+ *
+ * It applies only when every one of these holds, because each one missing is
+ * a case where "old source" says nothing about the sentence:
+ *  - the audit knows when it is running (`asOf`);
+ *  - the claim says something is true NOW (`PRESENT_STATE`) and is neither a
+ *    forecast nor an opinion;
+ *  - the claim names no date of its own — "as of March 2024" anchors the
+ *    sentence, and the date checks above already judge that;
+ *  - the source has a publication date. An undated page is the live page as
+ *    fetched (a pricing or docs page usually carries no date), which is
+ *    evidence about the present, not against it;
+ *  - the passage itself carries no recent date ("As of September 2026, …"):
+ *    an old page that was updated says when.
+ */
+function staleForPresent(input: {
+  claim: string;
+  claimType: ClaimType;
+  claimDates: readonly DateMention[];
+  passageDates: readonly DateMention[];
+  publishedAt: Date | null;
+  asOf: Date | null;
+}): { published: string; days: number } | null {
+  const { asOf, publishedAt } = input;
+  if (!asOf || !publishedAt || !Number.isFinite(asOf.getTime()) || !Number.isFinite(publishedAt.getTime())) return null;
+  if (input.claimType === "prediction" || input.claimType === "opinion") return null;
+  if (input.claimDates.length > 0 || !PRESENT_STATE.test(input.claim)) return null;
+  const days = (asOf.getTime() - publishedAt.getTime()) / DAY_MS;
+  if (days <= STALE_FOR_PRESENT_DAYS) return null;
+  // A date AFTER the audit is a target or a deadline ("50 GW by 2030"), not
+  // evidence the page was updated; only a recent past date counts.
+  const recentInPassage = input.passageDates.some((d) => {
+    const at = Date.UTC(d.year, (d.month ?? 1) - 1, d.day ?? 1);
+    const age = (asOf.getTime() - at) / DAY_MS;
+    return age >= 0 && age <= STALE_FOR_PRESENT_DAYS;
+  });
+  if (recentInPassage) return null;
+  return { published: publishedAt.toISOString().slice(0, 10), days };
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1619,10 @@ export async function validateClaimAgainstPassage(opts: {
   passage: string;
   sourceTitle?: string;
   publishedAt?: Date | null;
+  /** When the audit runs, for the freshness check. See `auditEvidence`. */
+  asOf?: Date | null;
+  /** The claim's other cited sources' text. See `auditEvidence`. */
+  corroborating?: readonly string[];
   judge: CitationJudge;
 }): Promise<LinkVerdict> {
   const claimType = opts.claimType ?? classify(opts.claim);
@@ -1345,6 +1631,8 @@ export async function validateClaimAgainstPassage(opts: {
     claimType,
     passage: opts.passage,
     publishedAt: opts.publishedAt,
+    asOf: opts.asOf,
+    corroborating: opts.corroborating,
   });
 
   if (audit.contradicted) {

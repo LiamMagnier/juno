@@ -10,22 +10,18 @@ import {
   JUDGE_OUTPUT_TOKENS,
   JUDGE_PASSAGE_CHARS,
   MAX_JUDGE_CALLS,
+  parsePlan,
 } from "@/lib/research/domain";
 import {
   auditEvidence,
   detectSyndication,
-  claimsForAudit,
-  extractClaims,
   extractEventDate,
   hostOfUrl,
-  resolveClaimStatus,
   repairReportFromClaims,
   scoreSource,
-  selectPassagesForClaim,
   sourceTypeOf,
   splitPassages,
   supportLabel,
-  validateClaimAgainstPassage,
   type AuditReason,
   type CitationJudge,
   type ClaimStatus,
@@ -37,6 +33,14 @@ import {
   type RepairableClaim,
   type SupportLabel,
 } from "@/lib/research/claim-analysis";
+import { auditClaims, readAuditReceipt, selectClaimsForAudit } from "@/lib/research/citation-audit-core";
+import {
+  isPreviewOnly,
+  isSourceReadState,
+  openedUrlsFrom,
+  sourceReadState,
+  type SourceReadState,
+} from "@/lib/research/source-provenance";
 
 /**
  * The claim graph and citation validator (program §8.3), server side.
@@ -238,6 +242,13 @@ export interface ResearchCorpusSource {
    * evidence does not carry.
    */
   truncated?: boolean;
+  /**
+   * How `body` was obtained — opened by the run, supplied by the search
+   * provider, or a preview (source-provenance.ts). Absent: derived from the
+   * run's event log when the audit belongs to a run, unknown otherwise. A
+   * `search_preview` is treated as `truncated`.
+   */
+  readState?: SourceReadState | null;
 }
 
 export interface CitationAuditSummary {
@@ -251,6 +262,14 @@ export interface CitationAuditSummary {
   unverified: number;
   /** Sources found to be syndicated copies of another source in the run. */
   duplicateSources: number;
+  /**
+   * Supported claims that other evidence in the corpus disagrees with: a
+   * cited passage that contradicts them, or an uncited source giving a
+   * different figure. Optional because audits recorded before it carry none.
+   */
+  contested?: number;
+  /** Claims carrying a `[n]` that names no source in the corpus. Optional, as above. */
+  unresolvedCitations?: number;
 }
 
 export interface CitationAuditResult extends CitationAuditSummary {
@@ -279,6 +298,8 @@ interface StoredSource {
   publishedAt: Date | null;
   /** Snippet-only: see ResearchCorpusSource.truncated. */
   truncated: boolean;
+  /** See ResearchCorpusSource.readState; null when it cannot be known. */
+  readState: SourceReadState | null;
 }
 
 /**
@@ -315,12 +336,17 @@ export async function recordCitationAudit(opts: {
   maxClaims?: number;
   /** The run's date line, for the judge (§9.3). */
   today?: string;
+  /** When this audit counts as running, for the freshness check. Defaults to now. */
+  asOf?: Date;
 }): Promise<CitationAuditResult | null> {
   const judgeCap = Math.max(1, Math.floor(opts.maxJudgeCalls ?? MAX_JUDGE_CALLS));
   // Table cells are claims too (comparative and decision matrices); the
   // selection keeps them to a share of the cap so prose is still checked.
-  const claims = claimsForAudit(extractClaims(opts.report), Math.max(1, Math.floor(opts.maxClaims ?? MAX_CLAIMS)));
+  const claims = selectClaimsForAudit(opts.report, opts.maxClaims ?? MAX_CLAIMS);
   if (claims.length === 0 || opts.sources.length === 0) return null;
+  // The moment the audit runs: what a present-tense claim is checked against,
+  // recorded on the event so the inspector re-derives the same findings.
+  const asOf = opts.asOf ?? new Date();
 
   // The message id is a user-visible foreign key, not a convenience string.
   // Check it before writing any claims so a caller cannot attach an audit to a
@@ -367,7 +393,8 @@ export async function recordCitationAudit(opts: {
     await prisma.researchClaim.deleteMany({ where: { runId: run.id, userId: opts.userId } });
   }
 
-  const stored = await storeCorpus({ userId: opts.userId, runId: run.id, sources: opts.sources });
+  const readStates = await resolveReadStates({ userId: opts.userId, runId: existing ? run.id : null, sources: opts.sources });
+  const stored = await storeCorpus({ userId: opts.userId, runId: run.id, sources: opts.sources, readStates });
   const duplicates = await markSyndication({ userId: opts.userId, stored, sources: opts.sources });
 
   /*
@@ -393,106 +420,84 @@ export async function recordCitationAudit(opts: {
       ...(opts.today ? { today: opts.today } : {}),
     });
 
+  /*
+   * The decision loop is citation-audit-core.ts — the same function the eval
+   * set measures — and nothing in it touches the database. What it returns is
+   * persisted below: one claim row per claim, one link row per verdict, and
+   * the uncited rivals on the audit event (they are not citations, and a link
+   * row would make every reader of `links` count them as one).
+   */
+  const outcome = await auditClaims({
+    claims,
+    sources: stored.map((s) => ({
+      index: s.index,
+      title: s.title,
+      url: s.url,
+      publishedAt: s.publishedAt,
+      passages: s.passages,
+      truncated: s.truncated,
+    })),
+    corpusSize: opts.sources.length,
+    judge,
+    judgeCap,
+    asOf,
+  });
+  const judgeCalls = outcome.judgeCalls;
+
   const summary: CitationAuditSummary = {
     runId: run.id,
-    claims: claims.length,
-    supported: 0,
-    partiallySupported: 0,
-    unsupported: 0,
-    contradicted: 0,
-    unverified: 0,
+    claims: outcome.counts.claims,
+    supported: outcome.counts.supported,
+    partiallySupported: outcome.counts.partiallySupported,
+    unsupported: outcome.counts.unsupported,
+    contradicted: outcome.counts.contradicted,
+    unverified: outcome.counts.unverified,
     duplicateSources: duplicates.size,
+    contested: outcome.counts.contested,
+    unresolvedCitations: outcome.counts.unresolvedCitations,
   };
 
-  const passagesBySource = new Map<number, PassageDraft[]>(stored.map((s) => [s.index, s.passages]));
   const passageIdOf = new Map<string, string>();
   for (const s of stored) for (const p of s.passages) passageIdOf.set(`${s.index}:${p.ordinal}`, p.id);
-  const sourceByIndex = new Map(stored.map((s) => [s.index, s]));
+  const sourceIdOf = new Map(stored.map((s) => [s.index, s.id]));
   const repairableClaims: RepairableClaim[] = [];
+  /** Per claim row: the sources it cited (by id, so a renumbering cannot move them) and the markers that named nothing. */
+  const claimCitations: Record<string, { sourceIds: string[]; unresolved: number[] }> = {};
+  const rivals: Array<{ claimId: string; sourceId: string; passageId: string }> = [];
 
-  let judgeCalls = 0;
-  for (const claim of claims) {
+  for (const claim of outcome.claims) {
     const row = await prisma.researchClaim.create({
       data: {
         userId: opts.userId,
         runId: run.id,
         text: claim.text,
         type: claim.type,
-        status: "unverified",
+        status: claim.status,
+        supportStrength: claim.supportStrength,
         answerSpan: claim.answerSpan,
       },
       select: { id: true },
     });
-
-    const candidates = selectPassagesForClaim(claim, passagesBySource);
-    const verdicts: LinkVerdict[] = [];
-    let sawFullText = false;
-    /** The cap stopped this claim's checks before any verdict (B4). */
-    let judgeCapReached = false;
-    /*
-     * The deterministic audit is free, so it runs on every candidate first and
-     * the model is spent only on the one it cannot decide. Ranking by the
-     * audit's own ceiling also means the passage most likely to actually carry
-     * the claim is the one that gets checked — a citation names a SOURCE, not a
-     * passage, and picking the wrong paragraph marks a true claim unsupported.
-     */
-    const ranked = candidates
-      .map((c) => {
-        const source = sourceByIndex.get(c.sourceIndex);
-        return {
-          ...c,
-          source,
-          audit: auditEvidence({
-            claim: claim.text,
-            claimType: claim.type as ClaimType,
-            passage: c.passage.text,
-            publishedAt: source?.publishedAt ?? null,
-          }),
-        };
-      })
-      .sort((a, b) => b.audit.ceiling * (0.5 + 0.5 * b.relevance) - a.audit.ceiling * (0.5 + 0.5 * a.relevance));
-
-    for (const candidate of ranked) {
-      const settledByText = candidate.audit.contradicted;
-      if (!settledByText && judgeCalls >= judgeCap) {
-        judgeCapReached = verdicts.length === 0;
-        break;
-      }
-      if (!settledByText) judgeCalls++;
-      const verdict = await validateClaimAgainstPassage({
-        claim: claim.text,
-        claimType: claim.type as ClaimType,
-        passage: candidate.passage.text,
-        sourceTitle: candidate.source?.title,
-        publishedAt: candidate.source?.publishedAt ?? null,
-        judge,
-      });
-      verdicts.push(verdict);
-      if (!candidate.source?.truncated) sawFullText = true;
-      const passageId = passageIdOf.get(`${candidate.sourceIndex}:${candidate.passage.ordinal}`);
-      if (passageId) await upsertLink(row.id, passageId, verdict.stance, verdict.strength);
-      // One honest supporting passage is what a citation is for; checking the
-      // rest would spend the budget re-proving a settled claim.
-      if (verdict.status === "supported") break;
+    for (const link of claim.links) {
+      const passageId = passageIdOf.get(`${link.sourceIndex}:${link.ordinal}`);
+      if (passageId) await upsertLink(row.id, passageId, link.stance, link.strength);
     }
-
-    const resolved = resolveClaimStatus(verdicts, { judgeCapReached });
-    /*
-     * A claim checked only against search snippets is UNVERIFIED, not
-     * unsupported. Two sentences of preview text failing to contain a figure is
-     * not evidence that the page lacks it, and the difference matters: the
-     * whole value of the unsupported badge is that a reader can believe it.
-     * A contradiction survives — the snippet said the opposite, which it did.
-     */
-    const status =
-      resolved.status === "unsupported" && verdicts.length > 0 && !sawFullText ? "unverified" : resolved.status;
-    const supportStrength = status === "unverified" ? null : resolved.supportStrength;
-    await prisma.researchClaim.update({
-      where: { id: row.id, userId: opts.userId },
-      data: { status, supportStrength },
+    claimCitations[row.id] = {
+      sourceIds: claim.citations.map((n) => sourceIdOf.get(n)).filter((id): id is string => !!id),
+      unresolved: claim.unresolvedCitations,
+    };
+    for (const rival of claim.rivals) {
+      const passageId = passageIdOf.get(`${rival.sourceIndex}:${rival.ordinal}`);
+      const sourceId = sourceIdOf.get(rival.sourceIndex);
+      if (passageId && sourceId) rivals.push({ claimId: row.id, sourceId, passageId });
+    }
+    repairableClaims.push({
+      ...claim,
+      status: claim.status,
+      supportStrength: claim.supportStrength,
+      unresolvedCitations: claim.unresolvedCitations,
+      staleSince: claim.staleSince,
     });
-    tally(summary, status, supportStrength);
-    repairableClaims.push({ ...claim, status, supportStrength });
   }
 
   const repaired = repairReportFromClaims(opts.report, repairableClaims);
@@ -566,6 +571,18 @@ export async function recordCitationAudit(opts: {
         // key as "this audit predates the receipt", so an omitted empty array
         // would make a fully-read corpus indistinguishable from an old one.
         truncatedSources: stored.filter((s) => s.truncated).map((s) => s.id),
+        // How each source's text was obtained: opened by the run, supplied by
+        // the search provider, a preview, or the person's own record. Only
+        // the sources it could be established for; the inspector reads an
+        // absent entry as "not known", never as "opened".
+        readStates: Object.fromEntries(
+          stored.filter((s) => s.readState).map((s) => [s.id, s.readState])
+        ),
+        // What a present-tense claim was checked against (`source_stale`),
+        // so the inspector re-derives the findings this audit actually made.
+        asOf: asOf.toISOString(),
+        claimCitations,
+        rivals,
         judgeCalls,
         // Beside `judgeCalls` because the two answer different questions: one
         // says how much checking was done, the other what the checking cost.
@@ -591,11 +608,12 @@ export async function recordCitationAudit(opts: {
       },
     });
   }
-  if (summary.contradicted > 0 || duplicates.size > 0) {
+  if (summary.contradicted > 0 || duplicates.size > 0 || (summary.contested ?? 0) > 0) {
     events.push({
       kind: "conflict_found",
       payload: {
         contradictedClaims: summary.contradicted,
+        contestedClaims: summary.contested ?? 0,
         duplicateSources: duplicates.size,
         sourceIds: stored.map((s) => s.id),
       },
@@ -621,6 +639,8 @@ function summaryCounts(s: CitationAuditSummary) {
     contradicted: s.contradicted,
     unverified: s.unverified,
     duplicateSources: s.duplicateSources,
+    contested: s.contested ?? 0,
+    unresolvedCitations: s.unresolvedCitations ?? 0,
   };
 }
 
@@ -690,10 +710,54 @@ async function upsertLink(claimId: string, passageId: string, stance: LinkStance
   });
 }
 
+/**
+ * How each corpus source's text was obtained (source-provenance.ts), in corpus
+ * order.
+ *
+ * A caller that knows says so on the source. Otherwise, for an audit that
+ * belongs to a run, the run's own ledger answers it: the `source_read` events
+ * every fetching stage appends, plus the plan's `sweepFetched` list. A source
+ * the ledger never saw opened, whose text is shorter than a page, is a search
+ * preview — which is what `truncated: !source.snapshot` at both call sites
+ * could never detect, since a preview HAS a snapshot. Without a run there is
+ * no ledger, and the state is null: unknown, not "opened".
+ */
+async function resolveReadStates(opts: {
+  userId: string;
+  runId: string | null;
+  sources: readonly ResearchCorpusSource[];
+}): Promise<Array<SourceReadState | null>> {
+  const given = opts.sources.map((source) => (isSourceReadState(source.readState) ? source.readState : null));
+  if (!opts.runId || given.every((state) => state !== null)) return given;
+  let opened: Set<string> | null = null;
+  try {
+    const [events, run] = await Promise.all([
+      prisma.researchEvent.findMany({
+        where: { runId: opts.runId, userId: opts.userId, kind: "source_read" },
+        select: { kind: true, payload: true },
+      }),
+      prisma.researchRun.findFirst({
+        where: { id: opts.runId, userId: opts.userId },
+        select: { plan: true },
+      }),
+    ]);
+    opened = openedUrlsFrom({ events, sweepFetched: parsePlan(run?.plan).sweepFetched ?? null });
+  } catch (error) {
+    // The audit must not fail over its own receipt: an unreadable ledger is
+    // an unknown read state, which the inspector shows as nothing.
+    console.error("[research] could not read the source ledger for the audit", { runId: opts.runId, error });
+  }
+  return opts.sources.map(
+    (source, i) => given[i] ?? sourceReadState({ url: source.url, textChars: source.body?.trim().length ?? 0 }, opened)
+  );
+}
+
 async function storeCorpus(opts: {
   userId: string;
   runId: string;
   sources: ResearchCorpusSource[];
+  /** Per corpus position, from `resolveReadStates`. */
+  readStates: ReadonlyArray<SourceReadState | null>;
 }): Promise<StoredSource[]> {
   const stored: StoredSource[] = [];
   for (const [i, source] of opts.sources.slice(0, MAX_SOURCES).entries()) {
@@ -775,7 +839,10 @@ async function storeCorpus(opts: {
       title: source.title,
       url: source.url,
       publishedAt: source.publishedAt ?? null,
-      truncated: !!source.truncated,
+      // A preview is a preview whoever says so: the caller's own flag, or the
+      // run's ledger showing the page was never opened and the text is short.
+      truncated: !!source.truncated || isPreviewOnly(opts.readStates[i]),
+      readState: opts.readStates[i] ?? null,
       passages: passages.map((p) => ({ ...p, id: byOrdinal.get(p.ordinal) ?? "" })).filter((p) => p.id),
     });
   }
@@ -849,6 +916,28 @@ export interface ClaimAuditSourceView {
    * that moment, not of a row that is still being updated afterwards.
    */
   truncated: boolean | null;
+  /**
+   * How the text the audit judged against was obtained: `opened` by the run,
+   * supplied by the search provider (`search_text`), a `search_preview`, the
+   * person's own record (`private`). Null when the audit predates the record
+   * or the run's ledger could not establish it — never read as "opened".
+   */
+  readState: SourceReadState | null;
+}
+
+/**
+ * A passage from a source the claim did NOT cite, giving a different figure
+ * for the same thing (citation-audit-core.ts, `rivalEvidence`). Kept apart from
+ * `links` because it is not a citation: everything that reads `links` as "the
+ * claims that cite source n" — the sources pill, the native evidence list —
+ * would otherwise count it as one.
+ */
+export interface ClaimAuditRivalView {
+  sourceIndex: number;
+  passage: string;
+  locator: string | null;
+  /** The figure findings, recomputed from the stored passage like a link's. */
+  codedReasons: AuditReason[];
 }
 
 export interface ClaimAuditLinkView {
@@ -890,6 +979,15 @@ export interface ClaimAuditClaimView {
   label: SupportLabel;
   answerSpan: string | null;
   links: ClaimAuditLinkView[];
+  /** Uncited passages that give a different figure. Empty on audits that predate the scan. */
+  rivals: ClaimAuditRivalView[];
+  /** Supported, while a cited passage contradicts it or an uncited source disagrees. */
+  contested: boolean;
+  /**
+   * The `[n]` markers on this claim that named no source in the corpus. Null
+   * when the audit predates the record: "none" and "not recorded" differ.
+   */
+  unresolvedCitations: number[] | null;
 }
 
 export interface ClaimAuditView {
@@ -1021,6 +1119,7 @@ export async function loadCitationAuditForMessage(
   const truncatedIds = Array.isArray(recordedTruncation)
     ? new Set(recordedTruncation.filter((id): id is string => typeof id === "string"))
     : null;
+  const receipt = readAuditReceipt(event.payload);
 
   const sourceById = new Map(run.sources.map((s) => [s.id, s]));
   const sources: ClaimAuditSourceView[] = run.sources
@@ -1047,9 +1146,31 @@ export async function loadCitationAuditForMessage(
         sourceType: s.sourceType ?? sourceTypeOf({ url: s.url, text: body, authority: s.authority ?? score.authority }),
         duplicateOfIndex: s.duplicateOfId ? indexOf.get(s.duplicateOfId) ?? null : null,
         truncated: truncatedIds ? truncatedIds.has(s.id) : null,
+        readState: receipt.readStates?.get(s.id) ?? null,
       };
     })
     .sort((a, b) => a.index - b.index);
+
+  // The uncited rivals' passages, by id, scoped to this run's sources and owner.
+  const rivalPassages = receipt.rivals.length
+    ? await prisma.researchPassage.findMany({
+        where: { id: { in: receipt.rivals.map((r) => r.passageId) }, userId, sourceId: { in: run.sources.map((s) => s.id) } },
+        select: { id: true, text: true, locator: true, sourceId: true },
+      })
+    : [];
+  const rivalPassageById = new Map(rivalPassages.map((p) => [p.id, p]));
+  // Each source's passages, cut from its snapshot exactly as `storeCorpus`
+  // cut them, for the corroboration the audit applied to multi-source claims.
+  const passageTextsOf = new Map<string, string[]>();
+  const passagesOf = (sourceId: string): string[] => {
+    let texts = passageTextsOf.get(sourceId);
+    if (!texts) {
+      const snapshot = sourceById.get(sourceId)?.snapshot ?? "";
+      texts = splitPassages(snapshot, { maxPassages: MAX_PASSAGES_PER_SOURCE }).map((p) => p.text);
+      passageTextsOf.set(sourceId, texts);
+    }
+    return texts;
+  };
 
   const summary: CitationCounts = {
     claims: run.claims.length,
@@ -1059,11 +1180,36 @@ export async function loadCitationAuditForMessage(
     contradicted: 0,
     unverified: 0,
     duplicateSources: run.sources.filter((s) => s.duplicateOfId).length,
+    contested: 0,
+    unresolvedCitations: 0,
   };
 
   const claims: ClaimAuditClaimView[] = run.claims.map((claim) => {
     const status = claim.status as ClaimStatus;
     tally(summary, status, claim.supportStrength);
+    const rivals: ClaimAuditRivalView[] = receipt.rivals
+      .filter((r) => r.claimId === claim.id)
+      .flatMap((r) => {
+        const passage = rivalPassageById.get(r.passageId);
+        const source = passage ? sourceById.get(passage.sourceId) : undefined;
+        if (!passage || !source) return [];
+        const audit = auditEvidence({
+          claim: claim.text,
+          claimType: claim.type as ClaimType,
+          passage: passage.text,
+          publishedAt: source.publishedAt ?? null,
+        });
+        const codedReasons = audit.reasons.filter((reason) => reason.code === "figure_mismatch");
+        // Recomputed like a link's reasons: a rival this build would no
+        // longer call one is not shown on the strength of an old receipt.
+        if (codedReasons.length === 0) return [];
+        return [{ sourceIndex: indexOf.get(source.id) ?? 0, passage: passage.text, locator: passage.locator, codedReasons }];
+      });
+    const contested =
+      status === "supported" && (claim.links.some((link) => link.stance === "contradicts") || rivals.length > 0);
+    if (contested) summary.contested = (summary.contested ?? 0) + 1;
+    const unresolved = receipt.claimCitations?.get(claim.id)?.unresolved ?? (receipt.claimCitations ? [] : null);
+    if (unresolved?.length) summary.unresolvedCitations = (summary.unresolvedCitations ?? 0) + 1;
     return {
       id: claim.id,
       text: claim.text,
@@ -1086,6 +1232,14 @@ export async function loadCitationAuditForMessage(
           claimType: claim.type as ClaimType,
           passage: link.passage.text,
           publishedAt: source?.publishedAt ?? null,
+          // The audit's own clock, so `source_stale` is the finding it made —
+          // and absent on audits that never checked freshness at all.
+          asOf: receipt.asOf,
+          // The claim's other cited sources, as the audit saw them. Absent on
+          // audits that predate the receipt, which never corroborated.
+          corroborating: (receipt.claimCitations?.get(claim.id)?.sourceIds ?? [])
+            .filter((id) => id !== source?.id)
+            .flatMap((id) => passagesOf(id)),
         });
         return {
           sourceIndex: source ? indexOf.get(source.id) ?? 0 : 0,
@@ -1097,8 +1251,12 @@ export async function loadCitationAuditForMessage(
           codedReasons: audit.reasons,
         };
       }),
+      rivals,
+      contested,
+      unresolvedCitations: unresolved,
     };
   });
 
   return { runId: run.id, state: run.state, claims, sources, summary };
 }
+
