@@ -59,6 +59,43 @@ export interface GenerationUsage {
   cacheWrite1h: number;
   cacheRead: number;
   cacheWrite: number;
+  /** Whether the billed counts are the provider's report or partly estimated (see `usageBasisOf`). */
+  basis: UsageBasis;
+}
+
+/**
+ * "reported": every billed count is a number the provider sent.
+ * "estimated": `resolveBillableTokens` filled at least one in from characters.
+ */
+export type UsageBasis = "reported" | "estimated";
+
+/**
+ * Which of the two a billed figure is, by the same rules `resolveBillableTokens`
+ * (pricing.ts) applies, so a receipt never calls a chars/4 guess a report:
+ *  - nothing reported at all: both counts come from characters;
+ *  - no prompt count but a billed prompt: the prompt came from characters (a
+ *    fully cached Anthropic turn bills 0 fresh input and is not flagged);
+ *  - a billed output above everything the provider reported for output
+ *    (completion, reasoning, total minus prompt): the character floor won.
+ */
+export function usageBasisOf(
+  raw: Pick<RawGenerationUsage, "input" | "output" | "reasoning" | "total" | "cacheRead" | "cacheWrite" | "cacheWrite5m" | "cacheWrite1h">,
+  billed: { promptTokens: number; completionTokens: number }
+): UsageBasis {
+  const positive = (n: number | undefined) => Math.max(0, n ?? 0);
+  const reportedAnything =
+    positive(raw.input) > 0 ||
+    positive(raw.output) > 0 ||
+    positive(raw.total) > 0 ||
+    positive(raw.reasoning) > 0 ||
+    positive(raw.cacheRead) > 0 ||
+    positive(raw.cacheWrite) + positive(raw.cacheWrite5m) + positive(raw.cacheWrite1h) > 0;
+  if (!reportedAnything) return billed.promptTokens > 0 || billed.completionTokens > 0 ? "estimated" : "reported";
+  if (raw.input == null && billed.promptTokens > 0) return "estimated";
+  const total = positive(raw.total);
+  const impliedOut = total > 0 && billed.promptTokens > 0 ? Math.max(0, total - billed.promptTokens) : 0;
+  const reportedOut = Math.max(positive(raw.output), positive(raw.reasoning), impliedOut);
+  return billed.completionTokens > reportedOut ? "estimated" : "reported";
 }
 
 /**
@@ -134,5 +171,6 @@ export function buildUsage(
     cacheWrite1h,
     cacheRead,
     cacheWrite,
+    basis: usageBasisOf(raw, billed),
   };
 }

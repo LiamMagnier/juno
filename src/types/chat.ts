@@ -153,6 +153,30 @@ export interface ClientMessage {
    * routed by hand and for turns written before Auto Router 2.0.
    */
   routing?: RoutingReceipt | null;
+  /**
+   * What this turn actually ran with, as the server applied it. Sent on
+   * PRIVATE turns, where the frame is the only record. The side-by-side
+   * comparison reads it to show each pane's real effort, search and cost basis
+   * instead of the ones it asked for. Absent on saved turns and from older
+   * servers, which means "not reported", never "off".
+   */
+  applied?: ClientAppliedConditions;
+}
+
+/** The conditions a private turn ran under (see `ClientMessage.applied`). */
+export interface ClientAppliedConditions {
+  /** The effort sent to the provider. Null when none was sent: Instant, or a model with no effort control. */
+  reasoningEffort: ReasoningEffort | null;
+  /** Provider web search was offered to the model on this turn. */
+  webSearch: boolean;
+  /**
+   * Where `promptTokens`, `completionTokens` and `costUsd` come from.
+   * "reported": the provider's own usage report, priced at list rates.
+   * "estimated": at least one count was filled in from text length
+   * (characters / 4) because the provider reported none, or less than was
+   * streamed.
+   */
+  usageBasis: "reported" | "estimated";
 }
 
 export interface ClientSource {

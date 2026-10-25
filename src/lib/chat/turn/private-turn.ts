@@ -46,6 +46,7 @@ import { recordTurnSpend } from "./spend";
 import { createTurnTrace, traceUsage } from "./trace";
 import { emitTurnTrace } from "./trace-sink";
 import type { TurnUser } from "./types";
+import type { ReasoningEffort } from "@/types/chat";
 
 /*
  * Pipeline — the private turn, start to finish.
@@ -245,6 +246,10 @@ export async function runPrivateTurn({
       // Declared out here because the catch below reads it to tell a
       // budget-triggered abort from a real failure.
       let budgetHalted = false;
+      // The effort actually sent to the provider, for the done frame's
+      // `applied` record. Set once it is resolved below; a turn that fails
+      // before that point never reaches a done frame.
+      let appliedEffort: ReasoningEffort | null = null;
       // Same reason: the catch reads `stalled` to tell a wedged provider from
       // a user Stop. Nothing else bounds a stream that goes quiet — the SDK
       // timeout is cleared once headers arrive, and Juno's own 15s SSE
@@ -298,6 +303,7 @@ export async function runPrivateTurn({
           modelInfo,
           autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
         );
+        appliedEffort = reasoningEffort ?? null;
         sendReasoningAndSearch(sendActivity, {
           reasoningEffort,
           auto: isAutoModelId(requestedId),
@@ -383,7 +389,11 @@ export async function runPrivateTurn({
 
         send({
           type: "done",
-          message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog, routingReceipt),
+          message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog, routingReceipt, {
+            reasoningEffort: appliedEffort,
+            webSearch: useWebSearch,
+            usageBasis: usage.basis,
+          }),
           artifacts: [],
           memoryUpdated: false,
           quota: consumed.quota,
@@ -453,7 +463,11 @@ export async function runPrivateTurn({
           );
           send({
             type: "done",
-            message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog, routingReceipt),
+            message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog, routingReceipt, {
+              reasoningEffort: appliedEffort,
+              webSearch: useWebSearch,
+              usageBasis: partialUsage.basis,
+            }),
             artifacts: [],
             memoryUpdated: false,
             quota: consumed.quota,

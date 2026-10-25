@@ -59,6 +59,8 @@ if (!DB_URL) {
   let forcedPlatformBudget = false;
   let minimumAutoContext = 0;
   let fallbackChecks = 0;
+  /** Lets one test script the PRIVATE turn's model (it passes no requestContext). */
+  let scriptPrivateTurn = false;
   const logLines: string[] = [];
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -138,8 +140,9 @@ if (!DB_URL) {
         // Only the turn itself is scripted. Background work after the turn
         // (moderation, memory extraction) also reaches `streamChat`; it gets an
         // empty reply so it neither hangs nor counts as a turn call.
-        streamChat: (opts: { signal?: AbortSignal; system: string; requestContext?: unknown }) => {
-          if (!opts.requestContext) return (async function* () { yield { type: "finish", reason: "stop" }; })();
+        streamChat: (opts: { signal?: AbortSignal; system: string; requestContext?: unknown; cacheKey?: string }) => {
+          const privateTurn = scriptPrivateTurn && String(opts.cacheKey ?? "").startsWith("private-");
+          if (!opts.requestContext && !privateTurn) return (async function* () { yield { type: "finish", reason: "stop" }; })();
           streamCalls += 1;
           return script(opts);
         },
@@ -429,8 +432,174 @@ if (!DB_URL) {
     assert.equal(status, 200);
     assert.equal(frames[0].conversationId, "private");
     assert.equal(frames.at(-1)?.type, "done");
+    // What the turn ran with travels on the frame, its only record (/compare reads it).
+    const applied = (frames.at(-1)?.message as { applied?: Record<string, unknown> } | undefined)?.applied;
+    assert.ok(applied, "the private done frame reports its applied conditions");
+    assert.equal(applied.webSearch, false);
+    // The stand-in model answers a turn without a requestContext (the private
+    // path passes none) with an empty reply and no usage, so the receipt is
+    // billed from the prompt's characters, and the frame must say so.
+    assert.equal(applied.usageBasis, "estimated", "no provider usage was reported");
+    assert.ok("reasoningEffort" in applied);
     assert.equal(await prisma.conversation.count({ where: { userId: user.id } }), 0);
     assert.equal(await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }), 0);
+  });
+
+  test("a private turn whose provider reports usage says so, with the effort and search it ran with", async () => {
+    await seedUser();
+    script = () => answer("Private reply.");
+    scriptPrivateTurn = true;
+    try {
+      const { status, frames } = await chat({
+        privateMode: true,
+        message: "secret question",
+        privateHistory: [{ role: "USER", content: "secret question" }],
+        webSearch: false,
+      });
+      assert.equal(status, 200);
+      const message = frames.at(-1)?.message as {
+        content?: string;
+        promptTokens?: number;
+        completionTokens?: number;
+        applied?: { reasoningEffort: unknown; webSearch: boolean; usageBasis: string };
+      };
+      assert.equal(message.content, "Private reply.");
+      assert.equal(message.promptTokens, 40);
+      assert.equal(message.completionTokens, 12);
+      assert.equal(message.applied?.usageBasis, "reported", "40 in / 12 out came from the provider");
+      assert.equal(message.applied?.webSearch, false);
+      assert.ok(message.applied && "reasoningEffort" in message.applied);
+    } finally {
+      scriptPrivateTurn = false;
+    }
+  });
+
+  // ── Side-by-side /compare, end to end (P2-2) ─────────────────────────────
+
+  /** The comparison's fetch, answered by the real route handlers in-process. */
+  async function compareFetch(sent: { chats: Array<Record<string, unknown>>; cancels: string[] }) {
+    const chatRoute = await import("@/app/api/chat/route");
+    const cancelRoute = await import("@/app/api/chat/cancel/route");
+    return async (url: string, init: RequestInit): Promise<Response> => {
+      const body = String(init.body);
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      if (url === "/api/chat") sent.chats.push(parsed);
+      else sent.cancels.push(String(parsed.generationId));
+      const req = new Request(`http://juno.test${url}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-juno-request-id": `req-${randomUUID()}` },
+        body,
+      });
+      return url === "/api/chat/cancel" ? cancelRoute.POST(req) : chatRoute.POST(req);
+    };
+  }
+
+  test("concurrent first turns of a period all start: the usage and spend-period rows are created atomically", async () => {
+    // A comparison opens two or three turns at once. The first turns of a
+    // period used to race Prisma's find-then-create upsert of Usage and
+    // SpendPeriod, and the loser failed before streaming ("Couldn't start the
+    // chat"). Several fresh accounts make the race near-certain to show.
+    script = () => answer("ok");
+    for (let round = 0; round < 4; round++) {
+      const user = await seedUser();
+      const results = await Promise.all(
+        [0, 1, 2].map(() =>
+          chat({ privateMode: true, message: "same", privateHistory: [{ role: "USER", content: "same" }] })
+        )
+      );
+      assert.deepEqual(results.map((r) => r.status), [200, 200, 200], `round ${round}: ${results.map((r) => r.text.slice(0, 120)).join(" | ")}`);
+      assert.deepEqual(results.map((r) => r.frames.at(-1)?.type), ["done", "done", "done"]);
+      const usage = await prisma.usage.findMany({ where: { userId: user.id } });
+      assert.equal(usage.length, 1);
+      assert.equal(usage[0].messageCount, 3, "every turn was counted, once");
+      assert.equal(await prisma.spendPeriod.count({ where: { userId: user.id } }), 1);
+    }
+  });
+
+  const COMPARE_A = "qwen:qwen3.8-flash";
+  const COMPARE_B = "anthropic:claude-opus-5-5";
+
+  test("a comparison runs two private turns through the real route on identical input, and reports what each ran with", async () => {
+    await seedUser();
+    const { CompareController } = await import("@/lib/compare/controller");
+    const { createRunSpec, sharedInputFingerprint } = await import("@/lib/compare/run-spec");
+    const sent = { chats: [] as Array<Record<string, unknown>>, cancels: [] as string[] };
+    script = (opts) => answer(`Answer from ${(opts as { model?: ModelInfo }).model?.id}`);
+    scriptPrivateTurn = true;
+    try {
+      const compare = new CompareController({ fetch: await compareFetch(sent) });
+      const spec = createRunSpec({ id: "e2e", prompt: "Same question", settings: { webSearch: false, reasoningEffort: "high" }, timeZone: "UTC" });
+      await compare.start(spec, [
+        { id: "a", modelId: COMPARE_A },
+        { id: "b", modelId: COMPARE_B },
+      ]);
+      await drainAfter();
+      const { runs, anyStreaming } = compare.getSnapshot();
+      assert.equal(anyStreaming, false);
+      for (const [paneId, modelId] of [["a", COMPARE_A], ["b", COMPARE_B]] as const) {
+        const run = runs[paneId];
+        assert.equal(run.status, "done", `${paneId}: ${run.errorMessage}`);
+        assert.equal(run.servedModelId, modelId, "the server ran the model the pane asked for");
+        assert.equal(run.content, `Answer from ${modelId}`);
+        assert.equal(run.inputFingerprint, spec.fingerprint);
+        assert.equal(run.usageBasis, "reported");
+        assert.equal(run.promptTokens, 40);
+        assert.equal(run.completionTokens, 12);
+        assert.ok((run.costUsd ?? 0) > 0, "a reported, priced cost");
+        assert.notEqual(run.appliedEffort, undefined, "the server reported the effort it sent");
+        assert.equal(run.webSearchApplied, false);
+        assert.ok(run.startedAt != null && run.firstOutputAt != null && run.finishedAt != null, "latency was measured");
+      }
+      assert.equal(sent.chats.length, 2);
+      assert.equal(sharedInputFingerprint(sent.chats[0]), sharedInputFingerprint(sent.chats[1]));
+      assert.equal(sent.cancels.length, 0);
+      assert.equal(await prisma.conversation.count({ where: { title: "Same question" } }), 0, "a comparison stores nothing");
+    } finally {
+      scriptPrivateTurn = false;
+    }
+  });
+
+  test("Stop in a comparison cancels the real generations server-side and keeps each partial answer", async () => {
+    const user = await seedUser();
+    const { CompareController } = await import("@/lib/compare/controller");
+    const { createRunSpec } = await import("@/lib/compare/run-spec");
+    const sent = { chats: [] as Array<Record<string, unknown>>, cancels: [] as string[] };
+    script = async function* (opts) {
+      yield { type: "text", text: "Half an" };
+      for (let i = 0; i < 300 && !opts.signal?.aborted; i++) await sleep(10);
+      if (opts.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
+      yield { type: "text", text: " answer" };
+    };
+    scriptPrivateTurn = true;
+    try {
+      const compare = new CompareController({ fetch: await compareFetch(sent) });
+      const spec = createRunSpec({ id: "e2e-stop", prompt: "Go.", settings: { webSearch: false, reasoningEffort: null }, timeZone: null });
+      const finished = compare.start(spec, [
+        { id: "a", modelId: COMPARE_A },
+        { id: "b", modelId: COMPARE_B },
+      ]);
+      for (let i = 0; i < 300; i++) {
+        const runs = Object.values(compare.getSnapshot().runs);
+        if (runs.length === 2 && runs.every((run) => run.status === "writing")) break;
+        await sleep(10);
+      }
+      assert.deepEqual(Object.values(compare.getSnapshot().runs).map((run) => run.status), ["writing", "writing"]);
+      compare.stopAll();
+      await finished;
+      await drainAfter();
+      const { runs, stopping } = compare.getSnapshot();
+      assert.equal(stopping, false);
+      assert.deepEqual(new Set(sent.cancels), new Set(sent.chats.map((body) => String(body.generationId))), "both generations were cancelled through the route");
+      for (const run of Object.values(runs)) {
+        assert.equal(run.status, "done");
+        assert.equal(run.finishReason, "user_stopped");
+        assert.equal(run.content, "Half an", "the partial answer is kept");
+      }
+      const usage = await prisma.usage.findFirst({ where: { userId: user.id } });
+      assert.equal(usage?.messageCount, 2, "two stopped private turns are two messages, not refunded");
+    } finally {
+      scriptPrivateTurn = false;
+    }
   });
 
   // ── Reliability (BRIEF §48) ───────────────────────────────────────────────

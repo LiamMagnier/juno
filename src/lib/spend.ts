@@ -806,12 +806,18 @@ async function ensureSpendPeriod(userId: string, period: BillingPeriod): Promise
   if (existing) return existing.id;
 
   const seeded = await spendSinceMicroUsd(userId, new Date(period.startMs));
-  const row = await prisma.spendPeriod.upsert({
+  // One atomic INSERT … ON CONFLICT DO NOTHING: a concurrent caller that won
+  // the race has already seeded the row, and re-seeding would clobber whatever
+  // has settled since. This was an `upsert` with an empty update, which Prisma
+  // runs as find-then-create for a compound key, so two first turns of a
+  // period at once (a side-by-side comparison sends two or three) both tried to
+  // create it and the loser failed on the unique key before streaming.
+  await prisma.spendPeriod.createMany({
+    data: [{ userId, period: key, committedMicroUsd: BigInt(Math.max(0, seeded)) }],
+    skipDuplicates: true,
+  });
+  const row = await prisma.spendPeriod.findUniqueOrThrow({
     where: { userId_period: { userId, period: key } },
-    create: { userId, period: key, committedMicroUsd: BigInt(Math.max(0, seeded)) },
-    // Empty on purpose: a concurrent caller that won the race has already
-    // seeded it, and re-seeding would clobber whatever has settled since.
-    update: {},
     select: { id: true },
   });
   return row.id;
