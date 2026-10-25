@@ -140,7 +140,7 @@ export function sofficeInstallRoot(soffice: string): string | null {
  * provider key or token is in reach of a hostile document.
  */
 export function sofficeEnv(work: string): NodeJS.ProcessEnv {
-  return { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: work, LANG: "C.UTF-8" };
+  return { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: work, LANG: "C.UTF-8" } as unknown as NodeJS.ProcessEnv;
 }
 
 function convert(soffice: string, input: string, format: keyof typeof IMPORT_FILTERS, target: string, outDir: string, work: string, sandboxed: boolean): { ok: boolean; log: string } {

@@ -142,7 +142,7 @@ export function validateCodeTests(spec: CodeSpec, ctx: CodeContext): CheckResult
       timeout: timeoutMs,
       killSignal: "SIGKILL" as const,
       maxBuffer: 4 * 1024 * 1024,
-      env: { PATH: process.env.PATH ?? "", NODE_ENV: "test" },
+      env: { PATH: process.env.PATH ?? "", NODE_ENV: "test" } as NodeJS.ProcessEnv,
     };
     const node = nodeBinary();
     const run = sandbox.available

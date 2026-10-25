@@ -220,7 +220,7 @@ function probe(): SandboxStatus {
       encoding: "utf8",
       timeout: 20_000,
       killSignal: "SIGKILL",
-      env: { PATH: process.env.PATH ?? "" },
+      env: { PATH: process.env.PATH ?? "" } as unknown as NodeJS.ProcessEnv,
     });
     if (run.error) return { available: false, reason: `could not start unshare: ${run.error.message}` };
     if (run.status !== 0) {

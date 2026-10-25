@@ -574,7 +574,7 @@ process.stdout.write(JSON.stringify(r));
 `
     );
     const node = nodeBinary();
-    const run = runSandboxed(node, ["probe.mjs"], { readOnly: [work, node], cwd: work }, { encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "" } });
+    const run = runSandboxed(node, ["probe.mjs"], { readOnly: [work, node], cwd: work }, { encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "" } as unknown as NodeJS.ProcessEnv });
     assert.equal(run.status, 0, run.stderr);
     const r = JSON.parse(run.stdout) as Record<string, string | number>;
     assert.equal(r.read, "err:ENOENT", JSON.stringify(r));
@@ -601,7 +601,7 @@ process.stdout.write(JSON.stringify(r));
     const node = nodeBinary();
     const started = Date.now();
     try {
-      const run = runSandboxed(node, [path.join(work, "spin.js"), work], { readOnly: [work, node], cwd: work }, { encoding: "utf8", timeout: 1_500, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "" } });
+      const run = runSandboxed(node, [path.join(work, "spin.js"), work], { readOnly: [work, node], cwd: work }, { encoding: "utf8", timeout: 1_500, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "" } as unknown as NodeJS.ProcessEnv });
       assert.equal((run.error as NodeJS.ErrnoException | undefined)?.code, "ETIMEDOUT");
       assert.ok(Date.now() - started < 10_000);
       spawnSync("sleep", ["0.5"]);
