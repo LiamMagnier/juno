@@ -228,6 +228,33 @@ update the backend, SSH in and run:
 ./deploy/deploy.sh
 ```
 
+#### Before rolling back past a release
+`./deploy/deploy.sh --rollback` restores the previous release's code, not the
+data the newer release wrote. Some rows written by a newer release do not
+parse on an older one. Check the list below before you roll back past one of
+these releases, and keep the rollback short:
+
+- **Teach Juno (taught skills).** From this release, a skill contract may name
+  namespaced connector ids such as `composio:gmail` or `mcp:<id>`
+  (`SKILL_CONNECTOR_NAME_PATTERN` in `src/lib/work/skills.ts`). An older build
+  rejects the `:`, and its `parseSkillContract` then reads the WHOLE contract
+  as empty. While the older build runs, such a skill loses its inputs,
+  outputs, budget, policy and Teach provenance, so a taught skill is no longer
+  kept to what it lists. The stored JSON is intact, and redeploying the newer
+  release restores it. Editing the skill on the older build would save a new
+  version with the empty contract, so do not edit skills during the rollback.
+  To count the affected versions first:
+  ```sql
+  SELECT count(*) FROM "WorkSkillVersion" v
+  WHERE EXISTS (
+    SELECT 1 FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(v.contract->'requestedConnectors') = 'array'
+           THEN v.contract->'requestedConnectors' ELSE '[]'::jsonb END
+    ) AS c
+    WHERE c LIKE '%:%'
+  );
+  ```
+
 ---
 
 ## Step 9: Choose your Integration & Domain Strategy

@@ -34,9 +34,11 @@ const START_TASK_TOOL_ID = "start_task";
  * that make the sentence true, driven through `applyChatSkill` the way the
  * chat route applies a skill the person picked:
  *
- *   - apps the skill names are the only apps the turn keeps (every skill);
  *   - a taught skill that lists anything keeps to its list: tools, apps, web
  *     search and the canvas it did not list are not used;
+ *   - a skill that was not taught keeps the turn's apps whatever it names: a
+ *     contract written before Teach holds bare ids (`gmail`) that match none
+ *     of the turn's namespaced ones (`composio:gmail`);
  *   - a taught skill that lists nothing narrows nothing (the page says so);
  *   - a skill that was not taught keeps today's rule: each kind narrows only
  *     when it names at least one of it.
@@ -119,15 +121,27 @@ test("a taught skill is marked as declaring its surface; any other skill is not"
   assert.equal(skillDeclaresWholeSurface(apply({ taught: true, connectors: ["notion"] })), true);
 });
 
-test("apps: a skill that names apps keeps only those of the turn's, taught or not", () => {
-  for (const taught of [true, false]) {
-    const application = apply({ taught, connectors: ["composio:gmail"] });
-    assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, application)), ["composio:gmail"], `taught=${taught}`);
-  }
+test("apps: a taught skill that names apps keeps only those of the turn's", () => {
+  const application = apply({ taught: true, connectors: ["composio:gmail"] });
+  assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, application)), ["composio:gmail"]);
+  assert.deepEqual(ids(scopeTurnToSkill(application, turn).connectors), ["composio:gmail"]);
   // Never widened: an app the turn does not have is not added by naming it.
   const asksForSlack = apply({ taught: true, connectors: ["slack"] });
   assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, asksForSlack)), []);
   assert.deepEqual(asksForSlack.resolved.withheld.connectors, ["slack"], "and the model is told it did not get it");
+});
+
+test("apps: a skill that was not taught keeps the turn's apps, whatever its contract names", () => {
+  // A contract written before Teach could hold only bare ids. Narrowing on
+  // `gmail` against the turn's `composio:gmail` would match nothing and strip
+  // every app, including one the person @-mentioned.
+  const legacy = apply({ connectors: ["gmail"] });
+  assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, legacy)), ids(CONNECTORS), "bare id");
+  assert.deepEqual(ids(scopeTurnToSkill(legacy, turn).connectors), ids(CONNECTORS), "bare id, whole turn");
+  assert.deepEqual(legacy.resolved.withheld.connectors, ["gmail"], "the unmatched name is still reported as withheld");
+  // A namespaced id written through the Work skills API narrows nothing either.
+  const named = apply({ connectors: ["composio:gmail"] });
+  assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, named)), ids(CONNECTORS), "namespaced id");
 });
 
 test("apps: a skill naming none keeps the turn's apps, unless it is taught and lists tools", () => {
@@ -302,7 +316,7 @@ test("the turn wires what no skill can list to the taught scope, tool and prompt
   assert.match(turnModule("cross"), /input\.skillPermits !== false && \(await chatConversationEnabled/);
 });
 
-test("the turn: nothing listed, no skill, or a skill that was not taught leaves web search and the canvas alone", () => {
+test("the turn: nothing listed, no skill, or a skill that was not taught leaves web search, the canvas and apps alone", () => {
   for (const [label, application] of [
     ["no skill", null],
     ["taught, nothing listed", apply({ taught: true })],
@@ -313,9 +327,9 @@ test("the turn: nothing listed, no skill, or a skill that was not taught leaves 
     assert.equal(scoped.alevrSearch, true, label);
     assert.equal(scoped.canvas, true, label);
   }
-  // The imported skill still loses apps it does not name only when it names some.
+  // A skill that was not taught keeps the turn's apps, whether it names some or not.
   assert.deepEqual(ids(scopeTurnToSkill(apply({ tools: ["run_code"] }), turn).connectors), ids(CONNECTORS));
-  assert.deepEqual(ids(scopeTurnToSkill(apply({ connectors: ["notion"] }), turn).connectors), ["notion"]);
+  assert.deepEqual(ids(scopeTurnToSkill(apply({ connectors: ["notion"] }), turn).connectors), ids(CONNECTORS));
 });
 
 test("the chat route narrows the turn once, right after the skill applies, and the private branch does too", () => {

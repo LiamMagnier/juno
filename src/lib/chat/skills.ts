@@ -626,19 +626,25 @@ export function narrowRuntimeToolsForSkill(
 /**
  * The connected apps a turn keeps once a skill is applied.
  *
- * Narrowed, never widened, by the same rule as tools: a skill that names apps
- * (`contract.requestedConnectors`) keeps only those of the turn's connectors;
- * a skill that names none keeps them all — except a taught skill that lists
- * tools and no apps, which keeps none, because its list is its whole surface
- * (`skillDeclaresWholeSurface`). The ids compared are the connector ids the
- * turn resolved (`ActiveConnector.id`), which are what Teach and the contract
- * store.
+ * Only a taught skill (`declaredSurface`) narrows apps. Its list was reviewed
+ * on the Teach page, which stores the connector ids the turn resolves
+ * (`ActiveConnector.id`: `composio:<slug>`, `user_mcp:<id>`, `mcp:<id>`), so
+ * a taught skill that names apps keeps only those of the turn's connectors,
+ * and one that lists tools and no apps keeps none, because its list is its
+ * whole surface (`skillDeclaresWholeSurface`). Narrowed, never widened.
+ *
+ * Every other skill keeps the turn's apps, as chat always did: a contract
+ * written before Teach could hold only bare ids (`gmail`, never
+ * `composio:gmail`), which match none of the turn's namespaced ids, so
+ * narrowing on them would strip every app from the turn, even one the person
+ * @-mentioned. Its unmatched names are still reported to the model as
+ * withheld (`resolveSkillPermissions`).
  */
 export function narrowConnectorsForSkill<C extends { id: string }>(
   connectors: readonly C[],
   application: ChatSkillApplication | null
 ): C[] {
-  if (!application) return [...connectors];
+  if (!application?.declaredSurface) return [...connectors];
   const requested = requestedSurface(application).connectors;
   if (requested.size === 0 && !skillDeclaresWholeSurface(application)) return [...connectors];
   return connectors.filter((connector) => requested.has(connector.id));
@@ -676,7 +682,7 @@ export interface SkillTurnScope<C extends { id: string }> {
  * place, so the prompt, the provider request and the trace all read the same
  * answer.
  *
- * - Apps: `narrowConnectorsForSkill`, for every skill.
+ * - Apps: `narrowConnectorsForSkill`, for a taught skill only.
  * - Web search, deep research and the canvas: only for a skill that declares
  *   its whole surface (a taught one listing anything). Web search and deep
  *   research stay when it lists "Search the web" or "Open web pages", as Alevr

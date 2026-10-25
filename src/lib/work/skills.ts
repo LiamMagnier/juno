@@ -275,6 +275,11 @@ const nameSchema = z.string().trim().regex(NAME_PATTERN);
  * withheld. Matching is still exact string equality against the grant, so
  * admitting the separator lets a skill name a connector that exists and widens
  * nothing.
+ *
+ * Rollback hazard: a build from before this pattern rejects the `:`, and its
+ * `parseSkillContract` then reads the whole contract as empty, so it drops the
+ * inputs, budget, policy and Teach provenance too, for as long as it runs.
+ * See "Before rolling back past a release" in deploy/VM_SETUP_GUIDE.md.
  */
 export const SKILL_CONNECTOR_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/;
 

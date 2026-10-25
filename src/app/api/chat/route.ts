@@ -191,8 +191,8 @@ async function handleChat(req: Request) {
     });
     const { appliedSkill } = skill;
     // What the turn keeps once the skill has narrowed it (never more than it
-    // had): apps the skill does not name are not connected, and a taught skill
-    // keeps web search, deep research and the canvas only when it lists them
+    // had): a taught skill connects only the apps it names, and keeps web
+    // search, deep research and the canvas only when it lists them
     // (`scopeTurnToSkill`). Everything below — the prompt, the provider
     // request, the native tools, the trace — reads these.
     const {
