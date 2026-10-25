@@ -220,17 +220,18 @@ export async function auditClaims(opts: {
     const ranked = candidates
       .map((candidate) => {
         const source = sourceByIndex.get(candidate.sourceIndex);
+        const corroborating = corroboratingFor(candidate.sourceIndex);
         return {
           ...candidate,
           source,
-          corroborating: corroboratingFor(candidate.sourceIndex),
+          corroborating,
           audit: auditEvidence({
             claim: claim.text,
             claimType,
             passage: candidate.passage.text,
             publishedAt: source?.publishedAt ?? null,
             asOf,
-            corroborating: corroboratingFor(candidate.sourceIndex),
+            corroborating,
           }),
         };
       })
