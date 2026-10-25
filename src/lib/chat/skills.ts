@@ -49,6 +49,7 @@ import {
   type WorkSkillGrantLayer,
 } from "@/lib/work/skills";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { isTaughtContract } from "@/lib/skills/teach";
 
 /**
  * The tool names a chat turn can grant.
@@ -274,6 +275,15 @@ export interface ChatSkillApplication {
    * `skill_applied` audit row (`contentHash`) and on every run of its scripts.
    */
   bundle: { digest: string; manifest: SkillBundleManifest } | null;
+  /**
+   * The skill's tools and apps are its WHOLE surface: a taught skill, whose
+   * list the person reviewed on the Teach page under "uses just what's listed
+   * here" (`isTaughtContract`). When it lists anything, what it does not list
+   * is not used — tools, apps, web search and the canvas alike — see
+   * `scopeTurnToSkill`. Absent for every other skill, where each kind narrows
+   * only when the skill names at least one of it.
+   */
+  declaredSurface?: boolean;
 }
 
 export type ChatSkillOutcome =
@@ -525,8 +535,53 @@ export function applyChatSkill(input: {
       resolved,
       ...(row.versionId ? { versionId: row.versionId } : {}),
       bundle: row.bundle ?? null,
+      ...(isTaughtContract(row.contract) ? { declaredSurface: true } : {}),
     },
   };
+}
+
+/**
+ * The tool and connector names the applied skill asked for, granted or not.
+ *
+ * A list that is missing reads as empty. `resolveSkillPermissions` always
+ * fills all of them, but this is what every narrowing step reads, and an
+ * application built with only `tools` (as callers and tests did before apps
+ * were narrowed) must keep narrowing tools exactly as it did, not throw.
+ */
+function requestedSurface(application: ChatSkillApplication): { tools: Set<string>; connectors: Set<string> } {
+  const { resolved } = application;
+  const listed = (names: readonly string[] | undefined): readonly string[] => names ?? [];
+  return {
+    tools: new Set([...listed(resolved.tools), ...listed(resolved.withheld?.tools)].map(canonicalSkillToolName)),
+    connectors: new Set([...listed(resolved.connectors), ...listed(resolved.withheld?.connectors)]),
+  };
+}
+
+/**
+ * Whether the applied skill keeps the turn to exactly what it lists: a skill
+ * with a declared surface (a taught one) that lists at least one tool or app.
+ * Listing nothing narrows nothing, for taught skills as for every other.
+ */
+export function skillDeclaresWholeSurface(application: ChatSkillApplication | null): boolean {
+  if (!application?.declaredSurface) return false;
+  const requested = requestedSurface(application);
+  return requested.tools.size + requested.connectors.size > 0;
+}
+
+/**
+ * Whether the turn keeps what no skill can list: the folder on the person's Mac
+ * (the local-folder tools), the agent configuration tools (`create_agent`,
+ * `update_agent`, `agent_goal`, `agent_memory`, `propose_setup_change`,
+ * `create_room`), a room member's `ask_room_member` and the cross-conversation
+ * tools. Teach offers only `TEACHABLE_TOOLS`, so a taught skill that lists
+ * anything — a list the person reviewed as everything it uses — runs without
+ * them. Every other skill, and a taught one listing nothing, keeps them as the
+ * turn had them: they are choices the person made for this chat or this agent,
+ * not tools a skill's author reached for, and an imported skill has no way to
+ * name them.
+ */
+export function skillKeepsUnlistedSurfaces(application: ChatSkillApplication | null): boolean {
+  return !skillDeclaresWholeSurface(application);
 }
 
 /**
@@ -546,20 +601,117 @@ export function applyChatSkill(input: {
  * is "what may the TURN use", and the turn's own answer is already the user's.
  * A skill is not a way to take capabilities away from a conversation the reader
  * configured.
+ *
+ * ONE EXCEPTION, the taught skill (`declaredSurface`). Its list was reviewed on
+ * the Teach page as the whole of what it uses, so one that lists only apps
+ * keeps no tools beyond its own skill tools: an empty tool list there is the
+ * person's answer, not an author's omission. Listing nothing at all still
+ * narrows nothing (`skillDeclaresWholeSurface`).
  */
 export function narrowRuntimeToolsForSkill(
   allowlist: readonly string[],
   application: ChatSkillApplication | null
 ): string[] {
   if (!application) return [...allowlist];
-  const requested = new Set(
-    [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
-  );
-  if (requested.size === 0) return [...allowlist];
+  const requested = requestedSurface(application).tools;
+  if (requested.size === 0 && !skillDeclaresWholeSurface(application)) return [...allowlist];
   // What the skill's own method implies, as in a Work run
   // (`skillPermittedRunTools`): a folder with scripts asks to run them, and
   // `check_run` only ever follows a run `run_code` started.
   if (bundleHasScripts(application.bundle?.manifest)) requested.add(RUN_CODE_TOOL_ID);
   if (requested.has(RUN_CODE_TOOL_ID)) requested.add(CHECK_RUN_TOOL_ID);
   return allowlist.filter((tool) => SKILL_SELF_TOOL_SET.has(tool) || requested.has(canonicalSkillToolName(tool)));
+}
+
+/**
+ * The connected apps a turn keeps once a skill is applied.
+ *
+ * Only a taught skill (`declaredSurface`) narrows apps. Its list was reviewed
+ * on the Teach page, which stores the connector ids the turn resolves
+ * (`ActiveConnector.id`: `composio:<slug>`, `user_mcp:<id>`, `mcp:<id>`), so
+ * a taught skill that names apps keeps only those of the turn's connectors,
+ * and one that lists tools and no apps keeps none, because its list is its
+ * whole surface (`skillDeclaresWholeSurface`). Narrowed, never widened.
+ *
+ * Every other skill keeps the turn's apps, as chat always did: a contract
+ * written before Teach could hold only bare ids (`gmail`, never
+ * `composio:gmail`), which match none of the turn's namespaced ids, so
+ * narrowing on them would strip every app from the turn, even one the person
+ * @-mentioned. Its unmatched names are still reported to the model as
+ * withheld (`resolveSkillPermissions`).
+ */
+export function narrowConnectorsForSkill<C extends { id: string }>(
+  connectors: readonly C[],
+  application: ChatSkillApplication | null
+): C[] {
+  if (!application?.declaredSurface) return [...connectors];
+  const requested = requestedSurface(application).connectors;
+  if (requested.size === 0 && !skillDeclaresWholeSurface(application)) return [...connectors];
+  return connectors.filter((connector) => requested.has(connector.id));
+}
+
+/**
+ * Said instead of an answer when the person switched deep research on and
+ * picked a taught skill that does not list web search or page reading
+ * (`scopeTurnToSkill` turned research off). The same shape as the other
+ * "research could not run" notices: the turn answers with this, not with a
+ * reply that silently skipped the research they asked for.
+ */
+export const SKILL_WITHHELD_RESEARCH = {
+  notice:
+    "Deep research didn’t start: the skill you picked uses only what it lists, and searching the web isn’t on its list. Send the message without the skill to research it, or add “Search the web” to the skill under Skills, Teach.",
+  title: "Deep research was skipped",
+  detail: "The skill you picked doesn’t list web search.",
+} as const;
+
+/** What a chat turn carries, as `scopeTurnToSkill` narrows it. */
+export interface SkillTurnScope<C extends { id: string }> {
+  /** Provider-side web search (`useWebSearch`). */
+  webSearch: boolean;
+  /** Alevr Search's own tools (`useAlevrSearch`). */
+  alevrSearch: boolean;
+  /** Deep research (`researchActive`), which reads the web on its own. */
+  research: boolean;
+  /** The canvas (`canvasOn`). */
+  canvas: boolean;
+  connectors: C[];
+}
+
+/**
+ * Everything the applied skill narrows that is not a runtime tool id, in one
+ * place, so the prompt, the provider request and the trace all read the same
+ * answer.
+ *
+ * - Apps: `narrowConnectorsForSkill`, for a taught skill only.
+ * - Web search, deep research and the canvas: only for a skill that declares
+ *   its whole surface (a taught one listing anything). Web search and deep
+ *   research stay when it lists "Search the web" or "Open web pages", as Alevr
+ *   Search's tools already did for every skill; the canvas stays when it lists
+ *   "Write in a canvas". Other skills keep all three as the turn had them,
+ *   unchanged: a skill imported from elsewhere cannot name the canvas, and
+ *   taking it away from every skill with an `allowed-tools` line would be a
+ *   behaviour change nobody reviewed.
+ *
+ * What no skill can list (the Mac folder, the agent configuration tools, the
+ * room and cross-conversation tools) is gated where each is decided, on
+ * `skillKeepsUnlistedSurfaces`.
+ */
+export function scopeTurnToSkill<C extends { id: string }>(
+  application: ChatSkillApplication | null,
+  turn: { webSearch: boolean; alevrSearch: boolean; research?: boolean; canvas: boolean; connectors: readonly C[] }
+): SkillTurnScope<C> {
+  const connectors = narrowConnectorsForSkill(turn.connectors, application);
+  const research = turn.research ?? false;
+  if (!skillDeclaresWholeSurface(application)) {
+    return { webSearch: turn.webSearch, alevrSearch: turn.alevrSearch, research, canvas: turn.canvas, connectors };
+  }
+  const keepsWeb = narrowRuntimeToolsForSkill([CHAT_SKILL_TOOLS.webSearch, CHAT_SKILL_TOOLS.webFetch], application).length > 0;
+  const keepsCanvas = narrowRuntimeToolsForSkill([CHAT_SKILL_TOOLS.canvas], application).length > 0;
+  return {
+    webSearch: turn.webSearch && keepsWeb,
+    alevrSearch: turn.alevrSearch && keepsWeb,
+    research: research && keepsWeb,
+    canvas: turn.canvas && keepsCanvas,
+    connectors,
+  };
 }

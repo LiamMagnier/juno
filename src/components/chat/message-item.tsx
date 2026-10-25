@@ -59,6 +59,10 @@ const RoutineProposalList = nextDynamic(
   () => import("@/components/chat/routine-proposal-card").then((m) => m.RoutineProposalList),
   { ssr: false },
 );
+const SkillDraftList = nextDynamic(
+  () => import("@/components/skills/skill-draft-card").then((m) => m.SkillDraftList),
+  { ssr: false },
+);
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 
@@ -1485,6 +1489,9 @@ export const MessageItem = React.memo(function MessageItem({
         {view.activity?.some((evt) => Boolean(evt.routineProposal)) ? (
           <RoutineProposalList activity={view.activity} />
         ) : null}
+        {/* Skills the person taught (`draft_skill`): Review opens the Teach
+            page, where the only Save is (skill-draft-card.tsx). */}
+        {view.activity?.some((evt) => Boolean(evt.skillDraft)) ? <SkillDraftList activity={view.activity} /> : null}
 
         {/* Footer, below the answer it backs — the inline chips are the citation,
             this is the bibliography. */}

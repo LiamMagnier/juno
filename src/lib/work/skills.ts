@@ -267,6 +267,24 @@ const NAME_PATTERN = SKILL_CAPABILITY_NAME_PATTERN;
 
 const nameSchema = z.string().trim().regex(NAME_PATTERN);
 
+/**
+ * A connector id as a turn grants it: the capability pattern plus `:`, because
+ * the ids chat and Work actually carry are namespaced — `composio:gmail`, a
+ * user MCP server's `mcp:<id>` — and under the bare capability pattern no skill
+ * could name one, so a skill that needs Gmail could only ever be told it was
+ * withheld. Matching is still exact string equality against the grant, so
+ * admitting the separator lets a skill name a connector that exists and widens
+ * nothing.
+ *
+ * Rollback hazard: a build from before this pattern rejects the `:`, and its
+ * `parseSkillContract` then reads the whole contract as empty, so it drops the
+ * inputs, budget, policy and Teach provenance too, for as long as it runs.
+ * See "Before rolling back past a release" in deploy/VM_SETUP_GUIDE.md.
+ */
+export const SKILL_CONNECTOR_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/;
+
+const connectorNameSchema = z.string().trim().regex(SKILL_CONNECTOR_NAME_PATTERN);
+
 export const SKILL_FIELD_KINDS = ["string", "number", "boolean", "file", "url"] as const;
 export type SkillFieldKind = (typeof SKILL_FIELD_KINDS)[number];
 
@@ -355,7 +373,7 @@ const budgetSchema = z.object({
 export const skillContractSchema = z.object({
   inputs: z.array(skillFieldSchema).max(MAX_CONTRACT_FIELDS).default([]),
   outputs: z.array(skillFieldSchema).max(MAX_CONTRACT_FIELDS).default([]),
-  requestedConnectors: z.array(nameSchema).max(MAX_REQUESTED_NAMES).default([]),
+  requestedConnectors: z.array(connectorNameSchema).max(MAX_REQUESTED_NAMES).default([]),
   requestedApps: z.array(nameSchema).max(MAX_REQUESTED_NAMES).default([]),
   requestedDomains: z
     .array(z.string().trim().min(1).max(MAX_DOMAIN_CHARS))

@@ -10,9 +10,10 @@ import { executionEntitlements } from "@/lib/tools/entitlements";
 import { openGrantedProviders, providerAvailability, toolProviders } from "@/lib/tools/providers";
 import type { ToolTurn } from "@/lib/tools/types";
 import { codeExecutionNote } from "@/lib/chat/prompt-sections";
-import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
+import { narrowRuntimeToolsForSkill, skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
 import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
+import { createDraftSkillTool, skillDraftActivity } from "@/lib/chat/skill-draft-tool";
 import { createGenerateImageTool } from "@/lib/chat/image-tool";
 import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
@@ -163,7 +164,14 @@ export async function buildNativeTools({
   conversationId,
   conversation,
   userMessageId,
-  approvals: { taskToolOn, routineToolOn = false, imageToolOn = false, agentConfigToolsOn, agentContext },
+  approvals: {
+    taskToolOn,
+    routineToolOn = false,
+    imageToolOn = false,
+    skillDraftToolOn = false,
+    agentConfigToolsOn,
+    agentContext,
+  },
   appliedSkill,
   conversationModelId,
   requestedEffort,
@@ -184,6 +192,7 @@ export async function buildNativeTools({
   plan,
   generatedAttachmentIds,
   onImageModel,
+  liveTaint,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -191,7 +200,7 @@ export async function buildNativeTools({
   conversation: { projectId: string | null; taskApprovalMode?: string | null };
   userMessageId: string | null;
   approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext"> &
-    Partial<Pick<TurnApprovals, "routineToolOn" | "imageToolOn">>;
+    Partial<Pick<TurnApprovals, "routineToolOn" | "imageToolOn" | "skillDraftToolOn">>;
   appliedSkill: TurnSkill["appliedSkill"];
   conversationModelId: string;
   requestedEffort: ReasoningEffort | undefined;
@@ -216,6 +225,11 @@ export async function buildNativeTools({
   generatedAttachmentIds?: string[];
   /** The image model that made a picture, for Auto's receipt. */
   onImageModel?: (model: { id: string; name: string; auto: boolean }) => void;
+  /**
+   * The turn's taint as it stands when a tool is called (`turnTaintReader`),
+   * when the turn keeps one. Read by `draft_skill` only.
+   */
+  liveTaint?: () => { untrusted: boolean; hostile?: boolean };
 }): Promise<NativeChatTool[]> {
   let taskAnnounced = false;
   const taskTool =
@@ -352,7 +366,11 @@ export async function buildNativeTools({
         })
       : null;
   const askRoomMemberTool =
-    roomSetup && roomMessageId && agentContext && !agentContext.paused && roomMayAsk(roomSetup, roomMessageId)
+    roomSetup &&
+    roomMessageId &&
+    agentContext &&
+    !agentContext.paused &&
+    roomMayAsk(roomSetup, roomMessageId, skillKeepsUnlistedSurfaces(appliedSkill))
       ? createAskRoomMemberTool({
           user,
           conversationId,
@@ -403,6 +421,25 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // A skill the person is teaching, drafted for them to review
+  // (src/lib/chat/skill-draft-tool.ts). It creates nothing: the card under the
+  // reply opens the Teach page, whose Save is the only write. `untrustedNow`
+  // reads the turn's live taint (Alevr Search's page reads mark it, hostile
+  // included), so a draft asked for after a hostile page is refused.
+  const skillDraftTool =
+    skillDraftToolOn && userMessageId
+      ? createDraftSkillTool({
+          user,
+          userMessageId,
+          conversationId,
+          activeConnectors: activeConnectors.map((connector) => ({ id: connector.id, label: connector.label })),
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          ...(liveTaint ? { untrustedNow: liveTaint } : {}),
+          onDraft: (draft) => {
+            sendActivity(skillDraftActivity(draft));
+          },
+        })
+      : null;
   // Pictures in chat (src/lib/chat/image-tool.ts): one activity row per call,
   // re-sent in place as it moves; the files are linked to the answer on save.
   const imageTool =
@@ -423,6 +460,7 @@ export async function buildNativeTools({
   const nativeTools = [
     taskTool,
     routineTool,
+    skillDraftTool,
     imageTool,
     handoffTool,
     ...agentConfigTools,

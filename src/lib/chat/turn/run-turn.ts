@@ -57,6 +57,7 @@ import {
 } from "@/lib/chat-responses";
 import { contextActivityDetail, promptChars, type AttachmentKnowledge, type ProjectKnowledge } from "@/lib/chat/context-assembly";
 import { CHAT_SKILL_REFUSAL_MESSAGES, narrowRuntimeToolsForSkill, skillAppliedActivity } from "@/lib/chat/skills";
+import { turnTaintReader } from "@/lib/chat/skill-draft-tool";
 import { contextActivityRows, type TurnContext } from "@/lib/chat/context-resolution";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import {
@@ -173,6 +174,8 @@ export interface SavedTurnPlan {
   turnHistory: MessageForModel[];
   researchActive: boolean;
   researchRequested: boolean;
+  /** Research was on and the applied skill turned it off (`scopeTurnToSkill`). */
+  researchWithheldBySkill?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   /** The serving tier (pricing.ts FastMode), resolved by turn/capabilities.ts. */
@@ -244,13 +247,14 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     turnHistory,
     researchActive,
     researchRequested,
+    researchWithheldBySkill = false,
     useWebSearch,
     useAlevrSearch,
     useFastMode,
     useProMode,
     skill: { skillOutcome, appliedSkill },
     untrustedContentInTurn,
-    approvals: { taskToolOn, routineToolOn, imageToolOn, agentConfigToolsOn, agentContext, localFolder },
+    approvals: { taskToolOn, routineToolOn, imageToolOn, skillDraftToolOn, agentConfigToolsOn, agentContext, localFolder },
     tools: { toolProviderSessions },
     system,
     baseSystemSections,
@@ -515,6 +519,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       modelHistory,
       researchActive,
       researchRequested,
+      researchWithheldBySkill,
       // SPEC §9.6.1: a client that follows background runs gets one. Not on
       // a regenerate — the answer being replaced has to be superseded by an
       // answer, so that turn keeps the in-chat path.
@@ -571,7 +576,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       conversationId,
       conversation,
       userMessageId,
-      approvals: { taskToolOn, routineToolOn, imageToolOn, agentConfigToolsOn, agentContext },
+      approvals: { taskToolOn, routineToolOn, imageToolOn, skillDraftToolOn, agentConfigToolsOn, agentContext },
       appliedSkill,
       conversationModelId,
       requestedEffort,
@@ -596,6 +601,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       onImageModel: (image) => {
         if (routingReceipt) routingReceipt.image = { model: image.id, name: image.name, auto: image.auto };
       },
+      // Alevr Search's page reads judge what they fetched; a hostile page
+      // makes `draft_skill` refuse for the rest of the turn.
+      liveTaint: turnTaintReader(alevrSearchTurn?.taint),
     });
 
     try {

@@ -12,7 +12,7 @@
   "x-native-summary": {
     "native": 217,
     "planned": 276,
-    "web-only": 67,
+    "web-only": 100,
     "unclassified": 0
   },
   "x-native-only": {
@@ -1442,6 +1442,11 @@
           "$ref": "#/$defs/ClientRoutineProposal",
           "x-native": "web-only",
           "x-native-note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
+        },
+        "skillDraft": {
+          "$ref": "#/$defs/ClientSkillDraft",
+          "x-native": "web-only",
+          "x-native-note": "A skill the person taught in chat, drafted by draft_skill for them to review on the Teach page. Like routineProposal, the tool is only attached for the web client (chatSkillDraftToolEnabled's clientDrawsProposal), so native never receives it; the apps have no Teach page yet (contracts/parity/features.json, /skills/teach)."
         },
         "imageGeneration": {
           "$ref": "#/$defs/ClientImageGeneration",
@@ -3026,6 +3031,191 @@
         "digest"
       ]
     },
+    "ClientSkillDraft": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1,
+          "x-native": "web-only"
+        },
+        "key": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "name": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "slug": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "web-only"
+        },
+        "whenToUse": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaughtInput"
+          },
+          "x-native": "web-only"
+        },
+        "doneWhen": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaughtApp"
+          },
+          "x-native": "web-only"
+        },
+        "missingApps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "dropped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "observed": {
+          "type": "object",
+          "properties": {
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "web-only"
+            },
+            "apps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "web-only"
+            }
+          },
+          "required": [
+            "tools",
+            "apps"
+          ],
+          "x-native": "web-only"
+        },
+        "source": {
+          "$ref": "#/$defs/TaughtSource",
+          "x-native": "web-only"
+        },
+        "fromOutsideContent": {
+          "type": "boolean",
+          "x-native": "web-only"
+        },
+        "scan": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "clear",
+                "warning"
+              ],
+              "x-native": "web-only"
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "x-native": "web-only"
+                  },
+                  "message": {
+                    "type": "string",
+                    "x-native": "web-only"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ]
+              },
+              "x-native": "web-only"
+            }
+          },
+          "required": [
+            "status",
+            "findings"
+          ],
+          "x-native": "web-only"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "version",
+        "key",
+        "name",
+        "slug",
+        "whenToUse",
+        "steps",
+        "inputs",
+        "doneWhen",
+        "rules",
+        "questions",
+        "tools",
+        "apps",
+        "missingApps",
+        "dropped",
+        "observed",
+        "source",
+        "fromOutsideContent",
+        "scan",
+        "createdAt"
+      ]
+    },
     "ClientSource": {
       "type": "object",
       "properties": {
@@ -4089,6 +4279,69 @@
       },
       "required": [
         "code"
+      ]
+    },
+    "TaughtApp": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "label": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "TaughtInput": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "description": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "required": {
+          "type": "boolean",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "required"
+      ]
+    },
+    "TaughtSource": {
+      "type": "object",
+      "properties": {
+        "via": {
+          "type": "string",
+          "enum": [
+            "conversation",
+            "walkthrough"
+          ],
+          "x-native": "web-only"
+        },
+        "conversationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "via",
+        "conversationId"
       ]
     },
     "ToolCallApproval": {

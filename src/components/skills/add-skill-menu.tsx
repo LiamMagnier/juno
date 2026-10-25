@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown, Plus } from "@/components/ui/icons";
+import { ChevronDown, GraduationCap, Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,17 +11,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GitHubMark } from "@/components/connections/connector-logos";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { ActionIcons } from "@/lib/app-icons";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * The page's one way in: every route to a new skill behind a single button.
  *
- * Three doors, in the order they are easiest to walk through. Writing is
- * first because it is the skill's own home at `/skills/new`; importing is for
- * the format Claude and Codex already read (there are thousands on GitHub);
- * and "Create with Juno" hands the blank page to a conversation, which is the
- * easiest way to write one you do not have yet.
+ * Teaching is first because it is the easiest: show Juno the task once and
+ * review the draft (`/skills/teach`). Writing is the skill's own home at
+ * `/skills/new`; importing is for the format Claude and Codex already read
+ * (there are thousands on GitHub). `onCreateWithJuno` keeps its name for the
+ * callers that pass it; it opens Teach.
  */
 export function AddSkillMenu({
   onImport,
@@ -41,7 +41,11 @@ export function AddSkillMenu({
           <ChevronDown className="size-3.5 opacity-80" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuItem onSelect={onCreateWithJuno}>
+          <GraduationCap aria-hidden="true" />
+          {`Teach ${PRODUCT_NAME}…`}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onWrite}>
           <ActionIcons.edit aria-hidden="true" />
           Write a skill
@@ -53,25 +57,22 @@ export function AddSkillMenu({
         <DropdownMenuItem asChild>
           <Link href="/skills/new?import=file">Import SKILL.md…</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onCreateWithJuno}>
-          <AppIcons.conversation aria-hidden="true" />
-          {`Create with ${PRODUCT_NAME}`}
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 /**
- * The first message of a conversation that writes a skill.
+ * The first message of a conversation that teaches a skill.
  *
  * Left open at the end on purpose: it lands in the composer as a draft, not as
  * a sent message, and the reader finishes the sentence with the job they have
- * in mind. A prompt that asked for "a skill" with nothing after it would get a
- * question back, which is a round trip the reader could have answered here.
+ * in mind. "Teach you" is what switches on the chat's `draft_skill` tool
+ * (`detectTeachIntent`), so the conversation ends in a reviewable draft card
+ * rather than a SKILL.md to copy by hand.
  */
 export const CREATE_SKILL_PROMPT =
-  `Help me create a skill for ${PRODUCT_NAME}. Ask me anything you need, then write the SKILL.md with a name, a one-line description and step-by-step instructions. The job is: `;
+  `I want to teach you how I do something, so you can save it as a skill for me to review. Ask me one question at a time until you know the steps, then draft it. The task is: `;
 
 /** The composer's field, by its fixed id (see CHAT_COMPOSER_FIELD_ID in composer.tsx). */
 const COMPOSER_FIELD_ID = "juno-composer-textarea";

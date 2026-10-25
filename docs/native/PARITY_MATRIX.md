@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-363 routes: 230 native, 60 planned, 58 web only, 15 internal. 51 pages: on the Mac 38 native, 2 partial, 2 planned, 9 web only; on iOS 25 native, 9 partial, 8 planned, 9 web only.
+367 routes: 230 native, 64 planned, 58 web only, 15 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -36,7 +36,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 14 | 1 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
-| [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
+| [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Activity](#activity) | 1/1 | 1/1 | 1 | 0 | 1 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
@@ -331,6 +331,7 @@ Design is a type of artifact (register #73).
 | `/skills/[id]` | Native | Partial | DesktopSkillPage · JunoMobileSkillDetailView | The phone reads a skill, switches it on or off and deletes it; editing instructions, versions, usage and consent stay on the Mac and the web. |
 | `/skills/new` | Native | Planned | DesktopSkillPage (new) | Writing a new skill is Mac and web only; the phone imports skills from GitHub. |
 | `/skills/import` | Native | Native | DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView | A sheet on both apps. |
+| `/skills/teach` | Planned | Planned |  | Teach Alevr: review a method taught once (or a chat's draft_skill card) step by step, confirm what it may use, then switch it on. The apps have no Teach page yet; on the Mac a skill is written in DesktopSkillPage, and a taught skill shows there like any other. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -347,6 +348,10 @@ Design is a type of artifact (register #73).
 | `/api/work/skills/[id]/versions/[version]/consent` | POST | Native | JunoWorkKit |  |
 | `/api/work/skills/[id]/versions/[version]/files` | GET | Planned |  | Reading a skill version's bundled files (skills as executable workflows, 2026-10-02); the Mac skill detail does not list them yet. |
 | `/api/work/skills/[id]/export` | GET | Planned |  | Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet. |
+| `/api/skills/teach` | GET, POST | Planned |  | Save a taught skill from the Teach page (saved off unless the reviewed permission fingerprint matches), and look up whether a chat's draft card was saved. The apps have no Teach page yet (see /skills/teach). |
+| `/api/skills/teach/[id]` | GET | Planned |  | Load a taught skill's steps as editable fields to re-teach it on the Teach page. As /api/skills/teach. |
+| `/api/skills/teach/[id]/revoke` | POST | Planned |  | Switch a taught skill off and out of automatic selection in one write, recorded as withdrawn consent. The apps can already switch any skill off through PATCH /api/work/skills/[id]; they have no Teach page to revoke from. |
+| `/api/skills/teach/context` | GET | Planned |  | The projects and connected apps a taught skill can name, for the Teach page's review. As /api/skills/teach. |
 
 <a id="assistants"></a>
 

@@ -342,6 +342,10 @@
       "status": "web-only",
       "note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
     },
+    "ClientActivityEvent.skillDraft": {
+      "status": "web-only",
+      "note": "A skill the person taught in chat, drafted by draft_skill for them to review on the Teach page. Like routineProposal, the tool is only attached for the web client (chatSkillDraftToolEnabled's clientDrawsProposal), so native never receives it; the apps have no Teach page yet (contracts/parity/features.json, /skills/teach)."
+    },
     "ClientActivityEvent.imageGeneration": {
       "status": "native",
       "note": "A picture the chat model made (generate_image, G04): generating, then done with the files or failed with the cause, re-sent in place by id. Both native apps decode it (NativeActivityWire) to draw the placeholder and the named failure; the finished files also arrive as the answer's attachments, which every build draws."

@@ -63,6 +63,42 @@ consent-first design:
 - Alternative lighter path (ship first): "Show me once" as a single
   annotated walkthrough (user narrates + clicks) without continuous recording.
 
+**Status (2026-10-25): the lighter path is built** (branch
+`claude/w9-teach-juno`). The person walks Juno through a task in a chat (the
+`draft_skill` tool, offered only after they ask to teach something) or types
+the steps on `/skills/teach`; the review edits steps, permissions and scope and
+saves a `user_authored` skill switched off unless the save carries the
+permission fingerprint the page showed when the box was ticked, equal to the one
+the server recomputes (a staleness check, not proof of review). Run in a chat, a
+taught skill that lists anything keeps to it: tools, apps, web search, deep
+research and the canvas it does not list are not used (`scopeTurnToSkill`), and
+what no skill can list (the Mac folder, the agent setup, room and
+cross-conversation tools) is not attached (`skillKeepsUnlistedSurfaces`); only
+its own `use_skill` and `read_skill_file` stay. One that lists nothing narrows
+nothing. In an agent's thread, teaching goes through `propose_setup_change`
+(kind `skill_draft`), not `draft_skill`. Re-teaching mints versions; revoking
+switches off and is audited. Code: `src/lib/skills/teach*.ts`,
+`src/lib/chat/skill-draft-tool.ts`, `src/components/skills/teach/`. Screen
+capture remains out of scope.
+
+Follow-ups (known gaps, not built):
+
+- A taught skill the model picks itself through `use_skill` (automatic use, off
+  by default) is loaded mid-turn and narrows nothing; the skill library's
+  automatic-use and enable switches turn a kept-off taught skill on without the
+  Teach review and without a warning. Warn there, or route through Teach.
+- An app the person @-names stays shown as applied in the context receipt when
+  a taught skill's scope removed it; the context-token vocabulary needs a drop
+  reason for "removed by the skill's scope".
+- The hostile-content refusal of `draft_skill` reads the turn's live taint,
+  which only Alevr Search's own page reads mark. Connector results and the
+  provider's own web search should mark it too.
+- In an agent thread where the setup tool is off (a paused agent, a room
+  without it, or while a taught skill is applied), the model gets neither the
+  teaching section, the line saying it cannot draft here, nor
+  `propose_setup_change`, so it is told nothing about teaching. The routine
+  line behaves the same way; give both one line that says where to do it.
+
 ## 3. Password manager / secret card
 
 Muse: vault the agent uses without seeing (Sentinel).

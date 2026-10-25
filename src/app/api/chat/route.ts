@@ -18,7 +18,9 @@ import { resolveMemory } from "@/lib/chat/turn/memory";
 import { resolveProjectContext } from "@/lib/chat/turn/project-context";
 import { resolveCapabilities, turnCarriesUntrustedContent } from "@/lib/chat/turn/capabilities";
 import { resolveSkills } from "@/lib/chat/turn/skills";
+import { scopeTurnToSkill, skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { resolveApprovals } from "@/lib/chat/turn/approvals";
+import { detectTeachIntent } from "@/lib/chat/skill-draft-tool";
 import { resolveTools } from "@/lib/chat/turn/tools";
 import { composeTurnSystem } from "@/lib/chat/turn/prompt";
 import { runTurn } from "@/lib/chat/turn/run-turn";
@@ -101,7 +103,7 @@ async function handleChat(req: Request) {
   const { modelInfo } = model;
 
   const tokens = await resolveTurnTokens({ user, input, settings, workspaceConfig, modelInfo });
-  const { turnContext, activeConnectors } = tokens;
+  const { turnContext, activeConnectors: offeredConnectors } = tokens;
 
   if (input.privateMode) {
     return runPrivateTurn({ req, user, request, settings, plan, period, effective, model, tokens, toolDetailEnabled });
@@ -164,7 +166,13 @@ async function handleChat(req: Request) {
     const { attachmentToolToggles } = context;
 
     const capabilities = resolveCapabilities({ input, plan, modelInfo, workspaceConfig });
-    const { researchActive, useWebSearch, useAlevrSearch, useProMode, canvasOn } = capabilities;
+    const {
+      researchActive: offeredResearch,
+      useWebSearch: offeredWebSearch,
+      useAlevrSearch: offeredAlevrSearch,
+      useProMode,
+      canvasOn: offeredCanvas,
+    } = capabilities;
 
     const skill = await resolveSkills({
       userId: user.id,
@@ -172,16 +180,34 @@ async function handleChat(req: Request) {
       turnSkillSlug: tokens.turnSkillSlug,
       projectId: conversation.projectId,
       grant: {
-        webSearch: useWebSearch || useAlevrSearch,
-        canvas: canvasOn,
+        webSearch: offeredWebSearch || offeredAlevrSearch,
+        canvas: offeredCanvas,
         documents: attachmentToolToggles.documents,
         images: attachmentToolToggles.images,
-        connectors: activeConnectors.map((connector) => connector.id),
+        connectors: offeredConnectors.map((connector) => connector.id),
       },
       turnContext,
       durableGenerationId,
     });
     const { appliedSkill } = skill;
+    // What the turn keeps once the skill has narrowed it (never more than it
+    // had): a taught skill connects only the apps it names, and keeps web
+    // search, deep research and the canvas only when it lists them
+    // (`scopeTurnToSkill`). Everything below — the prompt, the provider
+    // request, the native tools, the trace — reads these.
+    const {
+      webSearch: useWebSearch,
+      alevrSearch: useAlevrSearch,
+      research: researchActive,
+      canvas: canvasOn,
+      connectors: activeConnectors,
+    } = scopeTurnToSkill(appliedSkill, {
+      webSearch: offeredWebSearch,
+      alevrSearch: offeredAlevrSearch,
+      research: offeredResearch,
+      canvas: offeredCanvas,
+      connectors: offeredConnectors,
+    });
 
     const untrustedContentInTurn = turnCarriesUntrustedContent({
       connectors: activeConnectors.length,
@@ -215,6 +241,12 @@ async function handleChat(req: Request) {
       conversation,
       roomSetup,
       appliedSkill,
+      // Teaching runs over several messages ("let me show you how I…", then
+      // the steps), so the person's last few messages are read, not only this one.
+      teachIntent: detectTeachIntent([
+        ...turnHistory.baseHistory.filter((m) => m.role === "USER").map((m) => m.content),
+        input.message,
+      ]),
     });
     const { agentContext } = approvals;
 
@@ -271,6 +303,8 @@ async function handleChat(req: Request) {
       conversationId: conversation.id,
       crossTrigger: accepted.crossTrigger,
       crossLinkIds: accepted.crossLinkIds,
+      // A taught skill that lists what it uses runs without them.
+      skillPermits: skillKeepsUnlistedSurfaces(appliedSkill),
     });
     const { system: composedSystem, baseSystemSections } = composeTurnSystem({
       user,
@@ -283,6 +317,8 @@ async function handleChat(req: Request) {
       taskToolOn: approvals.taskToolOn,
       routineToolOn: approvals.routineToolOn,
       imageToolOn: approvals.imageToolOn,
+      skillDraftToolOn: approvals.skillDraftToolOn,
+      skillDraftUnavailable: approvals.skillDraftUnavailable,
       useWebSearch,
       useAlevrSearch,
       attachmentToolToggles,
@@ -369,6 +405,7 @@ async function handleChat(req: Request) {
       turnHistory: turnHistoryForModel,
       researchActive,
       researchRequested: capabilities.researchRequested,
+      researchWithheldBySkill: offeredResearch && !researchActive,
       useWebSearch,
       useAlevrSearch,
       useFastMode: capabilities.useFastMode,
