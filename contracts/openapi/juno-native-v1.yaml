@@ -311,7 +311,11 @@ paths:
     post:
       servers: [{ url: /api }]
       operationId: cancelNativeChatGeneration
-      description: Account-scoped best-effort cancellation of an in-process generation.
+      description: >-
+        Account-scoped Stop for a generation held by any backend process. The
+        process that received the request aborts it at once when it holds the
+        generation; otherwise the Stop is recorded durably and the holding
+        process reads it within about a second.
       requestBody:
         required: true
         content:
@@ -319,7 +323,10 @@ paths:
             schema: { $ref: '#/components/schemas/ChatCancellationRequest' }
       responses:
         '200':
-          description: The request was valid; cancelled is false if no owned live generation was registered.
+          description: >-
+            The request was valid. cancelled is true when a terminal frame is on
+            its way to the stream's reader; false when no owned live generation
+            was found or the Stop could not be recorded.
           content: { application/json: { schema: { $ref: '#/components/schemas/ChatCancellationResponse' } } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
@@ -4041,6 +4048,15 @@ components:
       properties:
         ok: { const: true }
         cancelled: { type: boolean }
+        delivery:
+          type: string
+          enum: [local, remote, queued, none]
+          description: >-
+            How the Stop travelled. local, this process aborted it; remote, the
+            process holding it will read the recorded Stop; queued, recorded but
+            no process holds a live lease yet, so it applies if one picks the
+            generation up; none, it could not be recorded. Optional: older
+            servers omit it, and clients decide on cancelled.
     ChatReceiptResponse:
       type: object
       additionalProperties: false

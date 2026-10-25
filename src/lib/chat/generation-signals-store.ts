@@ -14,7 +14,8 @@ import {
  * Rows live in `RateLimit` rather than a table of their own, on the precedent
  * of `work/notify/deliver.ts`: that table is already the schema's keyed,
  * expiring claim — a string primary key, a counter, an `expiresAt` that the
- * nightly prune (`scripts/prune-sync.ts`) sweeps a day after it passes — and
+ * scheduled prune (`scripts/prune-sync.ts`, weekly by the suggested cron in
+ * deploy/VM_SETUP_GUIDE.md) sweeps once it is a day past — and
  * that is the whole shape of a cancel signal and of a live lease. The primary
  * key makes a Stop idempotent with no read-then-write window, and the
  * `generation:cancel:` / `generation:live:` prefixes cannot collide with a
