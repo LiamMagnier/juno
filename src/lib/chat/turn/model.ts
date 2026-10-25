@@ -284,6 +284,8 @@ export async function resolveModel({
     modelInfo = selection.model ?? undefined;
     routingWarning = selection.warning ?? routingWarning;
   }
+  /** Auto's pick was swapped for a cheaper one by the platform's daily ceiling (the receipt says why). */
+  let capacityReroute = false;
   // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
   // set). Only Auto may pick a cheaper model. A concrete choice is an explicit
   // data-routing decision, so substituting another provider would violate it.
@@ -305,6 +307,7 @@ export async function resolveModel({
       });
       routingWarning = `Auto chose ${cheapest.name} to stay within today's capacity.`;
       modelInfo = cheapest;
+      capacityReroute = true;
     }
   }
 
@@ -342,16 +345,25 @@ export async function resolveModel({
   if (autoDecision) {
     const rerouted = modelInfo.id !== autoDecision.model.id;
     if (rerouted) autoReasoningEffort = pickAutoReasoningEffort(modelInfo, autoDecision.complexity);
+    // The receipt's per-model facts (cost, latency, odds, evidence) describe
+    // the model that answers, which a reroute changes; `factors.selected`
+    // keeps the router's own pick.
     routingReceipt = {
-      ...receiptFromDecision({ ...autoDecision, reasoningEffort: autoReasoningEffort ?? null }),
+      ...receiptFromDecision({ ...autoDecision, reasoningEffort: autoReasoningEffort ?? null }, modelInfo.id),
       rerouted: rerouted ? autoDecision.model.id : null,
+      rerouteReason: rerouted ? (capacityReroute ? "capacity" : "unreachable") : null,
     };
   }
   /** Telemetry for this turn's outcome; written once, when the generation settles. */
   const routingTelemetryBase = {
     routerVersion: ROUTER_VERSION,
     auto: !!autoDecision,
-    taskClass: autoDecision?.profile.taskClass ?? classifyTaskForTelemetry(input.message ?? ""),
+    taskClass:
+      autoDecision?.profile.taskClass ??
+      classifyTaskForTelemetry(input.message ?? "", {
+        wantsWebSearch: !!input.webSearch,
+        toolsOffered: input.connectors?.length ?? 0,
+      }),
     complexity: autoDecision?.complexity.level ?? classifyPromptComplexity(input.message ?? "").level,
     modelId,
     provider: modelInfo.provider,

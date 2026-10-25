@@ -238,8 +238,25 @@ if (!DB_URL) {
     assert.ok(fallbackChecks > 0, "the platform-budget substitution path was exercised");
     assert.equal(streamCalls, before + 1, "selection requires no preliminary model call");
     const assistant = await prisma.message.findFirst({ where: { conversationId: conversation.id, role: "ASSISTANT" }, orderBy: { createdAt: "desc" } });
-    const { parseRoutingReceipt } = await import("@/lib/router/receipt");
-    assert.equal(parseRoutingReceipt(assistant?.routing)?.taskClass, "long_context");
+    const { parseRoutingReceipt, receiptSummary } = await import("@/lib/router/receipt");
+    const receipt = parseRoutingReceipt(assistant?.routing);
+    assert.ok(receipt, "Auto stored a receipt");
+    assert.equal(receipt.taskClass, "long_context");
+    // The stored receipt is the decision's own record (master brief Part 4.2):
+    // the factors it turned on, true to the model that answered.
+    const factors = receipt.factors;
+    assert.ok(factors, "the persisted receipt carries the decision's factors");
+    assert.equal(factors.plan, "PRO");
+    assert.ok(factors.contextTokens >= 160_000, `context ${factors.contextTokens}`);
+    assert.ok(factors.candidates >= 1);
+    if (receipt.rerouted) {
+      assert.equal(factors.selected, receipt.rerouted, "selected keeps the router's own pick");
+      assert.equal(receipt.rerouteReason, "capacity", "the forced platform budget is the reason");
+      assert.notEqual(assistant!.model, receipt.rerouted);
+    } else {
+      assert.equal(factors.selected, assistant!.model);
+    }
+    assert.ok(receiptSummary(receipt), "and a sentence for the reader");
     const { getModel } = await import("@/lib/models");
     const { getModelMetrics } = await import("@/lib/model-metrics");
     const selected = getModel(assistant!.model!);

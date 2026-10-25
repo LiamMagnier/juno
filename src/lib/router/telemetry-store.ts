@@ -56,6 +56,28 @@ export function completionStateFor(finishReason: string | null | undefined, pers
   return persistedPartial ? "partial" : "failed";
 }
 
+/** How a turn ended that the model had no part in (see `endingSaysNothingAboutModel`). */
+export interface PlatformEnding {
+  /** The process drained for a restart mid-stream (finish reason "error"). */
+  shutdown?: boolean;
+  /** Another process took over the durable receipt (finish reason "error"). */
+  leaseLost?: boolean;
+  /** The account's own budget ceiling halted the stream (finish reason "user_stopped"). */
+  budgetHalted?: boolean;
+}
+
+/**
+ * True when a turn's ending was caused by the platform, not by the model or
+ * the reader: a deploy draining the process, a lost receipt lease, the
+ * account's budget halting the stream. Such a turn writes NO outcome row. As
+ * a row it read as "failed" or "stopped", which `outcomeSucceeded` counts
+ * against the model — so every deploy made the models that happened to be
+ * streaming look worse, and Auto learned to avoid them for it.
+ */
+export function endingSaysNothingAboutModel(ending: PlatformEnding | null | undefined): boolean {
+  return !!ending && (!!ending.shutdown || !!ending.leaseLost || !!ending.budgetHalted);
+}
+
 export async function recordRoutingOutcome(input: RoutingOutcomeInput): Promise<void> {
   try {
     const data = {
@@ -120,6 +142,7 @@ interface AggregateRow {
   taskClass: string;
   n: bigint;
   successes: bigint;
+  errors: bigint;
   toolRoundsSum: bigint | null;
   retriesSum: bigint | null;
   latencyMsSum: bigint | null;
@@ -129,8 +152,9 @@ interface AggregateRow {
 }
 
 /**
- * The aggregate, straight from SQL. Success is computed with the same rule as
- * `outcomeSucceeded` (pinned by tests/router-telemetry.integration.test.ts).
+ * The aggregate, straight from SQL. Success, errors and the completed-only
+ * latency use the same rules as `outcomeSucceeded`, `outcomeErrored` and
+ * `aggregateOutcomes` (pinned by tests/router-telemetry.integration.test.ts).
  */
 export async function aggregateRoutingEvidence(since: Date): Promise<Map<string, EvidenceCell>> {
   const rows = await prisma.$queryRaw<AggregateRow[]>(Prisma.sql`
@@ -140,10 +164,11 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
         WHERE "completionState" = 'completed' AND NOT "userRegenerated" AND NOT "userSwitchedModel"
           AND NOT "userEdited" AND ("feedback" IS NULL OR "feedback" <> 'DOWN')
       ) AS successes,
+      COUNT(*) FILTER (WHERE "completionState" IN ('failed', 'partial')) AS errors,
       SUM("toolRounds") AS "toolRoundsSum",
       SUM("retryCount") AS "retriesSum",
-      SUM("latencyMs") AS "latencyMsSum",
-      COUNT("latencyMs") AS "latencyN",
+      SUM("latencyMs") FILTER (WHERE "completionState" = 'completed') AS "latencyMsSum",
+      COUNT("latencyMs") FILTER (WHERE "completionState" = 'completed') AS "latencyN",
       SUM("costMicroUsd") AS "costSum",
       COUNT("costMicroUsd") AS "costN"
     FROM "RoutingOutcome"
@@ -160,6 +185,7 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
       taskClass: r.taskClass,
       n: Number(r.n),
       successes: Number(r.successes),
+      errors: Number(r.errors),
       toolRoundsSum: Number(r.toolRoundsSum ?? 0),
       retriesSum: Number(r.retriesSum ?? 0),
       latencyMsSum: Number(r.latencyMsSum ?? 0),

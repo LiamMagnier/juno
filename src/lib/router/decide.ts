@@ -14,10 +14,12 @@
  *                  + (1 − p_success) × recovery_cost
  *                  + expected_latency × value_of_a_second
  *
- * and the cheapest EXPECTED TOTAL wins. `p_success`, tool rounds and retries
- * start as priors from the catalogue (intelligence/speed/context/tool flags)
- * and move toward measured Alevr outcomes once a (model, task class) cell has
- * enough samples (evidence.ts).
+ * and the cheapest EXPECTED TOTAL wins. `p_success`, tool rounds, retries and
+ * latency start as priors from the catalogue (intelligence/speed/context/tool
+ * flags) and move toward measured Alevr outcomes once a (model, task class)
+ * cell has enough samples; a thinner cell still feels the model's measured
+ * error rate across every class (evidence.ts). When measurement changes the
+ * pick, the decision says from what (`factors.evidence.shiftedFrom`).
  *
  * Hard filters come first and are never traded against price: plan, provider
  * configured, data-use terms (data-policy.ts), modality needs, context window,
@@ -41,7 +43,16 @@ import { getModelMetrics, reasoningMultiplier, type ReasoningEffort } from "@/li
 import { canUseModel } from "@/lib/plans";
 import { isProviderConfigured } from "@/lib/providers";
 import { autoDataUseVerdict, type AutoDataBoundary } from "@/lib/router/data-policy";
-import { emptyEvidence, evidenceKey, posterior, type EvidenceTable } from "@/lib/router/evidence";
+import {
+  emptyEvidence,
+  evidenceKey,
+  modelReliability,
+  posterior,
+  posteriorLatency,
+  type EvidenceSource,
+  type EvidenceTable,
+} from "@/lib/router/evidence";
+import { costTierOf, latencyTierOf, type RoutingFactors } from "@/lib/router/receipt";
 import { classifyTask, type TaskProfile } from "@/lib/router/task-class";
 
 export const ROUTER_VERSION = 2;
@@ -133,9 +144,20 @@ export interface CandidateScore {
   latencyMicroUsd: number;
   expectedTotalMicroUsd: number;
   expectedLatencyS: number;
-  /** True when measured Alevr outcomes moved the priors. */
+  /** True when this (model, task class) cell's measured outcomes moved the priors. */
   measured: boolean;
+  /** Where the odds came from: priors, this cell, or the model's error rate across classes. */
+  evidence: EvidenceSource;
+  /** Turns behind `evidence` (0 for priors). */
   samples: number;
+  /** True when measured completed-turn latency replaced the latency prior. */
+  latencyMeasured: boolean;
+  /** The catalogue's 1–3 price tier. */
+  costTier: number;
+  /** Rate-limit pressure on this provider when scored (0–1). */
+  retryPressure: number;
+  /** The same total from catalogue priors alone: what the pick would be with no measurement. */
+  priorTotalMicroUsd: number;
 }
 
 export interface RouteDecision {
@@ -157,6 +179,8 @@ export interface RouteDecision {
   budgetSaver: boolean;
   preference: AutoPreference;
   routerVersion: number;
+  /** Every fact the decision turned on, as the receipt stores it (receipt.ts). */
+  factors: RoutingFactors;
 }
 
 export class NoAutoCandidateError extends Error {
@@ -336,6 +360,7 @@ export function routeAuto(input: RouteInput): RouteDecision {
   }
 
   let degraded: RouteDecision["degraded"] = null;
+  const down = [...new Set(pool.filter((m) => !available(m.provider)).map((m) => m.provider))].sort();
   const healthy = pool.filter((m) => available(m.provider));
   if (healthy.length > 0) {
     if (healthy.length < pool.length) excluded.provider_unavailable = pool.length - healthy.length;
@@ -346,35 +371,50 @@ export function routeAuto(input: RouteInput): RouteDecision {
     degraded = "all_providers_unavailable";
   }
 
-  // Score every candidate at the effort Auto would give it.
+  // Score every candidate at the effort Auto would give it. Each carries its
+  // prior (catalogue only) and its posterior (after measured outcomes), so the
+  // decision can say when measurement — not the catalogue — chose the model.
+  const reliability = modelReliability(evidence);
   const scored = pool.map((model) => {
     const effort = pickAutoReasoningEffort(model, complexity);
+    const providerPressure = pressure(model.provider);
     const prior = {
       success: priorSuccess(model, effort, profile, input.toolVerdict?.(model.id)),
       toolRounds: profile.priorToolRounds,
-      retries: 0.02 + pressure(model.provider),
+      retries: 0.02 + providerPressure,
     };
-    const post = posterior(evidence.get(evidenceKey(model.id, profile.taskClass)), prior);
+    const cell = evidence.get(evidenceKey(model.id, profile.taskClass));
+    const post = posterior(cell, prior, reliability.get(model.id));
     // Measured retries are historical; current pressure still applies on top.
-    const retries = post.measured ? post.retries + pressure(model.provider) : post.retries;
+    const retries = post.measured ? post.retries + providerPressure : post.retries;
     const call = callCost(model, profile, effort);
     // A tool round re-sends the grown context (largely cached) and reads a short
     // reply: about 45% of a full call.
     const toolRoundsMicroUsd = Math.round(post.toolRounds * call * 0.45);
     const retriesMicroUsd = Math.round(retries * call);
-    const latencyS = expectedLatencySeconds(model, profile, effort, post.toolRounds);
-    return { model, effort, post, retries, call, toolRoundsMicroUsd, retriesMicroUsd, latencyS };
+    const latency = posteriorLatency(cell, expectedLatencySeconds(model, profile, effort, post.toolRounds));
+    const priorLatencyS = expectedLatencySeconds(model, profile, effort, prior.toolRounds);
+    return { model, effort, prior, post, retries, call, toolRoundsMicroUsd, retriesMicroUsd, latency, priorLatencyS, providerPressure };
   });
 
   // Recovery = asking again on the strongest candidate, plus the reader's time.
   const strongest = scored.reduce((best, s) => (s.post.success > best.post.success ? s : best), scored[0]);
   const recovery = strongest.call + FAILURE_TIME_COST_MICRO_USD[profile.complexity] * weights.failure;
+  const priorStrongest = scored.reduce((best, s) => (s.prior.success > best.prior.success ? s : best), scored[0]);
+  const priorRecovery = priorStrongest.call + FAILURE_TIME_COST_MICRO_USD[profile.complexity] * weights.failure;
+  const latencyValue = secondValue(profile) * weights.latency;
 
   let ranked: CandidateScore[] = scored
     .map((s) => {
       const failureMicroUsd = Math.round((1 - s.post.success) * recovery);
-      const latencyMicroUsd = Math.round(s.latencyS * secondValue(profile) * weights.latency);
+      const latencyMicroUsd = Math.round(s.latency.seconds * latencyValue);
       const total = s.call + s.toolRoundsMicroUsd + s.retriesMicroUsd + failureMicroUsd + latencyMicroUsd;
+      const priorTotal =
+        s.call +
+        Math.round(s.prior.toolRounds * s.call * 0.45) +
+        Math.round(s.prior.retries * s.call) +
+        Math.round((1 - s.prior.success) * priorRecovery) +
+        Math.round(s.priorLatencyS * latencyValue);
       return {
         modelId: s.model.id,
         provider: s.model.provider,
@@ -389,9 +429,14 @@ export function routeAuto(input: RouteInput): RouteDecision {
         failureMicroUsd,
         latencyMicroUsd,
         expectedTotalMicroUsd: total,
-        expectedLatencyS: Math.round(s.latencyS * 10) / 10,
+        expectedLatencyS: Math.round(s.latency.seconds * 10) / 10,
         measured: s.post.measured,
-        samples: s.post.n,
+        evidence: s.post.source,
+        samples: s.post.source === "prior" ? 0 : s.post.n,
+        latencyMeasured: s.latency.measured,
+        costTier: s.model.cost,
+        retryPressure: Math.round(s.providerPressure * 100) / 100,
+        priorTotalMicroUsd: priorTotal,
       } satisfies CandidateScore;
     })
     .sort(
@@ -419,6 +464,17 @@ export function routeAuto(input: RouteInput): RouteDecision {
   const winner = ranked[0];
   const model = pool.find((m) => m.id === winner.modelId)!;
 
+  // Did measurement choose this model? Re-rank the same final candidates on
+  // priors alone; a different winner means measured outcomes moved the pick.
+  // Not asked when the budget fallback ordered by price instead of total.
+  let shiftedFrom: CandidateScore | null = null;
+  if (degraded !== "over_budget" && ranked.some((c) => c.evidence !== "prior" || c.latencyMeasured)) {
+    const byPrior = [...ranked].sort(
+      (a, b) => a.priorTotalMicroUsd - b.priorTotalMicroUsd || a.modelId.localeCompare(b.modelId)
+    )[0];
+    if (byPrior.modelId !== winner.modelId) shiftedFrom = byPrior;
+  }
+
   const alternates: ModelInfo[] = [];
   for (const c of ranked.slice(1)) {
     if (c.provider === model.provider || alternates.some((a) => a.provider === c.provider)) continue;
@@ -428,14 +484,44 @@ export function routeAuto(input: RouteInput): RouteDecision {
     if (alternates.length >= 2) break;
   }
 
+  const factors: RoutingFactors = {
+    selected: model.id,
+    complexity: profile.complexity,
+    // An image is an output only when the answering model can call the image
+    // tool; without one in the catalogue the turn still answers in words.
+    modality: {
+      input: profile.needs.vision ? "text_image" : "text",
+      output: input.wantsImage && model.agenticTools ? "image" : "text",
+    },
+    tools: {
+      webSearch: !!input.wantsWebSearch,
+      imageGeneration: !!input.wantsImage,
+      connectors: Math.max(0, input.toolsOffered ?? 0),
+      reliable: profile.needs.toolReliability,
+    },
+    contextTokens: profile.estInputTokens,
+    providerHealth: { down, retryPressure: winner.retryPressure },
+    cost: {
+      tier: costTierOf(model.cost),
+      expectedMicroUsd: winner.callMicroUsd + winner.toolRoundsMicroUsd + winner.retriesMicroUsd,
+    },
+    latency: { tier: latencyTierOf(winner.expectedLatencyS), expectedS: winner.expectedLatencyS },
+    plan: input.plan,
+    preference,
+    candidates: ranked.length,
+    choice: ranked.length === 1 ? "only_option" : paidForOdds(winner, ranked) ? "better_odds" : "lowest_cost",
+    pSuccess: winner.pSuccess,
+    evidence: { source: winner.evidence, samples: winner.samples, shiftedFrom: shiftedFrom?.modelId ?? null },
+    budgetSaver,
+    routerVersion: ROUTER_VERSION,
+  };
+
   return {
     model,
     reasoningEffort: winner.effort,
     complexity,
     profile,
-    reasons: budgetSaver
-      ? [...decisionReasons(profile, winner, ranked, degraded), "saving your remaining budget"]
-      : decisionReasons(profile, winner, ranked, degraded),
+    reasons: decisionReasons(profile, winner, ranked, degraded, { budgetSaver, shiftedFrom }),
     ranked,
     alternates,
     excluded,
@@ -443,7 +529,18 @@ export function routeAuto(input: RouteInput): RouteDecision {
     budgetSaver,
     preference,
     routerVersion: ROUTER_VERSION,
+    factors,
   };
+}
+
+/**
+ * The pick costs clearly more per call than the cheapest candidate: it was
+ * chosen for its odds of a first-try answer, not its price. A pick near the
+ * cheapest is simply the cheapest good answer.
+ */
+export function paidForOdds(winner: CandidateScore, ranked: readonly CandidateScore[]): boolean {
+  const cheapestCall = ranked.reduce((min, c) => Math.min(min, c.callMicroUsd), Infinity);
+  return winner.callMicroUsd > cheapestCall * 1.5 && winner.callMicroUsd - cheapestCall > 200;
 }
 
 function round3(n: number): number {
@@ -453,26 +550,30 @@ function round3(n: number): number {
 /**
  * "Selected for:" lines. Built only from this decision — the task signals it
  * acted on and the comparison it made — never from a template that would read
- * the same whatever happened.
+ * the same whatever happened. At most four: the decision's own facts (the
+ * comparison, a measured shift, measured samples, a budget rule) are kept, and
+ * task signals fill what room is left, so a budget or evidence line is never
+ * the one cut off.
  */
 export function decisionReasons(
   profile: TaskProfile,
   winner: CandidateScore,
   ranked: CandidateScore[],
-  degraded: RouteDecision["degraded"]
+  degraded: RouteDecision["degraded"],
+  extra: { budgetSaver?: boolean; shiftedFrom?: Pick<CandidateScore, "modelId" | "name"> | null } = {}
 ): string[] {
-  const reasons = profile.signals.slice(0, 3);
-  const cheapestCall = ranked.reduce((min, c) => Math.min(min, c.callMicroUsd), Infinity);
+  const tail: string[] = [];
   if (ranked.length > 1) {
-    // "Outweigh a cheaper model" only when the pick really costs more per call;
-    // a pick near the cheapest is simply the cheapest good answer.
-    if (winner.callMicroUsd > cheapestCall * 1.5 && winner.callMicroUsd - cheapestCall > 200) {
-      reasons.push("better odds of a first-try answer outweigh a cheaper model");
+    if (paidForOdds(winner, ranked)) {
+      tail.push("better odds of a first-try answer outweigh a cheaper model");
     } else {
-      reasons.push(`lowest expected cost of ${ranked.length} eligible models`);
+      tail.push(`lowest expected cost of ${ranked.length} eligible models`);
     }
   }
-  if (winner.measured) reasons.push(`measured on ${winner.samples} similar Alevr turns`);
-  if (degraded === "over_budget") reasons.push("kept within your remaining budget");
-  return reasons.slice(0, 4);
+  if (extra.shiftedFrom) tail.push(`results on similar Alevr requests favoured it over ${extra.shiftedFrom.name}`);
+  else if (winner.measured) tail.push(`measured on ${winner.samples} similar Alevr turns`);
+  if (degraded === "over_budget") tail.push("kept within your remaining budget");
+  if (extra.budgetSaver) tail.push("saving your remaining budget");
+  const room = Math.max(1, 4 - tail.length);
+  return [...profile.signals.slice(0, Math.min(3, room)), ...tail].slice(0, 4);
 }
