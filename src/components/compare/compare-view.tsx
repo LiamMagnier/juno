@@ -16,10 +16,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useApp } from "@/components/app/app-provider";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ComparePane } from "@/components/compare/compare-pane";
+import { CompareRunSettings } from "@/components/compare/compare-run-settings";
+import { CompareSummary } from "@/components/compare/compare-summary";
 import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
+import { buildCompareReport } from "@/lib/compare/report";
+import {
+  browserTimeZone,
+  createRunSpec,
+  DEFAULT_COMPARE_SETTINGS,
+  type CompareRunSpec,
+  type CompareSettings,
+} from "@/lib/compare/run-spec";
 import { resolveModel, DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
-import { getModelMetrics, costScore } from "@/lib/model-metrics";
-import { planRank, modelRequiredPlan } from "@/lib/plans";
+import { getModelMetrics, costScore, REASONING_TIERS } from "@/lib/model-metrics";
+import { PLANS, planRank, modelRequiredPlan } from "@/lib/plans";
 import { promptPlaceholderTitle } from "@/lib/title-ownership";
 import { cn } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
@@ -30,14 +40,20 @@ import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 /**
  * Side-by-side model comparison — the aggregator's signature move. One prompt,
  * two or three models answering in parallel panes over the private (ephemeral)
- * chat transport, each with its live stream, response time, and real cost.
- * Nothing here is persisted: a fresh prompt replaces the panes.
+ * chat transport. A controlled run: every model gets the identical request
+ * (prompt, search, effort, time zone), frozen at Send, and the page checks
+ * that it did. Each pane shows what it actually ran with, its measured
+ * latency and its cost with the cost's basis; the summary compares them and
+ * their sources, and exports the lot. Nothing here is persisted: a fresh
+ * prompt replaces the panes.
  */
 
 const MAX_PANES = 3;
 const MIN_PANES = 2;
 /** Last pane model selection, restored across visits. */
 const PANE_MODELS_KEY = "juno:compare-models";
+/** Last search/effort choice, restored across visits. */
+const SETTINGS_KEY = "juno:compare-settings";
 /** chat-view's branch-seeding stash — "Continue in chat" rides the fork flow. */
 const FORK_STORAGE_KEY = "juno:fork";
 
@@ -159,13 +175,45 @@ export function CompareView() {
     }
   }, [panes]);
 
+  // The controlled conditions for the NEXT comparison. Restored after mount
+  // for the same SSR reason as the pane models.
+  const [runSettings, setRunSettings] = React.useState<CompareSettings>(DEFAULT_COMPARE_SETTINGS);
+  const settingsRestoredRef = React.useRef(false);
+  React.useEffect(() => {
+    if (settingsRestoredRef.current) return;
+    settingsRestoredRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<CompareSettings>;
+      const effort = (REASONING_TIERS as readonly string[]).includes(String(saved.reasoningEffort))
+        ? (saved.reasoningEffort as CompareSettings["reasoningEffort"])
+        : null;
+      setRunSettings({ webSearch: saved.webSearch === true, reasoningEffort: effort });
+    } catch {
+      /* malformed stash — defaults stand */
+    }
+  }, []);
+  const updateRunSettings = (next: CompareSettings) => {
+    setRunSettings(next);
+    try {
+      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    } catch {
+      /* storage may be unavailable */
+    }
+  };
+  const webSearchAllowed = PLANS[plan]?.webSearch ?? false;
+
   const compare = useCompare({ onQuota: setQuota });
   const { runs, anyStreaming, stopping } = compare;
 
   const [prompt, setPrompt] = React.useState("");
-  // The prompt of the comparison currently on the board (in memory only — v1
-  // keeps the last run, and a fresh prompt replaces the panes).
-  const [lastPrompt, setLastPrompt] = React.useState<string | null>(null);
+  // The comparison on the board: its prompt and conditions, frozen at Send (in
+  // memory only — a fresh prompt replaces the panes). Every rerun, retry and
+  // late-joining pane runs from THIS, never from the composer's current state,
+  // so the panes stay comparable.
+  const [spec, setSpec] = React.useState<CompareRunSpec | null>(null);
+  const lastPrompt = spec?.prompt ?? null;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const canSend = prompt.trim().length > 0 && !anyStreaming;
 
@@ -177,10 +225,16 @@ export function CompareView() {
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || anyStreaming) return;
-      setLastPrompt(trimmed);
-      compare.start(trimmed, panes);
+      const next = createRunSpec({
+        id: crypto.randomUUID(),
+        prompt: trimmed,
+        settings: { ...runSettings, webSearch: runSettings.webSearch && webSearchAllowed },
+        timeZone: browserTimeZone(),
+      });
+      setSpec(next);
+      compare.start(next, panes);
     },
-    [anyStreaming, compare, panes]
+    [anyStreaming, compare, panes, runSettings, webSearchAllowed]
   );
 
   const submit = () => runAll(prompt);
@@ -204,8 +258,8 @@ export function CompareView() {
       DEFAULT_MODEL;
     const pane = { id: nextPaneId(), modelId };
     setPanes((prev) => [...prev, pane]);
-    // Join the race late: run the new pane against the prompt on the board.
-    if (lastPrompt) void compare.runPane(pane.id, modelId, lastPrompt);
+    // Join the race late: run the new pane against the comparison on the board.
+    if (spec) void compare.runPane(pane.id, modelId, spec);
   };
 
   const removePane = (paneId: string) => {
@@ -216,9 +270,9 @@ export function CompareView() {
 
   const changeModel = (paneId: string, modelId: ModelId) => {
     setPanes((prev) => prev.map((p) => (p.id === paneId ? { ...p, modelId } : p)));
-    // Same prompt, new mind — rerun just this pane so the answer never lies
+    // Same input, new mind — rerun just this pane so the answer never lies
     // about which model wrote it.
-    if (lastPrompt) void compare.runPane(paneId, modelId, lastPrompt);
+    if (spec) void compare.runPane(paneId, modelId, spec);
     else compare.resetPane(paneId);
   };
 
@@ -248,6 +302,7 @@ export function CompareView() {
         promptTokens: run.promptTokens,
         completionTokens: run.completionTokens,
         costUsd: run.costUsd,
+        sources: run.sources.length ? run.sources : undefined,
       },
     ];
     try {
@@ -259,7 +314,25 @@ export function CompareView() {
     router.push("/chat");
   };
 
-  const hasRun = lastPrompt !== null;
+  const hasRun = spec !== null;
+
+  // The comparison as one record: the summary strip, each pane's compared
+  // sources and both exports read it. Deferred, so a streaming token never
+  // waits on citation parsing.
+  const deferredRuns = React.useDeferredValue(runs);
+  const report = React.useMemo(() => {
+    if (!spec) return null;
+    const lookup = (id: string) => models.find((m) => m.id === id) ?? resolveModel(id) ?? undefined;
+    return buildCompareReport({
+      spec,
+      panes: panes.map((pane) => ({ paneId: pane.id, modelId: pane.modelId, run: deferredRuns[pane.id] ?? IDLE_RUN })),
+      resolveModel: lookup,
+    });
+  }, [spec, panes, deferredRuns, models]);
+  const citationsByPane = React.useMemo(
+    () => new Map((report?.panes ?? []).map((pane) => [pane.paneId, pane.citations])),
+    [report]
+  );
 
   return (
     /*
@@ -292,7 +365,7 @@ export function CompareView() {
         // What the tool does and what it shows that chat does not, in one
         // line. It replaces the eyebrow ("One prompt · 2 models"), which
         // counted the panes the page draws directly below it.
-        lede="Ask up to three models at once and compare their answers and cost."
+        lede="Ask up to three models the same question and compare their answers, speed, cost and sources."
         actions={
           <span className="ed-annot text-right">
             Comparisons aren&rsquo;t saved
@@ -342,6 +415,13 @@ export function CompareView() {
               <span className="px-1 text-caption tabular-nums text-muted-foreground">
                 {panes.length}/{MAX_PANES}
               </span>
+              <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border/70" />
+              <CompareRunSettings
+                settings={runSettings}
+                onChange={updateRunSettings}
+                disabled={anyStreaming}
+                webSearchAllowed={webSearchAllowed}
+              />
             </>
           }
           action={
@@ -359,6 +439,9 @@ export function CompareView() {
           }
         />
       </div>
+
+      {/* The verdict strip: what every model was given, who led, what differed. */}
+      {report && <CompareSummary report={report} streaming={anyStreaming} />}
 
       {/* Body: hero (until the first run) + the panes. Side by side — a
           fixed-height page with per-pane scroll — from the CONTENT COLUMN width
@@ -428,9 +511,15 @@ export function CompareView() {
               key={pane.id}
               modelId={pane.modelId}
               run={runs[pane.id] ?? IDLE_RUN}
+              requested={
+                spec && runs[pane.id]?.specId === spec.id
+                  ? { webSearch: spec.webSearch, reasoningEffort: spec.reasoningEffort }
+                  : { ...runSettings, webSearch: runSettings.webSearch && webSearchAllowed }
+              }
+              citations={citationsByPane.get(pane.id)}
               onChangeModel={(id) => changeModel(pane.id, id)}
               onRemove={panes.length > MIN_PANES ? () => removePane(pane.id) : undefined}
-              onRetry={() => lastPrompt && void compare.runPane(pane.id, pane.modelId, lastPrompt)}
+              onRetry={() => spec && void compare.runPane(pane.id, pane.modelId, spec)}
               onContinue={() => continueInChat(pane)}
             />
           ))}
