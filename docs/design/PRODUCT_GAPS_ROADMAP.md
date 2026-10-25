@@ -93,6 +93,11 @@ Follow-ups (known gaps, not built):
 - The hostile-content refusal of `draft_skill` reads the turn's live taint,
   which only Alevr Search's own page reads mark. Connector results and the
   provider's own web search should mark it too.
+- In an agent thread where the setup tool is off (a paused agent, a room
+  without it, or while a taught skill is applied), the model gets neither the
+  teaching section, the line saying it cannot draft here, nor
+  `propose_setup_change`, so it is told nothing about teaching. The routine
+  line behaves the same way; give both one line that says where to do it.
 
 ## 3. Password manager / secret card
 

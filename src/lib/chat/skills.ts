@@ -540,13 +540,20 @@ export function applyChatSkill(input: {
   };
 }
 
-/** The tool and connector names the applied skill asked for, granted or not. */
+/**
+ * The tool and connector names the applied skill asked for, granted or not.
+ *
+ * A list that is missing reads as empty. `resolveSkillPermissions` always
+ * fills all of them, but this is what every narrowing step reads, and an
+ * application built with only `tools` (as callers and tests did before apps
+ * were narrowed) must keep narrowing tools exactly as it did, not throw.
+ */
 function requestedSurface(application: ChatSkillApplication): { tools: Set<string>; connectors: Set<string> } {
+  const { resolved } = application;
+  const listed = (names: readonly string[] | undefined): readonly string[] => names ?? [];
   return {
-    tools: new Set(
-      [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
-    ),
-    connectors: new Set([...application.resolved.connectors, ...application.resolved.withheld.connectors]),
+    tools: new Set([...listed(resolved.tools), ...listed(resolved.withheld?.tools)].map(canonicalSkillToolName)),
+    connectors: new Set([...listed(resolved.connectors), ...listed(resolved.withheld?.connectors)]),
   };
 }
 

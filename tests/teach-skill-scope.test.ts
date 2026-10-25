@@ -152,6 +152,23 @@ test("tools: listing nothing narrows nothing, for taught skills as for every oth
   assert.deepEqual(narrowRuntimeToolsForSkill(ALLOWLIST, apply({ connectors: ["notion"] })), ALLOWLIST);
 });
 
+test("an application that carries only tool lists still narrows tools, and leaves apps alone", () => {
+  // The shape tests/tool-aliases.test.ts builds by hand: no connector lists at
+  // all. Reading apps must not throw on it, and the tool rule is the old one.
+  const toolsOnly = {
+    resolved: { tools: ["browser_agent"], withheld: { tools: ["code_interpreter"] } },
+  } as unknown as ChatSkillApplication;
+  assert.deepEqual(narrowRuntimeToolsForSkill(["read_document", "run_code", "web_fetch"], toolsOnly), ["run_code", "web_fetch"]);
+  assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, toolsOnly)), ids(CONNECTORS));
+  assert.equal(skillDeclaresWholeSurface(toolsOnly), false);
+  assert.deepEqual(ids(scopeTurnToSkill(toolsOnly, turn).connectors), ids(CONNECTORS));
+  const taughtToolsOnly = { ...toolsOnly, declaredSurface: true } as ChatSkillApplication;
+  assert.equal(skillDeclaresWholeSurface(taughtToolsOnly), true);
+  assert.deepEqual(ids(narrowConnectorsForSkill(CONNECTORS, taughtToolsOnly)), [], "taught, tools only: no apps");
+  const noLists = { resolved: {} } as unknown as ChatSkillApplication;
+  assert.deepEqual(narrowRuntimeToolsForSkill(ALLOWLIST, noLists), ALLOWLIST, "nothing listed narrows nothing");
+});
+
 test("tools: a listed tool narrows to it, as before", () => {
   assert.deepEqual(narrowRuntimeToolsForSkill(ALLOWLIST, apply({ taught: true, tools: ["calculate"] })), [
     "calculate",

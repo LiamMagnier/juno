@@ -18,6 +18,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import { emptySkillContract } from "@/lib/work/skills";
 import {
   emptyTaughtForm,
+  reteachInputsNotice,
   taughtInputsFromContract,
   type ClientSkillDraft,
   type TaughtSkillForEdit,
@@ -51,7 +52,16 @@ type View =
   | { kind: "choose" }
   | { kind: "loading" }
   | { kind: "missing"; message: string }
-  | { kind: "edit"; initial: TeachEditorState; mode: TeachEditorMode; draft?: ClientSkillDraft; freeform?: boolean; walk?: boolean }
+  | {
+      kind: "edit";
+      initial: TeachEditorState;
+      mode: TeachEditorMode;
+      draft?: ClientSkillDraft;
+      freeform?: boolean;
+      walk?: boolean;
+      /** Re-teach: what the page could not show of what the skill asks for (`reteachInputsNotice`). */
+      inputsNotice?: string | null;
+    }
   | { kind: "saved"; saved: TaughtSkillSaved; conversationId: string | null; revoked?: boolean };
 
 /**
@@ -92,6 +102,7 @@ function reteachView(loaded: TaughtSkillForEdit): View {
   return {
     kind: "edit",
     freeform,
+    inputsNotice: reteachInputsNotice(loaded.version?.contract.inputs ?? []),
     initial: stateFromForm(form, loaded.skill.projectId),
     mode: {
       kind: "reteach",
@@ -218,6 +229,11 @@ export function TeachPage() {
                   This skill’s instructions weren’t written as steps, so each line became one. Check them, and “What it
                   asks you for each time”, before you save: the saved version replaces the text with these steps, and
                   what it asks for with that list.
+                </WorkStateNote>
+              ) : null}
+              {view.inputsNotice ? (
+                <WorkStateNote tone="info" className="mb-6">
+                  {view.inputsNotice}
                 </WorkStateNote>
               ) : null}
               <TeachEditor

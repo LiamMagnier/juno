@@ -640,35 +640,50 @@ export function taughtDescription(form: Pick<TaughtSkillForm, "whenToUse" | "nam
   return (when || cleanText(form.name)).slice(0, MAX_SKILL_DESCRIPTION_CHARS);
 }
 
+/** How an input is matched across a re-teach: its name as the Teach page shows it. */
+function shownInputKey(name: string): string {
+  return cleanText(name).slice(0, MAX_INPUT_NAME_CHARS).toLowerCase();
+}
+
 /**
  * Contract inputs, as the skill contract stores fields.
  *
  * Re-teaching passes the version being replaced (`base`): an input the person
- * kept, matched by name, keeps the kind it had (a `number` or a `url` stays
- * one), because the editor only shows a name, a description and whether it is
- * needed, and saving a typed input back as text would quietly change what the
- * skill accepts. A new input is text.
+ * kept, matched by name as the page showed it, keeps the kind it had (a
+ * `number` or a `url` stays one), because the editor only shows a name, a
+ * description and whether it is needed, and saving a typed input back as text
+ * would quietly change what the skill accepts. The page shortens a name over
+ * 60 characters and a description over 200 (`taughtInputsFromContract`), so a
+ * kept input is matched on the shortened name, and a name or description sent
+ * back exactly as it was shown keeps its full text. A new input is text.
  */
 export function taughtContractInputs(
   inputs: readonly TaughtInput[],
   base: readonly WorkSkillField[] = []
 ): WorkSkillField[] {
-  const kindOf = new Map(base.map((field) => [cleanText(field.name).toLowerCase(), field.kind]));
+  const before = new Map<string, WorkSkillField>();
+  for (const field of base) {
+    const key = shownInputKey(field.name);
+    if (key && !before.has(key)) before.set(key, field);
+  }
   return inputs
     .filter((input) => cleanText(input.name))
     .slice(0, MAX_TAUGHT_INPUTS)
     .map((input) => {
       const name = cleanText(input.name).slice(0, MAX_INPUT_NAME_CHARS);
+      const description = cleanText(input.description).slice(0, MAX_INPUT_DESCRIPTION_CHARS);
+      const kept = before.get(name.toLowerCase());
+      const shown = kept ? taughtInputsFromContract([kept])[0] : undefined;
       return {
-        name,
-        kind: kindOf.get(name.toLowerCase()) ?? SKILL_FIELD_KINDS[0],
+        name: kept && shown && name === shown.name ? cleanText(kept.name) : name,
+        kind: kept?.kind ?? SKILL_FIELD_KINDS[0],
         required: input.required,
-        description: cleanText(input.description).slice(0, MAX_INPUT_DESCRIPTION_CHARS),
+        description: kept && shown && description === shown.description ? cleanText(kept.description) : description,
       };
     });
 }
 
-/** A stored contract field as the editor shows an input. */
+/** A stored contract field as the editor shows an input: the first eight, long text shortened. */
 export function taughtInputsFromContract(fields: readonly WorkSkillField[]): TaughtInput[] {
   return fields
     .filter((field) => cleanText(field.name))
@@ -681,14 +696,57 @@ export function taughtInputsFromContract(fields: readonly WorkSkillField[]): Tau
 }
 
 /**
+ * The contract inputs the Teach page cannot show: past the first
+ * `MAX_TAUGHT_INPUTS`. A skill authored elsewhere can ask for up to 32 things;
+ * the page shows eight, and a re-teach keeps the rest as they are, because the
+ * person never saw them and so could not have removed them.
+ */
+export function inputsPastTheTeachPage(fields: readonly WorkSkillField[]): WorkSkillField[] {
+  return fields.filter((field) => cleanText(field.name)).slice(MAX_TAUGHT_INPUTS);
+}
+
+/**
+ * What the re-teach page says about the inputs it cannot show exactly, or
+ * null when it shows every one as it is. Said on the page so nobody learns of
+ * it only by reading the saved contract.
+ */
+export function reteachInputsNotice(fields: readonly WorkSkillField[]): string | null {
+  const named = fields.filter((field) => cleanText(field.name));
+  const past = inputsPastTheTeachPage(named).length;
+  const shortened = named
+    .slice(0, MAX_TAUGHT_INPUTS)
+    .some(
+      (field) =>
+        cleanText(field.name).length > MAX_INPUT_NAME_CHARS ||
+        cleanText(field.description).length > MAX_INPUT_DESCRIPTION_CHARS
+    );
+  const parts: string[] = [];
+  if (past > 0) {
+    parts.push(
+      `It asks for ${named.length} things each time. This page shows the first ${MAX_TAUGHT_INPUTS}, and saving keeps ${
+        past === 1 ? "the last one as it is" : `the other ${past} as they are`
+      }.`
+    );
+  }
+  if (shortened) {
+    parts.push(
+      `Names over ${MAX_INPUT_NAME_CHARS} characters and descriptions over ${MAX_INPUT_DESCRIPTION_CHARS} are shown shortened. One you leave as it is keeps its full text.`
+    );
+  }
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/**
  * The inputs a re-taught version's contract keeps.
  *
- * From the form, with kinds carried over by name (`taughtContractInputs`).
- * One exception: instructions that were free-form, re-taught by a client that
- * sends no inputs at all, keep the inputs they had. The Teach page shows a
- * free-form skill's inputs and sends them back, so this only catches a client
- * that never showed them; a taught-shaped skill whose inputs the person removed
- * on the page loses them, as asked.
+ * From the form, with kinds carried over by name (`taughtContractInputs`),
+ * then every input past the ones the page shows (`inputsPastTheTeachPage`),
+ * unchanged, unless the form now has one by that name. One exception:
+ * instructions that were free-form, re-taught by a client that sends no
+ * inputs at all, keep the inputs they had. The Teach page shows a free-form
+ * skill's inputs and sends them back, so this only catches a client that
+ * never showed them; a taught-shaped skill whose inputs the person removed on
+ * the page loses them, as asked.
  */
 export function reteachContractInputs(input: {
   form: readonly TaughtInput[];
@@ -698,7 +756,10 @@ export function reteachContractInputs(input: {
   if (input.baseWasFreeform && input.form.filter((i) => cleanText(i.name)).length === 0) {
     return input.base.map((field) => ({ ...field }));
   }
-  return taughtContractInputs(input.form, input.base);
+  const fromForm = taughtContractInputs(input.form, input.base);
+  const taken = new Set(fromForm.map((field) => shownInputKey(field.name)));
+  const unseen = inputsPastTheTeachPage(input.base).filter((field) => !taken.has(shownInputKey(field.name)));
+  return [...fromForm, ...unseen.map((field) => ({ ...field }))];
 }
 
 /** Whether a version's contract says it was taught (Teach Juno wrote its provenance). */
@@ -856,7 +917,12 @@ export function taughtSaveRefusal(
           : `A skill can use at most ${MAX_TAUGHT_APPS} apps.${end}`,
       };
     case "domains":
-      return { field, message: `A skill can list at most ${MAX_TAUGHT_DOMAINS} websites.${end}` };
+      return {
+        field,
+        message: nested
+          ? `One of the websites isn’t a valid address.${end}`
+          : `A skill can list at most ${MAX_TAUGHT_DOMAINS} websites.${end}`,
+      };
     case "projectId":
       return { field, message: `That project couldn’t be read.${end}` };
     case "acknowledged":

@@ -285,6 +285,82 @@ if (!DB_URL) {
     ]);
   });
 
+  test("re-teaching through the page twice keeps inputs it cannot show, and a long name stays typed", async (t) => {
+    const teach = await import("@/lib/skills/teach");
+    const store = await import("@/lib/skills/teach-store");
+    const skills = await import("@/lib/skills/store");
+    const { emptySkillContract, parseSkillContract } = await import("@/lib/work/skills");
+    const suffix = randomUUID();
+    const me = await prisma.user.create({ data: { email: `teach-many-inputs-${suffix}@example.invalid` } });
+    t.after(async () => {
+      await prisma.workAuditEvent.deleteMany({ where: { userId: me.id } });
+      await prisma.user.deleteMany({ where: { id: me.id } });
+    });
+    const longName = "Account number in the billing system the finance team uses for EU invoices.";
+    const typed = [
+      { name: longName, kind: "number" as const, required: true, description: "Their account number" },
+      ...Array.from({ length: 11 }, (_, i) => ({
+        name: `Field ${i + 2}`,
+        kind: (i % 2 === 0 ? "url" : "boolean") as "url" | "boolean",
+        required: false,
+        description: "",
+      })),
+    ];
+    const created = await skills.createSkillWithFirstVersion({
+      userId: me.id,
+      slug: "eu-billing",
+      name: "EU billing",
+      description: "Bills EU clients.",
+      instructions: "Look up the account, then bill every EU client for the month.",
+      projectId: null,
+      contract: { ...emptySkillContract(), inputs: typed },
+      requestedTools: [],
+      origin: "authored",
+      autoSelect: false,
+      enabled: false,
+      actor: "web",
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const skillId = created.skill.id;
+
+    // First re-teach: free-form, so the page shows the contract's first eight, the long name shortened.
+    const first = await store.loadTaughtSkillForEdit(me.id, skillId);
+    assert.equal(first?.form, null);
+    const shown = teach.taughtInputsFromContract(first!.version!.contract.inputs);
+    assert.equal(shown.length, 8);
+    assert.equal(shown[0].name.length, 60);
+    assert.match(teach.reteachInputsNotice(first!.version!.contract.inputs) ?? "", /It asks for 12 things/);
+    const v2save = await store.saveTaughtSkill(
+      me.id,
+      teach.taughtSkillSaveSchema.parse({ skillId, name: "EU billing", steps: ["Look up the account.", "Bill each client."], inputs: shown })
+    );
+    assert.equal(v2save.ok && v2save.version, 2);
+    const v2 = await prisma.workSkillVersion.findFirstOrThrow({ where: { skillId, version: 2 } });
+    assert.deepEqual(parseSkillContract(v2.contract).inputs, typed, "all twelve, kinds and the full name kept");
+
+    // Second re-teach: now taught-shaped, the page shows the steps' inputs; the unseen four still stay.
+    const second = await store.loadTaughtSkillForEdit(me.id, skillId);
+    assert.ok(second?.form, "taught-shaped now");
+    assert.equal(second!.form!.inputs.length, 8);
+    const v3save = await store.saveTaughtSkill(
+      me.id,
+      teach.taughtSkillSaveSchema.parse({
+        skillId,
+        name: "EU billing",
+        steps: second!.form!.steps,
+        inputs: second!.form!.inputs.filter((input) => input.name !== "Field 3"),
+      })
+    );
+    assert.equal(v3save.ok && v3save.version, 3);
+    const v3 = await prisma.workSkillVersion.findFirstOrThrow({ where: { skillId, version: 3 } });
+    assert.deepEqual(
+      parseSkillContract(v3.contract).inputs,
+      typed.filter((field) => field.name !== "Field 3"),
+      "only the one removed on the page is gone"
+    );
+  });
+
   test(
     "the routes, as the Teach page calls them: signed in, scoped to the account, off until confirmed",
     { skip: !canMockModules && "needs --experimental-test-module-mocks" },
