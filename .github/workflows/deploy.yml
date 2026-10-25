@@ -509,6 +509,27 @@ jobs:
           CHAT_TURN_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test
           NODE_OPTIONS: --conditions=react-server
 
+      # LEDGER P1-1. Two real Node processes against one database: this test
+      # is process B, tests/fixtures/chat-turn-process.ts is process A running
+      # turns through the real POST /api/chat. Stop pressed through B's real
+      # POST /api/chat/cancel must end A's turn within 3 s as a user Stop —
+      # without a receipt, with one, before the turn registered, and for a
+      # private turn — and a resume served by B must tail A's turn to its end.
+      # The store suite pins the RateLimit-backed signals on the same server.
+      - name: Cross-process Stop and live leases, two processes against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_route_test_xproc'
+          npx prisma migrate deploy
+          npx tsx --test tests/generation-signals-store-db.test.ts
+          npx tsx --test --experimental-test-module-mocks tests/chat-cross-process-stop.integration.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test_xproc
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test_xproc
+          GENERATION_SIGNALS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test_xproc
+          CROSS_PROCESS_STOP_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test_xproc
+          NODE_OPTIONS: --conditions=react-server
+
       - name: Images in chat through the shared media meter, against a real database
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_image_test'

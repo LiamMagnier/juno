@@ -106,8 +106,9 @@ const UNTRUSTED_RESULT_TOOLS: ReadonlySet<string> = new Set([
  *
  * Generation + persistence is detached from the request lifecycle: req.signal
  * is never passed to the model, so navigating away drops the browser stream
- * without losing the saved answer. The explicit cancel endpoint (and the
- * durable cancel poll) abort it. Every frame goes to the resumable stream log,
+ * without losing the saved answer. The explicit cancel endpoint aborts it —
+ * from this process at once, from any other through the durable cancel the
+ * per-process signal pump reads (chat/generation-signals.ts). Every frame goes to the resumable stream log,
  * so a reconnecting client resumes THIS turn instead of regenerating it.
  *
  * Inputs are what the earlier stages resolved (SavedTurnPlan); nothing here
@@ -319,7 +320,6 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
   const stopGenerationTimers = () => {
     if (generationHeartbeat) clearInterval(generationHeartbeat);
     generationHeartbeat = null;
-    receipt.stop();
   };
   const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
     // Once the client disconnects the controller is closed; swallow the enqueue
@@ -393,7 +393,6 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       send({ type: "ping" });
       receipt.heartbeat(() => generationController.abort());
     }, 15_000);
-    receipt.startCancelPoll();
 
     sendActivity({
       kind: "context",

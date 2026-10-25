@@ -21,7 +21,8 @@ import { turnModule } from "./chat-turn-source";
  *     executing twice.
  *  3. The turn is detached from the HTTP request: `req.signal` never reaches
  *     the model, so a closed tab cannot abort a half-done external write; only
- *     the explicit cancel (registry or durable poll) stops a generation.
+ *     the explicit cancel (registry, or the durable cancel the per-process
+ *     signal pump reads) stops a generation.
  */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -55,7 +56,11 @@ test("the generation is detached from the request; only an explicit cancel stops
   // (Comments may name it; no code passes it.)
   assert.doesNotMatch(run, /signal: req\.signal|\(req\.signal\)|req\.signal\.add/);
   assert.match(run, /signal: generationController\.signal,/);
-  assert.match(turnModule("durable-receipt"), /cancelGeneration\(receiptGenerationId, userId\)/);
+  // The durable half of that cancel reaches every generation a process holds,
+  // receipt or not, and goes through the registry so it ends as a user Stop.
+  const registry = read("src/lib/generation-cancel.ts");
+  assert.match(registry, /onCancel: \(ref\) => \{\s*if \(registry\.cancel\(ref\.generationId, ref\.userId\)\)/);
+  assert.match(read("src/lib/chat/generation-signals-store.ts"), /"cancelRequestedAt" IS NOT NULL/, "the receipt flag is still read");
 });
 
 test("every terminal path releases the spend hold or settles it", () => {

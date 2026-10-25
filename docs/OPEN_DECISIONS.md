@@ -119,16 +119,35 @@ says so out loud.
 
 Recorded here so it is not rediscovered as a bug.
 
-Two pieces of state are per-process and in memory:
+**Stop is no longer one of them (2026-10-25, LEDGER P1-1).** The
+active-generation map in `src/lib/generation-cancel.ts` is still per-process,
+but a Stop that lands on another process — or before the turn registered — is
+recorded as a durable `generation:cancel:` row (in `RateLimit`, no migration)
+that every process's signal pump reads once a second for the generations it
+holds, alongside the receipt's `cancelRequestedAt`. Saved turns also hold a
+`generation:live:` lease, so the cancel route answers `cancelled` honestly and
+the resume route tails a turn another process is generating. Polling rather
+than `LISTEN/NOTIFY`: Prisma cannot hold a LISTEN session, there is no raw `pg`
+driver in the app, and a NOTIFY nobody hears is lost, so the durable row would
+be needed underneath anyway. Proven with two Node processes against Postgres
+(`tests/chat-cross-process-stop.integration.test.ts`, a CI step).
 
-- `src/lib/generation-cancel.ts` — the active-generation map that
-  `POST /api/chat/cancel` looks in.
+What is still per-process and in memory:
+
+- `activeGenerationForConversation` (`/api/chat/stream/active`, cross-chat
+  context): a tab reopened WITHOUT its sessionStorage ledger finds a running
+  web turn only when it reaches the process generating it. The lease key is
+  per generation, not per conversation, so another process cannot answer this
+  without a lookup the `RateLimit` key cannot index; it needs a small
+  `ChatGeneration` table (generationId, userId, conversationId, heartbeat) if
+  it ever matters.
 - `src/app/api/i18n/translations/route.ts` — the translation cache.
 - (Also `provider-health.ts` and `platform-budget.ts`, both added since, both
   documented as such in place.)
+- The others the 2026-10-25 audit lists under P1-1: the local-folder bridge
+  (`src/lib/chat/local-folder-bridge.ts`, PR #85) and the code env-link hub's
+  in-memory default (`ALEVR_LINK_STORE`).
 
-With **one** PM2 instance, which is what runs today, all of this is correct.
-With more than one, `cancel` reaches the wrong process and returns
-`{ ok: true, cancelled: false }` — a silent no-op. The fix when it is needed is
-Postgres `LISTEN/NOTIFY`, or a `generationId → cancel` row the streaming loop
-polls. Do not add a second instance without doing that first.
+With more than one instance those still answer for one process only, and the
+last two can lose in-flight work across a restart (see the audit). Stop no
+longer silently does nothing.
