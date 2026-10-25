@@ -575,6 +575,11 @@
           "ios": "native",
           "screen": "DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView",
           "note": "A sheet on both apps."
+        },
+        "/skills/teach": {
+          "mac": "planned",
+          "ios": "planned",
+          "note": "Teach Alevr: review a method taught once (or a chat's draft_skill card) step by step, confirm what it may use, then switch it on. The apps have no Teach page yet; on the Mac a skill is written in DesktopSkillPage, and a taught skill shows there like any other."
         }
       },
       "routes": {
@@ -602,6 +607,22 @@
         "/api/work/skills/[id]/export": {
           "status": "planned",
           "note": "Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet."
+        },
+        "/api/skills/teach": {
+          "status": "planned",
+          "note": "Save a taught skill from the Teach page (saved off unless the reviewed permission fingerprint matches), and look up whether a chat's draft card was saved. The apps have no Teach page yet (see /skills/teach)."
+        },
+        "/api/skills/teach/[id]": {
+          "status": "planned",
+          "note": "Load a taught skill's steps as editable fields to re-teach it on the Teach page. As /api/skills/teach."
+        },
+        "/api/skills/teach/[id]/revoke": {
+          "status": "planned",
+          "note": "Switch a taught skill off and out of automatic selection in one write, recorded as withdrawn consent. The apps can already switch any skill off through PATCH /api/work/skills/[id]; they have no Teach page to revoke from."
+        },
+        "/api/skills/teach/context": {
+          "status": "planned",
+          "note": "The projects and connected apps a taught skill can name, for the Teach page's review. As /api/skills/teach."
         }
       }
     },
