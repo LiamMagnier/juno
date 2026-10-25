@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
-test.skip(Boolean(process.env.E2E_BASE_URL), "Development-only Connections fixture");
+// /dev/connections is a development-only gallery (a 404 on production builds),
+// and Playwright now only runs through the QA runner's production build, so
+// this spec has nothing to open there. The real flow — /connections, the
+// dialog the app actually mounts, POST /api/mcp/servers — is covered by
+// e2e/journey/mcp-add.spec.ts on every pull request.
+test.skip(
+  Boolean(process.env.E2E_BASE_URL) || process.env.ALEVR_QA_RUNNER === "1",
+  "Development-only Connections fixture; the production flow is e2e/journey/mcp-add.spec.ts"
+);
 
 // This public dev fixture runs the production dialog. Provider calls are
 // intercepted; database migration/custody is exercised in the separate DB suite.

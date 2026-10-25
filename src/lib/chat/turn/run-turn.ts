@@ -618,7 +618,10 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         ? streamResearchNotice(researchNotice)
         : deterministicSmokeProviderEnabled
         ? streamDeterministicSmokeResponse(
-            input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? ""
+            input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? "",
+            // Stop aborts this controller; the smoke stream honours it as a
+            // provider does, so the browser journey can test Stop for real.
+            generationController.signal
           )
         : streamChat({
         model: modelInfo,

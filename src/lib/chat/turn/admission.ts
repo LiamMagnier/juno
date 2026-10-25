@@ -24,6 +24,7 @@ import { recoverFirstSubmission, type FirstSubmissionRecoveryPort } from "@/lib/
 import type { ClientArtifact } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 import type { StageResult, TurnUser } from "./types";
+import { deterministicSmokeProviderAllowed } from "./smoke-provider-gate";
 
 /*
  * Pipeline stage 1 — resolveTurnContext: what was asked, by whom, and whether
@@ -125,8 +126,9 @@ export async function resolveTurnContext(req: Request, user: TurnUser): Promise<
     return NextResponse.json(admission.body, { status: admission.status });
   }
   const input = admission.input;
-  const deterministicSmokeProviderEnabled =
-    process.env.JUNO_E2E_SMOKE_PROVIDER === "1" && process.env.NODE_ENV !== "production" && !input.privateMode;
+  // Opt-in only, and in a production process only under the QA runner against
+  // its disposable database (smoke-provider-gate.ts). Never for private turns.
+  const deterministicSmokeProviderEnabled = deterministicSmokeProviderAllowed(process.env) && !input.privateMode;
 
   // Valid durable retries are recovered here, before rate limiting; a legacy
   // caller without both keys falls through and keeps the historical order.

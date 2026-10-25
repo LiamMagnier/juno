@@ -307,7 +307,9 @@ const testSuites = [
   {
     id: "GATE_PLAYWRIGHT_CHAT",
     name: "Authenticated Browser Chat and Auto-refresh E2E",
-    command: "npx playwright test e2e/chat.spec.ts --project=chromium",
+    // Playwright only runs through the QA runner (scripts/qa/run-prod-e2e.sh):
+    // a disposable *_test database and a production build, never `next dev`.
+    command: "bash scripts/qa/run-prod-e2e.sh --package phase2 -- e2e/chat.spec.ts --project=chromium",
     environmentClass: "browser",
   },
   {
