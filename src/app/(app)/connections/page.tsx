@@ -307,7 +307,7 @@ export default function ConnectionsPage() {
           <div className="mb-4 flex h-6 items-center" aria-hidden="true">
             <Skeleton className="h-3.5 w-24 rounded-sm" />
           </div>
-          <div className="grid grid-cols-1 gap-3 @[40rem]/page:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-10 gap-y-1 @[40rem]/page:grid-cols-2">
             {[...Array(6)].map((_, i) => (
               <ConnectorTileSkeleton key={i} index={i} />
             ))}

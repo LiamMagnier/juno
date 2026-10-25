@@ -150,3 +150,26 @@
 .agent-presence { position: relative; display: inline-grid; place-items: center; }
 .agent-status-line { display: inline; }
 .agent-status-line[data-live] { color: hsl(var(--primary)); }
+
+/* ---------- The 3D body (agent-face.tsx Body3D) ---------- */
+.agent-face__tint { flood-color: hsl(var(--face-tone)); }
+.agent-face__spec {
+  mix-blend-mode: screen;
+  transition: transform 420ms var(--face-spring), opacity 200ms var(--ease-out-soft);
+}
+/* The light answers the pointer: on hover the highlight slides a little
+   toward the top-left key, as if the face turned toward you. */
+@media (hover: hover) and (pointer: fine) {
+  .agent-face:hover .agent-face__spec { transform: translate(-0.8px, -0.8px); }
+}
+.dark .agent-face__spec { opacity: 0.85; }
+/* The eyes sit ON the clay, so they get the faintest inset edge. */
+.agent-face__body[data-sculpted] ~ .agent-face__gaze .agent-face__pupil { filter: drop-shadow(0 0.4px 0 hsl(0 0% 100% / 0.35)); }
+@media (prefers-reduced-motion: reduce) {
+  .agent-face__spec { transition: none; }
+  .agent-face:hover .agent-face__spec { transform: none; }
+}
+/* A sculpted mark is lit ink: near-black on paper, warm off-white on charcoal
+   (--agent-mark), lifted toward white so the clay's shading still reads. */
+.agent-face__tint-ink { flood-color: color-mix(in oklab, hsl(var(--agent-mark)) 78%, white); }
+.dark .agent-face__tint-ink { flood-color: hsl(var(--agent-mark)); }

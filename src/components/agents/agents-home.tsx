@@ -24,6 +24,7 @@ import {
 } from "@/lib/agents/new-agent";
 import { cn } from "@/lib/utils";
 import { AgentPresence } from "./agent-presence";
+import { OrbitStage } from "./orbit-stage";
 import { formatAgo, localStateSentence } from "./agent-bits";
 import { announceAgentsChanged, hireAgent, updateAgent } from "./agents-transport";
 import { useAgents } from "./use-agents";
@@ -95,27 +96,15 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
         className={TITLE_FINISH}
       />
 
+      {/* The stage: the team in orbit around you (orbit-stage.tsx). A picture
+          with shortcuts; the roster below is the list a keyboard and a
+          screen reader use. */}
       <div className={cn("max-w-3xl", RISE)} style={stagger(1)}>
-        <DescribeAgent team={ordered} autoFocus={focusComposer} />
+        <OrbitStage agents={ordered} hrefOf={agentHref} />
       </div>
 
-      {/* The lineup: faces on the page itself, no card at rest. A hairline
-          above it marks the section the way the homepage's frames do. The
-          field, the lineup and Needs you share one column (max-w-3xl), so
-          every edge on the page lines up with the title. */}
-      <ul
-        aria-label={BRAND.orbit.description}
-        className="ed-arrive mt-8 grid max-w-3xl grid-cols-2 gap-1 border-t border-foreground/[0.07] pt-6 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-5"
-      >
-        {ordered.map((agent, index) => (
-          <li key={agent.id} className={cn("min-w-0", RISE)} style={stagger(index + 2)}>
-            <Portrait agent={agent} onChanged={refresh} />
-          </li>
-        ))}
-      </ul>
-
       {attention.length > 0 ? (
-        <section aria-labelledby="orbit-needs-you" className="mt-8 max-w-3xl pb-16">
+        <section aria-labelledby="orbit-needs-you" className="mt-6 max-w-3xl">
           <h2 id="orbit-needs-you" className="mb-3 flex items-center gap-2 text-ui font-medium text-foreground">
             {FEATURE_NAMES.needsYou.label}
             <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[hsl(var(--attention)/0.14)] px-1.5 font-mono text-caption tabular-nums text-[hsl(var(--attention))]">
@@ -130,9 +119,27 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
             ))}
           </ul>
         </section>
-      ) : (
-        <div className="pb-16" />
-      )}
+      ) : null}
+
+      {/* The roster: one row per agent, the face, who it is, what it is doing
+          now and when it last did something, and the way in. */}
+      <section aria-labelledby="orbit-roster" className="mt-8 max-w-3xl">
+        <h2 id="orbit-roster" className="mb-2 text-ui font-medium text-foreground">
+          {`Your ${AGENT_NOUN.plural}`}
+          <span className="ml-2 font-normal tabular-nums text-muted-foreground">{ordered.length}</span>
+        </h2>
+        <ul aria-label={BRAND.orbit.description} className="flex flex-col divide-y divide-foreground/[0.06] rounded-card border border-foreground/[0.08] bg-card">
+          {ordered.map((agent, index) => (
+            <li key={agent.id} className={cn("min-w-0", RISE)} style={stagger(index + 2)}>
+              <RosterRow agent={agent} onChanged={refresh} />
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section aria-label={`New ${AGENT_NOUN.singular}`} className={cn("mt-8 max-w-3xl pb-16", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
+        <DescribeAgent team={ordered} autoFocus={focusComposer} />
+      </section>
     </AppPage>
   );
 }
@@ -164,12 +171,13 @@ function stateWords(agent: ClientAgent): string {
   return localStateSentence(agent, agent.state) || AGENT_STATE_NAMES.working;
 }
 
-function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => void }) {
+function RosterRow({ agent, onChanged }: { agent: ClientAgent; onChanged: () => void }) {
   const waiting = agent.state === "waiting" || (agent.needsYou > 0 && agent.state !== "blocked");
   const words = stateWords(agent);
   const paused = agent.status === "paused";
   const router = useRouter();
   const href = agentHref(agent);
+  const last = agent.task ? formatAgo(agent.task.lastActivityAt) : null;
   const act = async (patch: Parameters<typeof updateAgent>[1]) => {
     const outcome = await updateAgent(agent.id, patch);
     if (outcome.kind === "ok") {
@@ -178,31 +186,33 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
     }
   };
   return (
-    <div className="group/portrait relative" data-state={agent.state}>
-      {/* Full prefetch on aim, not a partial one on sight: a viewport prefetch
-          of a force-dynamic route stops at its loading boundary, so the click
-          committed the skeleton and React then held the thread back for its
-          300 ms Suspense reveal throttle (measured ~400 ms Orbit → agent).
-          See lib/intent-prefetch.ts. */}
+    <div className="group/row relative flex items-center gap-4 px-4 py-3" data-state={agent.state}>
+      {/* Full prefetch on aim (lib/intent-prefetch.ts): a viewport prefetch of
+          a force-dynamic route stops at its loading boundary. The link covers
+          the row; the menu sits above it. */}
       <Link
         href={href}
         prefetch={false}
         {...intentPrefetch(router, href)}
         data-face-trigger
         aria-label={`${agent.name}${agent.role ? `, ${agent.role}` : ""}. ${words}`}
-        className="flex flex-col items-center rounded-card border border-transparent px-3 pb-4 pt-3 text-center transition-[background-color,border-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.08] hover:bg-foreground/[0.025] active:scale-[.99] motion-reduce:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        <span className="grid size-24 place-items-center transition-transform duration-base ease-out-soft group-hover/portrait:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover/portrait:translate-y-0 @[40rem]/page:size-28">
-          <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : agent.state} size={88} spread={0.3} gaze />
+        className="absolute inset-0 rounded-card transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      />
+      <span className="pointer-events-none relative shrink-0 transition-transform duration-base ease-out-soft group-hover/row:-translate-y-0.5 motion-reduce:transition-none">
+        <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : agent.state} size={48} spread={0.2} />
+      </span>
+      <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="truncate font-serif text-heading font-normal leading-tight tracking-[-0.015em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
+          {agent.role ? <span className="truncate text-ui text-muted-foreground">{agent.role}</span> : null}
         </span>
-        <span className="mt-3 max-w-full truncate font-serif text-heading font-normal tracking-[-0.015em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
-        {agent.role ? <span className="mt-0.5 max-w-full truncate text-ui text-muted-foreground">{agent.role}</span> : null}
         <StateLine agent={agent} words={words} waiting={waiting} paused={paused} />
-      </Link>
+      </span>
+      {last ? <span className="pointer-events-none relative hidden shrink-0 text-caption tabular-nums text-muted-foreground @[36rem]/page:inline">{last}</span> : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`More for ${agent.name}`}
-          className="absolute right-1 top-1 grid size-8 place-items-center rounded-control text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast ease-out-soft hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 group-hover/portrait:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+          className="relative grid size-8 shrink-0 place-items-center rounded-control text-muted-foreground transition-[background-color,color] duration-fast ease-out-soft hover:bg-foreground/[0.05] hover:text-foreground data-[state=open]:bg-foreground/[0.05]"
         >
           <MoreHorizontal className="size-4" aria-hidden="true" />
         </DropdownMenuTrigger>
@@ -235,7 +245,7 @@ function StateLine({ agent, words, waiting, paused }: { agent: ClientAgent; word
   return (
     <span
       className={cn(
-        "mt-2.5 line-clamp-3 max-w-full text-balance text-ui leading-5 transition-colors duration-base ease-out-soft",
+        "mt-0.5 line-clamp-2 max-w-full text-ui leading-5 transition-colors duration-base ease-out-soft",
         waiting
           ? "font-medium text-[hsl(var(--attention))]"
           : blocked

@@ -167,6 +167,47 @@ export interface AgentFaceProps {
   className?: string;
 }
 
+/**
+ * The 3D body (2026-10): each shape is modelled and lit in Blender
+ * (scripts/agent-bodies: the exact silhouette above, inflated into clay and
+ * rendered front-orthographic on this 64-unit grid) as two greyscale passes.
+ * The face tints them with its own tone here, so one render serves every
+ * colour and the agent's hue stays a design-system token:
+ *   shade  multiplied by the tone (white clay, diffuse light only)
+ *   spec   screened on top (the coat's highlights on black)
+ * Below 28 px the flat vector body is crisper, so small faces keep it.
+ */
+function Body3D({ shape, tintId }: { shape: AgentShape; tintId: string }) {
+  return (
+    <>
+      <defs>
+        <filter id={tintId} x="0" y="0" width="1" height="1" colorInterpolationFilters="sRGB">
+          <feFlood className="agent-face__tint" result="tone" />
+          <feComposite in="tone" in2="SourceAlpha" operator="in" result="toned" />
+          <feBlend in="SourceGraphic" in2="toned" mode="multiply" />
+        </filter>
+        <filter id={`${tintId}-ink`} x="0" y="0" width="1" height="1" colorInterpolationFilters="sRGB">
+          <feFlood className="agent-face__tint-ink" result="tone" />
+          <feComposite in="tone" in2="SourceAlpha" operator="in" result="toned" />
+          <feBlend in="SourceGraphic" in2="toned" mode="multiply" />
+        </filter>
+      </defs>
+      <image className="agent-face__shade" href={`/agents/bodies/${shape}-shade.webp`} x={0} y={0} width={64} height={64} filter={`url(#${tintId})`} />
+      <image className="agent-face__spec" href={`/agents/bodies/${shape}-spec.webp`} x={0} y={0} width={64} height={64} />
+    </>
+  );
+}
+
+/** A sculpted mark: the same two passes, tinted with the mark ink instead of the tone. */
+function Mark3D({ mark, tintId }: { mark: "ring" | "spark" | "leaf" | "antenna"; tintId: string }) {
+  return (
+    <g className="agent-face__mark3d">
+      <image href={`/agents/bodies/mark-${mark}-shade.webp`} x={0} y={0} width={64} height={64} filter={`url(#${tintId})`} />
+      <image className="agent-face__spec" href={`/agents/bodies/mark-${mark}-spec.webp`} x={0} y={0} width={64} height={64} />
+    </g>
+  );
+}
+
 /** The body's light: a soft top-left key, the tone itself, a deeper rim. */
 function Shading({ id }: { id: string }) {
   return (
@@ -191,6 +232,7 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
   // eyes never are. Light, catchlights and the ground shadow need room to read.
   const detailed = px >= 28;
   const rich = px >= 40;
+  const sculpted = px >= 28;
   const label = name ? `${name}, ${AGENT_STATE_LABEL[labelState ?? state].toLowerCase()}` : undefined;
   const gradientId = `agent-face-${React.useId().replace(/:/g, "")}`;
   const ref = React.useRef<SVGSVGElement | null>(null);
@@ -239,12 +281,12 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
       className={cn("agent-face shrink-0 overflow-visible", className)}
       style={{ "--face-tone": `var(--agent-${avatar.tone})` } as React.CSSProperties}
     >
-      {rich ? <Shading id={gradientId} /> : null}
+      {rich && !sculpted ? <Shading id={gradientId} /> : null}
       {rich ? <ellipse className="agent-face__ground" cx={32} cy={62.5} rx={16} ry={2.4} /> : null}
       <g className="agent-face__rig">
         <g className="agent-face__all">
-          <g className="agent-face__body" style={rich ? { fill: `url(#${gradientId})` } : undefined}>
-            <Body shape={avatar.shape} />
+          <g className="agent-face__body" data-sculpted={sculpted ? "" : undefined} style={rich && !sculpted ? { fill: `url(#${gradientId})` } : undefined}>
+            {sculpted ? <Body3D shape={avatar.shape} tintId={`${gradientId}-tint`} /> : <Body shape={avatar.shape} />}
           </g>
           {detailed && avatar.mark === "visor" ? <Mark mark="visor" eyes={spec.eyes} /> : null}
           <g className="agent-face__gaze">
@@ -276,7 +318,13 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
               </g>
             </g>
           </g>
-          {detailed && avatar.mark !== "visor" ? <Mark mark={avatar.mark} eyes={spec.eyes} /> : null}
+          {detailed && avatar.mark !== "visor" ? (
+            sculpted && avatar.mark !== "none" ? (
+              <Mark3D mark={avatar.mark} tintId={`${gradientId}-tint-ink`} />
+            ) : (
+              <Mark mark={avatar.mark} eyes={spec.eyes} />
+            )
+          ) : null}
           {detailed ? (
             <g className="agent-face__thought">
               <circle cx={49} cy={13} r={1.5} />

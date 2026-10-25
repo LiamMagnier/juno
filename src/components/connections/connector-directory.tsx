@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
-import { ChevronRight, KeyRound, Plug, Plus, RotateCcw, Search, X } from "@/components/ui/icons";
+import { ChevronRight, KeyRound, Plug, Plus, Search } from "@/components/ui/icons";
 import { AppDetailSheet } from "@/components/connections/app-detail-sheet";
 import { motion } from "framer-motion";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -15,7 +15,7 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
-import { staggerDelay, transition } from "@/lib/motion";
+import { transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { useReducedMotion } from "@/lib/motion-preference";
@@ -154,32 +154,24 @@ function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
   return item.name.trim() || titleize(item.slug);
 }
 
-/** The app's mark on a tone step: brand marks keep their own colours. An app
- *  with no mark wears its initial rather than a generic plug, so a column of
- *  unfamiliar apps still reads as a column of different apps. */
-function AppLogo({ item, size = "row" }: { item: DirectoryItem; size?: "row" | "sheet" }) {
-  const initial = (
-    <span className="text-ui font-semibold text-foreground" aria-hidden="true">
-      {monogram(item.label)}
-    </span>
-  );
+/** The app's mark on a tone step: brand marks keep their own colours. */
+function AppLogo({ item }: { item: DirectoryItem; size?: "row" | "sheet" }) {
   return (
     <span
       className={cn(
         "flex shrink-0 items-center justify-center overflow-hidden text-muted-foreground",
         "size-10 rounded-field border border-foreground/[0.08] bg-card",
-        size === "row" && "transition-transform duration-base ease-out-soft group-hover/row:scale-[1.04] motion-reduce:transition-none",
       )}
     >
       {item.source === "custom" ? (
-        initial
+        <span className="text-ui font-semibold text-foreground" aria-hidden="true">
+          {monogram(item.label)}
+        </span>
       ) : item.source === "native" ? (
-        <ConnectorMark id={item.id} className="size-[22px]" fallback={initial} />
+        <ConnectorMark id={item.id} className="size-[22px]" />
       ) : item.logo ? (
         // eslint-disable-next-line @next/next/no-img-element -- a provider logo from the catalog; no optimiser route for third-party hosts
         <img src={item.logo} alt="" className="size-[22px] object-contain" loading="lazy" />
-      ) : item.source === "composio" ? (
-        initial
       ) : (
         <Plug className="size-[18px]" />
       )}
@@ -187,80 +179,25 @@ function AppLogo({ item, size = "row" }: { item: DirectoryItem; size?: "row" | "
   );
 }
 
-/** Wrap the part of `text` that matched the search, so the eye lands on why a row is here. */
-function Highlight({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>;
-  const at = text.toLowerCase().indexOf(query);
-  if (at < 0) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, at)}
-      <mark className="rounded-micro bg-selected px-px text-foreground">{text.slice(at, at + query.length)}</mark>
-      {text.slice(at + query.length)}
-    </>
-  );
-}
-
-/** --loop-breathe (globals.css), in seconds for framer: the connecting sweep's period. */
-const LOOP_BREATHE_S = 1.8;
-
-type Tone = "ok" | "off" | "error" | "busy";
-
-/** A state as a word with a quiet dot beside it. The dot is a second channel, never the only one. */
-function StatusChip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption font-medium transition-colors duration-base ease-out-soft",
-        tone === "error" ? "bg-destructive/10 text-destructive-ink" : "bg-secondary text-muted-foreground",
-      )}
-    >
-      {tone === "busy" ? (
-        <GalaxyMark phase="working" size={12} />
-      ) : (
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-1.5 rounded-full",
-            tone === "ok" && "bg-success",
-            tone === "off" && "bg-muted-foreground/50",
-            tone === "error" && "bg-destructive",
-          )}
-        />
-      )}
-      {children}
-    </span>
-  );
-}
-
 /**
- * One app, one card: its mark, its name over the one line that says what it
- * lets the assistant do, and on the right its state (Connected, Connecting,
- * Couldn't reach it) or the one thing you can do with it (Connect, Sign in,
- * Set up). A connected card is one target that opens the app's details; an
- * available card is not a target itself, its action button is. A server that
- * failed its last check carries Retry beside its state, so recovering does
- * not take a trip into the sheet.
+ * One app, one row (design V3 Customize scene): its mark, its name over one
+ * line, and on the right what it is (Connected, with the way into its
+ * details) or what you can do (Connect). A connected row is one button that
+ * opens the app's details; an available row is not a target itself, its
+ * Connect button is. States are words, never pips.
  */
 function ConnectorTile({
   item,
-  index,
-  query,
   busy,
   onConnect,
   onOpen,
-  onRetry,
   landed,
 }: {
   item: DirectoryItem;
-  index: number;
-  query: string;
   busy: boolean;
   onConnect: () => void;
   /** Open the details (connected apps, your servers) or a custom server's manager. */
   onOpen?: () => void;
-  /** user_mcp only: run the server's check again. */
-  onRetry?: () => void;
   landed?: boolean;
 }) {
   const reduce = useReducedMotion() ?? false;
@@ -285,7 +222,7 @@ function ConnectorTile({
         : item.connected
           ? item.accountLabel && item.accountLabel !== item.label
             ? item.accountLabel
-            : item.capability || (item.source === "composio" ? "Ready to use in chats" : item.description)
+            : item.capability || item.description
           : unavailable
             ? "Not set up on this server"
             : needsSetup
@@ -294,146 +231,97 @@ function ConnectorTile({
                 ? "Ready without sign-in"
                 : item.capability || item.description;
 
-  const failing = isUserMcp && item.enabled !== false && item.status === "error";
-  const status: { tone: Tone; label: string } | null = item.connecting
-    ? { tone: "busy", label: isUserMcp ? "Checking" : "Connecting" }
-    : isUserMcp
-      ? item.enabled === false
-        ? { tone: "off", label: "Off" }
-        : failing
-          ? { tone: "error", label: "Couldn’t reach it" }
-          : { tone: "ok", label: "On" }
-      : item.connected
-        ? { tone: "ok", label: "Connected" }
-        : null;
+  const status = isUserMcp
+    ? item.enabled === false
+      ? "Off"
+      : item.status === "error"
+        ? "Couldn’t reach it"
+        : "On"
+    : item.connected
+      ? "Connected"
+      : null;
 
-  const text = (
-    <span className="flex min-w-0 flex-1 flex-col">
-      <span className="truncate text-body font-medium leading-6 text-foreground">
-        <Highlight text={item.label} query={query} />
+  const body = (
+    <>
+      <AppLogo item={item} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-body font-medium leading-6 text-foreground">{item.label}</span>
+        <span className="truncate text-ui leading-5 text-muted-foreground">{line}</span>
       </span>
-      <span className={cn("truncate text-ui leading-5", failing ? "text-destructive-ink" : "text-muted-foreground")}>{line}</span>
-    </span>
+    </>
   );
-
-  const card = cn(
-    "group/row relative flex min-h-[76px] items-center gap-3.5 rounded-card border bg-card px-4 py-3 text-left",
-    "transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft",
-    failing ? "border-destructive/30" : "border-border/80",
-    !unavailable && "hover:border-foreground/15 hover:bg-accent/40",
-  );
-
-  let action: React.ReactNode = null;
-  if (status) {
-    action = <StatusChip tone={status.tone}>{status.label}</StatusChip>;
-  } else if (needsSetup) {
-    action = (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button asChild variant="outline" size="sm" className="relative z-10 shrink-0 gap-1.5 px-3">
-            <a href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`} target="_blank" rel="noreferrer">
-              Set up
-              <ActionIcons.external className="size-3.5" />
-            </a>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-60">
-          {`Composio has no shared sign-in app for ${item.label}. Add your own ${item.label} app credentials in the Composio dashboard, then connect it here.`}
-        </TooltipContent>
-      </Tooltip>
-    );
-  } else if (unavailable) {
-    action = <span className="shrink-0 text-caption text-muted-foreground">Unavailable</span>;
-  } else {
-    action = (
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={busy}
-        loading={busy}
-        onClick={onConnect}
-        aria-label={`${custom ? "Sign in to" : "Connect"} ${item.label}`}
-        className="relative z-10 shrink-0 gap-1.5 px-3 transition-[background-color,border-color,color,transform] duration-fast ease-out-soft group-hover/row:border-foreground/25 group-hover/row:text-foreground active:scale-[0.97] motion-reduce:active:scale-100"
-      >
-        {custom ? (
-          <KeyRound className="size-3.5" aria-hidden="true" />
-        ) : (
-          <Plus className="size-3.5 transition-transform duration-base ease-out-soft group-hover/row:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
-        )}
-        {custom ? "Sign in" : item.noAuth ? "Add" : "Connect"}
-      </Button>
-    );
-  }
 
   return (
-    <article
-      id={tileAnchor(item.id)}
-      aria-busy={item.connecting || undefined}
-      className={cn("relative isolate [animation-fill-mode:backwards] motion-safe:animate-rise-in", unavailable && "opacity-70")}
-      style={staggerDelay(index, "tight")}
-    >
-      <div className={card}>
-        {landed ? (
-          <motion.span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 -z-10 rounded-card bg-selected"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 0 }}
-            transition={{ ...transition.emphasis, delay: reduce ? 0.6 : 1.1 }}
-          />
-        ) : null}
-        <AppLogo item={item} />
-        {openable ? (
-          // The name is the button; its ::after stretches over the card so the
-          // whole card is one target, while Retry stays a separate one above it.
-          <button
-            type="button"
-            onClick={onOpen}
-            aria-haspopup="dialog"
-            className="flex min-w-0 flex-1 text-left outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-ring"
-          >
-            {text}
-          </button>
-        ) : (
-          text
-        )}
-        <span key={status?.label ?? "action"} className="flex shrink-0 items-center gap-1.5 motion-safe:animate-fade-in">
-          {failing && onRetry ? (
+    <article id={tileAnchor(item.id)} className={cn("relative isolate", unavailable && "opacity-70")}>
+      {landed ? (
+        <motion.span
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-x-3 inset-y-0 -z-10 rounded-card bg-selected"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ ...transition.emphasis, delay: reduce ? 0.6 : 1.1 }}
+        />
+      ) : null}
+      {openable ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-haspopup="dialog"
+          className="group/row -mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-card px-3 py-2.5 text-left transition-[background-color,transform] duration-fast ease-out-soft hover:bg-accent/60 active:scale-[0.99] active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring motion-reduce:active:scale-100"
+        >
+          {body}
+          <span className={cn("shrink-0 text-ui", status === "Couldn’t reach it" ? "text-foreground" : "text-muted-foreground")}>{status}</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-[color,transform] duration-fast ease-out-soft group-hover/row:translate-x-0.5 group-hover/row:text-foreground motion-reduce:transition-none" aria-hidden="true" />
+        </button>
+      ) : (
+        <div className="group/row -mx-3 flex min-h-[68px] items-center gap-3.5 rounded-card px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
+          {body}
+          {needsSetup ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={onRetry}
-                  aria-label={`Retry ${item.label}`}
-                  className="relative z-10 size-7 rounded-control text-muted-foreground hover:text-foreground coarse:size-11"
-                >
-                  <RotateCcw className="size-3.5 transition-transform duration-base ease-out-soft hover:-rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+                <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5 px-3">
+                  <a href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`} target="_blank" rel="noreferrer">
+                    Set up
+                    <ActionIcons.external className="size-3.5" />
+                  </a>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Try again</TooltipContent>
+              <TooltipContent className="max-w-60">
+                {`Composio has no shared sign-in app for ${item.label}. Add your own ${item.label} app credentials in the Composio dashboard, then connect it here.`}
+              </TooltipContent>
             </Tooltip>
-          ) : null}
-          {action}
-        </span>
-        {openable ? (
-          <ChevronRight className="-mr-1 size-4 shrink-0 text-muted-foreground transition-[color,transform] duration-fast ease-out-soft group-hover/row:translate-x-0.5 group-hover/row:text-foreground motion-reduce:transition-none" aria-hidden="true" />
-        ) : null}
-        {item.connecting ? (
-          // An indeterminate sweep along the card's foot: the connection is
-          // in flight somewhere else (a popup, a redirect) and this says so.
-          <span aria-hidden="true" className="pointer-events-none absolute inset-x-4 bottom-0 h-px overflow-hidden rounded-full bg-border">
-            {reduce ? null : (
-              <motion.span
-                className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/50 to-transparent"
-                initial={{ x: "-100%" }}
-                animate={{ x: "300%" }}
-                transition={{ duration: LOOP_BREATHE_S, ease: "easeInOut", repeat: Infinity }}
-              />
-            )}
-          </span>
-        ) : null}
-      </div>
+          ) : unavailable ? null : item.connecting ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-ui text-muted-foreground">
+              <GalaxyMark phase="working" size={14} />
+              Connecting
+            </span>
+          ) : (
+            custom ? (
+              <Button size="sm" variant="outline" disabled={busy} loading={busy} onClick={onConnect} className="shrink-0 gap-1.5 px-3">
+                <KeyRound className="size-3.5" aria-hidden="true" />
+                Sign in
+              </Button>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={busy}
+                    loading={busy}
+                    onClick={onConnect}
+                    aria-label={`Connect ${item.label}`}
+                    className="size-8 shrink-0 rounded-control text-muted-foreground hover:text-foreground active:scale-[0.9] coarse:size-11"
+                  >
+                    <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover/row:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Connect</TooltipContent>
+              </Tooltip>
+            )
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -441,34 +329,27 @@ function ConnectorTile({
 function TileGrid({
   items,
   busySlug,
-  query,
   onConnect,
   onOpen,
-  onRetry,
   landedId,
   trailing,
 }: {
   items: DirectoryItem[];
   busySlug: string | null;
-  query: string;
   onConnect: (item: DirectoryItem) => void;
   onOpen: (item: DirectoryItem) => void;
-  onRetry?: (item: DirectoryItem) => void;
   landedId: string | null;
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 @[40rem]/page:grid-cols-2">
-      {items.map((item, index) => (
+    <div className="grid grid-cols-1 gap-x-10 gap-y-1 @[40rem]/page:grid-cols-2">
+      {items.map((item) => (
         <ConnectorTile
           key={item.key}
           item={item}
-          index={index}
-          query={query}
           busy={busySlug === item.slug || item.connecting}
           onConnect={() => onConnect(item)}
           onOpen={() => onOpen(item)}
-          onRetry={item.source === "user_mcp" && onRetry ? () => onRetry(item) : undefined}
           landed={landedId === item.id}
         />
       ))}
@@ -777,96 +658,34 @@ export function ConnectorDirectory({
     setSheetOpen(true);
   };
 
-  const gridProps = {
-    busySlug,
-    query: q,
-    onConnect: connect,
-    onOpen: openItem,
-    onRetry: onTestUserMcp,
-    landedId,
-  };
-
-  // "/" jumps to search from anywhere on the page, the way every directory
-  // the reader already uses works; Escape clears it.
-  const searchRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-      e.preventDefault();
-      searchRef.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  const gridProps = { busySlug, onConnect: connect, onOpen: openItem, landedId };
 
   // Bring your own: always the last row of More apps, except while searching (it would read as a result).
   const addTile = onAddCustom && !q ? <AddServerTile index={availableItems.length} onClick={onAddCustom} /> : null;
-  const searching = Boolean(q) && loading;
 
   const skeletons = loading
-    ? Array.from({ length: q ? 2 : 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
+    ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
     : null;
 
   // The section title every Customize tab shares (CustomizeSection): the
   // serif at the tile-name rung, the count in mono beside it.
-  const sectionLabel = "customize-title flex min-h-6 items-baseline gap-2 text-foreground";
-  const sectionHead = (title: React.ReactNode, hint: string) => (
-    <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-      <h2 className={sectionLabel}>{title}</h2>
-      <p className="text-caption text-muted-foreground">{hint}</p>
-    </div>
-  );
+  const sectionLabel = "customize-title mb-4 flex min-h-6 items-baseline gap-2 text-foreground";
 
   return (
     <section>
       {/* ChatGPT's Plugins header: one large rounded search, the Add button
           beside it, and no chip row; a category is opened from its section. */}
       <div className="flex items-center gap-2">
-        <label className="group/search relative block min-w-0 flex-1">
-          {searching ? (
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2" aria-hidden="true">
-              <GalaxyMark phase="working" size={16} />
-            </span>
-          ) : (
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors duration-fast ease-out-soft group-focus-within/search:text-foreground" aria-hidden="true" />
-          )}
+        <label className="relative block min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
-            ref={searchRef}
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && query) {
-                e.preventDefault();
-                setQuery("");
-              }
-            }}
             placeholder="Search apps"
             aria-label="Search apps"
-            className="h-9 rounded-field border-foreground/[0.1] pl-10 pr-10 text-ui hover:border-foreground/20 focus-visible:border-foreground/35 coarse:h-11 [&::-webkit-search-cancel-button]:appearance-none"
+            className="h-9 rounded-field border-foreground/[0.1] pl-10 text-ui hover:border-foreground/20 focus-visible:border-foreground/35 coarse:h-11"
           />
-          {query ? (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                searchRef.current?.focus();
-              }}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in"
-            >
-              <X className="size-3.5" aria-hidden="true" />
-            </button>
-          ) : (
-            <kbd
-              aria-hidden="true"
-              className="pointer-events-none absolute right-3 top-1/2 inline-block -translate-y-1/2 rounded-xs border border-border px-1.5 font-mono text-caption leading-5 text-muted-foreground transition-opacity duration-fast ease-out-soft group-focus-within/search:opacity-0 coarse:hidden"
-            >
-              /
-            </kbd>
-          )}
         </label>
         {headerAction}
       </div>
@@ -885,15 +704,7 @@ export function ConnectorDirectory({
         </div>
       ) : null}
 
-      {/* What the search found, said once for a screen reader and once for the eye. */}
-      <div className="relative mt-6">
-      <p aria-live="polite" className={cn("absolute -top-[22px] left-0 text-caption leading-5 text-muted-foreground transition-opacity duration-fast ease-out-soft", q ? "opacity-100" : "opacity-0")}>
-        {q && !loading
-          ? items.length === 0
-            ? null
-            : `${items.length} ${items.length === 1 ? "app matches" : "apps match"} “${query.trim()}”`
-          : null}
-      </p>
+      <div className="mt-6">
         {!composioConfigured && canConfigureServer && <ComposioSetupCallout />}
 
         {error && (
@@ -914,12 +725,9 @@ export function ConnectorDirectory({
 
         {connectedItems.length > 0 && (
           <div>
-            {sectionHead(
-              <>
-                Connected <span className="ed-annot">{q ? connectedItems.length : connectedCount}</span>
-              </>,
-              `${PRODUCT_NAME} can use these in any chat you add them to.`,
-            )}
+            <h2 className={sectionLabel}>
+              Connected <span className="ed-annot">{connectedCount}</span>
+            </h2>
             <TileGrid items={connectedItems} {...gridProps} />
           </div>
         )}
@@ -928,7 +736,7 @@ export function ConnectorDirectory({
           <>
             {registryItems.some((i) => !i.connected) && (
               <div className={cn(connectedItems.length > 0 && "mt-10")}>
-                {sectionHead("Built in", "Sign in once and they’re ready.")}
+                <h2 className={sectionLabel}>Built in</h2>
                 <TileGrid items={registryItems.filter((i) => !i.connected)} {...gridProps} />
               </div>
             )}
@@ -958,10 +766,7 @@ export function ConnectorDirectory({
           </>
         ) : (availableItems.length > 0 || loading || addTile) && (
           <div className={cn(connectedItems.length > 0 && "mt-10")}>
-            {sectionHead(
-              connectedItems.length > 0 ? "Available" : "Apps you can connect",
-              q ? "Connect one to use it in chats." : "Connect once, then ask for it by name.",
-            )}
+            <h2 className={sectionLabel}>{connectedItems.length > 0 ? "More apps" : "Apps you can connect"}</h2>
             <TileGrid items={availableItems} {...gridProps} trailing={<>{skeletons}{addTile}</>} />
           </div>
         )}
@@ -1053,14 +858,13 @@ export function tileAnchor(id: string): string {
  * it alone answers the pointer: the recess firms up, the plus turns a
  * quarter. Pressing sinks it a touch.
  */
-function AddServerTile({ index, onClick }: { index: number; onClick: () => void }) {
+function AddServerTile({ index: _index, onClick }: { index: number; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-haspopup="dialog"
-      className="group flex min-h-[76px] w-full items-center gap-3.5 rounded-card border border-dashed border-foreground/15 px-4 py-3 text-left transition-[background-color,border-color,transform] duration-fast ease-out-soft [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent/40 active:scale-[0.99] active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring motion-safe:animate-rise-in motion-reduce:active:scale-100"
-      style={staggerDelay(index, "tight")}
+      className="group -mx-3 flex min-h-[68px] w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-card px-3 py-2.5 text-left transition-[background-color,transform] duration-fast ease-out-soft hover:bg-accent/60 active:scale-[0.99] active:bg-selected focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring motion-reduce:active:scale-100"
     >
       <span className="empty-well flex size-10 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
         <Plus className="size-[18px] transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
