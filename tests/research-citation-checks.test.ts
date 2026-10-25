@@ -90,6 +90,30 @@ test("freshness does not fire when the check does not apply", () => {
   }
 });
 
+test("words that only look like present-state markers do not trigger freshness", () => {
+  const old = new Date("2022-03-01T00:00:00Z");
+  for (const claim of [
+    "The country's current account deficit widened to 4% of GDP.",
+    "Archaeologists found human remains near the site of the old mill.",
+    "The studio sells still images and stock video to publishers.",
+    "The museum had been closed until now for structural repairs.",
+    "The remains of the original factory were listed in 1998.",
+  ]) {
+    const result = auditEvidence({ claim, passage: claim, publishedAt: old, asOf: ASOF });
+    assert.ok(!result.reasons.some((r) => r.code === "source_stale"), claim);
+  }
+  for (const claim of [
+    "The service is still free for students.",
+    "The plan now costs $25 a month.",
+    "The company remains the largest employer in the region.",
+    "The service currently costs $20 a month.",
+    "Shares have risen 6% this year.",
+  ]) {
+    const result = auditEvidence({ claim, passage: claim, publishedAt: old, asOf: ASOF });
+    assert.ok(result.reasons.some((r) => r.code === "source_stale"), claim);
+  }
+});
+
 test("a target year in the passage is not evidence the page is recent", () => {
   const result = auditEvidence({
     claim: "The country currently has 13.8 GW of capacity installed.",
@@ -139,6 +163,62 @@ test("two cited sources that agree are not contested", async () => {
   ]);
   assert.equal(outcome.claims[0].contested, false);
   assert.equal(outcome.counts.contested, 0);
+});
+
+test("an annual report's previous-year and segment paragraphs do not contest its own headline figure", async () => {
+  const report = "# R\n\nNorthwind's revenue was $4.3 billion in 2024 [1].";
+  for (const other of [
+    "Northwind's revenue was $3.9 billion in 2023, the previous annual report said.",
+    "Northwind's logistics revenue was $1.8 billion in 2024, the segment note shows.",
+    "Revenue in the logistics division was $1.8 billion in 2024, and the industrial division made the rest.",
+  ]) {
+    const outcome = await audit(report, [source(1, `Northwind's revenue was $4.3 billion in 2024, the annual report says.\n\n${other}`)]);
+    const [claim] = outcome.claims;
+    assert.equal(claim.status, "supported", other);
+    assert.equal(claim.contested, false, `${other}: ${JSON.stringify(claim.links)}`);
+    assert.ok(claim.links.every((l) => l.stance === "supports"), other);
+  }
+});
+
+test("the same source restating the same figure for the same year still contests it", async () => {
+  const outcome = await audit("# R\n\nNorthwind's revenue was $4.3 billion in 2024 [1].", [
+    source(1, "Northwind's revenue was $4.3 billion in 2024, the annual report says.\n\nNorthwind's revenue was $4.1 billion in 2024 after the restatement, the auditors found."),
+  ]);
+  assert.equal(outcome.claims[0].contested, true);
+});
+
+test("a segment or a previous year in an UNCITED source is not a rival either", async () => {
+  const report = "# R\n\nNorthwind's revenue was $4.3 billion in 2024 [1].";
+  const cited = source(1, "Northwind's revenue was $4.3 billion in 2024, the annual report says.");
+  for (const body of [
+    "Northwind's logistics revenue was $1.8 billion in 2024, analysts estimate.",
+    "Northwind's revenue was $3.9 billion in 2023, analysts noted.",
+  ]) {
+    const outcome = await audit(report, [cited, source(2, body)]);
+    assert.deepEqual(outcome.claims[0].rivals, [], body);
+    assert.equal(outcome.claims[0].contested, false, body);
+  }
+});
+
+test("a figure for a narrower subject is not a contradiction; the same subject with a scope word is", () => {
+  const segment = auditEvidence({
+    claim: "Northwind's revenue was $4.3 billion in 2024.",
+    passage: "Northwind's logistics revenue was $1.8 billion in 2024.",
+  });
+  assert.equal(segment.contradicted, false);
+  assert.ok(segment.reasons.some((r) => r.code === "figure_absent"));
+  const narrowerClaim = auditEvidence({
+    claim: "Northwind's logistics revenue was $1.8 billion in 2024.",
+    passage: "Northwind's revenue was $4.3 billion in 2024.",
+  });
+  assert.equal(narrowerClaim.contradicted, false);
+  for (const passage of [
+    "Total revenue was $3.9 billion in 2024.",
+    "The company's revenue was $3.9 billion in 2024.",
+    "Revenue for the year was $3.9 billion in 2024.",
+  ]) {
+    assert.equal(auditEvidence({ claim: "Northwind's revenue was $4.3 billion in 2024.", passage }).contradicted, true, passage);
+  }
 });
 
 // ── Rival figures in sources the claim did not cite ─────────────────────────
@@ -258,8 +338,45 @@ test("corroboration never masks two sources disagreeing about the same subject, 
   assert.equal(misattributed.contradicted, true);
 });
 
-test("named subjects ignore sentence starters and units", () => {
-  assert.deepEqual([...namedSubjects("Alpha Pro includes 100 GB. The plan from Beta Plus is cheaper.")].sort(), ["alpha", "beta", "plus", "pro"]);
+test("named subjects skip the first word of every sentence, sentence starters and units", () => {
+  // "Alpha" opens a sentence, so it is skipped like "Revenue" would be: any
+  // word is title case there. Mid-sentence names are kept.
+  assert.deepEqual([...namedSubjects("Alpha Pro includes 100 GB. The plan from Beta Plus is cheaper.")].sort(), ["beta", "plus", "pro"]);
+  assert.deepEqual([...namedSubjects("Revenue rose to $4.3 billion in 2024.")], []);
+  assert.deepEqual([...namedSubjects("Revenue rose. Alpha Pro is cheaper.", { withSentenceStarts: true })].sort(), ["alpha", "pro", "revenue"]);
+});
+
+test("corroboration never hides a cited passage that gives a different figure: a sentence-opening common noun", async () => {
+  // "Revenue" opens the claim; it used to count as a named subject that [1]
+  // (which says "revenue") lacks, so [2]'s $4.3bn stood in for [1] and the
+  // $3.9bn passage was recorded as SUPPORT.
+  const report = "# R\n\nRevenue rose to $4.3 billion in 2024 [1][2].";
+  const one = source(1, "The company said revenue rose to $3.9 billion in 2024, below its own guidance.");
+  const undated = await audit(report, [one, source(2, "Revenue reached $4.3 billion, the chief executive told investors.")]);
+  const [claim] = undated.claims;
+  assert.notEqual(claim.status, "supported");
+  assert.ok(claim.links.some((l) => l.sourceIndex === 1 && l.stance === "contradicts"));
+  assert.ok(!claim.links.some((l) => l.sourceIndex === 1 && l.stance === "supports"), "the $3.9bn passage is never support");
+
+  const dated = await audit(report, [one, source(2, "Revenue reached $4.3 billion in 2024, the chief executive told investors.")]);
+  assert.equal(dated.claims[0].status, "supported");
+  assert.equal(dated.claims[0].contested, true, "two cited sources disagree, and the reader is told");
+  assert.ok(dated.claims[0].links.some((l) => l.sourceIndex === 1 && l.stance === "contradicts"));
+});
+
+test("corroboration never hides a cited passage that gives a different figure: a subject one passage leaves unnamed", async () => {
+  // [1] says "the company" where the claim says "Northwind": the name is
+  // missing from [1], [2] has it, and [2]'s figure used to mask [1]'s.
+  const outcome = await audit("# R\n\nIn 2024, Northwind's revenue rose to $4.3 billion [1][2].", [
+    source(1, "The company's revenue rose to $3.9 billion in 2024, its annual report shows."),
+    source(2, "Northwind's revenue rose to $4.3 billion in 2024, the wire reported."),
+  ]);
+  const [claim] = outcome.claims;
+  assert.equal(claim.status, "supported");
+  assert.equal(claim.contested, true);
+  const fromOne = claim.links.filter((l) => l.sourceIndex === 1);
+  assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), JSON.stringify(claim.links));
+  assert.ok(!fromOne.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")));
 });
 
 test("two counts of days measuring different things are not a contradiction; the same thing is", () => {
@@ -281,6 +398,71 @@ test("figures in two-letter units are compared as the same quantity", () => {
     passage: "UK offshore wind capacity stood at 15.1 GW at the end of June 2026.",
   });
   assert.ok(result.reasons.some((r) => r.code === "figure_mismatch"));
+});
+
+test("a claim identical to its source is never contradicted by a negation in a leading or trailing clause", () => {
+  for (const sentence of [
+    "Sales rose sharply in 2024, but profits did not.",
+    "The vaccine reduced hospitalisations, although it did not prevent infection.",
+    "The regulator approved the merger, which the companies had not expected.",
+    "The drug did not reduce mortality, but it shortened hospital stays by two days",
+    "Profits did not rise in 2024, while sales grew by 8%.",
+  ]) {
+    const result = auditEvidence({ claim: sentence, passage: sentence });
+    assert.equal(result.contradicted, false, sentence);
+    assert.equal(result.ceiling, 1, `${sentence}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.deepEqual(result.reasons, [], sentence);
+  }
+});
+
+test("a claim identical to its source passes the whole audit and the repair untouched", async () => {
+  const report = "# R\n\nNorthwind's sales rose sharply in 2024, but its profits did not [1].";
+  const outcome = await audit(report, [source(1, "Northwind's sales rose sharply in 2024, but its profits did not.")]);
+  const [claim] = outcome.claims;
+  assert.equal(claim.status, "supported");
+  assert.equal(outcome.judgeCalls, 1, "the judge is asked, not pre-empted by a false contradiction");
+  assert.equal(repairReportFromClaims(report, outcome.claims).report, report);
+});
+
+test("clause against clause still catches a clause the passage negates", () => {
+  // Trailing clause flipped either way.
+  assert.equal(
+    auditEvidence({
+      claim: "Northwind's sales rose sharply in 2024, but its profits did not.",
+      passage: "Northwind's sales rose sharply in 2024, and its profits rose too.",
+    }).contradicted,
+    true
+  );
+  assert.equal(
+    auditEvidence({
+      claim: "Northwind's sales rose sharply in 2024, and its profits rose too.",
+      passage: "Northwind's sales rose sharply in 2024, but its profits did not.",
+    }).contradicted,
+    true
+  );
+  // Leading clause flipped, the trailing one agreeing.
+  assert.equal(
+    auditEvidence({
+      claim: "The drug reduced mortality, and it shortened hospital stays by two days.",
+      passage: "The drug did not reduce mortality, but it shortened hospital stays by two days.",
+    }).contradicted,
+    true
+  );
+});
+
+test("a one-clause claim is denied by an elided negation in another clause, and only by one about it", () => {
+  // The "not" that answers "profits rose" sits in a clause with no verb; the
+  // clause sharing the most words is about sales.
+  for (const claim of ["Profits rose in 2024.", "Northwind's profits rose in 2024."]) {
+    const result = auditEvidence({ claim, passage: "Northwind's sales rose sharply in 2024, but its profits did not." });
+    assert.equal(result.contradicted, true, claim);
+  }
+  for (const passage of [
+    "Revenue rose in 2024, but costs did not.",
+    "Revenue rose in 2024, but revenue did not rise in Europe.",
+  ]) {
+    assert.equal(auditEvidence({ claim: "Revenue rose in 2024.", passage }).contradicted, false, passage);
+  }
 });
 
 test("a negation in another clause does not flip the sentence; a negation of the claim itself does", () => {

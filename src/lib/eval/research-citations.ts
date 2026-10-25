@@ -56,6 +56,14 @@ export const STOCK_JUDGES = {
 
 export type StockJudgeName = keyof typeof STOCK_JUDGES;
 
+/**
+ * Printed on every scorecard: the stock cases were used to find and fix the
+ * audit's bugs (see research-citation-cases.ts), so their numbers are
+ * in-sample — a regression floor for this build, not an accuracy estimate.
+ */
+export const IN_SAMPLE_NOTE =
+  "in-sample: these cases were used to find and fix the audit's bugs, so this is a regression floor, not a held-out accuracy figure";
+
 /** As production: `MAX_PASSAGES_PER_SOURCE` in claims.ts. */
 const PASSAGES_PER_SOURCE = 24;
 
@@ -285,6 +293,7 @@ export function renderScorecard(card: Scorecard): string {
     `  label accuracy ${pct(card.strictAccuracy)} strict / ${pct(card.lenientAccuracy)} lenient`,
     `  contradiction recall ${pct(card.contradictionRecall)} · contradiction precision ${pct(card.contradictionPrecision)}`,
     `  false supports ${card.falseSupports.length} · flag failures ${card.flagFailures.length} · integrity failures ${card.integrityFailures.length}`,
+    `  ${IN_SAMPLE_NOTE}`,
     ...(card.judge === "unavailable"
       ? ["  (no model answered: a claim the text alone cannot settle is unverified by design, so label misses below are expected)"]
       : []),

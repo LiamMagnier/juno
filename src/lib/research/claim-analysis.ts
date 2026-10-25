@@ -292,8 +292,97 @@ function numberContext(
 /** Units that say how long, not what: "30-day version history" and "14-day trial" share one and measure different things. */
 const PERIOD_UNITS = new Set(["second", "minute", "hour", "day", "week", "month", "year", "quarter"]);
 
+/*
+ * Words passed over when looking for the noun a figure is measured on: the
+ * verbs that report a figure ("revenue ROSE to", "capacity STOOD at"), the
+ * prepositions and hedges in front of it, and the scope words that do not
+ * change what is measured ("TOTAL revenue", "revenue for the YEAR"). Short on
+ * purpose — a word missing from it is read as the measured noun, and the
+ * check it feeds can only take a contradiction away, never add one.
+ */
+const FIGURE_SUBJECT_SKIP = new Set(
+  (
+    "stood stand stands reached reach reaches rose rise rises risen grew grow grows grown fell fall falls fallen " +
+    "climbed climb climbs dropped drop drops declined decline declines totalled totaled total totals amounted amount amounts " +
+    "came come comes hit hits increased increase increases decreased decrease decreases jumped jump jumps slipped slip slips " +
+    "edged edge edges put puts cost costs raised raise raises earned earn earns posted post posts generated generate generates " +
+    "recorded record records hold holds held keep keeps kept cut cuts include includes included contributed contribute contributes " +
+    "accounted accounting account accounts represented represent represents made make makes employed employ employs ended ending " +
+    "reduced reduce reduces lowered lower lowers boosted boost boosts doubled tripled halved gained gain gains lost lose loses " +
+    "sank soared surged plunged tumbled expanded shrank contracted averaged average averages exceeded topped surpassed " +
+    "showed show shows saw see sees found find finds stated state states estimated " +
+    "against versus toward towards via around nearly almost roughly approximately just only some any up down out off least less " +
+    "every each all both our " +
+    "overall annual yearly group consolidated combined full whole entire fiscal financial year quarter month period half mid " +
+    "thousand million billion trillion percent cent " +
+    "january february march april june july august september october november december"
+  ).split(" ")
+);
+
+/** A word as `contentTokens` would store it: lowercased, de-accented, crudely singular. */
+function tokenForm(word: string): string {
+  const w = normalizeText(word).replace(/['’]s$|['’]$/, "");
+  return w.length > 4 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w;
+}
+
+const WORD_RE = /\p{L}+(?:['’]\p{L}+)*['’]?/gu;
+
+/** Every word of a text in `tokenForm`, short ones included ("EU", "UK"). */
+function wordForms(text: string): Set<string> {
+  return new Set((text.match(WORD_RE) ?? []).map(tokenForm));
+}
+
+/**
+ * The noun a figure is measured on, read backwards from the figure within its
+ * own clause, and the word directly in front of that noun when it qualifies
+ * it: "Northwind's logistics revenue was $1.8bn" → revenue, qualified by
+ * "logistics". A possessive owner ("the company's revenue") and a determiner
+ * are not qualifiers. Null head when the clause opens with the figure.
+ */
+function figureSubject(text: string, n: NumericFact): { head: string | null; qualifier: string | null } {
+  const before = text.slice(0, n.start);
+  let clauseStart = 0;
+  for (const m of before.matchAll(/[,;:.!?]\s+|\s[-–—]\s/g)) clauseStart = m.index + m[0].length;
+  const words = before.slice(clauseStart).match(WORD_RE) ?? [];
+  const skipped = (raw: string) => {
+    const form = tokenForm(raw);
+    return form.length < 3 || STOPWORDS.has(form) || FIGURE_SUBJECT_SKIP.has(form);
+  };
+  let i = words.length - 1;
+  while (i >= 0 && skipped(words[i]!)) i -= 1;
+  if (i < 0) return { head: null, qualifier: null };
+  const head = tokenForm(words[i]!);
+  const prev = words[i - 1];
+  if (!prev || /['’]s?$/.test(prev)) return { head, qualifier: null };
+  // A two-letter acronym ("EU revenue") qualifies; any other short word is grammar.
+  if (/^\p{Lu}{2,}$/u.test(prev)) return { head, qualifier: tokenForm(prev) };
+  return { head, qualifier: skipped(prev) ? null : tokenForm(prev) };
+}
+
+/**
+ * Whether two figures are about the same subject: neither side measures a
+ * noun the other never mentions, and neither narrows the measured noun with a
+ * word the other never uses. "Northwind's revenue was $4.3bn" against
+ * "Northwind's logistics revenue was $1.8bn" fails it — that is a segment, not
+ * a rival total — while "installed capacity stood at 15.1 GW" against
+ * "installed capacity reached 16.5 GW" passes.
+ */
+function sameSubject(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
+  const sa = figureSubject(claim, a);
+  const sb = figureSubject(passage, b);
+  if (!sa.head && !sb.head) return true;
+  const claimTokens = wordForms(claim);
+  const passageTokens = wordForms(passage);
+  if (sb.head && !claimTokens.has(sb.head)) return false;
+  if (sa.head && !passageTokens.has(sa.head)) return false;
+  if (sb.qualifier && !claimTokens.has(sb.qualifier)) return false;
+  if (sa.qualifier && !passageTokens.has(sa.qualifier)) return false;
+  return true;
+}
+
 /** Whether two figures are plausibly measuring the same quantity. */
 function measuresSameThing(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
+  if (!sameSubject(claim, a, passage, b)) return false;
   const ca = numberContext(claim, a);
   const cb = numberContext(passage, b);
   if (ca.unit && cb.unit && ca.unit === cb.unit) {
@@ -503,9 +592,22 @@ const ATTRIBUTION = /\b(?:according to|as reported by|citing|cited by|sources? s
  * today, and a reader takes the sentence as today's price. Only explicit
  * present-state markers count; an undated present-tense sentence is too common
  * in reported prose to treat every one of them as a freshness claim.
+ *
+ * "still", "now" and "remain(s)" count only next to the verb they put in the
+ * present ("is still", "now costs", "remains the"): bare, they are also "still
+ * images", "until now" and "human remains". Bare "current" is left out for the
+ * same reason ("the current account deficit"); "currently" stays. "This year"
+ * and "today" stay: both are relative to the day the report is read, so a
+ * sentence using them on a page from more than a year ago is exactly the case.
  */
-const PRESENT_STATE =
-  /\b(?:currently|current|now|nowadays|today|at present|presently|right now|still|remains?|latest|newest|most recent|up[- ]to[- ]date|as of (?:today|now|this year)|this year)\b/i;
+const PRESENT_VERB =
+  "is|are|has|have|costs?|offers?|holds?|leads?|operates?|employs?|runs?|uses?|includes?|supports?|requires?|charges?|stands?|accounts?|lists?|sells?|serves?|owns?|controls?|provides?|allows?|ranks?";
+const PRESENT_STATE = new RegExp(
+  String.raw`\b(?:currently|presently|nowadays|today|at present|at the moment|right now|this year|latest|newest|most recent|up[- ]to[- ]date|as of (?:today|now|this year)` +
+    String.raw`|(?:is|are|has|have) (?:still|now)|(?:still|now) (?:${PRESENT_VERB})` +
+    String.raw`|remains? (?:the|a|an|in|on|at|under|below|above|its|their|one|among|available|unavailable|unchanged|open|closed|free|unclear|unresolved|limited|active|valid|in force))\b`,
+  "i"
+);
 
 /**
  * How old a dated source may be and still stand behind a sentence that says
@@ -1223,15 +1325,26 @@ const CEILING = {
 const CLAUSE_BREAK = /\s*[,;:]\s+|\s+[-–—]\s+|\s+(?=(?:and|but|while|whereas|although|though|which|who)\s)/i;
 
 /**
+ * The clauses of a sentence, split at CLAUSE_BREAK. A piece with no content
+ * word of its own ("but not") stays with the clause before it: on its own it
+ * would carry its negation away from the predicate it negates.
+ */
+export function clausesOf(sentence: string): string[] {
+  const out: string[] = [];
+  for (const piece of sentence.split(CLAUSE_BREAK).map((c) => c.trim()).filter((c) => c.length > 0)) {
+    if (out.length > 0 && contentTokens(piece).size === 0) out[out.length - 1] = `${out[out.length - 1]} ${piece}`;
+    else if (out.length === 1 && contentTokens(out[0]!).size === 0) out[0] = `${out[0]} ${piece}`;
+    else out.push(piece);
+  }
+  return out.length > 0 ? out : [sentence];
+}
+
+/**
  * The clause of `sentence` the claim is about: the one sharing the most of
- * its content words, the first on a tie. Negation parity is read here rather
- * than over the whole sentence, because a "not" in another clause negates a
- * different predicate — and a whole-sentence parity check read "Serious
- * adverse events occurred in 3% …, a difference described as not
- * significant" as the passage denying the 3%.
+ * its content words, the first on a tie.
  */
 export function bestMatchingClause(claim: string, sentence: string): string {
-  const clauses = sentence.split(CLAUSE_BREAK).map((c) => c.trim()).filter((c) => c.length > 0);
+  const clauses = clausesOf(sentence);
   if (clauses.length <= 1) return sentence;
   let best = clauses[0]!;
   let bestScore = -1;
@@ -1243,6 +1356,85 @@ export function bestMatchingClause(claim: string, sentence: string): string {
     }
   }
   return best;
+}
+
+/**
+ * The alignment (`clauseAlignment`) a claim clause needs with a passage clause
+ * before their negations are compared. A clause that matches nothing in the
+ * passage ("the trial found") says nothing about the passage's polarity.
+ */
+const CLAUSE_MATCH_MIN = 0.5;
+
+/** A clause whose verb is elided after its negation: "but its profits did not", "though costs haven't". */
+const ELIDED_NEGATION =
+  /\b(?:(?:did|does|do|has|have|had|is|are|was|were|could|would|will|can|should)\s+not|didn't|doesn't|don't|hasn't|haven't|hadn't|isn't|aren't|wasn't|weren't|couldn't|wouldn't|won't|can't)[.!?]?$/i;
+
+/**
+ * Whether `passageClause` is an elided negation answering `claimClause`:
+ * every word it names is in the claim clause, and its own verb is left out
+ * ("Profits rose" ← "but profits did not"). Such a clause is short by
+ * construction, so it never wins on shared words alone.
+ */
+function elidedAnswer(claimClause: string, passageClause: string): boolean {
+  return ELIDED_NEGATION.test(passageClause.trim()) && tokenCoverage(passageClause, claimClause) === 1;
+}
+
+/**
+ * How well a claim clause and a passage clause line up: the harmonic mean of
+ * the share of each one's content words the other holds. Both directions,
+ * because a negated clause often elides its verb — "…, but its profits did
+ * not" holds one word of "its profits rose too" and nothing else — and one
+ * direction alone would never pair them; an elided negation whose every word
+ * is in the claim clause counts as aligned.
+ */
+function clauseAlignment(claimClause: string, passageClause: string): number {
+  const forward = tokenCoverage(claimClause, passageClause);
+  const backward = tokenCoverage(passageClause, claimClause);
+  const f1 = forward + backward === 0 ? 0 : (2 * forward * backward) / (forward + backward);
+  return elidedAnswer(claimClause, passageClause) ? Math.max(f1, CLAUSE_MATCH_MIN) : f1;
+}
+
+/**
+ * Whether the passage sentence states the opposite of the claim, with
+ * negation compared clause against clause — the SAME level on both sides.
+ *
+ * Whole sentence against whole sentence read "Serious adverse events occurred
+ * in 3% …, a difference described as not significant" as denying the 3%: the
+ * "not" negates another predicate. But narrowing only the passage is worse:
+ * a claim identical to its source, "Sales rose sharply, but profits did not",
+ * then had its whole-sentence "not" compared with the passage's one negation-
+ * free clause, and an honest sentence was rewritten as "Conflicting
+ * evidence". So each clause of the claim is compared with the passage clause
+ * it lines up with best.
+ *
+ * A one-clause claim is also compared with any elided negation that answers
+ * it: "Profits rose in 2024" against "Sales rose in 2024, but profits did
+ * not" shares more words with the sales clause, and the "not" that denies it
+ * sits in a clause with no verb of its own. A claim of several clauses keeps
+ * to the best match only, because "Revenue rose, but revenue did not" lines
+ * each of its clauses up with both of its source's.
+ */
+export function polarityDisagrees(claim: string, sentence: string): boolean {
+  const clauses = clausesOf(claim);
+  const passageClauses = clausesOf(sentence);
+  if (clauses.length <= 1) {
+    const parity = negationParity(claim);
+    if (parity !== negationParity(bestMatchingClause(claim, sentence))) return true;
+    return passageClauses.some((candidate) => elidedAnswer(claim, candidate) && negationParity(candidate) !== parity);
+  }
+  for (const clause of clauses) {
+    let best: string | null = null;
+    let bestScore = CLAUSE_MATCH_MIN - Number.EPSILON;
+    for (const candidate of passageClauses) {
+      const score = clauseAlignment(clause, candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    if (best !== null && negationParity(clause) !== negationParity(best)) return true;
+  }
+  return false;
 }
 
 /** The sentence in the passage the claim is actually about. */
@@ -1264,10 +1456,8 @@ export function bestMatchingSentence(claim: string, passage: string): string {
 }
 
 /*
- * Capitalised words that open sentences without naming anything. A short list
- * on purpose: what is left over after it is a NAMED subject for the
- * corroboration rule, and a common noun that slips through ("Revenue") only
- * makes that rule stricter, never looser.
+ * Capitalised words that name nothing even in mid-sentence ("…; However, …").
+ * The first word of every sentence is skipped outright (see `namedSubjects`).
  */
 const SENTENCE_STARTERS = new Set(
   ("this that these those it its there here some most many all every each both our we they you he she his her " +
@@ -1276,10 +1466,27 @@ const SENTENCE_STARTERS = new Set(
     .split(" ")
 );
 
-/** Title-case words of a text, lowercased: the named subjects it talks about (Northwind, Alpha, Plus). */
-export function namedSubjects(text: string): Set<string> {
+/** Whether the word at `at` opens a sentence: nothing but opening punctuation since the text began or since a full stop. */
+function opensSentence(text: string, at: number): boolean {
+  const before = text.slice(0, at).replace(/[\s"'“‘«(\[*_|#>-]+$/u, "");
+  return before === "" || /[.!?:]$/.test(before);
+}
+
+/**
+ * Title-case words of a text, lowercased: the named subjects it talks about
+ * (Northwind, Alpha, Plus).
+ *
+ * The first word of a sentence is skipped unless `withSentenceStarts`: any
+ * word opens a sentence in title case, so "Revenue rose to $4.3bn" must not
+ * make "revenue" a named subject. On the CLAIM side that is the strict
+ * direction for the corroboration rule — fewer names, fewer to find
+ * elsewhere. A name that opens the claim is lost to it, which only means its
+ * figure has to be in the passage itself.
+ */
+export function namedSubjects(text: string, opts: { withSentenceStarts?: boolean } = {}): Set<string> {
   const out = new Set<string>();
   for (const match of text.matchAll(/\b[A-Z][a-z][A-Za-z'’-]*/g)) {
+    if (!opts.withSentenceStarts && opensSentence(text, match.index)) continue;
     const word = match[0].toLowerCase().replace(/['’]s$/, "");
     if (word.length < 3 || STOPWORDS.has(word) || SENTENCE_STARTERS.has(word)) continue;
     out.add(word);
@@ -1287,10 +1494,18 @@ export function namedSubjects(text: string): Set<string> {
   return out;
 }
 
+/** Every word of a text, lowercased, possessives cut: whether it mentions a name in any case. */
+function mentionedWords(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []).map((w) => w.replace(/['’]s?$/, "")));
+}
+
 /**
  * The figures and dates of the other cited sources that may stand in for this
  * passage — only those sources that cover a named subject of the claim this
- * passage does not mention (see `corroborating` on `auditEvidence`).
+ * passage does not mention, in any case (see `corroborating` on
+ * `auditEvidence`). Each side is read in its strict direction: the claim's
+ * names without sentence openers, the passage's mentions in any case, so a
+ * common noun can only make the rule harder to meet.
  */
 function corroboratingFacts(
   claim: string,
@@ -1298,12 +1513,12 @@ function corroboratingFacts(
   others: readonly string[] | undefined
 ): Array<{ numbers: NumericFact[]; dates: DateMention[] }> {
   if (!others?.length) return [];
-  const passageNames = namedSubjects(passage);
-  const missing = [...namedSubjects(claim)].filter((name) => !passageNames.has(name));
+  const mentioned = mentionedWords(passage);
+  const missing = [...namedSubjects(claim)].filter((name) => !mentioned.has(name));
   if (missing.length === 0) return [];
   return others
     .filter((text) => {
-      const names = namedSubjects(text);
+      const names = namedSubjects(text, { withSentenceStarts: true });
       return missing.some((name) => names.has(name));
     })
     .map((text) => {
@@ -1400,11 +1615,20 @@ export function auditEvidence(opts: {
   for (const n of claimNums) {
     const sameKind = passageNums.filter((p) => p.kind === n.kind);
     if (sameKind.some((p) => numbersAgree(p.value, n.value))) continue;
-    if (elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))) {
+    // A passage figure equal to ANOTHER of the claim's figures is the evidence
+    // for that figure ("100 GB against 50 GB": the 100 GB page), not a rival to this one.
+    const rival = sameKind.filter(
+      (p) =>
+        !claimNums.some((m) => m !== n && m.kind === p.kind && numbersAgree(m.value, p.value)) &&
+        measuresSameThing(claim, n, passage, p)
+    );
+    // Another cited source may supply a figure this passage lacks, never one
+    // it disagrees with: a passage giving a different figure for the same
+    // thing is a disagreement whoever else agrees with the claim.
+    if (rival.length === 0 && elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))) {
       statedElsewhere(n.raw);
       continue;
     }
-    const rival = sameKind.filter((p) => measuresSameThing(claim, n, passage, p));
     if (rival.length > 0) {
       // The passage measures the same thing and says something else. That is a
       // contradiction, not an omission — the difference matters, because a
@@ -1447,7 +1671,7 @@ export function auditEvidence(opts: {
   // Only meaningful where the two sentences are about the same thing; on an
   // unrelated passage a negation difference says nothing.
   const focus = bestMatchingSentence(claim, passage);
-  if (tokenCoverage(claim, focus) >= 0.45 && negationParity(claim) !== negationParity(bestMatchingClause(claim, focus))) {
+  if (tokenCoverage(claim, focus) >= 0.45 && polarityDisagrees(claim, focus)) {
     contradicted = true;
     cap(0, {
       code: "polarity_mismatch",

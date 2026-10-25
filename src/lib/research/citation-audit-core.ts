@@ -139,6 +139,20 @@ const RIVAL_CANDIDATES = 6;
  */
 const RIVAL_MIN_COVERAGE = 0.5;
 
+/**
+ * Whether a text-settled contradiction is about the period the claim names.
+ * A passage that does not place the claim's own date (`date_absent`), or only
+ * carries it as its publication date, is most often a different year's
+ * figure — "revenue was $3.9bn in 2023" beside a claim of "$4.3bn in 2024" —
+ * and recording it as disagreement would mark the annual-report pattern
+ * "Sources disagree" on every honest figure. Applied to everything this core
+ * records BESIDE a claim's verdict (cited contradictions after support,
+ * uncited rivals), never to the verdict's own passage.
+ */
+export function disagreesForSamePeriod(reasons: readonly AuditReason[]): boolean {
+  return !reasons.some((reason) => reason.code === "date_absent" || reason.code === "date_is_publication_date");
+}
+
 /** The claims one audit checks: extraction, capped with the table share kept to its slots. */
 export function selectClaimsForAudit(report: string, maxClaims: number): ExtractedClaim[] {
   return claimsForAudit(extractClaims(report), Math.max(1, Math.floor(maxClaims)));
@@ -290,9 +304,14 @@ export async function auditClaims(opts: {
      * trial "showed a 27% reduction" in one paragraph and that it "was not
      * designed to assess long-term safety" in the next is exactly the page a
      * reader of "the trial showed the drug is safe" needs to see quoted.
+     *
+     * Held to the rival scan's bar (`disagreesForSamePeriod`): an annual
+     * report's "$3.9 billion in 2023" paragraph beside its "$4.3 billion in
+     * 2024" one is last year, not a disagreement, and a segment's figure is
+     * already not "the same thing" (`measuresSameThing`).
      */
     for (const candidate of ranked.slice(next)) {
-      if (!candidate.audit.contradicted) continue;
+      if (!candidate.audit.contradicted || !disagreesForSamePeriod(candidate.audit.reasons)) continue;
       verdicts.push({
         status: "contradicted",
         stance: "contradicts",
@@ -412,8 +431,7 @@ function rivalEvidence(
       asOf,
     });
     const mismatches = audit.reasons.filter((reason) => reason.code === "figure_mismatch");
-    if (mismatches.length === 0) continue;
-    if (audit.reasons.some((reason) => reason.code === "date_absent" || reason.code === "date_is_publication_date")) continue;
+    if (mismatches.length === 0 || !disagreesForSamePeriod(audit.reasons)) continue;
     seenSources.add(entry.sourceIndex);
     rivals.push({ sourceIndex: entry.sourceIndex, ordinal: entry.passage.ordinal, reasons: mismatches });
   }

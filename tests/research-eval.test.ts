@@ -17,7 +17,9 @@ import { serverOnlyIn } from "./fixtures/server-only-graph";
  *
  * The thresholds are the measured behaviour of this build on this set, at or
  * above the program's §8.3 bar where one exists (95% supported precision).
- * They are a floor against regression, not a claim about live-model accuracy:
+ * The set is IN-SAMPLE — it was used to find and fix the audit's bugs (see
+ * the header of research-citation-cases.ts) — so the numbers are a floor
+ * against regression, not a held-out accuracy figure, and not a claim about live-model accuracy:
  * the judges here are stubs that model a small model's failure mode, so what
  * they measure is the deterministic audit's contribution. `npm run
  * eval:research` prints the full scorecard; a live-model run is not part of
@@ -93,6 +95,9 @@ for (const name of ["optimistic", "credulous"] as const) {
   });
 
   test(`${name} judge: every audit miss that reads "supported" still shows the reader the disagreement`, async () => {
+    // Known gap, tolerated here and stated in research-citation-cases.ts:
+    // relapse-trial's "safe in the long term" is a false support (shown as
+    // contested). One, and never without the contested flag.
     const m = await card(name);
     assert.ok(m.falseSupports.length <= 1, renderScorecard(m));
     for (const miss of m.falseSupports) {

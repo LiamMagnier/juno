@@ -6,8 +6,26 @@
  * markers, a table where a comparison calls for one — plus the numbered corpus
  * it was written from, plus a label for EVERY load-bearing sentence the audit
  * extracts. The labels were written from the report and the source text alone,
- * by reading them, before the audit was run against them; they are the ground
- * truth the audit is scored against and are never edited to match its output.
+ * by reading them; they are the ground truth the audit is scored against and
+ * are never edited to match its output.
+ *
+ * IN-SAMPLE. This set is not held out. The cases landed in one commit
+ * (74ed268e0) after the audit fixes they exposed — the comparison
+ * corroboration, the day-count and two-letter-unit rules, the clause-level
+ * negation, and "Plus" as a product name rather than a sentence starter — so
+ * git history cannot show the labels predate that tuning, and the numbers this
+ * set produces (`renderScorecard` says so on every run) are a regression floor
+ * for this build, not a general accuracy figure. A held-out set has to be
+ * written after the code it measures is frozen.
+ *
+ * KNOWN GAP. Under the optimistic and credulous judges one strict miss is a
+ * false support: relapse-trial's "The trial showed the drug is safe in the
+ * long term", labelled contradicted, is audited supported because the judge
+ * accepts the trial's efficacy paragraph; the "not designed to assess
+ * long-term safety" paragraph is recorded as a contradiction, so the claim is
+ * shown CONTESTED, but its label is wrong. The other two strict misses
+ * (dates-and-lists) are lenient: a wrong date read as unsupported rather than
+ * contradicted.
  * Where a careful reader could defensibly give either of two labels (a wrong
  * date is "contradicted" to some readers and "unsupported" to others) the
  * primary label is the stricter reading and `accept` names the other, so the

@@ -33,7 +33,7 @@ import {
   type RepairableClaim,
   type SupportLabel,
 } from "@/lib/research/claim-analysis";
-import { auditClaims, readAuditReceipt, selectClaimsForAudit } from "@/lib/research/citation-audit-core";
+import { auditClaims, disagreesForSamePeriod, readAuditReceipt, selectClaimsForAudit } from "@/lib/research/citation-audit-core";
 import {
   isPreviewOnly,
   isSourceReadState,
@@ -1202,7 +1202,7 @@ export async function loadCitationAuditForMessage(
         const codedReasons = audit.reasons.filter((reason) => reason.code === "figure_mismatch");
         // Recomputed like a link's reasons: a rival this build would no
         // longer call one is not shown on the strength of an old receipt.
-        if (codedReasons.length === 0) return [];
+        if (codedReasons.length === 0 || !disagreesForSamePeriod(audit.reasons)) return [];
         return [{ sourceIndex: indexOf.get(source.id) ?? 0, passage: passage.text, locator: passage.locator, codedReasons }];
       });
     const contested =

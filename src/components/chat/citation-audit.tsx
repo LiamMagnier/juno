@@ -321,7 +321,10 @@ export const AUDIT_COPY = {
    */
   contested: "contested",
   sourcesDisagree: "Sources disagree",
-  contestedDetail: "Its cited source supports it, but other evidence in this research gives a different figure.",
+  // Neutral on purpose: a claim is contested by a different figure (a rival)
+  // or by a cited passage saying the opposite (polarity), and the passages
+  // shown below it say which.
+  contestedDetail: "Its cited source supports it, but other evidence in this research disagrees.",
   rivalHeading: "Not cited for this sentence: another source in this research gives a different figure",
   citesNothing: "citing a source this research does not contain",
   unresolvedDetail: "does not match any source in this research, so it is not evidence for anything. The marker is removed from the answer.",

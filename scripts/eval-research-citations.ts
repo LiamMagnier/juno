@@ -19,7 +19,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { RESEARCH_CITATION_CASES } from "../src/lib/eval/research-citation-cases";
-import { STOCK_JUDGES, renderScorecard, scoreResearchCitationEval, type Scorecard } from "../src/lib/eval/research-citations";
+import { IN_SAMPLE_NOTE, STOCK_JUDGES, renderScorecard, scoreResearchCitationEval, type Scorecard } from "../src/lib/eval/research-citations";
 
 const json = process.argv.includes("--json");
 const write = process.argv.includes("--write");
@@ -55,6 +55,7 @@ async function main() {
   const report = {
     generatedAt: new Date().toISOString(),
     mode: "stub-judges",
+    sample: { kind: "in-sample", note: IN_SAMPLE_NOTE },
     liveModel: { status: "not_run", reason: "this script runs no model; the stub judges measure the deterministic audit" },
     scorecards: cards.map(summary),
   };
