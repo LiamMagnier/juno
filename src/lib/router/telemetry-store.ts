@@ -20,6 +20,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { evidenceKey, type EvidenceCell, type EvidenceTable } from "@/lib/router/evidence";
 import { isTaskClass, type TaskClass } from "@/lib/router/task-class";
+import type { CompletionState } from "@/lib/router/telemetry-rules";
 
 export const ROUTING_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const ROUTING_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
@@ -27,8 +28,6 @@ export const ROUTING_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 export const ROUTING_EVIDENCE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 const EVIDENCE_CACHE_MS = 5 * 60 * 1000;
 const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000;
-
-export type CompletionState = "completed" | "partial" | "failed" | "stopped";
 
 export interface RoutingOutcomeInput {
   messageId: string | null;
@@ -49,34 +48,13 @@ export interface RoutingOutcomeInput {
   expectedMicroUsd: number | null;
 }
 
-/** Map a turn's finish reason onto the four states the router learns from. */
-export function completionStateFor(finishReason: string | null | undefined, persistedPartial: boolean): CompletionState {
-  if (finishReason === "user_stopped") return "stopped";
-  if (finishReason === "stop" || finishReason === "tool_calls" || !finishReason) return persistedPartial ? "partial" : "completed";
-  return persistedPartial ? "partial" : "failed";
-}
-
-/** How a turn ended that the model had no part in (see `endingSaysNothingAboutModel`). */
-export interface PlatformEnding {
-  /** The process drained for a restart mid-stream (finish reason "error"). */
-  shutdown?: boolean;
-  /** Another process took over the durable receipt (finish reason "error"). */
-  leaseLost?: boolean;
-  /** The account's own budget ceiling halted the stream (finish reason "user_stopped"). */
-  budgetHalted?: boolean;
-}
-
-/**
- * True when a turn's ending was caused by the platform, not by the model or
- * the reader: a deploy draining the process, a lost receipt lease, the
- * account's budget halting the stream. Such a turn writes NO outcome row. As
- * a row it read as "failed" or "stopped", which `outcomeSucceeded` counts
- * against the model — so every deploy made the models that happened to be
- * streaming look worse, and Auto learned to avoid them for it.
- */
-export function endingSaysNothingAboutModel(ending: PlatformEnding | null | undefined): boolean {
-  return !!ending && (!!ending.shutdown || !!ending.leaseLost || !!ending.budgetHalted);
-}
+export {
+  completionStateFor,
+  endingSaysNothingAboutModel,
+  outcomeTimings,
+  type CompletionState,
+  type PlatformEnding,
+} from "@/lib/router/telemetry-rules";
 
 export async function recordRoutingOutcome(input: RoutingOutcomeInput): Promise<void> {
   try {

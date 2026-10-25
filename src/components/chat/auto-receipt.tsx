@@ -88,8 +88,8 @@ export function AutoReceiptReasons({ modelName, receipt }: { modelName: string; 
           {receipt.rerouted
             ? `Answered by ${modelName} because Auto's first choice could not be reached.`
             : receipt.degraded === "over_budget"
-              ? "Kept to what your remaining budget allows."
-              : "Every eligible provider was reporting trouble; Auto used the best it had."}
+              ? "Nothing fit what's left of your budget, so Auto tried the lowest-cost model."
+              : "Every eligible provider was reporting trouble, so Auto went ahead with one rather than refuse."}
         </p>
       )}
     </div>

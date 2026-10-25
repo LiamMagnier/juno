@@ -177,6 +177,13 @@ export interface RouteDecision {
   degraded: null | "all_providers_unavailable" | "over_budget";
   /** True when a low budget narrowed the pick to cost-1 models. */
   budgetSaver: boolean;
+  /**
+   * True when nothing fit the remaining budget, so `ranked` is ordered by call
+   * price and the pick is the cheapest call. Implied by `degraded ===
+   * "over_budget"`, and also set when every provider was down as well (then
+   * `degraded` reports that).
+   */
+  priceOrdered: boolean;
   preference: AutoPreference;
   routerVersion: number;
   /** Every fact the decision turned on, as the receipt stores it (receipt.ts). */
@@ -448,6 +455,8 @@ export function routeAuto(input: RouteInput): RouteDecision {
 
   // Budget: the expected spend of the turn itself must fit what is left.
   const remaining = input.remainingBudgetMicroUsd;
+  /** Nothing fit the budget, so the final order is by call price, not expected total. */
+  let priceOrdered = false;
   if (remaining != null) {
     const fits = ranked.filter((c) => c.callMicroUsd + c.toolRoundsMicroUsd <= remaining);
     if (fits.length > 0) {
@@ -457,6 +466,9 @@ export function routeAuto(input: RouteInput): RouteDecision {
       // Nothing fits the estimate; the cheapest call is the honest attempt and
       // the spend gate downstream decides whether it may run at all.
       ranked = [...ranked].sort((a, b) => a.callMicroUsd - b.callMicroUsd);
+      priceOrdered = true;
+      // When every provider is also down, that stays the headline; the
+      // price order is still recorded (`priceOrdered`, the reasons).
       degraded = degraded ?? "over_budget";
     }
   }
@@ -466,9 +478,11 @@ export function routeAuto(input: RouteInput): RouteDecision {
 
   // Did measurement choose this model? Re-rank the same final candidates on
   // priors alone; a different winner means measured outcomes moved the pick.
-  // Not asked when the budget fallback ordered by price instead of total.
+  // Not asked when the budget fallback ordered by price instead of total —
+  // whatever `degraded` says, as every provider may be down as well: price
+  // chose, and comparing it with a prior-only winner would credit measurement.
   let shiftedFrom: CandidateScore | null = null;
-  if (degraded !== "over_budget" && ranked.some((c) => c.evidence !== "prior" || c.latencyMeasured)) {
+  if (!priceOrdered && ranked.some((c) => c.evidence !== "prior" || c.latencyMeasured)) {
     const byPrior = [...ranked].sort(
       (a, b) => a.priorTotalMicroUsd - b.priorTotalMicroUsd || a.modelId.localeCompare(b.modelId)
     )[0];
@@ -521,12 +535,13 @@ export function routeAuto(input: RouteInput): RouteDecision {
     reasoningEffort: winner.effort,
     complexity,
     profile,
-    reasons: decisionReasons(profile, winner, ranked, degraded, { budgetSaver, shiftedFrom }),
+    reasons: decisionReasons(profile, winner, ranked, degraded, { budgetSaver, shiftedFrom, priceOrdered }),
     ranked,
     alternates,
     excluded,
     degraded,
     budgetSaver,
+    priceOrdered,
     preference,
     routerVersion: ROUTER_VERSION,
     factors,
@@ -547,33 +562,49 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
+/** The reason line when no candidate's expected spend fit what is left: the cheapest call was tried. */
+export const OVER_BUDGET_REASON = "lowest cost, as nothing fit your remaining budget";
+
 /**
  * "Selected for:" lines. Built only from this decision — the task signals it
  * acted on and the comparison it made — never from a template that would read
  * the same whatever happened. At most four: the decision's own facts (the
  * comparison, a measured shift, measured samples, a budget rule) are kept, and
- * task signals fill what room is left, so a budget or evidence line is never
- * the one cut off.
+ * task signals fill what room is left (none, when the facts take all four), so
+ * a budget or evidence line is never the one cut off.
+ *
+ * When nothing fit the remaining budget (`priceOrdered`, implied by
+ * `degraded === "over_budget"`), price chose: the line says so in place of the
+ * expected-cost comparison, and no measurement line is given, because the
+ * measured odds did not decide the pick.
  */
 export function decisionReasons(
   profile: TaskProfile,
   winner: CandidateScore,
   ranked: CandidateScore[],
   degraded: RouteDecision["degraded"],
-  extra: { budgetSaver?: boolean; shiftedFrom?: Pick<CandidateScore, "modelId" | "name"> | null } = {}
+  extra: {
+    budgetSaver?: boolean;
+    shiftedFrom?: Pick<CandidateScore, "modelId" | "name"> | null;
+    priceOrdered?: boolean;
+  } = {}
 ): string[] {
+  const priceOrdered = !!extra.priceOrdered || degraded === "over_budget";
   const tail: string[] = [];
-  if (ranked.length > 1) {
-    if (paidForOdds(winner, ranked)) {
-      tail.push("better odds of a first-try answer outweigh a cheaper model");
-    } else {
-      tail.push(`lowest expected cost of ${ranked.length} eligible models`);
+  if (priceOrdered) {
+    tail.push(OVER_BUDGET_REASON);
+  } else {
+    if (ranked.length > 1) {
+      if (paidForOdds(winner, ranked)) {
+        tail.push("better odds of a first-try answer outweigh a cheaper model");
+      } else {
+        tail.push(`lowest expected cost of ${ranked.length} eligible models`);
+      }
     }
+    if (extra.shiftedFrom) tail.push(`results on similar Alevr requests favoured it over ${extra.shiftedFrom.name}`);
+    else if (winner.measured) tail.push(`measured on ${winner.samples} similar Alevr turns`);
   }
-  if (extra.shiftedFrom) tail.push(`results on similar Alevr requests favoured it over ${extra.shiftedFrom.name}`);
-  else if (winner.measured) tail.push(`measured on ${winner.samples} similar Alevr turns`);
-  if (degraded === "over_budget") tail.push("kept within your remaining budget");
   if (extra.budgetSaver) tail.push("saving your remaining budget");
-  const room = Math.max(1, 4 - tail.length);
+  const room = Math.max(0, 4 - tail.length);
   return [...profile.signals.slice(0, Math.min(3, room)), ...tail].slice(0, 4);
 }

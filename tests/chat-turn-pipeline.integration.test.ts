@@ -669,6 +669,62 @@ if (!DB_URL) {
     }
   });
 
+  // ── Auto's outcome rows (src/lib/router/telemetry-store.ts) ───────────────
+
+  test("a finished turn records its outcome with both timings; a drain mid-stream records none", async () => {
+    // The row is written fire-and-forget after the stream closes: poll for it.
+    const rowsSince = (modelId: string, since: Date) =>
+      prisma.routingOutcome.findMany({ where: { modelId, createdAt: { gte: since } }, orderBy: { createdAt: "asc" } });
+    const settle = async (modelId: string, since: Date, want: number) => {
+      for (let i = 0; i < 40; i += 1) {
+        if ((await rowsSince(modelId, since)).length >= want) break;
+        await sleep(25);
+      }
+      return rowsSince(modelId, since);
+    };
+    // A model no other case here names, chosen by hand: its rows are this test's.
+    const model = "anthropic:claude-haiku-5-5";
+    await seedUser();
+    const since = new Date(Date.now() - 1);
+
+    // Control: a completed turn writes one row, with the first token measured
+    // from the same start as the turn's length.
+    script = () => answer("One, two, three.", 3, 10);
+    const done = await chat({ message: "Count to three.", model });
+    const doneFrame = done.frames.at(-1) as Frame & { message: { id: string } };
+    assert.equal(doneFrame.type, "done", done.text.slice(-400));
+    const [row] = await settle(model, since, 1);
+    assert.ok(row, "the completed turn wrote its outcome row");
+    assert.equal(row.messageId, doneFrame.message.id);
+    assert.equal(row.completionState, "completed");
+    assert.equal(row.auto, false, "a hand-routed turn still feeds the evidence");
+    assert.ok(row.firstTokenMs !== null, "the first token is recorded");
+    assert.ok(row.latencyMs !== null && row.firstTokenMs <= row.latencyMs, `ttft ${row.firstTokenMs} > turn ${row.latencyMs}`);
+
+    // A deploy drains the process mid-stream: the turn fails for the reader,
+    // but that says nothing about the model, so no row is written.
+    const { abortGenerationsForShutdown } = await import("@/lib/generation-cancel");
+    script = async function* (opts) {
+      yield { type: "text", text: "Half an" };
+      assert.equal(abortGenerationsForShutdown(), 1, "this turn was the one in flight");
+      if (opts.signal?.aborted) throw new DOMException("Server shutting down", "AbortError");
+      yield { type: "text", text: " answer" };
+    };
+    const drained = await chat({ message: "Go on.", model });
+    const last = drained.frames.at(-1) as Frame & { finishReason?: string };
+    assert.equal(last.type, "error", "a drain is a failure for the reader, not a Stop");
+    assert.equal(last.finishReason, "error");
+    const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+    assert.equal(
+      recentTurnTraces().find((t) => t.runId === drained.frames[0].generationId)?.cancellation.shutdown,
+      true,
+      "the turn ended by the drain"
+    );
+    // Give a stray write every chance to land before saying there is none.
+    await sleep(500);
+    assert.equal((await rowsSince(model, since)).length, 1, "the drained turn wrote no outcome row");
+  });
+
   test("nothing left the process", () => {
     assert.deepEqual(outbound.filter((url) => !url.startsWith("http://127.0.0.1")), []);
   });

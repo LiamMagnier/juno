@@ -7,7 +7,13 @@ import { loadOpsTarget } from "./semantic";
 import type { TurnModel } from "./model";
 import { classifyProviderError } from "@/lib/provider-error";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
-import { completionStateFor, endingSaysNothingAboutModel, recordRoutingOutcome, type PlatformEnding } from "@/lib/router/telemetry-store";
+import {
+  completionStateFor,
+  endingSaysNothingAboutModel,
+  outcomeTimings,
+  recordRoutingOutcome,
+  type PlatformEnding,
+} from "@/lib/router/telemetry-store";
 import { createAlevrSearchTurn } from "@/lib/search/alevr/turn";
 import type { Plan } from "@prisma/client";
 import type { EffectiveBudget } from "@/lib/spend-ceiling";
@@ -1192,8 +1198,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         });
       }
     } finally {
-      // The trace first: it measured the first token, which the outcome row
-      // records. Guarded so observability can never skip the cleanup below.
+      // The trace first: it measured the first token and the turn's length
+      // from one start, which the outcome row records (`outcomeTimings`).
+      // Guarded so observability can never skip the cleanup below.
       let finishedTrace: ReturnType<typeof trace.finish> = null;
       try {
         finishedTrace = trace.finish(
@@ -1218,8 +1225,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           ...routingTelemetryBase,
           messageId: outcome.messageId,
           effort: (autoReasoningEffort !== undefined ? autoReasoningEffort : requestedEffort) ?? null,
-          latencyMs: Date.now() - turnStartedAt,
-          firstTokenMs: finishedTrace?.latency.ttftMs ?? null,
+          ...outcomeTimings(finishedTrace, turnStartedAt),
           toolRounds: acc.currentRound,
           retryCount: 0,
           completionState: completionStateFor(outcome.finishReason, outcome.persistedPartial),

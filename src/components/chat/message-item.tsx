@@ -33,7 +33,7 @@ import { StreamingMarkdown } from "@/components/chat/stream-text";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
 import { AnswerMemory } from "@/components/chat/answer-memory";
-import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
+import { receiptLine, receiptSummary, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -1684,6 +1684,10 @@ export const MessageItem = React.memo(function MessageItem({
                             <span className="text-ui text-foreground">
                               {view.routing ? receiptLine(modelName, view.routing) : modelName}
                             </span>
+                          )}
+                          {/* The same sentence the desktop popover leads with (AutoReceiptReasons). */}
+                          {view.routing && receiptSummary(view.routing) && (
+                            <span className="text-label text-foreground">{receiptSummary(view.routing)}</span>
                           )}
                           {view.routing && view.routing.reasons.length > 0 && (
                             <span className="text-caption text-muted-foreground">

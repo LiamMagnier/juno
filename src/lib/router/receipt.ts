@@ -334,6 +334,9 @@ function thinkingClause(effort: ReasoningEffort): string {
   return effort && effort !== "minimal" && effort !== "low" ? `, with ${effortLabel(effort)} thinking` : "";
 }
 
+/** The reader's sentence never runs longer than this; secondary sentences give way first. */
+export const RECEIPT_SUMMARY_MAX_CHARS = 200;
+
 /**
  * One plain sentence on why Auto answered this turn the way it did, for the
  * person reading it — built from the stored factors and the receipt's own
@@ -346,40 +349,52 @@ function thinkingClause(effort: ReasoningEffort): string {
  *
  * Precedence follows what most changed the outcome: a replacement or a relaxed
  * rule first, then a hard need (an image to make or read, a long context, the
- * web, connected apps), then the kind of task.
+ * web, connected apps), then the kind of task. That first sentence is always
+ * given (every variant is well under the cap, which an exhaustive test over
+ * the factor combinations pins); a secondary one — measurement tipped the
+ * choice, a provider was skipped — is added only while the whole stays within
+ * `RECEIPT_SUMMARY_MAX_CHARS`, so the cap holds without cutting a sentence.
  */
 export function receiptSummary(receipt: RoutingReceipt): string | null {
   const f = receipt.factors;
   if (!f) return null;
-  const sentences: string[] = [];
 
+  let lead: string;
   if (receipt.rerouted) {
-    sentences.push(
+    lead =
       receipt.rerouteReason === "capacity"
         ? "Auto switched to a lower-cost model to stay within today's capacity."
-        : "Auto's first choice couldn't be reached, so the next best model answered."
-    );
+        : "Auto's first choice couldn't be reached, so the next best model answered.";
   } else if (receipt.degraded === "over_budget") {
-    sentences.push("Auto chose the model that fits what's left of your budget.");
+    // decide.ts: no candidate's expected spend fit, so the cheapest call is
+    // tried and the spend gate decides whether it may run.
+    lead = "Nothing fit what's left of your budget, so Auto tried the lowest-cost model.";
   } else if (receipt.degraded === "all_providers_unavailable") {
-    sentences.push("Every eligible provider was reporting trouble, so Auto used the best one it had.");
+    // Not "the best": when nothing fit the budget either, the pick was the
+    // cheapest call, and this flag alone cannot tell the two apart.
+    lead = "Every eligible provider was reporting trouble, so Auto went ahead with one rather than refuse.";
   } else if (f.budgetSaver) {
-    sentences.push("Your monthly budget is nearly used, so Auto kept to a low-cost model.");
+    lead = "Your monthly budget is nearly used, so Auto kept to a low-cost model.";
   } else {
-    sentences.push(needSentence(receipt, f));
+    lead = needSentence(receipt, f);
   }
 
+  const secondary: string[] = [];
   if (f.evidence.shiftedFrom && !receipt.rerouted) {
-    sentences.push("Results on similar Alevr requests tipped the choice.");
+    secondary.push("Results on similar Alevr requests tipped the choice.");
   }
   if (f.providerHealth.down.length > 0 && !receipt.rerouted && receipt.degraded !== "all_providers_unavailable") {
-    sentences.push(
+    secondary.push(
       f.providerHealth.down.length === 1
         ? "It skipped a provider that was having trouble."
         : "It skipped providers that were having trouble."
     );
   }
-  return sentences.join(" ");
+  let summary = lead;
+  for (const sentence of secondary) {
+    if (summary.length + 1 + sentence.length <= RECEIPT_SUMMARY_MAX_CHARS) summary = `${summary} ${sentence}`;
+  }
+  return summary;
 }
 
 function needSentence(receipt: RoutingReceipt, f: RoutingFactors): string {

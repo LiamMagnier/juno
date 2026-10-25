@@ -1,16 +1,23 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { routeAuto, type RouteInput } from "@/lib/router/decide";
+import { OVER_BUDGET_REASON, routeAuto, type RouteInput } from "@/lib/router/decide";
 import {
+  RECEIPT_SUMMARY_MAX_CHARS,
   costTierOf,
   latencyTierOf,
   parseRoutingFactors,
   parseRoutingReceipt,
   receiptFromDecision,
   receiptSummary,
+  type ReceiptChoice,
+  type ReceiptComplexity,
+  type ReceiptLatencyTier,
+  type ReceiptTier,
+  type RoutingFactors,
   type RoutingReceipt,
 } from "@/lib/router/receipt";
+import { TASK_CLASSES } from "@/lib/router/task-class";
 
 /*
  * Auto's receipt as a truthful internal record (master brief Part 4.2): every
@@ -241,8 +248,18 @@ describe("the reader's sentence", () => {
     assert.equal(receiptSummary(slow), "A quick everyday question, so Auto chose the best-value model.");
   });
 
-  test("relaxed rules come first", () => {
-    assert.match(summary(HARD_CODING, { remainingBudgetMicroUsd: 0 }), /what's left of your budget/);
+  test("relaxed rules come first, in words that match what happened", () => {
+    // Nothing fit the budget: the cheapest call is tried and the spend gate
+    // decides. Never "fits what's left", which is false by construction.
+    const broke = route(HARD_CODING, { remainingBudgetMicroUsd: 0 });
+    assert.equal(broke.degraded, "over_budget");
+    assert.equal(broke.ranked[0].callMicroUsd, Math.min(...broke.ranked.map((c) => c.callMicroUsd)));
+    assert.equal(
+      receiptSummary(receiptFromDecision(broke)),
+      "Nothing fit what's left of your budget, so Auto tried the lowest-cost model."
+    );
+    assert.ok(broke.reasons.includes(OVER_BUDGET_REASON), broke.reasons.join(" | "));
+    assert.ok(!broke.reasons.some((r) => /kept within|lowest expected cost/.test(r)), broke.reasons.join(" | "));
     assert.match(summary("hi", { isProviderAvailable: () => false }), /Every eligible provider was reporting trouble/);
   });
 
@@ -251,5 +268,119 @@ describe("the reader's sentence", () => {
       assert.ok(s.length <= 200, s);
       assert.ok(!/\$|%|µ|\b0\.\d/.test(s), s);
     }
+  });
+
+  test("the 200-character cap holds over every factor combination, without cutting a sentence", () => {
+    assert.equal(RECEIPT_SUMMARY_MAX_CHARS, 200);
+    const SECONDARY = new Set([
+      "Results on similar Alevr requests tipped the choice.",
+      "It skipped a provider that was having trouble.",
+      "It skipped providers that were having trouble.",
+    ]);
+    const base = receiptFromDecision(route("hi"));
+    const efforts = [null, "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+    const complexities: ReceiptComplexity[] = ["simple", "medium", "hard", "expert"];
+    const choices: ReceiptChoice[] = ["lowest_cost", "better_odds", "only_option"];
+    const latencies: ReceiptLatencyTier[] = ["fast", "standard", "slow"];
+    const costs: ReceiptTier[] = ["low", "medium", "high"];
+    const contexts = [0, 250_000, Number.MAX_SAFE_INTEGER];
+    const downs = [[], ["openai"], ["openai", "xai"]];
+    // How the lead is chosen: a reroute, a relaxed rule, the budget saver, or the need itself.
+    const leads: Pick<RoutingReceipt, "rerouted" | "rerouteReason" | "degraded">[] = [
+      { rerouted: null, rerouteReason: null, degraded: null },
+      { rerouted: "openai:gpt-6-luna", rerouteReason: "unreachable", degraded: null },
+      { rerouted: "openai:gpt-6-luna", rerouteReason: "capacity", degraded: null },
+      { rerouted: null, rerouteReason: null, degraded: "over_budget" },
+      { rerouted: null, rerouteReason: null, degraded: "all_providers_unavailable" },
+    ];
+    // Every combination of the fields the lead sentence reads, each with no
+    // secondary sentence; the output past the lead depends only on how the
+    // lead was chosen (a reroute and the degraded flag decide which secondary
+    // sentences apply) and on the secondary inputs, so each distinct lead is
+    // then tried with every secondary input.
+    const distinct = new Map<string, RoutingReceipt>();
+    let checked = 0;
+    leads.forEach((lead, kind) => {
+      for (const budgetSaver of [false, true])
+        for (const taskClass of TASK_CLASSES)
+          for (const complexity of complexities)
+            for (const effort of efforts)
+              for (const choice of choices)
+                for (const latency of latencies)
+                  for (const cost of costs)
+                    for (const input of ["text", "text_image"] as const)
+                      for (const output of ["text", "image"] as const)
+                        for (const webSearch of [false, true])
+                          for (const contextTokens of contexts) {
+                            const factors: RoutingFactors = {
+                              ...base.factors!,
+                              complexity,
+                              choice,
+                              budgetSaver,
+                              contextTokens,
+                              modality: { input, output },
+                              tools: { ...base.factors!.tools, webSearch },
+                              latency: { tier: latency, expectedS: 1 },
+                              cost: { tier: cost, expectedMicroUsd: 1 },
+                              providerHealth: { down: [], retryPressure: 0 },
+                              evidence: { source: "measured", samples: 150, shiftedFrom: null },
+                            };
+                            const receipt: RoutingReceipt = { ...base, ...lead, taskClass, effort, factors };
+                            const leadOnly = receiptSummary(receipt)!;
+                            checked += 1;
+                            assert.ok(leadOnly.length <= RECEIPT_SUMMARY_MAX_CHARS, `${leadOnly.length}: ${leadOnly}`);
+                            const key = `${kind}|${leadOnly}`;
+                            if (!distinct.has(key)) distinct.set(key, receipt);
+                          }
+    });
+    let longest = "";
+    let dropped = 0;
+    for (const [key, receipt] of distinct) {
+      const leadOnly = key.slice(key.indexOf("|") + 1);
+      for (const shiftedFrom of [null, "google:gemini-3.8-flash"])
+        for (const down of downs) {
+          const f = receipt.factors!;
+          const s = receiptSummary({
+            ...receipt,
+            factors: { ...f, providerHealth: { down, retryPressure: 0 }, evidence: { ...f.evidence, shiftedFrom } },
+          })!;
+          assert.ok(s.length <= RECEIPT_SUMMARY_MAX_CHARS, `${s.length}: ${s}`);
+          // The lead is whole, and anything after it is a whole secondary sentence.
+          assert.ok(s.startsWith(leadOnly), `${leadOnly} / ${s}`);
+          const rest = s.slice(leadOnly.length).trim();
+          const added = rest ? rest.split(/(?<=\.) /) : [];
+          for (const sentence of added) assert.ok(SECONDARY.has(sentence), sentence);
+          const applies =
+            (shiftedFrom && !receipt.rerouted ? 1 : 0) +
+            (down.length && !receipt.rerouted && receipt.degraded !== "all_providers_unavailable" ? 1 : 0);
+          if (added.length < applies) dropped += 1;
+          if (s.length > longest.length) longest = s;
+        }
+    }
+    assert.ok(checked > 1_000_000, String(checked));
+    assert.ok(dropped > 0, "some combinations do reach the cap, and give way");
+    // The combination a reviewer found at 217 characters keeps its lead and the measurement sentence.
+    const reviewer: RoutingReceipt = {
+      ...base,
+      rerouted: null,
+      degraded: null,
+      taskClass: "reasoning",
+      effort: "xhigh",
+      factors: {
+        ...base.factors!,
+        complexity: "hard",
+        choice: "better_odds",
+        budgetSaver: false,
+        modality: { input: "text", output: "text" },
+        tools: { ...base.factors!.tools, webSearch: false },
+        providerHealth: { down: ["openai"], retryPressure: 0 },
+        evidence: { source: "measured", samples: 150, shiftedFrom: "google:gemini-3.8-flash" },
+      },
+    };
+    assert.equal(
+      receiptSummary(reviewer),
+      "This needs careful reasoning, so Auto chose a model more likely to get it right first time, with Extra high thinking. Results on similar Alevr requests tipped the choice."
+    );
+    assert.ok(longest.length <= RECEIPT_SUMMARY_MAX_CHARS, longest);
   });
 });

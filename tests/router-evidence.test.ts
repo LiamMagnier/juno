@@ -1,7 +1,7 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { routeAuto, type RouteInput } from "@/lib/router/decide";
+import { OVER_BUDGET_REASON, decisionReasons, routeAuto, type RouteInput } from "@/lib/router/decide";
 import {
   MIN_SAMPLES,
   PRIOR_ERROR_RATE,
@@ -15,7 +15,7 @@ import {
 } from "@/lib/router/evidence";
 import { receiptFromDecision, receiptSummary } from "@/lib/router/receipt";
 import { TASK_CLASSES, type TaskClass } from "@/lib/router/task-class";
-import { completionStateFor, endingSaysNothingAboutModel } from "@/lib/router/telemetry-store";
+import { completionStateFor, endingSaysNothingAboutModel, outcomeTimings } from "@/lib/router/telemetry-rules";
 
 /*
  * Auto learns from what it already records (master brief Part 4.2): thumbs,
@@ -155,6 +155,76 @@ describe("reliability pools across task classes", () => {
   });
 });
 
+describe("when price chose, measurement is never credited", () => {
+  test("every provider down and nothing in budget: the cheapest call, with no shift claimed", () => {
+    // Clean evidence for a model that is not the cheapest call, on a class
+    // this prompt is not: it pools into that model's reliability, so the
+    // measurement check would run.
+    const evidence = aggregateOutcomes(rows(150, () => row("anthropic:claude-sonnet-5-5", "coding")));
+    const hard =
+      "Refactor this repository's auth module across multiple files to use a distributed session store, handle race conditions, and prove it correct step by step.";
+    const d = route(hard, { isProviderAvailable: () => false, remainingBudgetMicroUsd: 0, evidence });
+    assert.equal(d.degraded, "all_providers_unavailable", "every provider down stays the headline");
+    assert.equal(d.priceOrdered, true);
+    const cheapestCall = Math.min(...d.ranked.map((c) => c.callMicroUsd));
+    assert.equal(d.ranked[0].callMicroUsd, cheapestCall, "price chose");
+    assert.ok(d.ranked.some((c) => c.evidence !== "prior"), "some candidate carries evidence");
+    // The case that used to lie: the priors alone pick another model.
+    const byPrior = [...d.ranked].sort(
+      (a, b) => a.priorTotalMicroUsd - b.priorTotalMicroUsd || a.modelId.localeCompare(b.modelId)
+    )[0];
+    assert.notEqual(byPrior.modelId, d.model.id);
+
+    assert.equal(d.factors.evidence.shiftedFrom, null);
+    assert.ok(!d.reasons.some((r) => /favoured it over|measured on|lowest expected cost/.test(r)), d.reasons.join(" | "));
+    assert.ok(d.reasons.includes(OVER_BUDGET_REASON), d.reasons.join(" | "));
+    const summary = receiptSummary(receiptFromDecision(d))!;
+    assert.ok(!/tipped the choice|\bbest\b/.test(summary), summary);
+    assert.match(summary, /^Every eligible provider was reporting trouble/);
+  });
+
+  test("low budget, nothing in budget and a measured cell: every decision fact is kept, none invented", () => {
+    const before = route("hey, what's 2+2?", { lowBudget: true });
+    const evidence = aggregateOutcomes(rows(150, () => row(before.model.id, before.profile.taskClass)));
+    const d = route("hey, what's 2+2?", { lowBudget: true, remainingBudgetMicroUsd: 0, evidence });
+    assert.equal(d.degraded, "over_budget");
+    assert.equal(d.budgetSaver, true);
+    assert.equal(d.priceOrdered, true);
+    assert.ok(d.reasons.length <= 4, d.reasons.join(" | "));
+    assert.ok(d.reasons.includes(OVER_BUDGET_REASON), d.reasons.join(" | "));
+    assert.ok(d.reasons.includes("saving your remaining budget"), d.reasons.join(" | "));
+    // Price chose: neither the expected-cost comparison nor the measurement is offered as why.
+    assert.ok(!d.reasons.some((r) => /lowest expected cost|measured on|favoured it over/.test(r)), d.reasons.join(" | "));
+    assert.equal(d.factors.evidence.shiftedFrom, null);
+    assert.match(
+      receiptSummary(receiptFromDecision(d))!,
+      /^Nothing fit what's left of your budget, so Auto tried the lowest-cost model\./
+    );
+  });
+
+  test("task signals give way before any decision fact", () => {
+    const d = route("hey, what's 2+2?");
+    const profile = { ...d.profile, signals: ["signal one", "signal two", "signal three"] };
+    const winner = { ...d.ranked[0], measured: true, samples: 150 };
+    const ranked = [winner, ...d.ranked.slice(1)];
+    // Three facts (comparison, measurement, budget saver): one signal fits.
+    const full = decisionReasons(profile, winner, ranked, null, { budgetSaver: true });
+    assert.equal(full.length, 4);
+    assert.deepEqual(full.slice(1), [
+      `lowest expected cost of ${ranked.length} eligible models`,
+      "measured on 150 similar Alevr turns",
+      "saving your remaining budget",
+    ]);
+    assert.equal(full[0], "signal one");
+    // Price-ordered: the budget line replaces the comparison and the measurement.
+    const priced = decisionReasons(profile, winner, ranked, "over_budget", {
+      budgetSaver: true,
+      shiftedFrom: { modelId: "x", name: "X" },
+    });
+    assert.deepEqual(priced, ["signal one", "signal two", OVER_BUDGET_REASON, "saving your remaining budget"]);
+  });
+});
+
 describe("quality signals the code records", () => {
   const signals: [string, Partial<Row>][] = [
     ["thumbs down", { feedback: "DOWN" }],
@@ -233,5 +303,20 @@ describe("telemetry honesty", () => {
     assert.equal(completionStateFor("network_error", true), "partial");
     assert.equal(completionStateFor("error", false), "failed");
     assert.equal(completionStateFor("sensitive", false), "failed");
+  });
+
+  test("first token and turn length come from one start", () => {
+    // The finished trace measured both from the chat route's start.
+    assert.deepEqual(outcomeTimings({ latency: { totalMs: 4_200, ttftMs: 650 } }, 1_000, 99_999), {
+      latencyMs: 4_200,
+      firstTokenMs: 650,
+    });
+    // The pair once stored as 65 ms to first token on a 49 ms turn cannot recur.
+    const mixed = outcomeTimings({ latency: { totalMs: 49, ttftMs: 65 } }, 0, 0);
+    assert.ok(mixed.firstTokenMs! <= mixed.latencyMs, JSON.stringify(mixed));
+    // A turn that never streamed text has no first token.
+    assert.deepEqual(outcomeTimings({ latency: { totalMs: 900, ttftMs: null } }, 0, 0), { latencyMs: 900, firstTokenMs: null });
+    // No trace: the turn's own clock, and the first token unknown rather than borrowed from another clock.
+    assert.deepEqual(outcomeTimings(null, 1_000, 3_500), { latencyMs: 2_500, firstTokenMs: null });
   });
 });
