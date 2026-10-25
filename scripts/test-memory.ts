@@ -344,7 +344,9 @@ async function main() {
       },
     });
     check("a new fact emits a 'Memory updated' activity", captured.current?.title === "Memory updated");
-    check("the activity deep-links to /memory", captured.current?.url === "/memory");
+    // To the saved row itself (/memory?entry=<id>) since the receipt learned to
+    // open the fact it names; the page is still where it lands.
+    check("the activity deep-links to /memory", /^\/memory(?:\?entry=[^&]+)?$/.test(captured.current?.url ?? ""));
     check("the activity names the fact rather than counting it", !!captured.current?.detail?.includes("marathon"));
 
     captured.current = null;

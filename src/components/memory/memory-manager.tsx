@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { ActivitySheet, type ActivityTab } from "@/components/memory/activity-sheet";
 import { ImportDialog } from "@/components/memory/import-dialog";
 import { ClearProjectDialog, MemoryFooter, ResetDialog } from "@/components/memory/memory-footer";
+import { ExcludedTopicsDialog } from "@/components/memory/excluded-topics";
 import { SkillCandidates, type SkillCandidateTransport } from "@/components/memory/skill-candidates";
 import { MemoryHeaderActions } from "@/components/memory/memory-header";
 import { MemoryList, topicSummary, type MemoryListHandle, type MemorySort } from "@/components/memory/memory-list";
@@ -123,6 +124,7 @@ export function MemoryManagerView({
   const [scopeSwitched, setScopeSwitched] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [resetOpen, setResetOpen] = React.useState(false);
+  const [topicsOpen, setTopicsOpen] = React.useState(false);
   /** The project whose memory the clear dialog is asking about, when open. */
   const [clearing, setClearing] = React.useState<{ id: string; name: string } | null>(null);
   const [activityOpen, setActivityOpen] = React.useState(false);
@@ -486,10 +488,12 @@ export function MemoryManagerView({
           onExport={memory.exportMemory}
           onReset={() => setResetOpen(true)}
           onSettings={onOpenSettings}
+          onTopics={() => setTopicsOpen(true)}
           project={activeProject}
           onClearProject={() => setClearing(activeProject)}
         />
       )}
+      <ExcludedTopicsDialog open={topicsOpen} onOpenChange={setTopicsOpen} onChanged={() => void memory.reload()} />
       <ClearProjectDialog
         project={clearing}
         onOpenChange={(open) => {

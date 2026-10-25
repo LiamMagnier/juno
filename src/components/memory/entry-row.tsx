@@ -307,27 +307,38 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
       </span>
     );
   }
+  // The server's one answer to "how do you know that?" (memory-provenance.ts),
+  // as the source's tooltip; the chat it came from by name, or that it is gone.
+  const why = memory.provenance?.why;
+  const chatGone = memory.provenance?.source.conversationUnavailable === true;
   parts.push(
     words ? (
-      <span key="source">{words}</span>
-    ) : chatId ? (
+      <span key="source" title={why}>{words}</span>
+    ) : chatId && !chatGone ? (
       // A link that reads as metadata until it is pointed at: the whole of the
       // "why does Juno think this" question is one click from here.
       <Link
         key="source"
+        title={why}
         // The exact message it was learned from, when that is known.
         href={memory.sourceMessageId ? `/chat/${chatId}?m=${encodeURIComponent(memory.sourceMessageId)}` : `/chat/${chatId}`}
-        className="rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+        className="max-w-[16rem] truncate rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
       >
-        From a chat
+        {memory.provenance?.source.label ?? "From a chat"}
       </Link>
     ) : (
-      <span key="source">From your chats</span>
+      <span key="source" title={why}>
+        {memory.provenance?.source.label ?? "From your chats"}
+      </span>
     )
   );
+  // Dated by when it was SAID: a fact re-read out of last year's chat was
+  // written down today and is still a year old.
+  const said = memory.observedAt ?? memory.createdAt;
+  const notedLater = new Date(memory.createdAt).getTime() - new Date(said).getTime() > 24 * 60 * 60 * 1000;
   parts.push(
-    <span key="when" title={`Learned ${shortDate(memory.createdAt)}`}>
-      {relativeTime(memory.createdAt)}
+    <span key="when" title={notedLater ? `Said ${shortDate(said)} · noted ${shortDate(memory.createdAt)}` : `Said ${shortDate(said)}`}>
+      {relativeTime(said)}
     </span>
   );
   // Provenance that changes how much to trust it, and only when it says

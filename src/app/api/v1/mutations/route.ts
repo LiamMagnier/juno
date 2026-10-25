@@ -7,9 +7,10 @@ import { isModelId } from "@/lib/models";
 import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutations";
 import { WORKSPACE_CONFIG_VERSION, writeWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { serializeWorkDefaults, WORK_DEFAULTS_VERSION } from "@/lib/work/projects";
-import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
+import { guardedMemoryWrite, type MemoryEntryKind, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 import { factFields } from "@/lib/memory-lifecycle";
-import { summaryInvalidations } from "@/lib/memory-summary-changes";
+import { invalidateSummariesForDeletedConversations, summaryInvalidations } from "@/lib/memory-summary-changes";
+import { deleteMemoryEntries, settleRewrittenFact, writeManualFact } from "@/lib/memory";
 import { artifactsFollowConversationProject, keepArtifactAttachments } from "@/lib/artifact-follow";
 
 export const runtime = "nodejs";
@@ -145,6 +146,8 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
       // Its artifacts detach and stay (SET NULL); keep the files they use.
       await keepArtifactAttachments(tx, accountId, [op.entityId]);
+      // The summaries its digest went into, out of service with it (the web delete does the same).
+      await invalidateSummariesForDeletedConversations(tx, accountId, [op.entityId]);
       const deleted = await tx.conversation.deleteMany({ where: { id: op.entityId, userId: accountId } });
       if (!deleted.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId), deleted: true } };
@@ -266,14 +269,17 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       // Through the same door the web writes go through. A memory typed on the
       // Mac or iPhone used to land in the table unscreened, so "forget my old
       // job" held on the web and quietly failed to hold anywhere else.
-      const outcome = await guardedMemoryWrite({
-        content: op.content,
-        loadSuppressions: () => accountSuppressions(tx, accountId),
-        write: (content) =>
-          tx.memoryEntry.create({ data: { userId: accountId, content, source: "MANUAL", sourceRef: "native" } }),
-      });
-      const row = requireWritten(outcome);
-      return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "memory", row.id) } };
+      //
+      // And through the same lifecycle (writeManualFact): a fact typed on a
+      // device used to land with no category, no comparable form and the
+      // default confidence, beside whatever it contradicted. Now it is
+      // classified like a web add, replaces what it corrects, and — when the
+      // account already believes the same fact — resolves to THAT row, so the
+      // client's local id maps onto the existing entity instead of a copy.
+      const outcome = await writeManualFact(tx, { userId: accountId, content: op.content, sourceRef: "native" });
+      if (!outcome.ok) throw memoryRefusalError(outcome);
+      const { id } = outcome;
+      return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: id } : {}, entity: { id, revision: await nextRevision(tx, accountId, "memory", id) } };
     }
     case "memory.update": {
       await requireRevision(tx, accountId, "memory", op.entityId, baseRevision);
@@ -288,32 +294,51 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         // The same derived fields the web edit rewrites: a stale `normalized`
         // breaks duplicate and contradiction detection, and a vector of the old
         // sentence would keep retrieving it for the old meaning.
-        write: (content) =>
-          tx.memoryEntry.updateMany({
+        write: (content) => {
+          const fields = factFields(content, { source: "MANUAL" });
+          return tx.memoryEntry.updateMany({
             where: { id: op.entityId, userId: accountId },
             data: {
               content,
               source: "MANUAL",
-              normalized: factFields(content, { source: "MANUAL" }).normalized,
+              normalized: fields.normalized,
               embedding: [],
               embeddingModel: null,
               lastVerifiedAt: new Date(),
+              // The same rewrite the web pencil performs: reclassified, re-dated,
+              // believed again. A device edit used to leave the category, the
+              // confidence, the expiry and a "replaced" status of the OLD
+              // sentence on the new one.
+              ...(existing.kind === "FACT"
+                ? {
+                    category: fields.category,
+                    confidence: fields.confidence,
+                    expiresAt: fields.expiresAt,
+                    status: "active",
+                    reason: null,
+                    supersededById: null,
+                    observedAt: new Date(),
+                  }
+                : {}),
             },
-          }),
+          });
+        },
       });
       if (!requireWritten(outcome).count) throw new ApiV1Error("not_found", 404, "The memory was not found.");
       // A summary quoting the old text must not be injected until rebuilt.
-      if (existing.kind === "FACT") await Promise.all(summaryInvalidations(tx, accountId, [existing.projectId]));
+      if (existing.kind === "FACT") {
+        await Promise.all(summaryInvalidations(tx, accountId, [existing.projectId]));
+        // And the new wording settles its scope, as on the web.
+        await settleRewrittenFact(tx, accountId, op.entityId);
+      }
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "memory", op.entityId) } };
     }
     case "memory.delete": {
       await requireRevision(tx, accountId, "memory", op.entityId, baseRevision);
-      const doomed = await tx.memoryEntry.findFirst({ where: { id: op.entityId, userId: accountId }, select: { kind: true, projectId: true } });
-      const deleted = await tx.memoryEntry.deleteMany({ where: { id: op.entityId, userId: accountId } });
-      if (!deleted.count) throw new ApiV1Error("not_found", 404, "The memory was not found.");
-      await tx.memoryEntry.updateMany({ where: { userId: accountId, supersededById: op.entityId }, data: { supersededById: null } });
-      // A summary quoting the deleted fact must not be injected again.
-      if (doomed?.kind === "FACT") await Promise.all(summaryInvalidations(tx, accountId, [doomed.projectId]));
+      // The one delete every path shares: the row, the pointers at it, the
+      // reasons quoting it, and the summary of its scope.
+      const deleted = await deleteMemoryEntries(tx, accountId, [op.entityId]);
+      if (!deleted.length) throw new ApiV1Error("not_found", 404, "The memory was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "memory", op.entityId), deleted: true } };
     }
     case "settings.update": {
@@ -346,12 +371,16 @@ async function accountSuppressions(tx: Tx, accountId: string): Promise<string[]>
  */
 function requireWritten<T>(outcome: Awaited<ReturnType<typeof guardedMemoryWrite<T>>>): T {
   if (outcome.ok) return outcome.value;
-  if (outcome.reason === "suppressed") {
-    throw new ApiV1Error("suppressed_by_memory", 409, outcome.message, false, {
-      suppression: outcome.suppression,
+  throw memoryRefusalError(outcome);
+}
+
+function memoryRefusalError(refusal: MemoryWriteRefusal): ApiV1Error {
+  if (refusal.reason === "suppressed") {
+    return new ApiV1Error("suppressed_by_memory", 409, refusal.message, false, {
+      suppression: refusal.suppression,
     });
   }
-  throw new ApiV1Error("invalid_request", 400, "The memory text is empty.");
+  return new ApiV1Error("invalid_request", 400, "The memory text is empty.");
 }
 
 async function requireOwnedConversationReferences(

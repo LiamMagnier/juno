@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-362 routes: 230 native, 59 planned, 58 web only, 15 internal. 51 pages: on the Mac 38 native, 2 partial, 2 planned, 9 web only; on iOS 25 native, 9 partial, 8 planned, 9 web only.
+363 routes: 230 native, 60 planned, 58 web only, 15 internal. 51 pages: on the Mac 38 native, 2 partial, 2 planned, 9 web only; on iOS 25 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -34,7 +34,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 14 | 0 | 0 | 0 |
+| [Memory](#memory) | 1/1 | 1/1 | 14 | 1 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
 | [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
@@ -269,7 +269,7 @@ Design is a type of artifact (register #73).
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/memory` | GET, POST, DELETE | Native | JunoChatKit |  |
-| `/api/memory/[id]` | PATCH, DELETE | Native | JunoChatKit |  |
+| `/api/memory/[id]` | GET, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/memory/backfill` | GET, POST | Native | JunoChatKit |  |
 | `/api/memory/consolidate` | POST | Native | JunoChatKit |  |
 | `/api/memory/edit` | POST | Native | JunoChatKit |  |
@@ -279,6 +279,7 @@ Design is a type of artifact (register #73).
 | `/api/memory/import` | POST | Native | JunoChatKit |  |
 | `/api/memory/import/preview` | POST | Native | JunoChatKit |  |
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
+| `/api/memory/topics` | GET, POST | Planned |  | Topics Alevr does not remember (“anything about my divorce”), listed and added from Excluded topics on the web's Memory page. A topic is a SUPPRESSION row, so the apps already list it from /api/memory and lift it with DELETE /api/memory/[id]; adding one (which retires every fact on the topic) has no native control yet. |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
 | `/api/memory/skill-candidates` | GET | Native | JunoChatKit |  |
 | `/api/memory/skill-candidates/[id]` | POST | Native | JunoChatKit |  |

@@ -261,7 +261,10 @@ test("editing, forgetting, deleting or moving a fact rebuilds every scope it tou
 test("undoing a removed project fact restores it to its project, not account-wide", () => {
   const apply = src("src/app/api/memory/edit/apply/route.ts");
   assert.match(apply, /\.\.\.\(row\.kind === "FACT" && row\.projectId \? \{ projectId: row\.projectId \} : \{\}\)/);
-  assert.match(apply, /projectId: op\.suppress \? null : op\.projectId \?\? null/);
+  // A fact added back goes through the manual write door in its own scope; a
+  // suppression is account-wide by definition.
+  assert.match(apply, /writeManualFact\(tx, \{\s+userId: user\.id,\s+content: op\.content,\s+projectId: op\.projectId \?\? null,/);
+  assert.match(apply, /Suppressions are account-wide by definition\.\s+projectId: null,/);
   // A scope is a claim until the project is shown to be usable.
   assert.match(apply, /checkProjectAccess\(user\.id, projectId, "VIEWER"\)/);
   // The ledger stores what the apply route replays — zod strips unknown keys,

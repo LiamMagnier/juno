@@ -20,6 +20,7 @@ export const ledgerOperationSchema = z.union([
     content: z.string().trim().min(1).max(500),
     suppress: z.boolean().optional(),
     projectId: z.string().min(1).nullish(),
+    restoreId: z.string().min(1).optional(),
   }),
   z.object({
     op: z.literal("update"),

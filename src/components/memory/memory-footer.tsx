@@ -32,6 +32,7 @@ export function MemoryFooter({
   onExport,
   onReset,
   onSettings,
+  onTopics,
   project,
   onClearProject,
 }: {
@@ -42,6 +43,8 @@ export function MemoryFooter({
   onExport: () => void;
   onReset: () => void;
   onSettings: () => void;
+  /** Opens "Topics not remembered" — the person's own exclusions. */
+  onTopics?: () => void;
   /** The project the page is showing, when it is showing one. */
   project?: { id: string; name: string } | null;
   onClearProject?: () => void;
@@ -52,7 +55,7 @@ export function MemoryFooter({
         <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden="true" />
         <span>
           Incognito chats are never remembered. Sensitive subjects like health or religion are only learned if you
-          allow them.
+          allow them, and topics you exclude are never learned at all.
         </span>
       </p>
       <nav aria-label="Your memory data" className="ml-[1.375rem] mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -60,6 +63,14 @@ export function MemoryFooter({
           Memory settings
         </button>
         <span aria-hidden="true">·</span>
+        {onTopics ? (
+          <>
+            <button type="button" onClick={onTopics} className={linkClass} data-excluded-topics-open="">
+              Topics not remembered
+            </button>
+            <span aria-hidden="true">·</span>
+          </>
+        ) : null}
         <button type="button" onClick={onImport} disabled={paused} className={linkClass}>
           Import
         </button>

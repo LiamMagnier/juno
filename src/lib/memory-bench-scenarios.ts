@@ -550,7 +550,8 @@ export const MEMORY_BENCH_SCENARIOS: BenchScenario[] = [
         expect: ["The user has a cat named Miso."],
       },
       {
-        // No shared words either.
+        // No shared words either; found lexically since 2026-10-25 because a
+        // food request makes dietary facts relevant (requestImpliesFact).
         id: "dinner",
         projectId: null,
         query: "Suggest something for dinner tonight.",
