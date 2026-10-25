@@ -16,6 +16,9 @@ export const SKILLS_GALLERY_VIEWS = [
   "detail-notices",
   "detail-scripts",
   "composer",
+  "teach-walk",
+  "teach-draft",
+  "teach-card",
 ] as const;
 
 export type SkillsGalleryView = (typeof SKILLS_GALLERY_VIEWS)[number];

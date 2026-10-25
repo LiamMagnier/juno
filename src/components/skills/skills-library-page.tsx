@@ -20,7 +20,6 @@ import {
   type SkillLibrary,
   type SkillSourceUpdateResult,
 } from "@/lib/skills/library-contract";
-import { openSkillDraftingChat } from "@/components/skills/add-skill-menu";
 import { ImportSkillsDialog } from "@/components/skills/import-skills-dialog";
 import { highlightClearMs, skillSourceAnchor } from "@/components/skills/skill-source-group";
 import { SkillsLibraryView } from "@/components/skills/skills-library-view";
@@ -176,7 +175,7 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
           onRemoveSource: setRemoving,
           onImport: openImporter,
           onWrite: () => router.push("/skills/new"),
-          onCreateWithJuno: () => openSkillDraftingChat((href) => router.push(href)),
+          onCreateWithJuno: () => router.push("/skills/teach"),
         }}
       />
 

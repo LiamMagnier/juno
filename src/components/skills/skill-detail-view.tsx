@@ -34,6 +34,7 @@ import { serializeSkillMd, SKILL_MD_FILENAME } from "@/lib/skills/skill-md";
 import { cn } from "@/lib/utils";
 import { SkillEditor, type SkillDraft } from "@/components/skills/skill-editor";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
+import { TaughtLine } from "@/components/skills/teach/taught-line";
 import {
   bundleFileSize,
   consentReasonsOfScan,
@@ -244,6 +245,12 @@ export function SkillDetailView({
       />
 
       <SkillMeta skill={skill} source={source} repoUrl={repoUrl} />
+      <TaughtLine
+        skillId={skill.id}
+        provenance={version?.contract.provenance}
+        enabled={skill.enabled && !blocked}
+        canReteach={yours && !installedFrom}
+      />
       {version?.contract.provenance["source.kind"] && !source ? (
         <p className="mt-3 text-caption text-muted-foreground">Imported from {version.contract.provenance["source.file"] || version.contract.provenance["source.url"] || "pasted SKILL.md"}. External instructions are scanned and retain their trust setting.</p>
       ) : null}

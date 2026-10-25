@@ -2,7 +2,7 @@
 
 import { CustomizeFrame } from "@/components/customize/customize-nav";
 import * as React from "react";
-import { Search } from "@/components/ui/icons";
+import { GraduationCap, Search } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -198,7 +198,7 @@ export function SkillsLibraryView({
       ) : library === null ? (
         <SkillsLibrarySkeleton />
       ) : !hasAny ? (
-        <SkillsEmptyState onImport={actions.onImport} onWrite={actions.onWrite} />
+        <SkillsEmptyState onImport={actions.onImport} onWrite={actions.onWrite} onTeach={actions.onCreateWithJuno} />
       ) : (
         <>
           <label className="relative mb-6 block @container/search">
@@ -371,20 +371,29 @@ export function SkillsLibrarySkeleton() {
 export function SkillsEmptyState({
   onImport,
   onWrite,
+  onTeach,
 }: {
   onImport: (repository?: string) => void;
   onWrite: () => void;
+  /** Teach Juno (`/skills/teach`). Absent in callers that predate it. */
+  onTeach?: () => void;
 }) {
   return (
     <EmptyState
       icon={AppIcons.skills}
       title="No skills yet"
-      description="Install a set from GitHub, or write your own."
+      description={onTeach ? `Teach ${PRODUCT_NAME} how you do something, install a set from GitHub, or write your own.` : "Install a set from GitHub, or write your own."}
       action={
         <div className="flex flex-col items-center gap-5">
           <div className="flex flex-wrap items-center justify-center gap-2">
             {/* Secondary, not the accent: the header's Add is the page's one
                 primary action, and it offers these same doors. */}
+            {onTeach ? (
+              <Button size="sm" variant="secondary" className="gap-1.5" onClick={onTeach}>
+                <GraduationCap className="size-3.5" aria-hidden="true" />
+                {`Teach ${PRODUCT_NAME}`}
+              </Button>
+            ) : null}
             <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => onImport()}>
               <GitHubMark className="size-3.5" />
               Import from GitHub
