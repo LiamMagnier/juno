@@ -4,34 +4,39 @@
  * both run with a timeout. Visible tests must be byte-identical to the
  * fixture: weakening a test to make it pass is a failure, not a fix.
  *
- * Submitted code from any product is untrusted. The containment, and what
- * each layer covers:
+ * Submitted code from any product is untrusted. What contains it:
  *
  *   1. Links refused. Before anything is read or copied, the delivered tree is
  *      walked with lstat. A symlink, FIFO, socket or device anywhere in it
  *      fails the check ("symlink in delivered project") and nothing runs.
- *      Node's permission model FOLLOWS symlinks, so a link inside the copy
- *      (project/leak.txt -> ~/.env.local) would otherwise be readable.
- *   2. Filesystem. The tests run under Node's permission model: reads only
- *      inside the scratch copy (which now holds regular files only), no
- *      writes, no child processes, no workers, no native addons.
- *   3. Network. The child runs in its own empty network namespace
- *      (`unshare -rn`: a user namespace plus a network namespace with only a
- *      loopback interface, which is down). Nothing can be sent anywhere, not
- *      even to a listener on the host's loopback. Where that isolation is not
- *      available (macOS, or Linux without unprivileged user namespaces) the
- *      check is `not_run` with the reason, and the code is not executed,
- *      unless the operator passes --unsafe-code (filesystem limits only; use a
- *      disposable machine).
- *   4. Resources. A 15 s timeout (SIGKILL, so a SIGTERM handler cannot keep it
- *      alive) and a 256 MB heap cap, so a runaway loop dies quickly on a shared
- *      machine.
+ *   2. The sandbox (./sandbox.ts) is the security boundary. The tests run in
+ *      their own user, mount, network and PID namespaces, chrooted into a
+ *      fresh root that holds only the system directories (read-only), the
+ *      node binary and the scratch copy (read-only). The host's home, repo,
+ *      /tmp, /run and every Unix socket by path are not there; nothing on the
+ *      host can be written; the network namespace has no usable interface, so
+ *      nothing can be sent anywhere (TCP, UDP, abstract sockets, the host's
+ *      loopback included); capabilities are dropped. Where the sandbox cannot
+ *      be built (macOS, or Linux without unprivileged user namespaces) the
+ *      check is `not_run` with the reason and the code is not executed,
+ *      unless the operator passes --unsafe-code on a disposable machine.
+ *   3. Node's permission model as well (reads only inside the copy, no
+ *      writes, no child processes, workers or native addons) and node:sqlite
+ *      switched off (--no-experimental-sqlite), because SQLite ignores the
+ *      permission model. This is defence in depth, NOT a boundary: Node's own
+ *      documentation says the permission model does not protect against
+ *      malicious code. Under --unsafe-code it is the only layer left, which is
+ *      why that mode is for disposable machines only.
+ *   4. Resources. A 15 s timeout (SIGKILL; the sandbox's --kill-child takes
+ *      the whole process tree with it) and a 256 MB heap cap, so a runaway
+ *      loop dies quickly on a shared machine.
  */
 
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { CheckResult, ValidatorSpec } from "../types";
+import { detectSandbox, nodeBinary, runSandboxed, type SandboxStatus } from "./sandbox";
 import { SKIPPED_DIRS, containedFile, fail, linksAndSpecialFiles, notRun, pass, sha256 } from "./util";
 
 type CodeSpec = Extract<ValidatorSpec, { kind: "code_tests" }>;
@@ -45,29 +50,17 @@ export interface CodeContext {
   hiddenDir: string;
   scratchDir: string;
   /**
-   * The command prefix that puts the child in an empty network namespace.
-   * Undefined = detect; null = none available (tests use this to exercise
-   * the refusal path).
+   * Undefined = detect. false = behave as if no sandbox can be built (tests
+   * use this to exercise the refusal path).
    */
-  isolation?: string[] | null;
-  /** Run without network isolation (operator's explicit --unsafe-code). */
-  unsafeNoIsolation?: boolean;
+  sandbox?: false;
+  /** Run without the sandbox (operator's explicit --unsafe-code). */
+  unsafeNoSandbox?: boolean;
 }
 
-let detected: string[] | null | undefined;
-
-/**
- * `unshare -rn` when this machine can create an unprivileged user + network
- * namespace; null otherwise. Probed once per process.
- */
-export function detectNetworkIsolation(): string[] | null {
-  if (detected !== undefined) return detected;
-  detected = null;
-  if (process.platform === "linux") {
-    const probe = spawnSync("unshare", ["-rn", "--", process.execPath, "-e", "0"], { encoding: "utf8", timeout: 10_000 });
-    if (probe.status === 0) detected = ["unshare", "-rn", "--"];
-  }
-  return detected;
+/** node:sqlite ignores the permission model; switch it off where this node knows the flag. */
+export function nodeHardeningFlags(): string[] {
+  return process.allowedNodeEnvironmentFlags.has("--no-experimental-sqlite") ? ["--no-experimental-sqlite"] : [];
 }
 
 function tapCounts(output: string): { tests: number; pass: number; fail: number } {
@@ -109,14 +102,14 @@ export function validateCodeTests(spec: CodeSpec, ctx: CodeContext): CheckResult
   const hidden = path.join(ctx.hiddenDir, spec.hiddenTests);
   if (!existsSync(hidden)) return [...checks, fail(id("hidden-tests"), `held-out test file missing from the harness: ${spec.hiddenTests}`)];
 
-  const isolation = ctx.isolation === undefined ? detectNetworkIsolation() : ctx.isolation;
-  if (!isolation && !ctx.unsafeNoIsolation) {
+  const sandbox: SandboxStatus = ctx.sandbox === false ? { available: false, reason: "sandbox disabled for this run" } : detectSandbox();
+  if (!sandbox.available && !ctx.unsafeNoSandbox) {
     return [
       ...checks,
       notRun(
         id("tests"),
-        "the delivered code was not executed: no network isolation here (needs `unshare -rn`, i.e. Linux with unprivileged user namespaces). " +
-          "Run the benchmark on such a machine, or pass --unsafe-code to run it with filesystem limits only, on a disposable machine"
+        `the delivered code was not executed: no sandbox here (${sandbox.reason}). It needs Linux with unprivileged user namespaces and util-linux. ` +
+          "Run the benchmark on such a machine, or pass --unsafe-code to run it unsandboxed on a disposable machine (Node's permission model alone is not a security boundary)"
       ),
     ];
   }
@@ -136,25 +129,28 @@ export function validateCodeTests(spec: CodeSpec, ctx: CodeContext): CheckResult
       `--max-old-space-size=${CODE_HEAP_MB}`,
       "--permission",
       `--allow-fs-read=${work}`,
+      ...nodeHardeningFlags(),
       "--experimental-test-isolation=none",
       "--test",
       "--test-reporter=tap",
       hiddenName,
       ...visible,
     ];
-    const [command, ...args] = isolation ? [...isolation, process.execPath, ...nodeArgs] : [process.execPath, ...nodeArgs];
     const timeoutMs = spec.timeoutMs ?? CODE_TIMEOUT_MS;
-    const run = spawnSync(command, args, {
-      cwd: work,
-      encoding: "utf8",
+    const options = {
+      encoding: "utf8" as const,
       timeout: timeoutMs,
-      killSignal: "SIGKILL",
+      killSignal: "SIGKILL" as const,
       maxBuffer: 4 * 1024 * 1024,
       env: { PATH: process.env.PATH ?? "", NODE_ENV: "test" },
-    });
+    };
+    const node = nodeBinary();
+    const run = sandbox.available
+      ? runSandboxed(node, nodeArgs, { readOnly: [work, node], cwd: work }, options)
+      : spawnSync(node, nodeArgs, { ...options, cwd: work });
     const output = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
     const counts = tapCounts(output);
-    const where = isolation ? "network-isolated" : "UNSAFE: network NOT isolated (--unsafe-code)";
+    const where = sandbox.available ? "sandboxed: own filesystem view, no network" : "UNSAFE: not sandboxed (--unsafe-code)";
     const timedOut = (run.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
     if (timedOut) {
       checks.push(fail(id("tests"), `test run did not finish within the ${Math.round(timeoutMs / 1000)}s limit (killed)`));

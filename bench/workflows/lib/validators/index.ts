@@ -40,8 +40,12 @@ export interface ValidationContext {
   network: boolean;
   officeReopen: boolean;
   soffice: string | null;
-  /** Run delivered code without network isolation (the operator's --unsafe-code). */
+  /** Run delivered code without the sandbox (the operator's --unsafe-code). */
   unsafeCode?: boolean;
+  /** Open delivered office files in LibreOffice without the sandbox (the operator's --unsafe-office). */
+  unsafeOffice?: boolean;
+  /** Undefined = detect the sandbox. false = behave as if none can be built (tests of the refusal paths). */
+  sandbox?: false;
 }
 
 export function appliesTo(spec: ValidatorSpec, scope: BenchScope): boolean {
@@ -82,6 +86,8 @@ export async function runValidator(spec: ValidatorSpec, ctx: ValidationContext):
           enabled: ctx.officeReopen,
           scratchDir: ctx.scratchDir,
           reviewDir: ctx.reviewDir,
+          unsafeNoSandbox: ctx.unsafeOffice === true,
+          sandbox: ctx.sandbox,
         });
       case "citations":
         return validateCitations(spec, ctx.outputsDir, ctx.fixturesDir);
@@ -93,7 +99,8 @@ export async function runValidator(spec: ValidatorSpec, ctx: ValidationContext):
           fixturesDir: ctx.fixturesDir,
           hiddenDir: ctx.hiddenDir,
           scratchDir: ctx.scratchDir,
-          unsafeNoIsolation: ctx.unsafeCode === true,
+          unsafeNoSandbox: ctx.unsafeCode === true,
+          sandbox: ctx.sandbox,
         });
       case "extraction":
         return validateExtraction(spec, ctx.outputsDir);

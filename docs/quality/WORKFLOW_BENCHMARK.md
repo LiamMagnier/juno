@@ -40,7 +40,7 @@ comparing products.
 |---|---|
 | `passed` | The product delivered, every automated check passed, and, where the workflow needs judgement, a reviewer who is not the executor scored the exact bytes above the bar. |
 | `failed` | The product errored or timed out, or a check rejected the deliverable. Includes an observed cost over budget. |
-| `unverified` | The deliverable exists, but a check could not run (LibreOffice missing, no network for URL liveness) or human review is pending. Never rounded up. |
+| `unverified` | The deliverable exists, but a check could not run (LibreOffice missing, no sandbox for untrusted code or documents, no network for URL liveness) or human review is pending. Never rounded up. |
 | `unsupported` | The product lacks the capability, backed by dated official evidence (`source`, `accessedAt`, `note`). A missing account is `not_run`. |
 | `not_run` | Nothing ran. The record gives the exact reason. |
 
@@ -94,7 +94,15 @@ to accept a correct deliverable and reject a wrong one.
   or pptx is rendered to PDF; its page count is checked, and the PDF is kept
   under `review/` for the reviewer. A workbook is **recalculated from
   scratch**, so a formula whose cached value disagrees with what it computes
-  fails.
+  fails. The documents come from untrusted products, and LibreOffice has had
+  document-triggered code-execution and external-link bugs, so `soffice` runs
+  in the same sandbox as delivered code (see code_tests below), with
+  LibreOffice's own configuration read-only, a scratch copy of the one file
+  writable, a private `/tmp`, and a minimal environment (`PATH`, `HOME` set to
+  the scratch directory, `LANG`): no provider key or token is in reach. Where
+  the sandbox cannot be built the check is `not_run` and the file is not
+  opened, unless the operator passes `--unsafe-office` (disposable machines
+  only).
 - **pdf** (pdf.js), **html** (escaping, print rules, no script), **text**
   (word count, required and forbidden forms, language, bullets, a final-answer
   line), **facts** (JSON with a tolerance), **constraints** (any valid
@@ -105,19 +113,40 @@ to accept a correct deliverable and reject a wrong one.
   offline it is `not_run`.
 - **code_tests:** the delivered project is copied with the held-out tests
   beside it and run. Visible tests must be byte-identical to the fixture.
-  Delivered code is untrusted, and the containment has four layers. (1) The
-  delivered tree is walked with `lstat` first. Any symlink, FIFO, socket or
-  device fails the check ("symlink in delivered project") before anything is
-  read or run, because Node's permission model follows symlinks. (2) The
-  tests run under `node --permission`: reads only inside the scratch copy, no
-  writes, no child processes. (3) The child runs under `unshare -rn`, an
-  empty network namespace with no usable interface, so nothing can be sent
-  anywhere, the host's loopback included. Where `unshare -rn` is not
-  available (macOS, or Linux without unprivileged user namespaces) the check
-  is `not_run` and the code is not executed, unless the operator passes
-  `--unsafe-code` (filesystem limits only; use a disposable machine). (4) A
-  15 s timeout with SIGKILL and a 256 MB heap cap. Each coding workflow's
-  held-out tests are shown to pass a correct fix and fail the fixture.
+  Delivered code is untrusted. (1) The delivered tree is walked with `lstat`
+  first. Any symlink, FIFO, socket or device fails the check ("symlink in
+  delivered project") before anything is read or run. (2) **The sandbox is
+  the security boundary** (`validators/sandbox.ts`, util-linux only:
+  `unshare`, `mount`, `chroot`, `setpriv`). The tests run in their own user,
+  mount, network, PID, IPC and UTS namespaces, chrooted into a fresh tmpfs
+  root that holds only `/usr`, `/lib*`, `/bin`, `/sbin` and
+  `/etc/ld.so.cache` (read-only), four `/dev` nodes, the node binary and the
+  scratch copy (read-only). The host's home, the repo, `/tmp`, `/run` and
+  `/var/run` are not there, so no Unix socket reached by path (Docker, the
+  D-Bus session bus, local Postgres) and no file outside the copy (a
+  browser's cookie store, an app database) exists inside, whatever API the
+  code uses. Nothing on the host can be written. The network namespace has
+  only a loopback interface, which is down: no TCP or UDP anywhere (the
+  host's loopback included), and abstract Unix sockets are per network
+  namespace, so they are cut as well. Capabilities are dropped with
+  `no_new_privs`, and the PID namespace hides host processes. Whether the
+  sandbox can be built is probed once per run by running node inside it and
+  checking what it sees. Where it cannot be built (macOS, or Linux without
+  unprivileged user namespaces) the check is `not_run` with the reason and
+  the code is not executed, unless the operator passes `--unsafe-code`
+  (disposable machines only). (3) Node's permission model as well (reads only
+  inside the copy, no writes, no child processes, workers or native addons),
+  with `node:sqlite` switched off (`--no-experimental-sqlite`) because SQLite
+  ignores the permission model. **The permission model is not a sandbox**:
+  Node's own documentation says it does not protect against malicious code.
+  It is defence in depth inside the sandbox, and the only layer left under
+  `--unsafe-code`. (4) A 15 s timeout with SIGKILL (`unshare --kill-child`
+  takes the whole sandbox with it) and a 256 MB heap cap. Each coding
+  workflow's held-out tests are shown to pass a correct fix and fail the
+  fixture. Containment tests show that a host Unix socket, a POST to the
+  host's loopback, a read of a host file and `node:sqlite` reads and writes
+  outside the copy all fail, both through the validator and with node run in
+  the sandbox without the permission model.
 - **Outputs in general:** every run's outputs are walked with `lstat`. A
   symlink or special file anywhere fails the run (`outputs:no-links`), no
   validator opens anything, and nothing is hashed through a link. Imported
@@ -161,7 +190,9 @@ the import fail rather than be followed.
 ## Baseline 2026-10-25 (`bench/workflows/results/baseline-2026-10-25/`)
 
 Environment: no model provider key, no network, LibreOffice 24.2, code
-sandbox network-isolated (`unshare -rn`). Re-recorded at commit `0d98b3cfc`
+sandbox network-isolated (`unshare -rn`; the filesystem sandbox described
+above came later, and rescoring this baseline under it gives the same
+checks). Re-recorded at commit `0d98b3cfc`
 after the containment and scope fixes (same states as the first recording;
 `lang-03` now also reopens `note.xlsx`). See `report.md` in that folder for
 every check.

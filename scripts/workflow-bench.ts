@@ -4,16 +4,18 @@
  *   list                               the workflows, their inputs, tools and validators
  *   run [--only a,b] [--attempts n]    Alevr: offline pipeline + live model-via-router
  *       [--live] [--network] [--no-office] [--no-offline] [--run-id id] [--out dir]
- *       [--unsafe-code]                --live makes real model calls (needs a provider key) through
+ *       [--unsafe-code] [--unsafe-office]
+ *                                      --live makes real model calls (needs a provider key) through
  *                                      the router, scope model_via_router (NOT end_to_end: no product
  *                                      system prompt, tools or chat route; never counts for acceptance);
  *                                      everything that cannot run says not_run and why.
- *                                      --unsafe-code runs delivered code without network isolation
- *                                      when `unshare -rn` is unavailable (disposable machines only)
+ *                                      Delivered code and office files run in a namespace sandbox
+ *                                      (Linux). Where it cannot be built they are not_run unless
+ *                                      --unsafe-code / --unsafe-office (disposable machines only)
  *   prepare --product <id> --dir <dir> folders for a person to run the prompts in a
  *                                      product (chatgpt, claude, gemini, perplexity, grok, alevr)
  *   import --product <id> --dir <dir>  validate those conducted runs → results.json + report.md
- *       [--unsafe-code]                (refuses to start when the frozen fixtures changed)
+ *       [--unsafe-code] [--unsafe-office] (refuses to start when the frozen fixtures changed)
  *   review-template <results.json> <workflowId> [column]
  *                                      print a review.json skeleton bound to the artifact hashes
  *   rescore <results.json>             re-validate stored outputs (after a review, or with LibreOffice)
@@ -36,8 +38,8 @@ import { BENCH_DIR, verifyFixtures, writeManifest } from "../bench/workflows/lib
 import { STATE_LABEL, renderReport, summarize } from "../bench/workflows/lib/report";
 import { rescoreRecord, runBenchmark, type Executor } from "../bench/workflows/lib/runner";
 import { BENCH_VERSION, type BenchResults, type RunRecord } from "../bench/workflows/lib/types";
-import { detectNetworkIsolation } from "../bench/workflows/lib/validators/code";
 import { findSoffice } from "../bench/workflows/lib/validators/office";
+import { detectSandbox } from "../bench/workflows/lib/validators/sandbox";
 
 const argv = process.argv.slice(2);
 const command = argv[0] ?? "list";
@@ -128,11 +130,15 @@ function printSummary(records: RunRecord[]) {
   }
 }
 
-function codeSandboxLine(): string {
-  if (detectNetworkIsolation()) return "code sandbox: network-isolated (unshare -rn), filesystem-limited (node --permission)";
-  return flag("unsafe-code")
-    ? "code sandbox: UNSAFE — no network isolation here, delivered code runs with filesystem limits only (--unsafe-code)"
-    : "code sandbox: no network isolation here (needs `unshare -rn`); coding checks will be not_run unless --unsafe-code";
+function sandboxLine(): string {
+  const sandbox = detectSandbox();
+  if (sandbox.available) return "sandbox: delivered code and office files run in their own namespaces (no network; only system dirs and a scratch copy visible)";
+  const unsafe = [flag("unsafe-code") && "code (--unsafe-code)", flag("unsafe-office") && "office files (--unsafe-office)"].filter(Boolean);
+  return (
+    `sandbox: unavailable here (${sandbox.reason}). ` +
+    (unsafe.length ? `UNSAFE: running untrusted ${unsafe.join(" and ")} without it; ` : "") +
+    "anything not opted in is not_run"
+  );
 }
 
 function requireFrozenFixtures() {
@@ -153,7 +159,7 @@ async function run() {
   executors.push(liveExecutor({ product: alevrProduct("api"), call: flag("live") && providers.length ? await alevrLiveCall() : null, providersConfigured: providers, network }));
   console.log(`\nWorkflow benchmark ${BENCH_VERSION} — run ${runId}: ${workflows.length} workflow(s), ${executors.length} executor(s)`);
   console.log(`  LibreOffice: ${soffice ?? "not found (office reopen checks will be not_run)"} · network: ${network ? "on" : "off"} · providers configured: ${providers.join(", ") || "none"}`);
-  console.log(`  ${codeSandboxLine()}\n`);
+  console.log(`  ${sandboxLine()}\n`);
   const records: RunRecord[] = [];
   for (const executor of executors) {
     records.push(
@@ -167,6 +173,7 @@ async function run() {
         officeReopen: !flag("no-office"),
         soffice,
         unsafeCode: flag("unsafe-code"),
+        unsafeOffice: flag("unsafe-office"),
         onRecord: (r) => console.log(line(r)),
       }))
     );
@@ -186,9 +193,9 @@ async function importRuns() {
   const runId = option("run-id") ?? defaultRunId(`import-${product}`);
   const outDir = path.resolve(option("out") ?? path.join(BENCH_DIR, "results", runId));
   const soffice = flag("no-office") ? null : findSoffice();
-  console.log(`  ${codeSandboxLine()}`);
+  console.log(`  ${sandboxLine()}`);
   const executor = importedExecutor({ dir: path.resolve(dir), product: product === "alevr" ? alevrProduct("web") : { id: product, name: product, version: null, surface: "web" } });
-  const records = await runBenchmark({ runId, outDir, executor, workflows: selectedWorkflows(), network: flag("network"), officeReopen: !flag("no-office"), soffice, unsafeCode: flag("unsafe-code"), onRecord: (r) => console.log(line(r)) });
+  const records = await runBenchmark({ runId, outDir, executor, workflows: selectedWorkflows(), network: flag("network"), officeReopen: !flag("no-office"), soffice, unsafeCode: flag("unsafe-code"), unsafeOffice: flag("unsafe-office"), onRecord: (r) => console.log(line(r)) });
   printSummary(records);
   await writeResults(outDir, { benchVersion: BENCH_VERSION, runId, createdAt: new Date().toISOString(), environment: await detectEnvironment({ network: flag("network") }), workflowCount: records.length, records });
 }
@@ -204,10 +211,11 @@ async function rescore() {
   const results = loadResults(file);
   const outDir = path.dirname(path.resolve(file));
   const soffice = flag("no-office") ? null : findSoffice();
+  console.log(`  ${sandboxLine()}`);
   const records: RunRecord[] = [];
   for (const record of results.records) {
     const workflow = workflowById(record.workflowId);
-    records.push(workflow ? await rescoreRecord(record, workflow, outDir, { network: flag("network"), officeReopen: !flag("no-office"), soffice, unsafeCode: flag("unsafe-code") }) : record);
+    records.push(workflow ? await rescoreRecord(record, workflow, outDir, { network: flag("network"), officeReopen: !flag("no-office"), soffice, unsafeCode: flag("unsafe-code"), unsafeOffice: flag("unsafe-office") }) : record);
     console.log(line(records.at(-1)!));
   }
   printSummary(records);
