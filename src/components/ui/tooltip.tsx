@@ -56,7 +56,13 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        "surface-float z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control px-2.5 py-1 text-caption text-foreground data-[state=delayed-open]:animate-tooltip-in data-[state=closed]:animate-tooltip-out",
+        // 2026-10: an ink tooltip (ChatGPT, Claude): near-black with white
+        // text in both themes, so a label reads at a glance against any
+        // surface and never looks like another card. `.ui-tooltip` re-points
+        // the ink tokens inside it, so muted lines and glyphs stay legible.
+        // A rich hover card opts back into the popover surface with
+        // `.cite-card`.
+        "ui-tooltip z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control px-2.5 py-1.5 text-caption font-medium data-[state=delayed-open]:animate-tooltip-in data-[state=closed]:animate-tooltip-out",
         className
       )}
       {...props}

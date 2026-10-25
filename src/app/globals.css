@@ -2176,30 +2176,6 @@
     color: hsl(var(--popover-foreground));
     box-shadow: var(--shadow-float);
   }
-  /* 2026-10 premium pass: menus, submenus and popovers are frosted — the
-     restrained glass PRODUCT.md asks for. Mostly opaque (88%) so rows stay
-     legible over any content, with a blur and a saturation lift so what is
-     under the layer tints it instead of showing through it. Only where the
-     browser composites backdrop filters; elsewhere the solid ground above. */
-  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .overlay-glass {
-      background-color: hsl(var(--popover) / 0.88);
-      -webkit-backdrop-filter: blur(24px) saturate(1.6);
-      backdrop-filter: blur(24px) saturate(1.6);
-    }
-    .dark .overlay-glass {
-      background-color: hsl(var(--popover) / 0.82);
-      box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), var(--shadow-float);
-    }
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    .overlay-glass,
-    .dark .overlay-glass {
-      background-color: hsl(var(--popover));
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-  }
   @media (prefers-contrast: more) {
     .overlay-glass,
     .surface-float {
@@ -4876,4 +4852,36 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
    control to the foreground ink on hover, focus, open or highlight. */
 :where(.text-muted-foreground:not(:hover, :focus-visible, [data-state="open"], [data-highlighted], [aria-expanded="true"])) > svg.ji:not([class*="text-"]) {
   color: hsl(var(--icon-muted));
+}
+
+/* Ink tooltips (ui/tooltip.tsx). The tokens are re-pointed rather than the
+   text recoloured, so anything inside (a muted second line, a kbd, a glyph)
+   keeps its relative weight on the dark ground. */
+.ui-tooltip {
+  --foreground: 0 0% 98%;
+  --popover-foreground: 0 0% 98%;
+  --muted-foreground: 220 6% 72%;
+  --icon-muted: 220 6% 80%;
+  --border: 0 0% 100% / 0.14;
+  background-color: hsl(222 9% 12%);
+  color: hsl(0 0% 98%);
+  box-shadow: 0 4px 14px -4px hsl(0 0% 0% / 0.35), 0 0 0 0.5px hsl(0 0% 100% / 0.06);
+}
+.dark .ui-tooltip {
+  background-color: hsl(225 6% 22%);
+  box-shadow: 0 6px 18px -6px hsl(0 0% 0% / 0.7), 0 0 0 0.5px hsl(0 0% 100% / 0.1);
+}
+/* A rich hover card (a source) is a popover, not a label. */
+.ui-tooltip.cite-card {
+  --foreground: inherit;
+  --popover-foreground: inherit;
+  --muted-foreground: inherit;
+  --icon-muted: inherit;
+  --border: inherit;
+  border-radius: 14px;
+  font-weight: 400;
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border) / 0.9);
+  box-shadow: var(--shadow-float);
 }

@@ -577,3 +577,8 @@ div:has(> .live-slider:active) > div > .live-value {
 @media (prefers-reduced-motion: reduce) {
   .live-flash-inner { transition: none; }
 }
+
+/* Inline citation pill: ink flips to the reader's ink on hover so the target
+   is obvious without growing (source-chip.tsx). */
+.prose-juno a.cite-pill { color: hsl(var(--muted-foreground)); }
+.prose-juno a.cite-pill:hover { color: hsl(var(--background)); }

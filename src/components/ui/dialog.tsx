@@ -134,7 +134,7 @@ const DialogTitle = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
   // `text-heading` carries 1.125rem / 600 / -0.006em itself.
-  <DialogPrimitive.Title ref={ref} className={cn("font-sans text-heading", className)} {...props} />
+  <DialogPrimitive.Title ref={ref} className={cn("font-sans text-heading font-semibold tracking-[-0.01em]", className)} {...props} />
 ));
 DialogTitle.displayName = DialogPrimitive.Title.displayName;
 

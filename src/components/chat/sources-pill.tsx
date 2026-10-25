@@ -147,30 +147,29 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
         {...(Row === "span"
           ? { title: `${PRODUCT_NAME} did not link this: it is not a web address.` }
           : {})}
+        style={{ animationDelay: `${Math.min(index - 1, 8) * 30}ms` }}
         className={cn(
-          "group/row relative flex items-center gap-2.5 rounded-menu p-2",
+          "group/row relative flex items-center gap-2.5 rounded-card border border-border/60 bg-card p-2.5",
+          "motion-safe:animate-rise-in [animation-fill-mode:backwards]",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           // Hover is TONAL: a list row is text on the panel until the pointer
           // reaches it, and then it takes the --accent fill (PREMIUM_AUDIT §3.3).
           // It used to resolve into a card that rose 2px and cast `shadow-lift`,
           // which made the bibliography the one list in the product whose rows
           // floated off the page under the cursor.
-          "hover:bg-accent",
+          "hover:border-border hover:bg-accent",
           // The row is an <a>: it is reachable by keyboard, and the entire
           // "this is a link" treatment used to live on :hover alone.
           "focus-visible:bg-accent"
         )}
       >
         {/* Keeps the inline [n] chips and this list readable as the same numbering. */}
-        <span className="w-4 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">
-          {index}
-        </span>
         <SourceFavicon url={source.url} variant="list" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-body leading-tight text-foreground/90 transition-colors duration-fast ease-out-soft group-hover/row:text-foreground motion-reduce:transition-none">
-            {titleOf(source)}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-ui font-medium leading-tight text-foreground">{titleOf(source)}</span>
+          <span className="truncate text-caption text-muted-foreground">
+            <span className="tabular-nums">{index}</span> · {hostOf(source.url)}
           </span>
-          <span className="truncate font-mono text-caption text-muted-foreground">{hostOf(source.url)}</span>
         </span>
         <ActionIcons.external
           aria-hidden="true"
@@ -242,9 +241,11 @@ export function SourcesPill({
         // down while open — the same object as the follow-up chips beside it.
         data-state={open ? "on" : "off"}
         className={cn(
-          "group/pill control-neu relative z-0 inline-flex h-9 items-center gap-2 rounded-full pl-1.5 pr-3 hover:z-10",
-          // 44px touch target keeps its concentric geometry: radius 22 − 10px inset = 12.
-          "coarse:h-11 coarse:pl-2.5"
+          // 2026-10: the size of the text around it (ChatGPT's "Sources"
+          // button): a 28px soft capsule, sans label, small stacked logos.
+          "group/pill relative z-0 inline-flex h-7 items-center gap-1.5 rounded-full bg-foreground/[0.05] pl-1 pr-2.5 text-ui font-medium text-muted-foreground hover:z-10",
+          "transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-foreground/[0.09] hover:text-foreground active:scale-[0.97] motion-reduce:transition-none",
+          "data-[state=on]:bg-foreground/[0.09] data-[state=on]:text-foreground coarse:h-10 coarse:pl-2"
         )}
       >
         <span className="flex" aria-hidden="true">
@@ -257,20 +258,18 @@ export function SourcesPill({
               // cut-out rather than a stack of discs. ring-2 around a size-5 box
               // is a 24px visual circle — exactly the pill's 18px radius minus
               // its 6px inset, so the avatars sit concentric inside it.
-              className={cn("ring-2 ring-card", i > 0 && "-ml-1.5")}
+              className={cn("size-[18px] ring-2 ring-background", i > 0 && "-ml-1.5")}
               // First logo on top, per the stacked-avatar convention.
               style={{ zIndex: cluster.length - i }}
             />
           ))}
         </span>
-        <span className="font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/pill:text-foreground motion-reduce:transition-none">
-          Sources
-        </span>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">{sources.length}</span>
+        <span>Sources</span>
+        <span className="tabular-nums opacity-70">{sources.length}</span>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -286,7 +285,7 @@ export function SourcesPill({
         )}
       >
         <div className={cn("min-h-0", settled ? "overflow-visible" : "overflow-hidden")} inert={!open}>
-          <ul className="mt-1.5 flex max-w-xl flex-col gap-0.5 py-0.5">
+          <ul className="mt-2 grid grid-cols-1 gap-1.5 py-0.5 sm:grid-cols-2">
             {sources.map((source, i) => (
               // Sources can repeat a URL across citations, so the index has to
               // be part of the key — it's also what the row displays.

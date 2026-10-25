@@ -22,6 +22,22 @@ export function hostOf(url: string): string {
   }
 }
 
+const SECOND_LEVEL = new Set(["co", "com", "org", "gov", "ac", "net", "edu", "gouv", "govt"]);
+
+/**
+ * The short name a reader knows a site by, the label ChatGPT puts in its
+ * inline citations: "theguardian", "ofgem", "nature", "gov.uk".
+ */
+export function siteNameOf(url: string): string {
+  const host = hostOf(url);
+  if (parsePrivateSourceUrl(url) || !host.includes(".")) return host;
+  const parts = host.split(".");
+  if (parts.length <= 2) return parts.length === 2 && SECOND_LEVEL.has(parts[0]) ? host : parts[0];
+  const sld = parts[parts.length - 2];
+  const name = SECOND_LEVEL.has(sld) ? parts[parts.length - 3] : sld;
+  return name === "gov" || name.length <= 2 ? host.split(".").slice(-3).join(".") : name;
+}
+
 /** A human title, falling back to the host when the model handed us a URL as the title. */
 export function titleOf(source: ClientSource): string {
   const title = source.title?.trim();
@@ -222,8 +238,8 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
             aria-label={`Source ${index}: ${title} — ${host}`}
             data-private-source={own.kind}
             className={cn(
-              "relative z-0 mx-[0.15em] inline-flex h-[1.3em] items-center gap-[0.3em] rounded-full",
-              "border border-border/70 bg-secondary px-[0.4em] align-middle text-[0.72em] leading-none"
+              "relative z-0 ml-[0.3em] inline-flex h-[1.5em] items-center gap-[0.3em] rounded-full",
+              "bg-foreground/[0.06] px-[0.55em] align-[0.1em] text-[0.7em] font-medium leading-none text-muted-foreground"
             )}
           >
             <PrivateSourceIcon kind={own.kind} className="size-[0.9em] text-muted-foreground" />
@@ -244,8 +260,8 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
           <span
             aria-label={`Source ${index}: ${title} — link withheld, it is not a web address`}
             className={cn(
-              "relative z-0 mx-[0.15em] inline-flex h-[1.3em] items-center gap-[0.3em] rounded-full",
-              "border border-dashed border-border/70 bg-card px-[0.4em] align-middle text-[0.72em] leading-none"
+              "relative z-0 ml-[0.3em] inline-flex h-[1.5em] items-center gap-[0.3em] rounded-full",
+              "border border-dashed border-border/70 px-[0.55em] align-[0.1em] text-[0.7em] font-medium leading-none text-muted-foreground"
             )}
           >
             <Globe aria-hidden weight="bold" className="size-[0.9em] opacity-50" />
@@ -274,31 +290,47 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
           rel="noopener noreferrer"
           aria-label={`Source ${index}: ${title} — ${host}`}
           className={cn(
-            "group/cite relative z-0 mx-[0.15em] inline-flex h-[1.3em] items-center gap-[0.3em] rounded-full",
-            "border border-border/70 bg-card px-[0.4em] align-middle text-[0.72em] leading-none",
+            // 2026-10: ChatGPT-sized. The site's short name in a soft grey
+            // capsule, a step smaller than the prose and sitting on its
+            // x-height, no border, no favicon: a citation is a footnote to the
+            // sentence, never louder than it.
+            "cite-pill group/cite relative z-0 ml-[0.3em] inline-flex h-[1.5em] max-w-[11em] items-center rounded-full",
+            "bg-foreground/[0.06] px-[0.6em] align-[0.1em] text-[0.7em] font-medium leading-none text-muted-foreground",
             // `.prose-juno a` (0,1,1) sets an underline + the primary colour on
             // every link; a plain utility (0,1,0) loses to it, so this one has
             // to be important. Coral is reserved for selected state — a chip is
             // neither selected nor a body link.
             "!no-underline",
             "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-            "hover:border-border hover:bg-accent"
+            "hover:bg-foreground hover:text-background"
           )}
         >
-          <SourceFavicon url={source.url} variant="inline" />
-          <span className="font-mono tabular-nums text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/cite:text-foreground motion-reduce:transition-none">
-            {index}
-          </span>
+          <span className="truncate">{siteNameOf(source.url)}</span>
         </a>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[20rem]">
-        <span className="block truncate font-medium">{title}</span>
-        <span className="block truncate font-mono text-[0.9em] opacity-65">{host}</span>
-        {snippet && (
-          // Clamped: a snippet is a scent of the page, not the page.
-          <span className="mt-1 line-clamp-3 text-[0.9em] leading-snug opacity-80">{snippet}</span>
-        )}
+      <TooltipContent className="cite-card w-[20rem] max-w-[calc(100vw-2rem)] p-0">
+        <SourceCard source={source} index={index} />
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * A source as a small card: whose it is, what it is called, the passage the
+ * answer leaned on, and where it goes. The inline citation's hover and the
+ * Sources panel draw the same object.
+ */
+export function SourceCard({ source, index }: { source: ClientSource; index?: number }) {
+  const snippet = source.snippet?.trim();
+  return (
+    <span className="flex flex-col gap-1.5 p-3 text-left">
+      <span className="flex items-center gap-2 text-caption text-muted-foreground">
+        <SourceFavicon url={source.url} variant="list" />
+        <span className="min-w-0 flex-1 truncate">{hostOf(source.url)}</span>
+        {index !== undefined ? <span className="tabular-nums opacity-70">{index}</span> : null}
+      </span>
+      <span className="line-clamp-2 text-ui font-semibold leading-snug text-popover-foreground">{titleOf(source)}</span>
+      {snippet ? <span className="line-clamp-3 text-caption leading-relaxed text-muted-foreground">{snippet}</span> : null}
+    </span>
   );
 }
