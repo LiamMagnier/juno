@@ -916,14 +916,26 @@ research runs for the better part of an hour). A dropped turn is therefore
 offered **Reconnect**, and `regenerate()` intercepts itself into one while a
 reconnectable generation exists: the answer is already paid for.
 
-**Cancelling across processes.** `POST /api/chat/cancel` aborts through the
-in-memory registry first (instant, same process) and also records
-`cancelRequestedAt` on the receipt. A receipt-backed generation polls that flag
-every ~2 s from its stream loop with an id-only select, so a Stop pressed in
-another tab or served by another process still lands. The poll routes the
-result back through `cancelGeneration`, which marks the generation `stopped` —
-that is what makes the terminal state "user stopped" (partial kept, charge
-kept) rather than an error (refunded).
+**Cancelling across processes.** `POST /api/chat/cancel`
+(`chat/stop-generation.ts`) aborts through the in-memory registry first
+(instant, same process, nothing written). Otherwise it records the Stop
+durably — a `generation:cancel:<userId>:<generationId>` row in `RateLimit`
+(idempotent, 10-minute expiry) plus `cancelRequestedAt` on a receipt-backed
+turn's receipt — and every backend process runs one signal pump
+(`chat/generation-signals.ts`) that, while it holds any generation, reads the
+cancel rows and receipt flags of all of them in one query per second. Every
+turn is covered, receipt or not, saved or private, and a Stop pressed before
+the turn registered (a client that names its own generation id) lands as soon
+as it does. The pump routes the result back through `cancelGeneration`, so the
+terminal state is "user stopped" (partial kept, charge kept) rather than an
+error (refunded); the registry records one abort cause and the first one wins,
+so a Stop racing a drain ends one deterministic way. Saved turns also hold a
+live lease (`generation:live:…`, renewed every 5 s, 20 s expiry) so the cancel
+route can say honestly whether a terminal frame is coming (`cancelled`,
+`delivery: local | remote | queued | none`) and the resume route can tail a
+turn that another process is generating instead of calling it over. Proven by
+`tests/chat-cross-process-stop.integration.test.ts`: two Node processes, one
+Postgres, Stop delivered in well under the 3 s budget.
 
 ### 5.9 A skill on a chat turn
 

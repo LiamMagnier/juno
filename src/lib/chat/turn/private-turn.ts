@@ -207,6 +207,9 @@ export async function runPrivateTurn({
     controller: generationController,
     model: modelId,
     conversationId: "private",
+    // No live lease: a private turn writes nothing on its own. A Stop from
+    // another process still reaches it through the cancel row its owner writes.
+    private: true,
   });
 
   const stream = new ReadableStream<Uint8Array>({
