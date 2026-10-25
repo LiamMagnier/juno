@@ -89,3 +89,47 @@ test("a single pane, or panes without sources, share nothing", () => {
   assert.deepEqual(empty.sharedByAll, []);
   assert.deepEqual(empty.panes.map((p) => p.total), [0, 0]);
 });
+
+test("URLs with parentheses are read whole, as GFM and CommonMark read them", () => {
+  const MERCURY = "https://en.wikipedia.org/wiki/Mercury_(planet)";
+  const links = extractAnswerLinks(
+    [
+      `Read [Mercury](${MERCURY}) first.`,
+      `With a title: [The planet](${MERCURY} "Mercury").`,
+      `Or the bare link ${MERCURY}.`,
+      `Inside a sentence's own brackets (see ${MERCURY}).`,
+      "Plain brackets close a sentence (https://example.com/x), not a URL.",
+      "Deeper nesting falls back to the bare-URL rule: [f](https://example.com/f_(a_(b))",
+    ].join("\n")
+  );
+  assert.deepEqual(links, [
+    // Markdown links first, then bare URLs, each in order.
+    { url: MERCURY, title: "Mercury" },
+    { url: MERCURY, title: "The planet" },
+    { url: MERCURY, title: "" },
+    { url: MERCURY, title: "" },
+    { url: "https://example.com/x", title: "" },
+    { url: "https://example.com/f_(a_(b))", title: "" },
+  ]);
+});
+
+test("a percent-encoded parenthesis is the same page as a literal one", () => {
+  const key = normalizeCitationUrl("https://en.wikipedia.org/wiki/Mercury_(planet)")?.key;
+  assert.equal(key, "en.wikipedia.org/wiki/Mercury_(planet)");
+  assert.equal(normalizeCitationUrl("https://en.wikipedia.org/wiki/Mercury_%28planet%29")?.key, key);
+  assert.equal(normalizeCitationUrl("https://en.wikipedia.org/wiki/Mercury_%28planet%29/")?.key, key);
+  // An escaped slash is a different path and stays escaped (hex upper-cased, so its spelling does not matter).
+  assert.equal(normalizeCitationUrl("https://example.com/a%2fb")?.key, "example.com/a%2Fb");
+  assert.notEqual(normalizeCitationUrl("https://example.com/a%2Fb")?.key, normalizeCitationUrl("https://example.com/a/b")?.key);
+});
+
+test("the same page returned by one model and linked by another is shared, parentheses and all", () => {
+  const result = compareCitations([
+    { paneId: "a", sources: [src("https://en.wikipedia.org/wiki/Mercury_(planet)", "Mercury")], content: "" },
+    { paneId: "b", sources: [], content: "Per [Wikipedia](https://en.wikipedia.org/wiki/Mercury_(planet))." },
+    { paneId: "c", sources: [], content: "(https://en.wikipedia.org/wiki/Mercury_%28planet%29)" },
+  ]);
+  assert.deepEqual(result.sharedByAll.map((r) => r.url), ["https://en.wikipedia.org/wiki/Mercury_(planet)"]);
+  assert.equal(result.union, 1);
+  assert.deepEqual(result.panes.map((p) => [p.total, p.shared]), [[1, 1], [1, 1], [1, 1]]);
+});

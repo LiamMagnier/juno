@@ -27,8 +27,11 @@ import { cn } from "@/lib/utils";
 /**
  * The comparison's verdict strip, between the composer and the panes.
  *
- * Line one says what every model was given, and that the page checked it
- * (the input fingerprint each pane recorded matches the spec's). Line two is
+ * Line one says what every model was sent, and that the page checked it
+ * (the request fingerprint each pane recorded from the body it posted
+ * matches the spec's). That check covers the request as this browser sent
+ * it; what each model then ran with is the server's per-pane report, and any
+ * difference there is listed below as a difference. Line two is
  * the verdicts, drawn only from measured latency and from costs whose basis
  * is stated: an estimated cost reads "~". Below that, any condition that
  * was NOT the same for every model, because a comparison that silently
@@ -67,7 +70,7 @@ export function CompareSummary({ report, streaming }: { report: CompareReport; s
   const exportable = !streaming && report.panes.some((pane) => pane.status === "done" || pane.status === "error");
 
   const warnings: string[] = [];
-  if (!report.identicalInput) warnings.push("Not every model received the same input. Run the comparison again.");
+  if (!report.identicalInput) warnings.push("Not every model was sent the same request. Run the comparison again.");
   if (summary.effortsMatch === false || report.panes.some((pane) => pane.effort.honoured === false)) {
     warnings.push(
       `Thinking effort differs: ${report.panes.map((pane) => `${pane.label} ${pane.effort.label.replace(" (planned)", "")}`).join(" · ")}`
@@ -81,6 +84,8 @@ export function CompareSummary({ report, streaming }: { report: CompareReport; s
   for (const label of summary.modelChanged) warnings.push(`The server answered with ${label} instead of the model that was asked for.`);
 
   const verdicts: Array<{ key: string; label: string; value: string; title?: string }> = [];
+  // A stopped answer neither finished nor cost what a full one would: say it sat these out.
+  const stoppedNote = report.panes.some((pane) => pane.cost.partial) ? " Stopped answers are left out." : "";
   if (summary.fastestFirstOutput) {
     verdicts.push({
       key: `first-${summary.fastestFirstOutput.paneId}`,
@@ -94,7 +99,7 @@ export function CompareSummary({ report, streaming }: { report: CompareReport; s
       key: `finish-${summary.fastestFinish.paneId}`,
       label: "First to finish",
       value: `${summary.fastestFinish.label} · ${formatSeconds(summary.fastestFinish.value)}`,
-      title: "Time from sending to the complete answer, measured in this browser",
+      title: `Time from sending to the complete answer, measured in this browser.${stoppedNote}`,
     });
   }
   if (summary.lowestCost) {
@@ -102,9 +107,11 @@ export function CompareSummary({ report, streaming }: { report: CompareReport; s
       key: `cost-${summary.lowestCost.paneId}`,
       label: "Lowest cost",
       value: `${summary.lowestCost.label} · ${formatCost(summary.lowestCost.value, summary.lowestCost.estimated ? "estimated" : "reported_usage")}`,
-      title: summary.lowestCost.allReported
-        ? "Priced from each provider’s reported token usage at list rates"
-        : "Some of these costs are estimates (usage not fully reported), marked ~",
+      title: `${
+        summary.lowestCost.allReported
+          ? "Priced from each provider’s reported token usage at list rates."
+          : "Some of these costs are estimates (usage not fully reported), marked ~."
+      }${stoppedNote}`,
     });
   }
   if (input.webSearch || summary.citations.union > 0) {
@@ -115,6 +122,14 @@ export function CompareSummary({ report, streaming }: { report: CompareReport; s
       title: "Distinct pages across every answer, and how many every model cites",
     });
   }
+
+  // What the same-request check covers, and what it does not: it reads the
+  // request each pane posted, while the server reports per pane what it ran.
+  const inputTip = `${
+    report.identicalInput
+      ? "This browser sent every model the same prompt, search setting, effort and time zone; only the model differs."
+      : "Not every model was sent the same request."
+  } The effort and search each model actually ran with are reported by the server on its pane. Answers are not seeded, so a rerun can differ.`;
 
   const copyMarkdown = async () => {
     try {
@@ -141,14 +156,13 @@ export function CompareSummary({ report, streaming }: { report: CompareReport; s
               ) : (
                 <StatusIcons.warning aria-hidden="true" className="size-3.5" />
               )}
-              {report.identicalInput ? "Same input to every model" : "Inputs differ"}
+              {report.identicalInput ? "Same request sent to every model" : "Requests differ"}
               <span className="font-mono text-muted-foreground">#{input.fingerprint.slice(0, 8)}</span>
+              {/* The tooltip is hover-only; the same sentence for assistive tech. */}
+              <span className="sr-only">. {inputTip}</span>
             </p>
           </TooltipTrigger>
-          <TooltipContent className="max-w-xs">
-            Each model received the same prompt, search setting, effort and time zone. Only the model differs. Answers are not
-            seeded, so a rerun can differ.
-          </TooltipContent>
+          <TooltipContent className="max-w-xs">{inputTip}</TooltipContent>
         </Tooltip>
         <span className="ed-annot">Search {input.webSearch ? "on" : "off"}</span>
         <span className="ed-annot">Effort {input.reasoningEffortLabel.toLowerCase()}</span>

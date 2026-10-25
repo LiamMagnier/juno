@@ -72,6 +72,19 @@ function isTrackingParam(name: string): boolean {
   return lower.startsWith("utm_") || TRACKING_PARAMS.has(lower);
 }
 
+/**
+ * `%28planet%29` and `(planet)` are the same path: decode the escapes of
+ * characters that mean the same either way (RFC 3986 unreserved characters
+ * plus the sub-delimiters models and sites spell both ways), and upper-case
+ * the hex of every other escape, so one page has one key however it was spelled.
+ */
+function decodeSafePercentEscapes(path: string): string {
+  return path.replace(/%([0-9a-fA-F]{2})/g, (escape, hex: string) => {
+    const char = String.fromCharCode(parseInt(hex, 16));
+    return /[A-Za-z0-9\-._~()!*',]/.test(char) ? char : escape.toUpperCase();
+  });
+}
+
 /** The comparable identity of a link, or null for anything that is not an http(s) URL. */
 export function normalizeCitationUrl(raw: string): { key: string; host: string } | null {
   let url: URL;
@@ -87,7 +100,7 @@ export function normalizeCitationUrl(raw: string): { key: string; host: string }
     .filter(([name]) => !isTrackingParam(name))
     .sort(([a, av], [b, bv]) => (a === b ? (av < bv ? -1 : av > bv ? 1 : 0) : a < b ? -1 : 1));
   const query = params.map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join("&");
-  let path = url.pathname || "/";
+  let path = decodeSafePercentEscapes(url.pathname || "/");
   if (path.length > 1) path = path.replace(/\/+$/, "") || "/";
   return { key: `${host}${path === "/" ? "" : path}${query ? `?${query}` : ""}`, host };
 }
@@ -100,24 +113,48 @@ function withoutCode(markdown: string): string {
 const TRAILING_PUNCTUATION = /[.,;:!?'"’”]+$/;
 
 /**
+ * A bare URL's end, the way GFM autolinks find it: trailing punctuation is
+ * prose, and so is a closing parenthesis with no opening one in the URL. So
+ * `(see https://en.wikipedia.org/wiki/Mercury_(planet)).` keeps `(planet)`
+ * and drops the sentence's own `).`.
+ */
+function trimBareUrl(raw: string): string {
+  let url = raw.replace(TRAILING_PUNCTUATION, "");
+  const count = (char: string) => url.split(char).length - 1;
+  while (url.endsWith(")") && count(")") > count("(")) {
+    url = url.slice(0, -1).replace(TRAILING_PUNCTUATION, "");
+  }
+  return url;
+}
+
+/**
+ * A Markdown link's destination: any run of non-space characters in which
+ * parentheses come in balanced pairs (one level deep), as CommonMark allows,
+ * so `[Mercury](https://en.wikipedia.org/wiki/Mercury_(planet))` is read whole.
+ */
+const MD_LINK = /(!?)\[([^\]\n]*)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)(?:\s+"[^"]*")?\)/g;
+/** A bare URL: stops at whitespace, angle brackets, quotes, backticks and `]`; parentheses are settled by `trimBareUrl`. */
+const BARE_URL = /<?(https?:\/\/[^\s<>"'`\]]+)>?/g;
+
+/**
  * The links an answer's prose carries, in order, with the link text when the
  * link is a Markdown link. Images are skipped; so is anything inside code.
  */
 export function extractAnswerLinks(markdown: string): Array<{ url: string; title: string }> {
   const text = withoutCode(markdown);
   const out: Array<{ url: string; title: string }> = [];
-  const mdLink = /(!?)\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)(?:\s+"[^"]*")?\)/g;
   let rest = "";
   let last = 0;
-  for (const match of text.matchAll(mdLink)) {
+  for (const match of text.matchAll(MD_LINK)) {
     rest += text.slice(last, match.index);
     last = (match.index ?? 0) + match[0].length;
     if (match[1] === "!") continue; // an image, not a citation
     out.push({ url: match[3], title: match[2].trim() });
   }
   rest += text.slice(last);
-  for (const match of rest.matchAll(/<?(https?:\/\/[^\s<>"'`)\]]+)>?/g)) {
-    out.push({ url: match[1].replace(TRAILING_PUNCTUATION, ""), title: "" });
+  for (const match of rest.matchAll(BARE_URL)) {
+    const url = trimBareUrl(match[1]);
+    if (url) out.push({ url, title: "" });
   }
   return out;
 }

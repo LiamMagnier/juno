@@ -1,7 +1,7 @@
 import { isAutoModelId } from "@/lib/auto-model";
 import { clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import { effortLabel } from "@/lib/router/receipt";
-import type { ModelInfo } from "@/lib/models";
+import { FREE_DEFAULT_EFFORT, FREE_DEFAULT_MODEL, type ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 
 /**
@@ -13,8 +13,14 @@ import type { ReasoningEffort } from "@/types/chat";
  * from whatever the composer holds now. `buildCompareRequestBody` is the
  * only place the request is assembled, and it differs between panes only in
  * `model` and `generationId`. Each pane records a fingerprint of the shared
- * part of the body it ACTUALLY sent, so "identical input" is something the
- * page checks, not something it claims.
+ * part of the body it ACTUALLY sent, so "the same request went to every
+ * model" is something the page checks, not something it claims.
+ *
+ * What that check covers is the request as this browser sent it. What each
+ * model then ran with on the server (the effort after the model's own clamp,
+ * whether it could search on this plan) is not part of the fingerprint: the
+ * server reports it per turn (`ClientMessage.applied`) and the page shows
+ * any difference on the pane and in the summary.
  */
 
 export interface CompareSettings {
@@ -148,6 +154,12 @@ export function browserTimeZone(): string | null {
 export interface PlannedEffort {
   /** What the model is expected to run at; null = no effort sent. */
   effort: ReasoningEffort | null;
+  /**
+   * No effort was asked for and the server fills in the plan's default for
+   * this model instead (Free: GPT-6 Luna at Low), so `effort` comes from the
+   * plan, not from the model.
+   */
+  planDefault: boolean;
   /** False when a specific effort was asked for and this model cannot take it. */
   honoured: boolean;
   /** The model has a thinking control at all. */
@@ -157,17 +169,40 @@ export interface PlannedEffort {
 }
 
 /**
- * The effort a model will run at for a requested one, by the same rule the
- * server applies (`effectiveReasoningEffort` → `clampReasoningEffort`). This
- * is the PLAN, shown before a run. After a run the pane shows what the server
- * reported instead (`ClientMessage.applied`).
+ * The effort the server fills in when a request names none, for this plan
+ * and model; null when it fills in nothing. Mirrors the turn's rule in
+ * src/lib/chat/turn/model.ts (`requestedEffort`): Free's default model
+ * thinks at Low unless something asked otherwise. A test pins the two together.
  */
-export function plannedEffort(model: ModelInfo | undefined, requested: ReasoningEffort | null): PlannedEffort | null {
+export function planDefaultEffort(plan: string | null | undefined, modelId: string): ReasoningEffort | null {
+  return plan === "FREE" && modelId === FREE_DEFAULT_MODEL ? FREE_DEFAULT_EFFORT : null;
+}
+
+/**
+ * The effort a model will run at for a requested one, by the same rules the
+ * server applies: the plan's default when nothing was asked
+ * (`planDefaultEffort`), then the model's clamp (`effectiveReasoningEffort`
+ * → `clampReasoningEffort`). This is the PLAN, shown before a run. After a
+ * run the pane shows what the server reported instead (`ClientMessage.applied`).
+ * Without `plan`, the plan default is not applied.
+ */
+export function plannedEffort(
+  model: ModelInfo | undefined,
+  requested: ReasoningEffort | null,
+  options: { plan?: string | null } = {}
+): PlannedEffort | null {
   if (!model) return null;
-  if (isAutoModelId(model.id)) return { effort: null, honoured: true, reasoning: true, auto: true };
-  if (!model.reasoning) return { effort: null, honoured: requested === null, reasoning: false, auto: false };
-  const effort = clampReasoningEffort(model, requested);
-  return { effort, honoured: requested === null || effort === requested, reasoning: true, auto: false };
+  if (isAutoModelId(model.id)) return { effort: null, planDefault: false, honoured: true, reasoning: true, auto: true };
+  if (!model.reasoning) return { effort: null, planDefault: false, honoured: requested === null, reasoning: false, auto: false };
+  const fromPlan = requested === null ? planDefaultEffort(options.plan, model.id) : null;
+  const effort = clampReasoningEffort(model, requested ?? fromPlan);
+  return {
+    effort,
+    planDefault: fromPlan !== null,
+    honoured: requested === null || effort === requested,
+    reasoning: true,
+    auto: false,
+  };
 }
 
 /**

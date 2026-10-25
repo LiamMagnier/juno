@@ -8,6 +8,7 @@ import {
   compareReportToMarkdown,
   formatCost,
   LATE_START_MS,
+  markdownLinkUrl,
   type ComparePaneEntry,
 } from "@/lib/compare/report";
 import { createRunSpec } from "@/lib/compare/run-spec";
@@ -134,9 +135,35 @@ test("verdicts come from measured latency and priced cost, and say when a cost i
   assert.deepEqual(summary.fastestFirstOutput && [summary.fastestFirstOutput.label, summary.fastestFirstOutput.value], ["Gemini 3.1 Flash Lite", 200]);
   // Lite also ended soonest in wall-clock terms, but it was stopped: not a finish.
   assert.deepEqual(summary.fastestFinish && [summary.fastestFinish.label, summary.fastestFinish.value], ["GPT-6 Luna", 3_000]);
-  assert.equal(summary.lowestCost?.label, "Gemini 3.1 Flash Lite");
-  assert.equal(summary.lowestCost?.estimated, false);
+  // Lite cost least only because it was stopped after ten tokens: a partial
+  // cost is not a cheaper answer, so the verdict is drawn from the two that finished.
+  assert.equal(summary.lowestCost?.label, "GPT-6 Luna");
+  assert.equal(summary.lowestCost?.value, 0.004);
+  assert.equal(summary.lowestCost?.estimated, true, "Luna's cost is an estimate and the verdict says so");
   assert.equal(summary.lowestCost?.allReported, false, "Luna's cost is an estimate, so the field is mixed");
+});
+
+test("a stopped answer's cost is partial: kept on its pane, never the cheapest", () => {
+  const r = report();
+  const lite = r.panes[2];
+  assert.deepEqual(lite.cost, { usd: 0.00001, basis: "reported_usage", partial: true }, "what it spent is still recorded");
+  assert.equal(r.panes[0].cost.partial, false);
+  assert.ok(r.notes.some((n) => /stopped before it finished is priced only for what it produced/i.test(n)));
+
+  // The verifier's probe: stopped at $0.0001 against a full answer at $0.01.
+  // One finished answer is no field, so there is no cost verdict at all.
+  const probe = entries().slice(0, 2);
+  probe[0].run = { ...probe[0].run, costUsd: 0.01 };
+  probe[1].run = { ...probe[1].run, costUsd: 0.0001, usageBasis: "reported", finishReason: "user_stopped" };
+  const { summary } = buildCompareReport({ spec: SPEC, panes: probe, resolveModel: resolve });
+  assert.equal(summary.lowestCost, null);
+  assert.equal(summary.fastestFinish, null);
+  assert.doesNotMatch(compareReportToMarkdown(buildCompareReport({ spec: SPEC, panes: probe, resolveModel: resolve })), /Lowest cost/);
+
+  // A pane that hit its token limit did run to the end, and stays a contender.
+  const capped = entries();
+  capped[2].run = { ...capped[2].run, finishReason: "length" };
+  assert.equal(buildCompareReport({ spec: SPEC, panes: capped, resolveModel: resolve }).summary.lowestCost?.label, "Gemini 3.1 Flash Lite");
 });
 
 test("conditions that differ between panes are surfaced, not smoothed over", () => {
@@ -159,8 +186,8 @@ test("latency, usage and cost each state their basis", () => {
   assert.equal(opus.latency.firstOutputMs, 900);
   assert.equal(opus.latency.firstAnswerMs, 1_500);
   assert.equal(opus.latency.totalMs, 6_000);
-  assert.deepEqual(opus.cost, { usd: 0.02, basis: "reported_usage" });
-  assert.deepEqual(luna.cost, { usd: 0.004, basis: "estimated" });
+  assert.deepEqual(opus.cost, { usd: 0.02, basis: "reported_usage", partial: false });
+  assert.deepEqual(luna.cost, { usd: 0.004, basis: "estimated", partial: false });
   assert.equal(luna.usage.basis, "estimated");
 });
 
@@ -204,7 +231,7 @@ test("Markdown export: one table, estimates marked with ~, latency labelled as m
   const md = compareReportToMarkdown(report());
   assert.match(md, /^# Model comparison/);
   assert.match(md, /> Compare \| pipes\n> and lines/, "the prompt is quoted line by line");
-  assert.match(md, new RegExp(`Input fingerprint: \`${SPEC.fingerprint}\` \\(identical for every model\\)`));
+  assert.match(md, new RegExp(`Request fingerprint: \`${SPEC.fingerprint}\` \\(the same request was sent to every model\\)`));
   assert.match(md, /Gemini 3\.1 Flash Lite started 2\.4 s later/);
   const rows = md.split("\n").filter((line) => /^\| \d \|/.test(line));
   assert.equal(rows.length, 3);
@@ -213,12 +240,36 @@ test("Markdown export: one table, estimates marked with ~, latency labelled as m
   assert.match(rows[2], /\| No thinking \| unavailable \|.*\| stopped \|/);
   assert.match(md, /Latency is measured in the browser/);
   assert.doesNotMatch(md, /measured cost|cost \(measured\)/i, "a cost is never called measured");
-  assert.match(md, /Lowest cost: Gemini 3\.1 Flash Lite, <\$0\.0001 \(some costs are estimates\)/);
+  assert.match(md, /Lowest cost: GPT-6 Luna, ~\$0\.0040 \(some costs are estimates\)/);
   assert.match(md, /### 1\. Claude Opus 5\.5 \(2, 1 only here\)/);
   assert.match(md, /\[Shared\]\(https:\/\/shared\.example\/x\) \(also GPT-6 Luna\)/);
   assert.match(md, /\[MDN\]\(https:\/\/developer\.mozilla\.org\/\) \(linked in the answer\)/);
   assert.match(md, /## Answers[\s\S]*### 2\. GPT-6 Luna\n\nLuna answers\./);
   assert.match(md, /## Notes/);
+});
+
+test("a URL with parentheses survives: one shared page, and a Markdown link that does not close early", () => {
+  const MERCURY = "https://en.wikipedia.org/wiki/Mercury_(planet)";
+  const panes = entries().slice(0, 2);
+  // One model got the page back from its search tool; the other linked it in its prose.
+  panes[0].run = { ...panes[0].run, content: "Opus answers.", sources: [{ title: "Mercury [planet]", url: MERCURY, snippet: "" }] };
+  panes[1].run = { ...panes[1].run, content: `See [Mercury](${MERCURY}) and (${MERCURY}).`, sources: [] };
+  const r = buildCompareReport({ spec: SPEC, panes, resolveModel: resolve });
+  assert.deepEqual(r.summary.citations.sharedByAll, [{ title: "Mercury [planet]", url: MERCURY }]);
+  assert.equal(r.panes[1].citations.total, 1, "the Markdown link and the bare URL in parentheses are the same page");
+  assert.equal(r.panes[1].citations.refs[0].url, MERCURY);
+  const md = compareReportToMarkdown(r);
+  assert.match(md, /- \[Mercury \\\[planet\\\]\]\(https:\/\/en\.wikipedia\.org\/wiki\/Mercury_%28planet%29\)/, "parentheses encoded, brackets in the title escaped");
+  // The Sources section is written by the export; the answers below it are the models' own Markdown, kept verbatim.
+  const sources = md.slice(md.indexOf("## Sources"), md.indexOf("## Answers"));
+  assert.match(sources, /Mercury_%28planet%29/);
+  assert.doesNotMatch(sources, /Mercury_\(planet\)/, "no raw parenthesis inside a link destination the export wrote");
+});
+
+test("markdownLinkUrl encodes only what could end a link destination", () => {
+  assert.equal(markdownLinkUrl("https://en.wikipedia.org/wiki/Mercury_(planet)"), "https://en.wikipedia.org/wiki/Mercury_%28planet%29");
+  assert.equal(markdownLinkUrl("https://example.com/a b<c>"), "https://example.com/a%20b%3Cc%3E");
+  assert.equal(markdownLinkUrl("https://example.com/x?q=1&r=%28"), "https://example.com/x?q=1&r=%28");
 });
 
 test("JSON export round-trips the record and names its file", () => {

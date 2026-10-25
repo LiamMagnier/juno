@@ -10,6 +10,7 @@ import {
   IDLE_RUN,
   isPaneStreaming,
   OFFLINE_MESSAGE,
+  paneChatMessages,
   resolvePaneCost,
   startRun,
   timeToFirstAnswerMs,
@@ -262,4 +263,41 @@ test("thrown errors: an unreachable server reads as offline, anything else keeps
   assert.deepEqual(failureFromException(new TypeError("Load failed")), { message: OFFLINE_MESSAGE, action: "retry" });
   assert.equal(failureFromException(new Error("Stream parse failed.")).message, "Stream parse failed.");
   assert.equal(failureFromException(undefined).message, "Something went wrong. Run it again.");
+});
+
+test("Continue in chat credits the model that answered and dates the prompt by the wall clock", () => {
+  const spec = { id: "spec-1", prompt: "Plan a 3-day Lisbon trip.", createdAt: "2026-10-25T14:03:00.000Z" };
+  const answered: PaneRun = {
+    ...IDLE_RUN,
+    status: "done",
+    specId: spec.id,
+    content: "Day 1: Alfama.",
+    requestedModelId: "auto",
+    servedModelId: "anthropic:claude-sonnet-5",
+    // A monotonic reading (ms since the page loaded), not a date.
+    startedAt: 1_234.5,
+    promptTokens: 10,
+    completionTokens: 20,
+    costUsd: 0.001,
+    sources: [{ title: "Visit Lisboa", url: "https://www.visitlisboa.com/", snippet: "" }],
+  };
+  const now = new Date("2026-10-25T14:04:00.000Z");
+  const messages = paneChatMessages({ spec, run: answered, paneModelId: "auto", now });
+  assert.ok(messages);
+  const [user, assistant] = messages;
+  assert.equal(user.content, spec.prompt);
+  assert.equal(user.createdAt, spec.createdAt, "not 1970: startedAt is never read as a date");
+  assert.equal(assistant.model, "anthropic:claude-sonnet-5", "Auto's pick, not the pane's Auto");
+  assert.equal(assistant.createdAt, now.toISOString());
+  assert.equal(assistant.content, "Day 1: Alfama.");
+  assert.deepEqual([assistant.promptTokens, assistant.completionTokens, assistant.costUsd], [10, 20, 0.001]);
+  assert.equal(assistant.sources?.length, 1);
+  assert.notEqual(user.id, assistant.id);
+
+  // A swapped model is credited too; with no served model the request names it.
+  assert.equal(paneChatMessages({ spec, run: { ...answered, servedModelId: null, requestedModelId: "openai:gpt-6-luna" }, paneModelId: "auto", now })?.[1].model, "openai:gpt-6-luna");
+  assert.equal(paneChatMessages({ spec, run: { ...answered, servedModelId: null, requestedModelId: null }, paneModelId: "google:x", now })?.[1].model, "google:x");
+  // Nothing to carry: no answer, or an answer to another comparison.
+  assert.equal(paneChatMessages({ spec, run: { ...answered, content: "" }, paneModelId: "auto", now }), null);
+  assert.equal(paneChatMessages({ spec, run: { ...answered, specId: "older" }, paneModelId: "auto", now }), null);
 });

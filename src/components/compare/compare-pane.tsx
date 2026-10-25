@@ -113,13 +113,24 @@ function ConditionChip({
 /**
  * What this pane runs with: the thinking effort and, when asked for, web
  * search. After a run these are what the SERVER reported applying; before
- * one (or from an older server) they are the plan, worked out with the same
- * clamp the server uses, and the tip says it is a plan.
+ * one (or from an older server) they are the plan, worked out with the
+ * server's own rules (the plan's default effort, then the model's clamp),
+ * and the tip says it is a plan.
  */
-function PaneConditions({ model, run, requested }: { model: ModelInfo | undefined; run: PaneRun; requested: CompareSettings }) {
+function PaneConditions({
+  model,
+  run,
+  requested,
+  plan,
+}: {
+  model: ModelInfo | undefined;
+  run: PaneRun;
+  requested: CompareSettings;
+  plan?: string | null;
+}) {
   const effectiveModel = run.servedModelId ? (resolveModel(run.servedModelId) ?? model) : model;
   const reported = run.appliedEffort !== undefined;
-  const planned = plannedEffort(model, requested.reasoningEffort);
+  const planned = plannedEffort(model, requested.reasoningEffort, { plan });
   let effort: React.ReactNode = null;
   if (model) {
     const effortValue = reported ? (run.appliedEffort ?? null) : (planned?.effort ?? null);
@@ -127,7 +138,11 @@ function PaneConditions({ model, run, requested }: { model: ModelInfo | undefine
     const honoured = reported
       ? requested.reasoningEffort === null || run.appliedEffort === requested.reasoningEffort
       : (planned?.honoured ?? true);
-    const source = reported ? "Reported by the server for this run." : "Planned from the model’s settings.";
+    const source = reported
+      ? "Reported by the server for this run."
+      : planned?.planDefault
+        ? "Planned from your plan’s default for this model."
+        : "Planned from the model’s settings.";
     const tip = planned?.auto && !reported
       ? "Auto chooses the effort for each prompt."
       : !model.reasoning
@@ -298,6 +313,7 @@ export function ComparePane({
   modelId,
   run,
   requested,
+  plan,
   citations,
   onChangeModel,
   onRemove,
@@ -308,6 +324,8 @@ export function ComparePane({
   run: PaneRun;
   /** The conditions this pane ran with (its comparison's spec), or will run with next. */
   requested: CompareSettings;
+  /** The account's plan, for the server's plan default effort in the pre-run plan. */
+  plan?: string | null;
   /** This pane's sources compared with the others'; absent before a run. */
   citations?: CompareReportPane["citations"];
   onChangeModel: (id: ModelId) => void;
@@ -336,7 +354,7 @@ export function ComparePane({
       {/* Pane header: the picker IS the change button. */}
       <header className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5">
         <CompareModelPicker value={modelId} onChange={onChangeModel} disabled={streaming} />
-        <PaneConditions model={model ?? undefined} run={run} requested={requested} />
+        <PaneConditions model={model ?? undefined} run={run} requested={requested} plan={plan} />
         <div className="ml-auto flex items-center gap-1">
           {onRemove && (
             <Tooltip>

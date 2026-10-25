@@ -66,7 +66,16 @@ export interface CompareReportPane {
     totalMs: number | null;
   };
   usage: { basis: PaneUsageBasis | null; promptTokens: number | null; completionTokens: number | null };
-  cost: { usd: number | null; basis: "reported_usage" | "estimated" | null };
+  cost: {
+    usd: number | null;
+    basis: "reported_usage" | "estimated" | null;
+    /**
+     * The person stopped this answer, so the cost covers only what it
+     * produced before that. A partial cost is spent money, but it is not
+     * comparable with a full answer's, so it never wins "Lowest cost".
+     */
+    partial: boolean;
+  };
   citations: {
     total: number;
     shared: number;
@@ -98,7 +107,14 @@ export interface CompareReport {
     transport: "private";
     sampling: "provider_default";
   };
-  /** Every pane that ran sent the spec's exact shared input. */
+  /**
+   * Every pane that ran SENT the spec's exact shared request (prompt, history,
+   * search flag, effort, time zone): the fingerprint each pane recorded from
+   * the body it posted matches the spec's. This checks the request as the
+   * browser sent it. What each model then ran with on the server (its effort
+   * and whether it could search) is reported per pane in `effort.applied` and
+   * `webSearch.applied`, and differences there are surfaced separately.
+   */
   identicalInput: boolean;
   panes: CompareReportPane[];
   summary: {
@@ -147,9 +163,11 @@ export function buildCompareReport(input: {
   spec: CompareRunSpec;
   panes: ReadonlyArray<ComparePaneEntry>;
   resolveModel: (id: string) => ModelInfo | undefined;
+  /** The account's plan, so a pane with no server effort report is planned with the plan's default effort (Free: GPT-6 Luna at Low). */
+  plan?: string | null;
   generatedAt?: Date;
 }): CompareReport {
-  const { spec, resolveModel } = input;
+  const { spec, resolveModel, plan } = input;
   const labelOf = new Map<string, string>();
   const panesThatRan = input.panes.filter((pane) => ran(pane.run) && pane.run.specId === spec.id);
   for (const pane of panesThatRan) {
@@ -170,7 +188,7 @@ export function buildCompareReport(input: {
     const auto = isAutoModelId(requestedId);
     const effectiveModel = resolveModel(run.servedModelId ?? requestedId);
     const reported = run.appliedEffort !== undefined;
-    const planned = plannedEffort(resolveModel(requestedId), spec.reasoningEffort);
+    const planned = plannedEffort(resolveModel(requestedId), spec.reasoningEffort, { plan });
     const applied = reported ? (run.appliedEffort ?? null) : null;
     const honoured = reported
       ? spec.reasoningEffort === null || applied === spec.reasoningEffort
@@ -205,6 +223,7 @@ export function buildCompareReport(input: {
       cost: {
         usd: run.costUsd,
         basis: run.costUsd == null ? null : run.usageBasis === "reported" ? "reported_usage" : "estimated",
+        partial: run.status === "done" && run.finishReason === "user_stopped",
       },
       citations: {
         total: paneCitations?.total ?? 0,
@@ -224,8 +243,12 @@ export function buildCompareReport(input: {
   });
 
   const finished = panes.filter((pane) => pane.status === "done");
+  // A stopped answer is not a finish and its cost is not a full answer's:
+  // both "fastest finish" and "lowest cost" are drawn from answers that ran
+  // to the end. Its first output was still a real measurement, so it stays
+  // in "fastest first output".
   const completed = finished.filter((pane) => pane.finishReason !== "user_stopped");
-  const costed = finished.filter((pane) => pane.cost.usd != null);
+  const costed = completed.filter((pane) => pane.cost.usd != null);
   const cheapest = pickMin(costed.map((pane) => ({ pane, value: pane.cost.usd })));
   const reportedEfforts = panes.filter((pane) => pane.effort.reported).map((pane) => pane.effort.applied);
   const searchReports = panes.map((pane) => pane.webSearch.applied).filter((v): v is boolean => v !== null);
@@ -263,6 +286,9 @@ export function buildCompareReport(input: {
   }
   if (summary.searchApplied === false) {
     notes.push("Web search was requested but not every model could search; those answered from their own knowledge.");
+  }
+  if (finished.some((pane) => pane.cost.partial)) {
+    notes.push("An answer stopped before it finished is priced only for what it produced, so it is left out of the fastest finish and the lowest cost.");
   }
 
   return {
@@ -307,6 +333,25 @@ function cell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim() || "—";
 }
 
+/** A link's text: one line, with the brackets (and backslashes) that would end it early escaped. */
+function linkText(text: string): string {
+  return (
+    text
+      .replace(/[[\]\\]/g, (char) => `\\${char}`)
+      .replace(/\s*\n\s*/g, " ")
+      .trim() || "—"
+  );
+}
+
+/**
+ * A URL as a Markdown link destination. Parentheses, whitespace and angle
+ * brackets are percent-encoded, so `Mercury_(planet)` cannot close the link
+ * early in any renderer; servers read `%28` and `(` alike.
+ */
+export function markdownLinkUrl(url: string): string {
+  return url.replace(/[()<>\s]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+}
+
 function statusText(pane: CompareReportPane): string {
   if (pane.status === "error") return `failed: ${pane.error ?? "unknown error"}`;
   if (pane.finishReason === "user_stopped") return "stopped";
@@ -343,7 +388,7 @@ export function compareReportToMarkdown(report: CompareReport): string {
   lines.push("## Input", "");
   lines.push(blockquote(input.prompt), "");
   lines.push(
-    `- Input fingerprint: \`${input.fingerprint}\` (${report.identicalInput ? "identical for every model" : "NOT identical for every model"})`
+    `- Request fingerprint: \`${input.fingerprint}\` (${report.identicalInput ? "the same request was sent to every model" : "NOT the same request for every model"})`
   );
   lines.push(`- Web search: ${input.webSearch ? "on" : "off"}`);
   lines.push(`- Thinking effort requested: ${input.reasoningEffortLabel}`);
@@ -395,7 +440,7 @@ export function compareReportToMarkdown(report: CompareReport): string {
     lines.push("## Sources", "");
     if (summary.citations.sharedByAll.length) {
       lines.push("### Cited by every model", "");
-      for (const ref of summary.citations.sharedByAll) lines.push(`- [${cell(ref.title || ref.url)}](${ref.url})`);
+      for (const ref of summary.citations.sharedByAll) lines.push(`- [${linkText(ref.title || ref.url)}](${markdownLinkUrl(ref.url)})`);
       lines.push("");
     }
     for (const pane of report.panes) {
@@ -405,7 +450,7 @@ export function compareReportToMarkdown(report: CompareReport): string {
         const marks = [ref.inText ? "linked in the answer" : null, ref.sharedWith.length ? `also ${ref.sharedWith.join(", ")}` : null]
           .filter(Boolean)
           .join("; ");
-        lines.push(`- [${cell(ref.title || ref.host)}](${ref.url})${marks ? ` (${marks})` : ""}`);
+        lines.push(`- [${linkText(ref.title || ref.host)}](${markdownLinkUrl(ref.url)})${marks ? ` (${marks})` : ""}`);
       }
       lines.push("");
     }

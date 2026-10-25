@@ -19,6 +19,7 @@ import { ComparePane } from "@/components/compare/compare-pane";
 import { CompareRunSettings } from "@/components/compare/compare-run-settings";
 import { CompareSummary } from "@/components/compare/compare-summary";
 import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
+import { paneChatMessages } from "@/lib/compare/pane-run";
 import { buildCompareReport } from "@/lib/compare/report";
 import {
   browserTimeZone,
@@ -33,16 +34,17 @@ import { PLANS, planRank, modelRequiredPlan } from "@/lib/plans";
 import { promptPlaceholderTitle } from "@/lib/title-ownership";
 import { cn } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
-import type { ClientMessage, ClientQuota } from "@/types/chat";
+import type { ClientQuota } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
 import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 
 /**
  * Side-by-side model comparison — the aggregator's signature move. One prompt,
  * two or three models answering in parallel panes over the private (ephemeral)
- * chat transport. A controlled run: every model gets the identical request
+ * chat transport. A controlled run: every model is sent the identical request
  * (prompt, search, effort, time zone), frozen at Send, and the page checks
- * that it did. Each pane shows what it actually ran with, its measured
+ * the request each pane sent. Each pane shows what the server reports it
+ * actually ran with (effort, search), its measured
  * latency and its cost with the cost's basis; the summary compares them and
  * their sources, and exports the lot. Nothing here is persisted: a fresh
  * prompt replaces the panes.
@@ -213,7 +215,6 @@ export function CompareView() {
   // late-joining pane runs from THIS, never from the composer's current state,
   // so the panes stay comparable.
   const [spec, setSpec] = React.useState<CompareRunSpec | null>(null);
-  const lastPrompt = spec?.prompt ?? null;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const canSend = prompt.trim().length > 0 && !anyStreaming;
 
@@ -281,32 +282,12 @@ export function CompareView() {
   // (True DB seeding needs a message-create API that doesn't exist yet.)
   const continueInChat = (pane: PaneConfig) => {
     const run = runs[pane.id];
-    if (!run?.content || !lastPrompt) return;
-    const now = Date.now();
-    const messages: ClientMessage[] = [
-      {
-        id: `compare-user-${now}`,
-        role: "USER",
-        content: lastPrompt,
-        createdAt: new Date(run.startedAt ?? now).toISOString(),
-        attachments: [],
-      },
-      {
-        id: `compare-assistant-${now}`,
-        role: "ASSISTANT",
-        content: run.content,
-        reasoning: run.reasoning || undefined,
-        model: pane.modelId,
-        createdAt: new Date().toISOString(),
-        attachments: [],
-        promptTokens: run.promptTokens,
-        completionTokens: run.completionTokens,
-        costUsd: run.costUsd,
-        sources: run.sources.length ? run.sources : undefined,
-      },
-    ];
+    if (!spec || !run) return;
+    // Credited to the model that actually answered, dated by the wall clock.
+    const messages = paneChatMessages({ spec, run, paneModelId: pane.modelId, now: new Date() });
+    if (!messages) return;
     try {
-      sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify({ title: promptPlaceholderTitle(lastPrompt), messages }));
+      sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify({ title: promptPlaceholderTitle(spec.prompt), messages }));
     } catch {
       toast.error("Couldn’t carry this answer into chat — it's too large.");
       return;
@@ -327,8 +308,9 @@ export function CompareView() {
       spec,
       panes: panes.map((pane) => ({ paneId: pane.id, modelId: pane.modelId, run: deferredRuns[pane.id] ?? IDLE_RUN })),
       resolveModel: lookup,
+      plan,
     });
-  }, [spec, panes, deferredRuns, models]);
+  }, [spec, panes, deferredRuns, models, plan]);
   const citationsByPane = React.useMemo(
     () => new Map((report?.panes ?? []).map((pane) => [pane.paneId, pane.citations])),
     [report]
@@ -516,6 +498,7 @@ export function CompareView() {
                   ? { webSearch: spec.webSearch, reasoningEffort: spec.reasoningEffort }
                   : { ...runSettings, webSearch: runSettings.webSearch && webSearchAllowed }
               }
+              plan={plan}
               citations={citationsByPane.get(pane.id)}
               onChangeModel={(id) => changeModel(pane.id, id)}
               onRemove={panes.length > MIN_PANES ? () => removePane(pane.id) : undefined}

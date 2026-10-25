@@ -7,7 +7,7 @@ import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared
 import { IDLE_RUN, type PaneRun } from "@/lib/compare/pane-run";
 import { buildCompareReport } from "@/lib/compare/report";
 import { createRunSpec, plannedEffort, type CompareSettings } from "@/lib/compare/run-spec";
-import { MODEL_LIST, resolveModel, type ModelInfo } from "@/lib/models";
+import { FREE_DEFAULT_MODEL, MODEL_LIST, getModel, resolveModel, type ModelInfo } from "@/lib/models";
 
 /*
  * The /compare components, rendered: each pane says what it actually ran
@@ -57,6 +57,8 @@ const NO_MAX = chatModels.find((m) => m.reasoning && plannedEffort(m, "max")?.ho
 const OTHER = chatModels.find((m) => m.provider !== REASONER.provider) as ModelInfo;
 
 const OFF: CompareSettings = { webSearch: false, reasoningEffort: null };
+/** A cost is priced, never measured: no render may call it measured. */
+const MEASURED_COST = /measured cost|cost \(measured\)|cost[^<.]{0,40}measured/i;
 
 function doneRun(partial: Partial<PaneRun>): PaneRun {
   return {
@@ -108,6 +110,7 @@ test("a reported cost reads plainly; measured times are labelled first and total
   assert.match(html, /as the provider reported them/);
   assert.match(html, />Medium</, "the effort the server reported");
   assert.match(html, /Reported by the server for this run/);
+  assert.doesNotMatch(html, MEASURED_COST, "a reported cost is priced from usage, not measured");
 });
 
 test("an estimated cost and its tokens carry ~ and est., and say why", () => {
@@ -117,6 +120,19 @@ test("an estimated cost and its tokens carry ~ and est., and say why", () => {
   assert.match(html, / est\./);
   assert.match(html, /partly estimated from text length/);
   assert.match(html, /is an estimate/);
+  assert.doesNotMatch(html, MEASURED_COST, "an estimated cost is never called measured");
+});
+
+test("before a run on Free, the default model's chip plans the plan's Low, and says where it comes from", () => {
+  const luna = getModel(FREE_DEFAULT_MODEL) as ModelInfo;
+  const free = pane(IDLE_RUN, { modelId: luna.id, requested: OFF, plan: "FREE" });
+  assert.match(free, />Low</, "the server substitutes Low for Free's default model when no effort is sent");
+  assert.match(free, /Planned from your plan’s default for this model/);
+  const pro = pane(IDLE_RUN, { modelId: luna.id, requested: OFF, plan: "PRO" });
+  assert.doesNotMatch(pro, /your plan’s default/);
+  // After a run the chip shows what the server reported, whatever the plan.
+  const ran = pane(doneRun({ requestedModelId: luna.id, servedModelId: luna.id, appliedEffort: "low" }), { modelId: luna.id, plan: "FREE" });
+  assert.match(ran, /Reported by the server for this run/);
 });
 
 test("an effort the model cannot take is flagged, with what it ran at instead", { skip: !NO_MAX && "no catalogue model lacks Max" }, () => {
@@ -197,7 +213,8 @@ test("the summary states the checked fingerprint, the verdicts and every differe
     ],
   });
   const html = render(React.createElement(ui.CompareSummary, { report, streaming: false }));
-  assert.match(html, /Same input to every model/);
+  assert.match(html, /Same request sent to every model/);
+  assert.match(html, /The effort and search each model actually ran with are reported by the server on its pane/, "the check is scoped to what the browser sent");
   assert.match(html, new RegExp(`#${spec.fingerprint.slice(0, 8)}`));
   assert.match(html, /First to answer/);
   assert.match(html, /First to finish/);
@@ -206,8 +223,32 @@ test("the summary states the checked fingerprint, the verdicts and every differe
   assert.match(html, /Thinking effort differs/);
   assert.match(html, /couldn’t search the web/);
   assert.match(html, /aria-label="Export comparison"/);
+  assert.doesNotMatch(html, MEASURED_COST, "the summary never calls a cost measured");
   const streaming = render(React.createElement(ui.CompareSummary, { report, streaming: true }));
   assert.match(streaming, /Export comparison \(available when every model has finished\)/);
+});
+
+test("a stopped answer sits out First to finish and Lowest cost, and the verdicts say so", () => {
+  const spec = createRunSpec({ id: "spec-1", prompt: "Hi", settings: OFF, timeZone: "UTC" });
+  const finished = (paneId: string, model: ModelInfo, partial: Partial<PaneRun>) => ({
+    paneId,
+    modelId: model.id,
+    run: doneRun({ specId: spec.id, requestedModelId: model.id, servedModelId: model.id, inputFingerprint: spec.fingerprint, usageBasis: "reported", ...partial }),
+  });
+  const panes = [
+    finished("a", REASONER, { costUsd: 0.01, finishedAt: 4_000 }),
+    finished("b", OTHER, { costUsd: 0.02, finishedAt: 5_000 }),
+    // Stopped almost at once: cheapest and quickest to end, and neither verdict's winner.
+    finished("c", REASONER, { costUsd: 0.0001, finishedAt: 1_700, finishReason: "user_stopped" }),
+  ];
+  const report = buildCompareReport({ spec, panes, resolveModel: (id) => resolveModel(id) ?? undefined });
+  assert.equal(report.summary.lowestCost?.paneId, "a");
+  assert.equal(report.summary.fastestFinish?.paneId, "a");
+  const html = render(React.createElement(ui.CompareSummary, { report, streaming: false }));
+  assert.match(html, /title="Time from sending to the complete answer, measured in this browser\. Stopped answers are left out\."/);
+  assert.match(html, /title="Priced from each provider’s reported token usage at list rates\. Stopped answers are left out\."/);
+  assert.match(html, /\$0\.010/);
+  assert.doesNotMatch(html, /\$0\.0001|<\$0\.0001/, "the stopped pane's partial cost is not the verdict");
 });
 
 test("the whole view renders on the server with its run settings", () => {

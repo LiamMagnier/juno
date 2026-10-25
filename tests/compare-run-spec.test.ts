@@ -5,12 +5,14 @@ import {
   compareEffortLabel,
   createRunSpec,
   effortDisplay,
+  planDefaultEffort,
   plannedEffort,
   sharedInputFingerprint,
   stableStringify,
 } from "@/lib/compare/run-spec";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
-import type { ModelInfo } from "@/lib/models";
+import { readFileSync } from "node:fs";
+import { FREE_DEFAULT_MODEL, getModel, type ModelInfo } from "@/lib/models";
 
 /*
  * Master brief 4.3, identical-input controlled runs: one frozen spec per
@@ -73,15 +75,39 @@ test("stableStringify is key-order independent and drops undefined", () => {
 });
 
 test("planned effort follows the server's clamp, including the trap where Max on a model without it means Instant", () => {
-  assert.deepEqual(plannedEffort(OPUS_55, "high"), { effort: "high", honoured: true, reasoning: true, auto: false });
-  assert.deepEqual(plannedEffort(OPUS_55, null), { effort: "medium", honoured: true, reasoning: true, auto: false }, "always-on runs at its default");
-  assert.deepEqual(plannedEffort(OPUS_45, null), { effort: null, honoured: true, reasoning: true, auto: false }, "a model that can stop thinking runs Instant by default");
-  assert.deepEqual(plannedEffort(OPUS_45, "max"), { effort: null, honoured: false, reasoning: true, auto: false }, "unsupported Max falls to the default, which is Instant here");
-  assert.deepEqual(plannedEffort(HAIKU_45, "low"), { effort: "high", honoured: false, reasoning: true, auto: false }, "on/off models only think at their one setting");
-  assert.deepEqual(plannedEffort(PLAIN, "high"), { effort: null, honoured: false, reasoning: false, auto: false });
-  assert.deepEqual(plannedEffort(PLAIN, null), { effort: null, honoured: true, reasoning: false, auto: false });
+  assert.deepEqual(plannedEffort(OPUS_55, "high"), { effort: "high", planDefault: false, honoured: true, reasoning: true, auto: false });
+  assert.deepEqual(plannedEffort(OPUS_55, null), { effort: "medium", planDefault: false, honoured: true, reasoning: true, auto: false }, "always-on runs at its default");
+  assert.deepEqual(plannedEffort(OPUS_45, null), { effort: null, planDefault: false, honoured: true, reasoning: true, auto: false }, "a model that can stop thinking runs Instant by default");
+  assert.deepEqual(plannedEffort(OPUS_45, "max"), { effort: null, planDefault: false, honoured: false, reasoning: true, auto: false }, "unsupported Max falls to the default, which is Instant here");
+  assert.deepEqual(plannedEffort(HAIKU_45, "low"), { effort: "high", planDefault: false, honoured: false, reasoning: true, auto: false }, "on/off models only think at their one setting");
+  assert.deepEqual(plannedEffort(PLAIN, "high"), { effort: null, planDefault: false, honoured: false, reasoning: false, auto: false });
+  assert.deepEqual(plannedEffort(PLAIN, null), { effort: null, planDefault: false, honoured: true, reasoning: false, auto: false });
   assert.equal(plannedEffort({ ...OPUS_55, id: AUTO_MODEL_ID } as ModelInfo, "high")?.auto, true);
   assert.equal(plannedEffort(undefined, "high"), null);
+});
+
+test("before a run, Free's default model plans the server's plan default (Low), not the model's own", () => {
+  const luna = getModel(FREE_DEFAULT_MODEL) as ModelInfo;
+  assert.ok(luna?.reasoning, "the Free default model is a reasoning model");
+  assert.equal(planDefaultEffort("FREE", FREE_DEFAULT_MODEL), "low");
+  assert.equal(planDefaultEffort("PRO", FREE_DEFAULT_MODEL), null, "only Free has the default");
+  assert.equal(planDefaultEffort("FREE", OPUS_55.id), null, "only on the Free default model");
+  assert.equal(planDefaultEffort(null, FREE_DEFAULT_MODEL), null);
+
+  const free = plannedEffort(luna, null, { plan: "FREE" });
+  assert.deepEqual(free, { effort: "low", planDefault: true, honoured: true, reasoning: true, auto: false });
+  // An effort that was asked for wins over the plan default, as on the server.
+  assert.equal(plannedEffort(luna, "high", { plan: "FREE" })?.effort, "high");
+  assert.equal(plannedEffort(luna, "high", { plan: "FREE" })?.planDefault, false);
+  // Other plans, or no plan given, plan the model's own default.
+  assert.equal(plannedEffort(luna, null, { plan: "PRO" })?.planDefault, false);
+  assert.deepEqual(plannedEffort(luna, null, { plan: "PRO" }), plannedEffort(luna, null));
+});
+
+test("the plan default mirrored here is the rule the turn applies", () => {
+  // If the server's rule changes, this mirror must change with it (src/lib/chat/turn/model.ts).
+  const turn = readFileSync("src/lib/chat/turn/model.ts", "utf8");
+  assert.match(turn, /input\.reasoningEffort \?\?[\s\S]{0,160}\(plan === "FREE" && requestedId === FREE_DEFAULT_MODEL \? FREE_DEFAULT_EFFORT : undefined\)/);
 });
 
 test("effort reads the way each model takes it", () => {

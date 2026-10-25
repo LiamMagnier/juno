@@ -348,3 +348,47 @@ export function failureFromException(err: unknown): PaneFailure {
   }
   return { message: message.trim() || "Something went wrong. Run it again.", action: "retry" };
 }
+
+// ── Continue in chat ─────────────────────────────────────────────────────────
+
+/**
+ * "Continue in chat": the comparison's prompt and one pane's answer as the
+ * two messages that seed a chat branch. Null when the pane has no answer to
+ * this comparison. The answer is credited to the model that wrote it
+ * (`servedModelId`, which differs from the pane's model for an Auto pick or a
+ * server swap). Both messages are dated by the wall clock: the user's when
+ * the comparison started, the answer's now. `startedAt` is a monotonic
+ * reading (`monotonicNow`), not a date, so it never dates a message.
+ */
+export function paneChatMessages(input: {
+  spec: { id: string; prompt: string; createdAt: string };
+  run: PaneRun;
+  paneModelId: string;
+  now: Date;
+}): ClientMessage[] | null {
+  const { spec, run, now } = input;
+  if (!run.content || !spec.prompt || run.specId !== spec.id) return null;
+  const stamp = now.getTime();
+  return [
+    {
+      id: `compare-user-${stamp}`,
+      role: "USER",
+      content: spec.prompt,
+      createdAt: spec.createdAt,
+      attachments: [],
+    },
+    {
+      id: `compare-assistant-${stamp}`,
+      role: "ASSISTANT",
+      content: run.content,
+      reasoning: run.reasoning || undefined,
+      model: run.servedModelId ?? run.requestedModelId ?? input.paneModelId,
+      createdAt: now.toISOString(),
+      attachments: [],
+      promptTokens: run.promptTokens,
+      completionTokens: run.completionTokens,
+      costUsd: run.costUsd,
+      sources: run.sources.length ? run.sources : undefined,
+    },
+  ];
+}
