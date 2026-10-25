@@ -20,6 +20,7 @@ import {
   type AuditReason,
 } from "@/lib/research/claim-analysis";
 import { cn } from "@/lib/utils";
+import type { SourceReadState } from "@/lib/research/source-provenance";
 import type { ClientSource } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
@@ -78,6 +79,25 @@ export interface CitationAuditSource {
    * into false would print "the page was read" about an audit that has no idea.
    */
   truncated: boolean | null;
+  /**
+   * How the judged text was obtained (source-provenance.ts): opened by the
+   * run, supplied by the search provider, a preview, or the person's own
+   * record. Optional and nullable for the same reason as `truncated`: an audit
+   * that cannot say must draw nothing, never "opened".
+   */
+  readState?: SourceReadState | null;
+}
+
+/**
+ * A passage from a source this claim did NOT cite that gives a different figure
+ * for the same thing. Not a citation — the panel says so — and never part of
+ * `links`, which the sources pill reads as "the claims that cite source n".
+ */
+export interface CitationAuditRival {
+  sourceIndex: number;
+  passage: string;
+  locator: string | null;
+  codedReasons: AuditReason[];
 }
 
 export interface CitationAuditLink {
@@ -117,6 +137,12 @@ export interface CitationAuditClaim {
   label: "supported" | "partially supported" | "unsupported" | "contradicted" | "unverified";
   answerSpan: string | null;
   links: CitationAuditLink[];
+  /** Uncited passages giving a different figure. Absent on older audits. */
+  rivals?: CitationAuditRival[];
+  /** Supported, while a cited passage or an uncited source disagrees. */
+  contested?: boolean;
+  /** `[n]` markers that named no source in the corpus; null/absent when not recorded. */
+  unresolvedCitations?: number[] | null;
 }
 
 export interface CitationAudit {
@@ -132,6 +158,10 @@ export interface CitationAudit {
     contradicted: number;
     unverified: number;
     duplicateSources: number;
+    /** Supported claims other evidence in the corpus disagrees with. Absent on older audits. */
+    contested?: number;
+    /** Claims citing a source the research does not contain. Absent on older audits. */
+    unresolvedCitations?: number;
   };
 }
 
@@ -283,7 +313,30 @@ export const AUDIT_COPY = {
   showInAnswer: "Show this sentence in the answer",
   markedInAnswer: "Marked in the answer above",
   notInAnswer: `${PRODUCT_NAME} could not find this sentence in the answer above, so there is nothing to point at.`,
+  /*
+   * Disagreement and invented citations (citation-audit-core.ts). The words say
+   * what was found, not what to conclude: an uncited source with a different
+   * figure may be older, or about a different scope, and the reader is shown
+   * the passage to decide.
+   */
+  contested: "contested",
+  sourcesDisagree: "Sources disagree",
+  contestedDetail: "Its cited source supports it, but other evidence in this research gives a different figure.",
+  rivalHeading: "Not cited for this sentence: another source in this research gives a different figure",
+  citesNothing: "citing a source this research does not contain",
+  unresolvedDetail: "does not match any source in this research, so it is not evidence for anything. The marker is removed from the answer.",
 } as const;
+
+/**
+ * How the text a citation was judged against was obtained, said to a reader.
+ * `search_preview` has its own warning (`previewOnly`) and `not_read` is never
+ * judged, so neither needs a line here.
+ */
+export const READ_STATE_LABEL: Partial<Record<SourceReadState, string>> = {
+  opened: `Opened and read by ${PRODUCT_NAME}`,
+  search_text: "Page text supplied by the search provider, not opened",
+  private: "Your own source",
+};
 
 /**
  * How gravely one finding damages the citation, from the ceiling it imposed.
@@ -342,10 +395,14 @@ export function AuditFindings({ reasons }: { reasons: AuditReason[] }) {
                   are not in the passage" and "the passage attributes this to
                   someone" are both objections; only one of them means the
                   citation cannot be leaned on at all, and the ceiling is the
-                  validator's own statement of which. */}
-              <span className={cn("whitespace-nowrap font-mono tabular-nums", severity.tone)}>
-                {AUDIT_COPY.capsSupportAt} {Math.round(reason.ceiling * 100)}%
-              </span>
+                  validator's own statement of which. A note that capped
+                  nothing (a figure found in another cited source) says so by
+                  printing no cap rather than "caps support at 100%". */}
+              {reason.ceiling < 1 && (
+                <span className={cn("whitespace-nowrap font-mono tabular-nums", severity.tone)}>
+                  {AUDIT_COPY.capsSupportAt} {Math.round(reason.ceiling * 100)}%
+                </span>
+              )}
             </span>
           </li>
         );
@@ -627,13 +684,19 @@ export function ScoreMeter({ label, value }: { label: string; value: number }) {
  */
 export function auditHeadline(s: CitationAudit["summary"]): string {
   const problems = s.unsupported + s.partiallySupported + s.contradicted;
+  const contested = s.contested ?? 0;
+  const unresolved = s.unresolvedCitations ?? 0;
   if (s.claims === 0) return AUDIT_COPY.nothingToCheck;
-  if (problems === 0 && s.unverified === 0) return AUDIT_COPY.allSupported;
+  // "Every claim checks out" is withheld while sources disagree about one of
+  // them or a citation names nothing: both are things the reader must hear.
+  if (problems === 0 && s.unverified === 0 && contested === 0 && unresolved === 0) return AUDIT_COPY.allSupported;
   const parts = [`${s.supported}/${s.claims} ${AUDIT_COPY.claimsSupported}`];
   if (s.contradicted) parts.push(`${s.contradicted} ${AUDIT_COPY.contradicted}`);
+  if (contested) parts.push(`${contested} ${AUDIT_COPY.contested}`);
   if (s.unsupported) parts.push(`${s.unsupported} ${AUDIT_COPY.unsupported}`);
   if (s.partiallySupported) parts.push(`${s.partiallySupported} ${AUDIT_COPY.partlySupported}`);
   if (s.unverified) parts.push(`${s.unverified} ${AUDIT_COPY.notChecked}`);
+  if (unresolved) parts.push(`${unresolved} ${AUDIT_COPY.citesNothing}`);
   return parts.join(" · ");
 }
 
