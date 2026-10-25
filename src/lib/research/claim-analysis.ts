@@ -297,8 +297,11 @@ const PERIOD_UNITS = new Set(["second", "minute", "hour", "day", "week", "month"
  * verbs that report a figure ("revenue ROSE to", "capacity STOOD at"), the
  * prepositions and hedges in front of it, and the scope words that do not
  * change what is measured ("TOTAL revenue", "revenue for the YEAR"). Short on
- * purpose — a word missing from it is read as the measured noun, and the
- * check it feeds can only take a contradiction away, never add one.
+ * purpose — a word missing from it is read as the measured noun or its
+ * qualifier ("the company BOOKED revenue of $3.9bn" reads as a narrower
+ * subject), and the check it feeds can only take a contradiction away, never
+ * add one. It is never what lets another cited source stand in for a passage:
+ * that gate does not trust these guesses (see `namesOtherSubject`).
  */
 const FIGURE_SUBJECT_SKIP = new Set(
   (
@@ -380,9 +383,107 @@ function sameSubject(claim: string, a: NumericFact, passage: string, b: NumericF
   return true;
 }
 
-/** Whether two figures are plausibly measuring the same quantity. */
+/** Whether two figures are plausibly measuring the same quantity, about the same subject. */
 function measuresSameThing(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
-  if (!sameSubject(claim, a, passage, b)) return false;
+  return sameSubject(claim, a, passage, b) && sameQuantity(claim, a, passage, b);
+}
+
+/**
+ * Whether the passage pins a figure on a NAMED subject the claim never
+ * mentions: "Alpha Free includes 5 GB", against a claim about Alpha Pro and
+ * Beta Plus. The measured noun and its qualifier are guesses
+ * (`figureSubject`), so only a guess the passage itself confirms counts: a
+ * name in title case away from the start of a sentence. A verb read as the
+ * qualifier ("the company BOOKED revenue of $3.9bn"), a common noun that
+ * opens a sentence ("Sales were $3.9bn") and a lowercase subject ("the free
+ * plan") all fail it.
+ */
+function namesOtherSubject(claim: string, passage: string, p: NumericFact): boolean {
+  const { head, qualifier } = figureSubject(passage, p);
+  if (!head && !qualifier) return false;
+  const names = new Set([...namedSubjects(passage)].map(tokenForm));
+  const claimWords = wordForms(claim);
+  return [head, qualifier].some((word) => !!word && names.has(word) && !claimWords.has(word));
+}
+
+/** Where a clause ends, and where a sentence ends, for `figureDate`. */
+const FIGURE_CLAUSE_EDGE = /[,;:.!?]\s+|\s[-–—]\s/g;
+const FIGURE_SENTENCE_EDGE = /[.!?]\s+/g;
+
+/**
+ * The date a figure is given for: the nearest date in its own clause
+ * ("$3.9 billion in 2023"), else the nearest one before it in its sentence
+ * ("In 2024, revenue was $4.3 billion, …"). Null when neither holds one: a
+ * date later in the sentence is as often the date of something else ("…,
+ * the highest since 2019") as the figure's own.
+ */
+function figureDate(text: string, n: NumericFact, dates: readonly DateMention[]): DateMention | null {
+  if (dates.length === 0) return null;
+  const lastEdgeBefore = (edge: RegExp) => {
+    let at = 0;
+    for (const m of text.slice(0, n.start).matchAll(edge)) at = m.index + m[0].length;
+    return at;
+  };
+  const clauseStart = lastEdgeBefore(FIGURE_CLAUSE_EDGE);
+  const afterEdge = [...text.slice(n.end).matchAll(FIGURE_CLAUSE_EDGE)][0];
+  const clauseEnd = afterEdge ? n.end + afterEdge.index : text.length;
+  const distance = (d: DateMention) => (d.start >= n.end ? d.start - n.end : n.start - d.end);
+  const inClause = dates.filter((d) => d.start >= clauseStart && d.end <= clauseEnd);
+  if (inClause.length > 0) return inClause.reduce((best, d) => (distance(d) < distance(best) ? d : best));
+  const sentenceStart = lastEdgeBefore(FIGURE_SENTENCE_EDGE);
+  const before = dates.filter((d) => d.start >= sentenceStart && d.end <= n.start);
+  return before.length > 0 ? before.reduce((best, d) => (d.start > best.start ? d : best)) : null;
+}
+
+/**
+ * The passage figures that give a different value than the claim's figure
+ * `n` for the same thing: the contradiction behind `figure_mismatch`.
+ *
+ * A passage figure equal to ANOTHER of the claim's figures is that figure's
+ * evidence ("100 GB against 50 GB": the 100 GB page), not a rival to this one
+ * — unless both are dated and the dates differ: a page's "$3.9 billion in
+ * 2024" is not the evidence for a claim's "up from $3.9 billion in 2023", it
+ * is a different figure for the claim's 2024.
+ */
+function rivalFigures(
+  claim: { text: string; dates: readonly DateMention[]; numbers: readonly NumericFact[] },
+  n: NumericFact,
+  passage: { text: string; dates: readonly DateMention[]; numbers: readonly NumericFact[] }
+): NumericFact[] {
+  return passage.numbers.filter(
+    (p) =>
+      p.kind === n.kind &&
+      !numbersAgree(p.value, n.value) &&
+      !evidenceForAnotherFigure(claim, n, passage, p, { strict: false }) &&
+      measuresSameThing(claim.text, n, passage.text, p)
+  );
+}
+
+/**
+ * Whether passage figure `p` is the evidence for a claim figure other than
+ * `n`: equal to it, and given for the same date. `strict` also refuses the
+ * pair when only one of the two is dated — the bar for letting another cited
+ * source stand in for this passage, where a wrong guess shows a disagreeing
+ * passage as support.
+ */
+function evidenceForAnotherFigure(
+  claim: { text: string; dates: readonly DateMention[]; numbers: readonly NumericFact[] },
+  n: NumericFact,
+  passage: { text: string; dates: readonly DateMention[] },
+  p: NumericFact,
+  opts: { strict: boolean }
+): boolean {
+  const at = figureDate(passage.text, p, passage.dates);
+  return claim.numbers.some((m) => {
+    if (m === n || m.kind !== p.kind || !numbersAgree(m.value, p.value)) return false;
+    const mAt = figureDate(claim.text, m, claim.dates);
+    if (mAt && at) return datesAgree(mAt, at);
+    return !opts.strict || (!mAt && !at);
+  });
+}
+
+/** Whether two figures could be the same quantity, whatever they are about: unit and introducing phrase only. */
+function sameQuantity(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
   const ca = numberContext(claim, a);
   const cb = numberContext(passage, b);
   if (ca.unit && cb.unit && ca.unit === cb.unit) {
@@ -595,17 +696,28 @@ const ATTRIBUTION = /\b(?:according to|as reported by|citing|cited by|sources? s
  *
  * "still", "now" and "remain(s)" count only next to the verb they put in the
  * present ("is still", "now costs", "remains the"): bare, they are also "still
- * images", "until now" and "human remains". Bare "current" is left out for the
- * same reason ("the current account deficit"); "currently" stays. "This year"
- * and "today" stay: both are relative to the day the report is read, so a
+ * images", "until now" and "human remains". "Remains" counts only as a verb,
+ * so never after a determiner or a word that makes it the noun ("human
+ * remains at the site", "the fossil remains in a collection"). "Current"
+ * counts only where it heads a role, price or version that the sentence says
+ * IS something ("the current CEO is", "its current price is"): bare, it is
+ * also "the current account deficit"; "currently" stays. "This year" and
+ * "today" stay: both are relative to the day the report is read, so a
  * sentence using them on a page from more than a year ago is exactly the case.
  */
 const PRESENT_VERB =
   "is|are|has|have|costs?|offers?|holds?|leads?|operates?|employs?|runs?|uses?|includes?|supports?|requires?|charges?|stands?|accounts?|lists?|sells?|serves?|owns?|controls?|provides?|allows?|ranks?";
+/** Words after which "remains" is the noun: determiners, and what describes a body or a find. */
+const REMAINS_NOUN_BEFORE =
+  "the|a|an|his|her|their|its|our|whose|of|human|fossil|fossilised|fossilized|skeletal|mortal|earthly|archaeological|ancient|animal|dinosaur|charred|burnt|burned|cremated|burial|plant|organic|unidentified|recovered";
+/** What "current" heads when a sentence states a present fact with it: a role, a price, a version. */
+const CURRENT_HEADS =
+  "ceo|cfo|cto|coo|chief executive|chief executive officer|chair|chairman|chairwoman|chairperson|president|director|head|leader|manager|owner|holder|champion|prime minister|minister|governor|mayor|coach|editor|price|prices|pricing|fee|fees|cost|rate|rates|tariff|version|release|edition|model|record";
 const PRESENT_STATE = new RegExp(
   String.raw`\b(?:currently|presently|nowadays|today|at present|at the moment|right now|this year|latest|newest|most recent|up[- ]to[- ]date|as of (?:today|now|this year)` +
     String.raw`|(?:is|are|has|have) (?:still|now)|(?:still|now) (?:${PRESENT_VERB})` +
-    String.raw`|remains? (?:the|a|an|in|on|at|under|below|above|its|their|one|among|available|unavailable|unchanged|open|closed|free|unclear|unresolved|limited|active|valid|in force))\b`,
+    String.raw`|current (?:[a-z-]+ )?(?:${CURRENT_HEADS}) (?:is|are)` +
+    String.raw`|(?<!\b(?:${REMAINS_NOUN_BEFORE})\s)remains? (?:the|a|an|in|on|at|under|below|above|its|their|one|among|available|unavailable|unchanged|open|closed|free|unclear|unresolved|limited|active|valid|in force))\b`,
   "i"
 );
 
@@ -1325,16 +1437,56 @@ const CEILING = {
 const CLAUSE_BREAK = /\s*[,;:]\s+|\s+[-–—]\s+|\s+(?=(?:and|but|while|whereas|although|though|which|who)\s)/i;
 
 /**
- * The clauses of a sentence, split at CLAUSE_BREAK. A piece with no content
- * word of its own ("but not") stays with the clause before it: on its own it
- * would carry its negation away from the predicate it negates.
+ * Where one sentence ends and the next begins, for the clause split: a full
+ * stop, question or exclamation mark (and any closing quote or bracket),
+ * whitespace, then a capital or an opening quote or bracket before one.
+ *
+ * `splitSentences` does not end a sentence after a figure ("…in 2024. Most of
+ * its rules…"), so the span `bestMatchingSentence` hands the polarity check
+ * can be two sentences — and a claim clause lined up against a "clause"
+ * spanning both read the second sentence's "not" as its own. Here a figure
+ * ends a sentence like any other word; abbreviations and initials do not.
+ */
+const SENTENCE_END = /(?<=[.!?]["'”’)\]]?)\s+(?=["'“‘(\[]?\p{Lu})/gu;
+const INITIAL = /(?:^|[\s(])\p{Lu}\.$/u;
+
+function sentencesIn(text: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  for (const m of text.matchAll(SENTENCE_END)) {
+    const head = text.slice(start, m.index);
+    if (ABBREVIATIONS.test(head) || INITIAL.test(head)) continue;
+    out.push(head);
+    start = m.index + m[0].length;
+  }
+  out.push(text.slice(start));
+  return out;
+}
+
+/** A clause whose verb is elided after its negation: "but its profits did not", "though costs haven't". */
+const ELIDED_NEGATION =
+  /\b(?:(?:did|does|do|has|have|had|is|are|was|were|could|would|will|can|should)\s+not|didn't|doesn't|don't|hasn't|haven't|hadn't|isn't|aren't|wasn't|weren't|couldn't|wouldn't|won't|can't)[.!?]?$/i;
+
+/**
+ * The clauses of a text: its sentences (`sentencesIn`), each split at
+ * CLAUSE_BREAK.
+ *
+ * A piece with no content word of its own is one of two things. An elided
+ * negation of the clause before it ("Revenue was expected to rise, but did
+ * not") joins that clause: on its own it would carry the "not" away from the
+ * predicate it denies. Anything else — an alternative or a hedge tail such
+ * as "if not more", "not 3%" or "or not" — denies nothing the claim states,
+ * names nothing a claim clause could line up with, and is left out; joined
+ * to the main clause it read "shares rose 5%, if not more" as shares not
+ * rising.
  */
 export function clausesOf(sentence: string): string[] {
   const out: string[] = [];
-  for (const piece of sentence.split(CLAUSE_BREAK).map((c) => c.trim()).filter((c) => c.length > 0)) {
-    if (out.length > 0 && contentTokens(piece).size === 0) out[out.length - 1] = `${out[out.length - 1]} ${piece}`;
-    else if (out.length === 1 && contentTokens(out[0]!).size === 0) out[0] = `${out[0]} ${piece}`;
-    else out.push(piece);
+  for (const part of sentencesIn(sentence)) {
+    for (const piece of part.split(CLAUSE_BREAK).map((c) => c.trim()).filter((c) => c.length > 0)) {
+      if (contentTokens(piece).size > 0) out.push(piece);
+      else if (out.length > 0 && ELIDED_NEGATION.test(piece)) out[out.length - 1] = `${out[out.length - 1]} ${piece}`;
+    }
   }
   return out.length > 0 ? out : [sentence];
 }
@@ -1345,7 +1497,6 @@ export function clausesOf(sentence: string): string[] {
  */
 export function bestMatchingClause(claim: string, sentence: string): string {
   const clauses = clausesOf(sentence);
-  if (clauses.length <= 1) return sentence;
   let best = clauses[0]!;
   let bestScore = -1;
   for (const clause of clauses) {
@@ -1364,10 +1515,6 @@ export function bestMatchingClause(claim: string, sentence: string): string {
  * passage ("the trial found") says nothing about the passage's polarity.
  */
 const CLAUSE_MATCH_MIN = 0.5;
-
-/** A clause whose verb is elided after its negation: "but its profits did not", "though costs haven't". */
-const ELIDED_NEGATION =
-  /\b(?:(?:did|does|do|has|have|had|is|are|was|were|could|would|will|can|should)\s+not|didn't|doesn't|don't|hasn't|haven't|hadn't|isn't|aren't|wasn't|weren't|couldn't|wouldn't|won't|can't)[.!?]?$/i;
 
 /**
  * Whether `passageClause` is an elided negation answering `claimClause`:
@@ -1396,7 +1543,8 @@ function clauseAlignment(claimClause: string, passageClause: string): number {
 
 /**
  * Whether the passage sentence states the opposite of the claim, with
- * negation compared clause against clause — the SAME level on both sides.
+ * negation compared clause against clause — the SAME level on both sides,
+ * and never across a sentence end on either (`clausesOf`).
  *
  * Whole sentence against whole sentence read "Serious adverse events occurred
  * in 3% …, a difference described as not significant" as denying the 3%: the
@@ -1418,9 +1566,12 @@ export function polarityDisagrees(claim: string, sentence: string): boolean {
   const clauses = clausesOf(claim);
   const passageClauses = clausesOf(sentence);
   if (clauses.length <= 1) {
-    const parity = negationParity(claim);
-    if (parity !== negationParity(bestMatchingClause(claim, sentence))) return true;
-    return passageClauses.some((candidate) => elidedAnswer(claim, candidate) && negationParity(candidate) !== parity);
+    // The clause, not the whole claim: a hedge tail left out of it ("…, if
+    // not more") must not flip it either.
+    const clause = clauses[0]!;
+    const parity = negationParity(clause);
+    if (parity !== negationParity(bestMatchingClause(clause, sentence))) return true;
+    return passageClauses.some((candidate) => elidedAnswer(clause, candidate) && negationParity(candidate) !== parity);
   }
   for (const clause of clauses) {
     let best: string | null = null;
@@ -1612,20 +1763,34 @@ export function auditEvidence(opts: {
       code: "stated_by_other_citation",
       detail: `${raw} is not in this passage; another source cited for this sentence states it.`,
     });
+  const claimFacts = { text: claim, dates: claimDates, numbers: claimNums };
+  const passageFacts = { text: passage, dates: passageDates, numbers: passageNums };
   for (const n of claimNums) {
     const sameKind = passageNums.filter((p) => p.kind === n.kind);
     if (sameKind.some((p) => numbersAgree(p.value, n.value))) continue;
-    // A passage figure equal to ANOTHER of the claim's figures is the evidence
-    // for that figure ("100 GB against 50 GB": the 100 GB page), not a rival to this one.
-    const rival = sameKind.filter(
+    const rival = rivalFigures(claimFacts, n, passageFacts);
+    /*
+     * Another cited source may supply a figure this passage lacks, never one
+     * it may disagree with. `rival` rests on guesses about the measured noun
+     * (`sameSubject`), and a wrong guess there only turns a contradiction
+     * into an omission; here it would let another source's figure stand in
+     * and show the disagreeing passage as SUPPORT. So every figure in the
+     * passage that could be the same quantity — any amount of money or
+     * percentage, and a count in the same unit — has to be accounted for:
+     * the evidence for another of the claim's figures, for the same date, or
+     * pinned on a named subject the claim never mentions.
+     */
+    const accountedFor = sameKind.every(
       (p) =>
-        !claimNums.some((m) => m !== n && m.kind === p.kind && numbersAgree(m.value, p.value)) &&
-        measuresSameThing(claim, n, passage, p)
+        (p.kind === "plain" && !sameQuantity(claim, n, passage, p)) ||
+        evidenceForAnotherFigure(claimFacts, n, passageFacts, p, { strict: true }) ||
+        namesOtherSubject(claim, passage, p)
     );
-    // Another cited source may supply a figure this passage lacks, never one
-    // it disagrees with: a passage giving a different figure for the same
-    // thing is a disagreement whoever else agrees with the claim.
-    if (rival.length === 0 && elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))) {
+    if (
+      rival.length === 0 &&
+      accountedFor &&
+      elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))
+    ) {
       statedElsewhere(n.raw);
       continue;
     }
@@ -1748,6 +1913,46 @@ export function auditEvidence(opts: {
   }
 
   return { ceiling, contradicted, reasons };
+}
+
+/**
+ * For a claim that names no date: whether a passage that gives a different
+ * figure is about another period than the passage that supports it, so the
+ * difference is not a disagreement. "Northwind's revenue was $4.3 billion",
+ * supported by an annual report's "$4.3 billion in 2024", is not disputed by
+ * the same report's "$3.9 billion in 2023": each figure is pinned to its own
+ * year and the years differ.
+ *
+ * False — record the disagreement — whenever the claim is dated (the date
+ * checks already decide that: `disagreesForSamePeriod`), whenever the
+ * supporting figure or any differing figure carries no date of its own, and
+ * when the two dates agree.
+ */
+export function differentPeriodForUndatedClaim(claim: string, supporting: string, conflicting: string): boolean {
+  const claimDates = extractDates(claim);
+  if (claimDates.length > 0) return false;
+  const facts = (text: string) => {
+    const dates = extractDates(text);
+    return { text, dates, numbers: extractNumbers(text, dates) };
+  };
+  const claimFacts = facts(claim);
+  const supportFacts = facts(supporting);
+  const conflictFacts = facts(conflicting);
+  let differs = false;
+  for (const n of claimFacts.numbers) {
+    if (conflictFacts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value))) continue;
+    const rivals = rivalFigures(claimFacts, n, conflictFacts);
+    if (rivals.length === 0) continue;
+    const support = supportFacts.numbers.find((p) => p.kind === n.kind && numbersAgree(p.value, n.value));
+    const supportAt = support ? figureDate(supporting, support, supportFacts.dates) : null;
+    if (!supportAt) return false;
+    for (const rival of rivals) {
+      const at = figureDate(conflicting, rival, conflictFacts.dates);
+      if (!at || datesAgree(at, supportAt)) return false;
+    }
+    differs = true;
+  }
+  return differs;
 }
 
 /**

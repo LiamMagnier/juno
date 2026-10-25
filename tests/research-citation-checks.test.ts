@@ -98,6 +98,12 @@ test("words that only look like present-state markers do not trigger freshness",
     "The studio sells still images and stock video to publishers.",
     "The museum had been closed until now for structural repairs.",
     "The remains of the original factory were listed in 1998.",
+    // "remains" as the noun, followed by a word the verb also takes.
+    "Human remains at the site were dated to 3000 BC.",
+    "The fossil remains in a private collection in Berlin.",
+    "Skeletal remains on the riverbank were reburied in 1987.",
+    // "current" that heads no role, price or version stated as a fact.
+    "The current account deficit is 4% of GDP.",
   ]) {
     const result = auditEvidence({ claim, passage: claim, publishedAt: old, asOf: ASOF });
     assert.ok(!result.reasons.some((r) => r.code === "source_stale"), claim);
@@ -106,8 +112,14 @@ test("words that only look like present-state markers do not trigger freshness",
     "The service is still free for students.",
     "The plan now costs $25 a month.",
     "The company remains the largest employer in the region.",
+    "The rules remain in force across the bloc.",
     "The service currently costs $20 a month.",
     "Shares have risen 6% this year.",
+    // "current" heading a role, a price or a version that the sentence says IS something.
+    "The current CEO is Jane Doe.",
+    "Its current chief executive is Jane Doe.",
+    "The current price is $20 a month.",
+    "The current stable version is 3.2.",
   ]) {
     const result = auditEvidence({ claim, passage: claim, publishedAt: old, asOf: ASOF });
     assert.ok(result.reasons.some((r) => r.code === "source_stale"), claim);
@@ -185,6 +197,30 @@ test("the same source restating the same figure for the same year still contests
     source(1, "Northwind's revenue was $4.3 billion in 2024, the annual report says.\n\nNorthwind's revenue was $4.1 billion in 2024 after the restatement, the auditors found."),
   ]);
   assert.equal(outcome.claims[0].contested, true);
+});
+
+test("an undated figure is not contested by another year's figure when its support names its own year", async () => {
+  const report = "# R\n\nNorthwind's revenue was $4.3 billion [1].";
+  const supporting = "Northwind's revenue was $4.3 billion in 2024, the annual report says.";
+  const lastYear = "Northwind's revenue was $3.9 billion in 2023, the previous annual report said.";
+  // The same source's previous-year paragraph, and an uncited source's.
+  for (const sources of [[source(1, `${supporting}\n\n${lastYear}`)], [source(1, supporting), source(2, lastYear)]]) {
+    const [claim] = (await audit(report, sources)).claims;
+    assert.equal(claim.status, "supported");
+    assert.equal(claim.contested, false, JSON.stringify(claim.links));
+    assert.ok(claim.links.every((l) => l.stance === "supports"));
+    assert.deepEqual(claim.rivals, []);
+  }
+  // Still a disagreement: the same year, an undated rival, or an undated support.
+  for (const body of [
+    `${supporting}\n\nNorthwind's revenue was $4.1 billion in 2024 after the restatement, the auditors found.`,
+    `${supporting}\n\nNorthwind's revenue was $4.1 billion after the restatement, the auditors found.`,
+    `Northwind's revenue was $4.3 billion, the annual report says.\n\n${lastYear}`,
+  ]) {
+    const [claim] = (await audit(report, [source(1, body)])).claims;
+    assert.equal(claim.status, "supported", body);
+    assert.equal(claim.contested, true, body);
+  }
 });
 
 test("a segment or a previous year in an UNCITED source is not a rival either", async () => {
@@ -379,6 +415,66 @@ test("corroboration never hides a cited passage that gives a different figure: a
   assert.ok(!fromOne.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")));
 });
 
+test("corroboration never hides a cited passage that gives a different figure: a verb read as the measured noun's qualifier", async () => {
+  // "booked revenue of" read "booked" as a narrower revenue, so the $3.9bn
+  // was no rival and [2]'s $4.3bn stood in for it: [1] was shown as support.
+  const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];
+  for (const verb of ["booked", "achieved", "logged", "registered", "delivered", "announced", "disclosed", "secured", "expects", "forecast", "targets"]) {
+    const passage = `The company ${verb} revenue of $3.9 billion in 2024, its annual filing shows.`;
+    const result = auditEvidence({ claim: "In 2024, Northwind's revenue was $4.3 billion.", passage, corroborating });
+    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), verb);
+    assert.ok(result.ceiling < SUPPORTED_MIN, `${verb}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+  // A verb read as the measured noun itself.
+  const head = auditEvidence({
+    claim: "In 2024, Northwind's revenue was $4.3 billion.",
+    passage: "The company tallied $3.9 billion in revenue in 2024.",
+    corroborating,
+  });
+  assert.ok(!head.reasons.some((r) => r.code === "stated_by_other_citation"));
+
+  // End to end: [1] is never the support, and the claim is not supported on it.
+  const outcome = await audit("# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].", [
+    source(1, "The company booked revenue of $3.9 billion in 2024, its annual filing shows."),
+    source(2, "Northwind's revenue: $4.3 billion."),
+  ]);
+  const [claim] = outcome.claims;
+  assert.notEqual(claim.status, "supported");
+  assert.ok(!claim.links.some((l) => l.sourceIndex === 1 && l.status === "supported"), JSON.stringify(claim.links));
+  assert.ok(!claim.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")));
+});
+
+test("a page's figure for the claim's year is not the evidence for the claim's equal figure of another year", async () => {
+  const claim = "Northwind's revenue was $4.3 billion in 2024, up from $3.9 billion in 2023.";
+  // Alone: $3.9bn given for 2024 contradicts the claim's 2024 figure.
+  const sameYear = auditEvidence({ claim, passage: "Northwind's revenue was $3.9 billion in 2024, the filing shows." });
+  assert.equal(sameYear.contradicted, true);
+  assert.ok(sameYear.reasons.some((r) => r.code === "figure_mismatch"));
+  // Given for 2023, it is that figure's evidence: the 2024 figure is merely absent.
+  const previousYear = auditEvidence({ claim, passage: "Northwind's revenue was $3.9 billion in 2023, the filing shows." });
+  assert.equal(previousYear.contradicted, false);
+  assert.ok(previousYear.reasons.some((r) => r.code === "figure_absent"));
+
+  // With corroboration: [1] gives $3.9bn for 2024 and is never shown as
+  // support, whether or not [2] carries the claim on its own.
+  const report = "# R\n\nIn 2024, Northwind's revenue was $4.3 billion, up from $3.9 billion in 2023 [1][2].";
+  const one = source(1, "In 2024, the company's revenue was $3.9 billion, its annual filing shows, after $3.6 billion in 2023.");
+  for (const two of ["Northwind: revenue $4.3 billion.", "Northwind's revenue was $4.3 billion in 2024, up from $3.9 billion in 2023."]) {
+    const [audited] = (await audit(report, [one, source(2, two)])).claims;
+    const fromOne = audited.links.filter((l) => l.sourceIndex === 1);
+    assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), `${two}: ${JSON.stringify(audited.links)}`);
+    assert.ok(!audited.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), two);
+    if (audited.status === "supported") assert.equal(audited.contested, true, two);
+  }
+  // The honest year-over-year comparison across two sources still corroborates.
+  const honest = await audit("# R\n\nNorthwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion [1][2].", [
+    source(1, "Northwind earned $4.3 billion in 2024, its report says."),
+    source(2, "Southwind earned $2.1 billion in 2024, its report says."),
+  ]);
+  assert.equal(honest.claims[0].status, "supported");
+  assert.equal(honest.claims[0].contested, false);
+});
+
 test("two counts of days measuring different things are not a contradiction; the same thing is", () => {
   const differentThings = auditEvidence({
     claim: "All plans include 30-day version history.",
@@ -480,6 +576,76 @@ test("a negation in another clause does not flip the sentence; a negation of the
   assert.equal(
     bestMatchingClause("serious adverse events 3%", "Serious adverse events occurred in 3%, which was not significant"),
     "Serious adverse events occurred in 3%"
+  );
+});
+
+// The passage span the polarity check reads can be two sentences: a sentence
+// ending in a figure ("…in 2024.") is not split from the next one.
+
+test("a claim joining two source sentences, the first ending in a figure, is not contradicted, end to end through the repair", async () => {
+  for (const [sentence, body] of [
+    ["The EU adopted the AI Act in 2024, but the rules do not apply until 2026", "The EU adopted the AI Act in 2024. Most of its rules do not apply until 2026."],
+    ["Emissions fell 3% in 2023, but they did not fall enough to meet the target", "Emissions fell 3% in 2023. They did not fall enough to meet the 2030 target, the agency said."],
+    ["Northwind did not raise its dividend, although revenue grew 8% in 2024", "Northwind's revenue grew 8% in 2024. The company did not raise its dividend, citing capital needs."],
+    ["Northwind's sales rose sharply in 2024, but its profits did not", "Northwind's sales rose sharply in 2024. Its profits did not."],
+  ]) {
+    const report = `# R\n\n${sentence} [1].`;
+    const outcome = await audit(report, [source(1, body!)]);
+    const [claim] = outcome.claims;
+    assert.equal(claim.status, "supported", `${sentence}: ${JSON.stringify(claim.links)}`);
+    assert.equal(outcome.judgeCalls, 1, `${sentence}: the judge is asked`);
+    assert.ok(!claim.links.some((l) => l.reasons.some((r) => r.code === "polarity_mismatch")), sentence);
+    assert.equal(repairReportFromClaims(report, outcome.claims).report, report, sentence);
+  }
+});
+
+test("a verbatim claim is not contradicted by a neighbouring sentence that ends in a figure and holds a 'not'", async () => {
+  for (const [claim, passage] of [
+    ["Northwind's sales rose sharply in 2024, but its profits did not.", "Costs did not change in 2023. Northwind's sales rose sharply in 2024, but its profits did not."],
+    ["Emissions fell 3% in 2023, and they fell again in 2024.", "Emissions fell 3% in 2023, and they fell again in 2024. They did not fall enough to meet the target."],
+    ["The EU adopted the AI Act in 2024, but most rules do not apply until 2026.", "The EU adopted the AI Act in 2024, but most rules do not apply until 2026. Fines can reach 7%."],
+  ]) {
+    const result = auditEvidence({ claim: claim!, passage: passage! });
+    assert.equal(result.contradicted, false, claim);
+    assert.deepEqual(result.reasons, [], `${claim}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+  const report = "# R\n\nEmissions fell 3% in 2023, and they fell again in 2024 [1].";
+  const outcome = await audit(report, [source(1, "Emissions fell 3% in 2023, and they fell again in 2024. They did not fall enough to meet the target.")]);
+  assert.equal(outcome.claims[0].status, "supported");
+  assert.equal(repairReportFromClaims(report, outcome.claims).report, report);
+});
+
+test("across a sentence end, a clause the passage negates is still caught", () => {
+  // The second sentence denies the claim's second clause.
+  assert.equal(
+    auditEvidence({
+      claim: "Revenue grew 8% in 2024, and the company raised its dividend.",
+      passage: "Revenue grew 8% in 2024. The company did not raise its dividend.",
+    }).contradicted,
+    true
+  );
+  // An elided negation in the next sentence answers a one-clause claim.
+  assert.equal(auditEvidence({ claim: "Northwind's profits rose in 2024.", passage: "Northwind's sales rose in 2024. Its profits did not." }).contradicted, true);
+});
+
+test("a hedge or alternative tail with no word of its own does not flip the clause; an elided negation does", async () => {
+  for (const [claim, passage] of [
+    ["Northwind's shares rose 5% on the day of the announcement.", "Northwind's shares rose 5% on the day of the announcement, if not more."],
+    ["Unemployment fell to 4% in 2024.", "Unemployment fell to 4% in 2024, not 3%."],
+    ["The plan was approved in 2024.", "The plan was approved in 2024, or not, depending on whom you ask."],
+    ["Northwind's shares rose 5% on the day of the announcement, if not more.", "Northwind's shares rose 5% on the day of the announcement."],
+  ]) {
+    const result = auditEvidence({ claim: claim!, passage: passage! });
+    assert.equal(result.contradicted, false, `${claim} <> ${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+  const report = "# R\n\nNorthwind's shares rose 5% on the day of the announcement [1].";
+  const outcome = await audit(report, [source(1, "Northwind's shares rose 5% on the day of the announcement, if not more.")]);
+  assert.equal(outcome.claims[0].status, "supported");
+  assert.equal(repairReportFromClaims(report, outcome.claims).report, report);
+  // "…, but did not" is the main predicate denied, not a tail.
+  assert.equal(
+    auditEvidence({ claim: "Northwind's revenue rose in 2024.", passage: "Northwind's revenue was expected to rise in 2024, but did not." }).contradicted,
+    true
   );
 });
 

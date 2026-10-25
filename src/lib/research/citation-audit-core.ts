@@ -36,6 +36,7 @@ import {
   auditEvidence,
   claimsForAudit,
   contentTokens,
+  differentPeriodForUndatedClaim,
   extractClaims,
   extractDates,
   extractNumbers,
@@ -153,6 +154,25 @@ export function disagreesForSamePeriod(reasons: readonly AuditReason[]): boolean
   return !reasons.some((reason) => reason.code === "date_absent" || reason.code === "date_is_publication_date");
 }
 
+/**
+ * Whether a figure contradiction recorded beside a SUPPORTED claim is
+ * another period's figure, for a claim that names no period at all:
+ * `disagreesForSamePeriod` has no date of the claim's to go on, so an
+ * undated "revenue was $4.3 billion" read its own source's "$3.9 billion in
+ * 2023" paragraph as "Sources disagree" while the supporting paragraph said
+ * "$4.3 billion in 2024" (`differentPeriodForUndatedClaim`). A polarity
+ * contradiction is not about a figure, and is always kept.
+ */
+export function figureFromAnotherPeriod(
+  claim: string,
+  reasons: readonly AuditReason[],
+  passage: string,
+  supporting: string | null
+): boolean {
+  if (!supporting || reasons.some((reason) => reason.code === "polarity_mismatch")) return false;
+  return differentPeriodForUndatedClaim(claim, supporting, passage);
+}
+
 /** The claims one audit checks: extraction, capped with the table share kept to its slots. */
 export function selectClaimsForAudit(report: string, maxClaims: number): ExtractedClaim[] {
   return claimsForAudit(extractClaims(report), Math.max(1, Math.floor(maxClaims)));
@@ -253,6 +273,8 @@ export async function auditClaims(opts: {
 
     const verdicts: LinkVerdict[] = [];
     const links: AuditedLink[] = [];
+    /** The passage whose verdict supported the claim, when one did. */
+    let supporting: string | null = null;
     let sawFullText = false;
     /** The cap stopped this claim's checks before any verdict (B4). */
     let judgeCapReached = false;
@@ -289,6 +311,7 @@ export async function auditClaims(opts: {
       // One honest supporting passage is what a citation is for; checking the
       // rest with the judge would spend the budget re-proving a settled claim.
       if (verdict.status === "supported") {
+        supporting = candidate.passage.text;
         next += 1;
         break;
       }
@@ -308,10 +331,13 @@ export async function auditClaims(opts: {
      * Held to the rival scan's bar (`disagreesForSamePeriod`): an annual
      * report's "$3.9 billion in 2023" paragraph beside its "$4.3 billion in
      * 2024" one is last year, not a disagreement, and a segment's figure is
-     * already not "the same thing" (`measuresSameThing`).
+     * already not "the same thing" (`measuresSameThing`). For a claim that
+     * names no year, the previous-year paragraph is recognised by the years
+     * the two paragraphs pin their figures to (`figureFromAnotherPeriod`).
      */
     for (const candidate of ranked.slice(next)) {
       if (!candidate.audit.contradicted || !disagreesForSamePeriod(candidate.audit.reasons)) continue;
+      if (figureFromAnotherPeriod(claim.text, candidate.audit.reasons, candidate.passage.text, supporting)) continue;
       verdicts.push({
         status: "contradicted",
         stance: "contradicts",
@@ -345,7 +371,7 @@ export async function auditClaims(opts: {
     const label = supportLabel(status, supportStrength);
 
     const unresolvedCitations = claim.citations.filter((n) => n < 1 || n > corpusSize);
-    const rivals = index ? rivalEvidence(claim, claimType, index, asOf) : [];
+    const rivals = index ? rivalEvidence(claim, claimType, index, asOf, supporting) : [];
     const contested = status === "supported" && (links.some((link) => link.stance === "contradicts") || rivals.length > 0);
 
     // The freshness finding names the defect in the repair only when it is
@@ -394,13 +420,16 @@ function tally(counts: AuditCounts, status: ClaimStatus, strength: number | null
  * is far too easy to manufacture from two sentences that merely share words,
  * and the claim's own citations already carry the polarity check. And only
  * where the claim's own dates are all in the passage: "revenue was $3.9bn in
- * 2023" is not a rival to "$4.3bn in 2024", it is last year.
+ * 2023" is not a rival to "$4.3bn in 2024", it is last year — nor, for a
+ * claim that names no year, to the "$4.3bn in 2024" passage that supports it
+ * (`figureFromAnotherPeriod`).
  */
 function rivalEvidence(
   claim: ExtractedClaim,
   claimType: ClaimType,
   index: readonly IndexedPassage[],
-  asOf: Date | null
+  asOf: Date | null,
+  supporting: string | null
 ): RivalEvidence[] {
   const claimDates = extractDates(claim.text);
   if (extractNumbers(claim.text, claimDates).length === 0) return [];
@@ -432,6 +461,7 @@ function rivalEvidence(
     });
     const mismatches = audit.reasons.filter((reason) => reason.code === "figure_mismatch");
     if (mismatches.length === 0 || !disagreesForSamePeriod(audit.reasons)) continue;
+    if (figureFromAnotherPeriod(claim.text, mismatches, entry.passage.text, supporting)) continue;
     seenSources.add(entry.sourceIndex);
     rivals.push({ sourceIndex: entry.sourceIndex, ordinal: entry.passage.ordinal, reasons: mismatches });
   }

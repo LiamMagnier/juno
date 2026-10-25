@@ -33,7 +33,13 @@ import {
   type RepairableClaim,
   type SupportLabel,
 } from "@/lib/research/claim-analysis";
-import { auditClaims, disagreesForSamePeriod, readAuditReceipt, selectClaimsForAudit } from "@/lib/research/citation-audit-core";
+import {
+  auditClaims,
+  disagreesForSamePeriod,
+  figureFromAnotherPeriod,
+  readAuditReceipt,
+  selectClaimsForAudit,
+} from "@/lib/research/citation-audit-core";
 import {
   isPreviewOnly,
   isSourceReadState,
@@ -1187,6 +1193,13 @@ export async function loadCitationAuditForMessage(
   const claims: ClaimAuditClaimView[] = run.claims.map((claim) => {
     const status = claim.status as ClaimStatus;
     tally(summary, status, claim.supportStrength);
+    // The passage that carried a supported claim, as the audit's period check saw it.
+    const supporting =
+      status === "supported"
+        ? claim.links
+            .filter((link) => link.stance === "supports")
+            .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0))[0]?.passage.text ?? null
+        : null;
     const rivals: ClaimAuditRivalView[] = receipt.rivals
       .filter((r) => r.claimId === claim.id)
       .flatMap((r) => {
@@ -1203,6 +1216,7 @@ export async function loadCitationAuditForMessage(
         // Recomputed like a link's reasons: a rival this build would no
         // longer call one is not shown on the strength of an old receipt.
         if (codedReasons.length === 0 || !disagreesForSamePeriod(audit.reasons)) return [];
+        if (figureFromAnotherPeriod(claim.text, codedReasons, passage.text, supporting)) return [];
         return [{ sourceIndex: indexOf.get(source.id) ?? 0, passage: passage.text, locator: passage.locator, codedReasons }];
       });
     const contested =
