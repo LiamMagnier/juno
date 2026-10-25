@@ -1272,7 +1272,7 @@ export function bestMatchingSentence(claim: string, passage: string): string {
 const SENTENCE_STARTERS = new Set(
   ("this that these those it its there here some most many all every each both our we they you he she his her " +
     "however meanwhile overall today yesterday since until unless although though because while when where after before " +
-    "during under over above below between among across against about around per via plus versus")
+    "during under over above below between among across against about around")
     .split(" ")
 );
 
