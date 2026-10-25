@@ -160,13 +160,17 @@ the import fail rather than be followed.
 
 ## Baseline 2026-10-25 (`bench/workflows/results/baseline-2026-10-25/`)
 
-Environment: no model provider key, no network, LibreOffice 24.2. See
-`report.md` in that folder for every check.
+Environment: no model provider key, no network, LibreOffice 24.2, code
+sandbox network-isolated (`unshare -rn`). Re-recorded at commit `0d98b3cfc`
+after the containment and scope fixes (same states as the first recording;
+`lang-03` now also reopens `note.xlsx`). See `report.md` in that folder for
+every check.
 
 | Scope | Pass | Fail | Unverified | Not run |
 |---|---|---|---|---|
 | alevr · offline_pipeline | 15 | 2 | 5 (awaiting human rubric review) | 16 (no deterministic product path) |
-| alevr · end_to_end | 0 | 0 | 0 | 38 (no provider key here. 11 need only a key, `research-02` also needs network, and 26 need the deployed product, attachments, an account or devices, so they are run by hand and imported) |
+| alevr · model_via_router | 0 | 0 | 0 | 38 (no provider key here. 11 need only a key, `research-02` also needs network, and 26 need the deployed product, attachments, an account or devices, so they are run by hand and imported) |
+| alevr · end_to_end | — | — | — | no records: nothing has been run in the product and imported yet |
 
 The offline runs found two real product problems:
 

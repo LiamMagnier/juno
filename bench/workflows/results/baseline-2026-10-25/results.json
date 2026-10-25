@@ -1,14 +1,14 @@
 {
   "benchVersion": "workflow-bench/1.0.0",
   "runId": "baseline-2026-10-25",
-  "createdAt": "2026-10-25T16:47:55.519Z",
+  "createdAt": "2026-10-25T20:11:16.967Z",
   "environment": {
     "node": "v22.22.0",
     "platform": "linux-x64",
     "providersConfigured": [],
     "libreoffice": "LibreOffice 24.2.7.2 420(Build:2)",
     "network": false,
-    "gitCommit": "ebc322cfbbf6b59704f5c2ef0f2eb0382bc88244",
+    "gitCommit": "0d98b3cfc318914c1786e9ee537debf5301dbbcf",
     "gitDirty": false,
     "fixturesDigest": "9e8ab5263fc848cd8976caae6dfc82e799ea43866c2e7d317d70cfb55a7d7a6a"
   },
@@ -22,7 +22,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -56,7 +56,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -90,7 +90,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -103,9 +103,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:36.311Z",
-      "finishedAt": "2026-10-25T16:47:36.339Z",
-      "durationMs": 24,
+      "startedAt": "2026-10-25T20:10:58.331Z",
+      "finishedAt": "2026-10-25T20:10:58.345Z",
+      "durationMs": 11,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -115,8 +115,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:36.311Z",
-          "durationMs": 24,
+          "startedAt": "2026-10-25T20:10:58.331Z",
+          "durationMs": 11,
           "outcome": "completed",
           "state": "passed"
         }
@@ -199,7 +199,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -233,7 +233,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -246,9 +246,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:36.339Z",
-      "finishedAt": "2026-10-25T16:47:36.342Z",
-      "durationMs": 2,
+      "startedAt": "2026-10-25T20:10:58.345Z",
+      "finishedAt": "2026-10-25T20:10:58.349Z",
+      "durationMs": 3,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -258,8 +258,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:36.339Z",
-          "durationMs": 2,
+          "startedAt": "2026-10-25T20:10:58.345Z",
+          "durationMs": 3,
           "outcome": "completed",
           "state": "failed"
         }
@@ -337,7 +337,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -371,7 +371,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -405,7 +405,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -439,7 +439,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -473,7 +473,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -507,7 +507,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -541,7 +541,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -575,7 +575,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -588,9 +588,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:36.344Z",
-      "finishedAt": "2026-10-25T16:47:36.451Z",
-      "durationMs": 107,
+      "startedAt": "2026-10-25T20:10:58.351Z",
+      "finishedAt": "2026-10-25T20:10:58.382Z",
+      "durationMs": 30,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -600,8 +600,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:36.344Z",
-          "durationMs": 107,
+          "startedAt": "2026-10-25T20:10:58.351Z",
+          "durationMs": 30,
           "outcome": "completed",
           "state": "failed"
         }
@@ -659,7 +659,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -672,9 +672,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:36.452Z",
-      "finishedAt": "2026-10-25T16:47:37.153Z",
-      "durationMs": 700,
+      "startedAt": "2026-10-25T20:10:58.383Z",
+      "finishedAt": "2026-10-25T20:10:58.878Z",
+      "durationMs": 494,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -684,8 +684,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:36.452Z",
-          "durationMs": 700,
+          "startedAt": "2026-10-25T20:10:58.383Z",
+          "durationMs": 494,
           "outcome": "completed",
           "state": "passed"
         }
@@ -763,7 +763,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -776,9 +776,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:37.154Z",
-      "finishedAt": "2026-10-25T16:47:37.368Z",
-      "durationMs": 213,
+      "startedAt": "2026-10-25T20:10:58.879Z",
+      "finishedAt": "2026-10-25T20:10:59.040Z",
+      "durationMs": 160,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -788,8 +788,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:37.154Z",
-          "durationMs": 213,
+          "startedAt": "2026-10-25T20:10:58.879Z",
+          "durationMs": 160,
           "outcome": "completed",
           "state": "passed"
         }
@@ -837,7 +837,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -850,9 +850,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:37.368Z",
-      "finishedAt": "2026-10-25T16:47:37.375Z",
-      "durationMs": 6,
+      "startedAt": "2026-10-25T20:10:59.040Z",
+      "finishedAt": "2026-10-25T20:10:59.048Z",
+      "durationMs": 7,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -862,8 +862,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:37.368Z",
-          "durationMs": 6,
+          "startedAt": "2026-10-25T20:10:59.040Z",
+          "durationMs": 7,
           "outcome": "completed",
           "state": "passed"
         }
@@ -926,7 +926,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -939,9 +939,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:37.376Z",
-      "finishedAt": "2026-10-25T16:47:39.478Z",
-      "durationMs": 372,
+      "startedAt": "2026-10-25T20:10:59.049Z",
+      "finishedAt": "2026-10-25T20:11:00.561Z",
+      "durationMs": 247,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -951,8 +951,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:37.376Z",
-          "durationMs": 372,
+          "startedAt": "2026-10-25T20:10:59.049Z",
+          "durationMs": 247,
           "outcome": "completed",
           "state": "unverified"
         }
@@ -961,8 +961,8 @@
       "artifacts": [
         {
           "name": "memo.docx",
-          "bytes": 9279,
-          "sha256": "b82c934b325ddae980814ed15961bb42538e0270300a24a300f7255730c234fa"
+          "bytes": 9277,
+          "sha256": "cb9e40fb88d665de743578eb01b32eaa57c300f4244a1bc1560a9e01c7856daa"
         }
       ],
       "checks": [
@@ -1075,7 +1075,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1088,9 +1088,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:39.479Z",
-      "finishedAt": "2026-10-25T16:47:41.066Z",
-      "durationMs": 88,
+      "startedAt": "2026-10-25T20:11:00.562Z",
+      "finishedAt": "2026-10-25T20:11:01.862Z",
+      "durationMs": 23,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1100,8 +1100,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:39.479Z",
-          "durationMs": 88,
+          "startedAt": "2026-10-25T20:11:00.562Z",
+          "durationMs": 23,
           "outcome": "completed",
           "state": "unverified"
         }
@@ -1110,8 +1110,8 @@
       "artifacts": [
         {
           "name": "faq.docx",
-          "bytes": 8936,
-          "sha256": "b4efe13b1ef559f8c0a134d54006007461b6b7ed3618f66255114861b518ab2b"
+          "bytes": 8934,
+          "sha256": "294950fa09a2b3fab5c59ab282e5baecf3d9c26fbac2619cf25edac4eb0feb7c"
         }
       ],
       "checks": [
@@ -1199,7 +1199,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1212,9 +1212,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:41.067Z",
-      "finishedAt": "2026-10-25T16:47:41.073Z",
-      "durationMs": 4,
+      "startedAt": "2026-10-25T20:11:01.864Z",
+      "finishedAt": "2026-10-25T20:11:01.873Z",
+      "durationMs": 6,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1224,8 +1224,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:41.067Z",
-          "durationMs": 4,
+          "startedAt": "2026-10-25T20:11:01.864Z",
+          "durationMs": 6,
           "outcome": "completed",
           "state": "unverified"
         }
@@ -1318,7 +1318,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1331,9 +1331,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:41.073Z",
-      "finishedAt": "2026-10-25T16:47:42.593Z",
-      "durationMs": 175,
+      "startedAt": "2026-10-25T20:11:01.874Z",
+      "finishedAt": "2026-10-25T20:11:03.440Z",
+      "durationMs": 102,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1343,8 +1343,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:41.073Z",
-          "durationMs": 175,
+          "startedAt": "2026-10-25T20:11:01.874Z",
+          "durationMs": 102,
           "outcome": "completed",
           "state": "passed"
         }
@@ -1354,7 +1354,7 @@
         {
           "name": "invoices.xlsx",
           "bytes": 9505,
-          "sha256": "8a7a434e3b06d63855304b9746b0d10e292433ff6463ee40d96b6dbe08fabe41"
+          "sha256": "a16f6fdcfbb0193c46ee08232757e77ea3af79765cc00e8dde3ebc517f769b97"
         }
       ],
       "checks": [
@@ -1477,7 +1477,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1490,9 +1490,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:42.594Z",
-      "finishedAt": "2026-10-25T16:47:43.879Z",
-      "durationMs": 24,
+      "startedAt": "2026-10-25T20:11:03.441Z",
+      "finishedAt": "2026-10-25T20:11:05.029Z",
+      "durationMs": 37,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1502,8 +1502,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:42.594Z",
-          "durationMs": 24,
+          "startedAt": "2026-10-25T20:11:03.441Z",
+          "durationMs": 37,
           "outcome": "completed",
           "state": "passed"
         }
@@ -1512,8 +1512,8 @@
       "artifacts": [
         {
           "name": "expenses.xlsx",
-          "bytes": 7628,
-          "sha256": "270a93c3137a05e7f49d93b1e2293726290dd7935d73c32c164f5b9e43981006"
+          "bytes": 7627,
+          "sha256": "f64fec03a45922da493e5c0ee4b4569045ae06ce93d068fe47fca63b73acce67"
         }
       ],
       "checks": [
@@ -1616,7 +1616,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1629,9 +1629,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:43.880Z",
-      "finishedAt": "2026-10-25T16:47:45.412Z",
-      "durationMs": 20,
+      "startedAt": "2026-10-25T20:11:05.030Z",
+      "finishedAt": "2026-10-25T20:11:06.286Z",
+      "durationMs": 18,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1641,8 +1641,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:43.880Z",
-          "durationMs": 20,
+          "startedAt": "2026-10-25T20:11:05.030Z",
+          "durationMs": 18,
           "outcome": "completed",
           "state": "passed"
         }
@@ -1651,8 +1651,8 @@
       "artifacts": [
         {
           "name": "totals.xlsx",
-          "bytes": 6646,
-          "sha256": "9201e7f18746e1f5a3a6f3382de89b64c3e157cf492ebc136658bde719735f16"
+          "bytes": 6645,
+          "sha256": "f671b188d5203503282d4c6e89d8a21502d6c97a930cc1a58633c32ae75d862f"
         }
       ],
       "checks": [
@@ -1735,7 +1735,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1748,9 +1748,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:45.419Z",
-      "finishedAt": "2026-10-25T16:47:47.013Z",
-      "durationMs": 47,
+      "startedAt": "2026-10-25T20:11:06.287Z",
+      "finishedAt": "2026-10-25T20:11:07.567Z",
+      "durationMs": 26,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1760,8 +1760,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:45.419Z",
-          "durationMs": 47,
+          "startedAt": "2026-10-25T20:11:06.287Z",
+          "durationMs": 26,
           "outcome": "completed",
           "state": "unverified"
         }
@@ -1771,7 +1771,7 @@
         {
           "name": "decision.pptx",
           "bytes": 77594,
-          "sha256": "977e99076c1061d1615ec1d1fa426edf63f4ad2f40bb87fd6c1369a45c2316e5"
+          "sha256": "edb2563dc9270099388f98d56773e94bffb05f6456db80aa2e7c24c7c63b83b0"
         }
       ],
       "checks": [
@@ -1874,7 +1874,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -1887,9 +1887,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:47.014Z",
-      "finishedAt": "2026-10-25T16:47:48.692Z",
-      "durationMs": 82,
+      "startedAt": "2026-10-25T20:11:07.568Z",
+      "finishedAt": "2026-10-25T20:11:09.073Z",
+      "durationMs": 44,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -1899,8 +1899,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:47.014Z",
-          "durationMs": 82,
+          "startedAt": "2026-10-25T20:11:07.568Z",
+          "durationMs": 44,
           "outcome": "completed",
           "state": "unverified"
         }
@@ -1910,7 +1910,7 @@
         {
           "name": "pilot-data.pptx",
           "bytes": 123440,
-          "sha256": "e8ed5243ed874cde780d94f7012755cfa1e99e741dd09050df658fdbd02f4049"
+          "sha256": "fc09a52f2c4de71614d14efd3cf3379e02dba672a74e35577fe358ce61847c61"
         }
       ],
       "checks": [
@@ -2018,7 +2018,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2031,9 +2031,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:48.692Z",
-      "finishedAt": "2026-10-25T16:47:49.806Z",
-      "durationMs": 1113,
+      "startedAt": "2026-10-25T20:11:09.074Z",
+      "finishedAt": "2026-10-25T20:11:09.870Z",
+      "durationMs": 796,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2043,8 +2043,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:48.692Z",
-          "durationMs": 1113,
+          "startedAt": "2026-10-25T20:11:09.074Z",
+          "durationMs": 796,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2117,7 +2117,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2130,9 +2130,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:49.807Z",
-      "finishedAt": "2026-10-25T16:47:49.811Z",
-      "durationMs": 3,
+      "startedAt": "2026-10-25T20:11:09.871Z",
+      "finishedAt": "2026-10-25T20:11:09.878Z",
+      "durationMs": 7,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2142,8 +2142,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:49.807Z",
-          "durationMs": 3,
+          "startedAt": "2026-10-25T20:11:09.871Z",
+          "durationMs": 7,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2153,7 +2153,7 @@
         {
           "name": "trace.json",
           "bytes": 1753,
-          "sha256": "d586e583d1332b1ac88f10da97aa1cdd17a7d9ddb0f4dae9ed4c550537cdc08f"
+          "sha256": "3b07ffec8cf998dd2d1f806accb3425a1efd0d8bbc7e25ef5baab89f709a2e89"
         }
       ],
       "checks": [
@@ -2191,7 +2191,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2225,7 +2225,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2238,9 +2238,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:49.811Z",
-      "finishedAt": "2026-10-25T16:47:49.864Z",
-      "durationMs": 52,
+      "startedAt": "2026-10-25T20:11:09.878Z",
+      "finishedAt": "2026-10-25T20:11:09.894Z",
+      "durationMs": 15,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2250,8 +2250,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:49.811Z",
-          "durationMs": 52,
+          "startedAt": "2026-10-25T20:11:09.878Z",
+          "durationMs": 15,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2261,7 +2261,7 @@
         {
           "name": "trace.json",
           "bytes": 1042,
-          "sha256": "43db669a2745ff8127e98662f9f06529cc86d09efdb24a4c1cca02fcee4435ef"
+          "sha256": "6e115d7beaa124b0d8b0bfd275b753dc95febeab4c19821d9d5e07e034210b75"
         }
       ],
       "checks": [
@@ -2324,7 +2324,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2358,7 +2358,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2392,7 +2392,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2405,8 +2405,8 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:49.865Z",
-      "finishedAt": "2026-10-25T16:47:50.569Z",
+      "startedAt": "2026-10-25T20:11:09.894Z",
+      "finishedAt": "2026-10-25T20:11:10.599Z",
       "durationMs": 704,
       "cost": {
         "usd": 0,
@@ -2417,7 +2417,7 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:49.865Z",
+          "startedAt": "2026-10-25T20:11:09.894Z",
           "durationMs": 704,
           "outcome": "completed",
           "state": "passed"
@@ -2428,7 +2428,7 @@
         {
           "name": "trace.json",
           "bytes": 514,
-          "sha256": "1520b35479b8fd7930df0b74e1fb89116b7a1a975d73f815b5f1c33d2f36d165"
+          "sha256": "7bf9fa1a98adae8c3ea93b3ae514df581a4e0e8b1a6542396de187d6690df648"
         }
       ],
       "checks": [
@@ -2476,7 +2476,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2489,9 +2489,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:50.574Z",
-      "finishedAt": "2026-10-25T16:47:50.738Z",
-      "durationMs": 163,
+      "startedAt": "2026-10-25T20:11:10.599Z",
+      "finishedAt": "2026-10-25T20:11:10.741Z",
+      "durationMs": 141,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2501,8 +2501,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:50.574Z",
-          "durationMs": 163,
+          "startedAt": "2026-10-25T20:11:10.599Z",
+          "durationMs": 141,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2565,7 +2565,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2578,9 +2578,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:50.739Z",
-      "finishedAt": "2026-10-25T16:47:52.038Z",
-      "durationMs": 1298,
+      "startedAt": "2026-10-25T20:11:10.742Z",
+      "finishedAt": "2026-10-25T20:11:12.120Z",
+      "durationMs": 1377,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2590,8 +2590,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:50.739Z",
-          "durationMs": 1298,
+          "startedAt": "2026-10-25T20:11:10.742Z",
+          "durationMs": 1377,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2601,7 +2601,7 @@
         {
           "name": "trace.json",
           "bytes": 399,
-          "sha256": "a9826f132583a83c6489646fe241c72624b120a071de13e3872bfb936edba166"
+          "sha256": "6527521ad553d000911fcd0f79e7c47571bee005e179e546cfb2357b6cb4d027"
         }
       ],
       "checks": [
@@ -2649,7 +2649,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2662,9 +2662,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:52.043Z",
-      "finishedAt": "2026-10-25T16:47:52.165Z",
-      "durationMs": 116,
+      "startedAt": "2026-10-25T20:11:12.120Z",
+      "finishedAt": "2026-10-25T20:11:12.252Z",
+      "durationMs": 121,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2674,8 +2674,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:52.043Z",
-          "durationMs": 116,
+          "startedAt": "2026-10-25T20:11:12.120Z",
+          "durationMs": 121,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2768,7 +2768,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2802,7 +2802,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2836,7 +2836,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2870,7 +2870,7 @@
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "offline-harness"
       },
       "model": null,
@@ -2883,9 +2883,9 @@
         "identity": "workflow-bench/offline-executor",
         "kind": "automated"
       },
-      "startedAt": "2026-10-25T16:47:52.165Z",
-      "finishedAt": "2026-10-25T16:47:55.517Z",
-      "durationMs": 37,
+      "startedAt": "2026-10-25T20:11:12.253Z",
+      "finishedAt": "2026-10-25T20:11:16.965Z",
+      "durationMs": 52,
       "cost": {
         "usd": 0,
         "source": "offline_no_provider_calls",
@@ -2895,8 +2895,8 @@
       "attempts": [
         {
           "n": 1,
-          "startedAt": "2026-10-25T16:47:52.165Z",
-          "durationMs": 37,
+          "startedAt": "2026-10-25T20:11:12.253Z",
+          "durationMs": 52,
           "outcome": "completed",
           "state": "passed"
         }
@@ -2905,18 +2905,18 @@
       "artifacts": [
         {
           "name": "note.docx",
-          "bytes": 8774,
-          "sha256": "562407bd96c879ec04bdb490a6704fce29b7516808c96b5fb3c456145629616d"
+          "bytes": 8772,
+          "sha256": "3d5bc2462ebe039f653a7895f8a31eeaf45b46af1adfd8951a34e4bd29e05d93"
         },
         {
           "name": "note.pptx",
           "bytes": 46655,
-          "sha256": "4aea4c78968c3680a24e4aefa804533d851e483df8acb8c0892a18ac256434d3"
+          "sha256": "1537ef99c865928089a814005dc747464f59a88682c732c2629b0fbb23e34316"
         },
         {
           "name": "note.xlsx",
-          "bytes": 6826,
-          "sha256": "5927420922b0116b16ac99879680b1ad4c015e36cb07c5cafad19680317e6e1c"
+          "bytes": 6825,
+          "sha256": "17d850b61010e49ed4fbad83aef3d5c9c6d5f288ce2826d80a4c01b4c18e6584"
         }
       ],
       "checks": [
@@ -3096,6 +3096,16 @@
           "detail": "78 characters rendered"
         },
         {
+          "id": "office:note.xlsx:reopen",
+          "status": "pass",
+          "detail": "LibreOffice opened and recalculated 1 sheet(s)"
+        },
+        {
+          "id": "office:note.xlsx:no-stale-cache",
+          "status": "pass",
+          "detail": "0 formula value(s) match a fresh recalculation"
+        },
+        {
           "id": "office:note.pptx:reopen",
           "status": "pass",
           "detail": "LibreOffice rendered 1 page(s)"
@@ -3109,17 +3119,17 @@
       "review": null,
       "runDir": "runs/alevr-offline_pipeline/lang-03/attempt-1",
       "state": "passed",
-      "reason": "37/37 checks passed"
+      "reason": "39/39 checks passed"
     },
     {
       "runId": "baseline-2026-10-25",
       "workflowId": "chat-01",
       "category": "everyday_chat",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3149,11 +3159,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "chat-02",
       "category": "everyday_chat",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3183,11 +3193,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "reasoning-01",
       "category": "reasoning",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3217,11 +3227,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "reasoning-02",
       "category": "reasoning",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3251,11 +3261,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "reasoning-03",
       "category": "reasoning",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3285,11 +3295,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "writing-01",
       "category": "writing",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3319,11 +3329,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "writing-02",
       "category": "writing",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3353,11 +3363,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "coding-01",
       "category": "coding",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3387,11 +3397,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "coding-02",
       "category": "coding",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3421,11 +3431,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "coding-03",
       "category": "coding",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3455,11 +3465,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "research-01",
       "category": "research",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3489,11 +3499,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "research-02",
       "category": "research",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3523,11 +3533,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "research-03",
       "category": "research",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3557,11 +3567,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "files-01",
       "category": "file_analysis",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3591,11 +3601,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "files-02",
       "category": "file_analysis",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3625,11 +3635,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "files-03",
       "category": "file_analysis",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3659,11 +3669,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "documents-01",
       "category": "documents",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3693,11 +3703,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "documents-02",
       "category": "documents",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3727,11 +3737,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "documents-03",
       "category": "documents",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3761,11 +3771,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "sheets-01",
       "category": "spreadsheets",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3795,11 +3805,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "sheets-02",
       "category": "spreadsheets",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3829,11 +3839,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "sheets-03",
       "category": "spreadsheets",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3863,11 +3873,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "slides-01",
       "category": "presentations",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3897,11 +3907,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "slides-02",
       "category": "presentations",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3931,11 +3941,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "tools-01",
       "category": "connected_tools",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3965,11 +3975,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "tools-02",
       "category": "connected_tools",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -3999,11 +4009,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "tools-03",
       "category": "connected_tools",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4033,11 +4043,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "agent-01",
       "category": "agent_execution",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4067,11 +4077,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "agent-02",
       "category": "agent_execution",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4101,11 +4111,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "agent-03",
       "category": "agent_execution",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4135,11 +4145,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "recovery-01",
       "category": "failure_recovery",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4169,11 +4179,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "recovery-02",
       "category": "failure_recovery",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4203,11 +4213,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "recovery-03",
       "category": "failure_recovery",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4237,11 +4247,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "device-01",
       "category": "cross_device",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4271,11 +4281,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "device-02",
       "category": "cross_device",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4305,11 +4315,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "lang-01",
       "category": "multilingual",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4339,11 +4349,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "lang-02",
       "category": "multilingual",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,
@@ -4373,11 +4383,11 @@
       "runId": "baseline-2026-10-25",
       "workflowId": "lang-03",
       "category": "multilingual",
-      "scope": "end_to_end",
+      "scope": "model_via_router",
       "product": {
         "id": "alevr",
         "name": "Alevr",
-        "version": "1.10.11+ebc322cfbbf6",
+        "version": "1.10.11+0d98b3cfc318",
         "surface": "api"
       },
       "model": null,

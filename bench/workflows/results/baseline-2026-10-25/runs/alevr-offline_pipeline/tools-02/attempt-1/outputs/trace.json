@@ -17,7 +17,7 @@
       "error": "That address is on a private network Alevr can't reach."
     },
     {
-      "target": "http://localhost:35071/mcp",
+      "target": "http://localhost:38315/mcp",
       "policyProblem": "Alevr can't connect to servers on its own machine. Use the server's public https:// address.",
       "fetchRefused": true,
       "probeOk": false,
@@ -25,7 +25,7 @@
       "error": "Alevr can't connect to servers on its own machine. Use the server's public https:// address."
     },
     {
-      "target": "http://127.0.0.1:35071/mcp",
+      "target": "http://127.0.0.1:38315/mcp",
       "policyProblem": "Alevr can't connect to servers on its own machine. Use the server's public https:// address.",
       "fetchRefused": true,
       "probeOk": false,
@@ -33,7 +33,7 @@
       "error": "Alevr can't connect to servers on its own machine. Use the server's public https:// address."
     },
     {
-      "target": "http://[::1]:35071/mcp",
+      "target": "http://[::1]:38315/mcp",
       "policyProblem": "Alevr can't connect to servers on its own machine. Use the server's public https:// address.",
       "fetchRefused": true,
       "probeOk": false,
@@ -42,7 +42,7 @@
     }
   ],
   "canary": {
-    "port": 35071,
+    "port": 38315,
     "connections": 0
   }
 }

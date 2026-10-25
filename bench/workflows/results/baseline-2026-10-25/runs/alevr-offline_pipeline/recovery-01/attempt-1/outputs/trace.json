@@ -1,11 +1,11 @@
 {
-  "stopAt": 100.644,
+  "stopAt": 101.018,
   "calls": 3,
   "executions": [
     {
       "name": "slow_import",
       "callId": "call-1",
-      "startedAt": 0.407
+      "startedAt": 0.353
     }
   ],
   "effects": [],

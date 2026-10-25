@@ -10,12 +10,12 @@
     {
       "name": "lookup_invoice",
       "callId": "call-1",
-      "startedAt": 1.505
+      "startedAt": 1.331
     },
     {
       "name": "lookup_invoice",
       "callId": "call-2",
-      "startedAt": 1.694
+      "startedAt": 1.481
     }
   ],
   "authorizationRequests": [

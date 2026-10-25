@@ -1,8 +1,8 @@
 {
   "validator": "juno.work.deliverables.validate.v1",
-  "checkedAt": "2026-10-25T16:47:42.605Z",
+  "checkedAt": "2026-10-25T20:11:03.459Z",
   "kind": "spreadsheet",
-  "byteSize": 7628,
+  "byteSize": 7627,
   "ok": true,
   "observations": [
     "Opened the workbook with a reader that did not write it: 2 sheet(s) — Expenses, Summary.",

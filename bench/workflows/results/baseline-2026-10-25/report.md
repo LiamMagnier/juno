@@ -1,29 +1,29 @@
 # Workflow benchmark report
 
-Generated 2026-10-25T16:47:55.754Z from 1 results file(s): `baseline-2026-10-25`.
+Generated 2026-10-25T20:11:17.175Z from 1 results file(s): `baseline-2026-10-25`.
 
-Environment: Node v22.22.0 on linux-x64; git ebc322cfbbf6; LibreOffice: LibreOffice 24.2.7.2 420(Build:2); network: off; model providers configured: none; fixtures digest `9e8ab5263fc848cd`.
+Environment: Node v22.22.0 on linux-x64; git 0d98b3cfc318; LibreOffice: LibreOffice 24.2.7.2 420(Build:2); network: off; model providers configured: none; fixtures digest `9e8ab5263fc848cd`.
 
 States: **PASS** = delivered and every independent check passed (plus human review where required) · **FAIL** = product error or a check rejected the deliverable · **UNVERIFIED** = delivered but a check could not run or human review is pending · **UNSUPPORTED** = capability absent, with dated evidence · **NOT RUN** = nothing ran; the reason is listed.
 
-Scopes: `end_to_end` = the real product from prompt to deliverable · `offline_pipeline` = Alevr's own deterministic code driven by a fixed plan instead of a model (proves the product pipeline and the validators, not model quality). Scopes are never summed.
+Scopes: `end_to_end` = the real product from prompt to deliverable (the only scope that counts toward acceptance) · `model_via_router` = Alevr's router and model call driven directly by the harness, with the bench's system prompt and no product tools, chat route or attachments (a real model, not the product end to end) · `offline_pipeline` = Alevr's own deterministic code driven by a fixed plan instead of a model (proves the product pipeline and the validators, not model quality). Scopes are never summed.
 
 ## Headline
 
 | Product · scope | Workflows | Pass | Fail | Unverified | Unsupported | Not run | First-attempt pass (of attempted) | First-attempt pass (of all) | Observed cost | Median duration |
 |---|---|---|---|---|---|---|---|---|---|---|
-| alevr:offline_pipeline | 38 | 15 | 2 | 5 | 0 | 16 | 15/22 (68.2%) | 15/38 (39.5%) | $0.0000 (offline_no_provider_calls) | 85 ms |
-| alevr:end_to_end | 38 | 0 | 0 | 0 | 0 | 38 | n/a | 0/38 (0%) | unobserved | — |
+| alevr:offline_pipeline | 38 | 15 | 2 | 5 | 0 | 16 | 15/22 (68.2%) | 15/38 (39.5%) | $0.0000 (offline_no_provider_calls) | 41 ms |
+| alevr:model_via_router | 38 | 0 | 0 | 0 | 0 | 38 | n/a | 0/38 (0%) | unobserved | — |
 
 ## Acceptance (LEDGER P1-7)
 
-- **NOT MET** — ≥ 30 Alevr end-to-end runs recorded with artifacts and an independent verdict: 0 Alevr end-to-end run(s) with artifacts and a final passed/failed verdict (offline-pipeline runs are reported separately and do not count).
+- **NOT MET** — ≥ 30 Alevr end-to-end runs recorded with artifacts and an independent verdict: 0 distinct Alevr end-to-end workflow run(s) with artifacts and a final passed/failed verdict (offline_pipeline and model_via_router runs are reported separately and do not count).
 - **NOT MET** — At least one competitor column per category: no competitor run in 14/14 categories: everyday_chat, reasoning, writing, coding, research, file_analysis, documents, spreadsheets, presentations, connected_tools, agent_execution, failure_recovery, cross_device, multilingual.
 - **NOT MET** — First-attempt success rate reported: no Alevr end-to-end run was attempted, so there is no rate to report.
 
 ## Categories
 
-| Category | alevr:offline_pipeline | alevr:end_to_end |
+| Category | alevr:offline_pipeline | alevr:model_via_router |
 |---|---|---|
 | everyday_chat | 2 not run | 2 not run |
 | reasoning | 1/2 pass, 1 fail · 1 not run | 3 not run |
@@ -42,7 +42,7 @@ Scopes: `end_to_end` = the real product from prompt to deliverable · `offline_p
 
 ## Workflows
 
-| Workflow | Category | alevr:offline_pipeline | alevr:end_to_end |
+| Workflow | Category | alevr:offline_pipeline | alevr:model_via_router |
 |---|---|---|---|
 | `chat-01` Weekend plan under hard constraints | everyday_chat | NOT RUN | NOT RUN |
 | `chat-02` Polite rewrite that keeps every fact | everyday_chat | NOT RUN | NOT RUN |
@@ -81,7 +81,7 @@ Scopes: `end_to_end` = the real product from prompt to deliverable · `offline_p
 | `device-02` Phone-to-Mac remote task | cross_device | NOT RUN | NOT RUN |
 | `lang-01` Answer in French with correct figures | multilingual | NOT RUN | NOT RUN |
 | `lang-02` Translate preserving names and numbers | multilingual | NOT RUN | NOT RUN |
-| `lang-03` Multilingual content survives Office export | multilingual | PASS 37/37 | NOT RUN |
+| `lang-03` Multilingual content survives Office export | multilingual | PASS 39/39 | NOT RUN |
 
 Cells show the state and passed/total checks.
 
@@ -122,26 +122,26 @@ Cells show the state and passed/total checks.
 - alevr:offline_pipeline — no deterministic Alevr product path for this workflow; end-to-end needs provider_key, alevr_deployment, database, human_reviewer: `agent-02`
 - alevr:offline_pipeline — no deterministic Alevr product path for this workflow; end-to-end needs provider_key, alevr_deployment, database: `agent-03`
 - alevr:offline_pipeline — no deterministic Alevr product path for this workflow; end-to-end needs provider_key, alevr_deployment, physical_iphone, mac_host, human_reviewer: `device-02`
-- alevr:end_to_end — no model provider key is configured here (no *_API_KEY set): `chat-01`, `chat-02`, `reasoning-01`, `reasoning-02`, `reasoning-03`, `writing-01`, `writing-02`, `research-01`, `research-03`, `lang-01`, `lang-02`
-- alevr:end_to_end — delivers project, and the live harness captures chat answers only; needs file attachments (project/ledger.mjs, project/csv.mjs, project/test.mjs); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `coding-01`, `coding-02`, `coding-03`
-- alevr:end_to_end — needs network access (run with --network); no model provider key is configured here (no *_API_KEY set): `research-02`
-- alevr:end_to_end — needs file attachments (files/invoices.xlsx); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `files-01`
-- alevr:end_to_end — needs file attachments (files/pilot-report.pdf); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `files-02`
-- alevr:end_to_end — needs file attachments (files/meeting-notes.docx); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `files-03`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers memo.docx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `documents-01`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers faq.docx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `documents-02`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers report.html, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `documents-03`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers invoices.xlsx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `sheets-01`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers expenses.xlsx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `sheets-02`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers totals.xlsx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `sheets-03`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers decision.pptx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `slides-01`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers pilot-data.pptx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `slides-02`
-- alevr:end_to_end — needs alevr_deployment, connected_account beyond a model call; delivers trace.json, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `tools-01`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers trace.json, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `tools-02`, `agent-01`, `recovery-01`, `recovery-02`, `recovery-03`
-- alevr:end_to_end — needs alevr_deployment, connected_account beyond a model call; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `tools-03`
-- alevr:end_to_end — needs alevr_deployment, database beyond a model call; delivers memo.docx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `agent-02`
-- alevr:end_to_end — needs alevr_deployment, database beyond a model call; delivers status.md, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `agent-03`
-- alevr:end_to_end — needs alevr_deployment, physical_iphone beyond a model call; delivers trace.json, device-b.sse, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `device-01`
-- alevr:end_to_end — needs alevr_deployment, physical_iphone, mac_host beyond a model call; needs file attachments (project/ledger.mjs, project/csv.mjs, project/test.mjs); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `device-02`
-- alevr:end_to_end — needs alevr_deployment beyond a model call; delivers note.docx, note.xlsx, note.pptx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `lang-03`
+- alevr:model_via_router — no model provider key is configured here (no *_API_KEY set): `chat-01`, `chat-02`, `reasoning-01`, `reasoning-02`, `reasoning-03`, `writing-01`, `writing-02`, `research-01`, `research-03`, `lang-01`, `lang-02`
+- alevr:model_via_router — delivers project, and the live harness captures chat answers only; needs file attachments (project/ledger.mjs, project/csv.mjs, project/test.mjs); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `coding-01`, `coding-02`, `coding-03`
+- alevr:model_via_router — needs network access (run with --network); no model provider key is configured here (no *_API_KEY set): `research-02`
+- alevr:model_via_router — needs file attachments (files/invoices.xlsx); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `files-01`
+- alevr:model_via_router — needs file attachments (files/pilot-report.pdf); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `files-02`
+- alevr:model_via_router — needs file attachments (files/meeting-notes.docx); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `files-03`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers memo.docx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `documents-01`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers faq.docx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `documents-02`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers report.html, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `documents-03`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers invoices.xlsx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `sheets-01`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers expenses.xlsx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `sheets-02`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers totals.xlsx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `sheets-03`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers decision.pptx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `slides-01`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers pilot-data.pptx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `slides-02`
+- alevr:model_via_router — needs alevr_deployment, connected_account beyond a model call; delivers trace.json, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `tools-01`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers trace.json, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `tools-02`, `agent-01`, `recovery-01`, `recovery-02`, `recovery-03`
+- alevr:model_via_router — needs alevr_deployment, connected_account beyond a model call; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `tools-03`
+- alevr:model_via_router — needs alevr_deployment, database beyond a model call; delivers memo.docx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `agent-02`
+- alevr:model_via_router — needs alevr_deployment, database beyond a model call; delivers status.md, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `agent-03`
+- alevr:model_via_router — needs alevr_deployment, physical_iphone beyond a model call; delivers trace.json, device-b.sse, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `device-01`
+- alevr:model_via_router — needs alevr_deployment, physical_iphone, mac_host beyond a model call; needs file attachments (project/ledger.mjs, project/csv.mjs, project/test.mjs); no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `device-02`
+- alevr:model_via_router — needs alevr_deployment beyond a model call; delivers note.docx, note.xlsx, note.pptx, and the live harness captures chat answers only; no model provider key is configured here (no *_API_KEY set) — run it in the Alevr product and import the outputs: `lang-03`
 
