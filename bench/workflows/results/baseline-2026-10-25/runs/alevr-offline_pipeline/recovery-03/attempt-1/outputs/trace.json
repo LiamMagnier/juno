@@ -1,0 +1,13 @@
+{
+  "idleMs": 300,
+  "stalled": true,
+  "stalledAt": 383,
+  "lastEventAt": 83,
+  "userMessage": "The model stopped responding. Nothing more arrived, so the answer was cut short — try again, or pick another model.",
+  "partialText": "The pilot raised volume by 25% and ",
+  "truthPartial": "The pilot raised volume by 25% and ",
+  "holdScenario": {
+    "toolRunMs": 900,
+    "stalled": false
+  }
+}

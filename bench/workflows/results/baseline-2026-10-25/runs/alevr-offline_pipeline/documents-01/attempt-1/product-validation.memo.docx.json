@@ -1,0 +1,16 @@
+{
+  "validator": "juno.work.deliverables.validate.v1",
+  "checkedAt": "2026-10-25T16:47:37.741Z",
+  "kind": "document",
+  "byteSize": 9279,
+  "ok": true,
+  "observations": [
+    "Unzipped the package and read word/document.xml: 19 paragraphs, 604 characters of text."
+  ],
+  "problems": [],
+  "details": {
+    "paragraphCount": 19,
+    "characterCount": 604,
+    "missingAssetCount": 0
+  }
+}
