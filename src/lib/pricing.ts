@@ -306,6 +306,10 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
     case "moonshot":
       // platform.kimi.ai/docs/pricing/chat (2026-10-04). K3 used to fall
       // through to $0.60/$2.50 — a fifth of its real rate.
+      // K3.1 Pro $2/$10, Highspeed $4/$20 (2026-10-23 launch pricing; not yet
+      // in model-rates.generated.ts). Matched before the K3 rule they contain.
+      if (pm.includes("kimi-k3.1") && pm.includes("highspeed")) return { input: 4, output: 20 };
+      if (pm.includes("kimi-k3.1")) return { input: 2, output: 10 };
       if (pm.includes("kimi-k3")) return { input: 3, output: 15 };
       if (pm.includes("highspeed")) return { input: 1.9, output: 8 };
       if (pm.includes("k2.")) return { input: 0.95, output: 4 };
@@ -332,6 +336,9 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       // platform.minimax.io/docs/guides/pricing-paygo (2026-10-04): M3 ≤512K
       // input, M2.7 and M2.5 are $0.30/$1.20; the highspeed tiers double it.
       if (pm.includes("highspeed")) return { input: 0.6, output: 2.4 };
+      // M3.1 Flash GA (2026-10-19): $0.15/$0.60, flat. The M Plan-only
+      // Preview has no pay-as-you-go rate and stays priced as M3.
+      if (pm.includes("m3.1") && !pm.includes("preview")) return { input: 0.15, output: 0.6 };
       return { input: 0.3, output: 1.2 };
     case "mimo":
       // Xiaomi's published V2.6 card. These were estimates for one commit and
@@ -561,7 +568,8 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
     // K2.7 Code and its High-Speed tier 20% ($0.19 / $0.38), K2.6 $0.16 on
     // $0.95 (~17%). Older K2 rows keep the conservative 0.25x.
     const pm = model.providerModel.toLowerCase();
-    const ratio = pm.includes("kimi-k3") ? 0.1 : pm.includes("k2.7") ? 0.2 : pm.includes("k2.6") ? 0.168 : 0.25;
+    // K3.1 Pro $0.20 on $2 (10%); K3.1 Pro Highspeed $0.20 on $4 (5%).
+    const ratio = pm.includes("kimi-k3.1") && pm.includes("highspeed") ? 0.05 : pm.includes("kimi-k3") ? 0.1 : pm.includes("k2.7") ? 0.2 : pm.includes("k2.6") ? 0.168 : 0.25;
     return { input, output, cacheRead: input * ratio, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
   }
   if (model.provider === "zhipu") {
@@ -671,7 +679,9 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
     const m3 = /^minimax-m3($|-)/.test(pm);
     const m27 = pm.includes("m2.7");
     const m25 = pm.includes("m2.5");
-    const ratio = m3 ? 0.2 : m27 ? (highspeed ? 0.1 : 0.2) : m25 ? (highspeed ? 0.05 : 0.1) : 0.25;
+    // M3.1 Flash GA: $0.015 on $0.15 (10%).
+    const m31 = pm.includes("m3.1") && !pm.includes("preview");
+    const ratio = m31 ? 0.1 : m3 ? 0.2 : m27 ? (highspeed ? 0.1 : 0.2) : m25 ? (highspeed ? 0.05 : 0.1) : 0.25;
     const write = (m27 || m25) && !m3 ? (highspeed ? 0.625 : 1.25) : 1;
     return {
       input,

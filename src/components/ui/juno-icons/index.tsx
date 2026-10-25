@@ -88,18 +88,18 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
 /* —————————————————————————————— Optical sizing —————————————————————————————— */
 
 /**
- * One optical line. 18 px and up draw 1.5 px; 16 px draws 1.25 px, which is
- * where Inter's 14 px stem sits, so a sidebar row's glyph and its label carry
- * the same weight (the stroke lab, ?view=lab, shows 1, 1.25 and 1.5 side by
- * side). Relative weight falls gently as the glyph grows: 7.8% of the box at
- * 16, 7.5% at 20, 6.25% at 24, the optical sizing type uses.
+ * One optical line, bold (2026-10 design pass: "make them more bold, like
+ * Claude"). 18 px and up draw 2 px, 14 and 16 px draw 1.5 px, so a glyph
+ * reads as a confident mark beside 14 px Inter medium rather than a hairline
+ * next to it. The 1.5 and 2 px rungs are 3 and 4 device pixels at 2x, which
+ * the grid fit below keeps crisp. Relative weight still falls as the glyph
+ * grows: 10% of the box at 20, 9.4% at 16, 8.3% at 24. Knockout gaps follow
+ * the line (paintList), so parts stay separated at the new weight.
  */
 export function iconStrokePx(size: number): number {
-  // 18 px draws 1.5 too: 1.375 px is 2.75 device pixels at 2x and can never be crisp; 1.5 is 3.
-  if (size >= 18) return 1.5;
-  if (size >= 16) return 1.25;
-  if (size >= 14) return 1.125;
-  return 1;
+  if (size >= 18) return 2;
+  if (size >= 14) return 1.5;
+  return 1.25;
 }
 
 /* —————————————————————————————— Grid fitting —————————————————————————————— */

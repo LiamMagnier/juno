@@ -8,6 +8,7 @@
 @import "../components/chat/composer.css";
 @import "../components/chat/composer-media-params.css";
 @import "../components/chat/generation.css";
+@import "../components/chat/live-ui/live-ui.css";
 @import "../components/canvas/live-blueprint.css";
 @tailwind base;
 @tailwind components;
@@ -653,7 +654,7 @@
     /* The out-of-flow rung — popovers, dialogs, toasts, tooltips, sheets. A
        crisp contact shadow, a long soft throw pulled in by negative spread so
        it never smears across the page, and the rim light along the top edge. */
-    --shadow-float: 0 0 0 1px hsl(var(--shadow-ink) / 0.03), 0 2px 6px hsl(var(--shadow-ink) / 0.05), 0 14px 36px -10px hsl(var(--shadow-ink) / 0.16);
+    --shadow-float: 0 0 0 1px hsl(var(--shadow-ink) / 0.03), 0 4px 12px -2px hsl(var(--shadow-ink) / 0.06), 0 24px 56px -16px hsl(var(--shadow-ink) / 0.22);
 
     /* The legacy elevation ladder. `soft` and `lift` are the in-flow rungs a
        call site reaches for when it wants "a little" rather than the full raised
@@ -1830,23 +1831,32 @@
    * Focus deepens the lift instead of darkening the edge. Dark mode drops the
    * shadow (it reads as dirt on charcoal) for a faint top highlight.
    */
+  /* 2026-10 premium pass: the composer is the one object that floats. A
+     soft two-layer shadow at rest (a contact line and a wide, low ambient)
+     that deepens when the field takes focus, the way ChatGPT's and Claude's
+     composers sit above the thread rather than in it. */
   .composer-surface {
     background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--foreground) / 0.14);
-    box-shadow: none;
+    border: 1px solid hsl(var(--foreground) / 0.1);
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-ink) / 0.04),
+      0 8px 28px -12px hsl(var(--shadow-ink) / 0.12);
     transition:
-      box-shadow var(--dur-base) var(--ease-out-soft),
+      box-shadow var(--dur-slow) var(--ease-out-soft),
       border-color var(--dur-fast) var(--ease-out-soft);
   }
   .dark .composer-surface {
-    border-color: hsl(0 0% 100% / 0.1);
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+    background-color: hsl(var(--card) / 0.96);
+    border-color: hsl(0 0% 100% / 0.09);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.05),
+      0 12px 36px -14px hsl(0 0% 0% / 0.7);
   }
   .composer-surface::after {
     content: "";
     position: absolute;
     inset: -2px;
-    border-radius: calc(22px + 2px);
+    border-radius: calc(26px + 2px);
     box-shadow: 0 0 0 1px hsl(var(--primary) / 0.86);
     opacity: 0;
     pointer-events: none;
@@ -1911,11 +1921,16 @@
   /* BRAND_IDENTITY.md: "a crisp edge and surface define it, with no drop
      shadow." Focus is the edge stepping up, not a lift. */
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / 0.24);
+    border-color: hsl(var(--foreground) / 0.18);
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-ink) / 0.05),
+      0 14px 40px -14px hsl(var(--shadow-ink) / 0.18);
   }
   .dark .composer-surface:focus-within {
-    border-color: hsl(0 0% 100% / 0.2);
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05);
+    border-color: hsl(0 0% 100% / 0.16);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.06),
+      0 16px 44px -14px hsl(0 0% 0% / 0.8);
   }
   .composer-surface[data-kbd-focus],
   .dark .composer-surface[data-kbd-focus] {
@@ -2154,6 +2169,30 @@
     --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
     box-shadow: var(--shadow-float);
+  }
+  /* 2026-10 premium pass: menus, submenus and popovers are frosted — the
+     restrained glass PRODUCT.md asks for. Mostly opaque (88%) so rows stay
+     legible over any content, with a blur and a saturation lift so what is
+     under the layer tints it instead of showing through it. Only where the
+     browser composites backdrop filters; elsewhere the solid ground above. */
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .overlay-glass {
+      background-color: hsl(var(--popover) / 0.88);
+      -webkit-backdrop-filter: blur(24px) saturate(1.6);
+      backdrop-filter: blur(24px) saturate(1.6);
+    }
+    .dark .overlay-glass {
+      background-color: hsl(var(--popover) / 0.82);
+      box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), var(--shadow-float);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .overlay-glass,
+    .dark .overlay-glass {
+      background-color: hsl(var(--popover));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
   @media (prefers-contrast: more) {
     .overlay-glass,

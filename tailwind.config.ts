@@ -215,7 +215,7 @@ const config: Config = {
         // The composer is a raised soft card and takes the panel rung. It is
         // distinct through placement and material, not an oversized novelty
         // radius.
-        composer: "22px",
+        composer: "26px",
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",
@@ -228,8 +228,8 @@ const config: Config = {
         // chosen. They move WITH the shell — nesting reads as concentric only
         // while the inner radius stays a consistent fraction of the outer one,
         // so a shell that got 2px rounder hands its children a share of it.
-        "composer-control": "10px",
-        "composer-action": "12px",
+        "composer-control": "14px",
+        "composer-action": "16px",
         // The one user bubble (spec D6, sign-off S3): card radius, with an 8px
         // tuck on the logical end-end corner — `rounded-bubble
         // rounded-ee-bubble-tuck`, which mirrors in RTL. Mirrored as
@@ -759,13 +759,16 @@ const config: Config = {
         // flip it per data-side (globals.css) so a menu always emerges from its
         // trigger — a bottom-anchored menu rises 4px, a top-anchored one settles
         // 4px down. Non-popper users of animate-pop-in keep the 4px-rise default.
+        // 2026-10: the layer also comes into focus (a 3px blur that clears),
+        // scaled by --motion-shift so reduced motion keeps a plain fade.
         "pop-in": {
           from: {
             opacity: "0",
             transform:
               "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
+            filter: "blur(calc(3px * var(--motion-shift, 1)))",
           },
-          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)", filter: "blur(0)" },
         },
         "pop-out": {
           from: { opacity: "1", transform: "translateY(0) scale(1)" },

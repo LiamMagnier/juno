@@ -637,7 +637,32 @@
       }
     },
     {
-      "id": "moonshot:kimi-k3",
+      "id": "moonshot:kimi-k3.1-pro",
+      "provider": "moonshot",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "moonshot:kimi-k3.1-pro-highspeed",
       "provider": "moonshot",
       "adapter": "openai-compatible",
       "vision": true,
@@ -1095,7 +1120,7 @@
       }
     },
     {
-      "id": "minimax:MiniMax-M3.1-Flash-Preview",
+      "id": "minimax:MiniMax-M3.1-Flash",
       "provider": "minimax",
       "adapter": "openai-compatible",
       "vision": true,

@@ -212,6 +212,12 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["glm"], metric: metric(0.6, 2.2, 200_000, 6, 5) },
   ],
   moonshot: [
+    // K3.1 Pro / Highspeed (2026-10-23): $2/$10 and $4/$20, 1M ctx. Not yet in
+    // model-rates.generated.ts (the 2026-10-25 audit could not fetch Moonshot's
+    // pricing page); read from search-indexed copies of kimi.ai's pricing page.
+    // Highspeed first — its id also contains "k3".
+    { hints: ["k3.1", "highspeed"], metric: official(4, 20, 1_048_576, 8, 9) },
+    { hints: ["k3.1"], metric: official(2, 10, 1_048_576, 4, 9) },
     // platform.kimi.ai/docs/pricing/chat (2026-10-04).
     { hints: ["k3"], metric: official(3, 15, 1_048_576, 4, 8) }, // flagship 2.8T reasoner, 1M ctx — tops the lineup (no AA/arena index yet)
     { hints: ["highspeed"], metric: official(1.9, 8, 262_144, 9, 7) }, // premium ~180-260 tok/s serving of K2.7 Code
@@ -267,7 +273,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   ],
   minimax: [
     // M3.1 Flash Preview: M Plan only, no pay-as-you-go rate; priced as M3.
-    { hints: ["m3.1"], metric: metric(0.3, 1.2, 1_000_000, 7, 7) },
+    { hints: ["m3.1", "preview"], metric: metric(0.3, 1.2, 1_000_000, 7, 7) },
+    // M3.1 Flash GA (2026-10-19): pay-as-you-go $0.15/$0.60, flat, 1M ctx
+    // (platform.minimax.io pricing, via search-indexed copy 2026-10-25).
+    { hints: ["m3.1"], metric: official(0.15, 0.6, 1_000_000, 8, 7) },
     { hints: ["m3"], metric: official(0.3, 1.2, 1_000_000, 6, 7) }, // II 44.4 — AA's #2 open-weights · 96 tok/s
     // platform.minimax.io/docs/guides/pricing-paygo (2026-10-04).
     { hints: ["highspeed"], metric: official(0.6, 2.4, 204_800, 9, 6) }, // low-latency serving premium

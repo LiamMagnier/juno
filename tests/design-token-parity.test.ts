@@ -62,7 +62,7 @@ test("the projection carries the status roles, timing, springs, shell and gestur
   assert.equal(SHELL.edgeStripNative, 16);
   assert.equal(RADIUS.bubble, 12);
   assert.equal(RADIUS.bubbleTuck, 8);
-  assert.equal(RADIUS.composer, 22);
+  assert.equal(RADIUS.composer, 26);
   for (const name of ["JunoGeneratedTiming", "JunoGeneratedSprings", "JunoGeneratedShell", "JunoGeneratedGesture"]) {
     assert.match(swift, new RegExp(`public enum ${name} \\{`));
   }

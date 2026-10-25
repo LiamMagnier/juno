@@ -563,7 +563,16 @@ const CURATED: ModelInfo[] = [
   // `kimi-k3` family only so that two `current` entries could coexist while K2.6
   // was still the recommended one. Under one family the picker shows the newest
   // Kimi and nothing else, which is what K3 shipping means.
-  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Moonshot's flagship: 2.8T-parameter reasoner with a 1M context, always thinking at a selectable effort (low/high/max, default max), and image/video input." }),
+  // Kimi K3.1 Pro and K3.1 Pro Highspeed (2026-10-23; platform.kimi.ai/docs/
+  // guide/kimi-k3-1-pro-quickstart, via search snippets 2026-10-25 because the
+  // page could not be fetched from the audit host): 1,048,576 context, always
+  // thinking, top-level reasoning_effort low|high|max (default max), no off
+  // switch, image input (base64 or ms:// file id), max_completion_tokens up to
+  // 1,048,576. Highspeed is the same model served 2-3x faster. Same request
+  // contract as K3, so every `k3` gate in the adapters covers both ids.
+  def({ provider: "moonshot", id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro", family: "kimi", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Moonshot's newest flagship: 3T-class open-weight reasoner with a 1M context, always thinking at a selectable effort (low/high/max, default max), and image input." }),
+  def({ provider: "moonshot", id: "kimi-k3.1-pro-highspeed", name: "Kimi K3.1 Pro Highspeed", family: "kimi-highspeed", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_048_576, description: "K3.1 Pro served two to three times faster, same capabilities, at double the token price." }),
+  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Previous Kimi flagship: 2.8T-parameter reasoner with a 1M context, always thinking at a selectable effort (low/high/max, default max), and image/video input. Superseded by K3.1 Pro." }),
   def({ provider: "moonshot", id: "kimi-k2.6", name: "Kimi K2.6", family: "kimi", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Previous Kimi flagship: multimodal (image + video input) with toggleable thinking, superseded by K3." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code", name: "Kimi K2.7 Code", family: "kimi-code", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Dedicated Kimi coding model: always-on thinking, agentic coding, image and video input." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code High-Speed", family: "kimi-code-highspeed", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 262_144, description: "K2.7 Code served at ~180 tok/s for latency-sensitive agent loops." }),
@@ -643,7 +652,15 @@ const CURATED: ModelInfo[] = [
   // "disabled" is a 400) with reasoning_effort low|medium|high|xhigh|max,
   // default max; up to 512K output. "Available only through M Plan and
   // MiniMax Code for now" — not on a pay-as-you-go key, so not callable here.
-  def({ provider: "minimax", id: "MiniMax-M3.1-Flash-Preview", name: "MiniMax M3.1 Flash Preview", family: "m-flash", status: "current", comingSoon: true, released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Multimodal coding model with a 1M window and tunable thinking depth. M Plan only for now." }),
+  // MiniMax-M3.1-Flash, the GA release (2026-10-19; platform.minimax.io
+  // pricing overview and text-generation guide, via search snippets
+  // 2026-10-25 because the pages could not be fetched from the audit host):
+  // pay-as-you-go $0.15 / $0.60, cache read $0.015, flat (no long-context
+  // band), 1M context, image input, always thinks with reasoning_effort
+  // low|medium|high|xhigh|max, default max. Same contract as the Preview, so
+  // the `m3.1` gates in the adapters cover it.
+  def({ provider: "minimax", id: "MiniMax-M3.1-Flash", name: "MiniMax M3.1 Flash", family: "m-flash", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "MiniMax's low-cost M3 tier: multimodal coding and agent model with a 1M window and tunable thinking depth." }),
+  def({ provider: "minimax", id: "MiniMax-M3.1-Flash-Preview", name: "MiniMax M3.1 Flash Preview", family: "m-flash", status: "legacy", comingSoon: true, released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Multimodal coding model with a 1M window and tunable thinking depth. M Plan only; superseded by MiniMax M3.1 Flash." }),
   // MiniMax models page (read 2026-10-18): the M2.5 and M2.7 families stop
   // taking new users Oct 19 and "will be retired" Nov 18, 2026.
   def({ provider: "minimax", id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 Highspeed", family: "m-highspeed", status: "deprecated", released: "2026-03", minPlan: "FREE", cost: 2, contextWindow: 204_800, description: "Fastest MiniMax text tier for low-latency agent loops.", deprecationNote: "Retires Nov 18, 2026. Use MiniMax M3", retiresOn: "2026-11-18", replacedBy: "minimax:MiniMax-M3" }),
@@ -977,11 +994,12 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "zhipu:glm-5-turbo": "zhipu:glm-5.3",
   "zhipu:glm-5v-turbo": "zhipu:glm-5.3-flash",
   // Moonshot — the whole kimi-k2 (K2.0) series was discontinued 2026-05-25.
-  "moonshot:kimi-k2": "moonshot:kimi-k3",
+  // Re-pointed from K3 to K3.1 Pro when K3 stepped down to legacy (2026-10-25).
+  "moonshot:kimi-k2": "moonshot:kimi-k3.1-pro",
   // kimi-k2.5 and the whole moonshot-v1 series were discontinued 2026-08-31
   // (platform.kimi.ai/docs/models, "Deprecated Models"); Moonshot points both at K3.
-  "moonshot:kimi-k2.5": "moonshot:kimi-k3",
-  "moonshot:moonshot-v1-128k": "moonshot:kimi-k3",
+  "moonshot:kimi-k2.5": "moonshot:kimi-k3.1-pro",
+  "moonshot:moonshot-v1-128k": "moonshot:kimi-k3.1-pro",
   // DeepSeek — coder merged into chat back in 2024; id no longer valid.
   "deepseek:deepseek-coder": "deepseek:deepseek-flash",
   // xAI — May 15, 2026 retirement wave + ids that never existed.

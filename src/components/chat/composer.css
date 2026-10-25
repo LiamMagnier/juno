@@ -710,7 +710,7 @@
 }
 @media (pointer: coarse) {
   .composer-tray {
-    border-radius: 0 0 calc(22px + var(--tray-pad)) calc(22px + var(--tray-pad));
+    border-radius: 0 0 calc(26px + var(--tray-pad)) calc(26px + var(--tray-pad));
   }
   .composer-tray__item {
     height: 44px;
@@ -721,7 +721,7 @@
     border-radius: 22px;
   }
   .composer-tray--top {
-    border-radius: calc(22px + var(--tray-pad)) calc(22px + var(--tray-pad)) 0 0;
+    border-radius: calc(26px + var(--tray-pad)) calc(26px + var(--tray-pad)) 0 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1046,4 +1046,63 @@
 }
 .cmenu-empty__action:hover {
   text-decoration-color: currentColor;
+}
+
+/*
+ * Follow-up suggestions above the composer (2026-10 premium pass). Raised
+ * chips on the card ground with a soft contact shadow; under the pointer the
+ * chip lifts a pixel, its edge darkens and the reply arrow slides toward the
+ * composer. They arrive one after another with a short rise and a blur that
+ * clears, after the reply has finished.
+ */
+.followup-pill {
+  border-radius: 999px;
+  background: hsl(var(--card));
+  box-shadow:
+    0 0 0 1px hsl(var(--foreground) / 0.08),
+    0 1px 2px hsl(var(--shadow-ink) / 0.05);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-base) var(--ease-spring),
+    color var(--dur-fast) var(--ease-out-soft),
+    background-color var(--dur-fast) var(--ease-out-soft);
+}
+.followup-pill.rounded-card { border-radius: 16px; }
+.dark .followup-pill {
+  background: hsl(0 0% 100% / 0.04);
+  box-shadow: 0 0 0 1px hsl(0 0% 100% / 0.09);
+}
+@media (hover: hover) and (pointer: fine) {
+  .followup-pill:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px hsl(var(--foreground) / 0.16),
+      0 6px 16px -8px hsl(var(--shadow-ink) / 0.22);
+  }
+  .dark .followup-pill:hover {
+    background: hsl(0 0% 100% / 0.07);
+    box-shadow: 0 0 0 1px hsl(0 0% 100% / 0.16), 0 8px 20px -10px hsl(0 0% 0% / 0.8);
+  }
+}
+.followup-pill:active { transform: scale(0.98); transition-duration: var(--dur-press, 70ms); }
+.followup-arrow {
+  color: hsl(var(--muted-foreground));
+  transition: transform var(--dur-base) var(--ease-spring), color var(--dur-fast) var(--ease-out-soft);
+}
+.followup-pill:hover .followup-arrow {
+  color: hsl(var(--presence-ink));
+  transform: translateX(2px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .followup-pill {
+    animation: followup-in var(--dur-slow) var(--ease-spring) backwards;
+  }
+}
+@keyframes followup-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .followup-pill, .followup-arrow { transition: none; }
+  .followup-pill:hover { transform: none; }
 }

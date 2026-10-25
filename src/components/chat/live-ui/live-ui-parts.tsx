@@ -81,8 +81,8 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                   y1={fy(pa[1])}
                   x2={pb[0]}
                   y2={fy(pb[1])}
-                  stroke={lit ? "hsl(var(--foreground) / 0.55)" : "hsl(var(--foreground) / 0.18)"}
-                  strokeWidth={lit ? 1.5 : 1}
+                  stroke={lit ? "hsl(var(--live) / 0.7)" : "hsl(var(--foreground) / 0.14)"}
+                  strokeWidth={lit ? 2 : 1}
                   vectorEffect="non-scaling-stroke"
                   className="transition-[stroke] duration-base motion-reduce:transition-none"
                 />
@@ -114,16 +114,16 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                 <span
                   aria-hidden
                   className={cn(
-                    "block size-3.5 rounded-full border-[1.5px] transition-[background-color,border-color,transform] duration-fast ease-out-soft motion-reduce:transition-none",
+                    "block size-3.5 rounded-full border-2 transition-[background-color,border-color,transform,box-shadow] duration-base ease-spring motion-reduce:transition-none",
                     on
-                      ? "scale-110 border-foreground bg-foreground"
-                      : "border-foreground/45 bg-background group-hover:border-foreground",
+                      ? "scale-125 border-[hsl(var(--live))] bg-[hsl(var(--live))] shadow-[0_0_0_5px_hsl(var(--live)/0.15)]"
+                      : "border-foreground/35 bg-card group-hover:scale-110 group-hover:border-[hsl(var(--live))]",
                   )}
                 />
                 <span
                   className={cn(
-                    "whitespace-nowrap rounded-sm bg-background/85 px-1 text-caption leading-tight transition-colors duration-fast motion-reduce:transition-none",
-                    on ? "font-medium text-foreground" : "text-muted-foreground group-hover:text-foreground",
+                    "whitespace-nowrap rounded-full px-2 py-0.5 text-caption leading-tight transition-colors duration-fast motion-reduce:transition-none",
+                    on ? "bg-[hsl(var(--live)/0.1)] font-semibold text-[hsl(var(--live))]" : "bg-card/90 text-muted-foreground group-hover:text-foreground",
                   )}
                 >
                   {p.label}
@@ -151,8 +151,8 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                   tabIndex={on ? 0 : -1}
                   onClick={() => setSelected(p.id)}
                   className={cn(
-                    "flex min-w-0 flex-col items-start rounded-control px-3 py-2 text-left transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-                    on ? "bg-selected" : "hover:bg-accent",
+                    "relative flex min-w-0 flex-col items-start rounded-xl px-3 py-2 text-left transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                    on ? "bg-[hsl(var(--live)/0.08)] shadow-[inset_2px_0_0_hsl(var(--live))]" : "hover:bg-accent",
                   )}
                 >
                   <span className={cn("text-ui", on ? "font-medium text-foreground" : "text-foreground/85")}>{p.label}</span>
@@ -215,10 +215,10 @@ export function LiveStops({ stops }: { stops: Stops }) {
           const last = i === stops.stops.length - 1;
           return (
             <li key={i} className="group/stop relative grid min-w-0 grid-cols-[1.75rem_1fr_auto] gap-x-3">
-              {!last ? <span aria-hidden className="absolute bottom-0 left-[0.875rem] top-7 w-px -translate-x-1/2 bg-border" /> : null}
+              {!last ? <span aria-hidden className="absolute bottom-0 left-[0.875rem] top-7 w-0.5 -translate-x-1/2 rounded-full bg-gradient-to-b from-[hsl(var(--live)/0.25)] to-border" /> : null}
               <span
                 aria-hidden
-                className="relative z-[1] mt-0.5 flex size-7 items-center justify-center rounded-full border border-foreground/20 bg-background text-caption font-medium tabular-nums text-foreground"
+                className="relative z-[1] mt-0.5 flex size-7 items-center justify-center rounded-full bg-[hsl(var(--live)/0.1)] text-caption font-semibold tabular-nums text-[hsl(var(--live))] ring-4 ring-card"
               >
                 {i + 1}
               </span>
@@ -289,16 +289,16 @@ export function LiveChecklist({
                 role="checkbox"
                 aria-checked={on}
                 onClick={() => onToggle(i)}
-                className="flex w-full min-w-0 items-start gap-3 rounded-control px-1 py-1.5 text-left transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
+                className="flex w-full min-w-0 items-start gap-3 rounded-xl px-2 py-2 text-left transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border transition-colors duration-fast motion-reduce:transition-none",
-                    on ? "border-foreground bg-foreground text-background" : "border-foreground/35",
+                    "mt-0.5 flex size-[1.125rem] shrink-0 items-center justify-center rounded-full border-2 transition-[background-color,border-color,transform] duration-base ease-spring motion-reduce:transition-none",
+                    on ? "scale-105 border-[hsl(var(--live))] bg-[hsl(var(--live))] text-white" : "border-foreground/30",
                   )}
                 >
-                  {on ? <Check className="size-3" /> : null}
+                  {on ? <Check className="size-3 motion-safe:animate-pop-in" /> : null}
                 </span>
                 <span className="flex min-w-0 flex-col">
                   <span className={cn("text-ui transition-colors duration-fast", on ? "text-muted-foreground line-through decoration-foreground/30" : "text-foreground")}>

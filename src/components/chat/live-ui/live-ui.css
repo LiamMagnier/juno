@@ -1,0 +1,230 @@
+/*
+ * Live UI chrome (2026-10 premium pass). The interactive view inside an
+ * answer is a contained card — the ChatGPT pattern — so the reader can tell at
+ * a glance that this part of the reply responds to touch. Loaded from
+ * globals.css (a component module carries no CSS import; see the note there).
+ *
+ * --live is the one accent inside the card: presence ultramarine, the
+ * product's colour for "this is reacting right now". It paints the slider's
+ * range, the stepper's value, the first chart series, a highlighted column.
+ */
+
+[data-live-ui] {
+  --live: var(--presence);
+}
+
+.live-card {
+  border-radius: 20px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 0.75);
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-ink, 220 10% 10%) / 0.04),
+    0 12px 32px -16px hsl(var(--shadow-ink, 220 10% 10%) / 0.12);
+}
+.dark .live-card {
+  background: hsl(var(--card) / 0.9);
+  border-color: hsl(0 0% 100% / 0.08);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.04),
+    0 16px 40px -20px hsl(0 0% 0% / 0.6);
+}
+
+/* "Interactive" eyebrow: tells the reader the card can be touched. While the
+   view is still streaming it says "Building" and its spark breathes. */
+.live-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem 0.125rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.125rem;
+  color: hsl(var(--live));
+  background: hsl(var(--live) / 0.08);
+}
+.live-eyebrow[data-live] svg {
+  animation: live-breathe 1.4s var(--ease-in-out, ease-in-out) infinite;
+}
+@keyframes live-breathe {
+  0%, 100% { opacity: 0.45; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* The current value of an input, beside its label: a quiet tag that warms to
+   the accent, so the eye finds what the control is set to. */
+.live-value {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  padding: 0.0625rem 0.5rem;
+  border-radius: 999px;
+  background: hsl(var(--foreground) / 0.05);
+  transition: background-color var(--dur-fast) var(--ease-out-soft), color var(--dur-fast) var(--ease-out-soft);
+}
+div:has(> .live-slider:active) > div > .live-value {
+  color: hsl(var(--live));
+}
+
+/* Slider: a taller groove, the range in the live accent with a soft sheen,
+   and a white puck that grows and lifts a halo while it is carried. */
+.live-slider > span:first-child {
+  height: 0.375rem;
+  background: hsl(var(--foreground) / 0.08);
+  box-shadow: none;
+}
+.live-slider > span:first-child > span {
+  background: linear-gradient(90deg, hsl(var(--live) / 0.8), hsl(var(--live)));
+}
+.live-slider [role="slider"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  background: #fff;
+  border: 0;
+  box-shadow:
+    0 0 0 0.5px hsl(var(--foreground) / 0.12),
+    0 2px 6px -1px hsl(var(--shadow-ink, 220 10% 10%) / 0.25);
+  transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast) var(--ease-out-soft);
+}
+.live-slider [role="slider"]:hover {
+  box-shadow:
+    0 0 0 0.5px hsl(var(--foreground) / 0.12),
+    0 0 0 6px hsl(var(--live) / 0.1),
+    0 2px 6px -1px hsl(var(--shadow-ink, 220 10% 10%) / 0.25);
+}
+.live-slider [role="slider"]:active {
+  transform: scale(1.12);
+  box-shadow:
+    0 0 0 0.5px hsl(var(--foreground) / 0.12),
+    0 0 0 8px hsl(var(--live) / 0.16),
+    0 4px 10px -2px hsl(var(--shadow-ink, 220 10% 10%) / 0.3);
+}
+
+/* Stepper: one pill, round buttons inside it, the value rolling in. */
+.live-stepper {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: hsl(var(--foreground) / 0.05);
+}
+.live-stepper-btn {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: hsl(var(--foreground));
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 0.5px hsl(var(--foreground) / 0.1), 0 1px 2px hsl(var(--shadow-ink, 220 10% 10%) / 0.08);
+  transition: transform var(--dur-press, 70ms) var(--ease-out-soft), background-color var(--dur-fast) var(--ease-out-soft), opacity var(--dur-fast);
+}
+.live-stepper-btn:hover:not(:disabled) { background: hsl(var(--accent)); }
+.live-stepper-btn:active:not(:disabled) { transform: scale(0.9); }
+.live-stepper-btn:disabled { opacity: 0.35; box-shadow: none; background: transparent; }
+@media (pointer: coarse) {
+  .live-stepper-btn { width: 2.5rem; height: 2.5rem; }
+}
+.live-stepper-value {
+  min-width: 3rem;
+  padding: 0 0.25rem;
+  text-align: center;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .live-stepper-value { animation: live-roll var(--dur-base) var(--ease-spring); }
+}
+@keyframes live-roll {
+  from { opacity: 0; transform: translateY(35%); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* Metrics: the hero figure gets a tinted tile so the answer to the question
+   is the first thing the eye lands on. */
+.live-metric-hero {
+  padding: 1rem 1.125rem;
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, hsl(var(--live) / 0.08), transparent 60%),
+    hsl(var(--foreground) / 0.03);
+}
+
+/* Progress and other fills share the range's gradient. */
+.live-fill {
+  background: linear-gradient(90deg, hsl(var(--live) / 0.75), hsl(var(--live)));
+}
+
+/* Tables sit in their own rounded well. */
+.live-table {
+  border-radius: 14px;
+  border: 1px solid hsl(var(--border) / 0.7);
+}
+.live-table thead {
+  background: hsl(var(--foreground) / 0.03);
+}
+
+/* Chips: Reset, prompt and copy buttons. A pill with a quiet fill, an arrow
+   that leans toward where the prompt will go. */
+.live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--foreground) / 0.04);
+  transition: background-color var(--dur-fast) var(--ease-out-soft), color var(--dur-fast) var(--ease-out-soft), transform var(--dur-press, 70ms) var(--ease-out-soft);
+}
+.live-chip:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--foreground) / 0.08); }
+.live-chip:active:not(:disabled) { transform: scale(0.97); }
+.live-chip:disabled { opacity: 0.5; }
+.live-chip-lg {
+  height: 2.25rem;
+  padding: 0 0.9375rem;
+  font-size: 0.875rem;
+  color: hsl(var(--foreground));
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--border)), 0 1px 2px hsl(var(--shadow-ink, 220 10% 10%) / 0.05);
+}
+.live-chip-lg:hover:not(:disabled) { background: hsl(var(--accent)); }
+.live-chip-lg[data-copied] { box-shadow: 0 0 0 1px hsl(var(--live) / 0.4); }
+.live-chip-arrow { color: hsl(var(--muted-foreground)); transition: transform var(--dur-base) var(--ease-spring), color var(--dur-fast); }
+.live-chip:hover .live-chip-arrow { color: hsl(var(--live)); transform: translate(1.5px, -1.5px); }
+@media (pointer: coarse) {
+  .live-chip-lg { height: 2.75rem; }
+}
+
+/* Chart: the main line draws itself in on first paint; the hover dot pops. */
+@media (prefers-reduced-motion: no-preference) {
+  .live-line {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: live-draw 900ms var(--ease-out-soft) 80ms forwards;
+  }
+  .live-dot { animation: live-pop var(--dur-fast) var(--ease-spring); transform-box: fill-box; transform-origin: center; }
+}
+@keyframes live-draw { to { stroke-dashoffset: 0; } }
+@keyframes live-pop { from { transform: scale(0.4); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-eyebrow[data-live] svg { animation: none; }
+}
+
+/* The prose table rules flush the first and last cells to the article edge;
+   inside the table's own well they get the well's inset back. */
+.prose-juno .live-table :is(th, td):first-child { padding-left: 0.875rem; }
+.prose-juno .live-table :is(th, td):last-child { padding-right: 0.875rem; }
+.prose-juno .live-table th { white-space: nowrap; }
+/* The scroll-shadow covers and the sticky first column paint the table's
+   ground; inside a card that ground is the card, not the page. */
+.prose-juno .live-card .live-table { --table-ground: var(--card); }

@@ -30,12 +30,14 @@ export function formatInputValue(
   formatter: LiveFormatter,
   currency: string,
   mode: "input" | "metric" | "cell" = "cell",
+  /** The value whose shape picks the format (a gliding metric formats like the figure it lands on). */
+  shapeOf: number = value,
 ): string {
   // A setting reads without cents when it is whole ("€600"), a headline
   // figure when it is large ("€925,029"); table cells keep one shape per column.
   const wholeCurrency =
     format === "currency" &&
-    ((mode === "input" && Number.isInteger(value)) || (mode !== "cell" && Math.abs(value) >= 10_000));
+    ((mode === "input" && Number.isInteger(shapeOf)) || (mode !== "cell" && Math.abs(shapeOf) >= 10_000));
   const text = formatter.number(value, format ?? "number", { currency, digits: wholeCurrency ? 0 : undefined });
   return unit ? `${text} ${unit}` : text;
 }
@@ -47,7 +49,7 @@ function FieldHead({ htmlFor, id, label, value }: { htmlFor?: string; id?: strin
         {label}
       </label>
       {value !== undefined ? (
-        <output htmlFor={htmlFor} className="shrink-0 text-ui font-medium tabular-nums text-foreground">
+        <output htmlFor={htmlFor} className="live-value shrink-0 tabular-nums">
           {value}
         </output>
       ) : null}
@@ -83,7 +85,7 @@ export function LiveInputControl({
             step={input.step}
             value={[v]}
             onValueChange={([next]) => onChange(snapToStep(next, input.min, input.max, input.step))}
-            className="py-1"
+            className="live-slider py-1"
           />
         </div>
       );
@@ -97,20 +99,21 @@ export function LiveInputControl({
           <div
             role="group"
             aria-labelledby={`${id}-label`}
-            className="flex h-9 w-fit items-center rounded-field border border-foreground/[0.14] coarse:h-11 dark:border-white/[0.12]"
+            className="live-stepper"
           >
             <button
               type="button"
               aria-label={`Decrease ${input.label}`}
               disabled={v <= input.min}
               onClick={() => set(v - input.step)}
-              className="flex h-full w-9 items-center justify-center rounded-l-field text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:opacity-35 motion-reduce:transition-none coarse:w-11"
+              className="live-stepper-btn"
             >
               <Minus className="size-3.5" aria-hidden />
             </button>
             <output
+              key={v}
               aria-live="polite"
-              className="min-w-[3.5rem] border-x border-foreground/[0.1] px-2 text-center text-ui font-medium tabular-nums dark:border-white/[0.1]"
+              className="live-stepper-value"
             >
               {formatInputValue(v, "number", input.unit, formatter, currency)}
             </output>
@@ -119,7 +122,7 @@ export function LiveInputControl({
               aria-label={`Increase ${input.label}`}
               disabled={v >= input.max}
               onClick={() => set(v + input.step)}
-              className="flex h-full w-9 items-center justify-center rounded-r-field text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:opacity-35 motion-reduce:transition-none coarse:w-11"
+              className="live-stepper-btn"
             >
               <Plus className="size-3.5" aria-hidden />
             </button>

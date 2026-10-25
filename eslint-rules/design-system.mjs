@@ -56,9 +56,9 @@ const RADIUS_TOKENS = {
 };
 
 const SCALE_HELP =
-  "micro 2 · sm 4 · xs 6 · control 8 (md) · field 10 · composer-control 10 · card 12 · " +
-  "composer-action 12 · popover 12 · surface 12 · lg 12 · menu 14 · panel 16 · " +
-  "composer 22 · stage 28 (marketing only) · full · logo (24%)";
+  "micro 2 · sm 4 · xs 6 · control 8 (md) · field 10 · card 12 · popover 12 · " +
+  "surface 12 · lg 12 · composer-control 14 · menu 14 · composer-action 16 · panel 16 · " +
+  "composer 26 · stage 28 (marketing only) · full · logo (24%)";
 
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
 
@@ -247,18 +247,18 @@ export const RADIUS_PX = {
   md: 8,
   control: 8,
   field: 10,
-  "composer-control": 10,
+  "composer-control": 14,
   card: 12,
   popover: 12,
   surface: 12,
   lg: 12,
-  "composer-action": 12,
+  "composer-action": 16,
   // The one user bubble (wave 2 D6): card radius with an 8px end-end tuck.
   bubble: 12,
   "bubble-tuck": 8,
   menu: 14,
   panel: 16,
-  composer: 22,
+  composer: 26,
   stage: 28,
 };
 
@@ -282,7 +282,7 @@ export const PX_TO_TOKEN = {
   12: "card",
   14: "menu",
   16: "panel",
-  22: "composer",
+  26: "composer",
   28: "stage",
 };
 

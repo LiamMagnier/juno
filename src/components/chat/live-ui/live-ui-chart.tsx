@@ -80,7 +80,7 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return ticks;
 }
 
-const SERIES_STROKE = ["hsl(var(--primary))", "hsl(var(--foreground) / 0.62)", "hsl(var(--foreground) / 0.42)", "hsl(var(--foreground) / 0.3)"];
+const SERIES_STROKE = ["hsl(var(--live, var(--primary)))", "hsl(var(--foreground) / 0.62)", "hsl(var(--foreground) / 0.42)", "hsl(var(--foreground) / 0.3)"];
 const SERIES_DASH = [undefined, undefined, "4 3", "1.5 3"];
 
 /**
@@ -237,9 +237,15 @@ export function LiveChart({
         }}
         onBlur={() => setActive(null)}
       >
+        <defs>
+          <linearGradient id={`${clipId}-bar`} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--live, var(--primary)))" stopOpacity={1} />
+            <stop offset="100%" stopColor="hsl(var(--live, var(--primary)))" stopOpacity={0.62} />
+          </linearGradient>
+        </defs>
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={padL} x2={width - padR} y1={yAt(t)} y2={yAt(t)} stroke="hsl(var(--border))" strokeOpacity={t === 0 ? 1 : 0.6} strokeWidth={1} />
+            <line x1={padL} x2={width - padR} y1={yAt(t)} y2={yAt(t)} stroke="hsl(var(--border))" strokeOpacity={t === 0 ? 1 : 0.55} strokeWidth={1} strokeDasharray={t === 0 ? undefined : "2 4"} />
             <text x={padL - 8} y={yAt(t)} dy="0.32em" textAnchor="end" className="fill-muted-foreground text-caption tabular-nums">
               {fmtY(t, true)}
             </text>
@@ -269,7 +275,7 @@ export function LiveChart({
                     width={barW - 1}
                     height={Math.max(1, Math.abs(yAt(0) - yAt(v)))}
                     rx={Math.min(3, barW / 3)}
-                    fill={si === 0 ? "hsl(var(--primary))" : SERIES_STROKE[si]}
+                    fill={si === 0 ? `url(#${clipId}-bar)` : SERIES_STROKE[si]}
                     fillOpacity={active === null || active === i ? (si === 0 ? 0.85 : 1) : 0.4}
                     className="transition-[fill-opacity] duration-fast motion-reduce:transition-none"
                   />
@@ -280,18 +286,24 @@ export function LiveChart({
               <g key={si}>
                 {chart.kind === "area" && si === 0 ? (
                   <>
-                    <path d={areaFor(s.ys)} fill="hsl(var(--primary) / 0.08)" />
+                    <defs>
+                      <linearGradient id={`${clipId}-area`} x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--live, var(--primary)))" stopOpacity={0.22} />
+                        <stop offset="100%" stopColor="hsl(var(--live, var(--primary)))" stopOpacity={0.01} />
+                      </linearGradient>
+                    </defs>
+                    <path d={areaFor(s.ys)} fill={`url(#${clipId}-area)`} />
                     {markX !== null ? (
                       <>
                         <clipPath id={clipId}>
                           <rect x={padL} y={padT} width={Math.max(0, xPos(markX) - padL)} height={PLOT_HEIGHT} />
                         </clipPath>
-                        <path d={areaFor(s.ys)} fill="hsl(var(--primary) / 0.2)" clipPath={`url(#${clipId})`} />
+                        <path d={areaFor(s.ys)} fill="hsl(var(--live, var(--primary)) / 0.16)" clipPath={`url(#${clipId})`} />
                       </>
                     ) : null}
                   </>
                 ) : null}
-                <path d={pathFor(s.ys)} fill="none" stroke={SERIES_STROKE[si]} strokeWidth={si === 0 ? 2 : 1.5} strokeDasharray={SERIES_DASH[si]} strokeLinejoin="round" strokeLinecap="round" />
+                <path d={pathFor(s.ys)} fill="none" stroke={SERIES_STROKE[si]} strokeWidth={si === 0 ? 2.25 : 1.5} className={si === 0 ? "live-line" : undefined} pathLength={si === 0 ? 1 : undefined} strokeDasharray={SERIES_DASH[si]} strokeLinejoin="round" strokeLinecap="round" />
               </g>
             ))}
         {markX !== null ? (
@@ -302,7 +314,7 @@ export function LiveChart({
             <line x1={xAt(shown)} x2={xAt(shown)} y1={padT} y2={padT + PLOT_HEIGHT} stroke="hsl(var(--foreground) / 0.25)" strokeWidth={1} />
             {data.series.map((s, si) =>
               s.ys[shown] === null ? null : (
-                <circle key={si} cx={xAt(shown)} cy={yAt(s.ys[shown]!)} r={3.5} fill="hsl(var(--background))" stroke={SERIES_STROKE[si]} strokeWidth={2} />
+                <circle key={si} cx={xAt(shown)} cy={yAt(s.ys[shown]!)} r={4.5} fill="hsl(var(--card))" stroke={SERIES_STROKE[si]} strokeWidth={2.25} className="live-dot" />
               ),
             )}
           </g>

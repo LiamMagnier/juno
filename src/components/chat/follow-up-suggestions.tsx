@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Plus } from "@/components/ui/icons";
+import { ChevronDown, CornerDownRight } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import { useUiPref } from "@/lib/ui-prefs";
@@ -102,7 +102,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible: wanted }:
   return (
     // items-start, not items-center: an expanded pill is taller than its
     // collapsed neighbours and centring would float them against its midline.
-    <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5" role="group" aria-label="Suggested follow-ups">
+    <div className="followups flex flex-wrap items-start gap-x-2 gap-y-2" role="group" aria-label="Suggested follow-ups">
       {suggestions.map((suggestion, i) => {
         const isOpen = expanded.has(i);
         const hasChevron = isOpen || clipped[i] === true;
@@ -128,9 +128,12 @@ export function FollowUpSuggestions({ conversationId, onPick, visible: wanted }:
            */
           <div
             key={suggestion}
-            style={staggerDelay(i)}
+            style={staggerDelay(i, "base", 60)}
             className={cn(
-              "group/pill control-neu relative flex min-w-0 gap-1 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-ui font-normal leading-5 text-muted-foreground [animation-fill-mode:backwards] hover:text-foreground coarse:py-2 motion-safe:animate-rise-in",
+              // 2026-10 pass: a raised chip (the ChatGPT pattern) rather than a
+              // hairline footnote. `.followup-pill` (composer.css) owns the
+              // surface, the hover lift and the blur-in arrival.
+              "group/pill followup-pill relative flex min-w-0 gap-1 py-1.5 pl-3 pr-1.5 text-left font-sans text-ui font-normal leading-5 text-foreground/80 hover:text-foreground coarse:py-2",
               isOpen
                 // Takes the whole row so the sentence has width to wrap into,
                 // instead of unfurling inside a 20rem column. A stadium radius
@@ -168,12 +171,12 @@ export function FollowUpSuggestions({ conversationId, onPick, visible: wanted }:
               <span
                 aria-hidden="true"
                 className={cn(
-                  "inline-flex shrink-0 opacity-60 transition-opacity duration-fast ease-out-soft group-hover/pill:opacity-100",
+                  "followup-arrow inline-flex shrink-0",
                   // 14px glyph on a 20px line: 3px centres it on the first line.
                   isOpen && "mt-[3px]"
                 )}
               >
-                <Plus className="size-3.5" />
+                <CornerDownRight className="size-3.5" />
               </span>
               <span
                 ref={(el) => {

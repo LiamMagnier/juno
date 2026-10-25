@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 3dd401a33af73367
+// tokens-digest: 9ae0624877573983
 //
 
 /** The accent ids, in the order the web lists them (src/lib/accents.ts). */
@@ -155,15 +155,15 @@ export const RADIUS = {
   "control": 8,
   "bubbleTuck": 8,
   "field": 10,
-  "composerControl": 10,
   "card": 12,
   "popover": 12,
   "surface": 12,
-  "composerAction": 12,
   "bubble": 12,
   "menu": 14,
+  "composerControl": 14,
   "panel": 16,
-  "composer": 22,
+  "composerAction": 16,
+  "composer": 26,
   "stage": 28,
 } as const;
 

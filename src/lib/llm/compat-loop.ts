@@ -162,7 +162,7 @@ export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort 
     (model.provider === "zhipu" && (id.includes("glm-5.2") || glmEffortOnly)) ||
     // Kimi K3 introduced a top-level enum; the K2.x line keeps `thinking`.
     (model.provider === "moonshot" && id.includes("k3")) ||
-    // MiniMax M3.1 Flash Preview: the one MiniMax with reasoning_effort.
+    // MiniMax M3.1 Flash (GA and Preview): the one MiniMax line with reasoning_effort.
     (model.provider === "minimax" && id.includes("m3.1"));
 
   if (usesReasoningEffort) {

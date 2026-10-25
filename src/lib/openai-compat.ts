@@ -396,7 +396,7 @@ export async function* streamOpenAICompat(
     // K2.x line stays on the usesThinkingObject path below (and is canDisable:
     // false, so it never actually emits `thinking` either).
     (model.provider === "moonshot" && modelId.includes("k3")) ||
-    // MiniMax M3.1 Flash Preview: the one MiniMax with reasoning_effort.
+    // MiniMax M3.1 Flash (GA and Preview): the one MiniMax line with reasoning_effort.
     (model.provider === "minimax" && modelId.includes("m3.1"));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {

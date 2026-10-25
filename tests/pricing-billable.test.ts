@@ -563,6 +563,7 @@ test("published cache-hit rates for Mistral, MiniMax and LongCat replace the 0.2
   assert.equal(ratio("minimax", "MiniMax-M2.7-highspeed"), 0.1);
   assert.equal(ratio("minimax", "MiniMax-M2.5"), 0.1);
   assert.equal(ratio("minimax", "MiniMax-M3.1-Flash-Preview"), 0.25, "not on the price page: fallback");
+  assert.equal(ratio("minimax", "MiniMax-M3.1-Flash"), 0.1, "GA: $0.015 on $0.15");
   assert.equal(ratio("longcat", "LongCat-2.0"), 0.02);
   // MiniMax M2.x writes are $0.375 whatever the tier.
   assert.equal(Number(tokenRate(compatModel("minimax", "MiniMax-M2.7-highspeed")).cacheWrite.toFixed(4)), 0.375);

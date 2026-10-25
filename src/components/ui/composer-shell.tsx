@@ -473,12 +473,12 @@ export const composerChevronClass =
  * controls row sits 10px inside a composer surface that does not clip, so the
  * outline's 2px offset has room and the one indicator is the house one.
  *
- * `rounded-composer-action` (12), concentric with the shell: the `+` seats the
- * composer's bottom-left corner 10px in from a 22px curve, and 22 − 10 = 12.
+ * A circle, like the send disc it mirrors: the `+` seats the composer's
+ * bottom-left corner 10px in from a 26px curve.
  * It was a circle (16), rounder than the corner around it allows.
  */
 export const composerIconButtonClass =
-  "size-8 shrink-0 rounded-composer-action border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-8 shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row
@@ -580,9 +580,11 @@ const FACE_MOTION = {
   // Mic: existing semantic glyph change"): the glyphs overlap and swap in
   // place, opacity with scale 0.8 to 1 on fast. Reduced motion keeps the fade
   // (the app's root MotionConfig drops the scale). Nothing delays Stop.
-  initial: { opacity: 0, scale: 0.8 },
+  // 2026-10: from 0.5, so a face change reads as one glyph growing out of
+  // the disc rather than two glyphs crossing at nearly the same size.
+  initial: { opacity: 0, scale: 0.5 },
   animate: { opacity: 1, scale: 1 },
-  exit: { opacity: 0, scale: 0.8 },
+  exit: { opacity: 0, scale: 0.5 },
   // From the scale, not a literal. This was `0.12` and a raw cubic-bezier
   // array — the exact values of `--dur-fast` and `--ease-out-strong`, copied,
   // which means a change to the scale would have silently skipped this one
@@ -635,11 +637,10 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // (globals.css), which follows the round corner. The ring and
           // card-coloured ring offset it used to add painted a halo on top of
           // it (ICONS_AND_MOTION.md §2.2, rule 3).
-          // `rounded-composer-action` (12), not a circle: the disc closes the
-          // composer's bottom-right corner from 10px in, and a 22px corner
-          // inset by 10 leaves 12. A full circle there (18) was struck from a
-          // different centre than the shell's own curve around it.
-          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-composer-action",
+          // A full circle (2026-10 pass): with the shell at 26px, a 36px disc
+          // seated 10px in is concentric (26 − 10 = 16 ≈ its 18 radius), so
+          // the send disc reads as one round object, as in ChatGPT and Claude.
+          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full",
           face === "voice"
             ? // Empty, the disc is the quiet voice entry: a tone step and the
               // second ink, so the field (the thing to do) leads and the disc
