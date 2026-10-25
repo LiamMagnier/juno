@@ -138,11 +138,16 @@ export async function consumeMessage(
     return { allowed: false, quota: await getQuota(userId, plan), reason: "email_unverified" };
   }
 
-  // Ensure the period row exists without incrementing.
-  await prisma.usage.upsert({
-    where: { userId_period: { userId, period } },
-    create: { userId, period, messageCount: 0 },
-    update: {},
+  // Ensure the period row exists without incrementing. One atomic
+  // INSERT … ON CONFLICT DO NOTHING, not `upsert`: Prisma runs this upsert
+  // (compound key, empty update) as find-then-create, so two first turns of a
+  // period at once both tried to create the row and the loser failed on the
+  // unique key with "Couldn't start the chat". A side-by-side comparison
+  // sends two or three turns at once by design, so it hit this on every
+  // fresh period (tests/chat-turn-pipeline.integration.test.ts, /compare).
+  await prisma.usage.createMany({
+    data: [{ userId, period, messageCount: 0 }],
+    skipDuplicates: true,
   });
 
   if (limit == null) {
