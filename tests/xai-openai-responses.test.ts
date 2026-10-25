@@ -244,9 +244,12 @@ test("an OpenAI turn with web search on carries hosted web_search, maps sources 
 
 test("hosted search is withheld where the model rejects it: gpt-5 at minimal, o1 (no native search)", async () => {
   reset([[completed()], [completed()], [completed()]]);
+  // o1 retired 2026-10-23 and a stored id now lands on GPT-6.1 Sol, so the
+  // row is rebuilt here: what is pinned is its tool record (no hosted search).
+  const o1: ModelInfo = { ...model("openai:gpt-6.1-sol"), id: "openai:o1", providerModel: "o1", name: "OpenAI o1" };
   await collect(streamOpenAIResponses(model("openai:gpt-5"), "sys", HISTORY, 4_000, undefined, "minimal", true));
   await collect(streamOpenAIResponses(model("openai:gpt-5"), "sys", HISTORY, 4_000, undefined, "low", true));
-  await collect(streamOpenAIResponses(model("openai:o1"), "sys", HISTORY, 4_000, undefined, "high", true));
+  await collect(streamOpenAIResponses(o1, "sys", HISTORY, 4_000, undefined, "high", true));
   assert.equal("tools" in sent[0].body, false);
   assert.deepEqual(sent[1].body.tools, [{ type: "web_search", search_context_size: "medium" }]);
   assert.equal("tools" in sent[2].body, false);

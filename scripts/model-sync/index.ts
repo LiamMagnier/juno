@@ -21,7 +21,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CURATED_CHAT_MODELS, CURATED_GEN_MODELS, RETIRED_MODELS } from "../../src/lib/models";
 import type { Provider } from "../../src/lib/providers";
-import { applyPlanToModels, ratesFileHeader, renderRatesFile } from "./apply";
+import { OFFICIAL_RATES } from "../../src/lib/model-rates.generated";
+import { applyPlanToModels, mergeRates, ratesFileHeader, renderRatesFile } from "./apply";
 import { compare } from "./compare";
 import { pageStore } from "./fetch";
 import { readLabListings, type Listing } from "./lab-apis";
@@ -90,7 +91,13 @@ async function main(): Promise<number> {
             errors.push({ severity: "warn", kind: "source-error", model: `${lab.provider}:${p.key.slice(6)}`, message: `model page unavailable: ${(err as Error).message}` });
           }
         }
-        parsed = lab.parse(pages, today);
+        // A model page that breaks the parser costs only what it adds: the
+        // lab's own list, pricing and deprecation pages still count.
+        try {
+          parsed = lab.parse(pages, today);
+        } catch (err) {
+          errors.push({ severity: "warn", kind: "source-error", model: lab.provider, message: `model pages could not be parsed (${(err as Error).message}); kept what the lab's main pages say` });
+        }
       }
       facts.push(...parsed);
       labsRead.push(lab.provider);
@@ -136,21 +143,22 @@ async function main(): Promise<number> {
   );
   plan.findings.push(...errors);
 
+  // The catalogue edits are tried on every run, dry or not, so a change that
+  // cannot land is a needs-review line tonight rather than a failed apply
+  // later. Each lands whole or not at all; the rest go on (apply.ts).
+  const modelsPath = join(ROOT, "src/lib/models.ts");
+  const modelsSrc = applyPlanToModels(readFileSync(modelsPath, "utf8"), plan, today);
+  // A lab whose pages failed this run (or that --only left out) keeps its
+  // previous rates with the day each was read; nothing is re-stamped verified.
+  const keep = (provider: string) => labsFailed.includes(provider) || (!!only && !only.includes(provider as Provider));
+  const merged = mergeRates(OFFICIAL_RATES, plan.rates, keep);
+
   const applying = flag("apply");
   if (applying) {
     const ratesPath = join(ROOT, "src/lib/model-rates.generated.ts");
     const existing = readFileSync(ratesPath, "utf8");
-    // A lab whose pages failed this run keeps its previous verified rates.
-    const kept = only || labsFailed.length ? (await import("../../src/lib/model-rates.generated")).OFFICIAL_RATES : {};
-    const merged: typeof plan.rates = {};
-    for (const [id, r] of Object.entries(kept)) {
-      const provider = id.split(":")[0] as Provider;
-      if (labsFailed.includes(provider) || (only && !only.includes(provider))) merged[id] = r;
-    }
-    Object.assign(merged, plan.rates);
     writeFileSync(ratesPath, renderRatesFile(merged, ratesFileHeader(existing)));
-    const modelsPath = join(ROOT, "src/lib/models.ts");
-    writeFileSync(modelsPath, applyPlanToModels(readFileSync(modelsPath, "utf8"), plan, today));
+    writeFileSync(modelsPath, modelsSrc);
     // The Mac picker's fixture is generated from the catalogue just written,
     // in a fresh process so it reads the new files, not this one's imports.
     // Its pinned day moves to today, so the drift test regenerates the same file.
@@ -170,6 +178,7 @@ async function main(): Promise<number> {
     apiChecked: listings.map((l) => l.provider),
     apiSkipped,
     discovery,
+    ratesKept: Object.keys(merged).length - Object.keys(plan.rates).length,
   });
   console.log(report);
   const out = opt("out");

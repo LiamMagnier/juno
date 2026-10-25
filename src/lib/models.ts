@@ -432,15 +432,11 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-sol" }),
   def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026. Use GPT-5.6 Terra", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.6-terra" }),
   def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-sol" }),
-  def({ provider: "openai", id: "o3-mini", name: "OpenAI o3-mini", family: "o-series-mini", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 200_000, description: "Fast o-series reasoning.", deprecationNote: "Retires Oct 23, 2026. Use GPT-6.1 Sol", retiresOn: "2026-10-23", replacedBy: "openai:gpt-6.1-sol" }),
-  def({ provider: "openai", id: "o1", name: "OpenAI o1", family: "o-series", status: "deprecated", released: "2024-12", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "Early reasoning model, two generations behind.", deprecationNote: "Retires Oct 23, 2026. Use GPT-6.1 Sol", retiresOn: "2026-10-23", replacedBy: "openai:gpt-6.1-sol" }),
   // OpenAI's deprecations page (notice dated 2026-10-14, read 2026-10-18):
   // gpt-4o-2024-08-06 (the snapshot behind the `gpt-4o` alias), 2024-11-20 and
   // gpt-4o-mini-2024-07-18 shut down Jan 14, 2027, replacement gpt-6-luna.
   def({ provider: "openai", id: "gpt-4o", name: "GPT-4o", family: "gpt-4o", status: "deprecated", released: "2024-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 128_000, description: "Classic multimodal GPT-4o.", deprecationNote: "Retires Jan 14, 2027. Use GPT-6 Luna", retiresOn: "2027-01-14", replacedBy: "openai:gpt-6-luna" }),
   def({ provider: "openai", id: "gpt-4o-mini", name: "GPT-4o Mini", family: "gpt-4o-mini", status: "deprecated", released: "2024-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Small GPT-4o tier.", deprecationNote: "Retires Jan 14, 2027. Use GPT-6 Luna", retiresOn: "2027-01-14", replacedBy: "openai:gpt-6-luna" }),
-  def({ provider: "openai", id: "gpt-4-turbo", name: "GPT-4 Turbo", family: "gpt-4", status: "deprecated", released: "2024-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 128_000, description: "Legacy GPT-4 flagship.", deprecationNote: "Retires Oct 23, 2026. Use GPT-6.1 Sol", retiresOn: "2026-10-23", replacedBy: "openai:gpt-6.1-sol" }),
-  def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, contextWindow: 16_385, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026. Use GPT-5.6 Terra", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.6-terra" }),
 
   // —— Google ——
   // Gemini 4 Argon (owner-requested 2026-10-14), read 2026-10-14 from
@@ -756,7 +752,6 @@ const GENERATIVE: ModelInfo[] = [
   // 2026-12-01, replacement gpt-image-2.5-sunburst or -flare.
   def({ provider: "openai", id: "gpt-image-1-mini", name: "GPT Image 1 Mini", family: "gpt-image-mini", status: "deprecated", modality: "image", minPlan: "PRO", cost: 1, description: "Lower-cost OpenAI image generation and editing.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.5 Flare", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.5-flare" }),
   def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "deprecated", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.5 Sunburst", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.5-sunburst" }),
-  def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026. Use GPT Image 2.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-image-2.5-sunburst" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", released: "2025-11", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation: complex composition, text rendering, 4K." }),
   // Nano Banana 2.1 (owner-approved 2026-10-10), read 2026-10-10 from
   // ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1 and the
@@ -766,9 +761,14 @@ const GENERATIVE: ModelInfo[] = [
   // Banana 2's place in the family, which steps down to legacy and stays
   // callable; Google's deprecations page names 2.1 as Imagen 4's replacement.
   def({ provider: "google", id: "gemini-nano-banana-2.1", name: "Nano Banana 2.1", family: "gemini-image-flash", status: "current", released: "2026-10", modality: "image", minPlan: "PRO", cost: 2, description: "Google's Flash image model: sharper text and layouts, 1K to 4K, up to 14 references, Search grounding." }),
-  // Deprecated Oct 6, 2026 (Gemini API changelog, read 2026-10-18), no
-  // shutdown date announced yet; Nano Banana 2.1 is the replacement.
-  def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "deprecated", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation: 4K, references, Search grounding.", deprecationNote: "Deprecated by Google. Use Nano Banana 2.1", replacedBy: "google:gemini-nano-banana-2.1" }),
+  // Deprecated Oct 6, 2026 (Gemini API changelog, read 2026-10-18). Google's
+  // deprecations page names gemini-nano-banana-2.1 as the replacement and says
+  // "No shutdown date announced" (saved 2026-10-10; the nightly models:sync of
+  // 2026-10-25 read the live page and found no date either). So: deprecated
+  // with a note, and no retiresOn or replacedBy, which only mean something
+  // together (validate:models). models:sync writes both the day Google
+  // publishes a date; until then the model stays callable as itself.
+  def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "deprecated", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation: 4K, references, Search grounding.", deprecationNote: "Deprecated by Google. Use Nano Banana 2.1" }),
   def({ provider: "google", id: "gemini-3.1-flash-lite-image", name: "Nano Banana 2 Lite", family: "gemini-image-lite", status: "current", released: "2026-04", modality: "image", minPlan: "FREE", cost: 1, description: "Fastest, cheapest image generation for rapid ideation." }),
   def({ provider: "xai", id: "grok-imagine-image-2.0", name: "Grok Imagine 2.0", family: "imagine-image-2", status: "current", released: "2026-08", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's latest image generation and editing model." }),
   // xAI's May 15 retirement guide: "On November 2, 2026, grok-imagine-image-
@@ -796,11 +796,6 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "minimax", id: "image-01-live", name: "MiniMax Image-01 Live", family: "image-live", status: "current", modality: "image", minPlan: "PRO", cost: 2, description: "MiniMax's live image generation variant with reference support." }),
 
   // —— Video ——
-  // All three Veo 3.1 previews shut down 2026-10-22; Google's deprecations
-  // page names gemini-omni-1.1-flash as the replacement for each.
-  def({ provider: "google", id: "veo-3.1-generate-preview", name: "Veo 3.1", family: "veo", status: "deprecated", released: "2025-10", modality: "video", minPlan: "MAX", cost: 3, description: "Cinematic video with native synchronized audio, up to 4K.", deprecationNote: "Retires Oct 22, 2026. Use Gemini Omni Flash", retiresOn: "2026-10-22", replacedBy: "google:gemini-omni-1.1-flash" }),
-  def({ provider: "google", id: "veo-3.1-fast-generate-preview", name: "Veo 3.1 Fast", family: "veo-fast", status: "deprecated", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Faster, cheaper Veo tier.", deprecationNote: "Retires Oct 22, 2026. Use Gemini Omni Flash", retiresOn: "2026-10-22", replacedBy: "google:gemini-omni-1.1-flash" }),
-  def({ provider: "google", id: "veo-3.1-lite-generate-preview", name: "Veo 3.1 Lite", family: "veo-lite", status: "deprecated", released: "2026-03", modality: "video", minPlan: "MAX", cost: 1, description: "Lower-cost Veo 3.1 tier for quick video drafts.", deprecationNote: "Retires Oct 22, 2026. Use Gemini Omni Flash", retiresOn: "2026-10-22", replacedBy: "google:gemini-omni-1.1-flash" }),
   // Gemini Omni Flash, `gemini-omni-1.1-flash`, released 27 Aug 2026. Google's
   // models page and Omni guide still label it Preview (2026-10-04); the
   // deprecations page gives it no shutdown date and names it the replacement
@@ -1052,6 +1047,14 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:gemini-omni-flash-preview": "google:gemini-omni-1.1-flash", // retired 2026-09-30 (models:sync)
   "mimo:mimo-v2.5": "mimo:mimo-v2.6-flash", // retired 2026-10-13 (models:sync)
   "mimo:mimo-v2.5-pro": "mimo:mimo-v2.6-pro", // retired 2026-10-13 (models:sync)
+  "openai:o3-mini": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
+  "openai:o1": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
+  "openai:gpt-4-turbo": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
+  "openai:gpt-3.5-turbo": "openai:gpt-5.6-terra", // retired 2026-10-23 (models:sync)
+  "openai:gpt-image-1": "openai:gpt-image-2.5-sunburst", // retired 2026-10-23 (models:sync)
+  "google:veo-3.1-generate-preview": "google:gemini-omni-1.1-flash", // retired 2026-10-22 (models:sync)
+  "google:veo-3.1-fast-generate-preview": "google:gemini-omni-1.1-flash", // retired 2026-10-22 (models:sync)
+  "google:veo-3.1-lite-generate-preview": "google:gemini-omni-1.1-flash", // retired 2026-10-22 (models:sync)
 };
 
 /** Ids whose retirement date has passed, mapped to what replaces them. */

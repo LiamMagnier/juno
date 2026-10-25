@@ -67,7 +67,12 @@ test("Nano Banana 2.1 leads the Flash image line, priced per image, and the reti
   // Stepped down to legacy on 2026-10-10; Google deprecated it on Oct 6
   // (changelog, read 2026-10-18), so it is deprecated now, still callable.
   assert.equal(getModel("google:gemini-3.1-flash-image")!.status, "deprecated", "Nano Banana 2 steps down, still callable");
-  assert.equal(getModel("google:gemini-3.1-flash-image")!.replacedBy, nb.id);
+  // Google names 2.1 as the replacement but announces no shutdown date, so the
+  // row names it in its note only: replacedBy needs a retiresOn to mean
+  // anything (validate:models), and a date is never invented.
+  assert.match(getModel("google:gemini-3.1-flash-image")!.deprecationNote ?? "", /Use Nano Banana 2\.1$/);
+  assert.equal(getModel("google:gemini-3.1-flash-image")!.retiresOn, undefined);
+  assert.equal(getModel("google:gemini-3.1-flash-image")!.replacedBy, undefined);
   assert.equal(nb.family, getModel("google:gemini-3.1-flash-image")!.family);
   assert.equal(mediaRequestCost(nb.id, "image"), 33_600, "$0.0336 a 1K image");
   const caps = capabilitiesFor(nb.id);

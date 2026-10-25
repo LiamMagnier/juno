@@ -76,10 +76,23 @@ Recent releases already in the catalogue:
 - Write official rates for `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed` and `MiniMax-M3.1-Flash` into
   `model-rates.generated.ts`. Then confirm the cache-write prices: one report gives Moonshot 5-minute and 1-hour
   write prices; Moonshot's other rows list none.
-- Expiries the dry run already sees, from `retiresOn` dates that have passed. `MODEL_LIST` already hides these,
-  so only the move into `RETIRED_MODELS` is pending:
-  - `google:veo-3.1-*-preview` (×3), retired 2026-10-22;
-  - `openai:gpt-3.5-turbo`, `gpt-4-turbo`, `gpt-image-1`, `o1` and `o3-mini`, retired 2026-10-23.
+- ~~Expiries the dry run already sees~~ **Done 2026-10-25** with `models:sync --apply --only google,openai
+  --no-api --no-discovery` (no lab page reachable, so only the clock-driven moves; report:
+  [`sync-reports/2026-10-25-applied.md`](./models/sync-reports/2026-10-25-applied.md)). Rows moved into
+  `RETIRED_MODELS`, Mac picker fixture regenerated:
+  - `google:veo-3.1-*-preview` (×3), retired 2026-10-22, to `gemini-omni-1.1-flash`;
+  - `openai:gpt-3.5-turbo` (to GPT-5.6 Terra), `gpt-4-turbo`, `o1`, `o3-mini` (to GPT-6.1 Sol) and `gpt-image-1`
+    (to GPT Image 2.5 Sunburst), retired 2026-10-23.
+
+## Nightly sync failure (fixed 2026-10-25)
+
+Every scheduled run since 2026-10-19 stopped at `validate:models` with
+`FAIL: google:gemini-3.1-flash-image: replacedBy without retiresOn`. On 2026-10-18 Nano Banana 2 was marked deprecated
+with `replacedBy: gemini-nano-banana-2.1` but no date. Google's deprecations page names 2.1 as the replacement and
+says "No shutdown date announced". That was the saved copy of 2026-10-10, and the 2026-10-25 run read the live page and
+proposed no date either. The row keeps `status: "deprecated"` and its note, and drops `replacedBy`. No date was
+invented; the sync writes `retiresOn` and `replacedBy` together once Google publishes one. Before 2026-10-19 the runs
+failed later, at "Open reviewable model update": GitHub refuses PRs from Actions until the repository allows it.
 - Max output for MiniMax M3.1 Flash: reports say 524,288 or 1,048,576. `PROVIDER_MAX_OUTPUT.minimax` stays at
   131,072, the value MiniMax recommends, so it is unaffected.
 

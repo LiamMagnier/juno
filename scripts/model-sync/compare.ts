@@ -4,6 +4,7 @@ import { modelGeneration } from "../../src/lib/model-metrics";
 import { fastModeMultiplier, longContextPricing, tokenRate, ultraFastMultiplier } from "../../src/lib/pricing";
 import { PROVIDERS, type Provider } from "../../src/lib/providers";
 import type { Listing } from "./lab-apis";
+import { isOverdue, lifecycleProblems } from "./lifecycle";
 import type { Discovery } from "./openrouter";
 import { addDays } from "./tables";
 import type { Finding, ModelFact, Source } from "./types";
@@ -23,6 +24,10 @@ import type { Finding, ModelFact, Source } from "./types";
  *  4. New models are added only with every required field verified, and only
  *     for labs whose pages give the family line; anything short of that is a
  *     "new model" line in the report with what is missing.
+ *  5. One bad row never blocks the rest. A row whose own lifecycle metadata
+ *     is invalid (scripts/model-sync/lifecycle.ts, the rules validate:models
+ *     enforces) is reported as needs-review and is not retired on it; every
+ *     other row's changes are still planned.
  */
 
 export interface Catalogue {
@@ -169,6 +174,19 @@ export function compare(
   const src = (f: ModelFact, ...fields: (keyof ModelFact["sources"])[]) =>
     fields.map((k) => f.sources[k]).filter((s): s is Source => !!s).filter((s, i, a) => a.findIndex((x) => x.url === s.url) === i);
 
+  // —— Rows whose own lifecycle metadata is invalid ——
+  // validate:models fails on these. Here they are set aside for a person: the
+  // clock never retires a row on a date or a replacement that cannot be
+  // trusted, and nothing else in the run waits for them.
+  const served = all.filter((m) => !isOverdue(m, cat.today));
+  const needsReview = new Set<string>();
+  for (const m of all) {
+    const problems = lifecycleProblems(m, served);
+    if (!problems.length) continue;
+    needsReview.add(m.id);
+    findings.push({ severity: "warn", kind: "needs-review", model: m.id, message: `lifecycle metadata is invalid (${problems.join("; ")}): not retired automatically until a person fixes the row` });
+  }
+
   // —— Catalogue rows the lab's pages describe ——
   for (const m of all) {
     const f = factById.get(m.id);
@@ -280,6 +298,10 @@ export function compare(
       } else if (officialLast > m.retiresOn) {
         findings.push({ severity: "warn", kind: "retirement", model: m.id, message: `the lab now says ${officialLast}, later than the catalogue's ${m.retiresOn}; extending a retirement is left to a person`, sources: src(f, "retiresOn") });
       }
+    } else if (f.replacement && !officialLast && !m.retiresOn) {
+      // A successor named with no date (Google: "No shutdown date announced")
+      // is not a retirement. Nothing is written until the lab gives a date.
+      findings.push({ severity: "info", kind: "lifecycle", model: m.id, message: `the lab names ${f.replacement} as its replacement but announces no shutdown date; no retiresOn or replacedBy is written until it does`, sources: src(f, "replacement") });
     }
 
     // Superseded within its line, per the lab's own legacy list.
@@ -301,9 +323,12 @@ export function compare(
 
   // —— Expired rows: move to RETIRED_MODELS ——
   for (const m of all) {
-    const retiresOn = edits.find((e) => e.id === m.id)?.set.retiresOn ?? m.retiresOn;
-    const replacedBy = edits.find((e) => e.id === m.id)?.set.replacedBy ?? m.replacedBy;
-    if (retiresOn && retiresOn < cat.today && replacedBy) {
+    const official = edits.find((e) => e.id === m.id)?.set;
+    // A row set aside above retires only on a date and heir the lab's pages gave this run.
+    if (needsReview.has(m.id) && !(official?.retiresOn && official.replacedBy)) continue;
+    const retiresOn = official?.retiresOn ?? m.retiresOn;
+    const replacedBy = official?.replacedBy ?? m.replacedBy;
+    if (retiresOn && isOverdue({ retiresOn }, cat.today) && replacedBy) {
       expiries.push({ id: m.id, provider: m.provider, replacedBy, retiresOn });
       findings.push({ severity: "change", kind: "expired", model: m.id, message: `retired ${retiresOn}: removed from the catalogue, stored ids redirect to ${replacedBy}`, applied: true });
     }
@@ -411,6 +436,7 @@ export function compare(
   }
   for (const m of all) {
     if (!m.replacedBy || expiries.some((x) => x.id === m.id)) continue;
+    if (needsReview.has(m.id) && !edits.find((e) => e.id === m.id)?.set.retiresOn) continue; // left as the person will find it
     const planned = edits.find((e) => e.id === m.id)?.set.replacedBy ?? m.replacedBy;
     const to = follow(planned);
     if (to !== planned) {

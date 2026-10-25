@@ -60,13 +60,33 @@ disagrees with another, the catalogue keeps its value and the report says so.
 
 Never written automatically, always reported: a later retirement date than the
 catalogue's, a model missing from a lab's API list, vision being added, a free
-or promo price, a model from a lab whose product lines the sync cannot map, and
-anything a parser could not read. A new model also needs its thinking ladder
+or promo price, a model from a lab whose product lines the sync cannot map, a
+replacement the lab names without a shutdown date, and anything a parser could
+not read. A new model also needs its thinking ladder
 (`reasoningCaps`), thinking wire, reasoning evidence and pinned tool record
 checked by hand; the report lists them per model.
 
 `--apply` also regenerates the Mac model-picker fixture
 (`ModelPickerWebFixtures.swift`) and moves its pinned day to today.
+
+## One bad row, one dead page
+
+A run never stops for one entry. Each change lands whole or not at all; one
+that cannot (its row is missing, hand-wrapped over several lines, or not where
+the plan expects it) is listed under **Needs review** and every other change is
+still written, except those that depend on it (a predecessor stepping down for
+a model that was not added, a redirect to it). The dry run tries every edit in
+memory, so these show up in the nightly report before anyone applies.
+
+A row whose own lifecycle fields are invalid (the rules `validate:models`
+enforces, shared in `scripts/model-sync/lifecycle.ts`) is also listed under
+Needs review, and the clock never retires it on a date or replacement that
+cannot be trusted.
+
+A lab whose pages cannot be read is listed under "Sources that failed". Its
+rates on file are kept with the day each was read, never re-stamped as verified
+that day, and the report counts them apart from the rates read in the run. A
+model page that breaks a parser costs only that page.
 
 ## Running it
 
@@ -105,13 +125,27 @@ PM2. One-time setup: `git clone` the repo to `MODEL_SYNC_DIR` with a key that
 can push branches, and put the provider keys in the cron user's environment.
 
 `.github/workflows/sync-models.yml` also runs the dry run nightly when Actions
-minutes are available and appends the report to its model-watch issue.
+minutes are available and appends the report to its model-watch issue. A
+`validate:models` failure no longer stops the benchmark refresh or the issue:
+the validator's output is added to the issue and the job fails in its last
+step. If the repository does not let Actions open pull requests (Settings >
+Actions > General > Workflow permissions), the run warns with a link to the
+pushed branch instead of failing.
 
 ## Retirements and the clock
 
 `retiresOn` is the last day a model answers as itself. `MODEL_LIST` drops it the
 day after, and `migrateModelId` sends stored ids to `replacedBy`; the sync then
-moves the row into `RETIRED_MODELS`. Pinned tests are written so a retirement
+moves the row into `RETIRED_MODELS`. `validate:models` warns about a row past
+its date that is still curated.
+
+`retiresOn` and `replacedBy` are one statement and are written together. When
+a lab deprecates a model without a shutdown date (Google's "No shutdown date
+announced"), the row is `status: "deprecated"` with a `deprecationNote` naming
+the successor ("Deprecated by Google. Use Nano Banana 2.1") and has neither
+field. `validate:models` fails on `replacedBy` without `retiresOn`, and a date
+is never inferred. The sync reports the undated replacement every run and
+writes both fields the day the lab publishes a date. Pinned tests are written so a retirement
 date can never break a deploy later: `tests/model-retirement-clock.test.ts`
 runs the model suites with the catalogue's clock moved past the last scheduled
 retirement, and proves MiMo V2.5 Pro leaves the pickers on 2026-10-14.

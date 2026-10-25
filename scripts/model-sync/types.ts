@@ -121,6 +121,8 @@ export interface Finding {
     | "api-new"
     | "discovery"
     | "expired"
+    /** A row or change the run set aside for a person; everything else went on. */
+    | "needs-review"
     | "source-error";
   model?: string; // canonical provider:id
   message: string;
