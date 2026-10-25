@@ -126,8 +126,9 @@ Visit [http://localhost:3000](http://localhost:3000) to create an account and be
 Juno enforces strict quality and contract integrity gates across both web and native targets:
 
 ```bash
-# Extract UI translation strings
-npm run i18n:extract
+# Prepare the state CI tests in: Node 24 check, UI translation strings,
+# runner installs and the agent-core build
+npm run test:prepare
 
 # Run full project typecheck
 npm run typecheck

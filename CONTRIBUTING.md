@@ -29,13 +29,20 @@ For voice, run the relay with `RELAY_ENABLE_MOCK=1` and set
 ## Before you push
 
 ```bash
-npm run i18n:extract   # regenerates src/lib/i18n-catalog.generated.ts (not tracked)
+npm run test:prepare   # Node 24 check, i18n catalog, runner installs, agent-core build
 npm run typecheck      # the real type gate — `next build` deliberately skips it
 npm run lint
 npm test
 ```
 
-CI runs exactly these on every pull request. `next build` type-checks too, but
+CI runs exactly these on every pull request. `test:prepare`
+(`scripts/test-prepare.mjs`) is the same script CI's unit-test shards run
+after `npm ci`: it regenerates `src/lib/i18n-catalog.generated.ts` (not
+tracked), installs `runner/agent-core` and `runner/env-server` when their
+lockfiles changed, and builds `runner/agent-core/dist`. Without it a fresh
+clone fails suites CI passes (`Cannot find module .../dist/work/index.js`,
+`Cannot find module 'ws'`). It refuses a Node outside `package.json` engines
+(24): on Node 22, ESLint's RuleTester cancels its own cases under `node:test`. `next build` type-checks too, but
 it is the slowest and least legible place to find out — run `npm run typecheck`
 first; it is the gate CI enforces and the one that names the file.
 

@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "typecheck": "NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit",
     "test": "tsx --test tests/*.test.ts && tsx scripts/test-auth.ts && tsx scripts/test-message-crypto.ts && npm run test:moderation && npm run test:skill-package && npm run test:custom-mcp",
+    "test:prepare": "node scripts/test-prepare.mjs",
     "postinstall": "prisma generate",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "db:generate": "prisma generate",
