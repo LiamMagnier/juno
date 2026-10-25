@@ -14,7 +14,7 @@
  * so the gate reports before and after the owners add them.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { BUDGETS } from "./budgets";
@@ -88,11 +88,23 @@ export function evaluateParity(records: readonly GeometryRecord[]): { pass: bool
   return { pass: records.length > 0 && mismatches.length === 0, mismatches, contexts: records.map((r) => r.context) };
 }
 
+/** JSON file names in a directory, sorted; a missing directory has none. */
+function jsonFilesIn(dir: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  return names.filter((name) => name.endsWith(".json")).sort();
+}
+
 /** Reads the native snapshot exports; a missing directory is simply no records. */
 export function readNativeGeometry(dir: string | undefined): GeometryRecord[] {
-  if (!dir || !existsSync(dir)) return [];
+  if (!dir) return [];
   const out: GeometryRecord[] = [];
-  for (const name of readdirSync(dir).sort()) {
+  for (const name of jsonFilesIn(dir)) {
     if (!name.endsWith(".json")) continue;
     const parsed = JSON.parse(readFileSync(path.join(dir, name), "utf8")) as GeometryRecord;
     if (typeof parsed.context !== "string" || (parsed.platform !== "macos" && parsed.platform !== "ios")) {
@@ -105,9 +117,8 @@ export function readNativeGeometry(dir: string | undefined): GeometryRecord[] {
 
 /** Reads every geometry record (web or native) in a directory. */
 export function readGeometryRecords(dir: string): GeometryRecord[] {
-  if (!existsSync(dir)) return [];
   const out: GeometryRecord[] = [];
-  for (const name of readdirSync(dir).sort()) {
+  for (const name of jsonFilesIn(dir)) {
     if (!name.endsWith(".json")) continue;
     const parsed = JSON.parse(readFileSync(path.join(dir, name), "utf8")) as GeometryRecord;
     if (typeof parsed.context !== "string" || !["web", "macos", "ios"].includes(parsed.platform)) {

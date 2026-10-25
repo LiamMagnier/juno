@@ -13,6 +13,9 @@
 #   --report-dir <dir>       Where gate reports go (default: test-results/design-gates).
 #   --no-seed                Skip the E2E account, research and QA fixture seeds.
 #
+# ALEVR_QA_NODE_BIN=<dir> puts a Node 24 from <dir> first on PATH (Node 24 or
+# newer is required, as package.json "engines" and CI use).
+#
 # What it guarantees, in order:
 #   1. Refuses to start unless DATABASE_URL and DIRECT_URL are both
 #      postgresql://postgres@127.0.0.1:55439/<name>_test (default
@@ -32,8 +35,12 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INVOKED_FROM="$PWD"
-NODE24_BIN="/Users/liammagnier/.npm/_npx/387698761821791d/node_modules/node/bin"
-if [ -d "$NODE24_BIN" ]; then export PATH="$NODE24_BIN:$PATH"; fi
+# A Node 24 that is not first on PATH (e.g. a machine whose default is older)
+# can be named explicitly; it then goes first on PATH for the whole run.
+if [ -n "${ALEVR_QA_NODE_BIN:-}" ]; then
+  if [ ! -x "$ALEVR_QA_NODE_BIN/node" ]; then printf '[qa] Refusing: ALEVR_QA_NODE_BIN has no node binary (%s).\n' "$ALEVR_QA_NODE_BIN" >&2; exit 2; fi
+  export PATH="$ALEVR_QA_NODE_BIN:$PATH"
+fi
 cd "$ROOT"
 
 log() { printf '[qa] %s\n' "$*" >&2; }

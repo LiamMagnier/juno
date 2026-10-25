@@ -1,14 +1,24 @@
-# Wave-2 design gates (spec §9 and §14, package P0).
+# Wave-2 design gates (spec §9 and §14, package P0). Ported from PR #99 with
+# its three failing checks fixed (ledger P1-5).
 #
+# base          The wave-2 base gate (scripts/qa/check-base.sh) on pull requests and on
+#               demand: no unmerged paths, wave 1 in the history, main CI green. It
+#               waits (up to 45 minutes) for main checks that are still running
+#               instead of calling them "not green"; on #99 it failed on
+#               "macOS app: in_progress" for a main that went on to pass.
 # web-gates     The e2e/wave2 suites on a production build (scripts/qa/run-prod-e2e.sh:
 #               next build + next start, never next dev) against a service Postgres
 #               whose database name ends in _test. Publishes gate JSON (p50/p95),
 #               screenshots and the Playwright report.
-# summary       Combines web and native geometry into the parity gate, then applies
-#               every gate's mode (scripts/qa/gates.ts evaluate). Report-only gates
-#               warn; a gate some package lists in its e2e/wave2/<pkg>/gates.ts fails.
-# base          The wave-2 base gate (scripts/qa/check-base.sh) on pull requests and on
-#               demand: no unmerged paths, wave 1 in the history, main CI green.
+# summary       Combines the web geometry into the parity gate, then applies every
+#               gate's mode (scripts/qa/gates.ts evaluate --require-enforced).
+#               Report-only gates warn; a gate some package lists in its
+#               e2e/wave2/<pkg>/gates.ts fails, and so does an enforced browser gate
+#               that recorded nothing. External gates (platform "ci") are measured by
+#               their own jobs and are not required here.
+#
+# The native half of #99 ("Native gates (Release)") is not on this branch; see
+# scripts/qa/README.md § Native.
 #
 # Never deploys, never reads secrets, never touches production: the only database
 # is the service container, and the runner refuses any other.
@@ -21,11 +31,12 @@ on:
     paths:
       - "src/**"
       - "e2e/**"
-      - "native/**"
       - "prisma/**"
       - "public/**"
       - "scripts/qa/**"
+      - "scripts/test-prepare.mjs"
       - "playwright.config.ts"
+      - "next.config.mjs"
       - "package.json"
       - "package-lock.json"
       - "tailwind.config.ts"
@@ -50,7 +61,9 @@ jobs:
     name: Base gate
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Up to 45 minutes of waiting for main's slowest check (the macOS Stable
+    # build caps at 45) plus the gate itself.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,12 +74,13 @@ jobs:
       - name: Wave-2 base gate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/qa/check-base.sh --main-branch main
+        run: bash scripts/qa/check-base.sh --main-branch main --wait-minutes 45
 
   web-gates:
     name: Web gates (production build)
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # #99's run took 13.7 minutes for build + 204 tests.
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:16
@@ -88,13 +102,12 @@ jobs:
           node-version: 24
           cache: npm
       - name: Install dependencies
-        # Next typechecks imported runner sources and the Work driver too.
-        # Match the main build's complete package setup on a clean checkout.
-        run: |
-          npm ci
-          npm ci --prefix runner/agent-core
-          npm run build --prefix runner/agent-core
-          npm ci --prefix runner/env-server
+        run: npm ci
+      # `next build` compiles imported runner sources and the Work driver too,
+      # so it needs the runner installs and the agent-core build: the same
+      # preparation the unit-test shards use (scripts/test-prepare.mjs).
+      - name: Prepare runner packages (npm run test:prepare)
+        run: npm run test:prepare
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
       - name: Wave-2 suites on a production build
@@ -137,19 +150,23 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --ignore-scripts
+      # Runs even when web-gates failed (`if: always()`), so the gate table is
+      # printed for a red run too. A web-gates job that died before uploading
+      # leaves no results: then only enforced browser gates fail here, and the
+      # web-gates check itself is what reports the failure.
       - uses: actions/download-artifact@v4
         with:
           name: design-gates-web
           path: reports/web
         continue-on-error: true
-      - name: Combine web and native geometry
+      - name: Combine geometry into the parity gate
         run: |
           mkdir -p reports/combined
-          npx tsx scripts/qa/gates.ts parity --out reports/combined reports/web/web-geometry reports/native/native-geometry
+          npx tsx scripts/qa/gates.ts parity --out reports/combined reports/web/web-geometry
       - name: Apply gate modes
         run: |
-          mkdir -p reports/web/design-gates reports/native
-          npx tsx scripts/qa/gates.ts evaluate --require-enforced reports/web/design-gates reports/native reports/combined
+          mkdir -p reports/web/design-gates
+          npx tsx scripts/qa/gates.ts evaluate --require-enforced reports/web/design-gates reports/combined
       - name: Publish the summary
         if: always()
         uses: actions/upload-artifact@v4

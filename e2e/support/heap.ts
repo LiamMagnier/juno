@@ -7,7 +7,7 @@
  * gate compares the ratio measured / baseline against 1.10.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 
@@ -39,8 +39,14 @@ export async function measureHeapAfterGc(page: Page): Promise<HeapReading> {
 }
 
 export function readHeapBaseline(file: string): HeapBaseline | null {
-  if (!existsSync(file)) return null;
-  const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<HeapBaseline>;
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const parsed = JSON.parse(text) as Partial<HeapBaseline>;
   if (typeof parsed.usedBytes !== "number" || !(parsed.usedBytes > 0)) throw new Error(`${file} has no positive usedBytes.`);
   return parsed as HeapBaseline;
 }

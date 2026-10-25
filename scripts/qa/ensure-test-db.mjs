@@ -67,12 +67,19 @@ function main() {
   if (drop) {
     // A failed CREATE must never make teardown drop somebody else's database.
     // Only a successful CREATE below can write this run's ownership record.
-    if (!existsSync(ownershipFile)) {
-      console.error("[qa:db] No database was created by this run; leaving existing databases alone.");
-      return;
+    // Read, never check-then-read: the record is the only licence to drop.
+    let record;
+    try {
+      record = readFileSync(ownershipFile, "utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        console.error("[qa:db] No database was created by this run; leaving existing databases alone.");
+        return;
+      }
+      fail("The database ownership record is unreadable; refusing to drop anything.");
     }
     let ownership;
-    try { ownership = JSON.parse(readFileSync(ownershipFile, "utf8")); }
+    try { ownership = JSON.parse(record); }
     catch { fail("The database ownership record is unreadable; refusing to drop anything."); }
     if (ownership.database !== name) fail("The database does not match this run's ownership record.");
     prisma(["db", "execute", "--url", QA_MAINTENANCE_URL, "--stdin"], { input: dropSql, env: maintenance, label: `drop ${name}` });
@@ -80,8 +87,11 @@ function main() {
     console.error(`[qa:db] Dropped ${name}.`);
     return;
   }
-  if (existsSync(ownershipFile)) fail("This run already owns a database; refusing to replace it.");
   // CREATE fails if the name exists. Never reset an earlier run's database.
+  // The ownership record below is written with `wx` (exclusive create), so a
+  // run that somehow already holds a record cannot overwrite it: the write
+  // fails and the database this call just created is dropped again. No
+  // separate existence check, which would only race that write.
   prisma(["db", "execute", "--url", QA_MAINTENANCE_URL, "--stdin"], {
     input: `CREATE DATABASE "${name}";`,
     env: maintenance,

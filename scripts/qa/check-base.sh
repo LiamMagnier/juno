@@ -3,6 +3,7 @@
 # main only after this passes, and each package PR prints the base SHA it shows.
 #
 #   bash scripts/qa/check-base.sh [--repo <dir>] [--wave1 <sha>]... [--main-branch <name>]
+#                                 [--wait-minutes <n>]
 #
 # Fails (exit 1) unless all of these hold:
 #   1. `git diff --name-only --diff-filter=U` is empty (no unmerged paths).
@@ -14,23 +15,37 @@
 #      cannot be read, the gate fails rather than guessing.
 #
 # --wave1 replaces the default commit list (fixture repos use it).
+#
+# --wait-minutes <n> (CI passes it): while main's checks are still queued or
+# running, poll every minute for up to <n> minutes before judging them. Without
+# it, a check that is merely in progress fails the gate at once — which is how
+# PR #99's "Base gate" went red with "macOS app: in_progress" on a main that
+# went on to pass. Pending is not green, so a check still running when the wait
+# runs out fails the gate as before; the wait only stops "not finished yet"
+# from being reported as "not green". It polls the main commit read at the
+# start, so a later push to main cannot change what is being judged.
 set -Euo pipefail
 
 WAVE1_COMMITS=(244366124)
 REPO=""
 MAIN_BRANCH="main"
 CUSTOM_WAVE1=()
+WAIT_MINUTES=0
+POLL_SECONDS="${ALEVR_QA_BASE_POLL_SECONDS:-60}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:-}"; shift 2 ;;
+    --wait-minutes) WAIT_MINUTES="${2:-}"; shift 2 ;;
     --wave1) CUSTOM_WAVE1+=("${2:-}"); shift 2 ;;
     --main-branch) MAIN_BRANCH="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "check-base: unknown argument $1" >&2; exit 64 ;;
   esac
 done
 if [ "${#CUSTOM_WAVE1[@]}" -gt 0 ]; then WAVE1_COMMITS=("${CUSTOM_WAVE1[@]}"); fi
 case "$MAIN_BRANCH" in ''|*[!A-Za-z0-9._/-]*) echo "check-base: bad --main-branch" >&2; exit 64 ;; esac
+case "$WAIT_MINUTES" in ''|*[!0-9]*) echo "check-base: --wait-minutes takes a whole number of minutes" >&2; exit 64 ;; esac
+case "$POLL_SECONDS" in ''|*[!0-9]*|0) echo "check-base: ALEVR_QA_BASE_POLL_SECONDS must be a positive whole number" >&2; exit 64 ;; esac
 
 if [ -z "$REPO" ]; then
   REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "check-base: not inside a git repository." >&2; exit 1; }
@@ -72,17 +87,38 @@ else
 fi
 
 # 3. Main CI.
+# Reads main's check runs and combined status for CI_SHA into CHECKS,
+# STATUS_LINE and READ_OK; counts what is still queued or running into PENDING.
+read_main_ci() {
+  READ_OK=1
+  CHECKS="$(gh api "repos/{owner}/{repo}/commits/$CI_SHA/check-runs?per_page=100" \
+    --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null)" || READ_OK=0
+  STATUS_LINE="$(gh api "repos/{owner}/{repo}/commits/$CI_SHA/status" \
+    --jq '[.statuses[] | select(.context != "Vercel")] as $checks | (if any($checks[]; .state == "failure" or .state == "error") then "failure" elif any($checks[]; .state != "success") then "pending" else "success" end) + " " + ($checks | length | tostring)' 2>/dev/null)" || READ_OK=0
+  PENDING=0
+  if [ "$READ_OK" -eq 1 ]; then
+    while IFS=$'\t' read -r name status _conclusion; do
+      [ -z "${name:-}" ] && continue
+      case "$name" in Vercel|"Vercel Preview Comments") continue ;; esac
+      [ "$status" != "completed" ] && PENDING=$((PENDING + 1))
+    done <<< "$CHECKS"
+    case "$STATUS_LINE" in pending*) PENDING=$((PENDING + 1)) ;; esac
+  fi
+}
+
 if ! command -v gh >/dev/null 2>&1; then
   fail "main CI could not be read: the GitHub CLI (gh) is not installed"
 else
+  # Resolved once: every poll below judges this commit, even if main moves on.
   CI_SHA="$(gh api "repos/{owner}/{repo}/commits/$MAIN_BRANCH" --jq '.sha' 2>/dev/null)"
-  CHECKS="$(gh api "repos/{owner}/{repo}/commits/$CI_SHA/check-runs?per_page=100" \
-    --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null)"
-  CHECKS_STATUS=$?
-  STATUS_LINE="$(gh api "repos/{owner}/{repo}/commits/$CI_SHA/status" \
-    --jq '[.statuses[] | select(.context != "Vercel")] as $checks | (if any($checks[]; .state == "failure" or .state == "error") then "failure" elif any($checks[]; .state != "success") then "pending" else "success" end) + " " + ($checks | length | tostring)' 2>/dev/null)"
-  STATUS_STATUS=$?
-  if [ "$CHECKS_STATUS" -ne 0 ] || [ "$STATUS_STATUS" -ne 0 ]; then
+  read_main_ci
+  DEADLINE=$(( $(date +%s) + WAIT_MINUTES * 60 ))
+  while [ "$READ_OK" -eq 1 ] && [ -n "${CI_SHA:-}" ] && [ "$PENDING" -gt 0 ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    echo "  wait  $PENDING check(s) on $MAIN_BRANCH at ${CI_SHA:0:9} still queued or running; polling again in ${POLL_SECONDS}s."
+    sleep "$POLL_SECONDS"
+    read_main_ci
+  done
+  if [ "$READ_OK" -ne 1 ]; then
     fail "main CI could not be read from GitHub (gh api failed; is gh signed in?)"
   else
     total=0; bad=()

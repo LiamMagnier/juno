@@ -183,8 +183,18 @@ describeMatrix("visual matrix @matrix", (variant) => {
   for (const route of matrixRoutes(fixtures)) {
     test.describe(route.name, () => {
       if (route.anonymous) test.use(anonymous);
-      test(`route ${route.name}`, async ({ page }, testInfo) => {
+      test(`route ${route.name}`, async ({ page, browserName }, testInfo) => {
         test.skip(!route.path, route.reason ?? "no path");
+        // Known and tracked, not skipped silently: on GitHub's Linux WebKit
+        // with iPhone 14 emulation, the 404 page's browser closed mid-capture
+        // on design-gates run 39073034127 in 5 of its 6 variants (one failed
+        // all three tries, four passed on a retry; the sixth passed first
+        // time), while every other route, and the same page on Chromium,
+        // passed. The cause is not known (the
+        // run's traces were not readable from here). Reported as "fixme" in
+        // the Playwright report until someone reproduces it on a WebKit they
+        // can debug, or a real iPhone — see scripts/qa/README.md.
+        test.fixme(browserName === "webkit" && !!route.notFound, "WebKit closes the 404 page mid-capture in CI (run 39073034127); tracked in scripts/qa/README.md");
         const status = await openAndSettle(page, route.path!, { anonymous: route.anonymous, notFound: route.notFound });
         const shot = await captureMatrixShot(page, testInfo, { name: `route-${route.name}`, variant, baselineDir: path.join(BASELINES, "visual") });
         const detail =

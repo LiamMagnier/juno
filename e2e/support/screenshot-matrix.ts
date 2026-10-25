@@ -19,7 +19,7 @@
  * `animations: "disabled"` holds them at their start for a stable picture.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { decodePng, diffBitmaps, type PixelDiff } from "./png";
@@ -99,11 +99,42 @@ export function describeMatrix(
  * Waits until every finite animation on the page has finished (or `timeout`
  * passes), then two more frames for the last style changes to paint. Returns
  * how many finite animations it waited for.
+ *
+ * Bounded twice over. In the page, each "frame" also resolves after 100ms, so
+ * a renderer that has stopped producing frames (WebKit throttles
+ * requestAnimationFrame for pages it considers hidden) cannot park the
+ * evaluate forever. Outside it, the whole call is raced against `timeout`
+ * plus a margin and fails with a message that names the stall, instead of
+ * hanging until Playwright's test timeout closes the page and reports "Target
+ * page, context or browser has been closed" (PR #99, webkit-390).
  */
 export async function settleAnimations(page: Page, timeout = 4_000): Promise<number> {
+  const margin = 3_000;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`settleAnimations: the page did not answer within ${timeout + margin}ms (renderer stalled or crashed on ${page.url()}).`)),
+      timeout + margin
+    );
+  });
+  try {
+    return await Promise.race([settleInPage(page, timeout), stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function settleInPage(page: Page, timeout: number): Promise<number> {
   return page.evaluate(async (limit) => {
     const deadline = performance.now() + limit;
-    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const frame = () =>
+      new Promise<void>((resolve) => {
+        const fallback = setTimeout(resolve, 100);
+        requestAnimationFrame(() => {
+          clearTimeout(fallback);
+          resolve();
+        });
+      });
     let waited = 0;
     for (;;) {
       const finite = document.getAnimations().filter((animation) => {
@@ -163,13 +194,41 @@ export async function captureMatrixShot(
 
   if (!options.baselineDir) return { file, baseline: null, status: "captured", diff: null };
   const baseline = path.join(options.baselineDir, options.name, base);
-  if (process.env.ALEVR_QA_UPDATE_BASELINES === "1") {
-    const existed = existsSync(baseline);
+  return { file, ...settleBaseline(baseline, png, { update: process.env.ALEVR_QA_UPDATE_BASELINES === "1", threshold: options.threshold ?? 16 }) };
+}
+
+/**
+ * Compares a capture with its baseline, or (with `update`) records it as the
+ * baseline. Every outcome comes from the file operation itself, never from a
+ * separate existence check that could race it (CodeQL js/file-system-race on
+ * PR #99).
+ */
+export function settleBaseline(
+  baseline: string,
+  png: Buffer,
+  options: { update: boolean; threshold: number }
+): Omit<MatrixShot, "file"> {
+  if (options.update) {
     mkdirSync(path.dirname(baseline), { recursive: true });
-    writeFileSync(baseline, png);
-    return { file, baseline, status: existed ? "updated" : "new-baseline", diff: null };
+    // Exclusive create first: whether a baseline existed is the outcome of
+    // the write itself, not of a separate check that could race it.
+    let existed = false;
+    try {
+      writeFileSync(baseline, png, { flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      existed = true;
+      writeFileSync(baseline, png);
+    }
+    return { baseline, status: existed ? "updated" : "new-baseline", diff: null };
   }
-  if (!existsSync(baseline)) return { file, baseline: null, status: "captured", diff: null };
-  const diff = diffBitmaps(decodePng(readFileSync(baseline)), decodePng(png), options.threshold ?? 16);
-  return { file, baseline, status: diff.differing === 0 ? "match" : "changed", diff };
+  let recorded: Buffer;
+  try {
+    recorded = readFileSync(baseline);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { baseline: null, status: "captured", diff: null };
+    throw error;
+  }
+  const diff = diffBitmaps(decodePng(recorded), decodePng(png), options.threshold);
+  return { baseline, status: diff.differing === 0 ? "match" : "changed", diff };
 }

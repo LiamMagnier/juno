@@ -123,3 +123,32 @@ test("the direct database helper refuses dotenv files before invoking Prisma", (
     assert.deepEqual(f.calls(), []);
   } finally { f.cleanup(); }
 });
+
+test("a run that already holds an ownership record never overwrites it: the new database is dropped again", () => {
+  // The exclusive (`wx`) write is the guard now, not a separate existence check
+  // that could race it (CodeQL js/file-system-race on PR #99).
+  const f = fixture();
+  try {
+    writeFileSync(f.ownership, JSON.stringify({ database: "alevr_ownership_test" }));
+    const run = f.run();
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /Could not record database ownership/);
+    assert.deepEqual(JSON.parse(readFileSync(f.ownership, "utf8")), { database: "alevr_ownership_test" }, "the existing record is untouched");
+    const calls = f.calls();
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].sql, /^CREATE DATABASE/);
+    assert.match(calls[1].sql, /^DROP DATABASE IF EXISTS "alevr_ownership_test"/);
+    assert.ok(!calls.some((call) => call.args.includes("migrate")), "nothing is migrated into a database this run does not own");
+  } finally { f.cleanup(); }
+});
+
+test("an unreadable ownership record refuses the drop", () => {
+  const f = fixture();
+  try {
+    writeFileSync(f.ownership, "{not json");
+    const run = f.run(["--drop"]);
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /unreadable; refusing to drop anything/);
+    assert.deepEqual(f.calls(), []);
+  } finally { f.cleanup(); }
+});

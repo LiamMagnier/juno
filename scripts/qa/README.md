@@ -13,6 +13,7 @@ GitHub Actions checks still must pass, including all native jobs.
 
 ```sh
 bash scripts/qa/check-base.sh            # or: npm run qa:check-base
+bash scripts/qa/check-base.sh --wait-minutes 45   # what design-gates.yml runs
 ```
 
 Fails unless there are no unmerged paths, the wave-1 integration commit
@@ -21,6 +22,14 @@ GitHub has passed (read with `gh`; if CI cannot be read, the gate fails). Cut
 wave-2 worktrees from `main` only after it passes, and print the `Base SHA:`
 line it shows in each package PR. If `main` ever squashes wave 1 instead of
 merging it, add that squash commit to `WAVE1_COMMITS` in the script.
+
+`--wait-minutes <n>` polls main's checks once a minute while any is still
+queued or running, for up to `<n>` minutes, and only then judges them. CI
+passes 45: PR #99's Base gate failed on "macOS app: in_progress" for a main
+that went on to pass, because a check that had not finished was reported as
+"not green". A check still running when the wait ends fails the gate as
+before (pending is not green), and the poll keeps judging the main commit it
+read first, so a push to main mid-wait cannot change the verdict's subject.
 
 ## Running e2e
 
@@ -105,7 +114,12 @@ In a spec, record a measurement with `recordGate(testInfo, id, measurement)`
 After the tests, `npx tsx scripts/qa/gates.ts evaluate <report dir>...` (the
 runner and CI call it) prints the table, writes `summary.json` and exits 1 on
 any enforced failure. CI's summary job adds `--require-enforced`, so an
-enforced gate that recorded no measurement in the full run also fails. Native suites write records (`Wave2PerfReport.swift`)
+enforced gate that recorded no measurement in the full run also fails —
+except the external gates (platform `ci`: `design.contrast-matrix`,
+`design.lint`), which their own CI jobs measure and no browser run can; they
+print as `ext` lines instead. (P1 enforces both, so without that exception
+every full run on a branch carrying P1 failed with "recorded no measurement".)
+Native suites write records (`Wave2PerfReport.swift`, not on this branch yet)
 that the same command evaluates against the same budgets.
 
 ```sh
@@ -165,28 +179,24 @@ Playwright projects: the pre-wave-2 projects stay (firefox in CI only), and
 `chromium-1440`, `chromium-390` and `webkit-390` run `e2e/wave2/**`. Workers:
 1 locally, 2 in CI.
 
+Known issue, reported rather than hidden: on GitHub's Linux WebKit (iPhone 14
+emulation) the 404 page's browser closed mid-capture on design-gates run
+39073034127 in five of its six visual-matrix variants, while every other route
+and the same page on Chromium passed. `settleAnimations` is now bounded (a
+stalled renderer fails with a message naming it instead of hanging into
+"Target page, context or browser has been closed"), and the webkit 404 capture
+is `test.fixme` with that evidence, so it shows as "fixme" in every report
+until someone reproduces it on a WebKit they can debug or a real iPhone.
+
 ## Native
 
-```sh
-ALEVR_ALLOW_LOCAL_NATIVE=1 bash scripts/qa/native-perf.sh --platform macos --suite perf
-```
+The native half of PR #99 (the `Wave2*` performance and snapshot support in
+both apps, the `JunoDesktop-Wave2` / `JunoMobile-Wave2` schemes,
+`native-perf.sh` and the "Native gates (Release)" job) is **not on this
+branch**. It was left out when the web harness was ported (ledger P1-5): it
+cannot be compiled or run on Linux, its iOS `.pbxproj` conflicts here, and a
+75-minute macOS job on every `src/**` pull request contradicts native.yml's
+macOS-minutes budget. Land it from #99, rebased, on a machine with Xcode.
 
-Refuses locally without `ALEVR_ALLOW_LOCAL_NATIVE=1` (CI runs it). Builds the
-Stable (Release) configuration, runs every suite named `*PerformanceTests` or
-`*SnapshotTests` under each app's `Tests/Performance`, `Tests/Snapshots/Support`
-and `Tests/Wave2` (the older snapshot suites keep their own scripts), and shuts
-down any simulator booted during the run. Helpers:
-
-- `Tests/Performance/` (identical on macOS and iOS): `wave2MeasureMemory`
-  (`XCTMemoryMetric` plus a JSON footprint sample), `wave2MeasureSignpost`
-  (`XCTOSSignpostMetric`), `Wave2TestClock` (an injectable `Clock`),
-  `Wave2OcclusionMock`, `Wave2PerfReport`.
-- `Tests/Snapshots/Support/`: `Wave2SnapshotVariant` and `Wave2Snapshot.render`
-  (macOS: light, dark, .xxl, Increase Contrast, Reduce Transparency; iOS: light,
-  dark, Increase Contrast, Reduce Transparency, AX3), and
-  `Wave2GeometryExport` for the parity gate.
-
-New files under `Tests/` reach the Xcode projects through XcodeGen
-(`native/Scripts/generate-projects.sh`), which CI runs before every build.
-
-Native Release runs use the dedicated `JunoDesktop-Wave2` and `JunoMobile-Wave2` schemes. Their test bundles include `Tests/Performance`, `Tests/Snapshots/Support` and `Tests/Wave2`; the host apps keep their Stable optimization settings. Legacy preview-driven snapshots remain in the general Debug test bundle because their fixtures are intentionally absent from shipping builds.
+Until then the gate catalog's macOS and iOS gates simply record nothing, and
+the `design.bubble-composer-parity` summary combines web geometry only.

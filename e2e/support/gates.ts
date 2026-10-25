@@ -21,7 +21,7 @@
  * evaluate` turns that into an exit code for CI and the runner.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { GATES, type GateDefinition, type GateStat } from "./budgets";
 import { percentile } from "./perf-marks";
@@ -73,6 +73,9 @@ export interface GateResult {
 export interface EvaluatedGate {
   id: string;
   title: string;
+  /** Measured by its own CI job (platform "ci"), never by a Playwright run. */
+  external: boolean;
+  measuredBy: string;
   mode: GateMode;
   enforcedBy: string[];
   results: GateResult[];
@@ -85,6 +88,30 @@ export interface RunSummary {
   failures: EvaluatedGate[];
   warnings: EvaluatedGate[];
   errors: string[];
+}
+
+/**
+ * Reads a file, or returns null when it does not exist. One call instead of
+ * existsSync-then-readFileSync, so there is no window between the check and
+ * the read (CodeQL js/file-system-race on PR #99).
+ */
+function readIfPresent(file: string): string | null {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** Directory entries, or none when the directory does not exist. */
+function entriesOf(dir: string): Dirent[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 /** The repo root: the nearest directory up from `from` holding playwright.config.ts. */
@@ -136,14 +163,15 @@ export function loadGateConfig(root: string = repoRoot(), catalog: readonly Gate
   const errors: string[] = [];
   const enforcedBy = new Map<string, string[]>();
   const wave2 = path.join(root, "e2e", "wave2");
-  const dirs = existsSync(wave2) ? readdirSync(wave2).filter((name) => statSync(path.join(wave2, name)).isDirectory()).sort() : [];
+  const dirs = entriesOf(wave2).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   for (const pkg of dirs) {
     const file = path.join(wave2, pkg, "gates.ts");
-    if (!existsSync(file)) continue;
+    const source = readIfPresent(file);
+    if (source === null) continue;
     const relative = path.relative(root, file);
     let enforce: string[];
     try {
-      enforce = parseGateFile(readFileSync(file, "utf8"), relative);
+      enforce = parseGateFile(source, relative);
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
       continue;
@@ -249,14 +277,14 @@ export function readResults(dirs: readonly string[], catalog: readonly GateDefin
   const results: GateResult[] = [];
   const errors: string[] = [];
   const walk = (dir: string) => {
-    if (!existsSync(dir)) return;
-    for (const name of readdirSync(dir).sort()) {
+    for (const entry of entriesOf(dir)) {
+      const name = entry.name;
       const full = path.join(dir, name);
-      if (statSync(full).isDirectory()) {
+      if (entry.isDirectory()) {
         walk(full);
         continue;
       }
-      if (!name.endsWith(".json") || name === "summary.json") continue;
+      if (!entry.isFile() || !name.endsWith(".json") || name === "summary.json") continue;
       try {
         const parsed: unknown = JSON.parse(readFileSync(full, "utf8"));
         const list = Array.isArray(parsed) ? parsed : [parsed];
@@ -312,13 +340,30 @@ export function evaluateResults(
     const list = byGate.get(gate.id) ?? [];
     const failed = list.some((r) => !r.pass);
     const status: EvaluatedGate["status"] = list.length === 0 ? "unmeasured" : !failed ? "pass" : mode === "enforce" ? "fail" : "warn";
-    return { id: gate.id, title: gate.title, mode, enforcedBy: config.enforcedBy.get(gate.id) ?? [], results: list, status };
+    return {
+      id: gate.id,
+      title: gate.title,
+      external: gate.platform === "ci",
+      measuredBy: gate.measuredBy,
+      mode,
+      enforcedBy: config.enforcedBy.get(gate.id) ?? [],
+      results: list,
+      status,
+    };
   });
   // A full run (CI's summary job) must measure every enforced gate: an
   // enforced gate whose test was skipped or never ran would otherwise pass by
   // saying nothing. Partial local runs leave this off and only get a note.
+  //
+  // Except the external gates (platform "ci"): they are measured by their own
+  // CI job, never by Playwright, so no browser run can record them. P1
+  // enforces two (design.contrast-matrix in native-parity.yml, design.lint in
+  // ESLint); requiring them here turned every full run red with "recorded no
+  // measurement" for gates that were green where they are actually measured.
+  const external = new Set(config.catalog.filter((gate) => gate.platform === "ci").map((gate) => gate.id));
   if (options.requireEnforced) {
     for (const gate of gates) {
+      if (external.has(gate.id)) continue;
       if (gate.mode === "enforce" && gate.status === "unmeasured") {
         errors.push(`${gate.id} is enforced by ${gate.enforcedBy.join(", ")} but this run recorded no measurement for it.`);
       }
@@ -340,7 +385,13 @@ export function formatSummary(summary: RunSummary): string {
     lines.push(`  ${tag}  ${gate.id} (${mode}): ${worst?.detail ?? ""}`);
   }
   const unmeasuredEnforced = summary.gates.filter((g) => g.status === "unmeasured" && g.mode === "enforce");
-  for (const gate of unmeasuredEnforced) lines.push(`  note  ${gate.id} is enforced by ${gate.enforcedBy.join(", ")} but was not measured in this run.`);
+  for (const gate of unmeasuredEnforced) {
+    lines.push(
+      gate.external
+        ? `  ext   ${gate.id} is enforced by ${gate.enforcedBy.join(", ")} and measured outside this run (${gate.measuredBy}).`
+        : `  note  ${gate.id} is enforced by ${gate.enforcedBy.join(", ")} but was not measured in this run.`
+    );
+  }
   for (const error of summary.errors) lines.push(`  ERROR ${error}`);
   const measured = summary.gates.filter((g) => g.status !== "unmeasured").length;
   lines.push(

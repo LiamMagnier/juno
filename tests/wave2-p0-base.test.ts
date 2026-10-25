@@ -270,3 +270,86 @@ test("checks the verified remote SHA even when local main is stale", () => {
     assert.match(run.stdout, new RegExp(`main CI is green for main at ${remoteHead.slice(0, 9)}`));
   } finally { repo.cleanup(); }
 });
+
+/**
+ * --wait-minutes: main's checks still running are waited for, not reported as
+ * "not green". PR #99's Base gate failed with "macOS app: in_progress" on a
+ * main that went on to pass. A fake `gh` answers in_progress for its first
+ * `polls` check-run reads and then the final state.
+ */
+function fakeGhSettling(binDir: string, polls: number, final: "success" | "failure" | "in_progress") {
+  const counter = path.join(binDir, "check-run-reads");
+  const finalLine = final === "in_progress" ? "macOS app\\tin_progress\\t" : `macOS app\\tcompleted\\t${final}`;
+  const script = `#!/bin/bash
+case "$*" in
+  *check-runs*)
+    n=$(cat "${counter}" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "${counter}"
+    if [ "$n" -le ${polls} ]; then printf 'test\\tcompleted\\tsuccess\\nmacOS app\\tin_progress\\t\\n'; else printf 'test\\tcompleted\\tsuccess\\n${finalLine}\\n'; fi ;;
+  *"/status"*) echo "success 0" ;;
+  *) git rev-parse main ;;
+esac
+`;
+  writeFileSync(path.join(binDir, "gh"), script);
+  chmodSync(path.join(binDir, "gh"), 0o755);
+  return counter;
+}
+
+function runWaitingGate(repo: Repo, args: string[]) {
+  return spawnSync("/bin/bash", [SCRIPT, "--wave1", repo.wave1, ...args], {
+    cwd: repo.dir,
+    env: { PATH: `${repo.bin}:/usr/bin:/bin`, HOME: repo.dir, ALEVR_QA_BASE_POLL_SECONDS: "1", ...GIT_ENV } as unknown as NodeJS.ProcessEnv,
+    encoding: "utf8",
+    timeout: 90_000,
+  });
+}
+
+test("with --wait-minutes, checks still running on main are waited for and then judged", () => {
+  const repo = makeRepo();
+  try {
+    const counter = fakeGhSettling(repo.bin, 2, "success");
+    const run = runWaitingGate(repo, ["--wait-minutes", "1"]);
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, /wait {2}1 check\(s\) on main at [0-9a-f]{9} still queued or running/);
+    assert.match(run.stdout, /pass {2}main CI is green for main at [0-9a-f]{9} \(2 checks\)/);
+    assert.equal(execFileSync("cat", [counter], { encoding: "utf8" }).trim(), "3", "two pending reads, then the settled one");
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test("a check that finishes red during the wait still fails the gate", () => {
+  const repo = makeRepo();
+  try {
+    fakeGhSettling(repo.bin, 1, "failure");
+    const run = runWaitingGate(repo, ["--wait-minutes", "1"]);
+    assert.equal(run.status, 1, run.stdout);
+    assert.match(run.stdout, /FAIL {2}main CI is not green .*\n +macOS app: failure/);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test("a check still running when the wait runs out fails the gate: pending is not green", () => {
+  const repo = makeRepo();
+  try {
+    fakeGhSettling(repo.bin, 0, "in_progress");
+    const run = runWaitingGate(repo, ["--wait-minutes", "0"]);
+    assert.equal(run.status, 1, run.stdout);
+    assert.doesNotMatch(run.stdout, /wait {2}/, "a zero-minute wait polls nothing");
+    assert.match(run.stdout, /FAIL {2}main CI is not green .*\n +macOS app: in_progress/);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test("--wait-minutes refuses anything but a whole number", () => {
+  const repo = makeRepo();
+  try {
+    fakeGh(repo.bin, "green");
+    const run = runWaitingGate(repo, ["--wait-minutes", "ten"]);
+    assert.equal(run.status, 64);
+    assert.match(run.stderr, /--wait-minutes takes a whole number of minutes/);
+  } finally {
+    repo.cleanup();
+  }
+});

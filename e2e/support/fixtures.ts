@@ -4,7 +4,7 @@
  * --no-seed or the seed did not write them; specs skip what they cannot open.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 export interface QaFixtures {
@@ -18,8 +18,14 @@ export const EMPTY_FIXTURES: QaFixtures = { qaThreadId: null, qaCodeSessionId: n
 export function readQaFixtures(runDir: string | undefined = process.env.ALEVR_QA_RUN_DIR): QaFixtures {
   if (!runDir) return EMPTY_FIXTURES;
   const file = path.join(runDir, "fixtures.json");
-  if (!existsSync(file)) return EMPTY_FIXTURES;
-  const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<QaFixtures>;
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return EMPTY_FIXTURES;
+    throw error;
+  }
+  const parsed = JSON.parse(text) as Partial<QaFixtures>;
   return {
     qaThreadId: typeof parsed.qaThreadId === "string" ? parsed.qaThreadId : null,
     qaCodeSessionId: typeof parsed.qaCodeSessionId === "string" ? parsed.qaCodeSessionId : null,

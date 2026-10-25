@@ -97,7 +97,9 @@ const REFUSALS: { name: string; env: Record<string, string>; files?: string[]; m
   {
     name: "a remote DATABASE_URL",
     env: { DATABASE_URL: "postgresql://user@db.example.com:5432/app" },
-    message: /db\.example\.com/,
+    // The whole refusal sentence, not a bare host pattern: an unanchored
+    // hostname regex is what CodeQL flagged on PR #99.
+    message: /DATABASE_URL points at host "db\.example\.com"\. Only 127\.0\.0\.1 is allowed\./,
   },
   {
     name: "a database name not ending in _test",
@@ -121,7 +123,7 @@ const REFUSALS: { name: string; env: Record<string, string>; files?: string[]; m
     env: { DATABASE_URL: GOOD_URL, DIRECT_URL: "postgresql://postgres@127.0.0.1:55439/other_test" },
     message: /different databases/,
   },
-  { name: "a remote DIRECT_URL", env: { DATABASE_URL: GOOD_URL, DIRECT_URL: "postgresql://postgres@10.0.0.5:55439/alevr_p0_test" }, message: /10\.0\.0\.5/ },
+  { name: "a remote DIRECT_URL", env: { DATABASE_URL: GOOD_URL, DIRECT_URL: "postgresql://postgres@10.0.0.5:55439/alevr_p0_test" }, message: /DIRECT_URL points at host "10\.0\.0\.5"/ },
 ];
 
 for (const refusal of REFUSALS) {
