@@ -60,8 +60,25 @@ A run in flight when the service restarts becomes `lost` (the web side records
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_exec_host.py'           # no Docker needed
-JUNO_EXEC_DOCKER_TESTS=1 python3 -m unittest tests.test_exec_host.RealSandboxBoundary   # real containers
+
+# The boundary itself, against real containers (a non-root user in the docker group):
+docker build -t juno-exec:dev deploy/exec-host/image
+JUNO_EXEC_DOCKER_TESTS=1 python3 scripts/sandbox-boundary-check.py tests.test_exec_host.RealSandboxBoundary
 ```
+
+`RealSandboxBoundary` sends `tests/sandbox_probe.py` through the API as the program and
+asserts on what it saw from inside: no route to metadata (169.254.169.254, 169.254.170.2,
+168.63.129.16), RFC 1918, the host or the Internet (ENETUNREACH, only `lo`); none of the
+host's secrets (planted in the service's own environment) and only the image's own
+variables in the program's environment; a read-only root, read-only inputs and program,
+no host path but the session's own; uid = the workspace owner, no capabilities,
+seccomp on, nothing running as root; cancel and the time limit kill the container before
+a delayed write; the container Docker created has exactly the pinned profile; pids,
+memory, CPU and `/tmp` bounded. `tests/test_computer_boundary.py` does the same for an
+agent computer behind `firewall.sh` and `egress-proxy.py` (root, a disposable host).
+Both run on every push and pull request as the `exec-boundary` and `computer-boundary`
+jobs in `.github/workflows/deploy.yml`, which the deploy waits for;
+`scripts/sandbox-boundary-check.py` fails them on any skipped test.
 
 The web side's suites against a live local host and a throwaway Postgres:
 `tests/exec-runtime.integration.test.ts` and `tests/exec-chat-route.integration.test.ts`
