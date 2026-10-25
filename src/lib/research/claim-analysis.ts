@@ -297,11 +297,12 @@ const PERIOD_UNITS = new Set(["second", "minute", "hour", "day", "week", "month"
  * verbs that report a figure ("revenue ROSE to", "capacity STOOD at"), the
  * prepositions and hedges in front of it, and the scope words that do not
  * change what is measured ("TOTAL revenue", "revenue for the YEAR"). Short on
- * purpose — a word missing from it is read as the measured noun or its
- * qualifier ("the company BOOKED revenue of $3.9bn" reads as a narrower
- * subject), and the check it feeds can only take a contradiction away, never
- * add one. It is never what lets another cited source stand in for a passage:
- * that gate does not trust these guesses (see `namesOtherSubject`).
+ * purpose — a word missing from it is read as the measured noun, or as its
+ * qualifier when what precedes it says so (`qualifiesHead`: "the company
+ * BOOKED revenue" is a verb, "its LOGISTICS revenue" a qualifier), and the
+ * check it feeds can only take a contradiction away, never add one. It is
+ * never what lets another cited source stand in for a passage: that gate
+ * does not trust these guesses (see `namesOtherSubject`).
  */
 const FIGURE_SUBJECT_SKIP = new Set(
   (
@@ -317,6 +318,7 @@ const FIGURE_SUBJECT_SKIP = new Set(
     "against versus toward towards via around nearly almost roughly approximately just only some any up down out off least less " +
     "every each all both our " +
     "overall annual yearly group consolidated combined full whole entire fiscal financial year quarter month period half mid " +
+    "first second third fourth final last latest previous prior quarterly monthly " +
     "thousand million billion trillion percent cent " +
     "january february march april june july august september october november december"
   ).split(" ")
@@ -335,31 +337,162 @@ function wordForms(text: string): Set<string> {
   return new Set((text.match(WORD_RE) ?? []).map(tokenForm));
 }
 
+/** Words that never name what a figure measures: days, and the day a thing was said. */
+const NOT_A_SUBJECT = new Set(
+  "monday tuesday wednesday thursday friday saturday sunday today yesterday tomorrow tonight".split(" ")
+);
+/** Determiners and possessive pronouns: the word after one opens a noun phrase. */
+const DETERMINERS = new Set("the a an its their our his her this that these those".split(" "));
+/** Prepositions: a name after one is that preposition's object ("in London", "to the SEC"), not a figure's subject. */
+const PREPOSITIONS = new Set(
+  "of in on at to for from by with into onto over under about across against among between during after before since until via per toward towards around near inside outside within without".split(" ")
+);
+/** Verbs that take a person as their object: "told Reuters", "informed investors". */
+const TELLING_VERBS = new Set("told tell tells telling informed inform informs briefed brief briefs".split(" "));
+/** Verbs that open a reported clause: what follows one starts that clause ("said logistics revenue was"). */
+const REPORTING_VERBS = new Set(
+  ("said say says saying reported report reports noted note notes stated state states announced announce announces " +
+    "showed show shows found find finds estimated estimate estimates disclosed disclose discloses confirmed confirm confirms " +
+    "added adds wrote writes revealed reveals according")
+    .split(" ")
+);
+/** A company name's legal or group suffix: "Northwind Group" is still Northwind. */
+const CORPORATE_SUFFIXES = new Set(
+  "group inc incorporated corp corporation co company ltd limited plc llc lp ag sa nv se gmbh holdings holding international".split(" ")
+);
+
+interface ClauseWord {
+  raw: string;
+  /** Offset in the whole text. */
+  start: number;
+  end: number;
+}
+
 /**
- * The noun a figure is measured on, read backwards from the figure within its
- * own clause, and the word directly in front of that noun when it qualifies
- * it: "Northwind's logistics revenue was $1.8bn" → revenue, qualified by
- * "logistics". A possessive owner ("the company's revenue") and a determiner
- * are not qualifiers. Null head when the clause opens with the figure.
+ * The words of a figure's own clause before it, and which of them is the
+ * noun it is measured on: read backwards from the figure, past the verbs,
+ * prepositions and scope words of FIGURE_SUBJECT_SKIP. `headAt` is -1 when
+ * the clause opens with the figure.
  */
-function figureSubject(text: string, n: NumericFact): { head: string | null; qualifier: string | null } {
+function figureClause(text: string, n: NumericFact): { words: ClauseWord[]; headAt: number } {
   const before = text.slice(0, n.start);
   let clauseStart = 0;
   for (const m of before.matchAll(/[,;:.!?]\s+|\s[-–—]\s/g)) clauseStart = m.index + m[0].length;
-  const words = before.slice(clauseStart).match(WORD_RE) ?? [];
-  const skipped = (raw: string) => {
-    const form = tokenForm(raw);
-    return form.length < 3 || STOPWORDS.has(form) || FIGURE_SUBJECT_SKIP.has(form);
-  };
+  const words = [...before.slice(clauseStart).matchAll(WORD_RE)].map((m) => ({
+    raw: m[0],
+    start: clauseStart + m.index,
+    end: clauseStart + m.index + m[0].length,
+  }));
   let i = words.length - 1;
-  while (i >= 0 && skipped(words[i]!)) i -= 1;
-  if (i < 0) return { head: null, qualifier: null };
-  const head = tokenForm(words[i]!);
-  const prev = words[i - 1];
-  if (!prev || /['’]s?$/.test(prev)) return { head, qualifier: null };
-  // A two-letter acronym ("EU revenue") qualifies; any other short word is grammar.
-  if (/^\p{Lu}{2,}$/u.test(prev)) return { head, qualifier: tokenForm(prev) };
-  return { head, qualifier: skipped(prev) ? null : tokenForm(prev) };
+  while (i >= 0 && skippedForSubject(words[i]!.raw)) i -= 1;
+  return { words, headAt: i };
+}
+
+function skippedForSubject(raw: string): boolean {
+  const form = tokenForm(raw);
+  return form.length < 3 || STOPWORDS.has(form) || FIGURE_SUBJECT_SKIP.has(form) || NOT_A_SUBJECT.has(form);
+}
+
+const isPossessive = (raw: string) => /['’]s?$/.test(raw);
+const isTitleCase = (raw: string) => /^\p{Lu}/u.test(raw);
+const isAcronym = (raw: string) => /^\p{Lu}{2,}$/u.test(raw);
+
+/**
+ * Whether `words[at]`, the word in front of the measured noun, is a word that
+ * qualifies it — read from what comes before it, because the word itself is
+ * as often a verb or an object as a modifier:
+ *
+ *  - "Northwind's logistics revenue", "its cloud revenue", "growth in cloud
+ *    revenue", "posted logistics revenue", "Logistics revenue was": after a
+ *    possessive, a determiner, a preposition, a figure verb or at the start
+ *    of the clause, a lowercase word modifies the noun;
+ *  - "the company BOOKED revenue", "Northwind LOGGED revenue": after a noun
+ *    or a name it is the verb, and qualifies nothing;
+ *  - "EU revenue", "Northwind's EU revenue", "said EU revenue was": a name
+ *    or an acronym qualifies at the start of the clause or after a
+ *    possessive or a determiner, an acronym also after a reporting verb;
+ *  - "told REUTERS revenue was", "said MONDAY revenue", "in LONDON revenue",
+ *    "reported to the SEC revenue": a name after a verb or a preposition is
+ *    that word's object, not part of the subject.
+ */
+function qualifiesHead(text: string, words: readonly ClauseWord[], at: number): boolean {
+  const word = words[at];
+  if (!word || isPossessive(word.raw)) return false;
+  if (skippedForSubject(word.raw) && !isAcronym(word.raw)) return false;
+  const before = words[at - 1];
+  // A figure or a year between the two ("In 2024 logistics revenue") is a boundary.
+  if (!before || /\d/.test(text.slice(before.end, word.start))) return true;
+  if (isPossessive(before.raw)) return true;
+  const b = before.raw.toLowerCase();
+  if (DETERMINERS.has(b)) {
+    const ahead = words[at - 2]?.raw.toLowerCase();
+    return !isTitleCase(word.raw) || !ahead || !(PREPOSITIONS.has(ahead) || TELLING_VERBS.has(ahead));
+  }
+  if (isTitleCase(word.raw)) return isAcronym(word.raw) && REPORTING_VERBS.has(b);
+  return PREPOSITIONS.has(b) || REPORTING_VERBS.has(b) || STOPWORDS.has(b) || FIGURE_SUBJECT_SKIP.has(tokenForm(b));
+}
+
+/**
+ * The noun a figure is measured on, read backwards from the figure within its
+ * own clause, and the word directly in front of that noun when it qualifies
+ * it (`qualifiesHead`): "Northwind's logistics revenue was $1.8bn" →
+ * revenue, qualified by "logistics". A possessive owner ("the company's
+ * revenue"), a determiner and a verb ("the company booked revenue") are not
+ * qualifiers. Null head when the clause opens with the figure.
+ */
+function figureSubject(text: string, n: NumericFact): { head: string | null; qualifier: string | null } {
+  const { words, headAt } = figureClause(text, n);
+  if (headAt < 0) return { head: null, qualifier: null };
+  const head = tokenForm(words[headAt]!.raw);
+  return { head, qualifier: qualifiesHead(text, words, headAt - 1) ? tokenForm(words[headAt - 1]!.raw) : null };
+}
+
+/**
+ * The name the passage makes a figure's subject, as `tokenForm` words; empty
+ * when it names none. Two shapes only:
+ *
+ *  - the measured noun is itself a name, or ends one: "Alpha Free includes
+ *    5 GB", "while Southwind earned $2.1bn" — a run of title-case words
+ *    directly before the figure's verb, not the object of a verb or a
+ *    preposition ("told Reuters it made $3.9bn") and not one word opening a
+ *    sentence, where any word is title case ("Revenue reached $4.3bn");
+ *  - a possessive owner of the measured noun: "Alpha's revenue was $3.9bn",
+ *    "Alpha Pro's cloud revenue".
+ *
+ * A legal or group suffix is dropped ("Northwind Group" is Northwind).
+ */
+function figureNamedSubject(text: string, n: NumericFact): string[] {
+  const { words, headAt } = figureClause(text, n);
+  if (headAt < 0) return [];
+  const nameRun = (end: number, possessive = false): string[] => {
+    let start = end;
+    while (start > 0) {
+      const prev = words[start - 1]!;
+      if (!isTitleCase(prev.raw) || /\S/.test(text.slice(prev.end, words[start]!.start))) break;
+      const form = tokenForm(prev.raw);
+      if (STOPWORDS.has(form) || SENTENCE_STARTERS.has(form) || NOT_A_SUBJECT.has(form)) break;
+      start -= 1;
+    }
+    const run = words.slice(start, end + 1);
+    if (run.some((w) => NOT_A_SUBJECT.has(tokenForm(w.raw)))) return [];
+    // One title-case word opening a sentence may be any noun; as a possessive owner it is a name.
+    if (run.length === 1 && !possessive && opensSentence(text, run[0]!.start)) return [];
+    const before = words[start - 1]?.raw.toLowerCase();
+    if (before && (PREPOSITIONS.has(before) || TELLING_VERBS.has(before) || REPORTING_VERBS.has(before))) return [];
+    const forms = run.map((w) => tokenForm(w.raw));
+    while (forms.length > 1 && CORPORATE_SUFFIXES.has(forms[forms.length - 1]!)) forms.pop();
+    return forms;
+  };
+  const head = words[headAt]!;
+  if (isTitleCase(head.raw)) return nameRun(headAt);
+  // A possessive owner, directly before the noun or before its qualifier.
+  for (const at of [headAt - 1, headAt - 2]) {
+    const owner = words[at];
+    if (!owner) break;
+    if (isPossessive(owner.raw)) return isTitleCase(owner.raw) ? nameRun(at, true) : [];
+    if (at === headAt - 1 && !qualifiesHead(text, words, at)) break;
+  }
+  return [];
 }
 
 /**
@@ -383,32 +516,58 @@ function sameSubject(claim: string, a: NumericFact, passage: string, b: NumericF
   return true;
 }
 
-/** Whether two figures are plausibly measuring the same quantity, about the same subject. */
-function measuresSameThing(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
-  return sameSubject(claim, a, passage, b) && sameQuantity(claim, a, passage, b);
+/** Whether two figures are plausibly measuring the same quantity, about the same subject, over the same length of period. */
+function measuresSameThing(
+  claim: { text: string; dates: readonly DateMention[] },
+  a: NumericFact,
+  passage: { text: string; dates: readonly DateMention[] },
+  b: NumericFact
+): boolean {
+  return (
+    sameSubject(claim.text, a, passage.text, b) &&
+    sameQuantity(claim.text, a, passage.text, b) &&
+    sameGrain(figureGrain(claim.text, a, claim.dates), figureGrain(passage.text, b, passage.dates))
+  );
 }
 
 /**
  * Whether the passage pins a figure on a NAMED subject the claim never
  * mentions: "Alpha Free includes 5 GB", against a claim about Alpha Pro and
- * Beta Plus. The measured noun and its qualifier are guesses
- * (`figureSubject`), so only a guess the passage itself confirms counts: a
- * name in title case away from the start of a sentence. A verb read as the
+ * Beta Plus. Only a name the passage makes the figure's subject counts
+ * (`figureNamedSubject`): the name that IS the measured noun, or its
+ * possessive owner. A title-case word that merely sits in front of the
+ * measured noun is not one: "told Reuters revenue was", "said Monday revenue
+ * was", "Speaking in London revenue was" name who was told, when and where,
+ * and the figure is still the claim's subject's. Nor is a verb read as a
  * qualifier ("the company BOOKED revenue of $3.9bn"), a common noun that
- * opens a sentence ("Sales were $3.9bn") and a lowercase subject ("the free
- * plan") all fail it.
+ * opens a sentence ("Sales were $3.9bn") or a lowercase subject ("the free
+ * plan").
  */
 function namesOtherSubject(claim: string, passage: string, p: NumericFact): boolean {
-  const { head, qualifier } = figureSubject(passage, p);
-  if (!head && !qualifier) return false;
-  const names = new Set([...namedSubjects(passage)].map(tokenForm));
+  const name = figureNamedSubject(passage, p);
+  if (name.length === 0) return false;
   const claimWords = wordForms(claim);
-  return [head, qualifier].some((word) => !!word && names.has(word) && !claimWords.has(word));
+  return name.some((word) => !claimWords.has(word));
 }
 
 /** Where a clause ends, and where a sentence ends, for `figureDate`. */
 const FIGURE_CLAUSE_EDGE = /[,;:.!?]\s+|\s[-–—]\s/g;
 const FIGURE_SENTENCE_EDGE = /[.!?]\s+/g;
+
+/** The figure's own clause, and where its sentence starts: what `figureDate`, `figureGrain` and `figureRelativePeriod` read. */
+function figureScope(text: string, n: NumericFact): { clauseStart: number; clauseEnd: number; sentenceStart: number } {
+  const lastEdgeBefore = (edge: RegExp) => {
+    let at = 0;
+    for (const m of text.slice(0, n.start).matchAll(edge)) at = m.index + m[0].length;
+    return at;
+  };
+  const afterEdge = [...text.slice(n.end).matchAll(FIGURE_CLAUSE_EDGE)][0];
+  return {
+    clauseStart: lastEdgeBefore(FIGURE_CLAUSE_EDGE),
+    clauseEnd: afterEdge ? n.end + afterEdge.index : text.length,
+    sentenceStart: lastEdgeBefore(FIGURE_SENTENCE_EDGE),
+  };
+}
 
 /**
  * The date a figure is given for: the nearest date in its own clause
@@ -419,20 +578,117 @@ const FIGURE_SENTENCE_EDGE = /[.!?]\s+/g;
  */
 function figureDate(text: string, n: NumericFact, dates: readonly DateMention[]): DateMention | null {
   if (dates.length === 0) return null;
-  const lastEdgeBefore = (edge: RegExp) => {
-    let at = 0;
-    for (const m of text.slice(0, n.start).matchAll(edge)) at = m.index + m[0].length;
-    return at;
-  };
-  const clauseStart = lastEdgeBefore(FIGURE_CLAUSE_EDGE);
-  const afterEdge = [...text.slice(n.end).matchAll(FIGURE_CLAUSE_EDGE)][0];
-  const clauseEnd = afterEdge ? n.end + afterEdge.index : text.length;
+  const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
   const distance = (d: DateMention) => (d.start >= n.end ? d.start - n.end : n.start - d.end);
   const inClause = dates.filter((d) => d.start >= clauseStart && d.end <= clauseEnd);
   if (inClause.length > 0) return inClause.reduce((best, d) => (distance(d) < distance(best) ? d : best));
-  const sentenceStart = lastEdgeBefore(FIGURE_SENTENCE_EDGE);
   const before = dates.filter((d) => d.start >= sentenceStart && d.end <= n.start);
   return before.length > 0 ? before.reduce((best, d) => (d.start > best.start ? d : best)) : null;
+}
+
+/*
+ * The part of a year a figure covers, when its words say: a quarter, a half,
+ * the first nine months, one month. "Northwind's fourth-quarter revenue was
+ * $1.1 billion in 2024" is not a rival to "revenue was $4.3 billion in 2024":
+ * the year agrees and the measured noun is the same, but a quarter's revenue
+ * is a different quantity from a year's, and an annual report or an earnings
+ * release carries both side by side.
+ */
+const ORDINALS: Record<string, string> = { first: "1", "1st": "1", second: "2", "2nd": "2", third: "3", "3rd": "3", fourth: "4", "4th": "4", final: "4" };
+/** "Quarterly statistics show …" names the publication, not the period: only "quarterly revenue" and the like count. */
+const QUARTER_MARK =
+  /\b(?:q([1-4])|([1-4])q|(first|1st|second|2nd|third|3rd|fourth|4th|final)[- ]quarter|(?:the|this|that|each|last|latest|same|per) quarter|quarterly(?!\s+(?:statistics|stats|reports?|data|surveys?|reviews?|bulletins?|updates?|filings?|publications?|newsletters?|meetings?|calls?)\b)|three months (?:to|ended|ending|through))\b/i;
+const HALF_MARK =
+  /\b(?:h([12])|([12])h|(first|1st|second|2nd)[- ]half|half[- ]year(?:ly)?|semi[- ]?annual(?:ly)?|(?:first|last) six months|six months (?:to|ended|ending|through))\b/i;
+const MONTHS_MARK = /\b(?:(?:first|last) )?(nine|eight|seven|five|four|two) months\b/i;
+/*
+ * "Monthly revenue" is a month's worth; "a monthly fee", "$20 per month" and
+ * "$18 a month" are a price's rate, not a period, and stay out of it.
+ */
+const MONTHLY_MARK =
+  /\bmonthly\b(?!\s+(?:fees?|prices?|pricing|costs?|charges?|subscriptions?|plans?|payments?|rents?|rates?|premiums?|bills?|wages?|salar(?:y|ies)|allowances?|budgets?)\b)|\b(?:the|this|that|last) month\b/i;
+/** A whole year said out loud: the figure is the year's, whatever a lead-in clause said before it. */
+const YEAR_MARK = /\b(?:full[- ]year|annual(?:ly)?|(?:the|this|that|each|per|last|fiscal|financial|calendar) year|year[- ]end|twelve months|12 months|fy\s?'?\d{2,4})\b/i;
+/** A date read as a moment, not a period: what a stock stood at, not what a flow added up to. */
+const POINT_IN_TIME_CUE = /\b(?:as of|as at|at the end of|end of|by the end of|by|through|until|since|on)\s+(?:the\s+)?$/i;
+
+/** `figureGrain`'s answer: null for a year or an unstated length, otherwise the kind of part and which one ("?" when the text does not say). */
+type FigureGrain = { kind: "quarter" | "half" | "months" | "month"; which: string } | null;
+
+const GRAIN_MARKS: ReadonlyArray<{ re: RegExp; grain: (m: RegExpExecArray) => NonNullable<FigureGrain> | "year" }> = [
+  { re: QUARTER_MARK, grain: (m) => ({ kind: "quarter", which: m[1] ?? m[2] ?? ORDINALS[(m[3] ?? "").toLowerCase()] ?? "?" }) },
+  { re: HALF_MARK, grain: (m) => ({ kind: "half", which: m[1] ?? m[2] ?? ORDINALS[(m[3] ?? "").toLowerCase()] ?? "?" }) },
+  { re: MONTHS_MARK, grain: (m) => ({ kind: "months", which: m[1]!.toLowerCase() }) },
+  { re: MONTHLY_MARK, grain: () => ({ kind: "month", which: "?" }) },
+  { re: YEAR_MARK, grain: () => "year" },
+];
+
+/**
+ * The period marker of `text[from, to)` nearest the figure — "Full-year
+ * revenue rose to $4.3bn on a strong fourth quarter" is the year's — and
+ * "year" for a whole year said out loud; null when the span says nothing.
+ */
+function grainIn(text: string, from: number, to: number, n: NumericFact): FigureGrain | "year" {
+  const segment = text.slice(from, to);
+  let best: { distance: number; grain: NonNullable<FigureGrain> | "year" } | null = null;
+  for (const { re, grain } of GRAIN_MARKS) {
+    for (const m of segment.matchAll(new RegExp(re.source, "gi"))) {
+      const start = from + m.index;
+      const end = start + m[0].length;
+      const distance = start >= n.end ? start - n.end : end <= n.start ? n.start - end : 0;
+      if (!best || distance < best.distance) best = { distance, grain: grain(m) };
+    }
+  }
+  return best?.grain ?? null;
+}
+
+/**
+ * The part of a year a figure is given for, from its own clause, else from
+ * its sentence before it ("In the fourth quarter of 2024, revenue was …").
+ * A named month counts when it is the figure's period ("Revenue in December
+ * 2024 was …"), not when it dates a reading ("capacity stood at 16.5 GW at
+ * the end of June 2026", "as of March 2024"), which stays a year-level date.
+ */
+function figureGrain(text: string, n: NumericFact, dates: readonly DateMention[]): FigureGrain {
+  const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
+  const own = grainIn(text, clauseStart, clauseEnd, n);
+  if (own === "year") return null;
+  if (own) return own;
+  const at = figureDate(text, n, dates);
+  if (at && /^q[1-4]/i.test(at.raw)) return { kind: "quarter", which: at.raw[1]! };
+  if (at?.month != null && !POINT_IN_TIME_CUE.test(text.slice(Math.max(0, at.start - 24), at.start))) {
+    return { kind: "month", which: String(at.month) };
+  }
+  const lead = grainIn(text, sentenceStart, clauseStart, n);
+  return lead === "year" ? null : lead;
+}
+
+/** Whether two figures cover the same length of period: both a year (or unstated), or the same kind of part and no different one. */
+function sameGrain(a: FigureGrain, b: FigureGrain): boolean {
+  if (!a || !b) return !a && !b;
+  return a.kind === b.kind && (a.which === "?" || b.which === "?" || a.which === b.which);
+}
+
+/*
+ * A period named relative to another one: "a year earlier", "in the prior
+ * year", "two years ago", "next year". No date to extract, but plainly not
+ * the period of a figure stated beside it without one.
+ */
+const RELATIVE_PERIOD =
+  /\b(?:(a|one|two|three|four|five|\d+) years? (?:earlier|ago|before|previously)|year[- ](?:earlier|ago)|(?:the )?(?:prior|previous|preceding|last) (?:fiscal |financial |calendar )?year|prior[- ]year|previous[- ]year|the year before|(?:the )?(next|following|coming) year)\b/i;
+const COUNT_WORDS: Record<string, number> = { a: 1, one: 1, two: 2, three: 3, four: 4, five: 5 };
+
+/** "previous:1", "previous:2", "next:1" for a figure its own clause or sentence lead-in places relative to another period; null otherwise. */
+function figureRelativePeriod(text: string, n: NumericFact): string | null {
+  const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
+  for (const segment of [text.slice(clauseStart, clauseEnd), text.slice(sentenceStart, clauseStart)]) {
+    const m = RELATIVE_PERIOD.exec(segment);
+    if (!m) continue;
+    if (m[2]) return "next:1";
+    const count = m[1] ? COUNT_WORDS[m[1].toLowerCase()] ?? Number(m[1]) : 1;
+    return `previous:${count}`;
+  }
+  return null;
 }
 
 /**
@@ -455,7 +711,7 @@ function rivalFigures(
       p.kind === n.kind &&
       !numbersAgree(p.value, n.value) &&
       !evidenceForAnotherFigure(claim, n, passage, p, { strict: false }) &&
-      measuresSameThing(claim.text, n, passage.text, p)
+      measuresSameThing(claim, n, passage, p)
   );
 }
 
@@ -557,6 +813,8 @@ const DATE_RE = new RegExp(
     String.raw`\b(?<mdyM>${MONTH_ALT})\.?\s+(?:(?<mdyD>\d{1,2})(?:st|nd|rd|th)?,?\s+)?(?<mdyY>(?:19|20)\d{2})\b`,
     // Q3 2023
     String.raw`\b(?<qQ>[Qq][1-4])\s*(?<qY>(?:19|20)\d{2})\b`,
+    // FY2023 / FY 2023 / FY23: a fiscal year, read as its year.
+    String.raw`\bFY\s?'?(?<fy>(?:19|20)\d{2}|\d{2})\b`,
     // A bare year, last so the richer patterns win the span.
     String.raw`\b(?<bare>(?:19|20)\d{2})\b`,
   ].join("|"),
@@ -581,6 +839,7 @@ export function extractDates(text: string): DateMention[] {
         ...at,
       });
     else if (g.qY) out.push({ year: +g.qY, month: QUARTER_MONTH[g.qQ!.toLowerCase()], ...at });
+    else if (g.fy) out.push({ year: g.fy.length === 2 ? 2000 + +g.fy : +g.fy, ...at });
     else if (g.bare) out.push({ year: +g.bare, ...at });
   }
   return out;
@@ -697,11 +956,14 @@ const ATTRIBUTION = /\b(?:according to|as reported by|citing|cited by|sources? s
  * "still", "now" and "remain(s)" count only next to the verb they put in the
  * present ("is still", "now costs", "remains the"): bare, they are also "still
  * images", "until now" and "human remains". "Remains" counts only as a verb,
- * so never after a determiner or a word that makes it the noun ("human
- * remains at the site", "the fossil remains in a collection"). "Current"
- * counts only where it heads a role, price or version that the sentence says
- * IS something ("the current CEO is", "its current price is"): bare, it is
- * also "the current account deficit"; "currently" stays. "This year" and
+ * so never after a determiner, a modal or a word that makes it the noun
+ * ("human remains at the site", "the fossil remains in a collection", "will
+ * remain"), nor before what only the noun takes ("remains of", "remains were
+ * found"); as the verb it takes any predicate ("prices remain high", "it
+ * remains unprofitable"). "Current" counts only where it heads a role, price
+ * or version that the sentence says IS something, either way round ("the
+ * current CEO is", "its current price is", "Jane Doe is the current CEO"):
+ * bare, it is also "the current account deficit"; "currently" stays. "This year" and
  * "today" stay: both are relative to the day the report is read, so a
  * sentence using them on a page from more than a year ago is exactly the case.
  */
@@ -709,7 +971,10 @@ const PRESENT_VERB =
   "is|are|has|have|costs?|offers?|holds?|leads?|operates?|employs?|runs?|uses?|includes?|supports?|requires?|charges?|stands?|accounts?|lists?|sells?|serves?|owns?|controls?|provides?|allows?|ranks?";
 /** Words after which "remains" is the noun: determiners, and what describes a body or a find. */
 const REMAINS_NOUN_BEFORE =
-  "the|a|an|his|her|their|its|our|whose|of|human|fossil|fossilised|fossilized|skeletal|mortal|earthly|archaeological|ancient|animal|dinosaur|charred|burnt|burned|cremated|burial|plant|organic|unidentified|recovered";
+  "the|a|an|his|her|their|its|our|whose|of|human|fossil|fossilised|fossilized|skeletal|mortal|earthly|archaeological|ancient|animal|dinosaur|charred|burnt|burned|cremated|burial|plant|organic|unidentified|recovered|bone|bodily|mummified|partial|scattered|fragmentary|excavated|exhumed|any|no|these|those|such|will|would|could|might|may|should|must|can|cannot|to";
+/** Words after which "remains" is the noun: what is found, dated or made of it. */
+const REMAINS_NOUN_AFTER =
+  "of|were|was|are|have|had|found|discovered|recovered|unearthed|excavated|identified|show|showed|shows|date|dated|dates|dating|belong|belonged|belonging|belongs|suggest|suggested|suggests|indicate|indicated|indicates|lay|lie|lies|rest|rested|rests";
 /** What "current" heads when a sentence states a present fact with it: a role, a price, a version. */
 const CURRENT_HEADS =
   "ceo|cfo|cto|coo|chief executive|chief executive officer|chair|chairman|chairwoman|chairperson|president|director|head|leader|manager|owner|holder|champion|prime minister|minister|governor|mayor|coach|editor|price|prices|pricing|fee|fees|cost|rate|rates|tariff|version|release|edition|model|record";
@@ -717,7 +982,8 @@ const PRESENT_STATE = new RegExp(
   String.raw`\b(?:currently|presently|nowadays|today|at present|at the moment|right now|this year|latest|newest|most recent|up[- ]to[- ]date|as of (?:today|now|this year)` +
     String.raw`|(?:is|are|has|have) (?:still|now)|(?:still|now) (?:${PRESENT_VERB})` +
     String.raw`|current (?:[a-z-]+ )?(?:${CURRENT_HEADS}) (?:is|are)` +
-    String.raw`|(?<!\b(?:${REMAINS_NOUN_BEFORE})\s)remains? (?:the|a|an|in|on|at|under|below|above|its|their|one|among|available|unavailable|unchanged|open|closed|free|unclear|unresolved|limited|active|valid|in force))\b`,
+    String.raw`|(?:is|are) (?:the|its|their|his|her|our) current (?:[a-z-]+ )?(?:${CURRENT_HEADS})` +
+    String.raw`|(?<!\b(?:${REMAINS_NOUN_BEFORE})\s)remains? (?!(?:${REMAINS_NOUN_AFTER})\b)[a-z]+)\b`,
   "i"
 );
 
@@ -1526,19 +1792,123 @@ function elidedAnswer(claimClause: string, passageClause: string): boolean {
   return ELIDED_NEGATION.test(passageClause.trim()) && tokenCoverage(passageClause, claimClause) === 1;
 }
 
+/** Words that join a clause to the one before it and say nothing about what either is about. */
+const CONNECTIVES = new Set("although though whereas however yet because since unless despite instead meanwhile".split(" "));
+
+/** Past tenses no suffix rule reaches, by bare form: "did not pay" is "paid", "did not meet" is "met". */
+const IRREGULAR_PAST: Record<string, string> = {
+  pay: "paid", meet: "met", rise: "rose", fall: "fell", grow: "grew", make: "made", take: "took", give: "gave",
+  win: "won", lose: "lost", sell: "sold", buy: "bought", hold: "held", keep: "kept", leave: "left", begin: "began",
+  see: "saw", go: "went", come: "came", become: "became", build: "built", lead: "led", spend: "spent", send: "sent",
+  bring: "brought", find: "found", tell: "told", write: "wrote", choose: "chose", drive: "drove", run: "ran",
+  hit: "hit", cut: "cut", set: "set", put: "put", say: "said", think: "thought", know: "knew", show: "showed",
+};
+
+function pastOf(verb: string): string {
+  if (IRREGULAR_PAST[verb]) return IRREGULAR_PAST[verb];
+  if (verb.endsWith("e")) return `${verb}d`;
+  if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ied`;
+  return `${verb}ed`;
+}
+
+function thirdPersonOf(verb: string): string {
+  if (verb === "have") return "has";
+  if (/(?:s|sh|ch|x|z|o)$/.test(verb)) return `${verb}es`;
+  if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
+  return `${verb}s`;
+}
+
+/**
+ * A negation with "do" puts the verb in its bare form and the tense on the
+ * auxiliary: "approved" → "did not approve", "pays" → "does not pay", "met"
+ * → "did not meet". For lining clauses up, the verb gets its tense back
+ * ("did not approved", "does not pays"), so the clause that denies a claim
+ * shares the claim's verb rather than one word fewer than an unrelated
+ * clause naming the same subject — and "paid in 2019" still differs from
+ * "does not pay". The negation itself is untouched (parity is read on the
+ * clause as written).
+ */
+function inflectDoSupport(text: string): string {
+  return text.replace(
+    /\b(did|does)(\s+not|n['’]t)(\s+)((?:[a-z]+ly\s+)?)(?!not\b)([a-z]+)\b/gi,
+    (_whole, aux: string, neg: string, gap: string, adverb: string, verb: string) => {
+      const v = verb.toLowerCase();
+      return `${aux}${neg}${gap}${adverb}${aux.toLowerCase() === "did" ? pastOf(v) : thirdPersonOf(v)}`;
+    }
+  );
+}
+
+/** What a contraction leaves behind once its apostrophe splits it ("didn't" → "didn"): no content. */
+const CONTRACTION_STUBS = new Set("didn doesn don isn wasn weren aren hasn haven hadn won wouldn couldn shouldn mustn needn".split(" "));
+
+/** The content words of a clause as `clauseAlignment` compares them: do-support undone, connectives left out. */
+function alignmentTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const token of contentTokens(inflectDoSupport(text))) {
+    if (!CONNECTIVES.has(token) && !CONTRACTION_STUBS.has(token)) out.add(token);
+  }
+  return out;
+}
+
+function shareOf(of: Set<string>, within: Set<string>): number {
+  if (of.size === 0) return 0;
+  let hit = 0;
+  for (const t of of) if (within.has(t)) hit += 1;
+  return hit / of.size;
+}
+
 /**
  * How well a claim clause and a passage clause line up: the harmonic mean of
- * the share of each one's content words the other holds. Both directions,
- * because a negated clause often elides its verb — "…, but its profits did
- * not" holds one word of "its profits rose too" and nothing else — and one
- * direction alone would never pair them; an elided negation whose every word
- * is in the claim clause counts as aligned.
+ * the share of each one's content words (`alignmentTokens`) the other holds.
+ * Both directions, because a negated clause often elides its verb — "…, but
+ * its profits did not" holds one word of "its profits rose too" and nothing
+ * else — and one direction alone would never pair them; an elided negation
+ * whose every word is in the claim clause counts as aligned.
  */
 function clauseAlignment(claimClause: string, passageClause: string): number {
-  const forward = tokenCoverage(claimClause, passageClause);
-  const backward = tokenCoverage(passageClause, claimClause);
+  const claimTokens = alignmentTokens(claimClause);
+  const passageTokens = alignmentTokens(passageClause);
+  const forward = shareOf(claimTokens, passageTokens);
+  const backward = shareOf(passageTokens, claimTokens);
   const f1 = forward + backward === 0 ? 0 : (2 * forward * backward) / (forward + backward);
   return elidedAnswer(claimClause, passageClause) ? Math.max(f1, CLAUSE_MATCH_MIN) : f1;
+}
+
+/** Two alignment scores this close are a tie: neither clause is the better match. */
+const ALIGNMENT_TIE = 1e-9;
+
+/**
+ * The passage clauses a claim clause lines up with best (`clauseAlignment`),
+ * every one of them when several tie; empty when none reaches `min`. A tie
+ * is broken by the dates: when the claim clause names one, a tied clause
+ * that names only other dates is about another time ("Northwind was
+ * profitable in 2023" beside "the company was not profitable in 2024", for a
+ * claim about 2024).
+ */
+function bestAlignedClauses(clause: string, passageClauses: readonly string[], min: number): string[] {
+  const best = tiedBestClauses(clause, passageClauses, min);
+  const claimDates = extractDates(clause);
+  if (best.length < 2 || claimDates.length === 0) return best;
+  const sameTime = best.filter((candidate) =>
+    extractDates(candidate).every((d) => claimDates.some((c) => datesAgree(c, d)))
+  );
+  return sameTime.length > 0 ? sameTime : best;
+}
+
+function tiedBestClauses(clause: string, passageClauses: readonly string[], min: number): string[] {
+  let best: string[] = [];
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const candidate of passageClauses) {
+    const score = clauseAlignment(clause, candidate);
+    if (score < min - ALIGNMENT_TIE) continue;
+    if (score > bestScore + ALIGNMENT_TIE) {
+      bestScore = score;
+      best = [candidate];
+    } else if (score >= bestScore - ALIGNMENT_TIE) {
+      best.push(candidate);
+    }
+  }
+  return best;
 }
 
 /**
@@ -1555,6 +1925,19 @@ function clauseAlignment(claimClause: string, passageClause: string): number {
  * evidence". So each clause of the claim is compared with the passage clause
  * it lines up with best.
  *
+ * "Best" is the alignment both ways (`clauseAlignment`), not the share of the
+ * claim's words a clause holds. A passage that names its subject once and
+ * then uses a pronoun — "The firm was profitable in 2023. It was not
+ * profitable in 2024." — gives both clauses two of the three words of "The
+ * firm was not profitable in 2024", and the first one used to win the tie: a
+ * faithful restatement read as the passage denying it. The second clause has
+ * no word the claim lacks, so it lines up better. A tie between clauses is
+ * broken by the claim's date ("Northwind was profitable in 2023. The company
+ * was not profitable in 2024.", `bestAlignedClauses`); when nothing breaks it
+ * ("… in Asia. The company was not profitable in Europe."), the text cannot
+ * say which clause the claim is about: if any of them agrees with the claim,
+ * it is no contradiction, and the judge decides.
+ *
  * A one-clause claim is also compared with any elided negation that answers
  * it: "Profits rose in 2024" against "Sales rose in 2024, but profits did
  * not" shares more words with the sales clause, and the "not" that denies it
@@ -1565,45 +1948,40 @@ function clauseAlignment(claimClause: string, passageClause: string): number {
 export function polarityDisagrees(claim: string, sentence: string): boolean {
   const clauses = clausesOf(claim);
   const passageClauses = clausesOf(sentence);
+  const deniedBy = (clause: string, best: readonly string[]) =>
+    best.length > 0 && best.every((candidate) => negationParity(candidate) !== negationParity(clause));
   if (clauses.length <= 1) {
     // The clause, not the whole claim: a hedge tail left out of it ("…, if
-    // not more") must not flip it either.
+    // not more") must not flip it either. No alignment floor: the caller
+    // already holds the sentence to a coverage floor against the claim.
     const clause = clauses[0]!;
     const parity = negationParity(clause);
-    if (parity !== negationParity(bestMatchingClause(clause, sentence))) return true;
+    if (deniedBy(clause, bestAlignedClauses(clause, passageClauses, 0))) return true;
     return passageClauses.some((candidate) => elidedAnswer(clause, candidate) && negationParity(candidate) !== parity);
   }
-  for (const clause of clauses) {
-    let best: string | null = null;
-    let bestScore = CLAUSE_MATCH_MIN - Number.EPSILON;
-    for (const candidate of passageClauses) {
-      const score = clauseAlignment(clause, candidate);
-      if (score > bestScore) {
-        bestScore = score;
-        best = candidate;
-      }
-    }
-    if (best !== null && negationParity(clause) !== negationParity(best)) return true;
-  }
-  return false;
+  return clauses.some((clause) => deniedBy(clause, bestAlignedClauses(clause, passageClauses, CLAUSE_MATCH_MIN)));
 }
 
 /** The sentence in the passage the claim is actually about. */
 export function bestMatchingSentence(claim: string, passage: string): string {
+  return bestMatchingSentences(claim, passage)[0] ?? passage;
+}
+
+/**
+ * Every sentence of the passage that shares the most of the claim's content
+ * words, in reading order. More than one when they tie: "The vaccine was
+ * approved for adults. It was not approved for children." gives both two of
+ * the three words of "The vaccine was not approved for children", and only
+ * the clauses can say which one the claim is about.
+ */
+function bestMatchingSentences(claim: string, passage: string): string[] {
   const sentences = splitSentences(passage.replace(/\n+/g, " "), 0)
     .map((s) => s.text.trim())
     .filter((s) => s.length > 20);
-  if (sentences.length === 0) return passage;
-  let best = sentences[0];
-  let bestScore = -1;
-  for (const s of sentences) {
-    const score = tokenCoverage(claim, s);
-    if (score > bestScore) {
-      bestScore = score;
-      best = s;
-    }
-  }
-  return best;
+  if (sentences.length === 0) return [passage];
+  const scores = sentences.map((s) => tokenCoverage(claim, s));
+  const top = Math.max(...scores);
+  return sentences.filter((_, i) => scores[i]! >= top - ALIGNMENT_TIE);
 }
 
 /*
@@ -1835,8 +2213,11 @@ export function auditEvidence(opts: {
   // ── Polarity ─────────────────────────────────────────────────────────────
   // Only meaningful where the two sentences are about the same thing; on an
   // unrelated passage a negation difference says nothing.
-  const focus = bestMatchingSentence(claim, passage);
-  if (tokenCoverage(claim, focus) >= 0.45 && polarityDisagrees(claim, focus)) {
+  // Every sentence tied for the claim goes to the clause check, which picks
+  // between them; the hedge and attribution checks below read the first.
+  const focusSentences = bestMatchingSentences(claim, passage);
+  const focus = focusSentences[0]!;
+  if (tokenCoverage(claim, focus) >= 0.45 && polarityDisagrees(claim, focusSentences.join(" "))) {
     contradicted = true;
     cap(0, {
       code: "polarity_mismatch",
@@ -1921,12 +2302,17 @@ export function auditEvidence(opts: {
  * difference is not a disagreement. "Northwind's revenue was $4.3 billion",
  * supported by an annual report's "$4.3 billion in 2024", is not disputed by
  * the same report's "$3.9 billion in 2023": each figure is pinned to its own
- * year and the years differ.
+ * year and the years differ. Nor by "A year earlier, revenue was $3.9
+ * billion", "… in the prior year" or "… two years ago": a figure its own
+ * words place before (or after) another period is not the period of the one
+ * beside it, dated or not (`figureRelativePeriod`). A fiscal year is a date
+ * ("FY2023", `extractDates`).
  *
  * False — record the disagreement — whenever the claim is dated (the date
- * checks already decide that: `disagreesForSamePeriod`), whenever the
- * supporting figure or any differing figure carries no date of its own, and
- * when the two dates agree.
+ * checks already decide that: `disagreesForSamePeriod`), whenever a differing
+ * figure neither carries a date of its own nor places itself relative to
+ * another period, when the supporting figure carries no date for a dated
+ * rival to differ from, and when the two dates agree.
  */
 export function differentPeriodForUndatedClaim(claim: string, supporting: string, conflicting: string): boolean {
   const claimDates = extractDates(claim);
@@ -1945,10 +2331,12 @@ export function differentPeriodForUndatedClaim(claim: string, supporting: string
     if (rivals.length === 0) continue;
     const support = supportFacts.numbers.find((p) => p.kind === n.kind && numbersAgree(p.value, n.value));
     const supportAt = support ? figureDate(supporting, support, supportFacts.dates) : null;
-    if (!supportAt) return false;
+    const supportRelative = support ? figureRelativePeriod(supporting, support) : null;
     for (const rival of rivals) {
+      const relative = figureRelativePeriod(conflicting, rival);
+      if (relative && relative !== supportRelative) continue;
       const at = figureDate(conflicting, rival, conflictFacts.dates);
-      if (!at || datesAgree(at, supportAt)) return false;
+      if (!supportAt || !at || datesAgree(at, supportAt)) return false;
     }
     differs = true;
   }

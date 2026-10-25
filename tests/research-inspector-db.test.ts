@@ -282,4 +282,106 @@ if (!DB_URL) {
       await prisma.$disconnect();
     }
   });
+
+  test("the inspector re-derives rivals: a quarter or an earlier year an older receipt named is not shown, a real rival is", async () => {
+    const claims = await import("@/lib/research/claims");
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const owner = await prisma.user.create({
+      data: { email: `research-audit-periods-${suffix}@example.invalid`, name: "Research audit periods" },
+    });
+    try {
+      const report = [
+        "# Results",
+        "",
+        "Northwind's revenue was $4.3 billion [1]. In 2024, Northwind's revenue reached $4.3 billion [1].",
+      ].join("\n");
+      const conversation = await prisma.conversation.create({ data: { userId: owner.id, title: "Audit periods" } });
+      const message = await prisma.message.create({
+        data: { conversationId: conversation.id, role: "ASSISTANT", content: report },
+      });
+      const run = await prisma.researchRun.create({
+        data: { userId: owner.id, conversationId: conversation.id, goal: "Northwind revenue", state: "validating_citations" },
+      });
+      const bodies = {
+        annual: "Northwind's revenue was $4.3 billion in 2024, the annual report says. The board proposed a higher dividend.",
+        quarter: "Northwind's fourth-quarter revenue was $1.2 billion in 2024, the earnings release shows. Margins were steady.",
+        earlier: "A year earlier, Northwind's revenue was $3.9 billion, the previous filing shows. Costs fell slightly.",
+        restated: "Northwind's revenue was $4.1 billion in 2024 after the restatement, the auditors found. The gap was booked late.",
+      };
+      const keys = ["annual", "quarter", "earlier", "restated"] as const;
+      const rows = await Promise.all(
+        keys.map((key, i) =>
+          prisma.researchSource.create({
+            data: {
+              userId: owner.id,
+              runId: run.id,
+              url: `https://periods${i + 1}.example/${key}`,
+              canonicalUrl: `https://periods${i + 1}.example/${key}`,
+              title: `Source ${key}`,
+              snapshot: bodies[key],
+              publishedAt: new Date("2026-09-25T00:00:00Z"),
+            },
+          })
+        )
+      );
+      const result = await claims.recordCitationAudit({
+        userId: owner.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        runId: run.id,
+        goal: "Northwind revenue",
+        report,
+        sources: rows.map((row) => ({
+          sourceId: row.id,
+          url: row.url,
+          title: row.title,
+          body: row.snapshot ?? "",
+          publishedAt: row.publishedAt,
+        })),
+        judge: async () => ({ verdict: "supported", strength: 0.95 }),
+        asOf: new Date("2026-10-25T12:00:00Z"),
+      });
+      assert.ok(result);
+      assert.equal(result.claims, 2);
+      assert.equal(result.supported, 2);
+      assert.equal(result.contested, 2, "the restated figure for the same year disagrees with both");
+
+      const event = await prisma.researchEvent.findFirst({
+        where: { runId: run.id, userId: owner.id, kind: "citation_audit" },
+        orderBy: { seq: "desc" },
+        select: { id: true, payload: true },
+      });
+      assert.ok(event);
+      const payload = event.payload as Record<string, unknown>;
+      const recorded = payload.rivals as Array<{ claimId: string; sourceId: string; passageId: string }>;
+      // This build records only the restated figure: not the quarter, not the year before.
+      assert.deepEqual([...new Set(recorded.map((r) => r.sourceId))], [rows[3]!.id]);
+
+      // A receipt from an older build that also named the quarter and the
+      // earlier year: the inspector recomputes, and shows neither.
+      const claimIds = [...new Set(recorded.map((r) => r.claimId))];
+      assert.equal(claimIds.length, 2);
+      const passageOf = async (sourceId: string) =>
+        (await prisma.researchPassage.findFirstOrThrow({ where: { sourceId, userId: owner.id }, select: { id: true } })).id;
+      const stale = [];
+      for (const claimId of claimIds) {
+        for (const row of [rows[1]!, rows[2]!]) stale.push({ claimId, sourceId: row.id, passageId: await passageOf(row.id) });
+      }
+      await prisma.researchEvent.update({ where: { id: event.id }, data: { payload: { ...payload, rivals: [...recorded, ...stale] } } });
+
+      const view = await claims.loadCitationAuditForMessage(owner.id, message.id);
+      assert.ok(view);
+      assert.equal(view.claims.length, 2);
+      for (const claim of view.claims) {
+        assert.equal(claim.status, "supported", claim.text);
+        assert.deepEqual(claim.rivals.map((r) => r.sourceIndex), [4], `${claim.text}: ${JSON.stringify(claim.rivals.map((r) => r.passage))}`);
+        assert.ok(claim.rivals[0]!.codedReasons.every((reason) => reason.code === "figure_mismatch"));
+        assert.equal(claim.contested, true, claim.text);
+      }
+      assert.equal(view.summary.contested, 2);
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+      await prisma.$disconnect();
+    }
+  });
 }

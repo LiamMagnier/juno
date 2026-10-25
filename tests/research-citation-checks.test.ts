@@ -104,6 +104,10 @@ test("words that only look like present-state markers do not trigger freshness",
     "Skeletal remains on the riverbank were reburied in 1987.",
     // "current" that heads no role, price or version stated as a fact.
     "The current account deficit is 4% of GDP.",
+    // "remains" before what only the noun takes, and "remain" after a modal.
+    "Remains of a Roman villa were found near the river.",
+    "Excavated remains suggest a large settlement by the river.",
+    "Prices could remain high for years.",
   ]) {
     const result = auditEvidence({ claim, passage: claim, publishedAt: old, asOf: ASOF });
     assert.ok(!result.reasons.some((r) => r.code === "source_stale"), claim);
@@ -120,6 +124,11 @@ test("words that only look like present-state markers do not trigger freshness",
     "Its current chief executive is Jane Doe.",
     "The current price is $20 a month.",
     "The current stable version is 3.2.",
+    // …either way round; and "remain" as the verb, with any predicate.
+    "Jane Doe is the current CEO of Northwind.",
+    "Prices remain high across the region.",
+    "It remains unprofitable.",
+    "Inflation remains above the central bank's target.",
   ]) {
     const result = auditEvidence({ claim, passage: claim, publishedAt: old, asOf: ASOF });
     assert.ok(result.reasons.some((r) => r.code === "source_stale"), claim);
@@ -646,6 +655,236 @@ test("a hedge or alternative tail with no word of its own does not flip the clau
   assert.equal(
     auditEvidence({ claim: "Northwind's revenue rose in 2024.", passage: "Northwind's revenue was expected to rise in 2024, but did not." }).contradicted,
     true
+  );
+});
+
+// ── A source that names its subject once, then uses a pronoun ───────────────
+
+const PRONOUN_SOURCES: Array<[claim: string, passage: string]> = [
+  ["The firm was not profitable in 2024", "The firm was profitable in 2023. It was not profitable in 2024."],
+  ["The company does not pay a dividend", "The company paid a dividend in 2019. It does not pay a dividend now."],
+  ["The vaccine was not approved for children", "The vaccine was approved for adults in 2021. It was not approved for children."],
+  ["Northwind was not profitable in 2024", "Northwind was profitable in 2023. The company was not profitable in 2024, its filing shows."],
+  ["The firm was not profitable in 2024", "The firm was profitable in 2023, but it was not profitable in 2024."],
+];
+
+test("a claim restating its source's negated sentence, whose subject is a pronoun, is not contradicted, end to end through the repair", async () => {
+  for (const [sentence, body] of PRONOUN_SOURCES) {
+    const direct = auditEvidence({ claim: `${sentence}.`, passage: body });
+    assert.equal(direct.contradicted, false, `${sentence}: ${direct.reasons.map((r) => r.code).join(", ")}`);
+    const report = `# R\n\n${sentence} [1].`;
+    const outcome = await audit(report, [source(1, body)]);
+    const [claim] = outcome.claims;
+    assert.equal(claim.status, "supported", `${sentence}: ${JSON.stringify(claim.links)}`);
+    assert.equal(outcome.judgeCalls, 1, `${sentence}: the judge is asked, not pre-empted`);
+    assert.ok(!claim.links.some((l) => l.reasons.some((r) => r.code === "polarity_mismatch")), sentence);
+    assert.equal(repairReportFromClaims(report, outcome.claims).report, report, sentence);
+  }
+});
+
+test("the flip of a claim restating a pronoun sentence is still caught", () => {
+  for (const [claim, passage] of [
+    ["The firm was profitable in 2024.", "The firm was profitable in 2023. It was not profitable in 2024."],
+    ["The company pays a dividend.", "The company paid a dividend in 2019. It does not pay a dividend now."],
+    ["The vaccine was approved for children.", "The vaccine was approved for adults in 2021. It was not approved for children."],
+    ["Northwind was profitable in 2024.", "Northwind was profitable in 2023. The company was not profitable in 2024, its filing shows."],
+    ["The firm was profitable in 2024.", "The firm was profitable in 2023, but it was not profitable in 2024."],
+    // A negation with "do" puts the verb in its bare form.
+    ["The regulator approved the merger.", "The regulator approved the acquisition in 2021. It did not approve the merger."],
+    ["Northwind raised prices in 2025.", "Northwind raised prices in 2024, but the company did not raise prices in 2025."],
+    ["The firm met its emissions target.", "The firm met its sales target in 2022, although it did not meet its emissions target."],
+  ]) {
+    const result = auditEvidence({ claim: claim!, passage: passage! });
+    assert.ok(result.reasons.some((r) => r.code === "polarity_mismatch"), `${claim} <> ${passage}`);
+  }
+  // The faithful versions of those last three stand.
+  for (const [claim, passage] of [
+    ["The regulator did not approve the merger.", "The regulator approved the acquisition in 2021. It did not approve the merger."],
+    ["Northwind did not raise prices in 2025.", "Northwind raised prices in 2024, but the company did not raise prices in 2025."],
+    ["The firm did not meet its emissions target.", "The firm met its sales target in 2022, although it did not meet its emissions target."],
+  ]) {
+    assert.equal(auditEvidence({ claim: claim!, passage: passage! }).contradicted, false, claim);
+  }
+});
+
+test("when passage clauses tie for the claim and disagree with each other, the text settles nothing", () => {
+  // Both clauses hold two of the claim's three words and nothing tells them
+  // apart: the claim may be about either. The judge decides, both ways round.
+  const passage = "Northwind was profitable in Asia. The company was not profitable in Europe.";
+  for (const claim of ["Northwind was not profitable in Europe.", "Northwind was profitable in Europe."]) {
+    const result = auditEvidence({ claim, passage });
+    assert.equal(result.contradicted, false, `${claim}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+  // A date breaks the tie: the clause about another year is not the claim's.
+  const dated = "Northwind was profitable in 2023. The company was not profitable in 2024.";
+  assert.equal(auditEvidence({ claim: "Northwind was not profitable in 2024.", passage: dated }).contradicted, false);
+  assert.equal(auditEvidence({ claim: "Northwind was profitable in 2024.", passage: dated }).contradicted, true);
+});
+
+// ── Corroboration: a title-case word in front of the measured noun is not a subject ──
+
+test("corroboration never hides a cited passage that gives a different figure: who was told, when, where", async () => {
+  const claim = "In 2024, Northwind's revenue was $4.3 billion.";
+  const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];
+  for (const passage of [
+    "The company told Reuters revenue was $3.9 billion in 2024.",
+    "The company said Monday revenue was $3.9 billion in 2024.",
+    "On Tuesday revenue was $3.9 billion in 2024.",
+    "Speaking in London revenue was $3.9 billion in 2024.",
+    "The company told Reuters it made $3.9 billion in 2024.",
+  ]) {
+    const result = auditEvidence({ claim, passage, corroborating });
+    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+
+  const report = "# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].";
+  for (const one of ["The company told Reuters revenue was $3.9 billion in 2024.", "The company said Monday revenue was $3.9 billion in 2024."]) {
+    for (const two of ["Northwind's revenue was $4.3 billion, the wire reported.", "Northwind reported $4.3 billion."]) {
+      const [audited] = (await audit(report, [source(1, one), source(2, two)])).claims;
+      const fromOne = audited.links.filter((l) => l.sourceIndex === 1);
+      assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), `${one} / ${two}: ${JSON.stringify(audited.links)}`);
+      assert.ok(!audited.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), `${one} / ${two}`);
+      if (audited.status === "supported") assert.equal(audited.contested, true, `${one} / ${two}`);
+    }
+  }
+});
+
+test("corroboration still accepts a figure the passage pins on a subject the claim never names", () => {
+  const claim = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion.";
+  const corroborating = ["Southwind earned $2.1 billion in 2024."];
+  for (const passage of [
+    "Northwind earned $4.3 billion in 2024. Contoso's revenue was $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $3.0 billion.",
+  ]) {
+    const result = auditEvidence({ claim, passage, corroborating });
+    assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+  // "Northwind Group" is Northwind: its figure is the claim's subject's.
+  const group = auditEvidence({
+    claim: "In 2024, Northwind's revenue was $4.3 billion.",
+    passage: "Northwind Group's revenue was $3.9 billion in 2024.",
+    corroborating: ["Northwind's revenue was $4.3 billion in 2024."],
+  });
+  assert.equal(group.contradicted, true);
+});
+
+// ── A verb in front of the measured noun is not a narrower subject ───────────
+
+test("a verb read as the measured noun's qualifier no longer hides a disagreement another citation would have masked", async () => {
+  const two = source(2, "Northwind's revenue was $4.3 billion in 2024, the wire reported.");
+  for (const one of [
+    "The company booked revenue of $3.9 billion in 2024.",
+    "The company reported to the SEC revenue of $3.9 billion in 2024.",
+    "Northwind logged revenue of $3.9 billion in 2024.",
+    "The company achieved revenue of $3.9 billion in 2024.",
+  ]) {
+    const [claim] = (await audit("# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].", [source(1, one), two])).claims;
+    assert.equal(claim.status, "supported", one);
+    assert.equal(claim.contested, true, `${one}: ${JSON.stringify(claim.links)}`);
+    assert.ok(claim.links.some((l) => l.sourceIndex === 1 && l.stance === "contradicts"), one);
+  }
+});
+
+test("a narrower subject is still read however the passage words it", () => {
+  const claim = "Northwind's revenue was $4.3 billion in 2024.";
+  for (const passage of [
+    "Its logistics revenue was $1.8 billion in 2024.",
+    "Logistics revenue was $1.8 billion in 2024.",
+    "In 2024 logistics revenue was $1.8 billion.",
+    "The company said logistics revenue was $1.8 billion in 2024.",
+    "The company posted logistics revenue of $1.8 billion in 2024.",
+    "Growth in cloud revenue took it to $1.8 billion in 2024.",
+    "EU revenue was $1.8 billion in 2024.",
+    "The company said EU revenue was $1.8 billion in 2024.",
+    "Northwind's adjusted revenue was $4.0 billion in 2024.",
+    "Northwind's profit was $0.5 billion in 2024.",
+  ]) {
+    const result = auditEvidence({ claim, passage });
+    assert.equal(result.contradicted, false, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+});
+
+// ── Part of a year is not the year ──────────────────────────────────────────
+
+const SUB_PERIODS = [
+  "Northwind's fourth-quarter revenue was $1.1 billion in 2024.",
+  "In the fourth quarter of 2024, revenue was $1.2 billion.",
+  "In the first half of 2024, Northwind's revenue was $2.0 billion.",
+  "Revenue in December 2024 was $0.4 billion.",
+  "Q4 2024 revenue was $1.2 billion.",
+];
+
+test("a quarter, a half or a month of the claim's year does not contest the year's figure, cited or uncited", async () => {
+  const report = "# R\n\nNorthwind's revenue was $4.3 billion in 2024 [1].";
+  const headline = "Northwind's revenue was $4.3 billion in 2024, the annual report says.";
+  for (const part of SUB_PERIODS) {
+    for (const sources of [[source(1, `${headline}\n\n${part}`)], [source(1, headline), source(2, part)]]) {
+      const [claim] = (await audit(report, sources)).claims;
+      assert.equal(claim.status, "supported", part);
+      assert.equal(claim.contested, false, `${part}: ${JSON.stringify(claim.links)} ${JSON.stringify(claim.rivals)}`);
+      assert.ok(claim.links.every((l) => l.stance === "supports"), part);
+      assert.deepEqual(claim.rivals, [], part);
+    }
+    // Nor, as the only passage, is the part a contradiction of the whole.
+    assert.equal(auditEvidence({ claim: "Northwind's revenue was $4.3 billion in 2024.", passage: part }).contradicted, false, part);
+  }
+});
+
+test("the same part of the year giving a different figure still disagrees; another part does not", async () => {
+  const outcome = await audit("# R\n\nNorthwind's fourth-quarter revenue was $1.1 billion in 2024 [1].", [
+    source(1, "Northwind's fourth-quarter revenue was $1.1 billion in 2024.\n\nNorthwind's fourth-quarter revenue was $1.3 billion in 2024 after the restatement, the auditors found."),
+  ]);
+  assert.equal(outcome.claims[0].contested, true);
+  for (const [claim, passage, contradicted] of [
+    ["Q4 2024 revenue was $1.2 billion.", "Revenue in the fourth quarter of 2024 was $1.4 billion.", true],
+    ["Revenue in December 2024 was $0.4 billion.", "December 2024 revenue was $0.5 billion.", true],
+    ["Full-year revenue was $4.3 billion in 2024.", "Revenue for the year was $3.9 billion in 2024.", true],
+    ["Northwind's revenue was $4.3 billion in 2024.", "Full-year revenue rose to $3.9 billion in 2024 on a strong fourth quarter.", true],
+    ["Northwind's revenue was $4.3 billion in 2024.", "Northwind's revenue was $3.9 billion in 2024, the quarterly statistics show.", true],
+    // A reading at a date is a moment, not a month's worth.
+    ["Installed capacity reached 16.5 GW at the end of June 2026.", "Installed capacity stood at 15.1 GW at the end of June 2026.", true],
+    ["Alpha costs $18 a month.", "Alpha costs $20 per month.", true],
+    ["Northwind's fourth-quarter revenue was $1.1 billion in 2024.", "Northwind's third-quarter revenue was $1.0 billion in 2024.", false],
+    ["Revenue was $4.3 billion in 2024.", "Revenue for the first nine months of 2024 was $3.1 billion.", false],
+    ["Northwind paid a dividend of $2.00 in 2024.", "Northwind paid a quarterly dividend of $0.50 in 2024.", false],
+  ] as const) {
+    const result = auditEvidence({ claim, passage });
+    assert.equal(result.contradicted, contradicted, `${claim} <> ${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+});
+
+test("an undated figure is not contested by a paragraph its own words place in another period", async () => {
+  const report = "# R\n\nNorthwind's revenue was $4.3 billion [1].";
+  const supporting = "Northwind's revenue was $4.3 billion in 2024, the annual report says.";
+  for (const other of [
+    "A year earlier, revenue was $3.9 billion.",
+    "Revenue was $3.9 billion in the prior year.",
+    "Revenue in FY2023 was $3.9 billion.",
+    "Northwind's revenue was $3.9 billion two years ago.",
+    "Fourth-quarter revenue was $1.2 billion.",
+  ]) {
+    const [claim] = (await audit(report, [source(1, `${supporting}\n\n${other}`)])).claims;
+    assert.equal(claim.status, "supported", other);
+    assert.equal(claim.contested, false, `${other}: ${JSON.stringify(claim.links)}`);
+  }
+  // The same relative period giving another figure is still a disagreement.
+  const [same] = (
+    await audit(report, [
+      source(1, "Northwind's revenue was $4.3 billion last year, the annual report says.\n\nNorthwind's revenue was $4.1 billion last year after the restatement, the auditors found."),
+    ])
+  ).claims;
+  assert.equal(same.contested, true);
+});
+
+test("a fiscal year is a date", () => {
+  const result = auditEvidence({ claim: "Revenue in FY2024 was $4.3 billion.", passage: "Revenue in fiscal 2023 was $4.3 billion." });
+  assert.ok(result.reasons.some((r) => r.code === "date_absent"), result.reasons.map((r) => r.code).join(", "));
+  assert.deepEqual(
+    auditEvidence({ claim: "Revenue in FY2024 was $4.3 billion.", passage: "Revenue in fiscal 2024 was $4.3 billion." }).reasons,
+    []
   );
 });
 
