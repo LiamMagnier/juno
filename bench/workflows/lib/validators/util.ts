@@ -11,7 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
 import type { CheckResult, CheckStatus, Pattern } from "../types";
@@ -50,6 +50,48 @@ export function containedFile(root: string, name: string): string {
 
 export function readOutput(root: string, name: string): Buffer {
   return readFileSync(containedFile(root, name));
+}
+
+/** Directories no validator opens, hashes or copies (dependencies, VCS data). */
+export const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
+
+/**
+ * Every entry under `root` that is neither a regular file nor a directory,
+ * found with lstat so nothing is followed: symlinks (Node's fs and its
+ * permission model both follow them, so a link is a way out of any copy or
+ * sandbox), FIFOs and sockets (a read blocks forever), and device nodes (a
+ * link to /dev/zero never ends). Delivered outputs come from untrusted
+ * products, so callers refuse a tree that holds any of these rather than
+ * deciding which links look harmless. `root` itself is included when it is a
+ * link. Paths are relative to `root`, with forward slashes.
+ */
+export function linksAndSpecialFiles(root: string, limit = 50): string[] {
+  const found: string[] = [];
+  const top = lstatSync(root);
+  if (!top.isDirectory()) return top.isFile() ? [] : ["."];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir).sort()) {
+      if (found.length >= limit) return;
+      const full = path.join(dir, entry);
+      const stat = lstatSync(full);
+      if (stat.isDirectory()) {
+        if (!SKIPPED_DIRS.has(entry)) walk(full);
+      } else if (!stat.isFile()) {
+        found.push(path.relative(root, full).split(path.sep).join("/"));
+      }
+    }
+  };
+  walk(root);
+  return found;
+}
+
+/** An ISO 8601 date or date-time that names a real day ("2026-10-25", "2026-10-25T10:00:00Z"). */
+export function isIsoDate(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/.exec(value.trim());
+  if (!m || !Number.isFinite(Date.parse(value.trim()))) return false;
+  const day = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return day.getUTCFullYear() === Number(m[1]) && day.getUTCMonth() === Number(m[2]) - 1 && day.getUTCDate() === Number(m[3]);
 }
 
 export function normalizeSpace(text: string): string {

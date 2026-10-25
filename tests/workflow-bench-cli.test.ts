@@ -9,10 +9,13 @@
  * independent validators (LibreOffice checks off here, so office-dependent
  * runs may be unverified, never passed by default).
  *
- * Like the memory benchmark's record, the committed baseline pins which
- * offline workflows FAIL: if a product change fixes one or breaks another,
- * this test fails until the baseline is re-recorded on purpose
- * (`npm run bench:workflows -- run --run-id baseline-<date>`).
+ * The committed baseline records which offline workflows FAIL. This test
+ * fails on a NEW failure (a product change broke a workflow the baseline
+ * passes). A baseline failure that now passes (someone fixed calc.ts or the
+ * injection scanner) does not turn CI red: it prints a notice asking for the
+ * baseline to be re-recorded on purpose
+ * (`npm run bench:workflows -- run --run-id baseline-<date>`), so other
+ * workstreams are not coupled to this one.
  */
 
 import assert from "node:assert/strict";
@@ -65,14 +68,18 @@ describe("workflow benchmark CLI", () => {
     }
   });
 
-  it("never runs end-to-end without a live model, and says why", () => {
-    for (const r of results().records.filter((x) => x.scope === "end_to_end")) {
+  it("`run` never labels anything end_to_end; its live column is model_via_router, not_run without a key, and says why", () => {
+    const records = results().records;
+    assert.equal(records.filter((x) => x.scope === "end_to_end").length, 0, "only an imported run of the real product is end_to_end");
+    const live = records.filter((x) => x.scope === "model_via_router");
+    assert.equal(live.length, selected.length);
+    for (const r of live) {
       assert.equal(r.state, "not_run");
       assert.ok(r.reason.length > 10);
     }
   });
 
-  it("fails exactly the offline workflows the committed baseline records as failing", () => {
+  it("introduces no offline failure the committed baseline does not record (a fixed one asks for a re-record)", (t) => {
     const baseline = JSON.parse(readFileSync(BASELINE, "utf8")) as BenchResults;
     // Office checks are off here, so compare failures that do not depend on them.
     const failing = (res: BenchResults) =>
@@ -80,6 +87,13 @@ describe("workflow benchmark CLI", () => {
         .filter((r) => r.scope === "offline_pipeline" && r.state === "failed" && r.checks.some((c) => c.status === "fail" && !c.id.startsWith("office:")))
         .map((r) => r.workflowId)
         .sort();
-    assert.deepEqual(failing(results()), failing(baseline));
+    const now = failing(results());
+    const before = failing(baseline);
+    const added = now.filter((id) => !before.includes(id));
+    assert.deepEqual(added, [], `new offline failure(s) not in ${path.relative(REPO_ROOT, BASELINE)}`);
+    const fixed = before.filter((id) => selected.includes(id) && !now.includes(id));
+    if (fixed.length) {
+      t.diagnostic(`RE-RECORD NOTICE: ${fixed.join(", ")} failed in the committed baseline and pass now. Re-record it on purpose: npm run bench:workflows -- run --run-id baseline-<date>`);
+    }
   });
 });

@@ -9,6 +9,12 @@
  *                  scratch and exported, so a formula whose cached value
  *                  disagrees with what it computes is caught.
  *
+ * The import filter is named explicitly (Word 2007+ XML, PowerPoint 2007+
+ * XML, Excel 2007+ XML). Without it LibreOffice guesses from the content and
+ * falls back to a plain-text import, so a text file renamed memo.docx would
+ * "reopen" and render. With it, anything that is not a real OOXML package of
+ * the declared kind fails to load.
+ *
  * When LibreOffice is not installed the reopen check is `not_run`, which keeps
  * the run `unverified` — it never passes by default.
  */
@@ -94,13 +100,25 @@ function recalcProfile(dir: string): string {
   return `file://${path.join(dir, "profile")}`;
 }
 
-function convert(soffice: string, input: string, target: string, outDir: string, work: string): { ok: boolean; log: string } {
+/** LibreOffice import filters, so a file can only open as what it claims to be. */
+export const IMPORT_FILTERS: Record<"docx" | "xlsx" | "pptx", string> = {
+  docx: "MS Word 2007 XML",
+  xlsx: "Calc MS Excel 2007 XML",
+  pptx: "Impress MS PowerPoint 2007 XML",
+};
+
+function convert(soffice: string, input: string, format: keyof typeof IMPORT_FILTERS, target: string, outDir: string, work: string): { ok: boolean; log: string } {
   const run = spawnSync(
     soffice,
-    [`-env:UserInstallation=${recalcProfile(work)}`, "--headless", "--norestore", "--convert-to", target, "--outdir", outDir, input],
+    [`-env:UserInstallation=${recalcProfile(work)}`, "--headless", "--norestore", `--infilter=${IMPORT_FILTERS[format]}`, "--convert-to", target, "--outdir", outDir, input],
     { encoding: "utf8", timeout: 180_000, env: { ...process.env, HOME: work } }
   );
   return { ok: run.status === 0, log: `${run.stdout ?? ""}${run.stderr ?? ""}${run.error ? String(run.error) : ""}`.trim() };
+}
+
+/** LibreOffice's log without its unrelated Java warning. */
+function tidyLog(log: string): string {
+  return (log.split("\n").filter((l) => !/javaldx/.test(l)).join(" / ").trim() || "no output").slice(0, 300);
 }
 
 function parseCsv(text: string): string[][] {
@@ -162,9 +180,9 @@ export async function validateOfficeReopen(spec: Spec<"office_reopen">, outputsD
     const out = path.join(work, "out");
     mkdirSync(out);
     if (spec.format === "xlsx") {
-      const result = convert(options.soffice, input, "csv:Text - txt - csv (StarCalc):44,34,76,1,,0,false,true,false,false,false,-1", out, work);
+      const result = convert(options.soffice, input, "xlsx", "csv:Text - txt - csv (StarCalc):44,34,76,1,,0,false,true,false,false,false,-1", out, work);
       const csvs = readdirSync(out).filter((f) => f.endsWith(".csv"));
-      if (!result.ok || csvs.length === 0) return [fail(id("reopen"), `LibreOffice could not open the workbook: ${result.log.slice(0, 300)}`)];
+      if (!result.ok || csvs.length === 0) return [fail(id("reopen"), `LibreOffice could not open it as an Excel workbook (${IMPORT_FILTERS.xlsx}): ${tidyLog(result.log)}`)];
       const checks: CheckResult[] = [pass(id("reopen"), `LibreOffice opened and recalculated ${csvs.length} sheet(s)`)];
       // Recalculated values by sheet and address.
       const recalculated = new Map<string, string>();
@@ -201,9 +219,9 @@ export async function validateOfficeReopen(spec: Spec<"office_reopen">, outputsD
       }
       return checks;
     }
-    const result = convert(options.soffice, input, "pdf", out, work);
+    const result = convert(options.soffice, input, spec.format, "pdf", out, work);
     const pdf = path.join(out, "input.pdf");
-    if (!result.ok || !existsSync(pdf)) return [fail(id("reopen"), `LibreOffice could not open/render it: ${result.log.slice(0, 300)}`)];
+    if (!result.ok || !existsSync(pdf)) return [fail(id("reopen"), `LibreOffice could not open it as ${spec.format} (${IMPORT_FILTERS[spec.format]}) and render it: ${tidyLog(result.log)}`)];
     const bytes = readFileSync(pdf);
     const { pages } = await pdfText(bytes);
     const checks: CheckResult[] = [pass(id("reopen"), `LibreOffice rendered ${pages.length} page(s)`)];

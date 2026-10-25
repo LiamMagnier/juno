@@ -40,6 +40,8 @@ export interface ValidationContext {
   network: boolean;
   officeReopen: boolean;
   soffice: string | null;
+  /** Run delivered code without network isolation (the operator's --unsafe-code). */
+  unsafeCode?: boolean;
 }
 
 export function appliesTo(spec: ValidatorSpec, scope: BenchScope): boolean {
@@ -86,7 +88,13 @@ export async function runValidator(spec: ValidatorSpec, ctx: ValidationContext):
       case "web_citations":
         return await validateWebCitations(spec, ctx.outputsDir, { network: ctx.network });
       case "code_tests":
-        return validateCodeTests(spec, { outputsDir: ctx.outputsDir, fixturesDir: ctx.fixturesDir, hiddenDir: ctx.hiddenDir, scratchDir: ctx.scratchDir });
+        return validateCodeTests(spec, {
+          outputsDir: ctx.outputsDir,
+          fixturesDir: ctx.fixturesDir,
+          hiddenDir: ctx.hiddenDir,
+          scratchDir: ctx.scratchDir,
+          unsafeNoIsolation: ctx.unsafeCode === true,
+        });
       case "extraction":
         return validateExtraction(spec, ctx.outputsDir);
       case "constraints":

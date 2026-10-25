@@ -18,7 +18,8 @@ import type { Pattern, RubricCriterion, ValidatorSpec, WorkflowSpec } from "./ty
 
 const MERIDIAN = ["research/brief.md", "research/decision.md"];
 const OFFLINE: ValidatorSpec["appliesTo"] = ["offline_pipeline"];
-const E2E: ValidatorSpec["appliesTo"] = ["end_to_end"];
+/** Checks on a model's own answer (anything but the fixed offline plan). */
+const E2E: ValidatorSpec["appliesTo"] = ["end_to_end", "model_via_router"];
 
 const REVIEW_DATE: Pattern[] = ["2026-10-19", "19 October 2026", "October 19, 2026", "19/10/2026", "19 Oct 2026"];
 const BUDGET: Pattern = { regex: "2[,.\\s]?400" };
@@ -863,6 +864,7 @@ export const WORKFLOWS: WorkflowSpec[] = [
       { kind: "xlsx", file: "note.xlsx", exactText: ["Réunion à Paris — coût 12,50 €", "会議は東京で開催されます", "الاجتماع في دبي", "Grüße aus Köln", "🚀 launch"] },
       { kind: "pptx", file: "note.pptx", exactText: ["Réunion à Paris — coût 12,50 €", "会議は東京で開催されます", "الاجتماع في دبي", "Grüße aus Köln", "🚀 launch"] },
       { kind: "office_reopen", file: "note.docx", format: "docx" },
+      { kind: "office_reopen", file: "note.xlsx", format: "xlsx" },
       { kind: "office_reopen", file: "note.pptx", format: "pptx" },
     ],
     requires: ["provider_key", "alevr_deployment"],

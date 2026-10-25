@@ -9,11 +9,12 @@
  * `import` then validates every folder; a folder left untouched stays not_run.
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { FIXTURES_DIR } from "../fixtures";
 import type { ExecutionContext, ExecutionPlan, ExecutionResult, Executor } from "../runner";
 import { BENCH_VERSION, PERMITTED_TOOLS, type BenchScope, type ProductInfo, type WorkflowSpec } from "../types";
+import { SKIPPED_DIRS, isIsoDate, linksAndSpecialFiles } from "../validators/util";
 
 export const COMPETITORS = ["chatgpt", "claude", "gemini", "perplexity", "grok"] as const;
 
@@ -88,9 +89,20 @@ export function prepareImportDir(dir: string, product: string, workflows: Workfl
   return n;
 }
 
-function readResult(folder: string): ImportedResult | null {
+/** A regular file (never a link, FIFO or device: those are not followed). */
+function isPlainFile(file: string): boolean {
   try {
-    return JSON.parse(readFileSync(path.join(folder, "result.json"), "utf8")) as ImportedResult;
+    return lstatSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function readResult(folder: string): ImportedResult | null {
+  const file = path.join(folder, "result.json");
+  if (!isPlainFile(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as ImportedResult;
   } catch {
     return null;
   }
@@ -116,6 +128,9 @@ export function importedExecutor(options: { dir: string; product: ProductInfo; s
         if (!e || !e.source || !e.accessedAt || !e.note) {
           return { runnable: false, state: "not_run", reason: "marked unsupported without dated evidence (source, accessedAt, note); a missing account is not_run" };
         }
+        if (!isIsoDate(e.accessedAt)) {
+          return { runnable: false, state: "not_run", reason: `unsupportedEvidence.accessedAt "${e.accessedAt}" is not an ISO date (e.g. 2026-10-25)` };
+        }
         return { runnable: false, state: "unsupported", reason: e.note, evidence: e };
       }
       if (!result.executorIdentity) return { runnable: false, state: "not_run", reason: "result.json has no executorIdentity; independent review needs one" };
@@ -124,8 +139,20 @@ export function importedExecutor(options: { dir: string; product: ProductInfo; s
     async execute(ctx: ExecutionContext): Promise<ExecutionResult> {
       const folder = folderFor(ctx.workflow);
       const result = readResult(folder)!;
-      if (existsSync(path.join(folder, "outputs"))) cpSync(path.join(folder, "outputs"), ctx.outputsDir, { recursive: true });
-      if (existsSync(path.join(folder, "review.json"))) cpSync(path.join(folder, "review.json"), path.join(ctx.attemptDir, "review.json"));
+      const outputs = path.join(folder, "outputs");
+      if (existsSync(outputs)) {
+        // Imported outputs are untrusted: a symlink (to ~/.env.local, to
+        // /dev/zero) is never copied or followed. The run fails with the list.
+        const links = linksAndSpecialFiles(outputs);
+        if (links.length) {
+          return {
+            outcome: { kind: "errored", error: `refused the imported outputs: ${links.length} symlink(s) or special file(s) (${links.slice(0, 6).join(", ")}); save the real files instead of links` },
+            executorIdentity: result.executorIdentity ?? "imported",
+          };
+        }
+        cpSync(outputs, ctx.outputsDir, { recursive: true, filter: (src) => !SKIPPED_DIRS.has(path.basename(src)) });
+      }
+      if (isPlainFile(path.join(folder, "review.json"))) cpSync(path.join(folder, "review.json"), path.join(ctx.attemptDir, "review.json"));
       const outcome =
         result.status === "completed"
           ? ({ kind: "completed" } as const)

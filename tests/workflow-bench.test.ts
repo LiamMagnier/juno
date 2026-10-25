@@ -9,7 +9,7 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -17,8 +17,8 @@ import { WORKFLOWS, workflowById } from "../bench/workflows/lib/catalog";
 import { importedExecutor, prepareImportDir } from "../bench/workflows/lib/executors/imported";
 import { buildLivePrompt, liveExecutor, livePlan, splitReply } from "../bench/workflows/lib/executors/live";
 import { FIXTURES_DIR, HIDDEN_DIR, verifyFixtures } from "../bench/workflows/lib/fixtures";
-import { acceptance, renderReport, summarize } from "../bench/workflows/lib/report";
-import { rescoreRecord, runBenchmark, runWorkflow, type Executor } from "../bench/workflows/lib/runner";
+import { acceptance, latestPerWorkflow, renderReport, summarize } from "../bench/workflows/lib/report";
+import { listArtifacts, rescoreRecord, runBenchmark, runWorkflow, type Executor } from "../bench/workflows/lib/runner";
 import { deriveVerdict } from "../bench/workflows/lib/status";
 import { BENCH_CATEGORIES, PERMITTED_TOOLS, TRACE_CHECKERS, type RunRecord, type WorkflowSpec } from "../bench/workflows/lib/types";
 
@@ -212,6 +212,29 @@ describe("runner", () => {
     assert.match(record.reason, /budget/);
   });
 
+  it("a symlink in the outputs is never followed: listed nowhere, and the run fails", async () => {
+    const out = tmp();
+    const outside = path.join(tmp(), "secret.txt");
+    writeFileSync(outside, "TOP-SECRET");
+    const record = await runWorkflow(WORKFLOW, {
+      runId: "t",
+      outDir: out,
+      workflows: [WORKFLOW],
+      executor: fakeExecutor(async (_n, outputsDir) => {
+        writeFileSync(path.join(outputsDir, "answer.md"), "ANSWER: 42\n");
+        symlinkSync("/dev/zero", path.join(outputsDir, "zero.bin")); // statSync+readFileSync would never return
+        symlinkSync(outside, path.join(outputsDir, "leak.txt"));
+        return "ok";
+      }),
+    });
+    assert.equal(record.state, "failed");
+    assert.deepEqual(record.artifacts.map((a) => a.name), ["answer.md"]);
+    const check = record.checks.find((c) => c.id === "outputs:no-links");
+    assert.equal(check?.status, "fail");
+    assert.match(check!.detail, /leak\.txt.*zero\.bin/);
+    assert.deepEqual(listArtifacts(path.join(out, record.runDir!, "outputs")).map((a) => a.name), ["answer.md"]);
+  });
+
   it("rescore picks up a review added after the run, and an edit invalidates it", async () => {
     const wf: WorkflowSpec = { ...WORKFLOW, validators: [...WORKFLOW.validators, { kind: "rubric", criteria: [{ id: "clear", description: "clear", passAt: 4 }] }], requires: ["provider_key", "human_reviewer"] };
     const out = tmp();
@@ -305,6 +328,37 @@ describe("imported runs", () => {
     conduct(dir, "grok", { status: "completed", executorIdentity: "x", workflowId: "chat-01" });
     assert.match((await runBenchmark({ runId: "i", outDir: tmp(), workflows: [wf], executor: exec() }))[0].reason, /does not match/);
   });
+
+  it("unsupported evidence needs a real ISO accessedAt, not any string", async () => {
+    const dir = tmp();
+    prepareImportDir(dir, "grok", [wf]);
+    const exec = () => importedExecutor({ dir, product: { id: "grok", name: "Grok", version: null, surface: "web" } });
+    for (const accessedAt of ["yesterday", "2026-02-30", "25/10/2026"]) {
+      conduct(dir, "grok", { status: "unsupported", unsupportedEvidence: { source: "https://example.com/docs", accessedAt, note: "No attachments." } });
+      const [r] = await runBenchmark({ runId: "i", outDir: tmp(), workflows: [wf], executor: exec() });
+      assert.equal(r.state, "not_run", accessedAt);
+      assert.match(r.reason, /not an ISO date/);
+    }
+  });
+
+  it("imported outputs holding a symlink are refused, never copied or followed; a linked review.json is ignored", async () => {
+    const dir = tmp();
+    prepareImportDir(dir, "chatgpt", [wf]);
+    conduct(dir, "chatgpt", { status: "completed", executorIdentity: "alice" }, politeAnswer);
+    const folder = path.join(dir, "chatgpt", wf.id);
+    symlinkSync("/dev/zero", path.join(folder, "outputs/zero.bin"));
+    const product = { id: "chatgpt", name: "ChatGPT", version: null, surface: "web" };
+    const out = tmp();
+    const [r] = await runBenchmark({ runId: "imp", outDir: out, workflows: [wf], executor: importedExecutor({ dir, product }) });
+    assert.equal(r.state, "failed");
+    assert.match(r.reason, /refused the imported outputs.*zero\.bin/);
+    assert.deepEqual(r.artifacts, []);
+    rmSync(path.join(folder, "outputs/zero.bin"));
+    symlinkSync("/dev/zero", path.join(folder, "review.json"));
+    const [clean] = await runBenchmark({ runId: "imp", outDir: tmp(), workflows: [wf], executor: importedExecutor({ dir, product }) });
+    assert.equal(clean.state, "passed", clean.reason);
+    assert.equal(clean.review, null);
+  });
 });
 
 // ── Live executor ───────────────────────────────────────────────────────────
@@ -340,6 +394,7 @@ describe("live executor", () => {
     });
     const [r] = await runBenchmark({ runId: "live", outDir: tmp(), workflows: [workflowById("chat-02")!], executor });
     assert.equal(r.state, "passed", r.reason);
+    assert.equal(r.scope, "model_via_router", "the harness calling the router is not the product end to end");
     assert.equal(r.model, "claude-test");
     assert.equal(r.cost.usd, null);
     assert.equal(r.cost.source, "unobserved");
@@ -376,6 +431,10 @@ describe("report", () => {
   const ran = (state: RunRecord["state"], first: boolean, over: Partial<RunRecord> = {}) =>
     base({ state, firstAttemptPassed: first, attempts: [{ n: 1, startedAt: "", durationMs: 1, outcome: "completed", state }], artifacts: [{ name: "answer.md", bytes: 1, sha256: "a" }], reason: state, ...over });
 
+  /** One competitor run per category, each on a real workflow of that category. */
+  const competitorRuns = () =>
+    BENCH_CATEGORIES.map((c) => ran("failed", false, { category: c, workflowId: WORKFLOWS.find((w) => w.category === c)!.id, product: { id: "chatgpt", name: "ChatGPT", version: null, surface: "web" } }));
+
   it("rates first attempts over attempted runs and over all workflows, and never mixes scopes", () => {
     const records = [ran("passed", true), ran("failed", false, { workflowId: "chat-01" }), base({ workflowId: "writing-01" }), ran("passed", true, { scope: "offline_pipeline" })];
     const s = summarize(records);
@@ -392,8 +451,40 @@ describe("report", () => {
     const status = acceptance(offline);
     assert.deepEqual(status.map((a) => a.met), [false, false, false]);
     const e2e = WORKFLOWS.map((w) => ran("passed", true, { workflowId: w.id, category: w.category }));
-    const competitors = BENCH_CATEGORIES.map((c) => ran("failed", false, { category: c, product: { id: "chatgpt", name: "ChatGPT", version: null, surface: "web" } }));
+    const competitors = competitorRuns();
     assert.deepEqual(acceptance([...e2e, ...competitors]).map((a) => a.met), [true, true, true]);
+  });
+
+  it("live-harness (model_via_router) records never satisfy acceptance criterion 1, however many pass", async () => {
+    const live = WORKFLOWS.map((w) => ran("passed", true, { workflowId: w.id, category: w.category, scope: "model_via_router" }));
+    const competitors = competitorRuns();
+    const [first, , rate] = acceptance([...live, ...competitors]);
+    assert.equal(first.met, false);
+    assert.match(first.evidence, /^0 distinct/);
+    assert.equal(rate.met, false);
+    // And the real live executor labels its records that way.
+    const executor = liveExecutor({ product: { id: "alevr", name: "Alevr", version: "t", surface: "api" }, providersConfigured: ["anthropic"], network: false, call: async () => ({ text: "x", model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0 }) });
+    assert.equal(executor.scope, "model_via_router");
+  });
+
+  it("repeated results files count each workflow once (the latest record wins)", () => {
+    const ids = WORKFLOWS.slice(0, 20);
+    const day1 = ids.map((w) => ran("failed", false, { workflowId: w.id, category: w.category, finishedAt: "2026-10-24T10:00:00Z" }));
+    const day2 = ids.map((w) => ran("passed", true, { workflowId: w.id, category: w.category, finishedAt: "2026-10-25T10:00:00Z" }));
+    const [first] = acceptance([...day2, ...day1]);
+    assert.equal(first.met, false, "20 workflows run twice are 20 runs, not 40");
+    assert.match(first.evidence, /^20 distinct/);
+    const latest = latestPerWorkflow([...day2, ...day1]);
+    assert.equal(latest.length, 20);
+    assert.ok(latest.every((r) => r.state === "passed"), "the later run wins whatever the file order");
+    // A record that never ran does not displace one that did.
+    assert.equal(latestPerWorkflow([day2[0], base({ workflowId: day2[0].workflowId })])[0].state, "passed");
+    const md = renderReport(
+      [day1, day2].map((records, i) => ({ benchVersion: "v", runId: `r${i}`, createdAt: "", environment: { node: "v22", platform: "linux", providersConfigured: [], libreoffice: null, network: false, gitCommit: "abc", gitDirty: false, fixturesDigest: "d" }, workflowCount: 20, records })),
+      WORKFLOWS
+    );
+    assert.match(md, /20 older record\(s\)/);
+    assert.match(md, /\| alevr:end_to_end \| 20 \| 20 \| 0 \|/);
   });
 
   it("renders every state, failure detail and not_run reason", () => {

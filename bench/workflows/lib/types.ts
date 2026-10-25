@@ -23,10 +23,19 @@
  *                evidence. A missing account is not_run, not unsupported.
  *   not_run      nothing ran, and the record says precisely why.
  *
- * Two scopes, reported separately and never added together:
+ * Three scopes, reported separately and never added together:
  *
  *   end_to_end        the real product, from the prompt to the deliverable,
- *                     with the model choosing what to do.
+ *                     with the model choosing what to do: the product's own
+ *                     system prompt, tools, attachments and persistence (a
+ *                     person in the product, imported). Only these count
+ *                     toward P1-7 acceptance.
+ *   model_via_router  Alevr's Auto router and streamChat called directly by
+ *                     the harness, with the bench's own system prompt and no
+ *                     product tools, chat route, attachments or persistence.
+ *                     A real model answering the fixed prompt, but NOT the
+ *                     product end to end, so it never counts toward
+ *                     acceptance.
  *   offline_pipeline  Alevr's own deterministic code (renderers, extractors,
  *                     the tool dispatcher, the resumable stream, the MCP
  *                     client) driven by a FIXED plan that stands in for the
@@ -57,7 +66,7 @@ export type BenchCategory = (typeof BENCH_CATEGORIES)[number];
 export const RUN_STATES = ["passed", "failed", "unverified", "unsupported", "not_run"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
-export const SCOPES = ["end_to_end", "offline_pipeline"] as const;
+export const SCOPES = ["end_to_end", "model_via_router", "offline_pipeline"] as const;
 export type BenchScope = (typeof SCOPES)[number];
 
 /** What a workflow needs that this machine may not have. */

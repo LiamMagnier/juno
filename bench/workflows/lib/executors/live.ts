@@ -5,6 +5,13 @@
  * the script wires Alevr's own `streamChat` and Auto router — and records the
  * model, tokens and measured cost.
  *
+ * Its scope is `model_via_router`, NOT `end_to_end`: it uses the bench's own
+ * LIVE_SYSTEM_PROMPT instead of the product's, offers no tools (streamChat
+ * tools are opt-in, so no calculator or code execution even where a workflow
+ * permits them), and bypasses the chat route, attachments and persistence.
+ * Its records are reported in their own column and never count toward P1-7
+ * acceptance. The product end to end is run in the product and imported.
+ *
  * Everything else (documents, connectors, agents, devices) needs the deployed
  * product: those workflows are `not_run` here with the exact reason, and are
  * run in the product and brought in with the import executor.
@@ -89,7 +96,7 @@ export function liveExecutor(options: {
     identity: "workflow-bench/live-executor",
     kind: "automated",
     product: options.product,
-    scope: "end_to_end",
+    scope: "model_via_router",
     plan: (workflow) => livePlan(workflow, { providersConfigured: options.providersConfigured, network: options.network, hasCall: options.call !== null }),
     async execute(ctx: ExecutionContext): Promise<ExecutionResult> {
       const started = new Date().toISOString();
@@ -106,7 +113,7 @@ export function liveExecutor(options: {
         outcome: { kind: "completed" },
         startedAt: started,
         model: out.model,
-        settings: { system: "LIVE_SYSTEM_PROMPT", webSearch: ctx.workflow.permittedTools.includes("web_search"), ...(out.settings ?? {}) },
+        settings: { system: "LIVE_SYSTEM_PROMPT", tools: "none (streamChat called directly, not the chat route)", webSearch: ctx.workflow.permittedTools.includes("web_search"), ...(out.settings ?? {}) },
         cost: { usd: out.costUsd, source: out.costUsd === null ? "unobserved" : "measured_usage", inputTokens: out.inputTokens, outputTokens: out.outputTokens },
       };
     },

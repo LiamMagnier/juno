@@ -5,7 +5,7 @@
  * check, and the artifact hashes a human review binds to.
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { FIXTURES_DIR, HIDDEN_DIR, REPO_ROOT } from "./fixtures";
@@ -22,7 +22,7 @@ import type {
   WorkflowSpec,
 } from "./types";
 import { runValidators } from "./validators";
-import { sha256 } from "./validators/util";
+import { SKIPPED_DIRS, linksAndSpecialFiles, sha256 } from "./validators/util";
 
 export interface ExecutionContext {
   workflow: WorkflowSpec;
@@ -78,21 +78,29 @@ export interface RunOptions {
   network?: boolean;
   officeReopen?: boolean;
   soffice?: string | null;
+  /** Run delivered code without network isolation (the operator's --unsafe-code). */
+  unsafeCode?: boolean;
   /** Override the workflow's own time limit (tests). */
   timeoutMs?: number;
   onRecord?: (record: RunRecord) => void;
 }
 
+/**
+ * The regular files of a run's outputs, hashed. Walked with lstat: a symlink,
+ * FIFO, socket or device is never followed or read (a link to /dev/zero would
+ * never finish hashing). Those entries are left out here and failed by
+ * validateAttempt, which reports them.
+ */
 export function listArtifacts(outputsDir: string): ArtifactRecord[] {
-  if (!existsSync(outputsDir)) return [];
+  if (!existsSync(outputsDir) || !lstatSync(outputsDir).isDirectory()) return [];
   const out: ArtifactRecord[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir).sort()) {
       const full = path.join(dir, entry);
-      const stat = statSync(full);
+      const stat = lstatSync(full);
       if (stat.isDirectory()) {
-        if (entry !== "node_modules" && entry !== ".git") walk(full);
-      } else {
+        if (!SKIPPED_DIRS.has(entry)) walk(full);
+      } else if (stat.isFile()) {
         out.push({ name: path.relative(outputsDir, full).split(path.sep).join("/"), bytes: stat.size, sha256: sha256(readFileSync(full)) });
       }
     }
@@ -104,6 +112,8 @@ export function listArtifacts(outputsDir: string): ArtifactRecord[] {
 export function loadReview(attemptDir: string): ReviewRecord | null {
   const file = path.join(attemptDir, "review.json");
   if (!existsSync(file)) return null;
+  // A review is read only from a regular file, never through a link.
+  if (!lstatSync(file).isFile()) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as ReviewRecord;
   } catch {
@@ -143,6 +153,7 @@ export interface ValidateRunInput {
   network: boolean;
   officeReopen: boolean;
   soffice: string | null;
+  unsafeCode?: boolean;
 }
 
 /** The deliverables a run must contain: the offline plan's own for offline_pipeline runs. */
@@ -157,6 +168,23 @@ export async function validateAttempt(input: ValidateRunInput): Promise<{ artifa
   const outputsDir = path.join(input.attemptDir, "outputs");
   mkdirSync(outputsDir, { recursive: true });
   const artifacts = listArtifacts(outputsDir);
+  // Outputs come from an untrusted product. A link or special file anywhere
+  // in them fails the run, and no validator opens anything: a validator that
+  // followed a link could read outside the run or block forever.
+  const links = linksAndSpecialFiles(outputsDir);
+  if (links.length) {
+    return {
+      artifacts,
+      review: null,
+      checks: [
+        {
+          id: "outputs:no-links",
+          status: "fail",
+          detail: `outputs hold ${links.length} symlink(s) or special file(s), refused and never followed: ${links.slice(0, 6).join(", ")}${links.length > 6 ? ", …" : ""}`,
+        },
+      ],
+    };
+  }
   const review = loadReview(input.attemptDir);
   const checks = await runValidators(input.workflow.validators, {
     scope: input.scope,
@@ -172,6 +200,7 @@ export async function validateAttempt(input: ValidateRunInput): Promise<{ artifa
     network: input.network,
     officeReopen: input.officeReopen,
     soffice: input.soffice,
+    unsafeCode: input.unsafeCode,
   });
   // Required artifacts are a check of their own: a missing file fails the run
   // even when no validator happened to name it.
@@ -283,6 +312,7 @@ export async function runWorkflow(workflow: WorkflowSpec, options: RunOptions): 
             network: options.network ?? false,
             officeReopen: options.officeReopen ?? true,
             soffice: options.soffice ?? null,
+            unsafeCode: options.unsafeCode,
           })
         : { artifacts: listArtifacts(outputsDir), checks: [] as CheckResult[], review: null };
     const verdict = deriveVerdict(result.outcome, validated.checks);
@@ -347,7 +377,7 @@ export async function rescoreRecord(
   record: RunRecord,
   workflow: WorkflowSpec,
   outDir: string,
-  options: { network: boolean; officeReopen: boolean; soffice: string | null }
+  options: { network: boolean; officeReopen: boolean; soffice: string | null; unsafeCode?: boolean }
 ): Promise<RunRecord> {
   if (!record.runDir || record.attempts.length === 0 || record.attempts.at(-1)?.outcome !== "completed") return record;
   const attemptDir = path.join(outDir, record.runDir);

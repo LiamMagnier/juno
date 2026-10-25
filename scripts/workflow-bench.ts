@@ -2,13 +2,18 @@
  * The real-product workflow benchmark (LEDGER P1-7) — `npm run bench:workflows -- <command>`.
  *
  *   list                               the workflows, their inputs, tools and validators
- *   run [--only a,b] [--attempts n]    Alevr: offline pipeline + live end-to-end
+ *   run [--only a,b] [--attempts n]    Alevr: offline pipeline + live model-via-router
  *       [--live] [--network] [--no-office] [--no-offline] [--run-id id] [--out dir]
- *                                      --live makes real model calls (needs a provider key);
- *                                      everything that cannot run says not_run and why
+ *       [--unsafe-code]                --live makes real model calls (needs a provider key) through
+ *                                      the router, scope model_via_router (NOT end_to_end: no product
+ *                                      system prompt, tools or chat route; never counts for acceptance);
+ *                                      everything that cannot run says not_run and why.
+ *                                      --unsafe-code runs delivered code without network isolation
+ *                                      when `unshare -rn` is unavailable (disposable machines only)
  *   prepare --product <id> --dir <dir> folders for a person to run the prompts in a
  *                                      product (chatgpt, claude, gemini, perplexity, grok, alevr)
  *   import --product <id> --dir <dir>  validate those conducted runs → results.json + report.md
+ *       [--unsafe-code]                (refuses to start when the frozen fixtures changed)
  *   review-template <results.json> <workflowId> [column]
  *                                      print a review.json skeleton bound to the artifact hashes
  *   rescore <results.json>             re-validate stored outputs (after a review, or with LibreOffice)
@@ -31,6 +36,7 @@ import { BENCH_DIR, verifyFixtures, writeManifest } from "../bench/workflows/lib
 import { STATE_LABEL, renderReport, summarize } from "../bench/workflows/lib/report";
 import { rescoreRecord, runBenchmark, type Executor } from "../bench/workflows/lib/runner";
 import { BENCH_VERSION, type BenchResults, type RunRecord } from "../bench/workflows/lib/types";
+import { detectNetworkIsolation } from "../bench/workflows/lib/validators/code";
 import { findSoffice } from "../bench/workflows/lib/validators/office";
 
 const argv = process.argv.slice(2);
@@ -60,7 +66,12 @@ function line(r: RunRecord): string {
   return `  ${STATE_LABEL[r.state].padEnd(11)} ${r.workflowId.padEnd(14)} ${`${r.product.id}:${r.scope}`.padEnd(24)} checks ${checks.padEnd(6)} ${r.durationMs === null ? "" : `${r.durationMs}ms`.padEnd(8)} ${r.state === "passed" ? "" : r.reason.slice(0, 160)}`;
 }
 
-/** Alevr's own model path: the Auto router picks the model, streamChat makes the call. */
+/**
+ * Alevr's own model path: the Auto router picks the model, streamChat makes
+ * the call. This is NOT the product end to end (no product system prompt, no
+ * tools, no chat route), which is why the live executor's scope is
+ * model_via_router.
+ */
 async function alevrLiveCall(): Promise<LiveModelCall> {
   const { streamChat } = await import("../src/lib/llm");
   const { routeAuto } = await import("../src/lib/router/decide");
@@ -117,9 +128,20 @@ function printSummary(records: RunRecord[]) {
   }
 }
 
-async function run() {
+function codeSandboxLine(): string {
+  if (detectNetworkIsolation()) return "code sandbox: network-isolated (unshare -rn), filesystem-limited (node --permission)";
+  return flag("unsafe-code")
+    ? "code sandbox: UNSAFE — no network isolation here, delivered code runs with filesystem limits only (--unsafe-code)"
+    : "code sandbox: no network isolation here (needs `unshare -rn`); coding checks will be not_run unless --unsafe-code";
+}
+
+function requireFrozenFixtures() {
   const problems = verifyFixtures();
   if (problems.length) throw new Error(`frozen fixtures do not match MANIFEST.json:\n  ${problems.join("\n  ")}`);
+}
+
+async function run() {
+  requireFrozenFixtures();
   const network = flag("network");
   const runId = option("run-id") ?? defaultRunId("alevr");
   const outDir = path.resolve(option("out") ?? path.join(BENCH_DIR, "results", runId));
@@ -130,7 +152,8 @@ async function run() {
   if (!flag("no-offline")) executors.push(offlineExecutor(alevrProduct("offline-harness")));
   executors.push(liveExecutor({ product: alevrProduct("api"), call: flag("live") && providers.length ? await alevrLiveCall() : null, providersConfigured: providers, network }));
   console.log(`\nWorkflow benchmark ${BENCH_VERSION} — run ${runId}: ${workflows.length} workflow(s), ${executors.length} executor(s)`);
-  console.log(`  LibreOffice: ${soffice ?? "not found (office reopen checks will be not_run)"} · network: ${network ? "on" : "off"} · providers configured: ${providers.join(", ") || "none"}\n`);
+  console.log(`  LibreOffice: ${soffice ?? "not found (office reopen checks will be not_run)"} · network: ${network ? "on" : "off"} · providers configured: ${providers.join(", ") || "none"}`);
+  console.log(`  ${codeSandboxLine()}\n`);
   const records: RunRecord[] = [];
   for (const executor of executors) {
     records.push(
@@ -143,6 +166,7 @@ async function run() {
         network,
         officeReopen: !flag("no-office"),
         soffice,
+        unsafeCode: flag("unsafe-code"),
         onRecord: (r) => console.log(line(r)),
       }))
     );
@@ -156,11 +180,15 @@ async function importRuns() {
   const product = option("product");
   const dir = option("dir");
   if (!product || !dir) throw new Error("import needs --product <id> --dir <dir>");
+  // Imported runs are graded against the same held-out tests and fixtures as
+  // automated ones, so the frozen bytes must match here too.
+  requireFrozenFixtures();
   const runId = option("run-id") ?? defaultRunId(`import-${product}`);
   const outDir = path.resolve(option("out") ?? path.join(BENCH_DIR, "results", runId));
   const soffice = flag("no-office") ? null : findSoffice();
+  console.log(`  ${codeSandboxLine()}`);
   const executor = importedExecutor({ dir: path.resolve(dir), product: product === "alevr" ? alevrProduct("web") : { id: product, name: product, version: null, surface: "web" } });
-  const records = await runBenchmark({ runId, outDir, executor, workflows: selectedWorkflows(), network: flag("network"), officeReopen: !flag("no-office"), soffice, onRecord: (r) => console.log(line(r)) });
+  const records = await runBenchmark({ runId, outDir, executor, workflows: selectedWorkflows(), network: flag("network"), officeReopen: !flag("no-office"), soffice, unsafeCode: flag("unsafe-code"), onRecord: (r) => console.log(line(r)) });
   printSummary(records);
   await writeResults(outDir, { benchVersion: BENCH_VERSION, runId, createdAt: new Date().toISOString(), environment: await detectEnvironment({ network: flag("network") }), workflowCount: records.length, records });
 }
@@ -172,13 +200,14 @@ function loadResults(file: string): BenchResults {
 async function rescore() {
   const file = positional[0];
   if (!file) throw new Error("rescore needs <results.json>");
+  requireFrozenFixtures();
   const results = loadResults(file);
   const outDir = path.dirname(path.resolve(file));
   const soffice = flag("no-office") ? null : findSoffice();
   const records: RunRecord[] = [];
   for (const record of results.records) {
     const workflow = workflowById(record.workflowId);
-    records.push(workflow ? await rescoreRecord(record, workflow, outDir, { network: flag("network"), officeReopen: !flag("no-office"), soffice }) : record);
+    records.push(workflow ? await rescoreRecord(record, workflow, outDir, { network: flag("network"), officeReopen: !flag("no-office"), soffice, unsafeCode: flag("unsafe-code") }) : record);
     console.log(line(records.at(-1)!));
   }
   printSummary(records);
@@ -193,8 +222,9 @@ function reviewTemplate() {
   const workflow = workflowById(workflowId)!;
   const criteria = workflow.validators.flatMap((v) => (v.kind === "rubric" ? v.criteria : []));
   const template = {
+    // Placeholders are rejected by the rubric check until replaced.
     reviewer: "<your name — must not be the executor>",
-    reviewedAt: new Date().toISOString(),
+    reviewedAt: "<ISO date-time of your review, e.g. 2026-10-25T14:00:00Z>",
     executorIdentity: record.executor.identity,
     artifactHashes: Object.fromEntries(record.artifacts.map((a) => [a.name, a.sha256])),
     scores: Object.fromEntries(criteria.map((c) => [c.id, 0])),

@@ -12,8 +12,8 @@ grades a single model call per category. This one grades workflows.
 
 ```sh
 npm run bench:workflows -- list                      # the 38 workflows
-npm run bench:workflows -- run                       # Alevr: offline pipeline + live (not_run without a key)
-npm run bench:workflows -- run --live --network      # also real model calls, where a provider key exists
+npm run bench:workflows -- run                       # Alevr: offline pipeline + model-via-router (not_run without a key)
+npm run bench:workflows -- run --live --network      # also real model calls through the router, where a provider key exists
 npm run bench:workflows -- prepare --product chatgpt --dir ~/bench-runs
 npm run bench:workflows -- import  --product chatgpt --dir ~/bench-runs
 npm run bench:workflows -- review-template <results.json> <workflowId> [product:scope]
@@ -23,9 +23,16 @@ npm run bench:workflows -- report a/results.json b/results.json --out combined.m
 
 Code: `bench/workflows/lib/` (catalog, runner, validators, executors,
 report). CLI: `scripts/workflow-bench.ts`. Inputs: `bench/workflows/fixtures/`,
-frozen by `MANIFEST.json`. A run refuses to start if any input's hash has
-changed. Held-out tests: `bench/workflows/hidden/` (never given to an
-executor). Results: `bench/workflows/results/<run-id>/`.
+frozen by `MANIFEST.json`. `run`, `import` and `rescore` refuse to start if
+any input's hash has changed. Held-out tests: `bench/workflows/hidden/`
+(never given to an executor). Results: `bench/workflows/results/<run-id>/`.
+
+**Contamination risk.** The held-out tests are committed, so anyone with
+repository access can read them, and a model trained on a public copy of the
+repository could have seen them. They are hidden from the executor during a
+run, not secret. If the repository is or becomes public, move them to a
+private location (and update `MANIFEST.json`) or write new ones before
+comparing products.
 
 ## States and scopes
 
@@ -37,10 +44,20 @@ executor). Results: `bench/workflows/results/<run-id>/`.
 | `unsupported` | The product lacks the capability, backed by dated official evidence (`source`, `accessedAt`, `note`). A missing account is `not_run`. |
 | `not_run` | Nothing ran. The record gives the exact reason. |
 
-There are two scopes, and they are never added together:
+There are three scopes, and they are never added together:
 
-- **`end_to_end`**: the real product, from the prompt to the deliverable. Only
-  these runs count toward P1-7 acceptance.
+- **`end_to_end`**: the real product, from the prompt to the deliverable, with
+  the product's own system prompt, tools, attachments and persistence. Today
+  that means a person running the prompt in the product and importing the
+  outputs. Only these runs count toward P1-7 acceptance.
+- **`model_via_router`**: what `run --live` does. The harness calls Alevr's
+  Auto router and `streamChat` directly, with the benchmark's own system
+  prompt (`LIVE_SYSTEM_PROMPT`), no product tools (no calculator or code
+  execution, even where a workflow permits them) and no chat route,
+  attachments or persistence. It measures a real model answering the fixed
+  prompt, not the product end to end, so it has its own column and never
+  counts toward acceptance. Driving `POST /api/chat` on a running instance
+  would be the way to make an automated run `end_to_end`; that is not built.
 - **`offline_pipeline`**: Alevr's own deterministic code, driven by a fixed
   plan that stands in for the model. Each workflow's `offline` entry says what
   is exercised and what the plan stands in for. Examples are the renderers,
@@ -52,6 +69,11 @@ There are two scopes, and they are never added together:
 The first-attempt success rate is the number of runs that passed on attempt 1,
 with no human help beyond routine approvals. The report gives it over runs
 attempted and over all workflows.
+
+A report over several results files keeps one record per product, scope and
+workflow: the latest by finish time (a record that never ran never displaces
+one that did). Re-running a workflow therefore never counts it twice toward
+the threshold of 30, and the report says how many older records it set aside.
 
 ## Validators
 
@@ -65,10 +87,14 @@ to accept a correct deliverable and reject a wrong one.
   deduplication, numbers stored as text, and charts. The pptx checks cover
   slide order, shapes inside the slide, an estimate of text fit, word density,
   and native charts and tables.
-- **office_reopen:** LibreOffice opens the file headless. A docx or pptx is
-  rendered to PDF; its page count is checked, and the PDF is kept under
-  `review/` for the reviewer. A workbook is **recalculated from scratch**, so
-  a formula whose cached value disagrees with what it computes fails.
+- **office_reopen:** LibreOffice opens the file headless with an explicit
+  import filter (`MS Word 2007 XML`, `Impress MS PowerPoint 2007 XML`,
+  `Calc MS Excel 2007 XML`). Without the filter LibreOffice falls back to a
+  plain-text import, so a text file named `memo.docx` would "reopen". A docx
+  or pptx is rendered to PDF; its page count is checked, and the PDF is kept
+  under `review/` for the reviewer. A workbook is **recalculated from
+  scratch**, so a formula whose cached value disagrees with what it computes
+  fails.
 - **pdf** (pdf.js), **html** (escaping, print rules, no script), **text**
   (word count, required and forbidden forms, language, bullets, a final-answer
   line), **facts** (JSON with a tolerance), **constraints** (any valid
@@ -78,8 +104,24 @@ to accept a correct deliverable and reject a wrong one.
   domain allowlist and the access date. URL liveness needs `--network`;
   offline it is `not_run`.
 - **code_tests:** the delivered project is copied with the held-out tests
-  beside it and run under Node's permission model, with a timeout. Visible
-  tests must be byte-identical to the fixture.
+  beside it and run. Visible tests must be byte-identical to the fixture.
+  Delivered code is untrusted, and the containment has four layers. (1) The
+  delivered tree is walked with `lstat` first. Any symlink, FIFO, socket or
+  device fails the check ("symlink in delivered project") before anything is
+  read or run, because Node's permission model follows symlinks. (2) The
+  tests run under `node --permission`: reads only inside the scratch copy, no
+  writes, no child processes. (3) The child runs under `unshare -rn`, an
+  empty network namespace with no usable interface, so nothing can be sent
+  anywhere, the host's loopback included. Where `unshare -rn` is not
+  available (macOS, or Linux without unprivileged user namespaces) the check
+  is `not_run` and the code is not executed, unless the operator passes
+  `--unsafe-code` (filesystem limits only; use a disposable machine). (4) A
+  15 s timeout with SIGKILL and a 256 MB heap cap. Each coding workflow's
+  held-out tests are shown to pass a correct fix and fail the fixture.
+- **Outputs in general:** every run's outputs are walked with `lstat`. A
+  symlink or special file anywhere fails the run (`outputs:no-links`), no
+  validator opens anything, and nothing is hashed through a link. Imported
+  outputs holding a link are refused before they are copied.
 - **trace:** used for behaviour, not files. It reads observations from
   harness-owned instrumentation: the fake MCP server's request log, the bench
   tools' execution log, and the raw SSE bytes each simulated device received.
@@ -88,7 +130,13 @@ to accept a correct deliverable and reject a wrong one.
   `contracts/chat/juno-chat-wire-v1.schema.json`.
 - **rubric:** `not_run` until a `review.json` exists. The review must come
   from a reviewer who is not the executor, and it must match the current
-  artifact hashes. Editing a file after review invalidates the review.
+  artifact hashes. Editing a file after review invalidates the review. The
+  reviewer must be a name, not the template placeholder, and `reviewedAt`
+  must be a real ISO date. **Independence is attested, not verified:** the
+  reviewer and executor identities are self-declared in `review.json` and
+  `result.json`. The harness checks that they differ and that the review
+  matches the bytes; it cannot check who wrote the file. Whoever publishes a
+  comparison is accountable for the reviewers named in it.
 
 ## Running a competitor or the Alevr product by hand
 
@@ -103,7 +151,12 @@ to accept a correct deliverable and reject a wrong one.
 3. Run `import --product <id> --dir <dir>`. Folders you did not touch stay
    `not_run`.
 4. A second person runs `review-template`, opens the files (and the rendered
-   PDFs under `review/`), saves `review.json`, and then runs `rescore`.
+   PDFs under `review/`), replaces the `<…>` placeholders with their name and
+   the review date, saves `review.json`, and then runs `rescore`.
+
+Unsupported needs dated evidence: `source`, `note` and an ISO `accessedAt`
+(e.g. `2026-10-25`). Outputs must be real files: a symlink in `outputs/` makes
+the import fail rather than be followed.
 
 ## Baseline 2026-10-25 (`bench/workflows/results/baseline-2026-10-25/`)
 
@@ -117,11 +170,15 @@ Environment: no model provider key, no network, LibreOffice 24.2. See
 
 The offline runs found two real product problems:
 
-- **`reasoning-03`:** `calculate("floor(4.35 * 100)")` returns 434, not 435,
-  and `floor(0.29 * 100)` returns 28. In `src/lib/tools/calc.ts`, `floor`
-  acts on binary noise (434.99999999999994) before the 12-significant-digit
-  rounding is applied to the final result. So "exact arithmetic" gets
-  rounding to whole cents wrong.
+- **`reasoning-03`:** the fixed offline plan chose to compute cents as
+  `floor(4.35 * 100)` and `floor(0.29 * 100)`. The product's calculator
+  returns 434 and 28 for those, not 435 and 29: `4.35 * 100` is
+  434.99999999999994 in IEEE-754, and `src/lib/tools/calc.ts` applies `floor`
+  before its 12-significant-digit rounding of the final result. That is
+  ordinary binary floating point, so the finding depends on the expression
+  the plan picked (`round(4.35 * 100)` would give 435). It is still a fair
+  finding against a tool offered as "exact arithmetic": a model that writes
+  the natural `floor` expression gets the wrong number of cents.
 - **`research-03`:** the injection scanner (`src/lib/web/injection.ts`,
   mirrored from `runner/agent-core`) labels the hostile page `hostile`, and
   the envelope holds. But it does not raise `credential_exfiltration` for

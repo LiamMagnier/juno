@@ -4,7 +4,14 @@
  * behind every failure and every not_run, and the P1-7 acceptance status.
  *
  * Scopes are never added together: an offline-pipeline pass is evidence about
- * Alevr's renderers and runtime, not about a model answering a person.
+ * Alevr's renderers and runtime, not about a model answering a person, and a
+ * model_via_router pass is a model answering through the router, not the
+ * product end to end. Only end_to_end records count toward acceptance.
+ *
+ * Several results files can cover the same workflow (a re-run, a retry on
+ * another day). Every table and the acceptance math use ONE record per
+ * product, scope and workflow — the latest — so a workflow is never counted
+ * twice toward a threshold.
  */
 
 import { BENCH_CATEGORIES, RUN_STATES, type BenchResults, type RunRecord, type RunState, type WorkflowSpec } from "./types";
@@ -36,6 +43,26 @@ export const STATE_LABEL: Record<RunState, string> = {
 
 export function columnOf(record: Pick<RunRecord, "product" | "scope">): string {
   return `${record.product.id}:${record.scope}`;
+}
+
+function stamp(record: RunRecord): number {
+  const t = Date.parse(record.finishedAt ?? record.startedAt ?? "");
+  return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * One record per product, scope and workflow. The latest wins: by finishedAt
+ * (then startedAt), and on a tie the one given last. A record that never ran
+ * has no timestamp, so it never displaces a run that did.
+ */
+export function latestPerWorkflow(records: RunRecord[]): RunRecord[] {
+  const best = new Map<string, { record: RunRecord; index: number }>();
+  records.forEach((record, index) => {
+    const key = `${columnOf(record)}|${record.workflowId}`;
+    const previous = best.get(key);
+    if (!previous || stamp(record) >= stamp(previous.record)) best.set(key, { record, index });
+  });
+  return [...best.values()].sort((a, b) => a.index - b.index).map((b) => b.record);
 }
 
 function median(values: number[]): number | null {
@@ -76,8 +103,13 @@ export interface AcceptanceStatus {
   evidence: string;
 }
 
-/** LEDGER P1-7 acceptance, computed from the records — never asserted. */
-export function acceptance(records: RunRecord[]): AcceptanceStatus[] {
+/**
+ * LEDGER P1-7 acceptance, computed from the records — never asserted. Only
+ * `end_to_end` records count: offline_pipeline (a fixed plan) and
+ * model_via_router (the harness calling the router directly) never do.
+ */
+export function acceptance(allRecords: RunRecord[]): AcceptanceStatus[] {
+  const records = latestPerWorkflow(allRecords);
   const alevrE2E = records.filter((r) => r.product.id === "alevr" && r.scope === "end_to_end");
   const reviewedRuns = alevrE2E.filter((r) => r.attempts.length > 0 && r.artifacts.length > 0 && (r.state === "passed" || r.state === "failed"));
   const competitors = records.filter((r) => r.product.id !== "alevr" && r.attempts.length > 0);
@@ -88,7 +120,7 @@ export function acceptance(records: RunRecord[]): AcceptanceStatus[] {
     {
       criterion: "≥ 30 Alevr end-to-end runs recorded with artifacts and an independent verdict",
       met: reviewedRuns.length >= 30,
-      evidence: `${reviewedRuns.length} Alevr end-to-end run(s) with artifacts and a final passed/failed verdict (offline-pipeline runs are reported separately and do not count)`,
+      evidence: `${reviewedRuns.length} distinct Alevr end-to-end workflow run(s) with artifacts and a final passed/failed verdict (offline_pipeline and model_via_router runs are reported separately and do not count)`,
     },
     {
       criterion: "At least one competitor column per category",
@@ -112,7 +144,9 @@ function esc(text: string): string {
 }
 
 export function renderReport(results: BenchResults[], workflows: WorkflowSpec[]): string {
-  const records = results.flatMap((r) => r.records);
+  const all = results.flatMap((r) => r.records);
+  const records = latestPerWorkflow(all);
+  const superseded = all.length - records.length;
   const summaries = summarize(records);
   const columns = summaries.map((s) => s.column);
   const byKey = new Map(records.map((r) => [`${columnOf(r)}|${r.workflowId}`, r]));
@@ -120,7 +154,11 @@ export function renderReport(results: BenchResults[], workflows: WorkflowSpec[])
   const env = results[0]?.environment;
 
   lines.push("# Workflow benchmark report", "");
-  lines.push(`Generated ${new Date().toISOString()} from ${results.length} results file(s): ${results.map((r) => `\`${r.runId}\``).join(", ")}.`, "");
+  lines.push(
+    `Generated ${new Date().toISOString()} from ${results.length} results file(s): ${results.map((r) => `\`${r.runId}\``).join(", ")}.` +
+      (superseded ? ` ${superseded} older record(s) of a workflow already covered by a later run were set aside (one record per product, scope and workflow).` : ""),
+    ""
+  );
   if (env) {
     lines.push(
       `Environment: Node ${env.node} on ${env.platform}; git ${env.gitCommit?.slice(0, 12) ?? "unknown"}${env.gitDirty ? " (dirty)" : ""}; ` +
@@ -133,7 +171,9 @@ export function renderReport(results: BenchResults[], workflows: WorkflowSpec[])
     "States: **PASS** = delivered and every independent check passed (plus human review where required) · **FAIL** = product error or a check rejected the deliverable · " +
       "**UNVERIFIED** = delivered but a check could not run or human review is pending · **UNSUPPORTED** = capability absent, with dated evidence · **NOT RUN** = nothing ran; the reason is listed.",
     "",
-    "Scopes: `end_to_end` = the real product from prompt to deliverable · `offline_pipeline` = Alevr's own deterministic code driven by a fixed plan instead of a model (proves the product pipeline and the validators, not model quality). Scopes are never summed.",
+    "Scopes: `end_to_end` = the real product from prompt to deliverable (the only scope that counts toward acceptance) · " +
+      "`model_via_router` = Alevr's router and model call driven directly by the harness, with the bench's system prompt and no product tools, chat route or attachments (a real model, not the product end to end) · " +
+      "`offline_pipeline` = Alevr's own deterministic code driven by a fixed plan instead of a model (proves the product pipeline and the validators, not model quality). Scopes are never summed.",
     ""
   );
 
