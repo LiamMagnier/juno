@@ -759,16 +759,15 @@ const config: Config = {
         // flip it per data-side (globals.css) so a menu always emerges from its
         // trigger — a bottom-anchored menu rises 4px, a top-anchored one settles
         // 4px down. Non-popper users of animate-pop-in keep the 4px-rise default.
-        // 2026-10: the layer also comes into focus (a 3px blur that clears),
-        // scaled by --motion-shift so reduced motion keeps a plain fade.
+        // No blur on the way in: entrances move opacity and transform only
+        // (tests/wave2-p1-tier-table.test.ts, "no keyframe blurs").
         "pop-in": {
           from: {
             opacity: "0",
             transform:
               "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
-            filter: "blur(calc(3px * var(--motion-shift, 1)))",
           },
-          to: { opacity: "1", transform: "translateY(0) scale(1)", filter: "blur(0)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
         "pop-out": {
           from: { opacity: "1", transform: "translateY(0) scale(1)" },

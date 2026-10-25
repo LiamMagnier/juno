@@ -152,6 +152,7 @@ import type {
 } from "@/types/chat";
 import { plainReturnSends } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
+import { inputModality, installInputModality } from "@/lib/input-modality";
 
 /**
  * The chat field's id, so a card in the transcript can put the cursor in it.
@@ -889,13 +890,16 @@ function ComposerImpl({
   /** The composer surface: every layer it opens is placed outside this box. */
   const shellRef = React.useRef<HTMLDivElement>(null);
   /*
-   * Focus from the keyboard draws one ring in the presence ink around the
-   * whole composer; focus from a pointer only darkens its edge (C1). A text
-   * field matches :focus-visible on every focus, so the composer remembers
-   * whether a pointer pressed it just before.
+   * Focus from the keyboard draws one ring around the whole composer; focus
+   * from a pointer only darkens its edge (C1). A text field matches
+   * :focus-visible on every focus, so the composer remembers whether a
+   * pointer pressed it just before, and focus it gives itself (on load, after
+   * a send or a closed layer) is keyboard focus only when the person was
+   * actually using the keyboard (lib/input-modality.ts).
    */
   const pointerFocus = React.useRef(false);
   const [keyboardFocus, setKeyboardFocus] = React.useState(false);
+  React.useEffect(installInputModality, []);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   /** Which side of the composer its layers open toward: below on the home, above in the dock. */
   const layerSide = preferredLayerSide(frame);
@@ -3338,7 +3342,7 @@ function ComposerImpl({
                   value={text}
                   onChange={(e) => setDraftText(e.target.value)}
                   onFocus={() => {
-                    setKeyboardFocus(!pointerFocus.current);
+                    setKeyboardFocus(!pointerFocus.current && inputModality() === "keyboard");
                     pointerFocus.current = false;
                   }}
                   onBlur={() => setKeyboardFocus(false)}

@@ -1826,9 +1826,13 @@
   /*
    * The composer (V3, D-030): the surface and one crisp hairline, no shadow.
    * A pointer's focus darkens the edge in the same frame; the keyboard's
-   * focus (C1, `data-kbd-focus`) turns it into ONE 2px ring in the presence
-   * ink: the edge itself, switched at once, plus a pseudo-element whose
-   * opacity arrives on fast, so only opacity moves.
+   * focus (C1, `data-kbd-focus`, set only when the person is really using the
+   * keyboard: lib/input-modality.ts) turns it into ONE 2px ring: the edge
+   * itself, switched at once, plus a 1px pseudo-element ring flush against
+   * its outside, whose opacity arrives on fast, so only opacity moves. Ink at
+   * 0.55, not near-black: a soft graphite line that still clears 3:1 on the
+   * page in both themes. (It used to sit 1px off the edge, which drew two
+   * black lines with a gap.)
    */
   /*
    * The composer is the one object on the page that asks to be touched, so it
@@ -1861,9 +1865,11 @@
   .composer-surface::after {
     content: "";
     position: absolute;
-    inset: -2px;
-    border-radius: calc(26px + 2px);
-    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.86);
+    /* The containing block is the padding box: -1px is the border's outer
+       edge, so the ring continues the edge instead of floating off it. */
+    inset: -1px;
+    border-radius: 26px;
+    box-shadow: 0 0 0 1px hsl(var(--ring) / 0.55);
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-fast) var(--ease-out-soft);
@@ -1940,7 +1946,7 @@
   }
   .composer-surface[data-kbd-focus],
   .dark .composer-surface[data-kbd-focus] {
-    border-color: hsl(var(--primary) / 0.86);
+    border-color: hsl(var(--ring) / 0.55);
   }
   .composer-surface[data-kbd-focus]::after {
     opacity: 1;
