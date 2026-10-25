@@ -1102,6 +1102,10 @@ export interface ResearchRunView extends ResearchRunViewAdditions {
     contradicted: number;
     unverified: number;
     duplicateSources: number;
+    /** Supported claims other evidence disagrees with. Absent on audits recorded before it. */
+    contested?: number;
+    /** Claims citing a source the corpus does not have. Absent on audits recorded before it. */
+    unresolvedCitations?: number;
   } | null;
   reportRevision: number;
   /** Serialised as strings: BigInt does not survive JSON.stringify. */
@@ -1434,6 +1438,11 @@ export async function readResearchRun(input: {
           contradicted: Number((auditPayload as Record<string, unknown>).contradicted ?? 0),
           unverified: Number((auditPayload as Record<string, unknown>).unverified ?? 0),
           duplicateSources: Number((auditPayload as Record<string, unknown>).duplicateSources ?? 0),
+          // Carried so the run header cannot say "every claim checks out" over
+          // an audit whose inspector shows a contested claim or a citation to
+          // nothing. Zero on audits recorded before either was counted.
+          contested: Number((auditPayload as Record<string, unknown>).contested ?? 0),
+          unresolvedCitations: Number((auditPayload as Record<string, unknown>).unresolvedCitations ?? 0),
         }
       : null;
   return {
