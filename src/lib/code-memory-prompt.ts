@@ -40,7 +40,18 @@ export const CODING_MEMORY_LIMIT = 8;
  */
 export function selectCodingMemories(
   entries: readonly LifecycleEntry[],
-  opts: { query: string; now?: Date }
+  opts: {
+    query: string;
+    now?: Date;
+    /**
+     * The account's block-list — forgotten statements and excluded topics.
+     * Every other memory reader applies it on the read side as well as at
+     * write time; a Code run's background has to too, or a fact written in
+     * the instant before a forget (or by a path that missed it) reaches a CI
+     * runner the person never asked to tell.
+     */
+    suppressions: readonly string[];
+  }
 ): { id: string; content: string }[] {
   const now = opts.now ?? new Date();
   const allowed = new Set<string>(CODING_MEMORY_CATEGORIES);
@@ -60,6 +71,7 @@ export function selectCodingMemories(
     now,
     budgetTokens: CODING_MEMORY_BUDGET_TOKENS,
     limit: CODING_MEMORY_LIMIT,
+    suppressions: opts.suppressions,
     // Already narrowed to how the user works, which applies to every task;
     // the task text only orders them.
     relevanceGate: false,

@@ -84,12 +84,34 @@ function trim(word: string): string {
   return word;
 }
 
+/** Plain ASCII needs no accent folding — and folding is most of the cost on the read gate's hot path. */
+const ASCII_ONLY = /^[\x00-\x7f]*$/;
+
+/** Lower-cased and accent-folded: the text `topicWords` splits. */
+export function foldForTopics(text: string): string {
+  const lower = text.toLowerCase();
+  return ASCII_ONLY.test(lower) ? lower : lower.normalize("NFKD").replace(/[̀-ͯ]/g, "");
+}
+
+/**
+ * The cheapest true test that `folded` COULD be about a topic with these
+ * words: every word that matches a topic word (`topicWordsMatch`) begins with
+ * that word's first four letters, or is it exactly when it is shorter — so
+ * the folded text contains each of those prefixes. False means no match;
+ * true means split the text and ask properly.
+ */
+export function topicPrefixes(wanted: readonly string[]): string[] {
+  return wanted.map((word) => word.slice(0, 4));
+}
+
 /** The meaning-bearing words of a phrase, folded and trimmed. */
 export function topicWords(text: string): string[] {
-  return text
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+  return topicWordsOfFolded(foldForTopics(text));
+}
+
+/** `topicWords` for text already folded with `foldForTopics`. */
+export function topicWordsOfFolded(folded: string): string[] {
+  return folded
     .replace(/[^a-z0-9À-ɏ一-鿿]+/g, " ")
     .trim()
     .split(/\s+/)
@@ -148,12 +170,21 @@ export function topicStatement(topic: string): string {
   return `Anything about ${topic}`;
 }
 
+/**
+ * The topic rule over words already split (`topicWords` on both sides): every
+ * word of the topic is among the content's words. For a caller that checks one
+ * text against many topics, or many texts against one, without re-splitting.
+ */
+export function wordsCoverTopic(have: readonly string[], wanted: readonly string[]): boolean {
+  if (wanted.length === 0) return false;
+  return wanted.every((word) => have.some((candidate) => topicWordsMatch(word, candidate)));
+}
+
 /** Whether `content` is about `topic`: every word of the topic is in it, as a word. */
 export function contentMatchesTopic(content: string, topic: string): boolean {
   const wanted = topicWords(topic);
   if (wanted.length === 0) return false;
-  const have = topicWords(content);
-  return wanted.every((word) => have.some((candidate) => topicWordsMatch(word, candidate)));
+  return wordsCoverTopic(topicWords(content), wanted);
 }
 
 /** The first topic exclusion among `statements` that covers `content`, or null. */
@@ -173,6 +204,42 @@ const TOPIC_REFUSAL = {
 
 export function topicRefusalMessage(topic: string): string {
   return `${TOPIC_REFUSAL.lead} “${topic}”. ${TOPIC_REFUSAL.tail}`;
+}
+
+/**
+ * Words that end in a full stop without ending a sentence. A splitter that
+ * stops at every full stop cut "Dr. Smith is their divorce lawyer." into "Dr."
+ * and the rest, removed the rest, and stored "Dr." in the summary.
+ */
+const ABBREVIATIONS = new Set([
+  "mr", "mrs", "ms", "mx", "dr", "prof", "st", "sr", "jr", "rev", "gen", "col", "capt", "lt", "sgt", "hon",
+  "mt", "ft", "ave", "rd", "blvd", "no", "nos", "vol", "vs", "etc", "approx", "dept", "est", "fig",
+  "inc", "ltd", "co", "corp", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+]);
+
+/**
+ * One line of prose split into sentences, each with its trailing space, so
+ * that joining the pieces gives the line back. A full stop ends a sentence
+ * unless it is inside a token ("3.5", "U.S.", "e.g.": no space after it) or
+ * follows an abbreviation or an initial ("Dr.", "J.").
+ */
+export function splitSentences(body: string): string[] {
+  const pieces = body.match(/[^.!?]+(?:[.!?]+["”’)]*|$)\s*/g) ?? [body];
+  const out: string[] = [];
+  let pending = "";
+  for (let i = 0; i < pieces.length; i++) {
+    pending += pieces[i];
+    const last = i === pieces.length - 1;
+    if (last) break;
+    const insideToken = !/\s$/.test(pieces[i]);
+    const word = /([A-Za-zÀ-ɏ]+)\.\s*$/.exec(pieces[i])?.[1] ?? "";
+    const abbreviation = word.length === 1 || ABBREVIATIONS.has(word.toLowerCase());
+    if (insideToken || abbreviation) continue;
+    out.push(pending);
+    pending = "";
+  }
+  if (pending) out.push(pending);
+  return out;
 }
 
 /**
@@ -198,15 +265,16 @@ export function scrubCoveredSentences(
     if (/^\s*#/.test(line) || !line.trim()) return line;
     const bullet = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line)?.[1] ?? "";
     const body = line.slice(bullet.length);
-    const sentences = body.match(/[^.!?]+(?:[.!?]+["”’)]*|$)\s*/g) ?? [body];
-    const kept = sentences.filter((sentence) => {
-      if (!sentence.trim()) return false;
-      if (covers(sentence)) {
-        removed++;
-        return false;
-      }
-      return true;
-    });
+    const sentences = splitSentences(body);
+    const drop = sentences.map((sentence) => !sentence.trim() || covers(sentence));
+    for (let i = 0; i < sentences.length; i++) if (drop[i] && sentences[i].trim()) removed++;
+    // A one-word piece just before a removed sentence is that sentence's head
+    // — an abbreviation the splitter does not know ("Fr. Ana is their
+    // confessor.") — and goes with it rather than being left as a stray word.
+    for (let i = 0; i < sentences.length - 1; i++) {
+      if (!drop[i] && drop[i + 1] && sentences[i + 1].trim() && /^\s*\S+\.\s*$/.test(sentences[i])) drop[i] = true;
+    }
+    const kept = sentences.filter((_, i) => !drop[i]);
     const text = kept.join("").trim();
     return text ? `${bullet}${text}` : "";
   });

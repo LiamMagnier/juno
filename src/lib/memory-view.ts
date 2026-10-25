@@ -60,9 +60,9 @@ export interface MemoryEntryRow {
 
 /**
  * The chats the rows came from, by id: `{ id, title }` for one that still
- * exists, `null` for one that has been deleted. One query for a whole list,
- * scoped to the reader — a conversation id in another account resolves to
- * "deleted", never to its title.
+ * exists, `null` for one that cannot be found — deleted, or never in this
+ * account. One query for a whole list, scoped to the reader — a conversation
+ * id in another account resolves to "no longer available", never to its title.
  */
 export async function loadProvenanceConversations(
   userId: string,
@@ -80,7 +80,8 @@ export async function loadProvenanceConversations(
 
 /**
  * One row on the wire. `conversations` (from loadProvenanceConversations)
- * lets the provenance name the chat a fact came from, or say it is deleted;
+ * lets the provenance name the chat a fact came from, or say it is no longer
+ * available;
  * without it the provenance says "a chat".
  */
 export function serializeMemoryEntry(

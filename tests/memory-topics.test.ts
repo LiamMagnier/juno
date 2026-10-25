@@ -5,6 +5,7 @@ import {
   contentMatchesTopic,
   findExcludedTopic,
   scrubCoveredSentences,
+  splitSentences,
   topicOfStatement,
   topicStatement,
   topicWordsMatch,
@@ -218,3 +219,29 @@ test("prose scrubbing is narrower than ingestion: a short sentence is not cut fo
   assert.equal(proseCoveredBySuppression("Yes.", ["The user's eyes are blue"]), false);
   assert.equal(proseCoveredBySuppression("The user works at Acme as a designer.", ["works at Acme"]), true);
 });
+
+test("the scrub splits sentences around abbreviations, so a removed sentence leaves no stray fragment", () => {
+  // The review's probe: "Dr." was cut off its sentence and stored on its own.
+  const prose = "## Work context\nThe user works at Acme. Dr. Smith is their divorce lawyer. They like tea.";
+  assert.equal(
+    scrubSummaryForSuppressions(prose, ["Anything about my divorce"]),
+    "## Work context\nThe user works at Acme. They like tea."
+  );
+  // An abbreviation the list does not know is taken with the sentence it heads.
+  assert.equal(
+    scrubSummaryForSuppressions("The user works at Acme. Fr. Ana is their divorce counsellor. They like tea.", ["Anything about my divorce"]),
+    "The user works at Acme. They like tea."
+  );
+});
+
+test("sentence splitting keeps numbers, dotted abbreviations and initials inside their sentence", () => {
+  const line = "They paid 3.5 euros in the U.S. last year, e.g. for tea. Mr. J. R. Jones agreed! Next?";
+  assert.deepEqual(splitSentences(line), [
+    "They paid 3.5 euros in the U.S. last year, e.g. for tea. ",
+    "Mr. J. R. Jones agreed! ",
+    "Next?",
+  ]);
+  assert.equal(splitSentences(line).join(""), line, "the pieces give the line back");
+  assert.deepEqual(splitSentences("No full stop at all"), ["No full stop at all"]);
+});
+

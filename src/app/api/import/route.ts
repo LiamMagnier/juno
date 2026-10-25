@@ -9,6 +9,7 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { encryptJsonField, encryptField } from "@/lib/field-crypto";
 import { getSuppressions } from "@/lib/memory";
 import { guardedMemoryWrite } from "@/lib/memory-suppression";
+import { importedSourceRef } from "@/lib/memory-provenance";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { buildImportObjectKey, deleteObject, putObject } from "@/lib/storage";
@@ -775,7 +776,11 @@ export async function POST(req: Request) {
             projectId: stringValue(rawMemory.projectId, 200)
               ? sourceIdToProjectId.get(stringValue(rawMemory.projectId, 200)!) ?? null
               : null,
-            sourceRef: stringValue(rawMemory.sourceRef, 500),
+            // A chat-learned fact names the chat by id, and the chats were
+            // just given this account's ids: the exporting account's id would
+            // name nothing here, and the provenance would call it a chat that
+            // is gone. Word sources ("manual", "edit", …) pass through.
+            sourceRef: importedSourceRef(stringValue(rawMemory.sourceRef, 500), sourceIdToConversationId),
             sourceMessageId: stringValue(rawMemory.sourceMessageId, 200)
               ? sourceIdToMessageId.get(stringValue(rawMemory.sourceMessageId, 200)!) ?? null
               : null,

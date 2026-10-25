@@ -50,6 +50,7 @@ import {
 } from "@/lib/memory-sensitive";
 import {
   MEMORY_CONTENT_LIMIT,
+  compileBlockList,
   findSuppression,
   normalizeStatement,
   proseCoveredBySuppression,
@@ -656,10 +657,18 @@ export async function forgetStatements(
   opts: {
     /** Where the forget was asked for, for the row's provenance. */
     conversationId?: string | null;
+    /**
+     * Which surface asked: a conversation (the default) or the memory page's
+     * "Topics not remembered". Named in the reason each retired fact carries
+     * and in the block-list row's source, so neither claims a conversation
+     * that never happened.
+     */
+    origin?: "chat" | "memory-page";
     /** Receives the chat-timeline receipt; never called when nothing was recorded. */
     onActivity?: (event: MemoryUpdateActivity) => void;
   } = {}
 ): Promise<ForgetOutcome> {
+  const origin = opts.origin ?? "chat";
   const cleaned = [
     ...new Map(
       statements
@@ -686,10 +695,21 @@ export async function forgetStatements(
     rows.filter((row) => row.kind === "SUPPRESSION").map((row) => normalizeStatement(row.content))
   );
 
-  const retireIds = new Set<string>();
+  // Each retired fact keeps the reason of the first statement that covered
+  // it: "not anything about my divorce" says more than "forget this".
+  const retireReason = new Map<string, string>();
   for (const statement of cleaned) {
-    for (const id of factsCoveredByForget(statement, rows)) retireIds.add(id);
+    const topic = topicOfStatement(statement);
+    const where = origin === "memory-page" ? "on the memory page" : "in a conversation";
+    const reason =
+      topic !== null
+        ? `You asked ${PRODUCT_NAME} not to remember anything about “${topic}”, ${where}.`
+        : `You asked ${PRODUCT_NAME} to forget this ${where}.`;
+    for (const id of factsCoveredByForget(statement, rows)) if (!retireReason.has(id)) retireReason.set(id, reason);
   }
+  const retireIds = new Set(retireReason.keys());
+  const byReason = new Map<string, string[]>();
+  for (const [id, reason] of retireReason) byReason.set(reason, [...(byReason.get(reason) ?? []), id]);
   // A statement already on the block-list needs no second row — and writing
   // one would move `newestSuppressionAt` forward for nothing, benching a summary
   // that was already rebuilt without it.
@@ -698,17 +718,19 @@ export async function forgetStatements(
 
   const now = new Date();
   await prisma.$transaction([
-    prisma.memoryEntry.updateMany({
-      where: { userId, id: { in: [...retireIds] }, status: "active" },
-      data: {
-        status: "suppressed",
-        reason: `You asked ${PRODUCT_NAME} to forget this in a conversation.`,
-        supersededById: null,
-        // The text stays as the trail; its vector has no reader once retired.
-        embedding: [],
-        embeddingModel: null,
-      },
-    }),
+    ...[...byReason].map(([reason, ids]) =>
+      prisma.memoryEntry.updateMany({
+        where: { userId, id: { in: ids }, status: "active" },
+        data: {
+          status: "suppressed",
+          reason,
+          supersededById: null,
+          // The text stays as the trail; its vector has no reader once retired.
+          embedding: [],
+          embeddingModel: null,
+        },
+      })
+    ),
     ...fresh.map((statement) =>
       prisma.memoryEntry.create({
         data: {
@@ -716,7 +738,7 @@ export async function forgetStatements(
           content: statement,
           source: "MANUAL",
           kind: "SUPPRESSION",
-          sourceRef: opts.conversationId ?? "forget",
+          sourceRef: origin === "memory-page" ? "manual" : opts.conversationId ?? "forget",
           // A whole topic, or one statement — the memory page lists the first
           // as "topics not remembered", the second stays the block-list.
           category: topicOfStatement(statement) !== null ? TOPIC_EXCLUSION_CATEGORY : "suppression",
@@ -1325,6 +1347,52 @@ export async function writeManualFact(
     await retireInFavourOf(db, opts.userId, id, effects, entries, replaced);
   }
   return { ok: true, action, id, content, status, replaced, needsEmbedding };
+}
+
+/**
+ * UNDO'S DOOR: put back a fact an applied edit retired — the row itself, as it
+ * was.
+ *
+ * Undo used to re-add the retired fact's TEXT through writeManualFact, which
+ * found the old row and refreshed it as something typed today: source MANUAL,
+ * said-at now. So after undoing an edit, a fact Juno inferred from a chat
+ * months ago read "You said this in “…” on <today>, and confirmed it
+ * yourself" — provenance that was simply false. Here the row is believed
+ * again and nothing else about it changes: its source, when it was said, its
+ * confidence and its chat stay what they were. What it contradicts in its
+ * scope (the fact the edit wrote, unless the same Undo removes it) is retired
+ * in its favour, with history, exactly as a typed fact would retire it.
+ *
+ * Null when the row is gone or no longer reads `content` (the caller falls
+ * back to writing the text); the block-list refuses as for any write.
+ */
+export async function reinstateRetiredFact(
+  tx: MemoryTx,
+  opts: { userId: string; id: string; content: string; now?: Date }
+): Promise<ManualWriteOutcome | null> {
+  const db = tx as Prisma.TransactionClient;
+  const now = opts.now ?? new Date();
+  const rows = await db.memoryEntry.findMany({ where: { userId: opts.userId }, select: LIFECYCLE_SELECT });
+  const row = rows.find((entry) => entry.id === opts.id && entry.kind === "FACT");
+  if (!row || row.content !== opts.content) return null;
+  const suppressions = rows.filter((entry) => entry.kind === "SUPPRESSION").map((entry) => entry.content);
+  const screened = screenMemoryWrite({ content: row.content, kind: "FACT", suppressions });
+  if (!screened.ok) return screened;
+  const needsEmbedding = !row.embeddingModel;
+  if (row.status === "active") {
+    return { ok: true, action: "confirmed", id: row.id, content: row.content, status: "active", replaced: [], needsEmbedding };
+  }
+  await db.memoryEntry.updateMany({
+    where: { id: row.id, userId: opts.userId },
+    data: { status: "active", supersededById: null, reason: "Put back when you undid an edit." },
+  });
+  row.status = "active";
+  row.supersededById = null;
+  const entries: LifecycleEntry[] = rows.filter((entry) => entry.kind === "FACT");
+  const replaced: { id: string; content: string; reason: string }[] = [];
+  const effects = planRewriteEffects({ id: row.id, content: row.content, projectId: row.projectId }, entries, { now });
+  await retireInFavourOf(db, opts.userId, row.id, effects, entries, replaced);
+  return { ok: true, action: "reinstated", id: row.id, content: row.content, status: "active", replaced, needsEmbedding };
 }
 
 /**
@@ -2090,7 +2158,7 @@ export async function getMemoryProfile(
  */
 export async function getCodingMemory(userId: string, query: string): Promise<string[]> {
   try {
-    const [settings, rows] = await Promise.all([
+    const [settings, rows, suppressions] = await Promise.all([
       prisma.settings.findUnique({ where: { userId }, select: { memoryEnabled: true } }),
       prisma.memoryEntry.findMany({
         where: {
@@ -2104,9 +2172,11 @@ export async function getCodingMemory(userId: string, query: string): Promise<st
         take: 200,
         select: LIFECYCLE_SELECT,
       }),
+      // The read side of the block-list, as for every other reader.
+      getSuppressions(userId),
     ]);
     if (settings?.memoryEnabled === false) return [];
-    const selected = selectCodingMemories(rows, { query });
+    const selected = selectCodingMemories(rows, { query, suppressions });
     if (selected.length > 0) {
       await prisma.memoryEntry
         .updateMany({ where: { userId, id: { in: selected.map((m) => m.id) } }, data: { lastUsedAt: new Date() } })
@@ -2200,6 +2270,7 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
     loadAllowedSensitiveTopics(userId),
   ]);
   const suppressions = entries.filter((e) => e.kind === "SUPPRESSION").map((e) => e.content);
+  const blockList = compileBlockList(suppressions);
 
   // Newest facts always make the budget; drop the OLDEST when over.
   //
@@ -2223,7 +2294,7 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
         e.projectId === null &&
         (e.expiresAt === null || e.expiresAt > now)
     )
-    .filter((e) => consolidationMayUse(e, suppressions, allowedSensitiveTopics))
+    .filter((e) => consolidationMayUse(e, blockList, allowedSensitiveTopics))
     // Dated, and ordered, by when each was SAID: "most recent wins" in the
     // prompt has to mean the most recently said, not the most recently read.
     .sort((a, b) => observedAtOf(a).getTime() - observedAtOf(b).getTime());
@@ -2244,7 +2315,7 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
     digests: digestRows
       .map((d) => d.digest!)
       .filter(Boolean)
-      .filter((digest) => !proseCoveredBySuppression(digest, suppressions)),
+      .filter((digest) => !proseCoveredBySuppression(digest, blockList)),
     projectLines: projectRows.map(
       (p) => `${p.name}${p.instructions ? ` — instructions: ${p.instructions.replace(/\s+/g, " ").slice(0, 300)}` : ""}`
     ),
@@ -2555,6 +2626,7 @@ export async function consolidateProjectMemory(opts: {
     await removeSummary();
     return { status: "empty" };
   }
+  const blockList = compileBlockList(suppressions);
 
   const sources = {
     projectName: project.name,
@@ -2563,14 +2635,14 @@ export async function consolidateProjectMemory(opts: {
     // the account summary (gatherMemorySources).
     facts: budgetProjectFacts(
       factRows
-        .filter((row) => consolidationMayUse(row, suppressions, allowedSensitiveTopics))
+        .filter((row) => consolidationMayUse(row, blockList, allowedSensitiveTopics))
         .map((row) => ({ content: row.content, createdAt: observedAtOf(row) }))
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     ),
     digests: digestRows
       .map((row) => row.digest!)
       .filter(Boolean)
-      .filter((digest) => !proseCoveredBySuppression(digest, suppressions)),
+      .filter((digest) => !proseCoveredBySuppression(digest, blockList)),
     suppressions,
   };
   if (projectSummaryIsEmpty(sources)) {

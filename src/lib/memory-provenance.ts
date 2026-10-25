@@ -14,8 +14,8 @@ import { topicOfStatement } from "@/lib/memory-topics";
  * year-old chat said "learned today", and nothing named the chat it came from,
  * only "From a chat". This module is the one reading:
  *
- *   source   where it came from — a chat (named, or "a chat you've since
- *            deleted"), the memory page, an edit you asked for, another device,
+ *   source   where it came from — a chat (named, or "a chat that's no
+ *            longer available"), the memory page, an edit you asked for, another device,
  *            an import — with a link to the exact message when that is known.
  *   when     when you SAID it (observedAt), when Juno wrote it down, when you
  *            last confirmed it, when it was last used in an answer, and when
@@ -72,9 +72,23 @@ export function memorySourceKind(entry: Pick<ProvenanceEntry, "sourceRef">): Mem
 }
 
 /**
+ * A restored row's sourceRef, in the importing account's terms. A chat-learned
+ * fact names its chat by id, and an import gives every chat a new id; left as
+ * the exporting account's id, the ref names nothing here and every such fact
+ * reads as coming from a chat that is gone. Word sources pass through, and a
+ * chat the export did not carry keeps its old id (honestly unavailable).
+ */
+export function importedSourceRef(ref: string | null, conversationIds: ReadonlyMap<string, string>): string | null {
+  if (!ref || memorySourceKind({ sourceRef: ref }) !== "chat") return ref;
+  return conversationIds.get(ref.trim()) ?? ref;
+}
+
+/**
  * What the route knows about the chat a fact came from:
  *   { id, title } — it exists and belongs to the reader;
- *   null          — it was looked up and is gone (deleted);
+ *   null          — it was looked up and is not there: deleted, or never in
+ *                   this account (a chat an export left behind). Which of the
+ *                   two is not recorded anywhere, so nothing says "deleted";
  *   undefined     — not looked up (a list that did not resolve titles).
  */
 export type ProvenanceConversation = { id: string; title: string } | null | undefined;
@@ -82,12 +96,16 @@ export type ProvenanceConversation = { id: string; title: string } | null | unde
 export interface MemoryProvenance {
   source: {
     kind: MemorySourceKind;
-    /** One short phrase: "From “Moving”", "You added this", "From a chat you've since deleted". */
+    /** One short phrase: "From “Moving”", "You added this", "From a chat that’s no longer available". */
     label: string;
     conversationId: string | null;
     conversationTitle: string | null;
-    /** True when the chat it came from has been deleted. The fact stays yours; the link cannot. */
-    conversationDeleted: boolean;
+    /**
+     * True when the chat it came from cannot be found in the reader's account
+     * — deleted, or left behind by an import. The fact stays theirs; the link
+     * cannot. Not called "deleted": nothing records which it was.
+     */
+    conversationUnavailable: boolean;
     messageId: string | null;
     /** Where to read it in context, when that still exists. */
     href: string | null;
@@ -149,10 +167,10 @@ export function memoryProvenance(
   // ---- source -------------------------------------------------------------
   const conversationId = kind === "chat" ? entry.sourceRef : null;
   const conversation = kind === "chat" ? ctx.conversation : undefined;
-  const conversationDeleted = kind === "chat" && conversation === null;
+  const conversationUnavailable = kind === "chat" && conversation === null;
   const conversationTitle = conversation ? conversation.title : null;
   const href =
-    conversationId && !conversationDeleted
+    conversationId && !conversationUnavailable
       ? `/chat/${conversationId}${entry.sourceMessageId ? `?m=${encodeURIComponent(entry.sourceMessageId)}` : ""}`
       : null;
   const sourceLabel = (() => {
@@ -168,7 +186,7 @@ export function memoryProvenance(
       case "forget":
         return "From something you asked to forget";
       case "chat":
-        if (conversationDeleted) return "From a chat you’ve since deleted";
+        if (conversationUnavailable) return "From a chat that’s no longer available";
         return conversationTitle !== null ? `From ${quoteTitle(conversationTitle)}` : "From a chat";
       default:
         return entry.source === "MANUAL" ? `You told ${PRODUCT_NAME}` : "From your chats";
@@ -191,8 +209,8 @@ export function memoryProvenance(
   const on = provenanceDate(saidAt);
   const where =
     kind === "chat"
-      ? conversationDeleted
-        ? "in a chat you’ve since deleted"
+      ? conversationUnavailable
+        ? "in a chat that’s no longer available"
         : conversationTitle !== null
           ? `in ${quoteTitle(conversationTitle)}`
           : "in a chat"
@@ -244,7 +262,7 @@ export function memoryProvenance(
       label: sourceLabel,
       conversationId,
       conversationTitle,
-      conversationDeleted,
+      conversationUnavailable,
       messageId: kind === "chat" ? entry.sourceMessageId : null,
       href,
     },

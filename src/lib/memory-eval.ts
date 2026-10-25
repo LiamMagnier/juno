@@ -29,16 +29,21 @@
  *                  many of the injected facts the question needed (precision),
  *                  and what an off-topic message ("what is 17 × 23?") is
  *                  handed — which should be next to nothing.
- *   latency        fact selection over a 2,000-fact account; session recall
- *                  ranking over a synthetic 20,000-message account.
+ *   latency        fact selection over a 2,000-fact account, with and without
+ *                  the read gates (block-list, sensitive switches); session
+ *                  recall ranking over a synthetic 20,000-message account.
  *   recall         session recall quality: does a question about an old
  *                  conversation find the right message (hit@1 / hit@5), and
  *                  what the 50-conversation scan window it replaces found.
- *   personalisation  inappropriate personalisation (§10.3): sensitive facts
- *                  handed to unrelated messages, inferred facts on a topic the
- *                  person switched off, facts on a topic they excluded — all
- *                  must be 0 — and, so the gates are not simply refusing,
- *                  sensitive facts used when the message is about them.
+ *   personalisation  inappropriate personalisation (§10.3): inferred sensitive
+ *                  facts handed to unrelated messages, inferred facts on a
+ *                  topic the person switched off, facts on a topic they
+ *                  excluded — all must be 0 — and, so the gates are not simply
+ *                  refusing, sensitive facts used when the message is about
+ *                  them, including when it does not name them (a typed
+ *                  allergy for a recipe), lexically and with semantic evidence.
+ *                  Typed sensitive facts riding along off-topic are reported
+ *                  beside, not counted: the person put them there.
  *   deletion       what a forget, a topic exclusion, a delete or a revoked
  *                  topic leaves behind: retrieved, relearned, quoted in
  *                  another row, said by a summary or fed to a summariser.
@@ -67,6 +72,8 @@ import {
   BENIGN_NEAR_MISSES,
   MANUAL_CORRECTION_CASES,
   MANUAL_DUPLICATE_CASES,
+  IMPLICIT_RELEVANCE_FACTS,
+  IMPLICIT_RELEVANCE_QUERIES,
   PERSONALISATION_EXCLUDED_QUERIES,
   PERSONALISATION_EXCLUSIONS,
   PERSONALISATION_FACTS,
@@ -97,6 +104,7 @@ import {
   summaryPredatesMemoryChange,
   summaryRebuildDecision,
   type LifecycleEntry,
+  type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
 import { readerMayUse, type MemoryReader } from "@/lib/memory-scope";
 import { SENSITIVE_TOPICS, sensitiveTopicOf } from "@/lib/memory-sensitive";
@@ -159,7 +167,18 @@ export interface SuiteResult {
     offTopicMean: number;
     offTopicFactsMean: number;
   };
-  latency: { factSelectP50Ms: number; factSelectP95Ms: number; recallRankP50Ms: number; recallRankP95Ms: number };
+  latency: {
+    factSelectP50Ms: number;
+    factSelectP95Ms: number;
+    /**
+     * The same selection with the read gates a chat turn applies: a 20-entry
+     * block-list (3 of them topics) and the sensitive switches, all off.
+     */
+    factSelectGatedP50Ms: number;
+    factSelectGatedP95Ms: number;
+    recallRankP50Ms: number;
+    recallRankP95Ms: number;
+  };
   recall: {
     messages: number;
     conversations: number;
@@ -184,6 +203,38 @@ export interface SuiteResult {
     /** Facts the person typed on a topic they later switched off: still used / asked. */
     typed: number;
     typedKept: number;
+    /**
+     * Typed sensitive facts that rode along with an off-topic message inside
+     * the ambient allowance. Not counted as inappropriate: the person put them
+     * there, and a typed allergy has to reach a recipe the lexical gate cannot
+     * connect it to. Reported so the cost of that rule stays visible.
+     */
+    typedAmbientOffTopic: number;
+    /**
+     * Sensitive facts a request makes relevant without naming them (a typed
+     * peanut allergy for "suggest a dinner recipe", inferred diabetes for
+     * "plan my meals this week"): dietary facts handed to food requests, in
+     * three settings — lexical only (no embedder, or it failed), semantic
+     * evidence in which the fact stands out (a working embedder), and
+     * semantic evidence in which nothing stands out (a weak one). The vectors
+     * are synthetic and say only what each setting assumes.
+     */
+    implicit: {
+      /** Dietary facts × food requests, per setting. */
+      expected: number;
+      lexicalUsed: number;
+      semanticStandoutUsed: number;
+      semanticFlatUsed: number;
+      /** The lexical checks under the rules before 2026-10-25 (everything ambient). */
+      legacyLexicalUsed: number;
+      /** Sensitive facts that have nothing to do with food, handed to a food request, over every setting. Must be 0. */
+      distractorsUsed: number;
+      /** Health switched off: inferred health facts still handed over (must be 0)… */
+      revokedInferredUsed: number;
+      /** …and typed ones kept, over the asks. */
+      revokedTyped: number;
+      revokedTypedKept: number;
+    };
   };
   deletion: { checks: number; leaks: number; legacyLeaks: number; leakDetail: string[] };
   manual: {
@@ -635,6 +686,7 @@ function personalisationSection(): SuiteResult["personalisation"] {
   // Health and religion switched off later; the rest still on.
   const afterRevoke = ["sexuality", "finances"];
   const topicOf = new Map(PERSONALISATION_FACTS.map((f) => [f.id, f.topic ?? null]));
+  const typedIds = new Set(PERSONALISATION_FACTS.filter((f) => f.source === "MANUAL").map((f) => f.id));
   const excludedIds = new Set(PERSONALISATION_FACTS.filter((f) => f.excluded).map((f) => f.id));
 
   const run = (gated: boolean) => {
@@ -657,13 +709,17 @@ function personalisationSection(): SuiteResult["personalisation"] {
 
     let checks = 0;
     let sensitiveOffTopic = 0;
+    let typedAmbientOffTopic = 0;
     let revokedTopic = 0;
     let excludedTopic = 0;
     for (const allowed of [allTopics, afterRevoke]) {
       for (const query of PERSONALISATION_OFF_TOPIC) {
         const ids = select(query, allowed);
         checks++;
-        sensitiveOffTopic += ids.filter((id) => topicOf.get(id)).length;
+        // An INFERRED sensitive fact off-topic is inappropriate; a typed one
+        // rides along by design and is reported on its own.
+        sensitiveOffTopic += ids.filter((id) => topicOf.get(id) && !typedIds.has(id)).length;
+        typedAmbientOffTopic += ids.filter((id) => topicOf.get(id) && typedIds.has(id)).length;
         excludedTopic += ids.filter((id) => excludedIds.has(id)).length;
       }
     }
@@ -671,7 +727,7 @@ function personalisationSection(): SuiteResult["personalisation"] {
       if (afterRevoke.includes(probe.topic)) continue;
       const ids = select(probe.query, afterRevoke);
       checks++;
-      revokedTopic += ids.filter((id) => topicOf.get(id) === probe.topic && id !== "insulin-typed").length;
+      revokedTopic += ids.filter((id) => topicOf.get(id) === probe.topic && !typedIds.has(id)).length;
     }
     for (const query of PERSONALISATION_EXCLUDED_QUERIES) {
       for (const allowed of [allTopics, afterRevoke]) {
@@ -682,7 +738,7 @@ function personalisationSection(): SuiteResult["personalisation"] {
     let appropriateUsed = 0;
     for (const probe of PERSONALISATION_RELEVANT) if (select(probe.query, allTopics).includes(probe.expect)) appropriateUsed++;
     const typedKept = select("When should I take my insulin before meals?", afterRevoke).includes("insulin-typed") ? 1 : 0;
-    return { checks, sensitiveOffTopic, revokedTopic, excludedTopic, appropriateUsed, typedKept };
+    return { checks, sensitiveOffTopic, typedAmbientOffTopic, revokedTopic, excludedTopic, appropriateUsed, typedKept };
   };
 
   const now = run(true);
@@ -698,6 +754,81 @@ function personalisationSection(): SuiteResult["personalisation"] {
     appropriateUsed: now.appropriateUsed,
     typed: 1,
     typedKept: now.typedKept,
+    typedAmbientOffTopic: now.typedAmbientOffTopic,
+    implicit: implicitRelevance(),
+  };
+}
+
+/** See SuiteResult["personalisation"]["implicit"]. */
+function implicitRelevance(): SuiteResult["personalisation"]["implicit"] {
+  const allTopics = ["health", "religion", "sexuality", "finances"];
+  const healthOff = ["religion", "sexuality", "finances"];
+  const entries = IMPLICIT_RELEVANCE_FACTS.map((f) => storedEntry(f.id, f.content, f.source));
+  const dietary = new Set(IMPLICIT_RELEVANCE_FACTS.filter((f) => f.dietary).map((f) => f.id));
+  const distractors = new Set(IMPLICIT_RELEVANCE_FACTS.filter((f) => f.topic && !f.dietary).map((f) => f.id));
+  const fact = (id: string) => IMPLICIT_RELEVANCE_FACTS.find((f) => f.id === id)!;
+
+  // A working embedder puts a food request near the dietary facts and far
+  // from the rest; a weak one puts everything at the same distance. Synthetic
+  // on purpose: each says exactly what its setting assumes and nothing more.
+  const standout: SemanticEvidence = {
+    queryVector: [1, 0],
+    vectors: new Map(entries.map((e) => [e.id, dietary.has(e.id) ? [0.9, 0.1] : [0.2, 0.98]])),
+  };
+  const flat: SemanticEvidence = { queryVector: [1, 0], vectors: new Map(entries.map((e) => [e.id, [0.6, 0.8]])) };
+
+  const select = (query: string, opts: { semantic?: SemanticEvidence; allowed?: readonly string[]; legacy?: boolean }) =>
+    selectMemoriesForContext(entries, {
+      query,
+      now: EVAL_NOW,
+      budgetTokens: DEFAULT_MEMORY_TOKEN_BUDGET,
+      ...(opts.semantic ? { semantic: opts.semantic } : {}),
+      ...(opts.legacy ? { legacySensitiveAmbient: true } : { suppressions: [], allowedSensitiveTopics: opts.allowed ?? allTopics }),
+    }).selected.map((m) => m.id);
+
+  let lexicalUsed = 0;
+  let semanticStandoutUsed = 0;
+  let semanticFlatUsed = 0;
+  let legacyLexicalUsed = 0;
+  let distractorsUsed = 0;
+  let revokedInferredUsed = 0;
+  let revokedTyped = 0;
+  let revokedTypedKept = 0;
+  const countDietary = (ids: string[]) => ids.filter((id) => dietary.has(id)).length;
+  const countDistractors = (ids: string[]) => ids.filter((id) => distractors.has(id)).length;
+  for (const query of IMPLICIT_RELEVANCE_QUERIES) {
+    const lexical = select(query, {});
+    const semantic = select(query, { semantic: standout });
+    const weak = select(query, { semantic: flat });
+    lexicalUsed += countDietary(lexical);
+    semanticStandoutUsed += countDietary(semantic);
+    semanticFlatUsed += countDietary(weak);
+    legacyLexicalUsed += countDietary(select(query, { legacy: true }));
+    distractorsUsed += countDistractors(lexical) + countDistractors(semantic) + countDistractors(weak);
+
+    // Health switched off: what Juno inferred about it is not used, whatever
+    // the request; what the person typed about it still is.
+    const revoked = select(query, { allowed: healthOff });
+    for (const id of dietary) {
+      const f = fact(id);
+      if (f.topic !== "health") continue;
+      if (f.source === "AUTO") revokedInferredUsed += revoked.includes(id) ? 1 : 0;
+      else {
+        revokedTyped++;
+        revokedTypedKept += revoked.includes(id) ? 1 : 0;
+      }
+    }
+  }
+  return {
+    expected: dietary.size * IMPLICIT_RELEVANCE_QUERIES.length,
+    lexicalUsed,
+    semanticStandoutUsed,
+    semanticFlatUsed,
+    legacyLexicalUsed,
+    distractorsUsed,
+    revokedInferredUsed,
+    revokedTyped,
+    revokedTypedKept,
   };
 }
 
@@ -1102,6 +1233,27 @@ function recallAndLatencySection(opts: SuiteOptions): { recall: SuiteResult["rec
     selectMemoriesForContext(facts, { query: `${TOPICS[q % TOPICS.length]} plan`, projectId: q % 3 === 0 ? "p1" : null, now });
     selectTimes.push(performance.now() - t0);
   }
+  // And with the read gates every chat turn applies: the account's block-list
+  // (forgotten statements and excluded topics) and its sensitive switches.
+  // Without this line the gates' cost was never measured.
+  const blockList = [
+    ...Array.from({ length: 17 }, (_, i) => `The user works at Company${i}`),
+    "Anything about my divorce",
+    "Anything about my health",
+    "Anything about my side business",
+  ];
+  const gatedTimes: number[] = [];
+  for (let q = 0; q < 200; q++) {
+    const t0 = performance.now();
+    selectMemoriesForContext(facts, {
+      query: `${TOPICS[q % TOPICS.length]} plan`,
+      projectId: q % 3 === 0 ? "p1" : null,
+      now,
+      suppressions: blockList,
+      allowedSensitiveTopics: [],
+    });
+    gatedTimes.push(performance.now() - t0);
+  }
 
   return {
     recall: {
@@ -1115,6 +1267,8 @@ function recallAndLatencySection(opts: SuiteOptions): { recall: SuiteResult["rec
     latency: {
       factSelectP50Ms: round(quantile(selectTimes, 0.5), 2),
       factSelectP95Ms: round(quantile(selectTimes, 0.95), 2),
+      factSelectGatedP50Ms: round(quantile(gatedTimes, 0.5), 2),
+      factSelectGatedP95Ms: round(quantile(gatedTimes, 0.95), 2),
       recallRankP50Ms: round(quantile(rankTimes, 0.5), 2),
       recallRankP95Ms: round(quantile(rankTimes, 0.95), 2),
     },

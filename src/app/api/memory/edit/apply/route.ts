@@ -8,12 +8,13 @@ import {
   embedMemoryEntries,
   getMemorySummary,
   refreshSummaries,
+  reinstateRetiredFact,
   settleRewrittenFact,
   writeManualFact,
 } from "@/lib/memory";
 import { TOPIC_EXCLUSION_CATEGORY, topicOfStatement, topicStatement } from "@/lib/memory-topics";
 import { checkProjectAccess } from "@/lib/project-collaboration";
-import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
+import { guardedMemoryWrite, normalizeStatement, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 import { factFields } from "@/lib/memory-lifecycle";
 import { summaryInvalidations } from "@/lib/memory-summary-changes";
 import { MEMORY_ENTRY_SELECT, loadProvenanceConversations, serializeMemoryEntry } from "@/lib/memory-view";
@@ -32,6 +33,10 @@ const opSchema = z.union([
     // scope it was removed from. Without it, undoing the removal of a project
     // fact restored it account-wide — into every unrelated chat.
     projectId: z.string().min(1).nullish(),
+    // Only ever set by an Undo: the retired row to put back AS IT WAS
+    // (reinstateRetiredFact) rather than re-typed from its text, which
+    // restamped a months-old inferred fact as something said today.
+    restoreId: z.string().min(1).optional(),
   }),
   z.object({ op: z.literal("update"), id: z.string().min(1), before: z.string().max(500), content: z.string().trim().min(1).max(500) }),
   z.object({ op: z.literal("remove"), id: z.string().min(1), before: z.string().max(500) }),
@@ -120,30 +125,41 @@ export async function POST(req: Request) {
 
       for (const op of ops) {
         if (op.op === "add" && !op.suppress) {
-          // A fact: through the manual write door, so an edit that says "I
-          // moved to Porto" replaces "lives in Lisbon" rather than adding a
-          // second city, and one that restates a known fact confirms it
-          // rather than copying it (writeManualFact).
-          const outcome = await writeManualFact(tx, {
-            userId: user.id,
-            content: op.content,
-            projectId: op.projectId ?? null,
-            sourceRef: "edit",
-          });
+          // An Undo putting back a fact the edit retired: the row itself, as
+          // it was. Falls through to the text when the row is gone.
+          const restored = op.restoreId
+            ? await reinstateRetiredFact(tx, { userId: user.id, id: op.restoreId, content: op.content })
+            : null;
+          // Otherwise a fact: through the manual write door, so an edit that
+          // says "I moved to Porto" replaces "lives in Lisbon" rather than
+          // adding a second city, and one that restates a known fact confirms
+          // it rather than copying it (writeManualFact).
+          const outcome =
+            restored ??
+            (await writeManualFact(tx, {
+              userId: user.id,
+              content: op.content,
+              projectId: op.projectId ?? null,
+              sourceRef: "edit",
+            }));
           if (!outcome.ok) {
             refusal = outcome;
             throw new SuppressedWrite();
           }
           if (outcome.needsEmbedding) touched.push({ id: outcome.id, content: outcome.content });
           // Undo removes what this created — never a fact that was already
-          // believed and merely confirmed — and puts back what it replaced:
-          // re-adding a replaced belief reinstates its own row, which in turn
-          // retires this one with its history intact. A row brought back that
-          // replaced nothing has nothing to be retired by, so it is removed.
+          // believed and merely confirmed — and puts back what it replaced,
+          // row by row (restoreId), each of which retires this one with its
+          // history intact. A row brought back that replaced nothing has
+          // nothing to be retired by, so it is removed. A row an Undo put
+          // back is never removed by the next inverse: it existed before.
           const removable =
-            outcome.action === "created" || (outcome.action === "reinstated" && outcome.replaced.length === 0);
+            !restored &&
+            (outcome.action === "created" || (outcome.action === "reinstated" && outcome.replaced.length === 0));
           if (removable) inverse.push({ op: "remove", id: outcome.id, before: outcome.content });
-          for (const old of outcome.replaced) inverse.push({ op: "add", content: old.content, ...(op.projectId ? { projectId: op.projectId } : {}) });
+          for (const old of outcome.replaced) {
+            inverse.push({ op: "add", content: old.content, restoreId: old.id, ...(op.projectId ? { projectId: op.projectId } : {}) });
+          }
           replacedScopes.push(op.projectId ?? null);
         } else if (op.op === "add") {
           // Applied edits wrote straight to the table, so "forget my old job"
@@ -152,6 +168,16 @@ export async function POST(req: Request) {
           // canonical phrasing, like a forget said in chat (forgetStatements).
           const topic = topicOfStatement(op.content);
           const statement = topic !== null ? topicStatement(topic) : op.content;
+          // Already on the block-list (the same topic said another way, or
+          // the same statement): one row, as forgetStatements keeps it — a
+          // second would list the topic twice, and Undo would have nothing
+          // of this op's own to remove.
+          const canonical = (text: string) => {
+            const existingTopic = topicOfStatement(text);
+            return normalizeStatement(existingTopic !== null ? topicStatement(existingTopic) : text);
+          };
+          const listed = (await suppressions()).some((existing) => canonical(existing) === canonical(statement));
+          if (listed) continue;
           const outcome = await guardedMemoryWrite({
             content: statement,
             kind: "SUPPRESSION",
@@ -228,7 +254,7 @@ export async function POST(req: Request) {
             // The new wording settles its scope like a typed fact does; Undo
             // puts back whatever it replaced.
             for (const old of await settleRewrittenFact(tx, user.id, op.id)) {
-              inverse.push({ op: "add", content: old.content, ...(row.projectId ? { projectId: row.projectId } : {}) });
+              inverse.push({ op: "add", content: old.content, restoreId: old.id, ...(row.projectId ? { projectId: row.projectId } : {}) });
             }
           }
         } else {

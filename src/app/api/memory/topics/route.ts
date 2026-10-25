@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   const key = normalizeStatement(statement);
   const sameTopic = (view: TopicView) => normalizeStatement(topicStatement(view.topic)) === key;
   const existed = (await listTopics(user.id)).some(sameTopic);
-  const outcome = await forgetStatements(user.id, [statement], { conversationId: null });
+  const outcome = await forgetStatements(user.id, [statement], { conversationId: null, origin: "memory-page" });
   // The account's summary is benched by the new block-list row already
   // (summaryPredatesForget); rebuild it once the response has gone, so the
   // next chat has a summary again that never mentions the topic. Project

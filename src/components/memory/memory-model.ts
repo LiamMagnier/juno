@@ -78,8 +78,12 @@ export interface ProjectSummaryData extends SummaryData {
 }
 
 export type Operation =
-  /** `projectId` is only ever set by an Undo, restoring a fact to its project. */
-  | { op: "add"; content: string; suppress?: boolean; projectId?: string | null }
+  /**
+   * `projectId` and `restoreId` are only ever set by an Undo: the project a
+   * fact goes back to, and the retired row to put back as it was (so its
+   * source and date are not rewritten as something typed today).
+   */
+  | { op: "add"; content: string; suppress?: boolean; projectId?: string | null; restoreId?: string }
   | { op: "update"; id: string; before: string; content: string }
   | { op: "remove"; id: string; before: string };
 

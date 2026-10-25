@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  importedSourceRef,
   memoryHistory,
   memoryProvenance,
   memorySourceKind,
@@ -62,7 +63,7 @@ test("a fact from a chat names the chat, links the message, and is dated by when
   assert.equal(p.source.kind, "chat");
   assert.equal(p.source.label, "From “Moving house”");
   assert.equal(p.source.href, "/chat/conv-1?m=msg-1");
-  assert.equal(p.source.conversationDeleted, false);
+  assert.equal(p.source.conversationUnavailable, false);
   assert.equal(p.when.saidAt, SAID.toISOString(), "said a year ago");
   assert.equal(p.when.recordedAt, NOTED.toISOString(), "written down last week");
   assert.equal(p.scope.label, "Every chat");
@@ -71,12 +72,15 @@ test("a fact from a chat names the chat, links the message, and is dated by when
   assert.equal(p.why, `You said this in “Moving house” on ${provenanceDate(SAID)}. You said it again on ${provenanceDate(NOTED)}. It can be used in any chat.`);
 });
 
-test("a fact from a deleted chat stays explained, without a dead link", () => {
+test("a fact from a chat that can't be found stays explained, without a dead link — and without claiming a deletion", () => {
   const p = memoryProvenance(entry(), { conversation: null, now: NOW });
-  assert.equal(p.source.conversationDeleted, true);
+  assert.equal(p.source.conversationUnavailable, true);
   assert.equal(p.source.href, null);
-  assert.equal(p.source.label, "From a chat you’ve since deleted");
-  assert.match(p.why, /in a chat you’ve since deleted/);
+  // Deleted, or never in this account (an import): nothing records which, so
+  // nothing says "deleted".
+  assert.equal(p.source.label, "From a chat that’s no longer available");
+  assert.match(p.why, /in a chat that’s no longer available/);
+  assert.doesNotMatch(`${p.source.label} ${p.why}`, /deleted/);
   // Not looked up at all: honest about not knowing the title.
   assert.equal(memoryProvenance(entry(), { now: NOW }).source.label, "From a chat");
 });
@@ -200,3 +204,14 @@ test("history survives a cycle a hand-edited row could create", () => {
   assert.deepEqual(h.earlier, []);
   assert.equal(h.current, null);
 });
+
+test("an import names the chats it restored by their new ids; word sources and unknown chats pass through", () => {
+  const ids = new Map([["old-conv", "new-conv"]]);
+  assert.equal(importedSourceRef("old-conv", ids), "new-conv");
+  assert.equal(importedSourceRef(" old-conv ", ids), "new-conv");
+  for (const word of ["manual", "edit", "native", "import", "forget"]) assert.equal(importedSourceRef(word, ids), word);
+  assert.equal(importedSourceRef(null, ids), null);
+  // A chat the export did not carry: left as it was, so it reads as unavailable.
+  assert.equal(importedSourceRef("missing-conv", ids), "missing-conv");
+});
+

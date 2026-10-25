@@ -349,6 +349,44 @@ export const PERSONALISATION_EXCLUDED_QUERIES = [
   "Remind me what you know about my divorce.",
 ];
 
+/**
+ * Sensitive facts a request makes relevant WITHOUT naming them: an allergy for
+ * "suggest a dinner recipe", diabetes for "plan my meals this week". No word
+ * is shared, so in the lexical fallback (no embedder, an embedding failure,
+ * rows without vectors) the only way such a fact reaches the model is a rule
+ * that knows a food request makes dietary facts relevant — or the ambient
+ * allowance, which inferred sensitive facts never get. Typed (MANUAL) and
+ * inferred (AUTO) facts are both here, with sensitive facts that have nothing
+ * to do with food as distractors.
+ */
+export const IMPLICIT_RELEVANCE_FACTS: {
+  id: string;
+  content: string;
+  source: "AUTO" | "MANUAL";
+  topic?: string;
+  /** A dietary fact: every food request below should be handed it. */
+  dietary?: boolean;
+}[] = [
+  { id: "name", content: "The user is called Sam.", source: "AUTO" },
+  { id: "style", content: "The user prefers short answers.", source: "AUTO" },
+  { id: "job", content: "The user works at Hooli as a data engineer.", source: "AUTO" },
+  { id: "city", content: "The user lives in Porto.", source: "AUTO" },
+  { id: "peanut-typed", content: "The user has a severe peanut allergy.", source: "MANUAL", topic: "health", dietary: true },
+  { id: "diabetes", content: "The user has type 1 diabetes.", source: "AUTO", topic: "health", dietary: true },
+  { id: "kosher-typed", content: "The user keeps kosher.", source: "MANUAL", topic: "religion", dietary: true },
+  { id: "shellfish", content: "The user is allergic to shellfish.", source: "AUTO", topic: "health", dietary: true },
+  { id: "catholic", content: "The user is a practising Catholic.", source: "AUTO", topic: "religion" },
+  { id: "debt", content: "The user is in debt after a failed startup.", source: "AUTO", topic: "finances" },
+];
+
+/** Food requests that name no dietary fact. */
+export const IMPLICIT_RELEVANCE_QUERIES = [
+  "Suggest a dinner recipe for tonight.",
+  "Plan a 3-day food tour of Bangkok.",
+  "Plan my meals this week.",
+  "Pick a restaurant for our team lunch on Friday.",
+];
+
 // ---------------------------------------------------------------------------
 // Manual corrections — the person's own hand on the timeline
 // ---------------------------------------------------------------------------

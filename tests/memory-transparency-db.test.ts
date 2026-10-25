@@ -18,7 +18,15 @@ import { randomBytes, randomUUID } from "node:crypto";
  *     (PATCH /api/settings);
  *   - deletion propagation: a deleted fact leaves no pointer and no quote in
  *     the rows that remain, and deleting a chat benches the summary its digest
- *     went into (DELETE /api/memory/[id], DELETE /api/conversations/[id]).
+ *     went into (DELETE /api/memory/[id], DELETE /api/conversations/[id]);
+ *   - the native app's update, delete and chat delete do the same
+ *     (POST /api/v1/mutations: memory.update, memory.delete,
+ *     conversation.delete);
+ *   - Undo puts a retired row back as it was, a topic added on the memory page
+ *     says so, and an edit cannot list the same topic twice
+ *     (POST /api/memory/edit/apply, POST /api/memory/topics);
+ *   - an export imported into another account still names the chats its
+ *     facts came from (GET /api/account/export → POST /api/import).
  *
  * Same harness as memory-persistence-db.test.ts: only the session, `after()`
  * and the models are faked.
@@ -360,13 +368,186 @@ if (!DB_URL) {
     assert.equal(gone.status, 200);
     assert.equal(await prisma.memorySummary.count({ where: { userId: user.id } }), 0, "the summary built from its digest is benched");
     const listed = (await (await listRoute.GET(new Request("http://x/api/memory"))).json()) as {
-      memories: { content: string; provenance: { source: { conversationDeleted: boolean; label: string; href: string | null } } }[];
+      memories: { content: string; provenance: { source: { conversationUnavailable: boolean; label: string; href: string | null } } }[];
     };
     const kyoto = listed.memories.find((m) => m.content.includes("Kyoto"));
     assert.ok(kyoto, "the fact is the person's, and stays");
-    assert.equal(kyoto!.provenance.source.conversationDeleted, true);
+    assert.equal(kyoto!.provenance.source.conversationUnavailable, true);
     assert.equal(kyoto!.provenance.source.href, null);
-    assert.equal(kyoto!.provenance.source.label, "From a chat you’ve since deleted");
+    assert.equal(kyoto!.provenance.source.label, "From a chat that’s no longer available");
+    afterQueue.length = 0;
+  });
+
+  // ---- the native app's paths (POST /api/v1/mutations) ---------------------
+
+  async function revisionOf(accountId: string, entityType: string, entityId: string) {
+    const { prismaUnguarded: prisma } = await import("@/lib/prisma");
+    const row = await prisma.entityRevision.findUnique({
+      where: { accountId_entityType_entityId: { accountId, entityType, entityId } },
+    });
+    return row?.revision ?? 0;
+  }
+  async function mutate(operation: Record<string, unknown>, baseRevision: number) {
+    const mutations = await import("@/app/api/v1/mutations/route");
+    const res = await mutations.POST(
+      new Request("http://x/api/v1/mutations", {
+        method: "POST",
+        body: JSON.stringify({ clientMutationId: randomUUID(), baseRevision, operation }),
+      })
+    );
+    return { status: res.status, text: await res.text() };
+  }
+
+  test("another device: an update settles its scope, a delete propagates, a chat delete benches its summary", async (t) => {
+    const { prismaUnguarded: prisma } = await import("@/lib/prisma");
+    const memory = await import("@/lib/memory");
+    const { encryptField } = await import("@/lib/field-crypto");
+    const user = await newUser("native");
+    t.after(async () => {
+      await prisma.user.deleteMany({ where: { id: user.id } });
+    });
+
+    // memory.update — the rewrite goes through settleRewrittenFact.
+    await memory.saveCandidates(user.id, ["The user works at Initech.", "The user drinks espresso."], undefined, {
+      policy: { mode: "any_allowed_provider" } as never,
+    });
+    const initech = await prisma.memoryEntry.findFirstOrThrow({ where: { userId: user.id, content: { contains: "Initech" } } });
+    const espresso = await prisma.memoryEntry.findFirstOrThrow({ where: { userId: user.id, content: { contains: "espresso" } } });
+    const updated = await mutate(
+      { type: "memory.update", entityId: espresso.id, content: "The user works at Hooli." },
+      await revisionOf(user.id, "memory", espresso.id)
+    );
+    assert.equal(updated.status, 200, updated.text);
+    const initechAfter = await prisma.memoryEntry.findUniqueOrThrow({ where: { id: initech.id } });
+    assert.equal(initechAfter.status, "superseded", "the device's rewrite replaced the old employer");
+    assert.equal(initechAfter.supersededById, espresso.id);
+    const hooli = await prisma.memoryEntry.findUniqueOrThrow({ where: { id: espresso.id } });
+    assert.equal(hooli.content, "The user works at Hooli.");
+    assert.equal(hooli.category, "identity", "reclassified like a web rewrite");
+
+    // memory.delete — deleteMemoryEntries: pointer cleared, summary benched.
+    await prisma.memorySummary.create({ data: { userId: user.id, content: encryptField("Works at Hooli."), entryCount: 2 } });
+    const deleted = await mutate({ type: "memory.delete", entityId: espresso.id }, await revisionOf(user.id, "memory", espresso.id));
+    assert.equal(deleted.status, 200, deleted.text);
+    assert.equal(await prisma.memoryEntry.count({ where: { id: espresso.id } }), 0);
+    const initechAfterDelete = await prisma.memoryEntry.findUniqueOrThrow({ where: { id: initech.id } });
+    assert.equal(initechAfterDelete.supersededById, null, "no pointer at the deleted fact");
+    assert.equal(initechAfterDelete.reason, "Replaced by a memory you have since deleted.");
+    assert.equal(initechAfterDelete.status, "superseded", "deleting is not a claim the older fact is true again");
+    assert.equal(await prisma.memorySummary.count({ where: { userId: user.id } }), 0, "the summary that said it is benched");
+
+    // conversation.delete — invalidateSummariesForDeletedConversations.
+    const chat = await prisma.conversation.create({ data: { userId: user.id, title: "Trip" } });
+    await prisma.conversationMemory.create({
+      data: { userId: user.id, conversationId: chat.id, processedAt: new Date(), digest: "Planned a trip to Kyoto" },
+    });
+    await prisma.memorySummary.create({ data: { userId: user.id, content: encryptField("Planning Kyoto."), entryCount: 3 } });
+    const chatGone = await mutate({ type: "conversation.delete", entityId: chat.id }, await revisionOf(user.id, "conversation", chat.id));
+    assert.equal(chatGone.status, 200, chatGone.text);
+    assert.equal(await prisma.conversation.count({ where: { id: chat.id } }), 0);
+    assert.equal(await prisma.memorySummary.count({ where: { userId: user.id } }), 0, "the summary its digest fed is benched");
+    afterQueue.length = 0;
+  });
+
+  test("Undo puts a retired fact back as it was; topics added on the page or twice by an edit say so and stay one row", async (t) => {
+    const { prismaUnguarded: prisma } = await import("@/lib/prisma");
+    const memory = await import("@/lib/memory");
+    const applyRoute = await import("@/app/api/memory/edit/apply/route");
+    const itemRoute = await import("@/app/api/memory/[id]/route");
+    const topicsRoute = await import("@/app/api/memory/topics/route");
+    const user = await newUser("undo");
+    t.after(async () => {
+      await prisma.user.deleteMany({ where: { id: user.id } });
+    });
+
+    // An inferred fact from a chat, said months ago.
+    const chat = await prisma.conversation.create({ data: { userId: user.id, title: "Career chat" } });
+    const saidAt = new Date(Date.now() - 120 * DAY);
+    await memory.saveCandidates(user.id, ["The user works at Initech."], chat.id, {
+      observedAt: saidAt,
+      policy: { mode: "any_allowed_provider" } as never,
+    });
+    const initech = await prisma.memoryEntry.findFirstOrThrow({ where: { userId: user.id, content: { contains: "Initech" } } });
+    assert.equal(initech.source, "AUTO");
+
+    const applied = await applyRoute.POST(new Request("http://x", json({ operations: [{ op: "add", content: "The user works at Hooli." }] })));
+    assert.equal(applied.status, 200, await applied.clone().text());
+    const { inverse } = (await applied.json()) as { inverse: { op: string; restoreId?: string }[] };
+    assert.ok(inverse.some((op) => op.op === "add" && op.restoreId === initech.id), "the inverse names the row to put back");
+    assert.equal((await prisma.memoryEntry.findUniqueOrThrow({ where: { id: initech.id } })).status, "superseded");
+
+    const undone = await applyRoute.POST(new Request("http://x", json({ operations: inverse })));
+    assert.equal(undone.status, 200, await undone.clone().text());
+    const back = await prisma.memoryEntry.findUniqueOrThrow({ where: { id: initech.id } });
+    assert.equal(back.status, "active", "believed again");
+    assert.equal(back.source, "AUTO", "still something Juno inferred, not something typed today");
+    assert.equal(back.observedAt?.toISOString(), saidAt.toISOString(), "still said when it was said");
+    assert.equal(back.sourceRef, chat.id, "still from the chat it came from");
+    assert.equal(back.confidence, initech.confidence);
+    assert.equal(await prisma.memoryEntry.count({ where: { userId: user.id, content: { contains: "Hooli" } } }), 0, "the edit's fact is gone");
+    const detail = (await (await itemRoute.GET(new Request("http://x"), ctx(initech.id))).json()) as {
+      provenance: { why: string; when: { saidAt: string } };
+    };
+    assert.equal(detail.provenance.when.saidAt, saidAt.toISOString());
+    assert.match(detail.provenance.why, /in “Career chat”/);
+    assert.doesNotMatch(detail.provenance.why, /confirmed it yourself/);
+
+    // A topic added on the memory page: the retired facts say where it was asked.
+    await memory.saveCandidates(user.id, ["The user is going through a divorce."], undefined, {
+      policy: { mode: "any_allowed_provider" } as never,
+    });
+    const added = await topicsRoute.POST(new Request("http://x", json({ topic: "my divorce" })));
+    assert.equal(added.status, 201);
+    const retired = await prisma.memoryEntry.findFirstOrThrow({ where: { userId: user.id, kind: "FACT", content: { contains: "divorce" } } });
+    assert.equal(retired.status, "suppressed");
+    assert.match(retired.reason ?? "", /not to remember anything about “my divorce”, on the memory page\./);
+    assert.doesNotMatch(retired.reason ?? "", /conversation/);
+    const row = await prisma.memoryEntry.findFirstOrThrow({ where: { userId: user.id, kind: "SUPPRESSION" } });
+    assert.equal(row.sourceRef, "manual", "added on the page, not in a chat");
+
+    // The same topic again through an applied edit, phrased another way: still one row.
+    const again = await applyRoute.POST(
+      new Request("http://x", json({ operations: [{ op: "add", suppress: true, content: "Never remember anything about my divorce" }] }))
+    );
+    assert.equal(again.status, 200, await again.clone().text());
+    assert.equal(await prisma.memoryEntry.count({ where: { userId: user.id, kind: "SUPPRESSION" } }), 1);
+    const againBody = (await again.json()) as { inverse: unknown[] };
+    assert.deepEqual(againBody.inverse, [], "nothing of its own for an Undo to remove");
+    afterQueue.length = 0;
+  });
+
+  test("an export imported into another account names the chats its facts came from", async (t) => {
+    const { prismaUnguarded: prisma } = await import("@/lib/prisma");
+    const memory = await import("@/lib/memory");
+    const exportRoute = await import("@/app/api/account/export/route");
+    const importRoute = await import("@/app/api/import/route");
+    const listRoute = await import("@/app/api/memory/route");
+    const exporter = await newUser("exporter");
+    const accounts = [exporter.id];
+    t.after(async () => {
+      await prisma.user.deleteMany({ where: { id: { in: accounts } } });
+    });
+    const chat = await prisma.conversation.create({ data: { userId: exporter.id, title: "Moving to Porto" } });
+    await prisma.message.create({ data: { conversationId: chat.id, role: "USER", content: "I live in Porto now." } });
+    await memory.saveCandidates(exporter.id, ["The user lives in Porto."], chat.id, { policy: { mode: "any_allowed_provider" } as never });
+    const payload = await (await exportRoute.GET(new Request("http://x/api/account/export"))).json();
+
+    const importer = await newUser("importer");
+    accounts.push(importer.id);
+    const form = new FormData();
+    form.set("file", new File([JSON.stringify(payload)], "export.json", { type: "application/json" }));
+    const imported = await importRoute.POST(new Request("http://x/api/import", { method: "POST", body: form }));
+    assert.equal(imported.status, 200, await imported.clone().text());
+    const copy = await prisma.conversation.findFirstOrThrow({ where: { userId: importer.id } });
+    const fact = await prisma.memoryEntry.findFirstOrThrow({ where: { userId: importer.id, content: { contains: "Porto" } } });
+    assert.equal(fact.sourceRef, copy.id, "the ref names the restored chat, not the exporting account's");
+    const listed = (await (await listRoute.GET(new Request("http://x/api/memory"))).json()) as {
+      memories: { content: string; provenance: { source: { label: string; href: string | null; conversationUnavailable: boolean } } }[];
+    };
+    const porto = listed.memories.find((m) => m.content.includes("Porto"))!;
+    assert.equal(porto.provenance.source.conversationUnavailable, false);
+    assert.equal(porto.provenance.source.label, "From “Moving to Porto”");
+    assert.ok(porto.provenance.source.href?.startsWith(`/chat/${copy.id}`));
     afterQueue.length = 0;
   });
 }

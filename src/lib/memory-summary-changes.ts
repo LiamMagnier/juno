@@ -85,8 +85,8 @@ export function summaryInvalidations<P>(
  * consolidation rebuilds without the deleted chat.
  *
  * Facts learned in the chat are NOT deleted: they are the person's memory,
- * listed and deletable on their own, and their provenance now says "from a
- * chat you've since deleted" (memory-provenance.ts). Only chats that were ever
+ * listed and deletable on their own, and their provenance says they came
+ * from "a chat that's no longer available" (memory-provenance.ts). Only chats that were ever
  * digested invalidate anything, so deleting an unread chat costs no rebuild.
  *
  * Must run before the delete, in the same transaction: afterwards the digest

@@ -1,4 +1,9 @@
-import { findSuppression, proseCoveredBySuppression } from "@/lib/memory-suppression";
+import {
+  compileBlockList,
+  findSuppression,
+  proseCoveredBySuppression,
+  type CompiledBlockList,
+} from "@/lib/memory-suppression";
 import { scrubCoveredSentences } from "@/lib/memory-topics";
 import {
   normalizeSensitiveTopics,
@@ -1361,6 +1366,12 @@ export interface DeletionEffect {
  * cleared and a reason that says what happened without saying what was
  * deleted. Rows that were replaced by a deleted fact stay replaced: deleting
  * "lives in Madrid" is not a claim that the person still lives in Lisbon.
+ *
+ * A QUOTE is what the lifecycle writes — the deleted text inside “…”, whole
+ * or cut at 79 characters with an ellipsis (the merge reason above) — not any
+ * occurrence of its words. A bare substring match rewrote the reason of every
+ * row that happened to contain a short deleted fact: deleting a fact reading
+ * "Juno" rewrote "You asked Juno to forget this…" on an unrelated row.
  */
 export function planDeletionEffects(
   deleted: readonly { id: string; content: string }[],
@@ -1370,8 +1381,8 @@ export function planDeletionEffects(
   // A merge quotes at most 79 characters then an ellipsis; match either form.
   const quotes = deleted
     .map((row) => row.content.trim())
-    .filter((content) => content.length >= 3)
-    .flatMap((content) => (content.length > 80 ? [content, content.slice(0, 79)] : [content]));
+    .filter((content) => content.length > 0)
+    .flatMap((content) => (content.length > 80 ? [`“${content}”`, `“${content.slice(0, 79)}…”`] : [`“${content}”`]));
   const effects: DeletionEffect[] = [];
   for (const entry of entries) {
     if (ids.has(entry.id)) continue;
@@ -1492,6 +1503,37 @@ const SEMANTIC_STANDOUT_LIMIT = 6;
 const AMBIENT_CATEGORIES: ReadonlySet<string> = new Set(["identity", "preferences"]);
 /** The ambient allowance: a handful of facts, never a profile dump. */
 const AMBIENT_LIMIT = 3;
+
+/**
+ * WHAT A REQUEST MAKES RELEVANT WITHOUT SAYING SO.
+ *
+ * "Suggest a dinner recipe for tonight" shares no word with "The user has a
+ * severe peanut allergy", and an embedder is not always there to connect them
+ * (no provider configured, the call failed, rows written before vectors).
+ * Without a rule, the lexical gate hands the model the person's name and
+ * answer style and leaves out the one fact that could make the answer
+ * dangerous. A food request makes dietary facts — allergies, intolerances,
+ * diabetes, religious dietary law, what someone does not eat — evidence-level
+ * relevant, inferred or typed, sensitive or not.
+ *
+ * Narrow on purpose: one pair of word lists, both lexical like the rest of the
+ * gate, so it can be read in full and tested exhaustively. It does not widen
+ * anything the other gates close: a fact on a switched-off topic or the
+ * block-list never reaches this point.
+ */
+const DIETARY_FACT =
+  /\b(?:allerg\w*|anaphyla\w*|intoleran\w*|coeliac|celiac|gluten|lactose|dairy[- ]free|nut[- ]free|diabet\w*|insulin|halal|kosher|vegetarian|vegan|pescatarian|(?:does not|doesn['’]t|cannot|can['’]?t|never|won['’]t|will not) eat)\b/i;
+// Words that mean food in ordinary speech and rarely anything else: not
+// "menu" (a dropdown), "dish" (a satellite), "bake" (an image) or "takeaway"
+// (a key point), each of which would hand a coding question someone's
+// diagnosis.
+const FOOD_REQUEST =
+  /\b(?:recipes?|meals?|meal[- ]?prep|dinners?|lunch(?:es)?|breakfasts?|brunch|suppers?|snacks?|desserts?|cook(?:s|ed|ing)?|eat|eats|eating|food|foods|foodie|restaurants?|cuisine|groceries|grocery|diet|nutrition|takeout|picnic|potluck|catering|barbecue|bbq)\b/i;
+
+/** Whether a request makes this fact relevant though it names nothing in it (see DIETARY_FACT). */
+export function requestImpliesFact(query: string, content: string): boolean {
+  return FOOD_REQUEST.test(query) && DIETARY_FACT.test(content);
+}
 
 /**
  * "NOT RELEVANT", AS A RANKING SIGNAL.
@@ -1638,7 +1680,7 @@ export function selectMemoriesForContext(
      * in the instant before a topic was excluded, or by a path that has not
      * learned the rule yet, still never reaches a model.
      */
-    suppressions?: readonly string[];
+    suppressions?: readonly string[] | CompiledBlockList;
     /**
      * Sensitive topics the account has opted into NOW. When given, an
      * inferred (AUTO) fact on any other sensitive topic is not used: turning
@@ -1649,9 +1691,11 @@ export function selectMemoriesForContext(
      */
     allowedSensitiveTopics?: readonly string[];
     /**
-     * EVALUATION ONLY: let sensitive facts ride along ambiently, as they did
-     * before 2026-10-25, so memory-eval.ts can record what the rule changed.
-     * Nothing in the product passes it.
+     * EVALUATION ONLY: the ambient rules as they were before 2026-10-25 —
+     * sensitive facts ride along ambiently whatever their source, and a
+     * request implies no fact it does not name (requestImpliesFact) — so
+     * memory-eval.ts can record what the rules changed. Nothing in the
+     * product passes it.
      */
     legacySensitiveAmbient?: boolean;
   } = {}
@@ -1663,7 +1707,9 @@ export function selectMemoriesForContext(
   const queryTokens = new Set(opts.query ? significantTokens(opts.query) : []);
 
   const excluded = { inactive: 0, expired: 0, outOfScope: 0, irrelevant: 0, blocked: 0, sensitive: 0 };
-  const suppressions = opts.suppressions ?? [];
+  // Parsed once for the whole pass: checked per fact, re-deriving every entry
+  // per fact was most of a crowded account's selection time.
+  const blockList = compileBlockList(opts.suppressions ?? []);
   const allowedSensitive = opts.allowedSensitiveTopics ? new Set(normalizeSensitiveTopics(opts.allowedSensitiveTopics)) : null;
   // Recomputed from the text, like everywhere else (memory-sensitive.ts) —
   // lazily: the topic patterns are long, and only the switch gate (inferred
@@ -1697,7 +1743,7 @@ export function selectMemoriesForContext(
       excluded.outOfScope++;
       continue;
     }
-    if (suppressions.length > 0 && findSuppression(entry.content, suppressions) !== null) {
+    if (blockList.size > 0 && findSuppression(entry.content, blockList) !== null) {
       excluded.blocked++;
       continue;
     }
@@ -1745,7 +1791,14 @@ export function selectMemoriesForContext(
   // fill-the-budget behaviour; so does a caller that opts out.
   const gated = opts.relevanceGate !== false && !!opts.query?.trim();
   const standouts = gated && hasSemantic ? semanticStandouts(weighed) : new Set<string>();
-  const evidenced = new Set(weighed.filter((w) => w.lexical > 0 || standouts.has(w.id)).map((w) => w.id));
+  // A food request makes dietary facts relevant without naming them — the
+  // allergy for the recipe — whether or not an embedder is there to see it.
+  const implies = gated && opts.legacySensitiveAmbient !== true && FOOD_REQUEST.test(opts.query!);
+  const evidenced = new Set(
+    weighed
+      .filter((w) => w.lexical > 0 || standouts.has(w.id) || (implies && DIETARY_FACT.test(w.entry.content)))
+      .map((w) => w.id)
+  );
 
   const quieted = new Set(weighed.filter((w) => notRelevantNow(w.entry, now)).map((w) => w.id));
 
@@ -1782,12 +1835,18 @@ export function selectMemoriesForContext(
         AMBIENT_CATEGORIES.has(candidate.entry.category) &&
         // Marked "Not relevant": it has to be about the message now.
         !quieted.has(candidate.entry.id) &&
-        // INAPPROPRIATE PERSONALISATION. A sensitive fact — a diagnosis, a
-        // faith, a debt — is never handed to a model "just in case": the
-        // classifier files "The user is Muslim" under identity, and as an
-        // ambient fact it rode along with "what is 17 × 23?". It is used
-        // when the message is about it, and only then.
-        (opts.legacySensitiveAmbient === true || topicOf(candidate.entry) === null);
+        // INAPPROPRIATE PERSONALISATION. A sensitive fact Juno INFERRED — a
+        // diagnosis, a faith, a debt — is never handed to a model "just in
+        // case": the classifier files "The user is Muslim" under identity, and
+        // as an ambient fact it rode along with "what is 17 × 23?". It is
+        // used when the message is about it, and only then. A fact the person
+        // TYPED is theirs to have used, like every other typed fact: they put
+        // it there, and refusing it ambiently is what dropped a typed peanut
+        // allergy from "suggest a dinner recipe" whenever the lexical
+        // fallback was all there was.
+        (opts.legacySensitiveAmbient === true ||
+          candidate.entry.source === "MANUAL" ||
+          topicOf(candidate.entry) === null);
       if (!mayRideAlong) {
         excluded.irrelevant++;
         continue;
@@ -2089,10 +2148,10 @@ export function memoryForgetActivity(outcome: {
  */
 export function consolidationMayUse(
   fact: { content: string; source: string },
-  suppressions: readonly string[],
+  suppressions: readonly string[] | CompiledBlockList,
   allowedSensitiveTopics: readonly string[]
 ): boolean {
-  if (suppressions.length > 0 && findSuppression(fact.content, suppressions) !== null) return false;
+  if (findSuppression(fact.content, suppressions) !== null) return false;
   if (fact.source === "AUTO" && !sensitiveWriteDecision(fact.content, allowedSensitiveTopics).ok) return false;
   return true;
 }
@@ -2101,7 +2160,11 @@ export function consolidationMayUse(
  * A summary as written by the model, minus every sentence the block-list
  * covers — the deterministic half of the prompt's "never include this".
  */
-export function scrubSummaryForSuppressions(content: string, suppressions: readonly string[]): string {
-  if (suppressions.length === 0) return content;
-  return scrubCoveredSentences(content, (sentence) => proseCoveredBySuppression(sentence, suppressions)).content;
+export function scrubSummaryForSuppressions(
+  content: string,
+  suppressions: readonly string[] | CompiledBlockList
+): string {
+  const blockList = compileBlockList(suppressions);
+  if (blockList.size === 0) return content;
+  return scrubCoveredSentences(content, (sentence) => proseCoveredBySuppression(sentence, blockList)).content;
 }

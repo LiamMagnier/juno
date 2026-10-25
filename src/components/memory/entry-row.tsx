@@ -310,7 +310,7 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
   // The server's one answer to "how do you know that?" (memory-provenance.ts),
   // as the source's tooltip; the chat it came from by name, or that it is gone.
   const why = memory.provenance?.why;
-  const chatGone = memory.provenance?.source.conversationDeleted === true;
+  const chatGone = memory.provenance?.source.conversationUnavailable === true;
   parts.push(
     words ? (
       <span key="source" title={why}>{words}</span>
