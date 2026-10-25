@@ -131,7 +131,8 @@ import { maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { scheduleRunKindOf } from "@/lib/work/code-routine";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { readCloudWorkAvailability } from "@/lib/work/executor-heartbeat";
+import { plannerCloudAvailability } from "@/lib/work/executor-presence";
 
 /**
  * How often to look for triggers whose next poll is due.
@@ -159,11 +160,15 @@ const POLL_LOCK_MS = 3 * 60_000;
 
 /*
  * Whether cloud Work is accepting runs is the executor heartbeat
- * (`cloudWorkAvailable()`, src/lib/work/executor-heartbeat.ts), read per fire:
- * with no runner alive the planner holds or skips the fire with an honest
- * outcome instead of queueing a run nothing will claim. It used to be a
+ * (`readCloudWorkAvailability()`, src/lib/work/executor-heartbeat.ts), read
+ * per fire: with no runner alive the planner holds or skips the fire with an
+ * honest outcome instead of queueing a run nothing will claim. It used to be a
  * constant `true` here, as in the dispatcher. `WORK_CLOUD_AVAILABLE=0` is the
  * kill switch for a paused executor or a provider outage.
+ *
+ * A heartbeat read that failed is "unknown", and the planner then holds an
+ * event it would turn on (`wait`: the cursor does not move past it) rather
+ * than skipping it as executor_unavailable while a runner may be alive.
  */
 
 /**
@@ -1019,8 +1024,9 @@ async function offer(
     hosts: views,
     requiredCapabilities: runConfig.requiredCapabilities,
     // The executor heartbeat: with no runner alive a cloud fire is held by the
-    // planner rather than queued for nobody.
-    cloudAvailable: await cloudWorkAvailable(context.now),
+    // planner rather than queued for nobody, and with a read that failed
+    // ("unknown") the event is held rather than consumed.
+    cloudAvailable: plannerCloudAvailability(await readCloudWorkAvailability()),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
 

@@ -152,10 +152,12 @@ export function agentDispatchTarget(agent: {
  * names none; a Mac routine takes the agent's preferred Mac when that Mac is
  * switched on for Work, else the Mac it is already pinned to when that one
  * still is (`currentHostId`), else the only switched-on Mac. With several and
- * no way to choose, it is `pick_mac`, and with none (or a preferred Mac that is
- * switched off) it is `no_mac`: a Mac is never picked for the person, and the
- * routine is never left in the cloud instead. Used by `createAgentRoutine` and
- * by every change to where an agent runs, so its routines go where it goes.
+ * no way to choose, it is `pick_mac`; with none it is `no_mac`; and with a
+ * preferred Mac that is switched off while others are on it is
+ * `preferred_off`, so the refusal names the chosen Mac rather than claiming no
+ * Mac is on. A Mac is never picked for the person, and the routine is never
+ * left in the cloud instead. Used by `createAgentRoutine` and by every change
+ * to where an agent runs, so its routines go where it goes.
  */
 export function agentRoutineHost(input: {
   target: "cloud" | "local";
@@ -163,11 +165,12 @@ export function agentRoutineHost(input: {
   /** The account's Macs that are switched on for Work and not revoked. */
   enabledHostIds: readonly string[];
   currentHostId?: string | null;
-}): { ok: true; hostId: string | null } | { ok: false; reason: "no_mac" | "pick_mac" } {
+}): { ok: true; hostId: string | null } | { ok: false; reason: "no_mac" | "pick_mac" | "preferred_off" } {
   if (input.target === "cloud") return { ok: true, hostId: null };
   const enabled = new Set(input.enabledHostIds);
   if (input.preferredHostId) {
-    return enabled.has(input.preferredHostId) ? { ok: true, hostId: input.preferredHostId } : { ok: false, reason: "no_mac" };
+    if (enabled.has(input.preferredHostId)) return { ok: true, hostId: input.preferredHostId };
+    return { ok: false, reason: input.enabledHostIds.length > 0 ? "preferred_off" : "no_mac" };
   }
   if (input.currentHostId && enabled.has(input.currentHostId)) return { ok: true, hostId: input.currentHostId };
   if (input.enabledHostIds.length === 1) return { ok: true, hostId: input.enabledHostIds[0]! };

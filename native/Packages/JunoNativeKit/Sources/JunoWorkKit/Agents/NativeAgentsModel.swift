@@ -61,6 +61,15 @@ public final class NativeAgentsModel {
     /// The question each takeover is for, pinned at Take control, so Hand back
     /// answers that one and nothing else (``NativeComputerHandBack``).
     public private(set) var computerTakeoverPins: [String: NativeComputerHandBack.Pin] = [:]
+    /// The account's Macs an agent can be pointed at, for "Runs on" on a
+    /// device that is not itself one (the iPhone): read through the Work
+    /// client by ``loadWorkHosts()``, revoked Macs left out. Empty without a
+    /// Work client or before the first read.
+    public private(set) var workHosts: [WorkHostSummary] = []
+    /// Whether ``workHosts`` has been read since sign-in.
+    public private(set) var workHostsLoaded = false
+    /// Whether the latest read of ``workHosts`` failed.
+    public private(set) var workHostsLoadFailed = false
 
     /// Called when an agent starts needing the person between two reads of
     /// the roster — never for the first read, which is a state and not a
@@ -183,6 +192,9 @@ public final class NativeAgentsModel {
         computerTakeovers = [:]
         computerRestMinutes = [:]
         computerTakeoverPins = [:]
+        workHosts = []
+        workHostsLoaded = false
+        workHostsLoadFailed = false
         polledWaitingIDs = nil
         settledGateIDs = []
         gateReads = [:]
@@ -767,6 +779,35 @@ public final class NativeAgentsModel {
 
     public func clearMutationMessage() {
         lastMutationExplanation = nil
+    }
+
+    /// Whether this device can list the account's Macs for "Runs on".
+    public var canListWorkHosts: Bool {
+        workClient != nil
+    }
+
+    /// Reads ``workHosts``. Quiet on failure, like the gate reads: the list
+    /// keeps what it had, no error is put on the page, and the profile says
+    /// where else a Mac can be picked when it has nothing to offer.
+    public func loadWorkHosts() async {
+        guard let accountID, let workClient else { return }
+        do {
+            let hosts = try await workClient.hosts(for: accountID)
+            guard self.accountID == accountID else { return }
+            workHosts = Self.runsOnHosts(hosts)
+            workHostsLoaded = true
+            workHostsLoadFailed = false
+        } catch {
+            guard self.accountID == accountID else { return }
+            workHostsLoadFailed = true
+        }
+    }
+
+    /// The Macs an agent can be pointed at: every one not revoked, in the
+    /// server's order. A Mac switched off for Work stays listed and says so,
+    /// as on the web, because switching it back on is the person's to do.
+    public nonisolated static func runsOnHosts(_ hosts: [WorkHostSummary]) -> [WorkHostSummary] {
+        hosts.filter { $0.revokedAt == nil }
     }
 
     public func clearError() {

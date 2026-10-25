@@ -15,6 +15,7 @@ import { WORK_TARGETS } from "@/lib/work/domain";
 import {
   CLOUD_WORKER_DOWN_MESSAGE,
   RUNS_ON_HOST_LABELS,
+  macChoiceSaves,
   preferredHostGone,
   runsOnHostLabel,
   threadWorkNotice,
@@ -91,12 +92,21 @@ test("no agent dispatch path hardcodes the cloud any more", () => {
 });
 
 test("a preferred Mac that was removed is dropped to any Mac, never a Host not found refusal", () => {
-  // Agent.preferredHostId is a plain string: revoking a Mac deletes its
-  // WorkHost row and leaves the id dangling. Every agent path resolves it.
+  // Agent.preferredHostId is a plain string, and revoking a Mac keeps its
+  // WorkHost row (revokedAt set, enabled false). A revoked Mac is gone for
+  // every agent path, so the lookup asks for one that is not revoked.
   const shared = read("src/lib/agents/run-context.ts");
   const resolver = shared.slice(shared.indexOf("export async function resolveAgentDispatchTarget("));
-  assert.match(resolver, /where: \{ id: target\.preferredHostId, userId \}/);
+  assert.match(resolver, /where: \{ id: target\.preferredHostId, userId, revokedAt: null \}/);
   assert.match(resolver, /return host \? target : \{ requestedTarget: target\.requestedTarget \};/);
+  // Switched off is not revoked: the person's own switch keeps the choice.
+  assert.doesNotMatch(resolver.slice(0, 600), /enabled: true/);
+  // Choosing a Mac, and Undo restoring one, read the same rule.
+  const owned = read("src/lib/agents/store.ts");
+  const ownedHost = owned.slice(owned.indexOf("async function ownedHostId("), owned.indexOf("const HOST_NOT_FOUND ="));
+  assert.match(ownedHost, /where: \{ id: hostId, userId, revokedAt: null \}/);
+  // The revoke route soft-revokes, which is why the filter is needed at all.
+  assert.match(read("src/app/api/work/hosts/[id]/route.ts"), /revokedAt: now,[\s\S]{0,400}enabled: false,/);
   const store = read("src/lib/agents/store.ts");
   assert.doesNotMatch(store, /agentDispatchTarget\(agent\)/);
   const routine = store.slice(store.indexOf("export async function createAgentRoutine("));
@@ -107,13 +117,40 @@ test("a routine is placed where its agent runs, and a Mac is never picked for th
   assert.deepEqual(agentRoutineHost({ target: "cloud", preferredHostId: "a", enabledHostIds: ["a"] }), { ok: true, hostId: null });
   // The preferred Mac, when it takes Work.
   assert.deepEqual(agentRoutineHost({ target: "local", preferredHostId: "b", enabledHostIds: ["a", "b"] }), { ok: true, hostId: "b" });
-  // A preferred Mac switched off is refused, not swapped for another.
-  assert.deepEqual(agentRoutineHost({ target: "local", preferredHostId: "b", enabledHostIds: ["a"] }), { ok: false, reason: "no_mac" });
+  // A preferred Mac switched off is refused, not swapped for another, and the
+  // refusal says that Mac is off rather than that no Mac is on.
+  assert.deepEqual(agentRoutineHost({ target: "local", preferredHostId: "b", enabledHostIds: ["a"] }), { ok: false, reason: "preferred_off" });
+  assert.deepEqual(agentRoutineHost({ target: "local", preferredHostId: "b", enabledHostIds: [] }), { ok: false, reason: "no_mac" });
   // No preference: the Mac it is already on, else the only one.
   assert.deepEqual(agentRoutineHost({ target: "local", enabledHostIds: ["a", "b"], currentHostId: "b" }), { ok: true, hostId: "b" });
   assert.deepEqual(agentRoutineHost({ target: "local", enabledHostIds: ["a"], currentHostId: "gone" }), { ok: true, hostId: "a" });
   assert.deepEqual(agentRoutineHost({ target: "local", enabledHostIds: ["a", "b"] }), { ok: false, reason: "pick_mac" });
   assert.deepEqual(agentRoutineHost({ target: "local", enabledHostIds: [] }), { ok: false, reason: "no_mac" });
+
+  // Both refusal sites have a sentence for the switched-off preferred Mac.
+  const store = read("src/lib/agents/store.ts");
+  const plan = store.slice(store.indexOf("async function planAgentRoutineMoves("), store.indexOf("async function applyRoutineMoves("));
+  assert.match(plan, /placed\.reason === "preferred_off"\s*\? `\$\{agent\.name\} has \$\{routinesWord\}, and the Mac picked for \$\{agent\.name\} is switched off/);
+  const routine = store.slice(store.indexOf("export async function createAgentRoutine("));
+  assert.match(routine.slice(0, 3000), /placed\.reason === "preferred_off"\s*\? `\$\{agent\.name\} runs on a Mac that is switched off/);
+});
+
+test("Any of your Macs clears a stored Mac that is gone, though it shows as current", () => {
+  // The gone Mac reads as "Any of your Macs", and choosing that row saves.
+  assert.equal(macChoiceSaves({ target: "mac", storedPreferredHostId: "host_gone", choice: null }), true);
+  assert.equal(macChoiceSaves({ target: "mac", storedPreferredHostId: null, choice: null }), false, "already any Mac");
+  assert.equal(macChoiceSaves({ target: "mac", storedPreferredHostId: "host_a", choice: "host_a" }), false);
+  assert.equal(macChoiceSaves({ target: "mac", storedPreferredHostId: "host_a", choice: "host_b" }), true);
+  // Not on a Mac yet: any pick moves it there.
+  assert.equal(macChoiceSaves({ target: "cloud", storedPreferredHostId: null, choice: null }), true);
+
+  const panel = read("src/components/agents/agent-panel.tsx");
+  const section = panel.slice(panel.indexOf("function RunsOnSection("), panel.indexOf("function Section({ title, children }"));
+  assert.match(section, /if \(macChoiceSaves\(\{ target, storedPreferredHostId: preferredHostId, choice: id \}\)\) chooseMac\(id\);/);
+  assert.doesNotMatch(section, /if \(!current\) chooseMac\(id\);/);
+  // chooseMac compares against the stored id, so null is sent for a gone Mac.
+  assert.match(section, /if \(id !== preferredHostId\) void onSave\(\{ preferredHostId: id \}\);/);
+  assert.match(section, /const preferredHostId = agent\.preferredHostId \?\? null;/);
 });
 
 test("changing where an agent runs moves its routines with it, and Undo moves them back", () => {
@@ -288,4 +325,80 @@ test("the native agent decodes the new fields as optional, defaulting to cloud",
   const models = read("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeAgentModels.swift");
   const cases = models.slice(models.indexOf("public enum NativeAgentExecutionTarget"));
   assert.match(cases.slice(0, cases.indexOf("\n}")), /case cloud\n\s+case mac/);
+});
+
+const SHARED_SWIFT = "native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentsShared.swift";
+const HEADER_SWIFT = "native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentThreadHeader.swift";
+const PROFILE_SWIFT = "native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentProfile.swift";
+const AGENTS_MODEL_SWIFT = "native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeAgentsModel.swift";
+
+test("the Mac and iPhone thread header says cloud work cannot start, in the web's words", () => {
+  const shared = read(SHARED_SWIFT);
+  // One native constant, the web's sentence verbatim.
+  assert.ok(
+    shared.includes(`public static let cloudWorkerDownMessage = "${CLOUD_WORKER_DOWN_MESSAGE}"`),
+    "NativeAgentFormat.cloudWorkerDownMessage is not CLOUD_WORKER_DOWN_MESSAGE word for word"
+  );
+  // The profile's line is the same sentence.
+  assert.ok(read(PROFILE_SWIFT).includes(`Text("${CLOUD_WORKER_DOWN_MESSAGE}")`));
+  // threadWorkNotice's rules, in its order: paused, busy, target, heartbeat.
+  const notice = shared.slice(shared.indexOf("public static func workNotice(for agent: NativeAgent, state: JunoAgentState) -> String? {"));
+  assert.ok(notice.length > 0, "the native threadWorkNotice exists");
+  assert.match(
+    notice.slice(0, 500),
+    /guard !agent\.isPaused else \{ return nil \}\s*guard state != \.working, state != \.thinking, state != \.listening else \{ return nil \}\s*guard agent\.executionTarget == \.cloud else \{ return nil \}\s*return agent\.cloudWorkAvailable == false \? cloudWorkerDownMessage : nil/
+  );
+
+  const header = read(HEADER_SWIFT);
+  // Never over "needs you", like the web's `attention ? null : threadWorkNotice(...)`.
+  assert.match(header, /attention \? nil : NativeAgentFormat\.workNotice\(for: agent, state: shownState\)/);
+  // In place of the state sentence, in the attention ink...
+  assert.match(
+    header,
+    /\} else if let workNotice \{\s*Text\(verbatim: workNotice\)\s*\.junoType\(JunoType\.caption\.weight\(\.medium\)\)\s*\.foregroundStyle\(Color\.junoWarningInk\)/
+  );
+  // ...and in what VoiceOver reads and announces.
+  assert.match(header, /private var shownLine: String \{ workNotice \?\? sentence \}/);
+  assert.match(header, /\.accessibilityLabel\(Text\(verbatim: "\\\(agent\.name\)\. \\\(shownLine\)\. Open profile"\)\)/);
+  assert.match(header, /\.onChange\(of: shownLine\)/);
+});
+
+test("the iPhone can pick which Mac, so Your Mac is never a dead-end Pick which Mac", () => {
+  const panel = read("src/components/agents/agent-panel.tsx");
+  const profile = read(PROFILE_SWIFT);
+  const choice = profile.slice(profile.indexOf("enum NativeAgentMacChoice {"));
+  assert.ok(choice.length > 0, "the native Mac list rules exist");
+  // The list's words are the web's RUNS_ON_MESSAGE, word for word.
+  for (const [key, swiftName] of [
+    ["anyMac", "anyMac"],
+    ["pickMac", "pickMac"],
+    ["checking", "checking"],
+    ["noMac", "noMac"],
+  ] as const) {
+    const web = panel.match(new RegExp(`\\n  ${key}: ["\`]([^"\`]+)["\`],`))?.[1];
+    assert.ok(web, `RUNS_ON_MESSAGE.${key} on the web`);
+    const native = web.replace(/\$\{PRODUCT_NAME\}/g, "Alevr");
+    assert.ok(choice.includes(`static let ${swiftName} = "${native}"`), `${swiftName} is not RUNS_ON_MESSAGE.${key}`);
+  }
+  // Each Mac's line is RUNS_ON_HOST_LABELS.
+  for (const label of Object.values(RUNS_ON_HOST_LABELS)) {
+    assert.ok(choice.includes(`"${label}"`), label);
+  }
+  // Where the choice can be made when nothing can be listed: not a dead end.
+  assert.match(choice, /static let elsewhere = "Pick which Mac it uses in the Alevr Mac app or on the web\."/);
+
+  // Shown on a device that is not a Mac, while it runs on a Mac or once "Your
+  // Mac" is chosen there; picking sends the target and the Mac together.
+  assert.match(profile, /if thisMac == nil && \(agent\.executionTarget == \.mac \|\| choosingMac\) \{\s*macList\(agent\)\s*\}/);
+  assert.match(profile, /if thisMac == nil \{ choosingMac = target == \.mac \}/);
+  assert.match(choice, /return NativeAgentPatch\(executionTarget: \.mac, preferredHostID: hostID\)/);
+  assert.match(profile, /act\("runs-on"\) \{ await model\.update\(id: agent\.id, patch\) \}/);
+  assert.match(profile, /\.task\(id: agent\.id\) \{ await model\.loadWorkHosts\(\) \}/);
+
+  // The list is the account's Macs from the Work client, revoked ones left out.
+  const model = read(AGENTS_MODEL_SWIFT);
+  const load = model.slice(model.indexOf("public func loadWorkHosts() async {"));
+  assert.match(load.slice(0, 600), /let hosts = try await workClient\.hosts\(for: accountID\)/);
+  assert.match(load, /hosts\.filter \{ \$0\.revokedAt == nil \}/);
+  assert.match(model, /workHosts = \[\]\s*workHostsLoaded = false\s*workHostsLoadFailed = false/);
 });

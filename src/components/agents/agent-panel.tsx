@@ -35,7 +35,7 @@ import {
 } from "@/components/agents/agents-transport";
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
 import { AGENT_EXECUTION_TARGETS, type AgentExecutionTarget } from "@/lib/agents/domain";
-import { CLOUD_WORKER_DOWN_MESSAGE, preferredHostGone, runsOnHostLabel } from "@/components/agents/thread-agent-state";
+import { CLOUD_WORKER_DOWN_MESSAGE, macChoiceSaves, preferredHostGone, runsOnHostLabel } from "@/components/agents/thread-agent-state";
 import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import { Input } from "@/components/ui/input";
@@ -730,7 +730,9 @@ function RunsOnSection({
                     disabled={busy}
                     data-preferred-host={id ?? "any"}
                     onClick={() => {
-                      if (!current) chooseMac(id);
+                      // Against the stored id, not the row shown as current:
+                      // "Any of your Macs" over a gone Mac still clears it.
+                      if (macChoiceSaves({ target, storedPreferredHostId: preferredHostId, choice: id })) chooseMac(id);
                     }}
                     className={cn(
                       "-mx-2 flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",

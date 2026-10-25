@@ -4,11 +4,15 @@ import { readFileSync } from "node:fs";
 import {
   CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE,
   EXECUTOR_HEARTBEAT_TTL_MS,
+  EXECUTOR_PRESENCE_CACHE_MS,
   EXECUTOR_UNAVAILABLE_DETAIL,
   EXECUTOR_UNAVAILABLE_RESUME_DETAIL,
+  EXECUTOR_UNKNOWN_EXPLANATION,
   QUEUED_CLOUD_RUN_TTL_MS,
   cloudAvailabilityOverride,
+  createCloudAvailabilityReader,
   executorKnownAbsent,
+  plannerCloudAvailability,
   heartbeatExpiry,
   heartbeatIsFresh,
   heartbeatWrittenAt,
@@ -28,10 +32,15 @@ import { startCommandPayload } from "@/lib/work/relay";
 import { serializeClaimedCommand, serializeCommand } from "@/lib/work/serializers";
 import { AGENT_CONTEXT_COMMAND_KINDS, MAX_AGENT_RELAY_CONTEXT_CHARS, agentRelayContext } from "@/lib/agents/relay-context";
 import { admissionRefusal, refusalForSelection } from "@/app/api/work/protocol";
-import { parseTimeTrigger, planScheduleDispatch, type ScheduleDispatchInput } from "@/lib/work/schedule";
+import { EXECUTOR_UNKNOWN_RETRY_MS, parseTimeTrigger, planScheduleDispatch, type ScheduleDispatchInput } from "@/lib/work/schedule";
 import { planTriggerDispatch, type TriggerDispatchInput } from "@/lib/work/triggers";
 import { scheduleHealth, type HealthRunRow } from "@/lib/work/schedule-health";
-import { describeNotification } from "@/lib/work/notifications";
+import {
+  ENDED_RUN_NOTICE_TIMEOUT_MS,
+  describeNotification,
+  handOffEndedRunNotices,
+  notifyEndedRuns,
+} from "@/lib/work/notifications";
 import { statusSentence } from "@/components/work/work-vocabulary";
 import { buildWorkVoiceBriefing, workVoiceCatchUp, type WorkVoiceBriefingInput } from "@/components/work/voice/work-voice-briefing";
 
@@ -102,8 +111,19 @@ test("every path that admits cloud work now reads the heartbeat; no constant is 
   ]) {
     assert.doesNotMatch(read(path), /CLOUD_WORK_AVAILABLE = true/, path);
   }
-  assert.match(read("scripts/work-scheduler.ts"), /cloudAvailable: isCode \|\| \(await cloudWorkAvailable\(now\)\)/);
-  assert.match(read("scripts/work-trigger-poller.ts"), /cloudAvailable: await cloudWorkAvailable\(context\.now\)/);
+  // The unattended dispatchers read the three-way answer, so a failed read is
+  // "unknown" (fire left owed) rather than "absent" (fire skipped).
+  assert.match(
+    read("scripts/work-scheduler.ts"),
+    /cloudAvailable: isCode \|\| plannerCloudAvailability\(await readCloudWorkAvailability\(\)\)/
+  );
+  assert.match(
+    read("scripts/work-trigger-poller.ts"),
+    /cloudAvailable: plannerCloudAvailability\(await readCloudWorkAvailability\(\)\)/
+  );
+  for (const path of ["scripts/work-scheduler.ts", "scripts/work-trigger-poller.ts"]) {
+    assert.doesNotMatch(read(path), /cloudWorkAvailable\(/, `${path} must not fold a failed read into "absent"`);
+  }
   // Saving a schedule does not: that is about its next fire, which the
   // scheduler and the trigger poller decide when it comes (see below).
   assert.match(read("src/app/api/work/protocol.ts"), /hosts: ordered\.map\(\(host\) => hostCapabilityView\(host, "idle"\)\),\s*cloudAvailable: true,/);
@@ -122,8 +142,156 @@ test("the heartbeat lives in the existing RateLimit key/expiry table and fails c
   assert.match(heartbeat, /^import "server-only";/);
   assert.match(heartbeat, /prismaUnguarded\.rateLimit\.upsert\(/);
   assert.match(heartbeat, /prismaUnguarded\.rateLimit\.findUnique\(/);
-  // A read that throws answers "not available".
-  assert.match(heartbeat, /catch \{\s*available = false;\s*\}/);
+  // A person's dispatch fails closed: "unknown" (a read that threw) is not available.
+  assert.match(heartbeat, /return \(await readCloudAvailability\(\)\) === "available";/);
+  // One reader, timed on the wall clock rather than any caller's `now`.
+  assert.match(heartbeat, /const readCloudAvailability = createCloudAvailabilityReader\(\{/);
+  assert.match(heartbeat, /clock: \(\) => Date\.now\(\),/);
+  assert.doesNotMatch(heartbeat, /let cached/);
+});
+
+// ---------------------------------------------------------------------------
+// A failed heartbeat read is "unknown", never a cached "absent"
+// ---------------------------------------------------------------------------
+
+/** A reader over a fake clock and a scripted heartbeat row. */
+function fakeReader(script: { reads: Array<Date | null | Error>; localBeatMs?: number; override?: boolean | null }) {
+  let nowMs = Date.parse("2026-10-25T12:00:00Z");
+  let readCount = 0;
+  const reader = createCloudAvailabilityReader({
+    readHeartbeatExpiry: async () => {
+      const next = script.reads[Math.min(readCount, script.reads.length - 1)];
+      readCount += 1;
+      if (next instanceof Error) throw next;
+      return next ?? null;
+    },
+    clock: () => nowMs,
+    localBeatMs: () => script.localBeatMs ?? 0,
+    override: () => script.override ?? null,
+  });
+  return {
+    reader,
+    advance: (ms: number) => {
+      nowMs += ms;
+    },
+    at: () => nowMs,
+    reads: () => readCount,
+  };
+}
+
+test("a heartbeat read that fails is unknown and is never cached", async () => {
+  const fresh = new Date(Date.parse("2026-10-25T12:00:00Z") + EXECUTOR_HEARTBEAT_TTL_MS);
+  const fake = fakeReader({ reads: [new Error("pool timeout"), fresh] });
+  assert.equal(await fake.reader(), "unknown");
+  // The very next call reads again, inside the cache window, and sees the runner.
+  assert.equal(await fake.reader(), "available");
+  assert.equal(fake.reads(), 2, "the failure was not cached");
+  // A good answer is cached for the window...
+  assert.equal(await fake.reader(), "available");
+  assert.equal(fake.reads(), 2);
+});
+
+test("the availability cache lapses on the wall clock, whatever now a caller holds", async () => {
+  const startMs = Date.parse("2026-10-25T12:00:00Z");
+  const fake = fakeReader({ reads: [null, new Date(startMs + 60 * 60_000)] });
+  assert.equal(await fake.reader(), "absent", "no row: no executor");
+  fake.advance(EXECUTOR_PRESENCE_CACHE_MS - 1);
+  assert.equal(await fake.reader(), "absent", "cached inside the window");
+  assert.equal(fake.reads(), 1);
+  fake.advance(1);
+  assert.equal(await fake.reader(), "available", "re-read once the window lapses");
+  assert.equal(fake.reads(), 2);
+  // The reader takes no `now` at all: a tick-wide moment cannot pin it.
+  assert.equal(createCloudAvailabilityReader.length, 1);
+});
+
+test("the override and a live local executor answer without reading", async () => {
+  const forced = fakeReader({ reads: [new Error("never read")], override: false });
+  assert.equal(await forced.reader(), "absent");
+  const open = fakeReader({ reads: [new Error("never read")], override: true });
+  assert.equal(await open.reader(), "available");
+  const local = fakeReader({ reads: [new Error("never read")], localBeatMs: Date.parse("2026-10-25T11:59:30Z") });
+  assert.equal(await local.reader(), "available");
+  assert.equal(forced.reads() + open.reads() + local.reads(), 0);
+});
+
+test("only a person's dispatch folds unknown into absent; the planners keep it", () => {
+  assert.equal(plannerCloudAvailability("available"), true);
+  assert.equal(plannerCloudAvailability("absent"), false);
+  assert.equal(plannerCloudAvailability("unknown"), "unknown");
+});
+
+test("the scheduler leaves a cloud fire owed when the heartbeat could not be read", () => {
+  const owed = planScheduleDispatch(scheduleInput({ cloudAvailable: "unknown" }));
+  assert.equal(owed.outcome, "delayed", "a skip-on-offline cloud routine is not skipped on a failed read");
+  if (owed.outcome !== "delayed") throw new Error("unreachable");
+  assert.equal(owed.cause, "executor_unknown");
+  assert.equal(owed.retryAt.getTime() - scheduleInput().now.getTime(), EXECUTOR_UNKNOWN_RETRY_MS);
+  assert.equal(owed.explanation, EXECUTOR_UNKNOWN_EXPLANATION);
+  // Under every offline policy and missed-run policy alike: never a skip.
+  for (const hostOfflinePolicy of ["skip", "wait", "cloud_subset"] as const) {
+    for (const missedRunPolicy of ["skip", "run_once", "run_all"] as const) {
+      const decision = planScheduleDispatch(
+        scheduleInput({
+          cloudAvailable: "unknown",
+          now: new Date("2026-08-07T09:00:05Z"),
+          schedule: { ...scheduleInput().schedule, hostOfflinePolicy, missedRunPolicy },
+        })
+      );
+      assert.equal(decision.outcome, "delayed", `${hostOfflinePolicy}/${missedRunPolicy}`);
+    }
+  }
+});
+
+test("a fire the cloud plays no part in is planned as usual on a failed read", () => {
+  const onlineMac: HostCapabilityView = { ...offlineMac(), state: "online" };
+  const mac = scheduleInput({
+    cloudAvailable: "unknown",
+    schedule: { ...scheduleInput().schedule, target: "local", hostId: "host-1" },
+    hosts: [onlineMac],
+    requiredCapabilities: ["local_files"],
+  });
+  assert.deepEqual(planScheduleDispatch(mac), planScheduleDispatch({ ...mac, cloudAvailable: true }));
+  assert.equal(planScheduleDispatch(mac).outcome, "dispatch");
+  // A spent budget and a full slot are decided before the cloud is asked.
+  assert.equal(planScheduleDispatch(scheduleInput({ cloudAvailable: "unknown", remainingBudgetMicroUsd: 0 })).outcome, "budget_blocked");
+  const capped = planScheduleDispatch(scheduleInput({ cloudAvailable: "unknown", inFlightForSchedule: 1 }));
+  assert.equal(capped.outcome === "delayed" ? capped.cause : capped.outcome, "schedule_concurrency");
+});
+
+test("the scheduler's delayed outcome keeps nextRunAt, so a held fire is still owed", () => {
+  const scheduler = read("scripts/work-scheduler.ts");
+  const delayed = scheduler.slice(scheduler.indexOf('case "delayed": {'), scheduler.indexOf('case "skipped": {'));
+  assert.match(delayed, /data: \{ lockedUntil: decision\.retryAt \},/);
+  assert.doesNotMatch(delayed, /nextRunAt:/);
+});
+
+test("the trigger poller holds an event, unconsumed, when the heartbeat could not be read", () => {
+  const held = planTriggerDispatch(triggerInput({ cloudAvailable: "unknown" }));
+  assert.equal(held.outcome, "wait");
+  if (held.outcome !== "wait") throw new Error("unreachable");
+  assert.equal(held.cause, "executor_unknown");
+  for (const hostOfflinePolicy of ["skip", "wait", "cloud_subset"] as const) {
+    const decision = planTriggerDispatch(
+      triggerInput({ cloudAvailable: "unknown", schedule: { enabled: true, target: "cloud", hostOfflinePolicy, maxConcurrentRuns: 1 } })
+    );
+    assert.equal(decision.outcome, "wait", hostOfflinePolicy);
+  }
+  // A Mac routine with its Mac online does not wait on the cloud's heartbeat.
+  const onlineMac: HostCapabilityView = { ...offlineMac(), state: "online" };
+  const mac = planTriggerDispatch(
+    triggerInput({
+      cloudAvailable: "unknown",
+      schedule: { enabled: true, target: "local", hostOfflinePolicy: "skip", maxConcurrentRuns: 1 },
+      hosts: [onlineMac],
+      requiredCapabilities: ["local_files"],
+    })
+  );
+  assert.equal(mac.outcome, "dispatch");
+  // `wait` is "held", and a held event stops the walk before the cursor moves past it.
+  const poller = read("scripts/work-trigger-poller.ts");
+  assert.match(poller, /if \(decision\.outcome === "wait"\) \{[\s\S]*?return "held";/);
+  assert.match(poller, /if \(settlement === "held"\) break;/);
 });
 
 // ---------------------------------------------------------------------------
@@ -206,6 +374,157 @@ test("the WORK_CLOUD_AVAILABLE override and the admission cache play no part in 
   assert.doesNotMatch(reader, /cloudAvailabilityOverride\(/);
   assert.doesNotMatch(reader, /cached/);
   assert.match(reader, /catch \{\s*return \{ kind: "unknown" \};\s*\}/);
+});
+
+test("a run the sweep ends is told to its owner, once, after every run is ended", () => {
+  const store = read("src/lib/work/store.ts");
+  const sweep = store.slice(
+    store.indexOf("export async function expireUnclaimedCloudRuns("),
+    store.indexOf("export async function reclaimStalledRuns(")
+  );
+  // Only runs this call ended, through the fenced finishRun.
+  assert.match(sweep, /if \(ended\?\.finished\) \{\s*expired\.push\(run\.id\);\s*toNotify\.push\(\{ runId: run\.id, userId: run\.userId \}\);\s*\}/);
+  // After the loop that ends them, handed off to the never-throwing sequencer
+  // rather than awaited, with the same deliverer the runner calls at a run's
+  // terminal path.
+  const notify = sweep.indexOf("  handOffEndedRunNotices(toNotify, async (run) => {");
+  assert.ok(notify > 0, "the sweep notifies, without awaiting it");
+  assert.ok(notify > sweep.lastIndexOf("finishRun("), "after every finishRun");
+  assert.ok(notify < sweep.indexOf("return expired;"));
+  assert.match(sweep, /const \{ deliverRunNotification \} = await import\("@\/lib\/work\/notify\/deliver"\);\s*await deliverRunNotification\(run\);/);
+  // Nothing in the sweep waits on a delivery: not the sequencer, not the hand-off.
+  assert.doesNotMatch(sweep, /await notifyEndedRuns\(/);
+  assert.doesNotMatch(sweep, /await handOffEndedRunNotices\(/);
+  assert.doesNotMatch(sweep, /(?:return|=)\s*handOffEndedRunNotices\(/);
+  assert.match(read("scripts/work-runner.ts"), /await deliverRunNotification\(\{ runId, userId \}\)/);
+  // What it says for this ending: "did not start", not "may have changed".
+  const told = describeNotification({ title: "Weekly digest", status: "interrupted", terminalReason: "executor_unavailable" });
+  assert.equal(told.subject, "Weekly digest did not start");
+});
+
+test("notifying ended runs tells each run once, and one failure stops nothing", async () => {
+  const delivered: string[] = [];
+  await notifyEndedRuns(
+    [
+      { runId: "run_1", userId: "u1" },
+      { runId: "run_2", userId: "u1" },
+      { runId: "run_1", userId: "u1" },
+      { runId: "run_3", userId: "u2" },
+    ],
+    async (run) => {
+      delivered.push(run.runId);
+      if (run.runId === "run_2") throw new Error("push service down");
+    }
+  );
+  assert.deepEqual(delivered, ["run_1", "run_2", "run_3"], "run_1 once; run_3 still told after run_2 failed");
+  // Nothing to tell is nothing done, and the promise resolves rather than rejects.
+  await notifyEndedRuns([], async () => {
+    throw new Error("never called");
+  });
+  // One at a time: a delivery is finished before the next starts.
+  let inFlight = 0;
+  let most = 0;
+  await notifyEndedRuns(
+    [{ runId: "a", userId: "u" }, { runId: "b", userId: "u" }, { runId: "c", userId: "u" }],
+    async () => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+    }
+  );
+  assert.equal(most, 1);
+});
+
+test("the sweep's callers are not held up by a slow deliverer: the hand-off returns at once", async () => {
+  // A mail provider that takes 200ms a run, for five runs: a second's worth of
+  // deliveries that the scheduler's tick and a person's dispatch used to wait on.
+  const started: string[] = [];
+  const delivered: string[] = [];
+  let allTold!: () => void;
+  const done = new Promise<void>((resolve) => {
+    allTold = resolve;
+  });
+  const runs = ["r1", "r2", "r3", "r4", "r5"].map((runId) => ({ runId, userId: "u1" }));
+  const count = runs.length;
+  const before = performance.now();
+  const handedOff: unknown = handOffEndedRunNotices(runs, async (run) => {
+    started.push(run.runId);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    delivered.push(run.runId);
+    if (delivered.length === count) allTold();
+  });
+  const heldFor = performance.now() - before;
+  // Nothing to await: not a promise, so no caller can put the wait back.
+  assert.equal(handedOff, undefined);
+  assert.ok(heldFor < 50, `the caller was held up for ${heldFor.toFixed(0)}ms`);
+  assert.deepEqual(delivered, [], "the caller moved on before any delivery finished");
+  // The caller may reuse its array; the notices go to the runs it handed over.
+  runs.length = 0;
+  await done;
+  assert.deepEqual(delivered, ["r1", "r2", "r3", "r4", "r5"], "every run is still told, in order, once");
+  assert.deepEqual(started, delivered, "one at a time");
+  // Nothing to tell starts nothing.
+  handOffEndedRunNotices([], async () => {
+    throw new Error("never called");
+  });
+});
+
+test("a hung delivery is waited on for a bounded time, and the runs behind it are still told", async () => {
+  assert.ok(ENDED_RUN_NOTICE_TIMEOUT_MS > 0 && ENDED_RUN_NOTICE_TIMEOUT_MS <= 60_000);
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const delivered: string[] = [];
+    let failLate!: (error: Error) => void;
+    const before = performance.now();
+    await notifyEndedRuns(
+      [
+        { runId: "hung", userId: "u1" },
+        { runId: "late_failure", userId: "u1" },
+        { runId: "after", userId: "u1" },
+      ],
+      (run) => {
+        // A mail fetch with no timeout: never settles.
+        if (run.runId === "hung") return new Promise(() => {});
+        // One that gives up long after the sequencer stopped waiting on it.
+        if (run.runId === "late_failure") {
+          return new Promise((_resolve, reject) => {
+            failLate = reject;
+          });
+        }
+        delivered.push(run.runId);
+        return Promise.resolve();
+      },
+      { timeoutMs: 20 }
+    );
+    const tookMs = performance.now() - before;
+    assert.deepEqual(delivered, ["after"], "the run behind two stuck ones is still told");
+    assert.ok(tookMs < 1_000, `two stuck deliveries held the batch for ${tookMs.toFixed(0)}ms`);
+    // The abandoned delivery fails now: still not an unhandled rejection.
+    failLate(new Error("mail provider gave up"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+test("a deliverer that throws before it returns a promise is one run's failure, not the batch's", async () => {
+  const delivered: string[] = [];
+  await notifyEndedRuns(
+    [
+      { runId: "sync_throw", userId: "u1" },
+      { runId: "next", userId: "u1" },
+    ],
+    (run) => {
+      if (run.runId === "sync_throw") throw new Error("thrown synchronously");
+      delivered.push(run.runId);
+      return Promise.resolve();
+    }
+  );
+  assert.deepEqual(delivered, ["next"]);
 });
 
 test("the sweep reads time in queued from updatedAt, never createdAt", () => {

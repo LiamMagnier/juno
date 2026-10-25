@@ -687,11 +687,19 @@ async function ownedProjectId(userId: string, projectId: string | null | undefin
   return project ? project.id : undefined;
 }
 
-/** A Mac (WorkHost) id the account owns, null for "any Mac", or undefined when it is not theirs. */
+/**
+ * A Mac (WorkHost) id the account owns and has not revoked, null for "any
+ * Mac", or undefined when it is not theirs (or was revoked).
+ *
+ * `revokedAt: null` because revoking keeps the row: without it a revoked Mac
+ * could be chosen, or restored by Undo, and every routine placement then
+ * refused with "no Mac is switched on". A Mac only switched off for Work still
+ * counts, as `resolveAgentDispatchTarget` explains.
+ */
 async function ownedHostId(userId: string, hostId: string | null | undefined): Promise<string | null | undefined> {
   if (hostId === undefined) return undefined;
   if (hostId === null) return null;
-  const host = await prisma.workHost.findFirst({ where: { id: hostId, userId }, select: { id: true } });
+  const host = await prisma.workHost.findFirst({ where: { id: hostId, userId, revokedAt: null }, select: { id: true } });
   return host ? host.id : undefined;
 }
 
@@ -763,7 +771,9 @@ async function planAgentRoutineMoves(
           "host_required",
           placed.reason === "pick_mac"
             ? `${agent.name} has ${routinesWord}, and a routine on a Mac has to name its Mac. Pick which Mac ${agent.name} uses. Nothing was changed.`
-            : `${agent.name} has ${routinesWord}, and no Mac is switched on for ${PRODUCT_NAME} Work to run ${routines.length === 1 ? "it" : "them"}. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first. Nothing was changed.`
+            : placed.reason === "preferred_off"
+              ? `${agent.name} has ${routinesWord}, and the Mac picked for ${agent.name} is switched off for ${PRODUCT_NAME} Work. Turn on Allow ${PRODUCT_NAME} Work on that Mac, or pick another Mac. Nothing was changed.`
+              : `${agent.name} has ${routinesWord}, and no Mac is switched on for ${PRODUCT_NAME} Work to run ${routines.length === 1 ? "it" : "them"}. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first. Nothing was changed.`
         ),
       };
     }
@@ -1606,7 +1616,9 @@ export async function createAgentRoutine(
         "host_required",
         placed.reason === "no_mac"
           ? `${agent.name} runs on your Mac. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first.`
-          : `${agent.name} runs on your Mac. Pick which Mac in its settings first.`
+          : placed.reason === "preferred_off"
+            ? `${agent.name} runs on a Mac that is switched off for ${PRODUCT_NAME} Work. Turn on Allow ${PRODUCT_NAME} Work on that Mac, or pick another Mac in its settings first.`
+            : `${agent.name} runs on your Mac. Pick which Mac in its settings first.`
       );
     }
     hostId = placed.hostId;

@@ -81,6 +81,93 @@ export function cloudAvailabilityOverride(env: Record<string, string | undefined
   return null;
 }
 
+/**
+ * What a dispatcher knows about the cloud executor: one is alive, none is, or
+ * the heartbeat row could not be read.
+ *
+ * Three answers because the callers need different things from the third.
+ * `cloudWorkAvailable` folds "unknown" into "absent" for a person pressing a
+ * button, who is told honestly and can try again. The scheduler and the
+ * trigger poller act on their own, and to them "absent" means skip the fire
+ * and write it down as never started, so a failed read must never become that
+ * (see `planDespiteUnknownCloud`).
+ */
+export type CloudWorkAvailability = "available" | "absent" | "unknown";
+
+/** The planners' `cloudAvailable`: a plain answer, or "unknown" when the read failed. */
+export function plannerCloudAvailability(availability: CloudWorkAvailability): boolean | "unknown" {
+  return availability === "unknown" ? "unknown" : availability === "available";
+}
+
+export interface CloudAvailabilityReaderDeps {
+  /** The heartbeat row's `expiresAt`, or null with no row. Throws when the read fails. */
+  readHeartbeatExpiry: () => Promise<Date | null>;
+  /** Wall-clock milliseconds: `Date.now` in production, never a caller's `now`. */
+  clock: () => number;
+  /** When an executor inside this process last beat, or 0 if none ever did. */
+  localBeatMs: () => number;
+  /** `cloudAvailabilityOverride()`, read on every call. */
+  override: () => boolean | null;
+}
+
+/**
+ * The cached heartbeat read behind `cloudWorkAvailable` and
+ * `readCloudWorkAvailability` (src/lib/work/executor-heartbeat.ts).
+ *
+ * A failed read is never cached. It answers "unknown" this once, and the next
+ * call reads again. It used to be cached as "not available", and the
+ * scheduler then skipped every cloud fire it looked at for the rest of the
+ * tick while a runner was alive and beating.
+ *
+ * The cache is timed on the wall clock (`clock`), never on the `now` a caller
+ * passes. The scheduler hands one `now` to a whole tick, so a cache timed on
+ * it never lapsed inside a tick, however long the tick ran.
+ */
+export function createCloudAvailabilityReader(deps: CloudAvailabilityReaderDeps): () => Promise<CloudWorkAvailability> {
+  let cached: { availability: "available" | "absent"; readAtMs: number } | null = null;
+  return async () => {
+    const override = deps.override();
+    if (override !== null) return override ? "available" : "absent";
+    const nowMs = deps.clock();
+    const localBeatMs = deps.localBeatMs();
+    if (localBeatMs > 0 && nowMs - localBeatMs < EXECUTOR_HEARTBEAT_TTL_MS) return "available";
+    if (cached && nowMs >= cached.readAtMs && nowMs - cached.readAtMs < EXECUTOR_PRESENCE_CACHE_MS) {
+      return cached.availability;
+    }
+    let expiresAt: Date | null;
+    try {
+      expiresAt = await deps.readHeartbeatExpiry();
+    } catch {
+      return "unknown";
+    }
+    const availability = heartbeatIsFresh(expiresAt, new Date(nowMs)) ? "available" : "absent";
+    cached = { availability, readAtMs: nowMs };
+    return availability;
+  };
+}
+
+/**
+ * Plans a fire when the executor heartbeat could not be read.
+ *
+ * Plans it both ways. When the two answers agree, the cloud played no part (a
+ * routine for an online Mac, a budget that is spent, a schedule at its cap)
+ * and that answer stands. When they differ, whether a worker is alive decides
+ * the fire, and nothing can be decided on a read that failed: `owed()` leaves
+ * the fire owed (the scheduler's `delayed`, keeping `nextRunAt`; the poller's
+ * `wait`, keeping the event unconsumed) for the next pass to read again. It
+ * is never a skip, which would write down as "never started" a fire that a
+ * live runner would have taken.
+ */
+export function planDespiteUnknownCloud<T>(plan: (cloudAvailable: boolean) => T, owed: () => T): T {
+  const ifAvailable = plan(true);
+  const ifAbsent = plan(false);
+  return JSON.stringify(ifAvailable) === JSON.stringify(ifAbsent) ? ifAvailable : owed();
+}
+
+/** The sentence a fire held for an unreadable heartbeat is logged with. */
+export const EXECUTOR_UNKNOWN_EXPLANATION =
+  "Whether a cloud worker is running could not be checked, so this run is waiting until it can be.";
+
 /** Whether a heartbeat that expires at `expiresAt` still says an executor is alive. */
 export function heartbeatIsFresh(expiresAt: Date | null | undefined, now: Date): boolean {
   return expiresAt instanceof Date && expiresAt.getTime() > now.getTime();

@@ -106,7 +106,8 @@ import { LIVE_CODE_TASK_STATUSES, scheduleRunKindOf } from "@/lib/work/code-rout
 import { startCodeRoutineRun } from "@/lib/work/code-dispatch";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { Prisma, type Plan } from "@prisma/client";
-import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { readCloudWorkAvailability } from "@/lib/work/executor-heartbeat";
+import { plannerCloudAvailability } from "@/lib/work/executor-presence";
 
 /** How often to look for due schedules. Well under the shortest cadence a user
  *  can express (`hourly`), and short enough that `MISSED_RUN_GRACE_MS` is never
@@ -446,11 +447,16 @@ async function sweepMigrations(): Promise<void> {
 
 /*
  * Whether cloud Work is accepting runs is the executor heartbeat
- * (`cloudWorkAvailable()`, src/lib/work/executor-heartbeat.ts), read per fire:
- * with no runner alive the planner holds or skips the fire with an honest
- * outcome instead of queueing a run nothing will claim. It used to be a
+ * (`readCloudWorkAvailability()`, src/lib/work/executor-heartbeat.ts), read
+ * per fire: with no runner alive the planner holds or skips the fire with an
+ * honest outcome instead of queueing a run nothing will claim. It used to be a
  * constant `true` here, as in the dispatcher. `WORK_CLOUD_AVAILABLE=0` is the
  * kill switch for a paused executor or a provider outage.
+ *
+ * Three answers, not the boolean a person's dispatch gets: a heartbeat read
+ * that failed is "unknown", and the planner then leaves a fire it would turn
+ * on owed (`delayed`, `nextRunAt` untouched) instead of skipping it as
+ * executor_unavailable while a runner may be alive.
  */
 
 /**
@@ -781,8 +787,10 @@ async function dispatchOne(
     // satisfy them and turn the routine into one that never runs anywhere.
     requiredCapabilities: isCode ? [] : runConfig.requiredCapabilities,
     // A Code routine runs on the Code runner, not the Work executor, so only a
-    // Work routine also needs the Work executor's heartbeat to be fresh.
-    cloudAvailable: isCode || (await cloudWorkAvailable(now)),
+    // Work routine also needs the Work executor's heartbeat to be fresh. Read
+    // fresh per fire on the wall clock (never cached as absent after a failed
+    // read), and "unknown" when the read fails.
+    cloudAvailable: isCode || plannerCloudAvailability(await readCloudWorkAvailability()),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
 

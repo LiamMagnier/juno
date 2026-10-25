@@ -26,6 +26,9 @@ public struct NativeAgentProfileView: View {
     @State private var busy: String?
     @State private var costQuestion: NativeAgentCostQuestion?
     @State private var customizing = false
+    /// The iPhone's Mac list is open: "Your Mac" was chosen here (see
+    /// `macList`). The Mac app has `thisMac` and never opens it.
+    @State private var choosingMac = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nativeAgentThisMac) private var thisMac
 
@@ -546,11 +549,80 @@ public struct NativeAgentProfileView: View {
                         .accessibilityIdentifier("juno.agents.profile.allow-work")
                 }
             }
+            if thisMac == nil && (agent.executionTarget == .mac || choosingMac) {
+                macList(agent)
+            }
         }
+    }
+
+    /// Which Mac, on a device that is not one (the iPhone, with no
+    /// `thisMac`): the web's Mac list under "Your Mac". Shown while the agent
+    /// runs on a Mac, and from the moment "Your Mac" is chosen, so a move the
+    /// server refuses for want of a named Mac (an agent with routines, on an
+    /// account with several Macs: "Pick which Mac") is one pick away instead
+    /// of a dead end. Picking sends the target and the Mac together, as the
+    /// web's `chooseMac` does. With no list to offer, it says where the choice
+    /// can be made instead.
+    @ViewBuilder
+    private func macList(_ agent: NativeAgent) -> some View {
+        let hosts = model.workHosts
+        let chosen = NativeAgentMacChoice.chosen(
+            target: agent.executionTarget,
+            preferredHostID: agent.preferredHostID,
+            among: hosts
+        )
+        Group {
+            if !hosts.isEmpty {
+                if agent.executionTarget != .mac {
+                    Text(NativeAgentMacChoice.pickMac)
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, JunoSpace.hairline)
+                }
+                Picker(
+                    "Which Mac",
+                    selection: Binding<String?>(
+                        get: { chosen },
+                        set: { id in
+                            if let id { chooseMac(id, for: agent) }
+                        }
+                    )
+                ) {
+                    if chosen == nil {
+                        Text(NativeAgentMacChoice.anyMac).tag(String?.none)
+                    }
+                    ForEach(hosts) { host in
+                        Text(verbatim: "\(host.displayName) · \(NativeAgentMacChoice.stateWords(host))")
+                            .tag(Optional(host.hostID))
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(busy == "runs-on")
+                .padding(.top, JunoSpace.hairline)
+                .accessibilityIdentifier("juno.agents.profile.which-mac")
+            } else {
+                Text(
+                    NativeAgentMacChoice.emptyWords(
+                        canList: model.canListWorkHosts,
+                        loaded: model.workHostsLoaded,
+                        failed: model.workHostsLoadFailed
+                    )
+                )
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, JunoSpace.hairline)
+            }
+        }
+        .task(id: agent.id) { await model.loadWorkHosts() }
     }
 
     private func chooseTarget(_ target: NativeAgentExecutionTarget, for agent: NativeAgent) {
         guard target != agent.executionTarget else { return }
+        // On the iPhone the Mac list opens with the choice, so a move refused
+        // for want of a named Mac is one pick away (`macList`).
+        if thisMac == nil { choosingMac = target == .mac }
         // On this Mac, prefer this Mac; elsewhere any Mac switched on for Work.
         // A nil host sends nothing, so a Mac chosen on the web stays chosen.
         let host = target == .mac ? thisMac?.hostID : nil
@@ -567,6 +639,21 @@ public struct NativeAgentProfileView: View {
                 await thisMac.allowWork()
             }
         }
+    }
+
+    /// Points the agent at one of the account's Macs from the iPhone's list:
+    /// that Mac alone when it already runs on a Mac, the target and the Mac
+    /// together otherwise (`NativeAgentMacChoice.patch`), as the web's
+    /// `chooseMac` sends them.
+    private func chooseMac(_ hostID: String, for agent: NativeAgent) {
+        guard
+            let patch = NativeAgentMacChoice.patch(
+                hostID,
+                target: agent.executionTarget,
+                preferredHostID: agent.preferredHostID
+            )
+        else { return }
+        act("runs-on") { await model.update(id: agent.id, patch) }
     }
 
     /// Points an agent already set to run on a Mac at this one, leaving where
@@ -908,6 +995,66 @@ enum NativeAgentMacPlacement: Equatable {
     static func of(preferredHostID: String?, thisMacHostID: String?) -> NativeAgentMacPlacement {
         guard let preferredHostID else { return .anyMac }
         return preferredHostID == thisMacHostID ? .thisMac : .anotherMac
+    }
+}
+
+/// The iPhone's "Which Mac" list for an agent (the web's Mac list under "Your
+/// Mac" in `RunsOnSection`), as rules with no view in them.
+enum NativeAgentMacChoice {
+    /// `RUNS_ON_MESSAGE` (agent-panel.tsx), word for word.
+    static let anyMac = "Any of your Macs"
+    static let pickMac = "Pick the Mac it should use."
+    static let checking = "Checking your Macs…"
+    static let noMac = "No Mac is set up yet. Open the Alevr Mac app and turn on Allow Alevr Work on this Mac."
+    /// Where the choice can be made when this device cannot list the Macs:
+    /// never the dead end "Pick which Mac" with nothing to pick from.
+    static let elsewhere = "Pick which Mac it uses in the Alevr Mac app or on the web."
+
+    /// `runsOnHostLabel`: a Mac's line, in the words a refused task uses for
+    /// the same state (`RUNS_ON_HOST_LABELS`).
+    static func stateWords(_ host: WorkHostSummary) -> String {
+        if !host.enabled || host.revokedAt != nil { return "Work is switched off on this Mac" }
+        switch host.state {
+        case "online", "idle": return "Online"
+        case "stale": return "Not responding"
+        default: return "Offline"
+        }
+    }
+
+    /// The Mac shown as chosen: the preferred Mac while the agent runs on a
+    /// Mac and that Mac is listed; else none ("Any of your Macs", or nothing
+    /// picked yet).
+    static func chosen(
+        target: NativeAgentExecutionTarget,
+        preferredHostID: String?,
+        among hosts: [WorkHostSummary]
+    ) -> String? {
+        guard target == .mac, let preferredHostID, hosts.contains(where: { $0.hostID == preferredHostID }) else {
+            return nil
+        }
+        return preferredHostID
+    }
+
+    /// What picking `hostID` sends, or nil when it is already the choice: the
+    /// Mac alone for an agent already on a Mac, else the target and the Mac
+    /// together, so a move refused for want of a named Mac goes through.
+    static func patch(
+        _ hostID: String,
+        target: NativeAgentExecutionTarget,
+        preferredHostID: String?
+    ) -> NativeAgentPatch? {
+        if target == .mac {
+            return hostID == preferredHostID ? nil : NativeAgentPatch(preferredHostID: hostID)
+        }
+        return NativeAgentPatch(executionTarget: .mac, preferredHostID: hostID)
+    }
+
+    /// The line in place of the list when there are no Macs to show: still
+    /// reading, none paired, or (no Work client, or the read failed) where
+    /// else the choice can be made.
+    static func emptyWords(canList: Bool, loaded: Bool, failed: Bool) -> String {
+        guard canList, !failed else { return elsewhere }
+        return loaded ? noMac : checking
     }
 }
 

@@ -96,13 +96,22 @@ export async function claimedCommandAgentContext(input: {
 
 /**
  * The Work dispatch fields for an agent's work (`agentDispatchTarget`), with a
- * preferred Mac that no longer exists dropped.
+ * preferred Mac that is gone or revoked dropped.
  *
- * `Agent.preferredHostId` is a plain string, so revoking a Mac from the phone
- * (which deletes its WorkHost row) leaves it pointing at nothing, and every
- * task would then be refused "Host not found". A preference is an ordering
- * (dispatch puts that Mac first), so a missing one means "any of your Macs",
- * the way a project's default Mac is dropped when it no longer resolves.
+ * `Agent.preferredHostId` is a plain string. Revoking a Mac keeps its WorkHost
+ * row (`revokedAt` set, `enabled` false: DELETE /api/work/hosts/[id]), so a
+ * lookup by id alone still found a revoked Mac, kept it as the preference, and
+ * every routine placement then refused with a false "no Mac is switched on"
+ * while other Macs were. A preference is an ordering (dispatch puts that Mac
+ * first), so a revoked or missing one means "any of your Macs", the way a
+ * project's default Mac is dropped when it no longer resolves.
+ *
+ * A Mac only switched off for Work (`enabled` false, not revoked) still
+ * counts, deliberately: that is the person's own switch, one tap to undo, and
+ * forgetting the choice because of it would move the agent's routines to
+ * another Mac behind their back. Tasks treat it as an ordering (they run on
+ * another usable Mac); a routine, which must name its Mac, is refused in words
+ * that say the chosen Mac is off (`agentRoutineHost`'s `preferred_off`).
  */
 export async function resolveAgentDispatchTarget(
   userId: string,
@@ -111,7 +120,7 @@ export async function resolveAgentDispatchTarget(
   const target = agentDispatchTarget(agent);
   if (!target.preferredHostId) return target;
   const host = await prisma.workHost.findFirst({
-    where: { id: target.preferredHostId, userId },
+    where: { id: target.preferredHostId, userId, revokedAt: null },
     select: { id: true },
   });
   return host ? target : { requestedTarget: target.requestedTarget };

@@ -4,11 +4,11 @@ import {
   EXECUTOR_HEARTBEAT_KEY,
   EXECUTOR_HEARTBEAT_TTL_MS,
   EXECUTOR_HEARTBEAT_WRITE_MS,
-  EXECUTOR_PRESENCE_CACHE_MS,
   cloudAvailabilityOverride,
+  createCloudAvailabilityReader,
   heartbeatExpiry,
-  heartbeatIsFresh,
   heartbeatWrittenAt,
+  type CloudWorkAvailability,
   type ExecutorPresenceReading,
 } from "@/lib/work/executor-presence";
 
@@ -23,7 +23,6 @@ import {
 /** When this process last beat. Set only inside a running executor. */
 let lastLocalBeatMs = 0;
 let lastWrittenMs = 0;
-let cached: { available: boolean; readAtMs: number } | null = null;
 
 /**
  * Records that an executor is alive. Called by scripts/work-runner.ts every
@@ -48,29 +47,48 @@ export async function recordExecutorHeartbeat(now: Date = new Date()): Promise<v
 }
 
 /**
- * Whether cloud Work is accepting runs: an override from the environment, an
- * executor in this very process, or a heartbeat younger than the TTL.
- *
- * Fails closed on a read error: refusing with a sentence is recoverable, a run
- * queued for an executor that is not there is the bug this exists to remove.
+ * The one heartbeat reader for this process: an override from the
+ * environment, an executor in this very process, or a heartbeat younger than
+ * the TTL. Cached for EXECUTOR_PRESENCE_CACHE_MS on the wall clock; a failed
+ * read is "unknown" and is never cached (`createCloudAvailabilityReader`).
  */
-export async function cloudWorkAvailable(now: Date = new Date()): Promise<boolean> {
-  const override = cloudAvailabilityOverride();
-  if (override !== null) return override;
-  if (lastLocalBeatMs > 0 && now.getTime() - lastLocalBeatMs < EXECUTOR_HEARTBEAT_TTL_MS) return true;
-  if (cached && now.getTime() - cached.readAtMs < EXECUTOR_PRESENCE_CACHE_MS) return cached.available;
-  let available = false;
-  try {
+const readCloudAvailability = createCloudAvailabilityReader({
+  readHeartbeatExpiry: async () => {
     const row = await prismaUnguarded.rateLimit.findUnique({
       where: { key: EXECUTOR_HEARTBEAT_KEY },
       select: { expiresAt: true },
     });
-    available = heartbeatIsFresh(row?.expiresAt, now);
-  } catch {
-    available = false;
-  }
-  cached = { available, readAtMs: now.getTime() };
-  return available;
+    return row?.expiresAt ?? null;
+  },
+  clock: () => Date.now(),
+  localBeatMs: () => lastLocalBeatMs,
+  override: () => cloudAvailabilityOverride(),
+});
+
+/**
+ * Whether cloud Work is accepting runs, in three answers, for the dispatchers
+ * that act with nobody watching (scripts/work-scheduler.ts,
+ * scripts/work-trigger-poller.ts). "unknown" (the read failed) must leave a
+ * fire owed, never skip it: see `planDespiteUnknownCloud`.
+ */
+export function readCloudWorkAvailability(): Promise<CloudWorkAvailability> {
+  return readCloudAvailability();
+}
+
+/**
+ * Whether cloud Work is accepting runs, for a person's own dispatch.
+ *
+ * Fails closed on a read error: refusing with a sentence is recoverable, a run
+ * queued for an executor that is not there is the bug this exists to remove.
+ * The unattended dispatchers use `readCloudWorkAvailability` instead, because
+ * for them "not available" consumes a fire.
+ *
+ * `_callerNow` is accepted and ignored: callers pass their own `now`, which for
+ * the scheduler is one moment for a whole tick, and timing the cache on it is
+ * how a reading outlived its EXECUTOR_PRESENCE_CACHE_MS.
+ */
+export async function cloudWorkAvailable(_callerNow?: Date): Promise<boolean> {
+  return (await readCloudAvailability()) === "available";
 }
 
 /**

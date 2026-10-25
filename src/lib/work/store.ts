@@ -43,6 +43,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import { dependenciesSatisfied } from "@/lib/work/board";
 import { PARKED_RUN_TTL_MS } from "@/lib/work/schedule-health";
 import { readExecutorPresence } from "@/lib/work/executor-heartbeat";
+import { handOffEndedRunNotices, type EndedRunRef } from "@/lib/work/notifications";
 import {
   EXECUTOR_UNAVAILABLE_DETAIL,
   EXECUTOR_UNAVAILABLE_RESUME_DETAIL,
@@ -1552,6 +1553,19 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
  * Hosted by the scheduler (scripts/work-scheduler.ts) because the runner is
  * the process whose absence this is about, and called scoped to one account by
  * dispatch while cloud is closed, so a cap filled by dead runs frees itself.
+ *
+ * Each run it ends is then notified, as the runner notifies a run it ends:
+ * `deliverRunNotification` follows the run's own notify policy (a routine's
+ * setting, an agent's "tell me when it's done") and says "did not start".
+ * Only runs this call actually ended (the fenced `finishRun` said so), after
+ * all of them are ended, and handed off rather than awaited
+ * (`handOffEndedRunNotices`): the sweep returns as soon as the runs are ended,
+ * so neither the scheduler's tick (which fires every account's routines) nor
+ * a person's dispatch (which sweeps before it picks their Mac) waits on a push
+ * service or a mail provider. The notices go out one at a time behind it, each
+ * waited on for at most `ENDED_RUN_NOTICE_TIMEOUT_MS`, and never throw: a
+ * failed notice cannot leave a run queued or make the sweep run again, and
+ * the delivery record keeps a run from being told twice.
  */
 export async function expireUnclaimedCloudRuns(
   input: { now?: Date; userId?: string; limit?: number; ttlMs?: number } = {}
@@ -1591,6 +1605,7 @@ export async function expireUnclaimedCloudRuns(
     ).map((run) => run.id)
   );
   const expired: string[] = [];
+  const toNotify: EndedRunRef[] = [];
   for (const run of stale) {
     const resumed = checkpointed.has(run.id);
     const ended = await finishRun({
@@ -1601,8 +1616,18 @@ export async function expireUnclaimedCloudRuns(
       queuedBefore: cutoff,
       now,
     }).catch(() => null);
-    if (ended?.finished) expired.push(run.id);
+    if (ended?.finished) {
+      expired.push(run.id);
+      toNotify.push({ runId: run.id, userId: run.userId });
+    }
   }
+  // Not awaited: see the comment above. Imported here, as team-store.ts does,
+  // so this module's import graph does not take on the inbox, push and email
+  // transports.
+  handOffEndedRunNotices(toNotify, async (run) => {
+    const { deliverRunNotification } = await import("@/lib/work/notify/deliver");
+    await deliverRunNotification(run);
+  });
   return expired;
 }
 

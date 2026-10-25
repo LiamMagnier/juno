@@ -258,6 +258,101 @@ export function notificationKey(runId: string, subject: string): string {
   return `${runId}:${subject}`;
 }
 
+/** A run a sweep ended, as `deliverRunNotification` takes it. */
+export interface EndedRunRef {
+  runId: string;
+  userId: string;
+}
+
+/**
+ * How long one ended run's notice is waited on before the next one starts.
+ *
+ * A delivery is about ten database round trips, an APNs call (10s timeout),
+ * web push and a mail provider request with no timeout of its own, so one hung
+ * provider would otherwise hold every later run's notice behind it for minutes.
+ * A delivery that runs past this is not cancelled, only no longer waited on: it
+ * may still finish and record itself, and the delivery record keeps whatever
+ * finishes from being sent twice.
+ */
+export const ENDED_RUN_NOTICE_TIMEOUT_MS = 30_000;
+
+/**
+ * Tells the owners of runs a sweep has just ended, one run at a time.
+ *
+ * A sweep ends runs outside the executor, whose own terminal path is where a
+ * run is normally notified, so without this an expired cloud run ("did not
+ * start") was ended silently. `deliver` is `deliverRunNotification`, injected
+ * so this stays free of the database: it reads each run's own notify policy
+ * and records the delivery, so a second call for the same ending sends nothing.
+ *
+ * Each run once, even if listed twice; one at a time, so a sweep of a hundred
+ * does not open a hundred deliveries on a small pool; each waited on for at
+ * most `timeoutMs`; and it never throws: a delivery that fails or hangs is
+ * left behind and the rest still go out. A sweep does not await this: it hands
+ * it off with `handOffEndedRunNotices`, so nothing here can hold up the sweep
+ * or whoever called it.
+ */
+export async function notifyEndedRuns(
+  runs: readonly EndedRunRef[],
+  deliver: (run: EndedRunRef) => Promise<unknown>,
+  options: { timeoutMs?: number } = {}
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? ENDED_RUN_NOTICE_TIMEOUT_MS;
+  const told = new Set<string>();
+  for (const run of runs) {
+    if (told.has(run.runId)) continue;
+    told.add(run.runId);
+    await settleWithin(() => deliver(run), timeoutMs);
+  }
+}
+
+/**
+ * Waits for `task` to settle, or for `timeoutMs`, whichever comes first, and
+ * never rejects. A failure is already logged by the deliverer, which reports
+ * rather than throws; anything else is one run's notice, not the sweep's
+ * business. The task's own rejection is caught even after the wait gives up
+ * on it, so an abandoned delivery that fails later is not an unhandled one.
+ */
+function settleWithin(task: () => Promise<unknown>, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    // Not unref'd: the bound has to fire even when nothing else is pending,
+    // and it holds a process for at most `timeoutMs`.
+    const timer = setTimeout(resolve, timeoutMs);
+    Promise.resolve()
+      .then(task)
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+  });
+}
+
+/**
+ * Starts telling the owners of ended runs and returns at once, without waiting
+ * for a single delivery.
+ *
+ * The sweep that ends them runs inside work that must not wait on a push
+ * service or a mail provider: the scheduler's tick, which also fires every
+ * account's routines, and a person's own dispatch, which sweeps their dead
+ * cloud runs before it picks the Mac their task goes to. Both hosts are
+ * long-lived processes (the scheduler under PM2, the Next server on the VM),
+ * so the notices still go out after the caller has moved on, as the runner's
+ * and the team coordinator's `void deliverRunNotification(...)` do.
+ *
+ * The list is copied, so a caller that reuses its array changes nothing here.
+ */
+export function handOffEndedRunNotices(
+  runs: readonly EndedRunRef[],
+  deliver: (run: EndedRunRef) => Promise<unknown>,
+  options: { timeoutMs?: number } = {}
+): void {
+  if (runs.length === 0) return;
+  // notifyEndedRuns never rejects; the catch is so that stays true by
+  // construction rather than by reading it.
+  void notifyEndedRuns([...runs], deliver, options).catch(() => undefined);
+}
+
 export interface WorkNotifyMessage {
   subject: string;
   /** One sentence, written for a lock screen. */

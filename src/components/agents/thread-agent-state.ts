@@ -1,4 +1,4 @@
-import { aggregateAgentState, type AgentState } from "@/lib/agents/domain";
+import { aggregateAgentState, type AgentExecutionTarget, type AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import type { VoicePhase } from "@/lib/voice-phase";
 import type { ClientWorkSession } from "@/lib/work/serializers";
@@ -104,4 +104,24 @@ export function runsOnHostLabel(host: { enabled: boolean; revokedAt: string | nu
  */
 export function preferredHostGone(preferredHostId: string | null | undefined, hosts: readonly { id: string }[]): boolean {
   return Boolean(preferredHostId) && !hosts.some((host) => host.id === preferredHostId);
+}
+
+/**
+ * Whether choosing a row in an agent's "Which Mac" list has anything to save.
+ *
+ * Not the same as "is it the row shown as chosen". A preferred Mac that is
+ * gone (revoked, so no longer listed) is shown as "Any of your Macs", because
+ * that is what dispatch does with it, but its id is still stored. Choosing
+ * "Any of your Macs" must then send `preferredHostId: null` to clear it; the
+ * row used to count as current and the click did nothing.
+ */
+export function macChoiceSaves(input: {
+  target: AgentExecutionTarget;
+  /** `Agent.preferredHostId` as stored, gone or not. */
+  storedPreferredHostId: string | null;
+  /** The row chosen: a Mac's id, or null for "Any of your Macs". */
+  choice: string | null;
+}): boolean {
+  if (input.target !== "mac") return true;
+  return input.choice !== input.storedPreferredHostId;
 }

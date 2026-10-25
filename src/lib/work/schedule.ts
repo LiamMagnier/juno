@@ -49,6 +49,7 @@ import {
   type WorkUnattendedPolicy,
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES } from "@/lib/work/notifications";
+import { EXECUTOR_UNKNOWN_EXPLANATION, planDespiteUnknownCloud } from "@/lib/work/executor-presence";
 import { WORK_SCHEDULE_RUN_KINDS, codeRoutineInputSchema } from "@/lib/work/code-routine";
 import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -914,6 +915,8 @@ export const SCHEDULE_LOCK_MS = 60 * 1000;
 export const CONCURRENCY_RETRY_MS = 60 * 1000;
 /** How long to wait before re-examining a local schedule whose Mac is away. */
 export const HOST_WAIT_RETRY_MS = 5 * 60 * 1000;
+/** How long to wait before re-reading a cloud executor heartbeat that could not be read. */
+export const EXECUTOR_UNKNOWN_RETRY_MS = 60 * 1000;
 
 /**
  * How many Work runs one account may have in flight from schedules at once.
@@ -948,7 +951,11 @@ export interface ScheduleDispatchInput {
   /** The account's Work hosts, preferred first. */
   hosts: readonly HostCapabilityView[];
   requiredCapabilities: readonly WorkCapability[];
-  cloudAvailable: boolean;
+  /**
+   * Whether a cloud executor is alive, or "unknown" when its heartbeat could
+   * not be read. Unknown never skips a fire: see `planDespiteUnknownCloud`.
+   */
+  cloudAvailable: boolean | "unknown";
   /**
    * Micro-USD the account may still spend right now, or null when it is not
    * metered.
@@ -979,7 +986,11 @@ export interface ScheduleDispatchInput {
  * first time someone improves the wording; a dispatcher that decided what to
  * record by looking for the word "Mac" in it would break silently that day.
  */
-export type ScheduleDelayCause = "schedule_concurrency" | "account_concurrency" | "host_offline";
+/**
+ * `executor_unknown`: the cloud executor's heartbeat could not be read, and
+ * whether one is alive decides this fire. Held, not skipped, until a read works.
+ */
+export type ScheduleDelayCause = "schedule_concurrency" | "account_concurrency" | "host_offline" | "executor_unknown";
 /**
  * `executor_unavailable` is the cloud's twin of `host_offline`: the routine
  * runs in the cloud and no cloud worker was running. Kept apart so the run is
@@ -1028,6 +1039,23 @@ export type ScheduleDispatchDecision =
  */
 export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDispatchDecision {
   const { schedule, now } = input;
+  const cloudAvailable = input.cloudAvailable;
+
+  if (cloudAvailable === "unknown") {
+    // A failed heartbeat read is evidence of nothing. Where the answer turns
+    // on it, the fire stays owed (`nextRunAt` untouched, the lease as the
+    // backoff) rather than being skipped as executor_unavailable while a
+    // runner may be alive: the scheduler's "a failure leaves the fire owed".
+    return planDespiteUnknownCloud<ScheduleDispatchDecision>(
+      (known) => planScheduleDispatch({ ...input, cloudAvailable: known }),
+      () => ({
+        outcome: "delayed",
+        cause: "executor_unknown",
+        retryAt: new Date(now.getTime() + EXECUTOR_UNKNOWN_RETRY_MS),
+        explanation: EXECUTOR_UNKNOWN_EXPLANATION,
+      })
+    );
+  }
 
   if (!schedule.enabled) {
     return { outcome: "not_due", explanation: "The schedule is paused." };
@@ -1118,7 +1146,7 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
     requested: schedule.target,
     required,
     hosts: input.hosts,
-    cloudAvailable: input.cloudAvailable,
+    cloudAvailable,
   });
 
   if (selection.target === null) {
@@ -1150,7 +1178,7 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
           requested: "automatic",
           required,
           hosts: input.hosts,
-          cloudAvailable: input.cloudAvailable,
+          cloudAvailable,
         });
         if (fallback.target === null) {
           return {
