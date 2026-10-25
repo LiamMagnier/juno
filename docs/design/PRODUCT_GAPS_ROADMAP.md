@@ -63,6 +63,16 @@ consent-first design:
 - Alternative lighter path (ship first): "Show me once" as a single
   annotated walkthrough (user narrates + clicks) without continuous recording.
 
+**Status (2026-10-25): the lighter path is built** (branch
+`claude/w9-teach-juno`). The person walks Juno through a task in a chat (the
+`draft_skill` tool, offered only after they ask to teach something) or types
+the steps on `/skills/teach`; the review edits steps, permissions and scope and
+saves a `user_authored` skill switched off unless the person confirms the exact
+permission fingerprint the server recomputes. Re-teaching mints versions;
+revoking switches off and is audited. Code: `src/lib/skills/teach*.ts`,
+`src/lib/chat/skill-draft-tool.ts`, `src/components/skills/teach/`. Screen
+capture remains out of scope.
+
 ## 3. Password manager / secret card
 
 Muse: vault the agent uses without seeing (Sentinel).
