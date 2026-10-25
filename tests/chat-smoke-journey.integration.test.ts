@@ -23,6 +23,9 @@ import { parseTestEnv } from "../scripts/qa/lib/safe-env.mjs";
  *   - Stop: the cancel endpoint stops the slow stream mid-answer, the turn
  *     ends user_stopped and the partial answer is the stored one;
  *   - Auto with no eligible model still answers under the smoke provider;
+ *   - MCP add: a token server is saved through POST /api/mcp/servers with its
+ *     secret encrypted and never echoed, and an unreachable sign-in server is
+ *     refused by the probe in words;
  *   - without the runner's flag the gate stays shut in production: no smoke
  *     answer, the honest "no eligible model" refusal.
  *
@@ -259,6 +262,49 @@ if (!DB_URL) {
       env.DASHSCOPE_API_KEY = key;
       env.ALEVR_QA_RUNNER = "1";
     }
+  });
+
+  test("MCP add: a token server to an unreachable host is saved honestly and never echoes its secret", async () => {
+    const user = await seedUser();
+    const secret = "Bearer journey-fixture-not-a-real-token";
+    const url = "https://journey-tools.invalid/mcp";
+    const result = await asProduction(async () => {
+      const route = await import("@/app/api/mcp/servers/route");
+      const res = await route.POST(
+        new Request("http://127.0.0.1/api/mcp/servers", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: "Journey tools", url, authHeader: secret }),
+        })
+      );
+      return { status: res.status, text: await res.text() };
+    });
+    assert.equal(result.status, 201, result.text);
+    assert.doesNotMatch(result.text, /journey-fixture-not-a-real-token/, "the secret is never sent back");
+    const { server } = JSON.parse(result.text) as { server: Record<string, unknown> };
+    assert.equal(server.name, "Journey tools");
+    assert.equal(server.hasAuthHeader, true);
+    assert.equal(server.status, "error", "an unreachable server is never marked ok");
+    const row = await prisma.userMcpServer.findFirst({ where: { userId: user.id, name: "Journey tools" } });
+    assert.ok(row?.authHeader, "the header is stored");
+    assert.notEqual(row!.authHeader, secret, "and stored encrypted, not as typed");
+  });
+
+  test("MCP add: the sign-in probe refuses an unreachable server in words", async () => {
+    await seedUser();
+    const verdict = await asProduction(async () => {
+      const route = await import("@/app/api/connectors/custom/probe/route");
+      const res = await route.POST(
+        new Request("http://127.0.0.1/api/connectors/custom/probe", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://journey-tools.invalid/mcp" }),
+        })
+      );
+      return (await res.json()) as { ok?: boolean; message?: string };
+    });
+    assert.equal(verdict.ok, false);
+    assert.ok(verdict.message && verdict.message.length > 10, `a refusal in words (got ${JSON.stringify(verdict)})`);
   });
 
   test("nothing left the runner", async () => {
