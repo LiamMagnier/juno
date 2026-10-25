@@ -41,5 +41,7 @@
   // desktop-electron is new to this list because it was untracked until it was
   // committed, so CI had never seen it. Each subproject typechecks itself in its
   // own workflow.
-  "exclude": ["node_modules", "relay", "runner", "native/desktop-electron"]
+  // bench/workflows/results holds recorded benchmark runs, including code that
+  // other products delivered: evidence to validate, not source to typecheck.
+  "exclude": ["node_modules", "relay", "runner", "native/desktop-electron", "bench/workflows/results"]
 }

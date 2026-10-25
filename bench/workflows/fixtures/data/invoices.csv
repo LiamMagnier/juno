@@ -1,0 +1,8 @@
+id,customer,status,amount_eur
+I01,North,paid,125.50
+I02,South,paid,200.00
+I03,North,unpaid,80.25
+I04,West,cancelled,45.00
+I05,South,paid,64.50
+I02,South,paid,200.00
+I06,West,unpaid,30.75

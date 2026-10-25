@@ -146,3 +146,9 @@ __pycache__/
 
 # Alevr Code env server bundle for the Mac app (npm run env-server:bundle:mac)
 native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
+
+# Workflow benchmark (bench/workflows): per-run copies of the frozen inputs and
+# validator scratch space are reproducible from the fixtures; results, outputs,
+# review renders and review.json files are evidence and stay tracked.
+bench/workflows/results/**/inputs/
+bench/workflows/results/**/.scratch/

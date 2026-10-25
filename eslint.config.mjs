@@ -48,6 +48,12 @@ const config = [
       // reported thousands of errors from a copy of code it had already linted.
       ".claude/**",
       "**/.claude/**",
+      // Workflow benchmark inputs (frozen fixtures, deliberately buggy code a
+      // product is asked to fix), held-out tests and recorded run outputs
+      // (including code delivered by other products) are data, not source.
+      "bench/workflows/fixtures/**",
+      "bench/workflows/hidden/**",
+      "bench/workflows/results/**",
       ".worktrees/**",
       "**/.worktrees/**",
       "runner/**",

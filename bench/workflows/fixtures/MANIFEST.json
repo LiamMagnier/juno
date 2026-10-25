@@ -1,0 +1,23 @@
+{
+  "note": "SHA-256 of every frozen benchmark input and held-out test. Regenerate only on purpose: `npm run bench:workflows -- manifest`.",
+  "files": {
+    "data/email-draft.txt": "f913232983babdae4a5d1e35b3dd742338c0d50962dc69b73d1873ffbb88e618",
+    "data/expenses.csv": "2dc80c55d4040c082e19af48a759ee47228b3c64361795ab57a65e359951db23",
+    "data/invoices.csv": "94aab42601e6395dd2bcacc23bebd14aa9369ffe16f0ce02724eedd67cacce72",
+    "data/translation-source.md": "bbbc0d33863477f4ea8111b29e5c72f1cd094a9b3ce923dcbdaa1b013b576447",
+    "files/invoices.xlsx": "39c80915e80edb0a7889f0ad96e5812707dfbb1f79d755085a779e5bc0aacb52",
+    "files/meeting-notes.docx": "00b66e20b709b2d688e9d3fbc547f3b7f079c55472fc95cb43d83a7e4d0979bc",
+    "files/pilot-report.pdf": "d2ee21df5eab7c9a0c012fd58308a04eaad267745a42c9a11c5973012b500084",
+    "project/csv.mjs": "020d567f63ca148d7c1f27814c298ac39c4bc4a9df77705fdd7ebe6ec9f0a672",
+    "project/ledger.mjs": "10df71f2c490f4217fa921d171309daa8f08e8d9645adca7d39c046ad9159651",
+    "project/package.json": "3195b95a6b87c0e73ea29ac9c1af61cca25868da62f35fa969912ffa85177708",
+    "project/test.mjs": "05a330a9d2f0994d92d6f4a66054f6e2f85ec94c89d372c1a4c59f54ebceee4d",
+    "research/brief.md": "bcc2c77a7957392f36f6214d176e02cb3cca8106f5a137e0b9dfad59fad72862",
+    "research/decision.md": "a00593b6d7aa0a8c0ee715a4da93d76abf2d305376b05e009995d0dcbc34d595",
+    "research/hostile-page.html": "19e199275114acf76a3451d86f67a62776555de0e0ce67619a072dad62832399",
+    "research/supplier-note.md": "00b886cbed2cf705c36ebdfc87721327f758df1304bf2f64e770c6659098ded4",
+    "hidden/coding-01.hidden.test.mjs": "f4ee1708523fd787b89911d42dbe0140efc69d8c8b4356c18b54b1b10aa81445",
+    "hidden/coding-02.hidden.test.mjs": "f84eeb8406749975fd049c3a077d52e7acd1865f4f131b6205105f305aed72a4",
+    "hidden/coding-03.hidden.test.mjs": "dba01cbb90c320ad63934606c6d202871d59b9cfec07c956e0d6c427c15907f9"
+  }
+}
