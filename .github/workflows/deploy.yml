@@ -636,8 +636,67 @@ jobs:
           fi
           echo "All $checked Work orchestration sources and suites are present in dist/."
 
+  # The sandbox boundary, against real containers (ledger P1-2). Everything
+  # else tests the execution host with `docker run` played by a fake and the
+  # agent-computer broker and proxy as Python functions; these two jobs build
+  # the actual images and attack them from inside, the way model-written code
+  # and an agent's shell command arrive. They are the evidence for the main
+  # safety claim: what a model runs cannot reach cloud metadata or private
+  # networks, cannot see the host's secrets, cannot write outside its own
+  # workspace, and dies when it is cancelled.
+  #
+  # Not path filtered and a prerequisite of the deploy, on purpose: a boundary
+  # test that only runs when someone remembers to touch deploy/ protects
+  # nothing. scripts/sandbox-boundary-check.py fails on any skipped test (a
+  # missing image or a Docker daemon that is not there must not read as green),
+  # and JUNO_BOUNDARY_REQUIRE_ALL=1 also requires the public-Internet controls.
+  exec-boundary:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gate-exec-boundary-${{ github.ref }}
+      cancel-in-progress: true
+    # Mostly the image build (compilers, JDK, Go, Rust, the pinned wheels).
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the pinned execution image
+        run: docker build -t juno-exec:dev deploy/exec-host/image
+
+      # As the runner user (uid 1001, in the docker group): the container runs
+      # as the workspace owner's uid, as setup.sh pins it in production.
+      - name: Execution sandbox boundary, against real containers
+        env:
+          JUNO_EXEC_DOCKER_TESTS: "1"
+          JUNO_BOUNDARY_REQUIRE_ALL: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/sandbox-boundary-check.py tests.test_exec_host.RealSandboxBoundary
+
+  computer-boundary:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gate-computer-boundary-${{ github.ref }}
+      cancel-in-progress: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the agent-computer image, as setup-vm.sh does
+        run: docker build --pull -t juno-computer:1 deploy/agent-computers
+
+      # Root: the suite creates the juno-computers network, installs
+      # firewall.sh's rules, puts canary addresses on lo and runs the egress
+      # proxy on the bridge, exactly as setup-vm.sh arranges the VM. The runner
+      # is a disposable VM; the suite refuses a host that already has the network.
+      - name: Agent-computer boundary, a real computer behind firewall.sh and egress-proxy.py
+        env:
+          JUNO_COMPUTER_DOCKER_TESTS: "1"
+          JUNO_BOUNDARY_REQUIRE_ALL: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: sudo -E env "PATH=$PATH" python3 scripts/sandbox-boundary-check.py tests.test_computer_boundary
+
   build-and-deploy:
-    needs: [test, unit-tests, runner, migrations]
+    needs: [test, unit-tests, runner, migrations, exec-boundary, computer-boundary]
     # Pull requests run test, migrations and runner — but never a deploy. A
     # manual dispatch is production-capable only when launched from main; the
     # ref is checked explicitly because workflow_dispatch is otherwise allowed
