@@ -562,6 +562,22 @@ export function skillDeclaresWholeSurface(application: ChatSkillApplication | nu
 }
 
 /**
+ * Whether the turn keeps what no skill can list: the folder on the person's Mac
+ * (the local-folder tools), the agent configuration tools (`create_agent`,
+ * `update_agent`, `agent_goal`, `agent_memory`, `propose_setup_change`,
+ * `create_room`), a room member's `ask_room_member` and the cross-conversation
+ * tools. Teach offers only `TEACHABLE_TOOLS`, so a taught skill that lists
+ * anything — a list the person reviewed as everything it uses — runs without
+ * them. Every other skill, and a taught one listing nothing, keeps them as the
+ * turn had them: they are choices the person made for this chat or this agent,
+ * not tools a skill's author reached for, and an imported skill has no way to
+ * name them.
+ */
+export function skillKeepsUnlistedSurfaces(application: ChatSkillApplication | null): boolean {
+  return !skillDeclaresWholeSurface(application);
+}
+
+/**
  * The runtime tools a turn may carry once a skill has narrowed them.
  *
  * NARROWED, and only ever narrowed: the result is `allowlist` filtered by what
@@ -621,12 +637,28 @@ export function narrowConnectorsForSkill<C extends { id: string }>(
   return connectors.filter((connector) => requested.has(connector.id));
 }
 
+/**
+ * Said instead of an answer when the person switched deep research on and
+ * picked a taught skill that does not list web search or page reading
+ * (`scopeTurnToSkill` turned research off). The same shape as the other
+ * "research could not run" notices: the turn answers with this, not with a
+ * reply that silently skipped the research they asked for.
+ */
+export const SKILL_WITHHELD_RESEARCH = {
+  notice:
+    "Deep research didn’t start: the skill you picked uses only what it lists, and searching the web isn’t on its list. Send the message without the skill to research it, or add “Search the web” to the skill under Skills, Teach.",
+  title: "Deep research was skipped",
+  detail: "The skill you picked doesn’t list web search.",
+} as const;
+
 /** What a chat turn carries, as `scopeTurnToSkill` narrows it. */
 export interface SkillTurnScope<C extends { id: string }> {
   /** Provider-side web search (`useWebSearch`). */
   webSearch: boolean;
   /** Alevr Search's own tools (`useAlevrSearch`). */
   alevrSearch: boolean;
+  /** Deep research (`researchActive`), which reads the web on its own. */
+  research: boolean;
   /** The canvas (`canvasOn`). */
   canvas: boolean;
   connectors: C[];
@@ -638,27 +670,34 @@ export interface SkillTurnScope<C extends { id: string }> {
  * answer.
  *
  * - Apps: `narrowConnectorsForSkill`, for every skill.
- * - Web search and the canvas: only for a skill that declares its whole surface
- *   (a taught one listing anything). Web search stays when it lists "Search the
- *   web" or "Open web pages", as Alevr Search's tools already did for every
- *   skill; the canvas stays when it lists "Write in a canvas". Other skills
- *   keep both as the turn had them, unchanged: a skill imported from elsewhere
- *   cannot name the canvas, and taking it away from every skill with an
- *   `allowed-tools` line would be a behaviour change nobody reviewed.
+ * - Web search, deep research and the canvas: only for a skill that declares
+ *   its whole surface (a taught one listing anything). Web search and deep
+ *   research stay when it lists "Search the web" or "Open web pages", as Alevr
+ *   Search's tools already did for every skill; the canvas stays when it lists
+ *   "Write in a canvas". Other skills keep all three as the turn had them,
+ *   unchanged: a skill imported from elsewhere cannot name the canvas, and
+ *   taking it away from every skill with an `allowed-tools` line would be a
+ *   behaviour change nobody reviewed.
+ *
+ * What no skill can list (the Mac folder, the agent configuration tools, the
+ * room and cross-conversation tools) is gated where each is decided, on
+ * `skillKeepsUnlistedSurfaces`.
  */
 export function scopeTurnToSkill<C extends { id: string }>(
   application: ChatSkillApplication | null,
-  turn: { webSearch: boolean; alevrSearch: boolean; canvas: boolean; connectors: readonly C[] }
+  turn: { webSearch: boolean; alevrSearch: boolean; research?: boolean; canvas: boolean; connectors: readonly C[] }
 ): SkillTurnScope<C> {
   const connectors = narrowConnectorsForSkill(turn.connectors, application);
+  const research = turn.research ?? false;
   if (!skillDeclaresWholeSurface(application)) {
-    return { webSearch: turn.webSearch, alevrSearch: turn.alevrSearch, canvas: turn.canvas, connectors };
+    return { webSearch: turn.webSearch, alevrSearch: turn.alevrSearch, research, canvas: turn.canvas, connectors };
   }
   const keepsWeb = narrowRuntimeToolsForSkill([CHAT_SKILL_TOOLS.webSearch, CHAT_SKILL_TOOLS.webFetch], application).length > 0;
   const keepsCanvas = narrowRuntimeToolsForSkill([CHAT_SKILL_TOOLS.canvas], application).length > 0;
   return {
     webSearch: turn.webSearch && keepsWeb,
     alevrSearch: turn.alevrSearch && keepsWeb,
+    research: research && keepsWeb,
     canvas: turn.canvas && keepsCanvas,
     connectors,
   };

@@ -4,14 +4,18 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   CHAT_SKILL_TOOLS,
+  SKILL_WITHHELD_RESEARCH,
   applyChatSkill,
   narrowConnectorsForSkill,
   narrowRuntimeToolsForSkill,
   scopeTurnToSkill,
   skillDeclaresWholeSurface,
+  skillKeepsUnlistedSurfaces,
   type ChatSkillApplication,
   type ChatSkillCapabilities,
 } from "@/lib/chat/skills";
+import { chatAgentConfigToolsEnabled } from "@/lib/chat/agent-config-tools";
+import { localFolderToolsEnabled } from "@/lib/chat/local-folder";
 import { DRAFT_SKILL_TOOL_ID, taughtProvenance } from "@/lib/skills/teach";
 import { emptySkillContract, type SkillCandidate, type WorkSkillContract } from "@/lib/work/skills";
 import { wrapUntrusted } from "@/lib/untrusted-content";
@@ -180,7 +184,105 @@ test("the turn: a taught skill keeps web search and the canvas only when it list
     canvas: false,
     connectors: [],
   });
-  assert.deepEqual({ ...off, connectors: ids(off.connectors) }, { webSearch: false, alevrSearch: false, canvas: false, connectors: [] });
+  assert.deepEqual(
+    { ...off, connectors: ids(off.connectors) },
+    { webSearch: false, alevrSearch: false, research: false, canvas: false, connectors: [] }
+  );
+});
+
+test("the turn: deep research stays only for a taught skill that lists web search or page reading", () => {
+  const researching = { ...turn, webSearch: false, alevrSearch: false, research: true };
+  assert.equal(scopeTurnToSkill(apply({ taught: true, connectors: ["composio:gmail"] }), researching).research, false, "apps only");
+  assert.equal(scopeTurnToSkill(apply({ taught: true, tools: ["canvas"] }), researching).research, false, "canvas only");
+  assert.equal(scopeTurnToSkill(apply({ taught: true, tools: ["web_search"] }), researching).research, true);
+  assert.equal(scopeTurnToSkill(apply({ taught: true, tools: ["web_fetch"] }), researching).research, true);
+  // Unchanged for everything else, and never widened.
+  for (const [label, application] of [
+    ["no skill", null],
+    ["taught, nothing listed", apply({ taught: true })],
+    ["imported, tools listed", apply({ tools: ["run_code"] })],
+  ] as const) {
+    assert.equal(scopeTurnToSkill(application, researching).research, true, label);
+  }
+  assert.equal(scopeTurnToSkill(apply({ taught: true, tools: ["web_search"] }), { ...researching, research: false }).research, false);
+  assert.equal(scopeTurnToSkill(null, turn).research, false, "a caller that passes no research has none");
+});
+
+test("research withheld by a skill answers with a notice that names the skill, not the plan", () => {
+  assert.match(SKILL_WITHHELD_RESEARCH.notice, /skill you picked uses only what it lists/);
+  assert.match(SKILL_WITHHELD_RESEARCH.notice, /Search the web/);
+  assert.doesNotMatch(SKILL_WITHHELD_RESEARCH.notice, /plan|configured/);
+  const stage = turnModule("research-stage");
+  const withheld = stage.indexOf("researchRequested && researchWithheldBySkill");
+  const generic = stage.indexOf("} else if (researchRequested) {");
+  assert.ok(withheld > 0 && withheld < generic, "checked before the plan/deployment notice");
+  assert.match(stage.slice(withheld, generic), /researchNotice = SKILL_WITHHELD_RESEARCH\.notice/);
+  const runTurn = turnModule("run-turn");
+  assert.match(runTurn, /researchWithheldBySkill,\s*\/\/ SPEC/);
+});
+
+test("what no skill can list: kept for every skill except a taught one that lists anything", () => {
+  assert.equal(skillKeepsUnlistedSurfaces(null), true, "no skill");
+  assert.equal(skillKeepsUnlistedSurfaces(apply({ tools: ["web_search"] })), true, "imported, tools listed");
+  assert.equal(skillKeepsUnlistedSurfaces(apply({ connectors: ["notion"] })), true, "imported, apps listed");
+  assert.equal(skillKeepsUnlistedSurfaces(apply({ taught: true })), true, "taught, nothing listed");
+  assert.equal(skillKeepsUnlistedSurfaces(apply({ taught: true, tools: ["calculate"] })), false, "taught, a tool listed");
+  assert.equal(skillKeepsUnlistedSurfaces(apply({ taught: true, connectors: ["notion"] })), false, "taught, an app listed");
+
+  // The gates those surfaces ride really close on it.
+  const openGate = {
+    privateMode: false,
+    voiceMode: false,
+    regenerate: false,
+    userMessageId: "msg_1",
+    researchActive: false,
+    artifactEdit: false,
+    conversationKind: "chat",
+    agenticTools: true,
+    functionToolsReachModel: true,
+    lockdown: false,
+  };
+  assert.equal(chatAgentConfigToolsEnabled({ ...openGate, skillPermits: true }), true);
+  assert.equal(chatAgentConfigToolsEnabled({ ...openGate, skillPermits: false }), false);
+  const folderGate = {
+    clientDeclares: true,
+    folder: { name: "Invoices", access: "read" },
+    privateMode: false,
+    voiceMode: false,
+    lockdown: false,
+    functionToolsReachModel: true,
+    agenticTools: true,
+    conversationKind: "chat",
+    artifactEdit: false,
+    researchActive: false,
+  } as unknown as Parameters<typeof localFolderToolsEnabled>[0];
+  assert.equal(localFolderToolsEnabled({ ...folderGate, skillPermits: true }), true);
+  assert.equal(localFolderToolsEnabled({ ...folderGate, skillPermits: false }), false);
+});
+
+test("the turn wires what no skill can list to the taught scope, tool and prompt together", () => {
+  const approvals = turnModule("approvals");
+  const agentGate = approvals.slice(approvals.indexOf("const agentConfigToolsOn = chatAgentConfigToolsEnabled({"));
+  assert.match(agentGate.slice(0, 200), /skillPermits: skillKeepsUnlistedSurfaces\(appliedSkill\)/);
+  const folderGate = approvals.slice(approvals.indexOf("const localFolderOn = localFolderToolsEnabled({"));
+  assert.match(folderGate.slice(0, 700), /skillPermits: skillKeepsUnlistedSurfaces\(appliedSkill\)/);
+  assert.doesNotMatch(approvals, /skillPermits: true/, "no acting surface is exempt from an applied skill any more");
+  assert.doesNotMatch(approvals, /as a connector is/, "connectors are narrowed by a skill now; the old rationale is gone");
+
+  // A room member's ask_room_member: the tool and the prompt's invitation read the same answer.
+  const tools = turnModule("tools");
+  assert.match(tools, /roomMayAsk\(roomSetup, roomMessageId, skillKeepsUnlistedSurfaces\(appliedSkill\)\)/);
+  const prompt = turnModule("prompt");
+  assert.match(prompt, /roomPromptBlock\(\s*roomSetup,\s*user\.name,\s*roomMessageId,\s*skillKeepsUnlistedSurfaces\(appliedSkill\)\s*\)/);
+  const identity = turnModule("identity");
+  assert.match(identity, /skillPermits &&\s*!!roomMessageId/);
+  assert.match(identity, /canAsk: roomMayAsk\(setup, roomMessageId, skillPermits\)/);
+
+  // Cross-conversation: decided once, so the tools and their prompt section go together.
+  const route = readFileSync(join(ROOT, CHAT_ROUTE_PATH), "utf8");
+  const cross = route.slice(route.indexOf("resolveCrossConversation({"));
+  assert.match(cross.slice(0, 400), /skillPermits: skillKeepsUnlistedSurfaces\(appliedSkill\)/);
+  assert.match(turnModule("cross"), /input\.skillPermits !== false && \(await chatConversationEnabled/);
 });
 
 test("the turn: nothing listed, no skill, or a skill that was not taught leaves web search and the canvas alone", () => {
@@ -208,8 +310,14 @@ test("the chat route narrows the turn once, right after the skill applies, and t
   const grant = route.slice(route.indexOf("const skill = await resolveSkills("), applied);
   assert.match(grant, /connectors: offeredConnectors\.map/);
   assert.match(grant, /canvas: offeredCanvas/);
-  assert.match(route.slice(scoped), /webSearch: offeredWebSearch,\s*alevrSearch: offeredAlevrSearch,\s*canvas: offeredCanvas,\s*connectors: offeredConnectors,/);
-  for (const name of ["activeConnectors", "useWebSearch", "useAlevrSearch", "canvasOn"]) {
+  assert.match(
+    route.slice(scoped),
+    /webSearch: offeredWebSearch,\s*alevrSearch: offeredAlevrSearch,\s*research: offeredResearch,\s*canvas: offeredCanvas,\s*connectors: offeredConnectors,/
+  );
+  assert.match(route, /researchActive: offeredResearch,/, "the capability is renamed, so only the scoped value is researchActive");
+  assert.match(route, /research: researchActive,\s*canvas: canvasOn,/);
+  assert.match(route, /researchWithheldBySkill: offeredResearch && !researchActive/);
+  for (const name of ["activeConnectors", "useWebSearch", "useAlevrSearch", "canvasOn", "researchActive"]) {
     // Property keys (`activeConnectors: offeredConnectors`) are renames, not reads.
     const before = route.slice(0, scoped).match(new RegExp(`\\b${name}\\b(?!:)`, "g"))?.length ?? 0;
     // Bound once by the scope destructure (just before the call) and never read above it.

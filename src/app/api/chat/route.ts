@@ -18,7 +18,7 @@ import { resolveMemory } from "@/lib/chat/turn/memory";
 import { resolveProjectContext } from "@/lib/chat/turn/project-context";
 import { resolveCapabilities, turnCarriesUntrustedContent } from "@/lib/chat/turn/capabilities";
 import { resolveSkills } from "@/lib/chat/turn/skills";
-import { scopeTurnToSkill } from "@/lib/chat/skills";
+import { scopeTurnToSkill, skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { resolveApprovals } from "@/lib/chat/turn/approvals";
 import { detectTeachIntent } from "@/lib/chat/skill-draft-tool";
 import { resolveTools } from "@/lib/chat/turn/tools";
@@ -167,7 +167,7 @@ async function handleChat(req: Request) {
 
     const capabilities = resolveCapabilities({ input, plan, modelInfo, workspaceConfig });
     const {
-      researchActive,
+      researchActive: offeredResearch,
       useWebSearch: offeredWebSearch,
       useAlevrSearch: offeredAlevrSearch,
       useProMode,
@@ -192,17 +192,19 @@ async function handleChat(req: Request) {
     const { appliedSkill } = skill;
     // What the turn keeps once the skill has narrowed it (never more than it
     // had): apps the skill does not name are not connected, and a taught skill
-    // keeps web search and the canvas only when it lists them
+    // keeps web search, deep research and the canvas only when it lists them
     // (`scopeTurnToSkill`). Everything below — the prompt, the provider
     // request, the native tools, the trace — reads these.
     const {
       webSearch: useWebSearch,
       alevrSearch: useAlevrSearch,
+      research: researchActive,
       canvas: canvasOn,
       connectors: activeConnectors,
     } = scopeTurnToSkill(appliedSkill, {
       webSearch: offeredWebSearch,
       alevrSearch: offeredAlevrSearch,
+      research: offeredResearch,
       canvas: offeredCanvas,
       connectors: offeredConnectors,
     });
@@ -301,6 +303,8 @@ async function handleChat(req: Request) {
       conversationId: conversation.id,
       crossTrigger: accepted.crossTrigger,
       crossLinkIds: accepted.crossLinkIds,
+      // A taught skill that lists what it uses runs without them.
+      skillPermits: skillKeepsUnlistedSurfaces(appliedSkill),
     });
     const { system: composedSystem, baseSystemSections } = composeTurnSystem({
       user,
@@ -401,6 +405,7 @@ async function handleChat(req: Request) {
       turnHistory: turnHistoryForModel,
       researchActive,
       researchRequested: capabilities.researchRequested,
+      researchWithheldBySkill: offeredResearch && !researchActive,
       useWebSearch,
       useAlevrSearch,
       useFastMode: capabilities.useFastMode,

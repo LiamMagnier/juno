@@ -34,10 +34,12 @@ Nothing is saved until the user reviews the draft and presses Save. After drafti
 
 /**
  * For a turn where the person asked to teach something but `draft_skill` is
- * not attached (incognito, an agent's thread, a client that cannot draw the
- * card, a model that cannot call tools, an armed skill that does not list it).
- * Without it the model, asked to "draft it", could claim a draft that never
- * appears.
+ * not attached (incognito, a client that cannot draw the card, a model that
+ * cannot call tools, an armed skill that does not list it). Without it the
+ * model, asked to "draft it", could claim a draft that never appears. Never in
+ * an agent's thread: there the agent saves the method as a draft skill through
+ * `propose_setup_change` (kind `skill_draft`), and this line would tell it the
+ * opposite of the tool it has (`buildSystemPromptSections`, `agentThread`).
  */
 export const TEACH_UNAVAILABLE_LINE = `# Teaching skills
 You cannot draft or save a skill in this conversation, and no skill card will appear. When the user wants to teach you how they do something, help them get the steps clear, one short question at a time. Then write the method out as a SKILL.md in a fenced code block (front matter with a name and a one-line description, then numbered steps) so they can save it as a skill themselves, and tell them they can also teach it step by step under Skills, Teach. Never say a skill was drafted, saved or switched on.`;

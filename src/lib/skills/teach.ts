@@ -18,14 +18,21 @@
  *
  * WHAT IT MAY USE, AT RUN TIME. When the person runs a taught skill in a chat
  * (picks it in the composer), the turn keeps to what it lists, and never more
- * than the chat already has on (`scopeTurnToSkill`, `narrowRuntimeToolsForSkill`
- * and `narrowConnectorsForSkill` in `chat/skills.ts`): tools not listed are not
- * attached, apps not listed are not connected, web search stays only when
- * "Search the web" or "Open web pages" is listed, the canvas only when it is
- * listed. A taught skill that lists NOTHING narrows nothing (the page says so).
- * A taught skill the model picks for itself (`use_skill`, possible only after
- * the person turns automatic use on, which Teach never does) is loaded in the
- * middle of a turn whose tools are already fixed, and narrows nothing.
+ * than the chat already has on (`scopeTurnToSkill`, `narrowRuntimeToolsForSkill`,
+ * `narrowConnectorsForSkill` and `skillKeepsUnlistedSurfaces` in
+ * `chat/skills.ts`): tools not listed are not attached, apps not listed are not
+ * connected, web search and deep research stay only when "Search the web" or
+ * "Open web pages" is listed (research asked for without it answers with a
+ * notice saying so), the canvas only when it is listed. What no skill can list
+ * is not attached either: the folder on the person's Mac, the agent
+ * configuration tools (`propose_setup_change`, `create_room` and the rest), a
+ * room's `ask_room_member` and the cross-conversation tools. The one thing kept
+ * is the skill's own pair, `use_skill` and `read_skill_file`, so it can read
+ * its own files. A taught skill that lists NOTHING narrows nothing (the page
+ * says so). A taught skill the model picks for itself (`use_skill`, possible
+ * only after the person turns automatic use on, which Teach never does) is
+ * loaded in the middle of a turn whose tools are already fixed, and narrows
+ * nothing.
  *
  * WHAT THIS MODULE DECIDES, without a request or a database, so every rule has
  * a test:

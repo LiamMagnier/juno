@@ -70,14 +70,29 @@ the steps on `/skills/teach`; the review edits steps, permissions and scope and
 saves a `user_authored` skill switched off unless the save carries the
 permission fingerprint the page showed when the box was ticked, equal to the one
 the server recomputes (a staleness check, not proof of review). Run in a chat, a
-taught skill that lists anything keeps to it: tools, apps, web search and the
-canvas it does not list are not used (`scopeTurnToSkill`); one that lists
-nothing narrows nothing. Re-teaching mints versions; revoking switches off and
-is audited. Not covered: a taught skill the model picks itself (automatic use,
-off by default) narrows nothing, and the skill library's switch turns a kept-off
-skill on without the Teach review. Code: `src/lib/skills/teach*.ts`,
+taught skill that lists anything keeps to it: tools, apps, web search, deep
+research and the canvas it does not list are not used (`scopeTurnToSkill`), and
+what no skill can list (the Mac folder, the agent setup, room and
+cross-conversation tools) is not attached (`skillKeepsUnlistedSurfaces`); only
+its own `use_skill` and `read_skill_file` stay. One that lists nothing narrows
+nothing. In an agent's thread, teaching goes through `propose_setup_change`
+(kind `skill_draft`), not `draft_skill`. Re-teaching mints versions; revoking
+switches off and is audited. Code: `src/lib/skills/teach*.ts`,
 `src/lib/chat/skill-draft-tool.ts`, `src/components/skills/teach/`. Screen
 capture remains out of scope.
+
+Follow-ups (known gaps, not built):
+
+- A taught skill the model picks itself through `use_skill` (automatic use, off
+  by default) is loaded mid-turn and narrows nothing; the skill library's
+  automatic-use and enable switches turn a kept-off taught skill on without the
+  Teach review and without a warning. Warn there, or route through Teach.
+- An app the person @-names stays shown as applied in the context receipt when
+  a taught skill's scope removed it; the context-token vocabulary needs a drop
+  reason for "removed by the skill's scope".
+- The hostile-content refusal of `draft_skill` reads the turn's live taint,
+  which only Alevr Search's own page reads mark. Connector results and the
+  provider's own web search should mark it too.
 
 ## 3. Password manager / secret card
 

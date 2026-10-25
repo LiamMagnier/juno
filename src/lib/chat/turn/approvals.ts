@@ -6,7 +6,7 @@ import { isGemini3OrLater } from "@/lib/gemini-core";
 import { cheapestWorkModel } from "@/lib/work/models";
 import { agentChatContext } from "@/lib/agents/store";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
-import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
+import { narrowRuntimeToolsForSkill, skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { START_TASK_TOOL_ID, chatTaskToolEnabled, isTaskApproval } from "@/lib/chat/task-tool";
 import { HAND_OFF_TOOL_ID, isHandoffApproval } from "@/lib/chat/handoff-tool";
 import { chatAgentConfigToolsEnabled } from "@/lib/chat/agent-config-tools";
@@ -109,9 +109,15 @@ export async function resolveApprovals({
     ...taskGate,
     skillPermits: narrowRuntimeToolsForSkill([HAND_OFF_TOOL_ID], appliedSkill).length > 0,
   });
+  /*
+   * The agent configuration tools (and `propose_setup_change`, `create_room`,
+   * which ride this flag). No skill can list them, so only a taught skill that
+   * lists what it uses runs without them (`skillKeepsUnlistedSurfaces`);
+   * every other skill leaves them as the turn had them.
+   */
   const agentConfigToolsOn = chatAgentConfigToolsEnabled({
     ...taskGate,
-    skillPermits: true,
+    skillPermits: skillKeepsUnlistedSurfaces(appliedSkill),
   });
   /*
    * An agent's thread (docs/design/AGENTS.md): the reply is the agent's, with
@@ -139,10 +145,12 @@ export async function resolveApprovals({
 
   /*
    * The folder on the person's Mac (src/lib/chat/local-folder.ts): whether
-   * this turn carries the folder tools, and the folder it names. Not narrowed
-   * by an applied skill: the folder is a choice the person made in the
-   * composer for this chat, as a connector is, not a tool the model reached
-   * for.
+   * this turn carries the folder tools, and the folder it names. A skill that
+   * names some tools does not take the folder away: it is a choice the person
+   * made in the composer for this chat, not a tool a skill's author reached
+   * for, and no skill can list it. The one exception is a taught skill that
+   * lists what it uses, reviewed as everything it uses: it runs without the
+   * folder (`skillKeepsUnlistedSurfaces`).
    */
   const localFolderOn = localFolderToolsEnabled({
     clientDeclares: input.clientFeatures?.includes(LOCAL_FOLDER_FEATURE) ?? false,
@@ -155,7 +163,7 @@ export async function resolveApprovals({
     conversationKind: conversation.kind,
     artifactEdit,
     researchActive,
-    skillPermits: true,
+    skillPermits: skillKeepsUnlistedSurfaces(appliedSkill),
   });
   const localFolder = localFolderOn ? (input.localFolder ?? null) : null;
 
@@ -232,7 +240,11 @@ export async function resolveApprovals({
     routineToolOn,
     imageToolOn,
     skillDraftToolOn,
-    /** Asked to teach, but `draft_skill` is off: the prompt says how to do it here instead. */
+    /**
+     * Asked to teach, but `draft_skill` is off: the prompt says how to do it
+     * here instead — except in an agent's thread, whose own setup card saves
+     * the method (`buildSystemPromptSections` leaves the line out there).
+     */
     skillDraftUnavailable: teachIntent && !skillDraftToolOn,
     handoffGateOpen,
     agentConfigToolsOn,

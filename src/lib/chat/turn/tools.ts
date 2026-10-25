@@ -10,7 +10,7 @@ import { executionEntitlements } from "@/lib/tools/entitlements";
 import { openGrantedProviders, providerAvailability, toolProviders } from "@/lib/tools/providers";
 import type { ToolTurn } from "@/lib/tools/types";
 import { codeExecutionNote } from "@/lib/chat/prompt-sections";
-import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
+import { narrowRuntimeToolsForSkill, skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
 import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
 import { createDraftSkillTool, skillDraftActivity } from "@/lib/chat/skill-draft-tool";
@@ -366,7 +366,11 @@ export async function buildNativeTools({
         })
       : null;
   const askRoomMemberTool =
-    roomSetup && roomMessageId && agentContext && !agentContext.paused && roomMayAsk(roomSetup, roomMessageId)
+    roomSetup &&
+    roomMessageId &&
+    agentContext &&
+    !agentContext.paused &&
+    roomMayAsk(roomSetup, roomMessageId, skillKeepsUnlistedSurfaces(appliedSkill))
       ? createAskRoomMemberTool({
           user,
           conversationId,

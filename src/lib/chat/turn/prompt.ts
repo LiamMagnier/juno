@@ -11,6 +11,7 @@ import { buildSystemPromptSections } from "@/lib/anthropic";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { buildArtifactEditPrompt, type ArtifactSourceForEdit } from "@/lib/artifact-edit";
 import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
+import { skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { appendAgentBlock } from "@/lib/agents/prompt";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { ChatRequestBody } from "@/lib/chat/request";
@@ -117,8 +118,9 @@ export function composeTurnSystem({
     imageGeneration: imageToolOn,
     skillDrafts: skillDraftToolOn,
     skillDraftsUnavailable: skillDraftUnavailable && !skillDraftToolOn,
-    // An agent's thread sets its own routines up (`propose_setup_change`,
-    // and its brief says so), so it is never told routines cannot be made here.
+    // An agent's thread sets its own routines up and saves the methods it is
+    // taught (`propose_setup_change`, and its brief says so), so it is never
+    // told routines or skills cannot be made here.
     agentThread: agentContext !== null && agentContext !== undefined,
     // Interactive views: the web always renders them; a native build only
     // when it says so (shipped builds would show raw JSON).
@@ -168,7 +170,12 @@ export function composeTurnSystem({
       ),
       agentContext?.block
         ? roomSetup
-          ? `${agentContext.block}\n\n${roomPromptBlock(roomSetup, user.name, roomMessageId)}`
+          ? `${agentContext.block}\n\n${roomPromptBlock(
+              roomSetup,
+              user.name,
+              roomMessageId,
+              skillKeepsUnlistedSurfaces(appliedSkill)
+            )}`
           : agentContext.block
         : null
     ),

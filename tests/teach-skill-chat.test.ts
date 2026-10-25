@@ -19,8 +19,11 @@ import {
   TEACH_SECTION,
   TEACH_UNAVAILABLE_LINE,
 } from "@/lib/tools/specs/draft-skill.prompt";
+import { ROUTINE_UNAVAILABLE_LINE } from "@/lib/tools/specs/propose-routine.prompt";
 import { TurnTaint } from "@/lib/web/taint";
-import { buildSystemPromptSections } from "@/lib/chat/system-prompt";
+import { buildSystemPrompt, buildSystemPromptSections } from "@/lib/chat/system-prompt";
+import { SETUP_CHANGE_TOOL } from "@/lib/chat/setup-change-tool";
+import { buildAgentPromptBlock } from "@/lib/agents/prompt";
 import { INVOICES, NOW, ctx } from "./teach-skill-fixtures";
 
 /*
@@ -272,6 +275,55 @@ test("asked to teach without draft_skill, the model is told to write a SKILL.md 
   assert.ok(on.includes(TEACH_SECTION) && !on.includes(TEACH_UNAVAILABLE_LINE));
   assert.ok(!buildSystemPromptSections({ ...base, voiceMode: true, skillDraftsUnavailable: true }).stable.includes(TEACH_UNAVAILABLE_LINE));
   assert.ok(!buildSystemPromptSections({ ...base }).stable.includes(TEACH_UNAVAILABLE_LINE), "nobody asked: nothing said");
+});
+
+test("an agent's thread is never told teaching is unavailable: its setup card saves the method", () => {
+  // The verifier's probe, as a test: an agent thread where the person showed
+  // teaching intent ("Let me show you how I triage these issues"). draft_skill
+  // is never on there, so skillDraftsUnavailable is set, yet the agent has
+  // propose_setup_change, whose skill_draft kind saves a draft skill.
+  const teachIntentTurn = {
+    memoryEnabled: false,
+    canvas: true,
+    voiceMode: false,
+    skillDrafts: false,
+    skillDraftsUnavailable: true,
+    taskHandoff: true,
+    routineProposals: false,
+  } as const;
+  const agentThread = buildSystemPrompt({ ...teachIntentTurn, agentThread: true });
+  assert.ok(!agentThread.includes(TEACH_UNAVAILABLE_LINE), "no line contradicting propose_setup_change");
+  assert.ok(!agentThread.includes(ROUTINE_UNAVAILABLE_LINE), "the routine line has the same exemption");
+  assert.ok(!agentThread.includes(TEACH_SECTION), "and no draft_skill section either: that tool is not attached");
+
+  // The same turn in an ordinary chat still gets both lines.
+  const chat = buildSystemPrompt({ ...teachIntentTurn, agentThread: false });
+  assert.ok(chat.includes(TEACH_UNAVAILABLE_LINE));
+  assert.ok(chat.includes(ROUTINE_UNAVAILABLE_LINE));
+
+  // The exemption holds only because the agent really has the other path: its
+  // setup tool offers skill_draft, and its brief tells it to use it for a method.
+  assert.match(JSON.stringify(SETUP_CHANGE_TOOL.function.parameters), /skill_draft/);
+  const brief = buildAgentPromptBlock({
+    name: "Scout",
+    role: "Triage",
+    style: "brief",
+    instructions: "Triage new issues every morning and label them by area.",
+    approvalMode: "ask",
+    goals: [],
+    notes: [],
+    teammates: [],
+    taskHandoff: true,
+    selfConfig: true,
+  });
+  assert.match(brief, /asks you to learn a method they describe, call propose_setup_change/);
+});
+
+test("the saved turn tells the prompt it is an agent's thread from the agent context", async () => {
+  const { readFileSync } = await import("node:fs");
+  const root = new URL("..", import.meta.url).pathname;
+  const prompt = readFileSync(`${root}src/lib/chat/turn/prompt.ts`, "utf8");
+  assert.match(prompt, /agentThread: agentContext !== null && agentContext !== undefined/);
 });
 
 test("the turn says teaching is unavailable exactly when the person asked and draft_skill is off", async () => {

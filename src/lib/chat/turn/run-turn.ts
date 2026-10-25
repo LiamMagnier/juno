@@ -167,6 +167,8 @@ export interface SavedTurnPlan {
   turnHistory: MessageForModel[];
   researchActive: boolean;
   researchRequested: boolean;
+  /** Research was on and the applied skill turned it off (`scopeTurnToSkill`). */
+  researchWithheldBySkill?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   /** The serving tier (pricing.ts FastMode), resolved by turn/capabilities.ts. */
@@ -238,6 +240,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     turnHistory,
     researchActive,
     researchRequested,
+    researchWithheldBySkill = false,
     useWebSearch,
     useAlevrSearch,
     useFastMode,
@@ -509,6 +512,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       modelHistory,
       researchActive,
       researchRequested,
+      researchWithheldBySkill,
       // SPEC §9.6.1: a client that follows background runs gets one. Not on
       // a regenerate — the answer being replaced has to be superseded by an
       // answer, so that turn keeps the in-chat path.

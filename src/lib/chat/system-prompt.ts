@@ -74,14 +74,18 @@ export interface SystemPromptOptions {
   /**
    * The person asked to teach something but `draft_skill` is not attached:
    * adds TEACH_UNAVAILABLE_LINE, so the model writes a SKILL.md and points to
-   * the Teach page instead of claiming a draft card that never appears.
+   * the Teach page instead of claiming a draft card that never appears. Never
+   * in an agent's thread (`agentThread`), which saves a method through its own
+   * card.
    */
   skillDraftsUnavailable?: boolean;
   /**
-   * The reply is an agent's, in its own thread or a room. Its routines are set
-   * up through `propose_setup_change` (and its brief tells it to suggest
-   * them), so ROUTINE_UNAVAILABLE_LINE, which says no routine can be made in
-   * this conversation, would contradict the tool it has.
+   * The reply is an agent's, in its own thread or a room. Its routines and the
+   * methods it is taught are set up through `propose_setup_change` (kinds
+   * `routine_add` and `skill_draft`; its brief tells it to), so neither
+   * ROUTINE_UNAVAILABLE_LINE nor TEACH_UNAVAILABLE_LINE, which say no routine
+   * or skill can be made in this conversation, is added: each would contradict
+   * the tool it has.
    */
   agentThread?: boolean;
   /**
@@ -390,9 +394,11 @@ You write the content; the USER picks the download format. Never say you attache
   else if (opts.taskHandoff && !opts.voiceMode && !opts.agentThread) parts.push(ROUTINE_UNAVAILABLE_LINE);
   // Pictures in chat (G04): only with the tool, never on voice.
   if (opts.imageGeneration && !opts.voiceMode) parts.push(IMAGE_SECTION);
-  // Teaching a skill (Teach Juno): only with the tool, never on voice.
+  // Teaching a skill (Teach Juno): only with the tool, never on voice. An
+  // agent's thread is never told it cannot: it saves a taught method as a
+  // draft skill through `propose_setup_change`, as it sets up routines.
   if (opts.skillDrafts && !opts.voiceMode) parts.push(TEACH_SECTION);
-  else if (opts.skillDraftsUnavailable && !opts.voiceMode) parts.push(TEACH_UNAVAILABLE_LINE);
+  else if (opts.skillDraftsUnavailable && !opts.voiceMode && !opts.agentThread) parts.push(TEACH_UNAVAILABLE_LINE);
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.

@@ -45,14 +45,18 @@ import { permissionRows, type TeachPermissionRow } from "@/components/skills/tea
  *       Use this connected app, asking you first before anything…
  *   + Allow something else
  *
- * The rule the footnote states is the runtime's (`scopeTurnToSkill` and
- * `narrowRuntimeToolsForSkill` in src/lib/chat/skills.ts), not a promise: when
- * the person runs the skill in a chat and this list names anything, the turn
- * keeps to it — tools, apps, web search and the canvas — and never to more than
- * that chat already has on; an app action that needs approval still asks. An
- * empty list narrows nothing, and the page says that plainly rather than
- * "uses nothing". The footnote says "when you run it" because a skill the model
- * picks for itself (automatic use, off for every taught skill) narrows nothing.
+ * The rule the footnote states is the runtime's (`scopeTurnToSkill`,
+ * `narrowRuntimeToolsForSkill` and `skillKeepsUnlistedSurfaces` in
+ * src/lib/chat/skills.ts), not a promise: when the person runs the skill in a
+ * chat and this list names anything, the turn keeps to it — tools, apps, web
+ * search, deep research and the canvas — and runs without what no skill can
+ * list (the Mac folder, the agent setup, room and cross-conversation tools),
+ * never with more than that chat already has on; an app action that needs
+ * approval still asks. The skill's own tools (`use_skill`, `read_skill_file`)
+ * stay, so it can read itself. An empty list narrows nothing, and the page says
+ * that plainly rather than "uses nothing". The footnote says "when you run it"
+ * because a skill the model picks for itself (automatic use, off for every
+ * taught skill) narrows nothing.
  */
 
 const TOOL_ICON: Record<string, IconComponent> = {
