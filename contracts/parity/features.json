@@ -433,6 +433,10 @@
         "/api/memory/import": "native",
         "/api/memory/import/preview": "native",
         "/api/memory/recap": "native",
+        "/api/memory/topics": {
+          "status": "planned",
+          "note": "Topics Alevr does not remember (“anything about my divorce”), listed and added from Excluded topics on the web's Memory page. A topic is a SUPPRESSION row, so the apps already list it from /api/memory and lift it with DELETE /api/memory/[id]; adding one (which retires every fact on the topic) has no native control yet."
+        },
         "/api/projects/[id]/memory": "native",
         "/api/memory/skill-candidates": {
           "status": "native",
