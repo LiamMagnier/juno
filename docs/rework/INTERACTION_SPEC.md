@@ -1000,6 +1000,7 @@ Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer t
 #### S8 · Orbit rows (F0)
 - Face (20 px, static, its colour following P1), name in `ink-1`, and one "now" line in `ink-3`: "Drafting the renewal summary", "Free", "Paused". The words carry the state; the face never loops here.
 - The section header opens the roster.
+- **Owner decision, 2026-10-25: the sidebar shows only busy agents.** Rows are the agents at work right now (working, thinking, blocked, listening) that are not already asking in Needs you, then ones whose task just finished and has not been opened, at most three. Idle and paused agents are not listed; the heading shows the total and opens the full roster. This supersedes the full-roster reading of this section and of UI_UX_MOTION_SPEC_2026-10 P4 (2); keep it unless the owner says otherwise.
 
 #### S9 · Row menu and delete (F2)
 - ⋯ on hover or focus (always visible on touch), right-click, or the context-menu key: Rename, Pin, Move to…, Branch, Delete.
