@@ -277,13 +277,34 @@ async function defaultObserved(
   }
 }
 
+/**
+ * A live reading of a turn's taint, for `untrustedNow`, or undefined when the
+ * turn keeps none.
+ *
+ * What it covers, precisely: the saved chat path's `TurnTaint` is the one
+ * Alevr Search's tools carry (`createAlevrSearchTurn`), marked by its search
+ * and page reads as they happen, `hostile` included when a fetched page reads
+ * as an injection. Connector results and the provider's own web search do not
+ * mark it on this path, so a hostile page reached through them is not refused
+ * here; the draft is still marked `fromOutsideContent` whenever web search or
+ * an app is on, because the static `untrustedContent` flag covers both.
+ */
+export function turnTaintReader(
+  taint: { readonly observed: boolean; readonly severity: string } | null | undefined
+): (() => { untrusted: boolean; hostile: boolean }) | undefined {
+  if (!taint) return undefined;
+  return () => ({ untrusted: taint.observed, hostile: taint.severity === "hostile" });
+}
+
 export interface SkillDraftToolContext {
   user: { id: string };
   userMessageId: string;
   conversationId: string;
   /** The apps enabled for this message, which are connected by definition. */
   activeConnectors: readonly TaughtApp[];
+  /** Outside content could be in this turn (the static reading, decided before the first token). */
   untrustedContent: boolean;
+  /** The turn's taint as it stands at call time (`turnTaintReader`); absent, only the static flag is read. */
   untrustedNow?: () => { untrusted: boolean; hostile?: boolean };
   /** Puts the card on screen (and in the message's activity log). */
   onDraft: (draft: ClientSkillDraft) => void;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/code-remote";
-import { taughtSkillSaveSchema } from "@/lib/skills/teach";
+import { taughtSaveRefusal, taughtSkillSaveSchema } from "@/lib/skills/teach";
 import { findTaughtSkillByKey, saveTaughtSkill } from "@/lib/skills/teach-store";
 
 export const runtime = "nodejs";
@@ -13,7 +13,13 @@ export const runtime = "nodejs";
  *
  * A save creates the skill switched OFF unless the body says `enable: true`
  * AND carries the permission fingerprint the page showed when the person
- * confirmed it — the store checks the two match before anything runs.
+ * ticked "I've reviewed it", equal to the fingerprint of what is being saved.
+ * That catches a page gone stale (the list changed after the box was ticked);
+ * it does not prove a person read anything, since any client can compute the
+ * fingerprint of its own payload. See `teachEnableDecision`.
+ *
+ * A body the schema refuses gets a sentence naming what was wrong
+ * (`taughtSaveRefusal`), never one fixed sentence for every field.
  */
 
 export async function GET(req: Request) {
@@ -42,10 +48,8 @@ export async function POST(req: Request) {
   if (!user) return error;
   const parsed = taughtSkillSaveSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid input", message: "Every skill needs a name and at least one step. Nothing was saved." },
-      { status: 400 }
-    );
+    const { field, message } = taughtSaveRefusal(parsed.error.issues);
+    return NextResponse.json({ error: "Invalid input", ...(field ? { field } : {}), message }, { status: 400 });
   }
   const result = await saveTaughtSkill(user.id, parsed.data, { actor: "web" });
   if (!result.ok) return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });

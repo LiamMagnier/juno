@@ -10,9 +10,16 @@ import {
   detectTeachIntent,
   observedFromActivity,
   skillDraftActivity,
+  turnTaintReader,
   type SkillDraftToolGate,
 } from "@/lib/chat/skill-draft-tool";
-import { DRAFT_SKILL_DESCRIPTION, DRAFT_SKILL_PARAMETERS, TEACH_SECTION } from "@/lib/tools/specs/draft-skill.prompt";
+import {
+  DRAFT_SKILL_DESCRIPTION,
+  DRAFT_SKILL_PARAMETERS,
+  TEACH_SECTION,
+  TEACH_UNAVAILABLE_LINE,
+} from "@/lib/tools/specs/draft-skill.prompt";
+import { TurnTaint } from "@/lib/web/taint";
 import { buildSystemPromptSections } from "@/lib/chat/system-prompt";
 import { INVOICES, NOW, ctx } from "./teach-skill-fixtures";
 
@@ -197,4 +204,86 @@ test("a hostile turn drafts nothing even when the model asks", async () => {
   assert.equal(result.ok, false);
   assert.equal(JSON.parse(result.text).reason, "outside_content");
   assert.equal(drafted, 0);
+});
+
+test("the live taint reader: a hostile page read mid-turn refuses the draft; a clean one marks it", async () => {
+  assert.equal(turnTaintReader(null), undefined, "no taint kept: only the static flag is read");
+  assert.equal(turnTaintReader(undefined), undefined);
+
+  const make = (taint: TurnTaint, drafts: { fromOutsideContent: boolean }[]) =>
+    createDraftSkillTool({
+      user: { id: "u1" },
+      userMessageId: "msg-9",
+      conversationId: "conv-9",
+      activeConnectors: [],
+      // A turn that started clean: no web search, no app, no attachment.
+      untrustedContent: false,
+      untrustedNow: turnTaintReader(taint),
+      onDraft: (draft) => drafts.push(draft),
+      connectedApps: async () => [],
+      observed: async () => ({ tools: [], apps: [] }),
+    });
+
+  // Before anything is read, the draft is clean.
+  const quiet = new TurnTaint({ staticContent: false });
+  const quietDrafts: { fromOutsideContent: boolean }[] = [];
+  assert.equal((await make(quiet, quietDrafts).execute(INVOICES)).ok, true);
+  assert.equal(quietDrafts[0]?.fromOutsideContent, false);
+
+  // A page read during the turn marks the draft, read at call time.
+  const read = new TurnTaint({ staticContent: false });
+  const readDrafts: { fromOutsideContent: boolean }[] = [];
+  const readTool = make(read, readDrafts);
+  read.mark("web_fetch");
+  assert.equal((await readTool.execute(INVOICES)).ok, true);
+  assert.equal(readDrafts[0]?.fromOutsideContent, true);
+
+  // A page judged hostile refuses it.
+  const hostile = new TurnTaint({ staticContent: false });
+  const hostileDrafts: { fromOutsideContent: boolean }[] = [];
+  const hostileTool = make(hostile, hostileDrafts);
+  hostile.mark("web_fetch", "hostile");
+  const refused = await hostileTool.execute(INVOICES);
+  assert.equal(refused.ok, false);
+  assert.equal(JSON.parse(refused.text).reason, "outside_content");
+  assert.equal(hostileDrafts.length, 0);
+});
+
+test("the saved chat passes the turn's live taint to draft_skill", async () => {
+  const { readFileSync } = await import("node:fs");
+  const root = new URL("..", import.meta.url).pathname;
+  const runTurn = readFileSync(`${root}src/lib/chat/turn/run-turn.ts`, "utf8");
+  const tools = readFileSync(`${root}src/lib/chat/turn/tools.ts`, "utf8");
+  assert.match(runTurn, /liveTaint: turnTaintReader\(alevrSearchTurn\?\.taint\)/);
+  const draftTool = tools.slice(tools.indexOf("createDraftSkillTool({"));
+  assert.match(draftTool.slice(0, 800), /untrustedNow: liveTaint/);
+});
+
+test("asked to teach without draft_skill, the model is told to write a SKILL.md instead of claiming a card", () => {
+  const base = { memoryEnabled: true, canvas: true, voiceMode: false } as const;
+  const off = buildSystemPromptSections({ ...base, skillDraftsUnavailable: true }).stable;
+  assert.ok(off.includes(TEACH_UNAVAILABLE_LINE));
+  assert.ok(!off.includes(TEACH_SECTION));
+  assert.match(TEACH_UNAVAILABLE_LINE, /no skill card will appear/);
+  assert.match(TEACH_UNAVAILABLE_LINE, /SKILL\.md/);
+  assert.match(TEACH_UNAVAILABLE_LINE, /Never say a skill was drafted, saved or switched on/);
+  // With the tool on, its own section wins; on voice neither is said.
+  const on = buildSystemPromptSections({ ...base, skillDrafts: true, skillDraftsUnavailable: true }).stable;
+  assert.ok(on.includes(TEACH_SECTION) && !on.includes(TEACH_UNAVAILABLE_LINE));
+  assert.ok(!buildSystemPromptSections({ ...base, voiceMode: true, skillDraftsUnavailable: true }).stable.includes(TEACH_UNAVAILABLE_LINE));
+  assert.ok(!buildSystemPromptSections({ ...base }).stable.includes(TEACH_UNAVAILABLE_LINE), "nobody asked: nothing said");
+});
+
+test("the turn says teaching is unavailable exactly when the person asked and draft_skill is off", async () => {
+  const { readFileSync } = await import("node:fs");
+  const root = new URL("..", import.meta.url).pathname;
+  const approvals = readFileSync(`${root}src/lib/chat/turn/approvals.ts`, "utf8");
+  const prompt = readFileSync(`${root}src/lib/chat/turn/prompt.ts`, "utf8");
+  const privateTurn = readFileSync(`${root}src/lib/chat/turn/private-turn.ts`, "utf8");
+  const route = readFileSync(`${root}src/app/api/chat/route.ts`, "utf8");
+  assert.match(approvals, /skillDraftUnavailable: teachIntent && !skillDraftToolOn/);
+  assert.match(prompt, /skillDraftsUnavailable: skillDraftUnavailable && !skillDraftToolOn/);
+  assert.match(route, /skillDraftUnavailable: approvals\.skillDraftUnavailable/);
+  // Incognito never carries the tool, so its prompt reads the intent directly.
+  assert.match(privateTurn, /skillDraftsUnavailable: detectTeachIntent\(/);
 });

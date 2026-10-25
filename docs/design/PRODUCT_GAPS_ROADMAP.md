@@ -67,9 +67,15 @@ consent-first design:
 `claude/w9-teach-juno`). The person walks Juno through a task in a chat (the
 `draft_skill` tool, offered only after they ask to teach something) or types
 the steps on `/skills/teach`; the review edits steps, permissions and scope and
-saves a `user_authored` skill switched off unless the person confirms the exact
-permission fingerprint the server recomputes. Re-teaching mints versions;
-revoking switches off and is audited. Code: `src/lib/skills/teach*.ts`,
+saves a `user_authored` skill switched off unless the save carries the
+permission fingerprint the page showed when the box was ticked, equal to the one
+the server recomputes (a staleness check, not proof of review). Run in a chat, a
+taught skill that lists anything keeps to it: tools, apps, web search and the
+canvas it does not list are not used (`scopeTurnToSkill`); one that lists
+nothing narrows nothing. Re-teaching mints versions; revoking switches off and
+is audited. Not covered: a taught skill the model picks itself (automatic use,
+off by default) narrows nothing, and the skill library's switch turns a kept-off
+skill on without the Teach review. Code: `src/lib/skills/teach*.ts`,
 `src/lib/chat/skill-draft-tool.ts`, `src/components/skills/teach/`. Screen
 capture remains out of scope.
 

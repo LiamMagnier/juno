@@ -18,6 +18,7 @@ import { resolveMemory } from "@/lib/chat/turn/memory";
 import { resolveProjectContext } from "@/lib/chat/turn/project-context";
 import { resolveCapabilities, turnCarriesUntrustedContent } from "@/lib/chat/turn/capabilities";
 import { resolveSkills } from "@/lib/chat/turn/skills";
+import { scopeTurnToSkill } from "@/lib/chat/skills";
 import { resolveApprovals } from "@/lib/chat/turn/approvals";
 import { detectTeachIntent } from "@/lib/chat/skill-draft-tool";
 import { resolveTools } from "@/lib/chat/turn/tools";
@@ -102,7 +103,7 @@ async function handleChat(req: Request) {
   const { modelInfo } = model;
 
   const tokens = await resolveTurnTokens({ user, input, settings, workspaceConfig, modelInfo });
-  const { turnContext, activeConnectors } = tokens;
+  const { turnContext, activeConnectors: offeredConnectors } = tokens;
 
   if (input.privateMode) {
     return runPrivateTurn({ req, user, request, settings, plan, period, effective, model, tokens, toolDetailEnabled });
@@ -165,7 +166,13 @@ async function handleChat(req: Request) {
     const { attachmentToolToggles } = context;
 
     const capabilities = resolveCapabilities({ input, plan, modelInfo, workspaceConfig });
-    const { researchActive, useWebSearch, useAlevrSearch, useProMode, canvasOn } = capabilities;
+    const {
+      researchActive,
+      useWebSearch: offeredWebSearch,
+      useAlevrSearch: offeredAlevrSearch,
+      useProMode,
+      canvasOn: offeredCanvas,
+    } = capabilities;
 
     const skill = await resolveSkills({
       userId: user.id,
@@ -173,16 +180,32 @@ async function handleChat(req: Request) {
       turnSkillSlug: tokens.turnSkillSlug,
       projectId: conversation.projectId,
       grant: {
-        webSearch: useWebSearch || useAlevrSearch,
-        canvas: canvasOn,
+        webSearch: offeredWebSearch || offeredAlevrSearch,
+        canvas: offeredCanvas,
         documents: attachmentToolToggles.documents,
         images: attachmentToolToggles.images,
-        connectors: activeConnectors.map((connector) => connector.id),
+        connectors: offeredConnectors.map((connector) => connector.id),
       },
       turnContext,
       durableGenerationId,
     });
     const { appliedSkill } = skill;
+    // What the turn keeps once the skill has narrowed it (never more than it
+    // had): apps the skill does not name are not connected, and a taught skill
+    // keeps web search and the canvas only when it lists them
+    // (`scopeTurnToSkill`). Everything below — the prompt, the provider
+    // request, the native tools, the trace — reads these.
+    const {
+      webSearch: useWebSearch,
+      alevrSearch: useAlevrSearch,
+      canvas: canvasOn,
+      connectors: activeConnectors,
+    } = scopeTurnToSkill(appliedSkill, {
+      webSearch: offeredWebSearch,
+      alevrSearch: offeredAlevrSearch,
+      canvas: offeredCanvas,
+      connectors: offeredConnectors,
+    });
 
     const untrustedContentInTurn = turnCarriesUntrustedContent({
       connectors: activeConnectors.length,
@@ -291,6 +314,7 @@ async function handleChat(req: Request) {
       routineToolOn: approvals.routineToolOn,
       imageToolOn: approvals.imageToolOn,
       skillDraftToolOn: approvals.skillDraftToolOn,
+      skillDraftUnavailable: approvals.skillDraftUnavailable,
       useWebSearch,
       useAlevrSearch,
       attachmentToolToggles,

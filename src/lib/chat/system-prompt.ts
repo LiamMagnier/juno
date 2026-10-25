@@ -8,7 +8,7 @@ import { personalitySystemPrompt } from "@/lib/personalities";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ROUTINE_SECTION, ROUTINE_UNAVAILABLE_LINE } from "@/lib/tools/specs/propose-routine.prompt";
-import { TEACH_SECTION } from "@/lib/tools/specs/draft-skill.prompt";
+import { TEACH_SECTION, TEACH_UNAVAILABLE_LINE } from "@/lib/tools/specs/draft-skill.prompt";
 import { IMAGE_SECTION } from "@/lib/tools/specs/generate-image.prompt";
 
 export interface SystemPromptOptions {
@@ -71,6 +71,12 @@ export interface SystemPromptOptions {
    * when the person asked to teach something.
    */
   skillDrafts?: boolean;
+  /**
+   * The person asked to teach something but `draft_skill` is not attached:
+   * adds TEACH_UNAVAILABLE_LINE, so the model writes a SKILL.md and points to
+   * the Teach page instead of claiming a draft card that never appears.
+   */
+  skillDraftsUnavailable?: boolean;
   /**
    * The reply is an agent's, in its own thread or a room. Its routines are set
    * up through `propose_setup_change` (and its brief tells it to suggest
@@ -386,6 +392,7 @@ You write the content; the USER picks the download format. Never say you attache
   if (opts.imageGeneration && !opts.voiceMode) parts.push(IMAGE_SECTION);
   // Teaching a skill (Teach Juno): only with the tool, never on voice.
   if (opts.skillDrafts && !opts.voiceMode) parts.push(TEACH_SECTION);
+  else if (opts.skillDraftsUnavailable && !opts.voiceMode) parts.push(TEACH_UNAVAILABLE_LINE);
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.

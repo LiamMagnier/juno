@@ -219,6 +219,72 @@ if (!DB_URL) {
     assert.equal(blocked.ok && blocked.reason, "blocked");
   });
 
+  test("re-teaching free-form instructions keeps typed inputs, and a re-taught kind survives by name", async (t) => {
+    const teach = await import("@/lib/skills/teach");
+    const store = await import("@/lib/skills/teach-store");
+    const skills = await import("@/lib/skills/store");
+    const { emptySkillContract, parseSkillContract } = await import("@/lib/work/skills");
+    const suffix = randomUUID();
+    const me = await prisma.user.create({ data: { email: `teach-freeform-${suffix}@example.invalid` } });
+    t.after(async () => {
+      await prisma.workAuditEvent.deleteMany({ where: { userId: me.id } });
+      await prisma.user.deleteMany({ where: { id: me.id } });
+    });
+    const typed = [
+      { name: "Month", kind: "number" as const, required: true, description: "Month number" },
+      { name: "Folder", kind: "url" as const, required: false, description: "Where the files go" },
+    ];
+    const created = await skills.createSkillWithFirstVersion({
+      userId: me.id,
+      slug: "monthly-close",
+      name: "Monthly close",
+      description: "Closes the month.",
+      instructions: "Close the books for the month, then email the summary to finance.",
+      projectId: null,
+      contract: { ...emptySkillContract(), inputs: typed },
+      requestedTools: [],
+      origin: "authored",
+      autoSelect: false,
+      enabled: true,
+      actor: "web",
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const skillId = created.skill.id;
+    const loaded = await store.loadTaughtSkillForEdit(me.id, skillId);
+    assert.equal(loaded?.form, null, "free-form: no steps to read back");
+    assert.deepEqual(teach.taughtInputsFromContract(loaded!.version!.contract.inputs), [
+      { name: "Month", description: "Month number", required: true },
+      { name: "Folder", description: "Where the files go", required: false },
+    ], "the page shows what it asks for");
+
+    // A client that never showed the inputs sends none: they are kept, kinds and all.
+    const blind = await store.saveTaughtSkill(
+      me.id,
+      teach.taughtSkillSaveSchema.parse({ skillId, name: "Monthly close", steps: ["Close the books.", "Email the summary."] })
+    );
+    assert.equal(blind.ok && blind.version, 2);
+    const v2 = await prisma.workSkillVersion.findFirstOrThrow({ where: { skillId, version: 2 } });
+    assert.deepEqual(parseSkillContract(v2.contract).inputs, typed);
+    assert.equal(blind.ok && blind.skill.enabled, false, "saved off: it was not asked for on");
+
+    // The page sends them back (renamed in case): the kind follows the name; the one removed is gone.
+    const page = await store.saveTaughtSkill(
+      me.id,
+      teach.taughtSkillSaveSchema.parse({
+        skillId,
+        name: "Monthly close",
+        steps: ["Close the books.", "Email the summary."],
+        inputs: [{ name: "month", description: "Which month", required: true }],
+      })
+    );
+    assert.equal(page.ok && page.version, 3);
+    const v3 = await prisma.workSkillVersion.findFirstOrThrow({ where: { skillId, version: 3 } });
+    assert.deepEqual(parseSkillContract(v3.contract).inputs, [
+      { name: "month", kind: "number", required: true, description: "Which month" },
+    ]);
+  });
+
   test(
     "the routes, as the Teach page calls them: signed in, scoped to the account, off until confirmed",
     { skip: !canMockModules && "needs --experimental-test-module-mocks" },
@@ -248,7 +314,18 @@ if (!DB_URL) {
       signedIn = { id: me.id, email: me.email! };
       const invalid = await post({ name: "No steps", steps: [] });
       assert.equal(invalid.status, 400);
-      assert.match((await invalid.json()).message, /at least one step/);
+      const invalidBody = await invalid.json();
+      assert.equal(invalidBody.field, "steps");
+      assert.match(invalidBody.message, /1 to 20 steps/);
+      // Each refusal names its own field, never one sentence for all of them.
+      const tooManyApps = await (await post(body({ name: "Many apps", connectors: Array.from({ length: 13 }, (_, i) => `app-${i}`) }))).json();
+      assert.equal(tooManyApps.field, "connectors");
+      assert.match(tooManyApps.message, /at most 12 apps\. Nothing was saved\.$/);
+      const badTool = await (await post(body({ name: "Bad tool", tools: ["web search"] }))).json();
+      assert.match(badTool.message, /One of the tools isn’t a name a skill can ask for/);
+      // Six notes and three answered questions are nine notes: saved, not refused.
+      const notes = await post(body({ name: "Many notes", notes: Array.from({ length: 9 }, (_, i) => `Note ${i}`) }));
+      assert.equal(notes.status, 201);
 
       const key = `skill-draft:route-${suffix}:0`;
       const payload = body({ key, source: { via: "conversation", conversationId: null } });

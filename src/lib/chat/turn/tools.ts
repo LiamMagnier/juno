@@ -192,6 +192,7 @@ export async function buildNativeTools({
   plan,
   generatedAttachmentIds,
   onImageModel,
+  liveTaint,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -224,6 +225,11 @@ export async function buildNativeTools({
   generatedAttachmentIds?: string[];
   /** The image model that made a picture, for Auto's receipt. */
   onImageModel?: (model: { id: string; name: string; auto: boolean }) => void;
+  /**
+   * The turn's taint as it stands when a tool is called (`turnTaintReader`),
+   * when the turn keeps one. Read by `draft_skill` only.
+   */
+  liveTaint?: () => { untrusted: boolean; hostile?: boolean };
 }): Promise<NativeChatTool[]> {
   let taskAnnounced = false;
   const taskTool =
@@ -413,7 +419,9 @@ export async function buildNativeTools({
       : null;
   // A skill the person is teaching, drafted for them to review
   // (src/lib/chat/skill-draft-tool.ts). It creates nothing: the card under the
-  // reply opens the Teach page, whose Save is the only write.
+  // reply opens the Teach page, whose Save is the only write. `untrustedNow`
+  // reads the turn's live taint (Alevr Search's page reads mark it, hostile
+  // included), so a draft asked for after a hostile page is refused.
   const skillDraftTool =
     skillDraftToolOn && userMessageId
       ? createDraftSkillTool({
@@ -422,6 +430,7 @@ export async function buildNativeTools({
           conversationId,
           activeConnectors: activeConnectors.map((connector) => ({ id: connector.id, label: connector.label })),
           untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          ...(liveTaint ? { untrustedNow: liveTaint } : {}),
           onDraft: (draft) => {
             sendActivity(skillDraftActivity(draft));
           },

@@ -52,6 +52,7 @@ export function composeTurnSystem({
   routineToolOn = false,
   imageToolOn = false,
   skillDraftToolOn = false,
+  skillDraftUnavailable = false,
   useWebSearch,
   useAlevrSearch,
   attachmentToolToggles,
@@ -78,6 +79,8 @@ export function composeTurnSystem({
   imageToolOn?: boolean;
   /** `draft_skill` is attached (src/lib/chat/skill-draft-tool.ts). */
   skillDraftToolOn?: boolean;
+  /** The person asked to teach something and `draft_skill` is not attached. */
+  skillDraftUnavailable?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
@@ -113,6 +116,7 @@ export function composeTurnSystem({
     routineProposals: routineToolOn,
     imageGeneration: imageToolOn,
     skillDrafts: skillDraftToolOn,
+    skillDraftsUnavailable: skillDraftUnavailable && !skillDraftToolOn,
     // An agent's thread sets its own routines up (`propose_setup_change`,
     // and its brief says so), so it is never told routines cannot be made here.
     agentThread: agentContext !== null && agentContext !== undefined,

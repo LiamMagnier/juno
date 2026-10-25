@@ -4,8 +4,13 @@ import {
   MAX_TAUGHT_STEPS,
   SKILL_DRAFT_REFUSALS,
   TEACHABLE_TOOL_IDS,
+  MAX_TAUGHT_SAVED_NOTES,
   admitSkillDraft,
   disallowedTaughtTools,
+  isTaughtContract,
+  reteachContractInputs,
+  taughtInputsFromContract,
+  taughtSaveRefusal,
   parseTaughtInstructions,
   readSkillDraft,
   renderTaughtInstructions,
@@ -286,4 +291,94 @@ test("a persisted draft reads back field by field, and a malformed one is droppe
   const tampered = readSkillDraft({ key: "k", name: "n", steps: ["a"], tools: ["web_search", "root_shell"], scan: { status: "blocked" } });
   assert.deepEqual(tampered?.tools, ["web_search"], "a stored row cannot smuggle in a tool the list does not know");
   assert.equal(tampered?.scan.status, "clear", "a status this card does not draw is not trusted");
+});
+
+test("a refused save body names the field that failed, not one sentence for everything", () => {
+  const refusal = (body: Record<string, unknown>) => {
+    const parsed = taughtSkillSaveSchema.safeParse({ name: "File invoices", steps: ["Open the label"], ...body });
+    assert.equal(parsed.success, false, JSON.stringify(body).slice(0, 80));
+    if (parsed.success) throw new Error("accepted");
+    return taughtSaveRefusal(parsed.error.issues);
+  };
+  const apps = refusal({ connectors: Array.from({ length: 13 }, (_, i) => `app-${i}`) });
+  assert.equal(apps.field, "connectors");
+  assert.match(apps.message, /at most 12 apps\. Nothing was saved\.$/);
+  assert.match(refusal({ connectors: ["not an app"] }).message, /One of the apps isn’t a name/);
+  assert.match(refusal({ tools: ["web search"] }).message, /One of the tools isn’t a name a skill can ask for/);
+  assert.match(refusal({ tools: Array.from({ length: 17 }, (_, i) => `t${i}`) }).message, /at most 16 tools/);
+  assert.match(refusal({ name: "" }).message, /Give it a name/);
+  assert.match(refusal({ steps: ["", " "] }).message, /1 to 20 steps/);
+  assert.match(refusal({ notes: Array.from({ length: 14 }, (_, i) => `note ${i}`) }).message, /at most 13 notes, and each answered question/);
+  assert.match(refusal({ inputs: [{ name: "x".repeat(200) }] }).message, /Each thing it asks for needs a name/);
+  assert.match(refusal({ acknowledged: "x".repeat(16_001) }).message, /review confirmation couldn’t be checked/);
+  assert.match(refusal({ source: { via: "screen-recording" } }).message, /Reload the page/);
+  assert.equal(taughtSaveRefusal([]).field, null);
+  assert.match(taughtSaveRefusal([{ path: [] }]).message, /isn’t valid\. Nothing was saved\.$/);
+  // None of them is the old fixed sentence.
+  assert.doesNotMatch(apps.message, /needs a name and at least one step/);
+});
+
+test("a save carries up to 8 typed notes plus one per answered question", () => {
+  assert.equal(MAX_TAUGHT_SAVED_NOTES, 13);
+  // The verifier's case: 6 notes and 3 answered questions are 9 notes.
+  const nine = taughtSkillSaveSchema.safeParse({
+    name: "File invoices",
+    steps: ["Open the label"],
+    notes: Array.from({ length: 9 }, (_, i) => `note ${i}`),
+  });
+  assert.equal(nine.success, true);
+});
+
+test("the longest fingerprint a re-teach can show fits what a save may acknowledge", () => {
+  const base = {
+    ...emptySkillContract(),
+    requestedApps: Array.from({ length: 32 }, (_, i) => `app-${i}-${"a".repeat(70)}`),
+  };
+  const fingerprint = taughtPermissionFingerprint(
+    {
+      tools: Array.from({ length: 16 }, (_, i) => `tool-${i}-${"t".repeat(70)}`),
+      connectors: Array.from({ length: 12 }, (_, i) => `composio:${i}-${"c".repeat(100)}`),
+      domains: Array.from({ length: 8 }, (_, i) => `${"d".repeat(240)}${i}.example`),
+    },
+    base
+  );
+  assert.ok(fingerprint.length > 4_000, `the old bound refused it (${fingerprint.length})`);
+  const parsed = taughtSkillSaveSchema.safeParse({ name: "x", steps: ["a"], acknowledged: fingerprint });
+  assert.equal(parsed.success, true);
+});
+
+test("re-teaching keeps an input's kind by name, and free-form inputs nobody sent are kept", () => {
+  const base = [
+    { name: "Month", kind: "number" as const, required: true, description: "Month number" },
+    { name: "Folder", kind: "url" as const, required: false, description: "" },
+  ];
+  assert.deepEqual(
+    taughtContractInputs(
+      [
+        { name: "month", description: "Which month", required: true },
+        { name: "Client", description: "", required: false },
+      ],
+      base
+    ),
+    [
+      { name: "month", kind: "number", required: true, description: "Which month" },
+      { name: "Client", kind: "string", required: false, description: "" },
+    ]
+  );
+  assert.deepEqual(reteachContractInputs({ form: [], base, baseWasFreeform: true }), base, "free-form, none sent: kept");
+  assert.deepEqual(reteachContractInputs({ form: [], base, baseWasFreeform: false }), [], "taught shape, removed on the page: gone");
+  assert.deepEqual(taughtInputsFromContract(base), [
+    { name: "Month", description: "Month number", required: true },
+    { name: "Folder", description: "", required: false },
+  ]);
+});
+
+test("a contract is taught only when Teach wrote its provenance", () => {
+  assert.equal(isTaughtContract(null), false);
+  assert.equal(isTaughtContract(emptySkillContract()), false);
+  assert.equal(isTaughtContract({ provenance: { "source.owner": "acme" } }), false);
+  assert.equal(
+    isTaughtContract({ provenance: taughtProvenance({ source: { via: "conversation", conversationId: "c1" }, now: NOW }) }),
+    true
+  );
 });

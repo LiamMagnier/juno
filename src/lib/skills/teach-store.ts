@@ -34,6 +34,7 @@ import {
   formFromSave,
   parseTaughtInstructions,
   renderTaughtInstructions,
+  reteachContractInputs,
   scanTaughtSkill,
   taughtContractInputs,
   taughtDescription,
@@ -131,10 +132,12 @@ async function recordConsent(
  * Saves a taught skill: a new one (version 1), or the next version of the
  * skill named by `skillId`.
  *
- * Never switches anything on that the person did not confirm: `enable` is
- * honoured only when the fingerprint they acknowledged equals the fingerprint
- * being saved (`teachEnableDecision`). A chat draft saved twice (two tabs, a
- * double press, a press after reload) lands on the skill the first save made.
+ * `enable` is honoured only when the acknowledged fingerprint equals the
+ * fingerprint being saved (`teachEnableDecision`): a page whose list changed
+ * after the box was ticked saves the skill off. That is a staleness check, not
+ * proof of review (a client can fingerprint its own payload). A chat draft
+ * saved twice (two tabs, a double press, a press after reload) lands on the
+ * skill the first save made.
  */
 export async function saveTaughtSkill(
   userId: string,
@@ -268,9 +271,10 @@ async function reteach(
   }
   const current = await prisma.workSkillVersion.findFirst({
     where: { skillId: skill.id, version: skill.currentVersion },
-    select: { contract: true, requestedTools: true },
+    select: { contract: true, requestedTools: true, instructions: true },
   });
   const base = parseSkillContract(current?.contract);
+  const baseWasFreeform = current ? parseTaughtInstructions(current.instructions) === null : false;
   const previousTools = parseRequestedTools(current?.requestedTools);
 
   const unknown = disallowedTaughtTools(form.tools, previousTools);
@@ -284,7 +288,9 @@ async function reteach(
 
   const parsedContract = skillContractSchema.safeParse({
     ...base,
-    inputs: taughtContractInputs(form.inputs),
+    // Typed inputs keep their kind; free-form instructions re-taught without
+    // any inputs keep the ones they had (`reteachContractInputs`).
+    inputs: reteachContractInputs({ form: form.inputs, base: base.inputs, baseWasFreeform }),
     requestedConnectors: form.connectors,
     requestedDomains: form.domains,
     provenance: taughtProvenance({ source: ctx.source, now: ctx.now, previous: base.provenance }),
@@ -292,14 +298,41 @@ async function reteach(
   if (!parsedContract.success) return refuse(400, "invalid_contract", "Something in what it may use isn’t valid. Nothing was saved.");
   const contract: WorkSkillContract = parsedContract.data;
 
-  const minted = await mintSkillVersion({
-    userId,
-    skill: { id: skill.id, name: form.name, description: skill.description },
-    content: { instructions, contract, contractVersion: SKILL_CONTRACT_VERSION, requestedTools: form.tools },
-    head: { description: taughtDescription(form) },
-    actor: ctx.actor,
-  });
+  /*
+   * Off BEFORE the new version exists. Minting keeps the head's switch, and
+   * the switch this save leaves is decided only after it (it needs the minted
+   * version's scan and consent). Were the skill still on while that second
+   * write ran, a failure in between would leave the new version running under
+   * an acknowledgement given for the old one. Off first, a failure anywhere
+   * after leaves it off: the safe way to be wrong.
+   */
+  if (skill.enabled) {
+    await prisma.workSkill.update({ where: { id: skill.id, userId }, data: { enabled: false } });
+  }
+  // Nothing new was written: the switch goes back to what it was, provided
+  // the head still points at the version it was on for.
+  const restoreSwitch = async () => {
+    if (!skill.enabled) return;
+    await prisma.workSkill.updateMany({
+      where: { id: skill.id, userId, currentVersion: skill.currentVersion },
+      data: { enabled: true },
+    });
+  };
+  let minted: Awaited<ReturnType<typeof mintSkillVersion>>;
+  try {
+    minted = await mintSkillVersion({
+      userId,
+      skill: { id: skill.id, name: form.name, description: skill.description },
+      content: { instructions, contract, contractVersion: SKILL_CONTRACT_VERSION, requestedTools: form.tools },
+      head: { description: taughtDescription(form) },
+      actor: ctx.actor,
+    });
+  } catch (error) {
+    await restoreSwitch().catch(() => {});
+    throw error;
+  }
   if (!minted.ok) {
+    await restoreSwitch();
     return refuse(409, "version_conflict", "Someone else saved this skill at the same moment. Reload and try again.");
   }
 

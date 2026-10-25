@@ -13,6 +13,7 @@ import {
   MAX_TAUGHT_INPUTS,
   MAX_TAUGHT_NOTES,
   MAX_TAUGHT_RULES,
+  MAX_TAUGHT_SAVED_NOTES,
   MAX_TAUGHT_STEP_CHARS,
   MAX_TAUGHT_STEPS,
   emptyTaughtForm,
@@ -187,7 +188,7 @@ export const LIST_LIMITS = {
 // ---------------------------------------------------------------------------
 
 export interface TeachProblem {
-  field: "name" | "steps";
+  field: "name" | "steps" | "notes";
   message: string;
 }
 
@@ -202,6 +203,14 @@ export function teachProblems(state: TeachEditorState): TeachProblem[] {
   if (steps.length > MAX_TAUGHT_STEPS) problems.push({ field: "steps", message: `A skill can have at most ${MAX_TAUGHT_STEPS} steps.` });
   if (steps.some((s) => s.length > MAX_TAUGHT_STEP_CHARS)) {
     problems.push({ field: "steps", message: `Keep each step under ${MAX_TAUGHT_STEP_CHARS} characters; split a long one in two.` });
+  }
+  // Every answered question is saved as a note (`formFromState`), so the
+  // limit the server holds is on the two together, not on typed notes alone.
+  if (formFromState(state).notes.length > MAX_TAUGHT_SAVED_NOTES) {
+    problems.push({
+      field: "notes",
+      message: `A skill keeps at most ${MAX_TAUGHT_SAVED_NOTES} notes, and each answered question becomes one. Remove a note, or clear an answer so it asks you each time.`,
+    });
   }
   return problems;
 }
@@ -332,7 +341,9 @@ export function permissionRows(
     kind: "domain",
     id,
     label: id,
-    description: "A website an earlier version asked to reach.",
+    // Recorded, never enforced: chat search has no per-site allowlist to keep
+    // a skill to (`chatSkillGrantLayer`), so the row says so.
+    description: "A website an earlier version asked to reach. Kept as a record; a chat can’t limit search to it.",
     observed: false,
     connected: true,
     sensitive: true,

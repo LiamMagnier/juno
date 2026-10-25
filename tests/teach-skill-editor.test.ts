@@ -134,3 +134,30 @@ test("the Create-with chat prompt is a teaching prompt, so the chat offers draft
   const { CREATE_SKILL_PROMPT } = await import("@/components/skills/add-skill-menu");
   assert.equal(detectTeachIntent([`${CREATE_SKILL_PROMPT}sorting my receipts`]), true);
 });
+
+test("answered questions count against the notes a save may carry, so the editor stops a save the server would refuse", () => {
+  const withNotes = (notes: number, answered: number) => {
+    const state = stateFromForm({
+      ...FULL_FORM,
+      notes: Array.from({ length: notes }, (_, i) => `Note ${i}`),
+      questions: Array.from({ length: Math.max(answered, 1) }, (_, i) => `Question ${i}?`),
+    });
+    return { ...state, questions: state.questions.map((q, i) => (i < answered ? { ...q, answer: `Answer ${i}` } : q)) };
+  };
+  // The verifier's case: 6 notes and 3 answers save (the schema now takes 8 + 5).
+  const nine = withNotes(6, 3);
+  assert.deepEqual(teachProblems(nine), []);
+  assert.equal(taughtSkillSaveSchema.safeParse(teachSavePayload(nine, { source: { via: "walkthrough", conversationId: null }, enable: false, acknowledged: null })).success, true);
+  // A re-taught skill that came back with 12 notes, plus 2 answers, is over.
+  const over = withNotes(12, 2);
+  const problems = teachProblems(over);
+  assert.deepEqual(problems.map((p) => p.field), ["notes"]);
+  assert.match(problems[0].message, /at most 13 notes, and each answered question becomes one/);
+  // And the server would have refused it: the editor's check is the schema's.
+  assert.equal(taughtSkillSaveSchema.safeParse(teachSavePayload(over, { source: { via: "walkthrough", conversationId: null }, enable: false, acknowledged: null })).success, false);
+});
+
+test("a website kept from an earlier version says it is a record, not a limit", () => {
+  const rows = permissionRows({ tools: [], connectors: [], domains: ["example.com"] }, { apps: [] });
+  assert.match(rows[0].description, /Kept as a record; a chat can’t limit search to it\./);
+});

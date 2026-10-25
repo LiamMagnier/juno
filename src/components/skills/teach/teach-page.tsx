@@ -18,6 +18,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import { emptySkillContract } from "@/lib/work/skills";
 import {
   emptyTaughtForm,
+  taughtInputsFromContract,
   type ClientSkillDraft,
   type TaughtSkillForEdit,
   type TaughtSkillSaved,
@@ -81,6 +82,9 @@ function reteachView(loaded: TaughtSkillForEdit): View {
     name: loaded.skill.name,
     whenToUse: loaded.skill.description,
     steps: stepsFromFreeform(loaded.version?.instructions ?? "").map((step) => step.slice(0, 600)),
+    // What it asks for each time is shown and sent back, so a save never
+    // drops it unseen; a typed input keeps its kind on the server.
+    inputs: taughtInputsFromContract(loaded.version?.contract.inputs ?? []),
     tools: loaded.version?.requestedTools ?? [],
     connectors: loaded.version?.contract.requestedConnectors ?? [],
     domains: loaded.version?.contract.requestedDomains ?? [],
@@ -211,8 +215,9 @@ export function TeachPage() {
             <>
               {view.freeform ? (
                 <WorkStateNote tone="info" className="mb-6">
-                  This skill’s instructions weren’t written as steps, so each line became one. Check them before you save:
-                  the saved version replaces the text with these steps.
+                  This skill’s instructions weren’t written as steps, so each line became one. Check them, and “What it
+                  asks you for each time”, before you save: the saved version replaces the text with these steps, and
+                  what it asks for with that list.
                 </WorkStateNote>
               ) : null}
               <TeachEditor

@@ -27,7 +27,8 @@ import { privateModeFeatureRefusal } from "@/lib/chat/entitlements";
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { loadChatSkill } from "@/lib/chat/skill-runtime";
-import { CHAT_SKILL_REFUSAL_MESSAGES, skillAppliedActivity } from "@/lib/chat/skills";
+import { CHAT_SKILL_REFUSAL_MESSAGES, scopeTurnToSkill, skillAppliedActivity } from "@/lib/chat/skills";
+import { detectTeachIntent } from "@/lib/chat/skill-draft-tool";
 import { contextActivityRows } from "@/lib/chat/context-resolution";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import { INTERNAL_ERROR_FAILURE_CODE, resolveTerminalState } from "@/lib/chat/terminal-state";
@@ -97,7 +98,7 @@ export async function runPrivateTurn({
     return NextResponse.json(consumeRefusalBody(consumed), { status: 402 });
   }
 
-  const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
+  const offeredWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
   const useFastMode = resolveFastMode(modelInfo, input);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
   /*
@@ -115,7 +116,7 @@ export async function runPrivateTurn({
         userId: user.id,
         slug: turnSkillSlug,
         capabilities: {
-          webSearch: useWebSearch,
+          webSearch: offeredWebSearch,
           canvas: false,
           documents: false,
           images: false,
@@ -124,6 +125,15 @@ export async function runPrivateTurn({
       })
     : null;
   const privateSkillBlock = privateSkill?.applied ? privateSkill.application : null;
+  // A taught skill that lists what it uses and leaves web search out runs
+  // without it here too (`scopeTurnToSkill`); every other skill keeps the
+  // turn's search as it was.
+  const useWebSearch = scopeTurnToSkill(privateSkillBlock, {
+    webSearch: offeredWebSearch,
+    alevrSearch: false,
+    canvas: false,
+    connectors: [],
+  }).webSearch;
   turnContext.settleSkill(skillSettlement(privateSkill));
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
@@ -147,6 +157,12 @@ export async function runPrivateTurn({
     codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     // Private chats never execute on the server (outputs would persist).
     codeSandbox: false,
+    // `draft_skill` never runs in incognito (nothing of it may be kept), so a
+    // person asking to teach a method is told how to do it here instead.
+    skillDraftsUnavailable: detectTeachIntent([
+      ...privateHistory.filter((m) => m.role === "USER").map((m) => m.content),
+      input.message,
+    ]),
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`

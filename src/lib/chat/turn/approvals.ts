@@ -232,6 +232,8 @@ export async function resolveApprovals({
     routineToolOn,
     imageToolOn,
     skillDraftToolOn,
+    /** Asked to teach, but `draft_skill` is off: the prompt says how to do it here instead. */
+    skillDraftUnavailable: teachIntent && !skillDraftToolOn,
     handoffGateOpen,
     agentConfigToolsOn,
     turnAgentId,

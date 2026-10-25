@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { teachableTool, type ClientSkillDraft, type ClientTaughtSkill } from "@/lib/skills/teach";
 import { listPhrase } from "@/components/skills/teach/teach-model";
 import { fetchTaughtSkillByKey, stashSkillDraft } from "@/components/skills/teach/teach-transport";
+import type { WorkResult } from "@/components/work/work-transport";
 import type { ClientActivityEvent } from "@/types/chat";
 
 /*
@@ -35,13 +36,20 @@ import type { ClientActivityEvent } from "@/types/chat";
  * the skill switches on only with the person's confirmation. The draft key
  * makes a second save land on the first skill, and is how the card knows, on a
  * later visit, that it was saved.
+ *
+ * Split in two so every decision has a test without a DOM
+ * (tests/teach-skill-card.test.ts): `SkillDraftCardView` draws a phase and
+ * calls back; `draftCardPhase`, `skillDraftReviewHref` and the dismissal
+ * helpers decide; `SkillDraftCard` wires them to the router and the network.
  */
 
-type Phase = "checking" | "open" | "saved" | "dismissed";
+export type SkillDraftPhase = "checking" | "open" | "saved" | "dismissed";
+type Phase = SkillDraftPhase;
 
 const DISMISS_PREFIX = "alevr:skill-draft:not-now:";
 
-function readDismissed(key: string): boolean {
+/** Whether the person pressed Not now on this draft in this browser. */
+export function readDismissed(key: string): boolean {
   try {
     return window.localStorage.getItem(DISMISS_PREFIX + key) === "1";
   } catch {
@@ -49,7 +57,7 @@ function readDismissed(key: string): boolean {
   }
 }
 
-function writeDismissed(key: string, dismissed: boolean): void {
+export function writeDismissed(key: string, dismissed: boolean): void {
   try {
     if (dismissed) window.localStorage.setItem(DISMISS_PREFIX + key, "1");
     else window.localStorage.removeItem(DISMISS_PREFIX + key);
@@ -59,6 +67,46 @@ function writeDismissed(key: string, dismissed: boolean): void {
 }
 
 const PREVIEW_STEPS = 3;
+
+/**
+ * What the card shows once the lookup by draft key answers: saved when a skill
+ * carries this key, else open, or folded when the person said Not now. A
+ * lookup that failed (offline, signed out) shows the draft: Review is still
+ * safe, because a second save of one key lands on the first skill.
+ */
+export function draftCardPhase(
+  lookup: WorkResult<ClientTaughtSkill | null>,
+  dismissed: boolean
+): { phase: Exclude<Phase, "checking">; saved: ClientTaughtSkill | null } {
+  if (lookup.kind === "ok" && lookup.value) return { phase: "saved", saved: lookup.value };
+  return { phase: dismissed ? "dismissed" : "open", saved: null };
+}
+
+/**
+ * Review: forget a Not now, hand the draft over through this tab's session
+ * storage, and the Teach page address to open. A tab that cannot store it
+ * opens an empty walkthrough rather than nothing.
+ */
+export function skillDraftReviewHref(
+  draft: ClientSkillDraft,
+  deps: { stash?: (draft: ClientSkillDraft) => string | null; forget?: (key: string) => void } = {}
+): string {
+  (deps.forget ?? ((key: string) => writeDismissed(key, false)))(draft.key);
+  const id = (deps.stash ?? stashSkillDraft)(draft);
+  return id ? `/skills/teach?draft=${encodeURIComponent(id)}` : "/skills/teach?mode=walk";
+}
+
+/** "/file-invoices · 4 steps · uses Search the web and Gmail". */
+export function skillDraftMeta(draft: ClientSkillDraft): string {
+  const uses = [...draft.tools.map((id) => teachableTool(id)?.label ?? id), ...draft.apps.map((app) => app.label)];
+  return [
+    draft.slug ? `/${draft.slug}` : null,
+    `${draft.steps.length} step${draft.steps.length === 1 ? "" : "s"}`,
+    uses.length > 0 ? `uses ${listPhrase(uses)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function SkillDraftCard({ draft, className }: { draft: ClientSkillDraft; className?: string }) {
   const reduce = useReducedMotion();
@@ -71,32 +119,59 @@ export function SkillDraftCard({ draft, className }: { draft: ClientSkillDraft; 
     let cancelled = false;
     void fetchTaughtSkillByKey(draft.key).then((result) => {
       if (cancelled) return;
-      if (result.kind === "ok" && result.value) {
-        setSaved(result.value);
-        setPhase("saved");
-        return;
-      }
-      setPhase(readDismissed(draft.key) ? "dismissed" : "open");
+      const next = draftCardPhase(result, readDismissed(draft.key));
+      setSaved(next.saved);
+      setPhase(next.phase);
     });
     return () => {
       cancelled = true;
     };
   }, [draft.key]);
 
-  const review = () => {
-    writeDismissed(draft.key, false);
-    const id = stashSkillDraft(draft);
-    router.push(id ? `/skills/teach?draft=${encodeURIComponent(id)}` : "/skills/teach?mode=walk");
-  };
+  return (
+    <SkillDraftCardView
+      draft={draft}
+      phase={phase}
+      saved={saved}
+      reduce={!!reduce}
+      titleId={titleId}
+      className={className}
+      onReview={() => router.push(skillDraftReviewHref(draft))}
+      onNotNow={() => {
+        writeDismissed(draft.key, true);
+        setPhase("dismissed");
+      }}
+      onShow={() => {
+        writeDismissed(draft.key, false);
+        setPhase("open");
+      }}
+    />
+  );
+}
 
-  const uses = [...draft.tools.map((id) => teachableTool(id)?.label ?? id), ...draft.apps.map((app) => app.label)];
-  const meta = [
-    draft.slug ? `/${draft.slug}` : null,
-    `${draft.steps.length} step${draft.steps.length === 1 ? "" : "s"}`,
-    uses.length > 0 ? `uses ${listPhrase(uses)}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+/** The card for one phase. No hooks: a pure function of its props. */
+export function SkillDraftCardView({
+  draft,
+  phase,
+  saved,
+  reduce,
+  titleId,
+  className,
+  onReview,
+  onNotNow,
+  onShow,
+}: {
+  draft: ClientSkillDraft;
+  phase: Phase;
+  saved: ClientTaughtSkill | null;
+  reduce: boolean;
+  titleId: string;
+  className?: string;
+  onReview: () => void;
+  onNotNow: () => void;
+  onShow: () => void;
+}) {
+  const meta = skillDraftMeta(draft);
 
   if (phase === "checking") {
     return <div aria-hidden="true" className={cn("h-[3.25rem] rounded-field bg-muted/60", className)} />;
@@ -111,10 +186,7 @@ export function SkillDraftCard({ draft, className }: { draft: ClientSkillDraft; 
         </span>
         <button
           type="button"
-          onClick={() => {
-            writeDismissed(draft.key, false);
-            setPhase("open");
-          }}
+          onClick={onShow}
           className="shrink-0 rounded-control px-1 text-muted-on-fill underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
         >
           Show
@@ -223,15 +295,12 @@ export function SkillDraftCard({ draft, className }: { draft: ClientSkillDraft; 
               exit={{ opacity: 0, transition: transition.exit }}
               className="flex flex-wrap items-center gap-2"
             >
-              <VerbButton label="Review" accessibleLabel={`Review the ${draft.name} skill`} armed onClick={review} />
+              <VerbButton label="Review" accessibleLabel={`Review the ${draft.name} skill`} armed onClick={onReview} />
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  writeDismissed(draft.key, true);
-                  setPhase("dismissed");
-                }}
+                onClick={onNotNow}
                 className="font-normal text-muted-foreground hover:text-foreground"
               >
                 Not now

@@ -49,6 +49,7 @@ import {
   type WorkSkillGrantLayer,
 } from "@/lib/work/skills";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { isTaughtContract } from "@/lib/skills/teach";
 
 /**
  * The tool names a chat turn can grant.
@@ -274,6 +275,15 @@ export interface ChatSkillApplication {
    * `skill_applied` audit row (`contentHash`) and on every run of its scripts.
    */
   bundle: { digest: string; manifest: SkillBundleManifest } | null;
+  /**
+   * The skill's tools and apps are its WHOLE surface: a taught skill, whose
+   * list the person reviewed on the Teach page under "uses just what's listed
+   * here" (`isTaughtContract`). When it lists anything, what it does not list
+   * is not used — tools, apps, web search and the canvas alike — see
+   * `scopeTurnToSkill`. Absent for every other skill, where each kind narrows
+   * only when the skill names at least one of it.
+   */
+  declaredSurface?: boolean;
 }
 
 export type ChatSkillOutcome =
@@ -525,8 +535,30 @@ export function applyChatSkill(input: {
       resolved,
       ...(row.versionId ? { versionId: row.versionId } : {}),
       bundle: row.bundle ?? null,
+      ...(isTaughtContract(row.contract) ? { declaredSurface: true } : {}),
     },
   };
+}
+
+/** The tool and connector names the applied skill asked for, granted or not. */
+function requestedSurface(application: ChatSkillApplication): { tools: Set<string>; connectors: Set<string> } {
+  return {
+    tools: new Set(
+      [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
+    ),
+    connectors: new Set([...application.resolved.connectors, ...application.resolved.withheld.connectors]),
+  };
+}
+
+/**
+ * Whether the applied skill keeps the turn to exactly what it lists: a skill
+ * with a declared surface (a taught one) that lists at least one tool or app.
+ * Listing nothing narrows nothing, for taught skills as for every other.
+ */
+export function skillDeclaresWholeSurface(application: ChatSkillApplication | null): boolean {
+  if (!application?.declaredSurface) return false;
+  const requested = requestedSurface(application);
+  return requested.tools.size + requested.connectors.size > 0;
 }
 
 /**
@@ -546,20 +578,88 @@ export function applyChatSkill(input: {
  * is "what may the TURN use", and the turn's own answer is already the user's.
  * A skill is not a way to take capabilities away from a conversation the reader
  * configured.
+ *
+ * ONE EXCEPTION, the taught skill (`declaredSurface`). Its list was reviewed on
+ * the Teach page as the whole of what it uses, so one that lists only apps
+ * keeps no tools beyond its own skill tools: an empty tool list there is the
+ * person's answer, not an author's omission. Listing nothing at all still
+ * narrows nothing (`skillDeclaresWholeSurface`).
  */
 export function narrowRuntimeToolsForSkill(
   allowlist: readonly string[],
   application: ChatSkillApplication | null
 ): string[] {
   if (!application) return [...allowlist];
-  const requested = new Set(
-    [...application.resolved.tools, ...application.resolved.withheld.tools].map(canonicalSkillToolName)
-  );
-  if (requested.size === 0) return [...allowlist];
+  const requested = requestedSurface(application).tools;
+  if (requested.size === 0 && !skillDeclaresWholeSurface(application)) return [...allowlist];
   // What the skill's own method implies, as in a Work run
   // (`skillPermittedRunTools`): a folder with scripts asks to run them, and
   // `check_run` only ever follows a run `run_code` started.
   if (bundleHasScripts(application.bundle?.manifest)) requested.add(RUN_CODE_TOOL_ID);
   if (requested.has(RUN_CODE_TOOL_ID)) requested.add(CHECK_RUN_TOOL_ID);
   return allowlist.filter((tool) => SKILL_SELF_TOOL_SET.has(tool) || requested.has(canonicalSkillToolName(tool)));
+}
+
+/**
+ * The connected apps a turn keeps once a skill is applied.
+ *
+ * Narrowed, never widened, by the same rule as tools: a skill that names apps
+ * (`contract.requestedConnectors`) keeps only those of the turn's connectors;
+ * a skill that names none keeps them all — except a taught skill that lists
+ * tools and no apps, which keeps none, because its list is its whole surface
+ * (`skillDeclaresWholeSurface`). The ids compared are the connector ids the
+ * turn resolved (`ActiveConnector.id`), which are what Teach and the contract
+ * store.
+ */
+export function narrowConnectorsForSkill<C extends { id: string }>(
+  connectors: readonly C[],
+  application: ChatSkillApplication | null
+): C[] {
+  if (!application) return [...connectors];
+  const requested = requestedSurface(application).connectors;
+  if (requested.size === 0 && !skillDeclaresWholeSurface(application)) return [...connectors];
+  return connectors.filter((connector) => requested.has(connector.id));
+}
+
+/** What a chat turn carries, as `scopeTurnToSkill` narrows it. */
+export interface SkillTurnScope<C extends { id: string }> {
+  /** Provider-side web search (`useWebSearch`). */
+  webSearch: boolean;
+  /** Alevr Search's own tools (`useAlevrSearch`). */
+  alevrSearch: boolean;
+  /** The canvas (`canvasOn`). */
+  canvas: boolean;
+  connectors: C[];
+}
+
+/**
+ * Everything the applied skill narrows that is not a runtime tool id, in one
+ * place, so the prompt, the provider request and the trace all read the same
+ * answer.
+ *
+ * - Apps: `narrowConnectorsForSkill`, for every skill.
+ * - Web search and the canvas: only for a skill that declares its whole surface
+ *   (a taught one listing anything). Web search stays when it lists "Search the
+ *   web" or "Open web pages", as Alevr Search's tools already did for every
+ *   skill; the canvas stays when it lists "Write in a canvas". Other skills
+ *   keep both as the turn had them, unchanged: a skill imported from elsewhere
+ *   cannot name the canvas, and taking it away from every skill with an
+ *   `allowed-tools` line would be a behaviour change nobody reviewed.
+ */
+export function scopeTurnToSkill<C extends { id: string }>(
+  application: ChatSkillApplication | null,
+  turn: { webSearch: boolean; alevrSearch: boolean; canvas: boolean; connectors: readonly C[] }
+): SkillTurnScope<C> {
+  const connectors = narrowConnectorsForSkill(turn.connectors, application);
+  if (!skillDeclaresWholeSurface(application)) {
+    return { webSearch: turn.webSearch, alevrSearch: turn.alevrSearch, canvas: turn.canvas, connectors };
+  }
+  const keepsWeb = narrowRuntimeToolsForSkill([CHAT_SKILL_TOOLS.webSearch, CHAT_SKILL_TOOLS.webFetch], application).length > 0;
+  const keepsCanvas = narrowRuntimeToolsForSkill([CHAT_SKILL_TOOLS.canvas], application).length > 0;
+  return {
+    webSearch: turn.webSearch && keepsWeb,
+    alevrSearch: turn.alevrSearch && keepsWeb,
+    canvas: turn.canvas && keepsCanvas,
+    connectors,
+  };
 }

@@ -4,9 +4,28 @@
  * The person walks through a task (in a chat, or step by step on the Teach
  * page) and gets back a DRAFT: a name, when it applies, ordered steps they can
  * edit, what it may use, and where it applies. Nothing about a draft is live.
- * It becomes a skill only when the person saves it, and it runs only when they
- * switch it on with the permissions they were shown in front of them — the
- * server checks that, by fingerprint, rather than trusting a checkbox.
+ * It becomes a skill only when the person saves it, and a save switches it on
+ * only when it carries the permission fingerprint the page showed when the
+ * person ticked "I've reviewed it", and that fingerprint equals the one the
+ * server computes for what it is saving (`teachEnableDecision`).
+ *
+ * WHAT THAT CHECK IS, AND IS NOT. It catches a stale page: a tool or app added
+ * or removed after the box was ticked (another tab, a late edit) saves the
+ * skill switched off. It is not proof that a person read anything: any client
+ * can compute the fingerprint of its own payload. Nor is it the only way on:
+ * the skill library's switch (`PATCH /api/work/skills/[id]`) turns a skill
+ * that was saved off on without this page.
+ *
+ * WHAT IT MAY USE, AT RUN TIME. When the person runs a taught skill in a chat
+ * (picks it in the composer), the turn keeps to what it lists, and never more
+ * than the chat already has on (`scopeTurnToSkill`, `narrowRuntimeToolsForSkill`
+ * and `narrowConnectorsForSkill` in `chat/skills.ts`): tools not listed are not
+ * attached, apps not listed are not connected, web search stays only when
+ * "Search the web" or "Open web pages" is listed, the canvas only when it is
+ * listed. A taught skill that lists NOTHING narrows nothing (the page says so).
+ * A taught skill the model picks for itself (`use_skill`, possible only after
+ * the person turns automatic use on, which Teach never does) is loaded in the
+ * middle of a turn whose tools are already fixed, and narrows nothing.
  *
  * WHAT THIS MODULE DECIDES, without a request or a database, so every rule has
  * a test:
@@ -25,8 +44,7 @@
  *
  * WHAT IT NEVER DOES: record the screen, read anything the person did not type
  * or do in a conversation with Juno, or widen what a run may use. A taught
- * skill's tools are requests that NARROW a turn (`narrowRuntimeToolsForSkill`),
- * exactly like any other skill's.
+ * skill's tools and apps are requests that NARROW a turn, as above.
  *
  * Pure and client-safe. No `server-only`, no Prisma.
  */
@@ -66,16 +84,33 @@ export const MAX_TAUGHT_STEPS = 20;
 export const MAX_TAUGHT_STEP_CHARS = 600;
 export const MAX_TAUGHT_INPUTS = 8;
 export const MAX_TAUGHT_RULES = 8;
+/** Notes the person types. */
 export const MAX_TAUGHT_NOTES = 8;
 export const MAX_TAUGHT_QUESTIONS = 5;
+/**
+ * Notes a save may carry: the ones typed, plus one per answered question (an
+ * answer becomes a note, `answeredNote`). The editor checks the same total.
+ */
+export const MAX_TAUGHT_SAVED_NOTES = MAX_TAUGHT_NOTES + MAX_TAUGHT_QUESTIONS;
 export const MAX_TAUGHT_DONE_CHARS = 400;
+export const MAX_TAUGHT_TOOLS = 16;
+export const MAX_TAUGHT_APPS = 12;
+export const MAX_TAUGHT_DOMAINS = 8;
 const MAX_INPUT_NAME_CHARS = 60;
 const MAX_INPUT_DESCRIPTION_CHARS = 200;
 const MAX_LIST_ITEM_CHARS = 300;
-const MAX_APPS = 12;
-const MAX_DOMAINS = 8;
+const MAX_APPS = MAX_TAUGHT_APPS;
+const MAX_DOMAINS = MAX_TAUGHT_DOMAINS;
 const MAX_KEY_CHARS = 200;
 const MAX_ID_CHARS = 200;
+/**
+ * The longest permission fingerprint a save can acknowledge, with room to
+ * spare: 16 tools and 32 base-contract apps of up to 80 characters, 12 apps of
+ * up to 120, 8 websites of up to 253, the policy and the budget come to under
+ * 8,000 characters of JSON. A bound only so a body cannot be arbitrarily
+ * large; the value itself is compared for equality.
+ */
+const MAX_ACKNOWLEDGED_CHARS = 16_000;
 
 // ---------------------------------------------------------------------------
 // What a taught skill may ask for
@@ -598,17 +633,70 @@ export function taughtDescription(form: Pick<TaughtSkillForm, "whenToUse" | "nam
   return (when || cleanText(form.name)).slice(0, MAX_SKILL_DESCRIPTION_CHARS);
 }
 
-/** Contract inputs, as the skill contract stores fields. */
-export function taughtContractInputs(inputs: readonly TaughtInput[]): WorkSkillField[] {
+/**
+ * Contract inputs, as the skill contract stores fields.
+ *
+ * Re-teaching passes the version being replaced (`base`): an input the person
+ * kept, matched by name, keeps the kind it had (a `number` or a `url` stays
+ * one), because the editor only shows a name, a description and whether it is
+ * needed, and saving a typed input back as text would quietly change what the
+ * skill accepts. A new input is text.
+ */
+export function taughtContractInputs(
+  inputs: readonly TaughtInput[],
+  base: readonly WorkSkillField[] = []
+): WorkSkillField[] {
+  const kindOf = new Map(base.map((field) => [cleanText(field.name).toLowerCase(), field.kind]));
   return inputs
     .filter((input) => cleanText(input.name))
     .slice(0, MAX_TAUGHT_INPUTS)
-    .map((input) => ({
-      name: cleanText(input.name).slice(0, MAX_INPUT_NAME_CHARS),
-      kind: SKILL_FIELD_KINDS[0],
-      required: input.required,
-      description: cleanText(input.description).slice(0, MAX_INPUT_DESCRIPTION_CHARS),
+    .map((input) => {
+      const name = cleanText(input.name).slice(0, MAX_INPUT_NAME_CHARS);
+      return {
+        name,
+        kind: kindOf.get(name.toLowerCase()) ?? SKILL_FIELD_KINDS[0],
+        required: input.required,
+        description: cleanText(input.description).slice(0, MAX_INPUT_DESCRIPTION_CHARS),
+      };
+    });
+}
+
+/** A stored contract field as the editor shows an input. */
+export function taughtInputsFromContract(fields: readonly WorkSkillField[]): TaughtInput[] {
+  return fields
+    .filter((field) => cleanText(field.name))
+    .slice(0, MAX_TAUGHT_INPUTS)
+    .map((field) => ({
+      name: cleanText(field.name).slice(0, MAX_INPUT_NAME_CHARS),
+      description: cleanText(field.description).slice(0, MAX_INPUT_DESCRIPTION_CHARS),
+      required: field.required,
     }));
+}
+
+/**
+ * The inputs a re-taught version's contract keeps.
+ *
+ * From the form, with kinds carried over by name (`taughtContractInputs`).
+ * One exception: instructions that were free-form, re-taught by a client that
+ * sends no inputs at all, keep the inputs they had. The Teach page shows a
+ * free-form skill's inputs and sends them back, so this only catches a client
+ * that never showed them; a taught-shaped skill whose inputs the person removed
+ * on the page loses them, as asked.
+ */
+export function reteachContractInputs(input: {
+  form: readonly TaughtInput[];
+  base: readonly WorkSkillField[];
+  baseWasFreeform: boolean;
+}): WorkSkillField[] {
+  if (input.baseWasFreeform && input.form.filter((i) => cleanText(i.name)).length === 0) {
+    return input.base.map((field) => ({ ...field }));
+  }
+  return taughtContractInputs(input.form, input.base);
+}
+
+/** Whether a version's contract says it was taught (Teach Juno wrote its provenance). */
+export function isTaughtContract(contract: Pick<WorkSkillContract, "provenance"> | null | undefined): boolean {
+  return taughtOrigin(contract?.provenance) !== null;
 }
 
 /**
@@ -683,9 +771,9 @@ export const taughtSkillSaveSchema = z.object({
     .default([]),
   doneWhen: line(MAX_TAUGHT_DONE_CHARS).default(""),
   rules: z.array(line(MAX_LIST_ITEM_CHARS)).max(MAX_TAUGHT_RULES).default([]),
-  notes: z.array(line(MAX_LIST_ITEM_CHARS)).max(MAX_TAUGHT_NOTES).default([]),
+  notes: z.array(line(MAX_LIST_ITEM_CHARS)).max(MAX_TAUGHT_SAVED_NOTES).default([]),
   questions: z.array(line(MAX_LIST_ITEM_CHARS)).max(MAX_TAUGHT_QUESTIONS).default([]),
-  tools: z.array(nameSchema).max(16).default([]),
+  tools: z.array(nameSchema).max(MAX_TAUGHT_TOOLS).default([]),
   connectors: z.array(z.string().trim().regex(SKILL_CONNECTOR_NAME_PATTERN)).max(MAX_APPS).default([]),
   domains: z.array(z.string().trim().min(1).max(253)).max(MAX_DOMAINS).default([]),
   /** Where it applies: null is everywhere. Checked against the caller's projects. */
@@ -699,10 +787,86 @@ export const taughtSkillSaveSchema = z.object({
   /** The state the person asked for once saved. */
   enable: z.boolean().default(false),
   /** The permission fingerprint the page showed when the person ticked "I've reviewed". */
-  acknowledged: z.string().max(4_000).nullable().default(null),
+  acknowledged: z.string().max(MAX_ACKNOWLEDGED_CHARS).nullable().default(null),
 });
 
 export type TaughtSkillSave = z.infer<typeof taughtSkillSaveSchema>;
+
+/**
+ * The sentence a refused save body gets, by the first field that failed.
+ *
+ * Every refusal ends "Nothing was saved." so the person knows the page still
+ * holds their edits. `field` is the top-level key, for a client that wants to
+ * point at it; it is never shown on its own.
+ */
+export function taughtSaveRefusal(
+  issues: readonly { path: readonly PropertyKey[]; code?: string }[]
+): { field: string | null; message: string } {
+  const first = issues[0];
+  const field = first && typeof first.path[0] === "string" ? first.path[0] : null;
+  const nested = first ? first.path.length > 1 : false;
+  const end = " Nothing was saved.";
+  switch (field) {
+    case "name":
+      return { field, message: `Give it a name of up to ${MAX_TAUGHT_NAME_CHARS} characters.${end}` };
+    case "whenToUse":
+      return { field, message: `Keep “when to use it” under ${MAX_TAUGHT_WHEN_CHARS} characters.${end}` };
+    case "steps":
+      return {
+        field,
+        message: `A skill needs 1 to ${MAX_TAUGHT_STEPS} steps, each under ${MAX_TAUGHT_STEP_CHARS} characters.${end}`,
+      };
+    case "inputs":
+      return {
+        field,
+        message: nested
+          ? `Each thing it asks for needs a name of up to ${MAX_INPUT_NAME_CHARS} characters.${end}`
+          : `A skill can ask for at most ${MAX_TAUGHT_INPUTS} things each time.${end}`,
+      };
+    case "doneWhen":
+      return { field, message: `Keep “done when” under ${MAX_TAUGHT_DONE_CHARS} characters.${end}` };
+    case "rules":
+      return { field, message: `A skill can have at most ${MAX_TAUGHT_RULES} rules, each under ${MAX_LIST_ITEM_CHARS} characters.${end}` };
+    case "notes":
+      return {
+        field,
+        message: `A skill keeps at most ${MAX_TAUGHT_SAVED_NOTES} notes, and each answered question becomes one.${end}`,
+      };
+    case "questions":
+      return { field, message: `A skill can keep at most ${MAX_TAUGHT_QUESTIONS} open questions.${end}` };
+    case "tools":
+      return {
+        field,
+        message: nested
+          ? `One of the tools isn’t a name a skill can ask for.${end}`
+          : `A skill can ask for at most ${MAX_TAUGHT_TOOLS} tools.${end}`,
+      };
+    case "connectors":
+      return {
+        field,
+        message: nested
+          ? `One of the apps isn’t a name a skill can ask for.${end}`
+          : `A skill can use at most ${MAX_TAUGHT_APPS} apps.${end}`,
+      };
+    case "domains":
+      return { field, message: `A skill can list at most ${MAX_TAUGHT_DOMAINS} websites.${end}` };
+    case "projectId":
+      return { field, message: `That project couldn’t be read.${end}` };
+    case "acknowledged":
+      return {
+        field,
+        message: `The review confirmation couldn’t be checked. Tick “I’ve reviewed it” again, or save it switched off.${end}`,
+      };
+    case "key":
+    case "skillId":
+    case "slug":
+    case "source":
+    case "enable":
+      return { field, message: `This page sent something the server couldn’t read. Reload the page and try again.${end}` };
+    default:
+      return { field, message: `Something in this skill isn’t valid.${end}` };
+  }
+}
 
 /** The form half of a save, for rendering and fingerprinting. */
 export function formFromSave(save: TaughtSkillSave): TaughtSkillForm {

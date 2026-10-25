@@ -51,6 +51,7 @@ import {
 } from "@/lib/chat-responses";
 import { contextActivityDetail, promptChars, type AttachmentKnowledge, type ProjectKnowledge } from "@/lib/chat/context-assembly";
 import { CHAT_SKILL_REFUSAL_MESSAGES, narrowRuntimeToolsForSkill, skillAppliedActivity } from "@/lib/chat/skills";
+import { turnTaintReader } from "@/lib/chat/skill-draft-tool";
 import { contextActivityRows, type TurnContext } from "@/lib/chat/context-resolution";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import {
@@ -589,6 +590,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       onImageModel: (image) => {
         if (routingReceipt) routingReceipt.image = { model: image.id, name: image.name, auto: image.auto };
       },
+      // Alevr Search's page reads judge what they fetched; a hostile page
+      // makes `draft_skill` refuse for the rest of the turn.
+      liveTaint: turnTaintReader(alevrSearchTurn?.taint),
     });
 
     try {
