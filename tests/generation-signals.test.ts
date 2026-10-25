@@ -6,6 +6,7 @@ import {
   createMemoryGenerationSignalStore,
   GENERATION_CANCEL_POLL_MS,
   GENERATION_CANCEL_TTL_MS,
+  GENERATION_KICK_SPACING_MS,
   GENERATION_LIVE_RENEW_MS,
   GENERATION_LIVE_TTL_MS,
   liveLeaseKey,
@@ -277,6 +278,30 @@ test("one read and one write per tick, however many generations the process hold
   await time.advance(0);
   assert.deepEqual(batches.reads, [25]);
   assert.deepEqual(batches.writes, [25]);
+});
+
+test("a burst of registrations is leased and polled together, not one query each", async () => {
+  const time = manualTime();
+  const base = createMemoryGenerationSignalStore(time.now);
+  let reads = 0;
+  const store: GenerationSignalStore = {
+    ...base,
+    pendingCancels: async (refs) => {
+      reads += 1;
+      return base.pendingCancels(refs);
+    },
+  };
+  const a = instance(store, time);
+  a.registry.register("first", { userId: "u1", controller: new AbortController(), model: "m" });
+  await time.advance(0);
+  assert.equal(reads, 1);
+  for (let i = 0; i < 50; i += 1) {
+    a.registry.register(`burst-${i}`, { userId: "u1", controller: new AbortController(), model: "m" });
+    await time.advance(2); // 50 turns inside 100 ms
+  }
+  await time.advance(GENERATION_KICK_SPACING_MS);
+  assert.ok(reads <= 3, `${reads} reads for a burst of 50 registrations`);
+  assert.equal(await store.isLive({ userId: "u1", generationId: "burst-49" }), true, "every one of them leased");
 });
 
 test("a failing store is not a Stop, does not stop the loop, and is logged once per window", async () => {

@@ -59,6 +59,12 @@ export const GENERATION_LIVE_TTL_MS = 20_000;
 export const GENERATION_CANCEL_TTL_MS = 10 * 60_000;
 /** A failing store is logged at most this often per process, not once per poll. */
 export const GENERATION_SIGNAL_ERROR_LOG_MS = 30_000;
+/**
+ * The closest two ticks may run when registrations pull the next one forward.
+ * A burst of new turns is leased and polled together, so a busy process stays
+ * near one read per poll rather than one per registration.
+ */
+export const GENERATION_KICK_SPACING_MS = 100;
 
 /*
  * Row-key namespaces in `RateLimit`. Not `chat:` — the chat route's own rate
@@ -129,6 +135,7 @@ export interface GenerationSignalPumpOptions {
   renewMs?: number;
   liveTtlMs?: number;
   errorLogMs?: number;
+  kickSpacingMs?: number;
   now?: () => number;
   /** Injectable timer for tests. Must return something `clearTimer` accepts. */
   schedule?: (fn: () => void, ms: number) => unknown;
@@ -154,6 +161,7 @@ export function createGenerationSignalPump(options: GenerationSignalPumpOptions)
   const renewMs = Math.max(pollMs, options.renewMs ?? GENERATION_LIVE_RENEW_MS);
   const liveTtlMs = Math.max(renewMs * 2, options.liveTtlMs ?? GENERATION_LIVE_TTL_MS);
   const errorLogMs = options.errorLogMs ?? GENERATION_SIGNAL_ERROR_LOG_MS;
+  const kickSpacingMs = Math.max(0, options.kickSpacingMs ?? GENERATION_KICK_SPACING_MS);
   const now = options.now ?? Date.now;
   const schedule =
     options.schedule ??
@@ -171,6 +179,7 @@ export function createGenerationSignalPump(options: GenerationSignalPumpOptions)
   /** A generation registered while a tick was running: run the next one at once. */
   let rerun = false;
   let stopped = false;
+  let lastTickAt = Number.NEGATIVE_INFINITY;
   let lastRenewAt = Number.NEGATIVE_INFINITY;
   /** Leases written since the last full renewal, so a new generation is leased at once, not in 5 s. */
   const leased = new Set<string>();
@@ -202,9 +211,10 @@ export function createGenerationSignalPump(options: GenerationSignalPumpOptions)
 
   const runTick = (): Promise<void> => {
     if (inflight) return inflight;
+    lastTickAt = now();
     inflight = tickOnce().finally(() => {
       inflight = null;
-      const delay = rerun ? 0 : pollMs;
+      const delay = rerun ? kickSpacingMs : pollMs;
       rerun = false;
       if (options.held().length > 0) scheduleNext(delay);
     });
@@ -273,7 +283,7 @@ export function createGenerationSignalPump(options: GenerationSignalPumpOptions)
         rerun = true; // the running tick reschedules itself when it settles
         return;
       }
-      scheduleNext(0);
+      scheduleNext(Math.max(0, lastTickAt + kickSpacingMs - now()));
     },
     release(ref, wasLeased) {
       const key = cancelSignalKey(ref);
