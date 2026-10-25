@@ -87,6 +87,12 @@ export interface SystemPromptOptions {
    * exercise in prose, because an older app shows only the card's title.
    */
   liveUiExercise?: boolean;
+  /**
+   * The client draws the intelligent-UI views (recipe, choices, compare,
+   * cards, tabs, flashcards): the web. Native renderers skip unknown types,
+   * so a native build is never taught them until it draws them.
+   */
+  liveUiDo?: boolean;
   /** The client shows Run on code blocks (the web; native builds with `code_run`). */
   codeRun?: boolean;
 }
@@ -155,6 +161,27 @@ Write the view's text in the user's language. A diagram with branches or loops (
 \`\`\`
 \`\`\`live-ui
 {"title":"Savings over time","let":{"balance":"fv(rate / 12, years * 12, monthly, 0)"},"ui":[{"type":"grid","columns":3,"children":[{"type":"slider","id":"monthly","label":"Monthly","min":0,"max":2000,"step":50,"value":500,"format":"currency"},{"type":"slider","id":"rate","label":"Return","min":0,"max":0.1,"step":0.005,"value":0.05,"format":"percent"},{"type":"slider","id":"years","label":"Years","min":1,"max":40,"step":1,"value":20}]},{"type":"metric","label":"Balance after {{years}} years","value":"balance","format":"currency","emphasis":true},{"type":"chart","kind":"area","x":{"from":0,"to":"years","step":1,"var":"y"},"series":[{"label":"Balance","y":"fv(rate / 12, y * 12, monthly, 0)"}],"format":"currency"}]}
+\`\`\``;
+
+/**
+ * The intelligent-UI views (2026-10, after ChatGPT's GPT-6 Intelligent UI):
+ * views for what the reader will DO with an answer. Its own section, after
+ * the Live UI one, so the base contract (and the native clients that only
+ * draw it) stay byte-identical; the web adds this.
+ */
+export const LIVE_UI_DO_SECTION = `## Live UI: views people act on
+Reach for these when the reader will act on the answer, not only read it. Each must beat the same content as text, or leave it out.
+- Cooking anything: recipe (servings, yieldLabel?, ingredients:[{name, qty? for those servings, unit?, note?}], steps:[{text, minutes? adds a timer}]). It rescales for the guests and times each step.
+- A choice between products, plans, tools or approaches: compare (options:[{name, price?, tagline?, badge?, pros:[], cons:[], facts:[{label,value}], prompt?: sent when picked}], recommend: index of your pick). Say why in prose.
+- Picking from places, products, books, people: cards (items:[{title, subtitle?, meta? e.g. price, rating? 0-5, detail?, tags?, prompt?: sent when tapped}]).
+- A question that blocks a good answer: choices (question, options:[{label, detail?, prompt?: the reply sent, defaults to label}], multi?) the user taps instead of reading a paragraph of questions. Two to six short options; ask only what matters and give what you can meanwhile.
+- Revising: flashcards (cards:[{front, back}]). A lot of material with separate parts the reader moves between (by theme, day or option): tabs (tabs:[{label, children}]).
+
+\`\`\`live-ui
+{"title":"Weeknight carbonara","ui":[{"type":"recipe","servings":2,"yieldLabel":"people","ingredients":[{"name":"spaghetti","qty":200,"unit":"g"},{"name":"guanciale","qty":100,"unit":"g"},{"name":"egg yolks","qty":3},{"name":"pecorino","qty":40,"unit":"g"}],"steps":[{"text":"Crisp the guanciale over medium heat.","minutes":8},{"text":"Boil the pasta.","minutes":9},{"text":"Off the heat, toss with the fat, then the yolks and pecorino loosened with pasta water."}]}]}
+\`\`\`
+\`\`\`live-ui
+{"title":"Before I plan the trip","ui":[{"type":"choices","question":"What is the trip mainly for?","options":[{"label":"Relaxing","prompt":"Mainly to relax."},{"label":"Food and nightlife","prompt":"Mainly food and nightlife."},{"label":"Museums and history","prompt":"Mainly museums and history."}]}]}
 \`\`\``;
 
 /** The practice rule and component line for clients without the exercise card. */
@@ -352,7 +379,10 @@ You write the content; the USER picks the download format. Never say you attache
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.
-  if (opts.liveUi && !opts.voiceMode) parts.push(opts.liveUiExercise === false ? liveUiSectionWithoutExercise() : LIVE_UI_SECTION);
+  if (opts.liveUi && !opts.voiceMode) {
+    parts.push(opts.liveUiExercise === false ? liveUiSectionWithoutExercise() : LIVE_UI_SECTION);
+    if (opts.liveUiDo) parts.push(LIVE_UI_DO_SECTION);
+  }
   if (!opts.voiceMode && opts.codeRun !== false) parts.push(opts.codeSandbox ? `${CODE_RUN_RULE}\n${CODE_RUN_SANDBOX_LINE}` : CODE_RUN_RULE);
 
   if (opts.memoryEnabled) {

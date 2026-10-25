@@ -46,12 +46,20 @@ function hoverSelectors(css: string): string[] {
   return out;
 }
 
-test("hover articulation targets destination controls, not every link, button or menu row", () => {
+test("hover articulation targets destinations and icon-only buttons, not every link, row or menu item", () => {
   const selectors = hoverSelectors(icons);
   assert.ok(selectors.length >= 5, `found ${selectors.length} hover selectors`);
   for (const selector of selectors) {
-    assert.match(selector, /^:is\(\[data-jicon-articulate\]/, `not opt-in: ${selector}`);
-    assert.doesNotMatch(selector, /role="menuitem|role="option|role="tab"|\bsummary\b|\blabel\b/, `a scanned control articulates: ${selector}`);
+    // Destinations opt in; since the 2026-10 pass an icon-only button (its
+    // glyph the whole label: data-solo, or an aria-labelled button whose only
+    // child is the glyph) answers the pointer too.
+    assert.match(
+      selector,
+      /^(?::is\(\[data-jicon-articulate\]|:is\(\.jicon-trigger, button\[aria-label\]|button\[aria-label\]|\.jicon-trigger:)/,
+      `not opt-in: ${selector}`,
+    );
+    if (!selector.startsWith(":is([data-jicon-articulate]")) assert.match(selector, /data-solo|:only-child/, `not an icon-only button: ${selector}`);
+    assert.doesNotMatch(selector, /role="menuitem|role="option|role="tab"|\bsummary\b|(?<!aria-)\blabel\b/, `a scanned control articulates: ${selector}`);
   }
 });
 

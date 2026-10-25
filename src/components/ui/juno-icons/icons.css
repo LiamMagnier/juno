@@ -508,3 +508,66 @@
   scale: 1 var(--lv, 1) !important;
   transition: none;
 }
+
+/* ——————————————————————————— Ink (2026-10) ———————————————————————————
+ * Glyphs are a step blacker than the text they sit beside. A glyph that is
+ * itself `text-muted-foreground` (directly, or through a menu's
+ * `[&_svg]:text-muted-foreground`) resolves that token to --icon-muted; a glyph
+ * that inherits muted ink from a resting control takes it too, and follows its
+ * control to the foreground ink on hover, open or highlight. */
+svg.ji {
+  --muted-foreground: var(--icon-muted, 220 5% 25%);
+}
+/* The inherited case (a glyph in a resting muted control) lives in
+   globals.css beside --icon-muted, so this sheet's :hover rules stay the
+   articulation contract only. */
+
+/* ——————————————————————————— Icon buttons (2026-10) ———————————————————————
+ * The owner's direction moved on from G46's "destinations only": an icon
+ * button that holds nothing but its glyph now answers the pointer with the
+ * glyph's own pose, because a lone icon IS the control's label and its
+ * motion is the only feedback it has. Rows, menus and labelled buttons stay
+ * still, as before. Same poses, same tokens, same reduced-motion, fine
+ * pointer only. */
+@media (hover: hover) and (pointer: fine) {
+  :is(.jicon-trigger, button[aria-label], a[aria-label]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover > .ji[data-solo]:not([data-state="disabled"]) .jp:not([data-anim]),
+  button[aria-label]:not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover > svg.ji:only-child:not([data-state="disabled"]) .jp:not([data-anim]) {
+    translate: calc(var(--hx, 0px) * var(--ji-amp)) calc(var(--hy, 0px) * var(--ji-amp));
+    rotate: calc(var(--hr, 0deg) * var(--ji-amp));
+    scale: calc(1 + (var(--hsx, 1) - 1) * var(--ji-amp)) calc(1 + (var(--hsy, 1) - 1) * var(--ji-amp));
+    opacity: var(--ho, 1);
+    transition-duration: var(--dur-base), var(--dur-slow), var(--dur-base), var(--dur-fast);
+    transition-timing-function: var(--ease-out-back), var(--ease-out-back), var(--ease-out-back), var(--ji-soft);
+    transition-delay: var(--hd, 0ms);
+  }
+  :is(.jicon-trigger, button[aria-label], a[aria-label]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover > .ji[data-solo]:not([data-state="disabled"]) .jp[data-anim],
+  button[aria-label]:not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover > svg.ji:only-child:not([data-state="disabled"]) .jp[data-anim] {
+    opacity: var(--ho, 1);
+    animation: var(--ji-anim) var(--ji-anim-dur, var(--dur-base)) var(--ji-soft) var(--hd, 0ms) 1 both;
+  }
+  button[aria-label]:not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover > svg.ji:only-child:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
+    animation: ji-draw var(--dur-base) var(--ji-soft) var(--hd, 0ms) 1 both;
+  }
+  /* Every icon-only button lifts its glyph a hair under the pointer: the
+     glyph comes toward the reader before the press pushes it back. */
+  button[aria-label]:not(:disabled, [aria-disabled="true"], .jicon-quiet):hover > svg.ji:only-child,
+  .jicon-trigger:not(:disabled, [aria-disabled="true"], .jicon-quiet):hover > .ji[data-solo] {
+    scale: 1.08;
+    transition: scale var(--dur-base) var(--ease-out-back);
+  }
+}
+button[aria-label]:not(:disabled):active > svg.ji:only-child {
+  scale: 0.9;
+  transition: scale var(--dur-press) var(--ji-strong);
+}
+.jicon-trigger:active .ji[data-solo]:not([data-state="disabled"]) {
+  scale: 0.9;
+}
+@media (prefers-reduced-motion: reduce) {
+  button[aria-label]:hover > svg.ji:only-child,
+  .jicon-trigger:hover > .ji[data-solo],
+  button[aria-label]:active > svg.ji:only-child,
+  .jicon-trigger:active .ji[data-solo] {
+    scale: 1;
+  }
+}

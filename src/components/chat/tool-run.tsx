@@ -29,6 +29,8 @@ import { ToolRunFiles } from "@/components/chat/tool-run-files";
 import { ReceiptGlyph, ToolReceiptRow } from "@/components/chat/tool-receipt";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
+import { ShieldCheck } from "@/components/ui/icons";
+import { cn } from "@/lib/utils";
 import {
   activeRunId,
   runAgainDraft,
@@ -131,8 +133,20 @@ export function ToolRunDetail({
   const lines = view.progress?.lines ?? [];
   return (
     <div className="min-w-0 pt-0.5">
-      {context ? <p className="text-caption text-muted-foreground">{context}</p> : null}
-      {view.reason ? <p className="mt-1 text-caption text-foreground/80">{view.reason}</p> : null}
+      {view.reason ? <p className="text-ui leading-5 text-foreground">{view.reason}</p> : null}
+      {context ? (
+        // Where it ran is a fact about trust, so it reads as a quiet badge
+        // rather than a sentence competing with the reason above it.
+        <p
+          className={cn(
+            "inline-flex max-w-full items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-caption text-muted-foreground",
+            view.reason && "mt-1.5",
+          )}
+        >
+          <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="truncate">{context}</span>
+        </p>
+      ) : null}
 
       {view.code ? (
         <AicssCodeBlock
@@ -146,18 +160,25 @@ export function ToolRunDetail({
         <p className="mt-1 text-caption text-muted-foreground">Shortened for display.</p>
       ) : null}
 
-      {live && lines.length ? (
-        // The last lines while it runs. Not a live region: output changes
-        // several times a second and a screen reader announcing each line is
-        // the noise the phase announcement exists to replace.
-        <pre
-          tabIndex={0}
-          className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-secondary px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground focus-visible:-outline-offset-2"
-        >
-          {lines.join("\n")}
-        </pre>
+      {live && (lines.length || progressNote) ? (
+        <div className="mt-2 overflow-hidden rounded-lg border border-border/60 bg-secondary">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 px-2.5 py-1.5 text-caption text-muted-foreground">
+            <span>Output</span>
+            {progressNote ? <span className="font-mono tabular-nums">{progressNote}</span> : null}
+          </div>
+          {lines.length ? (
+            // The last lines while it runs. Not a live region: output changes
+            // several times a second and a screen reader announcing each line is
+            // the noise the phase announcement exists to replace.
+            <pre
+              tabIndex={0}
+              className="max-h-40 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-caption leading-5 text-foreground focus-visible:-outline-offset-2"
+            >
+              {lines.join("\n")}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
-      {live && progressNote ? <p className="mt-1 font-mono text-caption text-muted-foreground">{progressNote}</p> : null}
 
       {view.stdout ? <StreamBlock label="Output" stream={view.stdout} logUrl={view.logUrl} /> : null}
       {view.stderr ? <StreamBlock label="Errors" stream={view.stderr} logUrl={view.logUrl} /> : null}
@@ -174,7 +195,17 @@ export function ToolRunDetail({
         </div>
       ) : null}
 
-      {exit ? <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground">{exit}</p> : null}
+      {exit ? (
+        <p className="mt-2 flex items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+          {view.exitCode !== null ? (
+            <span
+              aria-hidden="true"
+              className={cn("size-1.5 rounded-full", view.exitCode === 0 ? "bg-success" : "bg-warning")}
+            />
+          ) : null}
+          {exit}
+        </p>
+      ) : null}
 
       <ToolRunFiles files={view.files} onOpen={onOpenFile} className="mt-2.5" />
       {view.filesDiscarded > 0 ? (
@@ -244,6 +275,7 @@ export function ToolRunReceipt({
       open={open}
       onToggle={() => setOpen((value) => !value)}
       mark={mark}
+      startedAt={view.startedAt}
       // Every run label says how it ended ("Python failed", "Stopped"), so the
       // right edge keeps only the evidence: the exit, the files, the time.
       quietStatus

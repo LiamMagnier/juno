@@ -4,7 +4,7 @@ import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
-import { ToolReceiptList } from "@/components/chat/tool-receipt";
+import { ToolReceiptList, ToolReceiptRow } from "@/components/chat/tool-receipt";
 import { ToolRunAnnouncer, ToolRunReceipt } from "@/components/chat/tool-run";
 import { CodeActivity } from "@/components/code/code-activity";
 import { WorkActivity, WorkCurrentAction, deriveActivity, deriveCurrentAction } from "@/components/work/work-timeline";
@@ -149,6 +149,65 @@ function PhasesSection() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* A research-shaped turn: searches, pages read, connector calls and one run. */
+const SITES = [
+  ["https://www.energysavingtrust.org.uk/heat-pumps", "Heat pumps explained"],
+  ["https://www.theguardian.com/environment/heat-pumps-cost", "What a heat pump really costs"],
+  ["https://www.ofgem.gov.uk/energy-price-cap", "Energy price cap"],
+  ["https://en.wikipedia.org/wiki/Heat_pump", "Heat pump"],
+  ["https://www.which.co.uk/reviews/air-source-heat-pumps", "Air source heat pumps"],
+  ["https://www.gov.uk/apply-boiler-upgrade-scheme", "Boiler Upgrade Scheme"],
+] as const;
+const searchRow = (id: string, query: string): ClientActivityEvent => ({ id, kind: "search", title: "Searching the web", detail: query, createdAt: at(0) });
+const visitRow = (i: number): ClientActivityEvent => ({ id: `v${i}`, kind: "visit", title: "Read source", url: SITES[i][0], detail: SITES[i][1], createdAt: at(0) });
+const toolRow = (id: string, server: string, detail: string): ClientActivityEvent => ({ id, kind: "tool", title: `Using ${server}`, detail, createdAt: at(0) });
+
+function GroupedSection() {
+  const settled = settledTurn(
+    searchRow("s1", "air source heat pump running cost uk 2026"),
+    visitRow(0),
+    visitRow(1),
+    searchRow("s2", "boiler upgrade scheme grant amount"),
+    visitRow(2),
+    visitRow(3),
+    visitRow(4),
+    visitRow(5),
+    toolRow("g1", "GitHub", "Search issues"),
+    toolRow("l1", "Linear", "Create issue"),
+    F.succeeded,
+  );
+  const live = turn(searchRow("s1", "air source heat pump running cost uk 2026"), visitRow(0), visitRow(1), visitRow(2));
+  return (
+    <div className="grid min-w-0 gap-8 [&>*]:min-w-0">
+      <div data-grouped="settled">
+        <p className="mb-1 font-mono text-caption text-muted-foreground">Settled: several kinds of work, one glanceable line</p>
+        <ActivityTimeline messageId="grouped-settled" events={settled} />
+        <p className="text-reading">A heat pump would cost about £1,050 a year to run against £1,310 for your boiler.</p>
+      </div>
+      <div data-grouped="live">
+        <p className="mb-1 font-mono text-caption text-muted-foreground">Live: reading sources</p>
+        <ActivityTimeline messageId="grouped-live" events={live} streaming />
+      </div>
+      <div data-grouped="receipts">
+        <p className="mb-1 font-mono text-caption text-muted-foreground">Receipts: running, done, failed with retry, declined</p>
+        <ToolReceiptList label="Mixed receipts">
+          <ToolReceiptRow icon="web" label="Searching the web" object="heat pump grants" status="running" />
+          <ToolReceiptRow icon="file" label="Read Q3 Forecast.xlsx" figure="3 sheets" durationMs={1_240} />
+          <ToolReceiptRow
+            icon="connectors"
+            label="Linear · Create issue"
+            status="failed"
+            reason="The connector timed out after 30 seconds. Nothing was created."
+            onRetry={() => {}}
+            durationMs={30_000}
+          />
+          <ToolReceiptRow icon="connectors" label="GitHub · Merge pull request" status="denied" />
+        </ToolReceiptList>
+      </div>
     </div>
   );
 }
@@ -348,6 +407,9 @@ export function ToolRunsGallery({ only }: { only?: string }) {
           <p className="mt-2 max-w-2xl text-ui text-muted-foreground">
             Every phase of a real run on every surface, from the wire fixtures. Words come from lib/chat/tool-run; no status pills, one live mark.
           </p>
+          <Section id="grouped" title="Several tools in one turn" only={only}>
+            <GroupedSection />
+          </Section>
           <Section id="phases" title="Every phase, as a chat receipt" only={only}>
             <PhasesSection />
           </Section>

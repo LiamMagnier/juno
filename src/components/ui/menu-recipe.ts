@@ -98,9 +98,12 @@ export const menuShellClass = `${menuShellFrameClass} nest-p-1.5`;
  * drawing in, a star filling).
  */
 export const menuRowClass =
-  "menu-item group/menu-item relative flex min-h-8 cursor-pointer select-none items-center gap-2.5 " +
+  "menu-item group/menu-item relative flex min-h-9 cursor-pointer select-none items-center gap-3 " +
   "rounded-inner px-2.5 py-1.5 text-ui outline-none " +
-  "transition-colors duration-fast ease-out-soft " +
+  // 2026-10: a row also gives under the finger (0.985) and its open submenu
+  // keeps the hover fill, so the path to the submenu stays lit.
+  "transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.985] " +
+  "data-[state=open]:bg-accent motion-reduce:active:scale-100 " +
   "data-[disabled]:pointer-events-none data-[disabled]:opacity-50 " +
   "[&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 " +
   "coarse:min-h-11";

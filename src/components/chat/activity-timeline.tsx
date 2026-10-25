@@ -39,6 +39,7 @@ import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
 import { activeRunId, runReceiptParts } from "@/lib/chat/tool-run";
 import { ToolRunOutputs } from "@/components/chat/tool-run-files";
+import { FaviconStack } from "@/components/chat/run/favicon-stack";
 import type { ClientActivityEvent, ClientAttachment, ClientSource } from "@/types/chat";
 import { reasoningHeadline } from "@/lib/chat/reasoning-headline";
 
@@ -331,34 +332,35 @@ export function ActivityTimeline({
     ...new Set(list.filter((e) => e.kind === "tool" && e.title.startsWith("Using ")).map((e) => e.title.slice(6).trim())),
   ].filter(Boolean);
   /*
-   * THE RESTING LINE IS ONE SENTENCE (INTERACTION_SPEC M4, M5): "Thought for
-   * 12s", or "Worked 12s, searched the web and read 3 sources". Typography,
-   * not a row: no glyph, no fill, no second column for the clock. The figure
-   * is the one formatter's (`formatSpan`), so the line and the panel cannot
-   * disagree about how long the run took.
+   * THE RESTING LINE IS ONE GLANCEABLE LINE (INTERACTION_SPEC M4, M5):
+   * "Thought for 12s", or, when the turn did work, what it did as short
+   * past-tense clauses and the time last: "Searched the web · Read 6 sources
+   * · Used GitHub and Linear · 12s". Typography, not a row: no fill, no
+   * second column for the clock. The figure is the one formatter's
+   * (`formatSpan`), so the line and the panel cannot disagree about how long
+   * the run took. The sources clause leads with the sites' own marks.
    */
   const span = run.elapsedMs === null ? null : formatSpan(run.elapsedMs);
+  const singleRun = runViews.length === 1 ? runReceiptParts(runViews[0]) : null;
   const did = [
-    runViews.length ? (runViews.length === 1 ? [runReceiptParts(runViews[0]).label, runReceiptParts(runViews[0]).object].filter(Boolean).join(" · ") : `completed ${runViews.length} runs`) : null,
-    run.searches ? (run.searches === 1 ? "searched the web" : `searched the web ${run.searches} times`) : null,
-    run.sourceCount ? `read ${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
+    singleRun
+      ? [singleRun.label, singleRun.object].filter(Boolean).join(" · ")
+      : runViews.length
+        ? `Ran ${runViews.length} programs`
+        : null,
+    run.searches ? (run.searches === 1 ? "Searched the web" : `Ran ${run.searches} searches`) : null,
+    run.sourceCount ? `Read ${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
     toolServers.length
-      ? `used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} and ${toolServers.length - 2} more` : toolServers.join(" and ")}`
+      ? `Used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} +${toolServers.length - 2}` : toolServers.join(" and ")}`
       : toolCalls
-        ? `made ${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}`
+        ? `Made ${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}`
         : null,
   ].filter((part): part is string => !!part);
-  const didSentence = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did[did.length - 1]}` : did[0] ?? null;
-  const lead = did.length
-    ? span
-      ? `Worked ${span}`
-      : "Worked"
-    : hasReasoning
-      ? span
-        ? `Thought for ${span}`
-        : "Thought process"
-      : null;
-  const restingLine = [lead, didSentence].filter(Boolean).join(", ");
+  const sourcesClause = run.sourceCount ? did.findIndex((part) => part.startsWith("Read ")) : -1;
+  // Reasoning alone keeps its own sentence; work is listed, then timed.
+  const lead = did.length ? null : hasReasoning ? (span ? `Thought for ${span}` : "Thought process") : null;
+  const restingParts = did.length ? [...did, ...(span ? [span] : [])] : lead ? [lead] : [];
+  const restingLine = restingParts.join(" · ");
   // A settled run with no reasoning, no searches, no sources and no tool calls
   // has nothing to open: the line would invite a reader into an empty panel.
   // ChatGPT and Claude show no trace line for a plain completion, and neither
@@ -454,9 +456,29 @@ export function ActivityTimeline({
             (inlineOpen || open) && "bg-accent text-foreground"
           )}
         >
-          <span aria-hidden="true" className="min-w-0 truncate">
-            {restingLine}
-            {run.note ? <span className="text-warning">{`. ${run.note}`}</span> : null}
+          <span aria-hidden="true" className="flex min-w-0 items-center gap-1.5 truncate">
+            {did.length ? (
+              <>
+                {did.map((part, i) => (
+                  <React.Fragment key={part}>
+                    {i > 0 ? <span className="shrink-0 text-ink-tertiary">·</span> : null}
+                    <span className={cn("inline-flex min-w-0 items-center gap-1.5", i === did.length - 1 ? "truncate" : "shrink-0")}>
+                      {i === sourcesClause ? <FaviconStack sources={run.sources} className="me-0.5" /> : null}
+                      <span className="truncate">{part}</span>
+                    </span>
+                  </React.Fragment>
+                ))}
+                {span ? (
+                  <>
+                    <span className="shrink-0 text-ink-tertiary">·</span>
+                    <span className="shrink-0 font-mono text-caption tabular-nums">{span}</span>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <span className="truncate">{restingLine}</span>
+            )}
+            {run.note ? <span className="shrink-0 text-warning">{`· ${run.note}`}</span> : null}
           </span>
           <ChevronRight
             aria-hidden="true"

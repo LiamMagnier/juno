@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 9ae0624877573983
+// tokens-digest: 6febf0ce467b380d
 //
 
 import CoreGraphics
@@ -351,6 +351,14 @@ public enum JunoGeneratedColors {
         dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316, 0.08),
         highContrastLight: JunoColorToken(unchecked: 0.4465, 0.4622, 0.4935),
         highContrastDark: JunoColorToken(unchecked: 0.5008, 0.5104, 0.5392)
+    )
+
+    /// `--icon-muted`
+    public static let iconMuted = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.2375, 0.2458, 0.2625),
+        dark: JunoColorToken(unchecked: 0.769, 0.7752, 0.791),
+        highContrastLight: JunoColorToken(unchecked: 0.2375, 0.2458, 0.2625),
+        highContrastDark: JunoColorToken(unchecked: 0.769, 0.7752, 0.791)
     )
 
     /// `--ink-tertiary`

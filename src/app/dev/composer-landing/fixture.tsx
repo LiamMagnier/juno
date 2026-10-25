@@ -1,6 +1,5 @@
 "use client";
 
-import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { TaskModeChip } from "@/components/chat/task-mode-chip";
 import { parseChatTaskMode, type ChatTaskMode } from "@/lib/chat/task-approval-mode";
 import * as React from "react";
@@ -316,11 +315,6 @@ function DockView(common: React.ComponentProps<typeof Composer>) {
       <div className="page-gutter mx-auto w-full max-w-3xl flex-1 space-y-4 pt-16 text-body text-foreground">
         <p className={cn(USER_BUBBLE_CLASS, "ml-auto w-fit max-w-[80%]")}>Compare the Q3 forecast with what Stripe shows for renewals.</p>
         <p>Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.</p>
-      </div>
-      {/* As chat-view places them: the follow-ups ride the composer's column.
-          They fetch /api/chat/follow-ups; a fixture run stubs that route. */}
-      <div className="page-gutter mx-auto w-full transcript-column shrink-0 pb-2">
-        <FollowUpSuggestions conversationId="conv-dev" onPick={() => {}} visible />
       </div>
       <div className="relative isolate w-full">
         <Composer

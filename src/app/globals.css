@@ -138,6 +138,11 @@
        argument. 40% clears it on all four reading grounds: 5.14 on the page,
        5.35 on a card, 4.84 on `--muted`, 4.57 on the `--accent` hover fill. */
     --muted-foreground: 217.500 3.704% 42.353%;
+    /* Glyph ink (2026-10 pass: "a little more black"). A muted glyph sits
+       a step darker than muted text, so icons read as solid marks while
+       captions keep their quieter grey. icons.css maps a glyph's
+       `text-muted-foreground` onto it. */
+    --icon-muted: 220 5% 25%;
 
     --accent: 210.000 6.667% 94.118%;
     --accent-foreground: 216.000 9.091% 10.784%;
@@ -789,6 +794,7 @@
     --muted: 225.000 6.061% 12.941%;
     /* 66%: 7.7:1 on the page, 5.8:1 on the `--accent` hover fill. */
     --muted-foreground: 222.857 3.415% 59.804%;
+    --icon-muted: 223 5% 78%;
 
     --accent: 225.000 4.255% 18.431%;
     --accent-foreground: 220.000 6.977% 91.569%;
@@ -4864,3 +4870,10 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
   .tone-edge, [data-tone-step] { box-shadow: inset 0 0 0 1px hsl(var(--tone-edge)); }
 }
 
+
+/* Glyph ink for a glyph that inherits muted ink from a resting control
+   (juno-icons/icons.css maps its own text-muted-foreground). It follows its
+   control to the foreground ink on hover, focus, open or highlight. */
+:where(.text-muted-foreground:not(:hover, :focus-visible, [data-state="open"], [data-highlighted], [aria-expanded="true"])) > svg.ji:not([class*="text-"]) {
+  color: hsl(var(--icon-muted));
+}

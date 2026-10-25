@@ -3,14 +3,15 @@
 /**
  * THE RECEIPT ROW — one anatomy for every tool call a transcript shows.
  *
- *   [icon 20px]  label · object · · · · · · · · ·  status  duration  ›
+ *   [icon tile]  label · object · · · · · · · · ·  status  duration  ›
  *   ─────────────────────────────────────────────────────────────────
  *   (in-flow disclosure: args / result / diff / log)
  *
- * Hairline top border, 20-22px icon slot (the Continuum thinking mark on the
- * ACTIVE row only, handing its tone on once per real step; settled rows fully
- * still), one
- * truncating label line, right-aligned duration/status in text-label. The
+ * Hairline top border, a 24px tonal icon tile (the Continuum thinking mark on
+ * the ACTIVE row only, handing its tone on once per real step; settled rows
+ * fully still), one truncating label line, right-aligned duration/status in
+ * text-label, and a live clock in that same column while the call runs. The
+ * tile's glyph cross-fades when the status changes. The
  * disclosure opens in-flow below, never a modal. Multiple receipts stack as a
  * tight list with hairlines, not floating cards.
  *
@@ -50,12 +51,16 @@ import {
   AlertCircle,
   TriangleAlert,
   Pencil,
+  RotateCcw,
   type IconComponent,
 } from "@/components/ui/icons";
+import { AnimatePresence, motion } from "framer-motion";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Collapse } from "@/components/ui/collapse";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { formatSpan } from "@/lib/run-receipt";
+import { variants } from "@/lib/motion";
+import { useReducedMotion } from "@/lib/motion-preference";
 import {
   churnLabel,
   receiptCanRetry,
@@ -112,8 +117,69 @@ const STATUS_ICONS: Record<"error" | "success" | "warning", IconComponent> = {
 };
 
 /**
- * One receipt row. Dense like Linear activity: a 32px line with a hairline
- * above it, not a card.
+ * Live elapsed seconds for a running row, from the call's own start when it
+ * has one (so a remount does not reset the clock), else from mount. A start
+ * more than six hours back is a stale record, not a run that has truly been
+ * going that long, so it shows no clock at all rather than "556h". Read in an
+ * effect, never in render, so the server render and the first client render
+ * agree.
+ */
+const STALE_START_MS = 6 * 60 * 60_000;
+function useRowElapsed(running: boolean, startedAt?: string | number | null): number | null {
+  const [ms, setMs] = React.useState<number | null>(null);
+  const since = typeof startedAt === "string" ? Date.parse(startedAt) : typeof startedAt === "number" ? startedAt : NaN;
+  React.useEffect(() => {
+    if (!running) {
+      setMs(null);
+      return;
+    }
+    const mounted = Date.now();
+    const origin = Number.isFinite(since) && since <= mounted ? since : mounted;
+    if (mounted - origin > STALE_START_MS) {
+      setMs(null);
+      return;
+    }
+    const tick = () => setMs(Date.now() - origin);
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [running, since]);
+  return ms;
+}
+
+/**
+ * The icon slot's state, cross-faded as one object when it changes (running
+ * → done, running → failed): the swap variant from `@/lib/motion`, on the
+ * fast rung. Under reduced motion the new face simply replaces the old.
+ */
+function IconSwap({ stateKey, children }: { stateKey: string; children: React.ReactNode }) {
+  const reduce = useReducedMotion();
+  if (reduce) return <span className="grid place-items-center">{children}</span>;
+  return (
+    <AnimatePresence mode="popLayout" initial={false}>
+      <motion.span
+        key={stateKey}
+        className="grid place-items-center"
+        variants={variants.swap}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+      >
+        {children}
+      </motion.span>
+    </AnimatePresence>
+  );
+}
+
+/** Left inset of everything under a row: the row's 12px gutter, the 24px tile and the 10px gap. */
+const UNDER_ROW = "pl-[2.875rem] pr-3";
+
+/**
+ * One receipt row. Dense like Linear activity: a 40px line with a hairline
+ * above it, not a card. The glyph sits in a small tonal tile, so a list of
+ * receipts scans down one column of marks; the live row carries the working
+ * mark and a ticking clock in the right column, where the duration lands
+ * once it settles, so finishing rewrites a figure rather than moving one.
  */
 export function ToolReceiptRow({
   icon,
@@ -132,6 +198,7 @@ export function ToolReceiptRow({
   retryLabel,
   mark,
   quietStatus,
+  startedAt,
   className,
 }: {
   /** The house glyph kind. Mapped here; never a hand-rolled SVG. */
@@ -165,6 +232,8 @@ export function ToolReceiptRow({
   mark?: React.ReactNode;
   /** The label already says how it ended ("Python failed"): no status word. */
   quietStatus?: boolean;
+  /** When the call started (ISO or epoch ms), for the live clock while it runs. Absent, the clock counts from mount. */
+  startedAt?: string | number | null;
   className?: string;
 }) {
   const Glyph = RECEIPT_ICONS[icon] ?? Wrench;
@@ -172,87 +241,125 @@ export function ToolReceiptRow({
   const failed = status === "failed";
   const denied = status === "denied";
   const running = status === "running";
+  const waiting = status === "waiting";
   const stopped = status === "stopped";
   const unknown = status === "unknown";
   const statusText = quietStatus ? null : receiptStatusText(status);
   const canOpen = expandable && !!children;
+  const elapsedMs = useRowElapsed(running && durationMs == null, startedAt);
+  const showDuration = durationMs != null && Number.isFinite(durationMs);
+  const troubled = failed || unknown;
+
+  const glyph = running ? (
+    (mark ?? <GalaxyMark phase="working" size={16} eventKey={label} />)
+  ) : unknown ? (
+    <HelpCircle className="size-4 text-warning" />
+  ) : stopped ? (
+    <StopCircle className="size-4 text-muted-foreground" />
+  ) : failed ? (
+    <STATUS_ICONS.error className="size-4 text-warning" />
+  ) : denied ? (
+    <X className="size-4 text-muted-foreground" />
+  ) : status === "ok" && icon === "success" ? (
+    <STATUS_ICONS.success className="size-4 text-muted-foreground" />
+  ) : (
+    <Glyph
+      className={cn(
+        "size-4 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        waiting ? "text-foreground" : "text-muted-foreground group-hover/receipt:text-foreground",
+      )}
+    />
+  );
 
   const row = (
     <>
-      {/* 20-22px icon slot. The thinking mark while running (it takes the
-          row's ink at rest and moves only when the call's label changes);
-          settled rows fully still. */}
-      <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
-        {running ? (
-          (mark ?? <GalaxyMark phase="working" size={16} eventKey={label} />)
-        ) : unknown ? (
-          <HelpCircle className="size-4 text-warning" />
-        ) : stopped ? (
-          <StopCircle className="size-4 text-muted-foreground" />
-        ) : failed ? (
-          <STATUS_ICONS.error className="size-4 text-warning" />
-        ) : denied ? (
-          <X className="size-4 text-muted-foreground" />
-        ) : status === "ok" && icon === "success" ? (
-          <STATUS_ICONS.success className="size-4 text-muted-foreground" />
-        ) : (
-          <Glyph
-            className={cn(
-              "size-4 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-              failed ? "text-warning" : "text-muted-foreground",
-            )}
-          />
+      {/* The icon tile. The thinking mark while running (it takes the row's
+          ink at rest and moves only when the call's label changes); settled
+          rows fully still. A trouble state tints the tile, not the row. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "grid size-6 shrink-0 place-items-center rounded-xs transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          running ? "bg-transparent" : troubled ? "bg-warning/10" : "bg-secondary",
         )}
+      >
+        <IconSwap stateKey={running ? "running" : status}>{glyph}</IconSwap>
       </span>
 
       {/* One truncating label line. The answer stays the hero; this is a receipt. */}
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-caption leading-5",
-          running ? "font-medium text-foreground" : failed || unknown ? "text-warning" : "text-foreground/80",
+          "min-w-0 flex-1 truncate text-ui leading-5 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          running || waiting ? "font-medium text-foreground" : troubled ? "text-warning" : "text-foreground",
         )}
       >
         {label}
-        {object ? <span className="text-muted-foreground"> {object}</span> : null}
+        {object ? <span className="font-normal text-muted-foreground"> {object}</span> : null}
       </span>
 
-      {/* Right-aligned status/duration in text-label. A success says nothing:
-          absence is the ordinary case. */}
+      {/* Right-aligned evidence in the third ink, tabular. A success says
+          nothing: absence is the ordinary case. While it runs, the clock
+          holds the place the measured duration will take. */}
       <span className="flex shrink-0 items-baseline gap-2 font-mono text-caption tabular-nums text-muted-foreground">
-        {figure ? <span>{figure}</span> : null}
+        {figure ? (
+          <span key={`f-${status}`} className="motion-safe:animate-fade-in">
+            {figure}
+          </span>
+        ) : null}
         {statusText ? (
-          <span className={failed ? "text-warning/80" : denied ? "text-muted-foreground" : undefined}>
+          <span
+            key={`s-${status}`}
+            className={cn("motion-safe:animate-fade-in", failed ? "text-warning" : waiting ? "text-foreground" : undefined)}
+          >
             {statusText}
           </span>
         ) : null}
-        {durationMs != null && Number.isFinite(durationMs) ? <span>{formatSpan(durationMs)}</span> : null}
+        {showDuration ? (
+          <span key="d" className="motion-safe:animate-fade-in">
+            {formatSpan(durationMs)}
+          </span>
+        ) : running && elapsedMs !== null && elapsedMs >= 1000 ? (
+          // The number changing once a second is information, not motion;
+          // hidden from assistive technology, which hears the phase instead.
+          <span aria-hidden="true" data-receipt-clock="">
+            {formatSpan(elapsedMs, { live: true })}
+          </span>
+        ) : null}
       </span>
 
       {/* Caret is a state mark and does not travel before it is pressed. */}
       {canOpen ? (
         <ChevronRight
           className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
-            open && "rotate-90",
+            "size-3.5 shrink-0 text-ink-tertiary transition-[transform,color] duration-base ease-in-out group-hover/receipt:text-foreground motion-reduce:transition-none",
+            open && "rotate-90 text-foreground",
           )}
           aria-hidden="true"
         />
       ) : (
-        <span className="w-3 shrink-0" aria-hidden="true" />
+        <span className="w-3.5 shrink-0" aria-hidden="true" />
       )}
     </>
   );
 
   const shared = cn(
-    "flex min-h-8 w-full items-center gap-2 px-1.5 py-1 text-left",
-    "border-t border-border/60",
-    "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+    "group/receipt flex min-h-10 w-full items-center gap-2.5 px-3 py-1.5 text-left",
+    "transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none",
+    "focus-visible:-outline-offset-2",
     canOpen && "cursor-pointer",
+    open && "bg-accent/40",
     className,
   );
 
+  const explains = (failed || stopped || unknown) && !!reason;
+  const offersRetry = !!onRetry && !running;
+
   return (
-    <li className="min-w-0">
+    <li
+      className="min-w-0 border-t border-border/60 first:border-t-0"
+      data-receipt-status={status}
+      aria-busy={running || undefined}
+    >
       {canOpen ? (
         <button
           type="button"
@@ -264,31 +371,49 @@ export function ToolReceiptRow({
           {row}
         </button>
       ) : (
-        <div className={cn(shared, "cursor-default")}>{row}</div>
+        <div className={cn(shared, "cursor-default hover:bg-transparent")}>{row}</div>
       )}
 
-      {/* Failures are receipts too: one line + reason + Retry when safe. */}
-      {((failed || stopped || unknown) && reason) || (onRetry && !running) ? (
-        <div className="border-t border-border/60 px-1.5 pb-1.5 pl-[1.875rem] pr-1 pt-0.5">
-          {(failed || stopped || unknown) && reason ? (
-            <p className={cn("text-caption", stopped ? "text-muted-foreground" : "text-warning/90")}>{reason}</p>
-          ) : null}
-          {onRetry && !running ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              disabled={retrying}
-              className="mt-0.5 text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none"
-            >
-              {retrying ? "Trying again…" : (retryLabel ?? "Try again")}
-            </button>
-          ) : null}
+      {/* Failures are receipts too: what happened, in a sentence, and the
+          one thing that can be done about it, side by side. */}
+      {explains || offersRetry ? (
+        <div className={cn("pb-2.5", UNDER_ROW)}>
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-x-3 gap-y-1.5 motion-safe:animate-fade-in",
+              explains && "rounded-lg border px-3 py-2",
+              explains && (stopped ? "border-border/60 bg-secondary/60" : "border-warning/20 bg-warning/[0.06]"),
+            )}
+          >
+            {explains ? (
+              <p className={cn("min-w-0 flex-1 text-caption leading-5", stopped ? "text-muted-foreground" : "text-foreground")}>
+                {reason}
+              </p>
+            ) : null}
+            {offersRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={retrying}
+                className={cn(
+                  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5 text-caption font-medium text-foreground",
+                  "transition-colors duration-fast ease-out-soft hover:bg-accent disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none coarse:h-9",
+                )}
+              >
+                <RotateCcw
+                  aria-hidden="true"
+                  className={cn("size-3.5 text-muted-foreground", retrying && "motion-safe:animate-spin")}
+                />
+                {retrying ? "Trying again…" : (retryLabel ?? "Try again")}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
       {/* Disclosure opens in-flow below, never a modal. */}
       {children ? (
-        <Collapse open={!!open} innerClassName="px-1.5 pb-1.5 pl-[1.875rem] pr-1">
+        <Collapse open={!!open} innerClassName={cn("pb-3", UNDER_ROW)}>
           <div id={bodyId} className="pt-0.5">
             {children}
           </div>
@@ -300,25 +425,39 @@ export function ToolReceiptRow({
 
 /**
  * The tight list receipts stack in. Hairlines between rows, no floating
- * cards, no gap. One continuous object, like Linear's activity feed.
+ * cards, no gap. One continuous object, like Linear's activity feed. A
+ * `summary` heads the list with what the calls added up to ("3 tools ·
+ * 1 failed · 12s"), so a long list can be read without reading every row.
  */
 export function ToolReceiptList({
   children,
   label,
+  summary,
   className,
 }: {
   children: React.ReactNode;
   label?: string;
+  /** One line above the rows: what the list adds up to. */
+  summary?: React.ReactNode;
   className?: string;
 }) {
-  return (
+  const list = (
     <ul
       role="list"
       aria-label={label ?? `What ${PRODUCT_NAME} did`}
-      className={cn("mt-2 overflow-hidden rounded-field border border-border/60 bg-card/40", className)}
+      className={cn(!summary && "mt-2 overflow-hidden rounded-xl border border-border/60 bg-card/60", !summary && className)}
     >
       {children}
     </ul>
+  );
+  if (!summary) return list;
+  return (
+    <div className={cn("mt-2 overflow-hidden rounded-xl border border-border/60 bg-card/60", className)}>
+      <div className="flex min-h-9 items-center gap-2 border-b border-border/60 px-3 font-mono text-caption tabular-nums text-muted-foreground">
+        {summary}
+      </div>
+      {list}
+    </div>
   );
 }
 

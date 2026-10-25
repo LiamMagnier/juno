@@ -7,6 +7,8 @@ import { ToolRunsGallery } from "./gallery";
  * settled, in the REAL components over the wire fixtures
  * (src/lib/chat/tool-run-fixtures.ts):
  *
+ *   grouped    a turn that searched, read, called connectors and ran code,
+ *              as the strip's one line, plus mixed receipt rows
  *   phases     every phase as a chat receipt row with its detail open
  *   strip      the run strip above the answer, live and settled, with files,
  *              and the real Thought process panel docked beside it

@@ -143,6 +143,7 @@ export async function runPrivateTurn({
     untrustedContent: useWebSearch || !!privateSkillBlock?.untrusted,
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
     liveUiExercise: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui_exercise") ?? false),
+    liveUiDo: legacyChatClientForOrigin(input) === "web",
     codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     // Private chats never execute on the server (outputs would persist).
     codeSandbox: false,

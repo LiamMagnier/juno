@@ -127,17 +127,10 @@ export function NotificationsSection() {
 
 
 export function CapabilitiesSection() {
-  const [followUps, setFollowUps] = useUiPref("followUps");
   const [codeWrap, setCodeWrap] = useUiPref("codeWrap");
   return (
     <>
       <SettingsGroup title="In replies" description="Set for this device only.">
-        <SettingRow
-          label="Follow-up suggestions"
-          htmlFor="cap-followups"
-          description="Offer a few next questions under a finished reply."
-          control={<Switch id="cap-followups" checked={followUps} onCheckedChange={setFollowUps} />}
-        />
         <SettingRow
           label="Wrap long code lines"
           htmlFor="cap-codewrap"

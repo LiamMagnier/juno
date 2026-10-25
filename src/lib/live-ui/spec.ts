@@ -34,6 +34,15 @@ export const SPEC_LIMITS = {
   questions: 10,
   quizOptions: 6,
   timeline: 20,
+  ingredients: 40,
+  recipeSteps: 24,
+  choices: 8,
+  compare: 4,
+  pros: 6,
+  cards: 12,
+  tags: 4,
+  tabs: 6,
+  flashcards: 30,
   text: 2000,
   label: 120,
 } as const;
@@ -92,6 +101,38 @@ export interface LiveQuizQuestion {
 
 export type LiveCalloutTone = "insight" | "tip" | "warning" | "note";
 
+/** One ingredient: a quantity the view scales with the servings, or none ("salt to taste"). */
+export interface LiveIngredient {
+  name: string;
+  qty?: number;
+  unit?: string;
+  note?: string;
+}
+
+/** One option in a compare view: a product, a plan, a route, an approach. */
+export interface LiveCompareOption {
+  name: string;
+  tagline?: string;
+  price?: string;
+  badge?: string;
+  pros: string[];
+  cons: string[];
+  facts: { label: string; value: string }[];
+  /** Sent as the user's next message when they pick this option. */
+  prompt?: string;
+}
+
+export interface LiveCard {
+  title: string;
+  subtitle?: string;
+  meta?: string;
+  detail?: string;
+  tags: string[];
+  /** 0 to 5. */
+  rating?: number;
+  prompt?: string;
+}
+
 export type LiveComponent =
   | (Base & { type: "row"; children: LiveComponent[]; pending: boolean })
   | (Base & { type: "grid"; columns: number; children: LiveComponent[]; pending: boolean })
@@ -146,6 +187,34 @@ export type LiveComponent =
       language?: string;
       hints: string[];
     })
+  /**
+   * The intelligent-UI set (2026-10): views for things people DO with an
+   * answer, beyond reading it. A recipe that rescales for the guests and times
+   * its steps, a question answered with a tap, options weighed side by side
+   * and picked, a gallery of places or products, tabs, and flashcards.
+   */
+  | (Base & {
+      type: "recipe";
+      id: string;
+      title?: string;
+      /** The servings the quantities are written for. */
+      servings: number;
+      /** What one serving is called ("servings", "people", "cookies"). */
+      yieldLabel: string;
+      ingredients: LiveIngredient[];
+      steps: { text: string; minutes?: number }[];
+    })
+  | (Base & {
+      type: "choices";
+      id: string;
+      question?: string;
+      options: { label: string; detail?: string; prompt: string }[];
+      multi: boolean;
+    })
+  | (Base & { type: "compare"; title?: string; options: LiveCompareOption[]; recommend?: number })
+  | (Base & { type: "cards"; title?: string; items: LiveCard[] })
+  | (Base & { type: "tabs"; tabs: { label: string; children: LiveComponent[] }[]; pending: boolean })
+  | (Base & { type: "flashcards"; title?: string; cards: { front: string; back: string }[] })
   /** A leaf that has not finished arriving. */
   | (Base & { type: "pending" });
 
@@ -202,6 +271,22 @@ const TYPE_ALIASES: Record<string, string> = {
   insight: "callout",
   process: "timeline",
   check: "quiz",
+  ingredients: "recipe",
+  cook: "recipe",
+  choice: "choices",
+  options: "choices",
+  ask: "choices",
+  "follow-up": "choices",
+  followup: "choices",
+  versus: "compare",
+  vs: "compare",
+  comparison: "compare",
+  products: "cards",
+  places: "cards",
+  gallery: "cards",
+  tab: "tabs",
+  flashcard: "flashcards",
+  deck: "flashcards",
 };
 
 const LAYOUTS = new Set(["row", "grid", "section"]);
@@ -321,7 +406,7 @@ function components(
     const typeRaw = typeof raw.type === "string" ? raw.type.trim().toLowerCase() : undefined;
     const type = typeRaw ? TYPE_ALIASES[typeRaw] ?? typeRaw : undefined;
     const isOpen = open.has(raw);
-    if (isOpen && (!type || !LAYOUTS.has(type))) {
+    if (isOpen && (!type || !(LAYOUTS.has(type) || type === "tabs"))) {
       out.push({ key, type: "pending" });
       return;
     }
@@ -661,6 +746,143 @@ function component(
       const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
       const id = IDENT.test(idRaw) ? idRaw : `exercise_${key.replace(/\./g, "_")}`;
       return { key, type, id, title, tag: str(raw.tag ?? raw.kind, 40), prompt, placeholder: str(raw.placeholder, 200), language, hints };
+    }
+    case "recipe": {
+      const servings = Math.max(1, Math.min(100, Math.round(num(raw.servings ?? raw.serves ?? raw.yield) ?? 4)));
+      const ingredients: LiveIngredient[] = [];
+      for (const it of Array.isArray(raw.ingredients) ? raw.ingredients : []) {
+        if (ingredients.length >= SPEC_LIMITS.ingredients) break;
+        if (typeof it === "string" && it.trim()) ingredients.push({ name: it.trim().slice(0, 200) });
+        else if (isRecord(it)) {
+          const name = str(it.name ?? it.label ?? it.item, 200);
+          if (!name) continue;
+          const qty = num(it.qty ?? it.quantity ?? it.amount);
+          ingredients.push({ name, qty: qty !== undefined && qty > 0 ? qty : undefined, unit: str(it.unit, 20), note: str(it.note, 200) });
+        }
+      }
+      const steps: { text: string; minutes?: number }[] = [];
+      for (const st of Array.isArray(raw.steps) ? raw.steps : Array.isArray(raw.method) ? raw.method : []) {
+        if (steps.length >= SPEC_LIMITS.recipeSteps) break;
+        if (typeof st === "string" && st.trim()) steps.push({ text: st.trim().slice(0, 600) });
+        else if (isRecord(st)) {
+          const text = str(st.text ?? st.step ?? st.title, 600);
+          if (!text) continue;
+          const minutes = num(st.minutes ?? st.timer ?? st.time);
+          steps.push({ text, minutes: minutes !== undefined && minutes > 0 ? Math.min(minutes, 24 * 60) : undefined });
+        }
+      }
+      if (ingredients.length === 0 && steps.length === 0) return null;
+      const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
+      const id = IDENT.test(idRaw) ? idRaw : `recipe_${key.replace(/\./g, "_")}`;
+      return { key, type, id, title: str(raw.title), servings, yieldLabel: str(raw.yieldLabel ?? raw.unit, 30) ?? "servings", ingredients, steps };
+    }
+    case "choices": {
+      const list = Array.isArray(raw.options) ? raw.options : Array.isArray(raw.choices) ? raw.choices : [];
+      const options: { label: string; detail?: string; prompt: string }[] = [];
+      for (const o of list) {
+        if (options.length >= SPEC_LIMITS.choices) break;
+        if (typeof o === "string" && o.trim()) options.push({ label: o.trim().slice(0, SPEC_LIMITS.label), prompt: o.trim().slice(0, 600) });
+        else if (isRecord(o)) {
+          const label = str(o.label ?? o.text);
+          if (!label) continue;
+          options.push({ label, detail: str(o.detail ?? o.description, 200), prompt: str(o.prompt ?? o.send, 600) ?? label });
+        }
+      }
+      if (options.length < 2) return null;
+      const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
+      const id = IDENT.test(idRaw) ? idRaw : `choices_${key.replace(/\./g, "_")}`;
+      return { key, type, id, question: str(raw.question ?? raw.title ?? raw.label, 300), options, multi: raw.multi === true || raw.multiple === true };
+    }
+    case "compare": {
+      const strings = (v: LiveJSON | undefined, max: number) => {
+        const out: string[] = [];
+        for (const x of Array.isArray(v) ? v : []) {
+          if (out.length >= max) break;
+          const t = str(x, 200);
+          if (t) out.push(t);
+        }
+        return out;
+      };
+      const options: LiveCompareOption[] = [];
+      for (const o of Array.isArray(raw.options) ? raw.options : Array.isArray(raw.items) ? raw.items : []) {
+        if (options.length >= SPEC_LIMITS.compare) break;
+        if (!isRecord(o)) continue;
+        const name = str(o.name ?? o.label ?? o.title);
+        if (!name) continue;
+        const facts: { label: string; value: string }[] = [];
+        if (Array.isArray(o.facts)) {
+          for (const f of o.facts) {
+            if (facts.length >= SPEC_LIMITS.facts || !isRecord(f)) continue;
+            const label = str(f.label);
+            const value = str(f.value, 200);
+            if (label && value) facts.push({ label, value });
+          }
+        }
+        options.push({
+          name,
+          tagline: str(o.tagline ?? o.summary ?? o.description, 200),
+          price: str(o.price, 40),
+          badge: str(o.badge, 30),
+          pros: strings(o.pros, SPEC_LIMITS.pros),
+          cons: strings(o.cons, SPEC_LIMITS.pros),
+          facts,
+          prompt: str(o.prompt ?? o.send, 600),
+        });
+      }
+      if (options.length < 2) return null;
+      const rec = num(raw.recommend ?? raw.best);
+      return { key, type, title: str(raw.title), options, recommend: rec !== undefined && rec >= 0 && rec < options.length ? Math.trunc(rec) : undefined };
+    }
+    case "cards": {
+      const items: LiveCard[] = [];
+      for (const it of Array.isArray(raw.items) ? raw.items : Array.isArray(raw.cards) ? raw.cards : []) {
+        if (items.length >= SPEC_LIMITS.cards || !isRecord(it)) continue;
+        const title = str(it.title ?? it.name ?? it.label);
+        if (!title) continue;
+        const tags: string[] = [];
+        for (const t of Array.isArray(it.tags) ? it.tags : []) {
+          if (tags.length >= SPEC_LIMITS.tags) break;
+          const tag = str(t, 30);
+          if (tag) tags.push(tag);
+        }
+        const rating = num(it.rating);
+        items.push({
+          title,
+          subtitle: str(it.subtitle, 200),
+          meta: str(it.meta ?? it.price, 60),
+          detail: str(it.detail ?? it.description, 400),
+          tags,
+          rating: rating !== undefined ? clamp(rating, 0, 5) : undefined,
+          prompt: str(it.prompt ?? it.send, 600),
+        });
+      }
+      if (items.length === 0) return null;
+      return { key, type, title: str(raw.title), items };
+    }
+    case "tabs": {
+      if (depth >= SPEC_LIMITS.nesting) return null;
+      const list = Array.isArray(raw.tabs) ? raw.tabs : Array.isArray(raw.items) ? raw.items : [];
+      const tabs: { label: string; children: LiveComponent[] }[] = [];
+      list.forEach((t, i) => {
+        if (tabs.length >= SPEC_LIMITS.tabs || !isRecord(t)) return;
+        const label = str(t.label ?? t.title);
+        if (!label) return;
+        const kids = Array.isArray(t.children) ? t.children : Array.isArray(t.ui) ? t.ui : [];
+        tabs.push({ label, children: components(kids, `${key}.${i}`, depth + 1, open, counter) });
+      });
+      if (tabs.length === 0) return null;
+      return { key, type, tabs, pending: isOpen };
+    }
+    case "flashcards": {
+      const cards: { front: string; back: string }[] = [];
+      for (const c of Array.isArray(raw.cards) ? raw.cards : Array.isArray(raw.items) ? raw.items : []) {
+        if (cards.length >= SPEC_LIMITS.flashcards || !isRecord(c)) continue;
+        const front = str(c.front ?? c.term ?? c.question, 300);
+        const back = str(c.back ?? c.definition ?? c.answer, 600);
+        if (front && back) cards.push({ front, back });
+      }
+      if (cards.length === 0) return null;
+      return { key, type, title: str(raw.title), cards };
     }
     case "button": {
       const label = str(raw.label);

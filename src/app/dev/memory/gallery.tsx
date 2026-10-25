@@ -10,6 +10,9 @@ import type { BackfillState } from "@/components/memory/use-backfill";
 import type { MemoryState } from "@/components/memory/use-memory";
 import type { RecapExtras } from "@/components/memory/recap-view";
 import type { SkillCandidateTransport, SkillCandidateView } from "@/components/memory/skill-candidates";
+import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { AnswerMemory } from "@/components/chat/answer-memory";
+import type { ClientActivityEvent, ClientMemoryWrite } from "@/types/chat";
 
 /*
  * Fixture state for the memory page. Every action mutates local state the way
@@ -472,7 +475,123 @@ const SKILL_CANDIDATES: SkillCandidateTransport = (() => {
   };
 })();
 
+/* ── In-chat memory surfaces (`?state=chat`) ─────────────────────────────── */
+
+const CHAT_AT = "2026-10-15T10:00:00.000Z";
+const SAVED_ONE: ClientMemoryWrite = {
+  saved: [{ id: "c-m1", content: "Is training for the Lisbon half marathon in March", category: "goals" }],
+};
+const SAVED_MANY: ClientMemoryWrite = {
+  saved: [
+    { id: "c-m2", content: "Prefers metric units and 24-hour times", category: "preferences" },
+    { id: "c-m3", content: "Works in Next.js, Prisma and Postgres day to day", category: "workflows" },
+  ],
+};
+const FORGOT_ONLY: ClientMemoryWrite = { saved: [], forgotten: ["Is considering a job at a bank"] };
+const ANSWER_ACTIVITY: ClientActivityEvent[] = [
+  {
+    id: "c-used",
+    kind: "context",
+    title: "Remembered about you",
+    createdAt: CHAT_AT,
+    memoryReceipt: [
+      { id: "c-u1", content: "Lives in Lisbon, in the Arroios neighbourhood", category: "identity", sourceRef: "chat-here" },
+      { id: "c-u2", content: "Prefers short answers that lead with the recommendation", category: "preferences", sourceRef: "chat-past", sourceMessageId: "msg-1" },
+    ],
+  },
+  { id: "c-saved", kind: "context", title: "Memory updated", createdAt: CHAT_AT, memoryWrite: SAVED_ONE },
+];
+
+/** The memory route, answered locally, so Edit, Undo and Not relevant play for real. */
+function useFakeMemoryRoute() {
+  React.useEffect(() => {
+    const real = window.fetch;
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/memory/") && init?.method === "PATCH") {
+        await wait(500);
+        return new Response(JSON.stringify({ ok: true, restored: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return real(input, init);
+    };
+    return () => {
+      window.fetch = real;
+    };
+  }, []);
+}
+
+/** A notice that comes back when dismissed, so its arrival can be watched again. */
+function ReplayingNotice({ title, write }: { title: string; write: ClientMemoryWrite | null }) {
+  const [key, setKey] = React.useState(0);
+  const [shown, setShown] = React.useState(true);
+  return (
+    <div className="grid gap-2" data-notice-fixture={title}>
+      <div className="flex items-center gap-3">
+        <p className="font-mono text-caption text-muted-foreground">{title}</p>
+        <button
+          type="button"
+          className="font-mono text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          onClick={() => {
+            setShown(true);
+            setKey((k) => k + 1);
+          }}
+        >
+          Replay
+        </button>
+      </div>
+      <div className="flex min-h-12 justify-center rounded-card border border-dashed border-border/70 px-4 py-3">
+        {shown ? <MemoryUpdatedNotice key={key} write={write} onDismiss={() => setShown(false)} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function ChatMemoryFixture() {
+  useFakeMemoryRoute();
+  // The answer's receipt opens once the page is up, so a screenshot shows it.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      document.querySelector<HTMLButtonElement>("[data-answer-memory] > button")?.click();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <main className="mx-auto grid w-full max-w-3xl gap-10 px-4 py-12">
+      <header>
+        <h1 className="font-serif text-page-title">Memory in a chat</h1>
+        <p className="mt-2 text-ui text-muted-foreground">
+          The notice chat-view shows after a turn saves something, and the receipt under an answer. Undo, Edit and Not relevant
+          answer locally.
+        </p>
+      </header>
+      <section className="grid gap-6">
+        <ReplayingNotice title="Saved one fact" write={SAVED_ONE} />
+        <ReplayingNotice title="Saved two facts" write={SAVED_MANY} />
+        <ReplayingNotice title="Forgot at your request" write={FORGOT_ONLY} />
+        <ReplayingNotice title="A write the turn could not name" write={null} />
+      </section>
+      <section>
+        <p className="mb-2 font-mono text-caption text-muted-foreground">Under an answer</p>
+        <p className="text-reading">
+          Given you&apos;re in Arroios, the Saturday parkrun at Parque da Bela Vista is the closest long flat loop for the
+          March half.
+        </p>
+        <AnswerMemory activity={ANSWER_ACTIVITY} conversationId="chat-here" />
+      </section>
+    </main>
+  );
+}
+
 export function MemoryGallery({ state }: { state: string }) {
+  if (state === "chat") {
+    return (
+      <MotionConfig reducedMotion="user">
+        <div className="min-h-dvh bg-background text-foreground">
+          <ChatMemoryFixture />
+        </div>
+      </MotionConfig>
+    );
+  }
   return (
     <MotionConfig reducedMotion="user">
       <div className="h-dvh bg-background text-foreground">

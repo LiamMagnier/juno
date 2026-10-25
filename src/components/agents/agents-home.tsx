@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
-import { MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
+import { ArrowRight, Hand, MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { announceAgentsChanged, hireAgent, updateAgent } from "./agents-transpor
 import { useAgents } from "./use-agents";
 import { AGENT_NOUN, AGENT_STATE_NAMES, BRAND, FEATURE_NAMES } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
+import { staggerDelay } from "@/lib/motion";
 import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 
 /*
@@ -115,8 +116,11 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
 
       {attention.length > 0 ? (
         <section aria-labelledby="orbit-needs-you" className="mt-8 max-w-3xl pb-16">
-          <h2 id="orbit-needs-you" className="mb-3 text-ui font-medium text-muted-foreground">
+          <h2 id="orbit-needs-you" className="mb-3 flex items-center gap-2 text-ui font-medium text-foreground">
             {FEATURE_NAMES.needsYou.label}
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[hsl(var(--attention)/0.14)] px-1.5 font-mono text-caption tabular-nums text-[hsl(var(--attention))]">
+              {attention.length}
+            </span>
           </h2>
           <ul className="flex flex-col gap-2">
             {attention.map((agent, index) => (
@@ -188,20 +192,12 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
         aria-label={`${agent.name}${agent.role ? `, ${agent.role}` : ""}. ${words}`}
         className="flex flex-col items-center rounded-card border border-transparent px-3 pb-4 pt-3 text-center transition-[background-color,border-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.08] hover:bg-foreground/[0.025] active:scale-[.99] motion-reduce:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <span className="grid size-24 place-items-center @[40rem]/page:size-28">
+        <span className="grid size-24 place-items-center transition-transform duration-base ease-out-soft group-hover/portrait:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover/portrait:translate-y-0 @[40rem]/page:size-28">
           <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : agent.state} size={88} spread={0.3} gaze />
         </span>
         <span className="mt-3 max-w-full truncate font-serif text-heading font-normal tracking-[-0.015em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
         {agent.role ? <span className="mt-0.5 max-w-full truncate text-ui text-muted-foreground">{agent.role}</span> : null}
-        <span
-          className={cn(
-            "mt-2.5 line-clamp-2 max-w-[20ch] text-pretty text-ui",
-            waiting ? "font-medium text-[hsl(var(--attention))]" : paused ? "text-muted-foreground" : "text-foreground/80",
-          )}
-          aria-live="polite"
-        >
-          {words}
-        </span>
+        <StateLine agent={agent} words={words} waiting={waiting} paused={paused} />
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -224,6 +220,45 @@ function Portrait({ agent, onChanged }: { agent: ClientAgent; onChanged: () => v
   );
 }
 
+/**
+ * The state under a face, set so it can be read at a glance without a dot:
+ * a wait is the attention ink with the raised hand the sidebar uses for it,
+ * a block is the error ink, work names its task in full ink after a quiet
+ * verb, and a pause or rest steps back to muted. The words always carry it;
+ * the ink and the glyph only make the scan faster.
+ */
+function StateLine({ agent, words, waiting, paused }: { agent: ClientAgent; words: string; waiting: boolean; paused: boolean }) {
+  const blocked = !paused && agent.state === "blocked";
+  const busy = !paused && !waiting && (agent.state === "working" || agent.state === "thinking");
+  const task = busy ? agent.task?.title : null;
+  const lead = task && words.endsWith(task) ? words.slice(0, words.length - task.length).trimEnd() : null;
+  return (
+    <span
+      className={cn(
+        "mt-2.5 line-clamp-3 max-w-full text-balance text-ui leading-5 transition-colors duration-base ease-out-soft",
+        waiting
+          ? "font-medium text-[hsl(var(--attention))]"
+          : blocked
+            ? "text-destructive-ink"
+            : paused || agent.state === "idle" || agent.state === "sleeping"
+              ? "text-muted-foreground"
+              : "text-foreground",
+      )}
+      aria-live="polite"
+    >
+      {waiting ? <Hand className="mr-1 inline size-3.5 -translate-y-px align-middle motion-safe:animate-pop-in" aria-hidden="true" /> : null}
+      {paused ? <Pause className="mr-1 inline size-3 -translate-y-px align-middle" aria-hidden="true" /> : null}
+      {lead ? (
+        <>
+          <span className="text-muted-foreground">{lead}</span> {task}
+        </>
+      ) : (
+        words
+      )}
+    </span>
+  );
+}
+
 /** One thing waiting on you: who, what kind of wait, where and when, then the words and the way in. */
 function Attention({ agent }: { agent: ClientAgent }) {
   const blocked = agent.state === "blocked";
@@ -231,26 +266,38 @@ function Attention({ agent }: { agent: ClientAgent }) {
   const where = agent.task?.title;
   const when = agent.task ? formatAgo(agent.task.lastActivityAt) : null;
   const href = agent.task?.conversationId ? `/chat/${encodeURIComponent(agent.task.conversationId)}` : agentHref(agent);
+  // "Waiting on you" under "needs your answer" said the same thing twice;
+  // the task is the news, so it leads and a generic sentence steps aside.
+  const generic = !sentence || /^waiting on you\.?$/i.test(sentence.trim());
   return (
-    <div className="surface-raised flex gap-3.5 rounded-card p-4">
+    <Link
+      href={href}
+      className={cn(
+        "group/attn relative flex items-center gap-4 overflow-hidden rounded-card border bg-card py-3.5 pl-5 pr-4",
+        "transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:bg-accent/40 active:scale-[.995] motion-reduce:active:scale-100",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+        blocked ? "border-destructive/25 hover:border-destructive/40" : "border-[hsl(var(--attention)/0.28)] hover:border-[hsl(var(--attention)/0.45)]",
+      )}
+    >
+      {/* The kind of wait, as an edge: attention for a question, error for a block. */}
+      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-[3px]", blocked ? "bg-destructive" : "bg-[hsl(var(--attention))]")} />
       <span className="shrink-0">
-        <AgentPresence avatar={agent.avatar} state={agent.state} size={28} spread={0.2} />
+        <AgentPresence avatar={agent.avatar} state={agent.state} size={36} spread={0.2} />
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-ui leading-[18px] text-muted-foreground">
+      <span className="min-w-0 flex-1">
+        <span className="block text-ui leading-5 text-muted-foreground">
           <span className="font-medium text-foreground">{agent.name}</span>{" "}
-          {blocked ? <span className="text-foreground">is blocked</span> : <span className="font-medium text-[hsl(var(--attention))]">needs your answer</span>}
-          {where ? ` in ${where}` : ""}
-          {when ? `, ${when}` : ""}
-        </p>
-        <p className="mt-1 text-pretty text-body leading-[23px] text-foreground">{sentence}</p>
-        <div className="mt-3.5 flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" asChild>
-            <Link href={href}>{blocked ? "See what’s needed" : "Answer in the chat"}</Link>
-          </Button>
-        </div>
-      </div>
-    </div>
+          {blocked ? <span className="font-medium text-destructive-ink">is blocked</span> : <span className="font-medium text-[hsl(var(--attention))]">needs your answer</span>}
+          {when ? <span>{` · ${when}`}</span> : null}
+        </span>
+        <span className="mt-0.5 block truncate text-body font-medium leading-6 text-foreground">{where ?? sentence}</span>
+        {where && !generic ? <span className="mt-0.5 block text-pretty text-ui leading-5 text-muted-foreground">{sentence}</span> : null}
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-control bg-foreground px-3 py-1.5 text-ui font-medium text-background transition-[gap] duration-fast ease-out-soft group-hover/attn:gap-2.5 motion-reduce:transition-none">
+        {blocked ? "See what’s needed" : "Answer"}
+        <ArrowRight className="size-3.5" aria-hidden="true" />
+      </span>
+    </Link>
   );
 }
 
@@ -283,7 +330,11 @@ function useCreateAgent(team: readonly ClientAgent[]) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [arrived, setArrived] = React.useState(false);
-  const salt = React.useMemo(() => Math.floor(Math.random() * 997), []);
+  // The salt picks the next face and name. Drawn on the client before first
+  // paint rather than during render: a render-time Math.random gave the server
+  // and the browser different faces, and React threw the hydrated tree away.
+  const [salt, setSalt] = React.useState(0);
+  React.useLayoutEffect(() => setSalt(Math.floor(Math.random() * 997)), []);
   const face = React.useMemo(() => nextFace(team, salt), [team, salt]);
   const name = React.useMemo(() => nextName(team, salt), [team, salt]);
   const request = React.useRef<{ key: string; text: string } | null>(null);
@@ -454,6 +505,26 @@ function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading
         <p role="alert" className="mt-3 text-ui text-destructive-ink">
           {error}
         </p>
+      ) : null}
+      {/* Jobs other people hand off, one tap from the field: the blank page
+          is the hardest part of a first agent. They fill, never send. */}
+      {!value && !busy ? (
+        <ul aria-label="Example jobs" className="mt-5 flex flex-wrap justify-center gap-2">
+          {EXAMPLES.slice(1).map((example, index) => (
+            <li key={example} className="[animation-fill-mode:backwards] motion-safe:animate-rise-in" style={staggerDelay(index, "tight", 120)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setValue(example);
+                  field.current?.focus();
+                }}
+                className="pressable rounded-full border border-border bg-card px-3.5 py-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+              >
+                {example}
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );

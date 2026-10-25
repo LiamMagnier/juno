@@ -10,6 +10,7 @@ import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/li
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
 import { LiveCallout, LiveExercise, LiveQuiz, LiveSteps, LiveTimeline } from "@/components/chat/live-ui/live-ui-learning";
+import { LiveCards, LiveChoices, LiveCompare, LiveFlashcards, LiveRecipe, LiveTabs } from "@/components/chat/live-ui/live-ui-intelligent";
 import { useLiveUIHost } from "@/components/chat/live-ui/host";
 import { useLiveState, type LiveState } from "@/components/chat/live-ui/use-live-state";
 import { useTweenedNumber } from "@/components/chat/live-ui/use-tweened-number";
@@ -237,6 +238,18 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       return <LiveCallout callout={c} interp={(t) => interpolate(t, scope)} />;
     case "timeline":
       return <LiveTimeline timeline={c} interp={(t) => interpolate(t, scope)} />;
+    case "recipe":
+      return <LiveRecipe recipe={c} />;
+    case "choices":
+      return <LiveChoices choices={c} onPrompt={onPrompt} />;
+    case "compare":
+      return <LiveCompare compare={c} onPrompt={onPrompt} />;
+    case "cards":
+      return <LiveCards cards={c} onPrompt={onPrompt} />;
+    case "tabs":
+      return <LiveTabs tabs={c} render={(list) => <Components list={list} {...props} />} />;
+    case "flashcards":
+      return <LiveFlashcards deck={c} />;
     default:
       if (INPUT_TYPES.has(c.type)) {
         const input = c as LiveInput;

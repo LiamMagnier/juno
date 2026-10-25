@@ -4,7 +4,7 @@ import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { splitMessageContent } from "@/lib/message-content";
-import { LEGACY_REPLY, LIVE_UI_SAMPLES, MERMAID_REPLY, PRACTICE_REPLY, type LiveUISample } from "./samples";
+import { INTELLIGENT_SAMPLES, LEGACY_REPLY, LIVE_UI_SAMPLES, MERMAID_REPLY, PRACTICE_REPLY, type LiveUISample } from "./samples";
 
 function Reply({ sample }: { sample: LiveUISample }) {
   return (
@@ -124,6 +124,9 @@ export function LiveUIGallery() {
             </p>
           ) : null}
         </header>
+        {INTELLIGENT_SAMPLES.map((sample) => (
+          <Reply key={sample.id} sample={sample} />
+        ))}
         {LIVE_UI_SAMPLES.map((sample) => (
           <Reply key={sample.id} sample={sample} />
         ))}

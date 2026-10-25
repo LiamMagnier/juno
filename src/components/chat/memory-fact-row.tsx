@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { ArrowUpRight, Check, EyeOff, Pencil, Trash2, Undo2 } from "@/components/ui/icons";
 import { memoryEntryHref, memorySourceChat } from "@/lib/chat/memory-receipts";
 import { cn } from "@/lib/utils";
 import type { ClientMemoryReceipt } from "@/types/chat";
@@ -138,6 +139,10 @@ export async function markMemoryNotRelevant(id: string, notRelevant: boolean): P
 const linkClass =
   "rounded-xs underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none disabled:cursor-wait disabled:opacity-60";
 
+/** A fact's action: a compact ghost button, glyph then word, inked on hover. */
+const actionClass =
+  "inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none disabled:cursor-wait disabled:opacity-60 coarse:h-9 [&>svg]:size-3.5 [&>svg]:shrink-0";
+
 export function MemoryFactRow({
   fact,
   saved = false,
@@ -231,9 +236,10 @@ export function MemoryFactRow({
   };
 
   return (
-    <li className="py-2" data-memory-fact={fact.id}>
+    <li className="group/fact py-2.5" data-memory-fact={fact.id} data-state={forgotten ? "forgotten" : notRelevant ? "not-relevant" : undefined}>
       {editing ? (
         <form
+          className="motion-safe:animate-fade-in"
           onSubmit={(event) => {
             event.preventDefault();
             void save();
@@ -260,36 +266,45 @@ export function MemoryFactRow({
               }
             }}
             disabled={busy === "edit"}
-            className="w-full resize-none rounded-control border border-border bg-background px-2.5 py-1.5 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft focus-visible:border-ring motion-reduce:transition-none"
+            className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-ui text-foreground outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 motion-reduce:transition-none"
           />
-          <div className="mt-1.5 flex items-center gap-3 text-caption text-muted-foreground">
-            <button type="submit" disabled={busy === "edit"} className={cn(linkClass, "font-medium text-foreground")}>
+          <div className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground">
+            <button
+              type="submit"
+              disabled={busy === "edit"}
+              className="inline-flex h-7 items-center rounded-md bg-foreground px-2.5 text-caption font-medium text-background transition-opacity duration-fast ease-out-soft hover:opacity-90 disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none coarse:h-9"
+            >
               {busy === "edit" ? "Saving…" : "Save"}
             </button>
-            <button type="button" onClick={cancel} disabled={busy === "edit"} className={linkClass}>
+            <button type="button" onClick={cancel} disabled={busy === "edit"} className={actionClass}>
               Cancel
             </button>
+            <span className="ml-auto hidden font-mono text-micro text-muted-foreground sm:inline" aria-hidden="true">
+              Enter saves · Esc cancels
+            </span>
           </div>
         </form>
       ) : (
         <p
           className={cn(
-            "break-words text-ui text-foreground/85 transition-colors duration-base ease-out-soft motion-reduce:transition-none",
-            forgotten && "text-muted-foreground line-through decoration-muted-foreground/40",
+            "break-words text-ui leading-5 text-foreground transition-[color,opacity] duration-base ease-out-soft motion-reduce:transition-none",
+            forgotten && "text-muted-foreground line-through decoration-muted-foreground/40 opacity-70",
+            notRelevant && "text-muted-foreground",
           )}
         >
           {content}
         </p>
       )}
       {error ? (
-        <p role="alert" className="mt-1 text-caption text-destructive">
+        <p role="alert" className="mt-1 text-caption text-destructive motion-safe:animate-fade-in">
           {error}
         </p>
       ) : null}
       {!editing && (
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
+        <div className="-ml-1.5 mt-1 flex flex-wrap items-center gap-x-0.5 gap-y-1 text-caption text-muted-foreground">
           {forgotten ? (
-            <span role="status">
+            <span role="status" className="inline-flex h-7 items-center gap-1 px-1.5 motion-safe:animate-fade-in">
+              <Check aria-hidden="true" className="size-3.5 shrink-0" />
               {!saved
                 ? "Forgotten. It won’t be used again."
                 : outcome?.restored
@@ -298,15 +313,19 @@ export function MemoryFactRow({
             </span>
           ) : notRelevant ? (
             <>
-              <span role="status">Noted. It’ll only come up when you ask about it.</span>
+              <span role="status" className="inline-flex h-7 items-center gap-1 px-1.5 motion-safe:animate-fade-in">
+                <EyeOff aria-hidden="true" className="size-3.5 shrink-0" />
+                Noted. It’ll only come up when you ask about it.
+              </span>
               <button
                 ref={undoMarkRef}
                 type="button"
                 onClick={() => void mark(false)}
                 disabled={busy !== null}
-                className={linkClass}
+                className={cn(actionClass, "text-foreground")}
               >
-                {busy === "notRelevant" ? "Undoing…" : "Undo"}
+                <Undo2 aria-hidden="true" />
+                <span>{busy === "notRelevant" ? "Undoing…" : "Undo"}</span>
               </button>
             </>
           ) : (
@@ -317,9 +336,10 @@ export function MemoryFactRow({
                   type="button"
                   onClick={() => void mark(true)}
                   disabled={busy !== null}
-                  className={linkClass}
+                  className={actionClass}
                 >
-                  {busy === "notRelevant" ? "Saving…" : "Not relevant"}
+                  <EyeOff aria-hidden="true" />
+                  <span>{busy === "notRelevant" ? "Saving…" : "Not relevant"}</span>
                 </button>
               )}
               <button
@@ -330,26 +350,32 @@ export function MemoryFactRow({
                   setEditing(true);
                 }}
                 disabled={busy !== null}
-                className={linkClass}
+                className={actionClass}
               >
-                Edit
+                <Pencil aria-hidden="true" />
+                <span>Edit</span>
               </button>
               <button
                 type="button"
                 onClick={() => void forget()}
                 disabled={busy !== null}
-                className={cn(linkClass, "hover:text-destructive")}
+                className={cn(actionClass, "hover:text-destructive")}
               >
-                {busy === "forget" ? (saved ? "Undoing…" : "Forgetting…") : saved ? "Undo" : "Forget"}
+                {saved ? <Undo2 aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+                <span>{busy === "forget" ? (saved ? "Undoing…" : "Forgetting…") : saved ? "Undo" : "Forget"}</span>
               </button>
             </>
           )}
-          <Link ref={viewRef} href={memoryEntryHref(fact.id)} onClick={onNavigate} className={linkClass}>
+          <Link ref={viewRef} href={memoryEntryHref(fact.id)} onClick={onNavigate} className={actionClass}>
             View in memory
+            <ArrowUpRight aria-hidden="true" />
           </Link>
-          {source?.kind === "this" && <span className="text-muted-foreground/80">Learned in this chat</span>}
+          {(source?.kind === "this" || source?.kind === "chat") && (
+            <span aria-hidden="true" className="mx-1 h-3.5 w-px bg-border" />
+          )}
+          {source?.kind === "this" && <span className="px-1 text-muted-foreground">Learned in this chat</span>}
           {source?.kind === "chat" && (
-            <Link href={source.href} onClick={onNavigate} className={linkClass}>
+            <Link href={source.href} onClick={onNavigate} className={cn(linkClass, "px-1")}>
               From a past chat
             </Link>
           )}

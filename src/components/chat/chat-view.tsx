@@ -22,7 +22,6 @@ import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { HomeStarters } from "@/components/chat/home-starters";
-import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -695,15 +694,6 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   }, [workTasks.sessions, taskWork]);
   const workSteering = composerTask?.steering ?? null;
 
-  // Follow-ups appear only on a settled turn: the stream is idle and the last
-  // message is a non-empty assistant reply. Flipping this false while a new send
-  // is in flight is also what clears the previous turn's suggestions and drives
-  // the refetch (the component keys its effect on `visible`).
-  const followUpsVisible = React.useMemo(() => {
-    if (chat.isBusy || chat.status !== "idle" || privateMode || research.run?.live) return false;
-    const last = chat.messages[chat.messages.length - 1];
-    return !!last && last.role === "ASSISTANT" && !!last.content.trim() && !last.errorMessage;
-  }, [chat.isBusy, chat.status, chat.messages, privateMode, research.run?.live]);
   const latestConversationsRef = React.useRef(conversations);
   const latestMessagesRef = React.useRef(chat.messages);
   const titleDebounceRef = React.useRef<number | null>(null);
@@ -2695,20 +2685,6 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 canSend={!chat.isBusy && !voiceSaving && !voiceSaveError && !voiceTurnSending}
                 {...answerSelection}
               />
-              {currentConversationId && !privateMode && (
-                // Same width cap, centring and gutter as the composer's root
-                // (composer.tsx) — otherwise these sit inside the composer's
-                // edge while it is centred under them, and the two never line
-                // up. Both now take `.page-gutter`, so "the same" is a shared
-                // declaration rather than two copies of one number.
-                <div className="page-gutter mx-auto w-full transcript-column shrink-0 pb-2">
-                  <FollowUpSuggestions
-                    conversationId={currentConversationId}
-                    onPick={(t) => void sendFromComposer(t, [])}
-                    visible={followUpsVisible}
-                  />
-                </div>
-              )}
               <div
                 ref={dockComposerRef}
                 className={cn(

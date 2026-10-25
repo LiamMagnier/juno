@@ -116,6 +116,7 @@ export function composeTurnSystem({
     // when it says so (shipped builds would show raw JSON).
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
     liveUiExercise: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui_exercise") ?? false),
+    liveUiDo: legacyChatClientForOrigin(input) === "web",
     codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     codeSandbox: isExecConfigured(),
   });

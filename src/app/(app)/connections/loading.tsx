@@ -29,7 +29,7 @@ export default function ConnectionsLoading() {
       {/* The tile's own anatomy, from the component the directory's catalog
           fetch renders too — the route transition and the fetch are two
           moments of one load and draw one picture. */}
-      <div className="mt-6 grid grid-cols-1 gap-x-10 gap-y-1 @[40rem]/page:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-3 @[40rem]/page:grid-cols-2">
         {[...Array(6)].map((_, i) => (
           <ConnectorTileSkeleton key={i} index={i} />
         ))}

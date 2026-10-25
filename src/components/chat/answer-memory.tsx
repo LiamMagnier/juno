@@ -66,7 +66,7 @@ export function AnswerMemory({
         <ComposerIcons.memory aria-hidden="true" className="size-3.5 text-muted-foreground" />
         {/* Each phrase is its own text node, so the catalog translates it
             whole; the count rides beside it, as it does on "Sources". */}
-        <span className="font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/pill:text-foreground motion-reduce:transition-none">
+        <span className="text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/pill:text-foreground motion-reduce:transition-none">
           {kind === "used" ? "Memory" : kind === "saved" ? "Memory updated" : "Forgotten"}
         </span>
         {count !== null && (
@@ -77,15 +77,15 @@ export function AnswerMemory({
           </span>
         )}
         {updated && (
-          <span className="font-mono text-caption text-muted-foreground">
-            <span aria-hidden="true">· </span>
+          <span className="inline-flex items-center gap-1 text-caption text-primary-ink">
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
             <span>updated</span>
           </span>
         )}
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3.5 text-ink-tertiary transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180",
           )}
         />
@@ -99,10 +99,10 @@ export function AnswerMemory({
         )}
       >
         <div className={cn("min-h-0", settled ? "overflow-visible" : "overflow-hidden")} inert={!open}>
-          <div className="max-w-xl pb-1 pl-1 pt-2">
+          <div className="mt-2 max-w-xl rounded-xl border border-border/60 bg-card/60 px-3.5 pb-1.5 pt-3">
             {memory.used.length > 0 && (
               <section aria-label="Used in this answer">
-                <h4 className="font-mono text-micro text-muted-foreground">Used in this answer</h4>
+                <h4 className="text-caption font-medium text-muted-foreground">Used in this answer</h4>
                 <ul className="divide-y divide-border/60">
                   {memory.used.map((fact) => (
                     <MemoryFactRow key={fact.id} fact={fact} conversationId={conversationId} />
@@ -111,8 +111,8 @@ export function AnswerMemory({
               </section>
             )}
             {memory.saved.length > 0 && (
-              <section aria-label="Saved from this turn" className={cn(memory.used.length > 0 && "mt-3")}>
-                <h4 className="font-mono text-micro text-muted-foreground">Saved from this turn</h4>
+              <section aria-label="Saved from this turn" className={cn(memory.used.length > 0 && "mt-2 border-t border-border/60 pt-3")}>
+                <h4 className="text-caption font-medium text-muted-foreground">Saved from this turn</h4>
                 <ul className="divide-y divide-border/60">
                   {memory.saved.map((fact) => (
                     <MemoryFactRow key={fact.id} fact={fact} saved />
@@ -121,8 +121,11 @@ export function AnswerMemory({
               </section>
             )}
             {memory.forgotten.length > 0 && (
-              <section aria-label="Forgotten at your request" className={cn((memory.used.length > 0 || memory.saved.length > 0) && "mt-3")}>
-                <h4 className="font-mono text-micro text-muted-foreground">Forgotten at your request</h4>
+              <section
+                aria-label="Forgotten at your request"
+                className={cn((memory.used.length > 0 || memory.saved.length > 0) && "mt-2 border-t border-border/60 pt-3")}
+              >
+                <h4 className="text-caption font-medium text-muted-foreground">Forgotten at your request</h4>
                 <ul className="divide-y divide-border/60">
                   {memory.forgotten.map((statement) => (
                     <li key={statement} className="py-2 text-ui text-muted-foreground line-through decoration-muted-foreground/40">

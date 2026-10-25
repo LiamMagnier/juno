@@ -10,6 +10,8 @@ import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { AgentChangeCard } from "@/components/chat/agent-change-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { ArrowUp } from "@/components/ui/icons";
+import { AppProvider } from "@/components/app/app-provider";
+import { bootstrap } from "@/app/dev/pages/fixtures";
 import type { ClientAgent, ClientAgentComputer, ClientAgentDetail } from "@/lib/agents/types";
 import type { ClientActionApproval } from "@/lib/action-approval";
 
@@ -256,7 +258,10 @@ function useFetchShim() {
 
 export function AgentsGallery() {
   useFetchShim();
-  const view = useSearchParams()?.get("view") ?? "home";
+  // `?view=gallery` routes here (page.tsx); the sub-view is `&g=`.
+  const params = useSearchParams();
+  const sub = params?.get("g") ?? params?.get("view");
+  const view = !sub || sub === "gallery" ? "home" : sub;
 
   // The app shell names the `page` container; the gallery has no shell.
   if (view === "home")
@@ -267,9 +272,11 @@ export function AgentsGallery() {
     );
   if (view === "home-empty")
     return (
-      <div className="@container/page h-dvh">
-        <AgentsHome initialAgents={[]} />
-      </div>
+      <AppProvider bootstrap={bootstrap()}>
+        <div className="@container/page flex h-dvh flex-col">
+          <AgentsHome initialAgents={[]} />
+        </div>
+      </AppProvider>
     );
   if (view === "thread") return <ThreadMock a={MIRA} />;
   if (view === "thread-fresh") return <ThreadMock a={FRESH} empty />;
