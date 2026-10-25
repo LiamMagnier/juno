@@ -203,7 +203,11 @@ export async function resolveModel({
         budgetSaver: pick.budgetSaver,
       });
     } catch (err) {
-      if (err instanceof NoAutoCandidateError) {
+      // Under the deterministic smoke provider no model is called at all, so
+      // "no eligible model" (a QA build has no provider keys, or only dead
+      // ones) is not a reason to refuse the turn: the smoke branch below pins
+      // DEFAULT_MODEL as the turn's identity instead.
+      if (err instanceof NoAutoCandidateError && !deterministicSmokeProviderEnabled) {
         return NextResponse.json({ error: err.message, code: "AUTO_NO_ELIGIBLE_MODEL" }, { status: 503 });
       }
       console.error("[chat:auto] routing failed", err);

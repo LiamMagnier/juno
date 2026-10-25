@@ -13,6 +13,8 @@ import { readGeometryRecords, readNativeGeometry } from "../e2e/support/parity";
 import { encodePng, solidBitmap } from "../e2e/support/png";
 import { settleBaseline } from "../e2e/support/screenshot-matrix";
 import { cell, gateTable } from "../scripts/qa/lib/gate-table";
+import { parseTestEnv } from "../scripts/qa/lib/safe-env.mjs";
+import { PROVIDERS } from "../src/lib/providers";
 
 /*
  * What changed in PR #99's harness on the way in (ledger P1-5):
@@ -161,4 +163,24 @@ test("this branch's full-run summary passes with only P1's external gates enforc
   } finally {
     cleanup();
   }
+});
+
+test("test.env configures a provider only with a fake key dead-ended on a loopback port", () => {
+  // The journey needs a model catalog (Regenerate › Switch model, a default
+  // model the composer can resolve), and a catalog lists only configured
+  // providers. test.env may configure one only so that nothing can reach it:
+  // the key says test-only and the provider's base URL is 127.0.0.1.
+  const testEnv = parseTestEnv(readFileSync(path.join(ROOT, "scripts", "qa", "test.env"), "utf8"));
+  const configured = Object.entries(PROVIDERS).filter(([, def]) => testEnv[def.apiKeyEnv] !== undefined);
+  assert.ok(configured.length >= 1, "the journey's catalog needs one configured provider");
+  for (const [provider, def] of configured) {
+    assert.match(testEnv[def.apiKeyEnv], /test-only/, `${def.apiKeyEnv} must be an obviously fake value`);
+    assert.ok(def.baseUrlEnv, `${provider} has no base URL override, so its fake key would be sent to the real host`);
+    const base = new URL(testEnv[def.baseUrlEnv!] ?? "");
+    assert.equal(base.hostname, "127.0.0.1", `${def.baseUrlEnv} must keep ${provider}'s calls on the runner`);
+    assert.equal(base.protocol, "http:");
+  }
+  // The deterministic default model's provider is the configured one, so a
+  // new chat resolves a real catalog entry instead of falling back to Auto.
+  assert.ok(configured.some(([provider]) => provider === "qwen"));
 });

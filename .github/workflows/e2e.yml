@@ -1,0 +1,133 @@
+# The deterministic browser journey (ledger P1-5).
+#
+# Until this workflow, no end-to-end browser journey ran anywhere in CI: the
+# Playwright specs under e2e/ were run by hand, if at all. This job runs the
+# journey a user takes on every pull request that can change it, and on main:
+#
+#   chat streaming   e2e/chat.spec.ts (stream, persistence across reload,
+#                    sidebar, history and a copied URL, a typed failure)
+#   Stop             e2e/journey/stop.spec.ts (server-side cancel, partial
+#                    answer kept and still partial after a reload)
+#   regenerate       e2e/regenerate.spec.ts (switch-model retry, both versions)
+#   artifacts        e2e/journey/artifact.spec.ts (card, canvas, stored row)
+#   MCP add          e2e/journey/mcp-add.spec.ts (real /connections dialog and
+#                    POST /api/mcp/servers; an unreachable server refused)
+#
+# Everything goes through the QA runner (scripts/qa/run-prod-e2e.sh): a
+# production build (next build + next start, never next dev), a disposable
+# *_test database on the service Postgres below, scripts/qa/test.env's fake
+# values and nothing else from the environment, and the chat route's
+# deterministic smoke provider instead of a model (src/lib/chat/turn/
+# smoke-provider-gate.ts admits it on this build only). No secrets, no real
+# provider, no network beyond the runner's own loopback.
+#
+# Before the browser, the same journey's server half runs as a unit-speed
+# integration test against the same Postgres
+# (tests/chat-smoke-journey.integration.test.ts), so a broken route fails in
+# seconds with a precise assertion rather than as a browser timeout.
+
+name: e2e
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "e2e/**"
+      - "prisma/**"
+      - "public/**"
+      - "scripts/qa/**"
+      - "scripts/seed-e2e-user.ts"
+      - "scripts/seed-research-e2e.ts"
+      - "scripts/test-prepare.mjs"
+      - "tests/chat-smoke-journey.integration.test.ts"
+      - "playwright.config.ts"
+      - "next.config.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "tailwind.config.ts"
+      - "postcss/**"
+      - "runner/agent-core/**"
+      - ".github/workflows/e2e.yml"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "native/**"
+      - "docs/**"
+      - "artifacts/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: e2e-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  journey:
+    name: E2E journey (production build)
+    runs-on: ubuntu-latest
+    # The build is most of it (#99's production build + 204 tests took 13.7
+    # minutes); the journey is 10 tests on one browser.
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: postgres
+        # The runner accepts exactly postgresql://postgres@127.0.0.1:55439/<name>_test.
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # The i18n catalog, runner installs and the agent-core build that
+      # `next build` compiles against: the unit-test shards' own preparation.
+      - name: Prepare runner packages (npm run test:prepare)
+        run: npm run test:prepare
+
+      - name: The journey's server half, against a real database
+        env:
+          SMOKE_JOURNEY_TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:55439/alevr_smoke_journey_test
+          DATABASE_URL: postgresql://postgres@127.0.0.1:55439/alevr_smoke_journey_test
+          DIRECT_URL: postgresql://postgres@127.0.0.1:55439/alevr_smoke_journey_test
+          NODE_OPTIONS: --conditions=react-server
+        run: |
+          psql postgresql://postgres@127.0.0.1:55439/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE alevr_smoke_journey_test'
+          npx prisma migrate deploy
+          npx tsx --test --experimental-test-module-mocks tests/chat-smoke-journey.integration.test.ts
+          psql postgresql://postgres@127.0.0.1:55439/postgres -v ON_ERROR_STOP=1 -c 'DROP DATABASE alevr_smoke_journey_test WITH (FORCE)'
+
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Journey on a production build
+        run: >-
+          bash scripts/qa/run-prod-e2e.sh --package journey --report-dir test-results/journey
+          --
+          e2e/journey e2e/chat.spec.ts e2e/regenerate.spec.ts
+          --project=chromium
+
+      - name: Publish the Playwright report and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-journey
+          path: |
+            playwright-report
+            test-results/playwright
+            test-results/playwright-report.json
+            test-results/journey
+          if-no-files-found: warn
+          retention-days: 14

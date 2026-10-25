@@ -90,10 +90,56 @@ What the runner guarantees, in order:
 `serve-prod.mjs` does not run `prisma generate`: worktrees share
 `node_modules`, so regenerate the client yourself after a schema change.
 
-Note: `src/lib/chat/turn/admission.ts` turns the smoke model provider off
-whenever `NODE_ENV=production`, so suites that need a mocked stream on a
-production build need a hook there (P5's call); the P0 smoke and the
-cross-cutting gates do not stream.
+The chat route's deterministic smoke provider answers turns on the runner's
+production build: `src/lib/chat/turn/smoke-provider-gate.ts` admits it in a
+production process only when `JUNO_E2E_SMOKE_PROVIDER=1`, `ALEVR_QA_RUNNER=1`
+and `DATABASE_URL` is this runner's disposable database (the rules above), which
+no deployed server can meet. Its prompt directives drive each lifecycle through
+the real pipeline: `JUNO_E2E_SLOW_STREAM` streams for 45 seconds and honours
+Stop, `JUNO_E2E_ARTIFACT` answers with one closed markdown artifact, anything
+else echoes the prompt's last `JUNO_*` token (`src/lib/chat/turn/model-streams.ts`).
+
+`test.env` configures one provider (Qwen, the default model's) with a fake key
+and a base URL on a closed loopback port, so the model catalog is not empty
+(the composer resolves a default model, Regenerate › Switch model has entries)
+while every call the smoke provider does not replace fails at once on
+127.0.0.1. A test holds that rule: any provider key in `test.env` must say
+`test-only` and point its provider at 127.0.0.1.
+
+## The journey (pull requests)
+
+`.github/workflows/e2e.yml` runs the deterministic journey on every pull request
+that can change it, and on main:
+
+```sh
+bash scripts/qa/run-prod-e2e.sh --package journey -- \
+  e2e/journey e2e/chat.spec.ts e2e/regenerate.spec.ts --project=chromium
+```
+
+| Lifecycle | Spec |
+|---|---|
+| Chat streaming, persistence, a typed failure | `e2e/chat.spec.ts` |
+| Stop (server-side cancel, partial answer kept) | `e2e/journey/stop.spec.ts` |
+| Regenerate with a switched model | `e2e/regenerate.spec.ts` |
+| Artifacts (card, canvas, stored row) | `e2e/journey/artifact.spec.ts` |
+| MCP add (real `/connections` dialog and API) | `e2e/journey/mcp-add.spec.ts` |
+
+Before the browser, the job runs the same journey's server half against the
+same Postgres (`tests/chat-smoke-journey.integration.test.ts`: production
+`NODE_ENV`, `test.env`, real route, real cancel), so a broken route fails in
+seconds with an assertion. Locally, against any QA-shaped database:
+
+```sh
+SMOKE_JOURNEY_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55439/alevr_smoke_journey_test \
+NODE_OPTIONS=--conditions=react-server \
+npx tsx --test --experimental-test-module-mocks tests/chat-smoke-journey.integration.test.ts
+```
+
+The other legacy specs (agents, code-agents-tree, keyboard-focus,
+notifications, transcript-*) are not in the PR job yet: they have never run in
+CI and need triage on a production build first. `e2e/mcp-add.spec.ts` drives a
+development-only gallery page and skips under the runner; the real flow is
+`e2e/journey/mcp-add.spec.ts`.
 
 ## Gates
 
