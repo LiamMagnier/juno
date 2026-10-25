@@ -51,6 +51,7 @@ export function composeTurnSystem({
   taskToolOn,
   routineToolOn = false,
   imageToolOn = false,
+  skillDraftToolOn = false,
   useWebSearch,
   useAlevrSearch,
   attachmentToolToggles,
@@ -75,6 +76,8 @@ export function composeTurnSystem({
   routineToolOn?: boolean;
   /** `generate_image` is attached (src/lib/chat/image-tool.ts). */
   imageToolOn?: boolean;
+  /** `draft_skill` is attached (src/lib/chat/skill-draft-tool.ts). */
+  skillDraftToolOn?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
@@ -109,6 +112,7 @@ export function composeTurnSystem({
     taskHandoff: taskToolOn,
     routineProposals: routineToolOn,
     imageGeneration: imageToolOn,
+    skillDrafts: skillDraftToolOn,
     // An agent's thread sets its own routines up (`propose_setup_change`,
     // and its brief says so), so it is never told routines cannot be made here.
     agentThread: agentContext !== null && agentContext !== undefined,

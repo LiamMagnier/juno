@@ -19,6 +19,7 @@ import { resolveProjectContext } from "@/lib/chat/turn/project-context";
 import { resolveCapabilities, turnCarriesUntrustedContent } from "@/lib/chat/turn/capabilities";
 import { resolveSkills } from "@/lib/chat/turn/skills";
 import { resolveApprovals } from "@/lib/chat/turn/approvals";
+import { detectTeachIntent } from "@/lib/chat/skill-draft-tool";
 import { resolveTools } from "@/lib/chat/turn/tools";
 import { composeTurnSystem } from "@/lib/chat/turn/prompt";
 import { runTurn } from "@/lib/chat/turn/run-turn";
@@ -215,6 +216,12 @@ async function handleChat(req: Request) {
       conversation,
       roomSetup,
       appliedSkill,
+      // Teaching runs over several messages ("let me show you how I…", then
+      // the steps), so the person's last few messages are read, not only this one.
+      teachIntent: detectTeachIntent([
+        ...turnHistory.baseHistory.filter((m) => m.role === "USER").map((m) => m.content),
+        input.message,
+      ]),
     });
     const { agentContext } = approvals;
 
@@ -283,6 +290,7 @@ async function handleChat(req: Request) {
       taskToolOn: approvals.taskToolOn,
       routineToolOn: approvals.routineToolOn,
       imageToolOn: approvals.imageToolOn,
+      skillDraftToolOn: approvals.skillDraftToolOn,
       useWebSearch,
       useAlevrSearch,
       attachmentToolToggles,

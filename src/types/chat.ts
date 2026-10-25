@@ -4,6 +4,7 @@ import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientRoutineProposal } from "@/lib/work/routine-proposal";
+import type { ClientSkillDraft } from "@/lib/skills/teach";
 import type { ClientImageGeneration } from "@/lib/media/image-generation";
 import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientFeature } from "@/lib/chat/client-features";
@@ -434,6 +435,12 @@ export interface ClientActivityEvent {
    * card's Schedule press creates it; the card reads whether it did by key.
    */
   routineProposal?: ClientRoutineProposal;
+  /**
+   * A skill the person taught in this conversation, drafted for them to review
+   * (`draft_skill`, src/lib/chat/skill-draft-tool.ts). Nothing exists until
+   * they save it on the Teach page; the card reads whether they did by key.
+   */
+  skillDraft?: ClientSkillDraft;
   /**
    * A picture the chat model made (`generate_image`, src/lib/chat/image-tool.ts):
    * generating, then done with the files or failed with the cause. The row is

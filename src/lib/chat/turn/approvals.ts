@@ -13,6 +13,8 @@ import { chatAgentConfigToolsEnabled } from "@/lib/chat/agent-config-tools";
 import { LOCAL_FOLDER_FEATURE, localFolderToolsEnabled } from "@/lib/chat/local-folder";
 import { chatRoutineToolEnabled } from "@/lib/chat/routine-tool";
 import { GENERATE_IMAGE_TOOL_ID, chatImageToolEnabled, imageModelAvailable } from "@/lib/chat/image-tool";
+import { chatSkillDraftToolEnabled } from "@/lib/chat/skill-draft-tool";
+import { DRAFT_SKILL_TOOL_ID } from "@/lib/skills/teach";
 import { PROPOSE_ROUTINE_TOOL_ID } from "@/lib/work/routine-proposal";
 import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import type { ChatRequestBody } from "@/lib/chat/request";
@@ -47,6 +49,7 @@ export async function resolveApprovals({
   conversation,
   roomSetup,
   appliedSkill,
+  teachIntent = false,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -61,6 +64,8 @@ export async function resolveApprovals({
   conversation: { id: string; kind: string; agentId: string | null };
   roomSetup: RoomTurnSetup | null;
   appliedSkill: TurnSkill["appliedSkill"];
+  /** The person asked, in this message or one of their last few, to teach Juno a method. */
+  teachIntent?: boolean;
 }) {
   /*
    * Whether the model may hand this request to a background task.
@@ -199,7 +204,40 @@ export async function resolveApprovals({
     imageModelAvailable: imageModelAvailable(plan),
   });
 
-  return { taskGate, taskToolOn, routineToolOn, imageToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext, localFolder };
+  /*
+   * Whether the model may draft a skill the person is teaching it, for them to
+   * review (src/lib/chat/skill-draft-tool.ts). Only when they asked to teach
+   * something; the card is drawn by the web; never in an agent's thread.
+   */
+  const skillDraftToolOn = chatSkillDraftToolEnabled({
+    clientDrawsProposal: legacyChatClientForOrigin(input) === "web",
+    privateMode: taskGate.privateMode,
+    voiceMode: taskGate.voiceMode,
+    regenerate: taskGate.regenerate,
+    userMessageId,
+    researchActive,
+    artifactEdit,
+    conversationKind: conversation.kind,
+    agentThread: turnAgentId !== null && turnAgentId !== undefined,
+    agenticTools: !!modelInfo.agenticTools,
+    functionToolsReachModel: taskGate.functionToolsReachModel,
+    skillPermits: narrowRuntimeToolsForSkill([DRAFT_SKILL_TOOL_ID], appliedSkill).length > 0,
+    lockdown: taskGate.lockdown,
+    teachIntent,
+  });
+
+  return {
+    taskGate,
+    taskToolOn,
+    routineToolOn,
+    imageToolOn,
+    skillDraftToolOn,
+    handoffGateOpen,
+    agentConfigToolsOn,
+    turnAgentId,
+    agentContext,
+    localFolder,
+  };
 }
 
 export type TurnApprovals = Awaited<ReturnType<typeof resolveApprovals>>;

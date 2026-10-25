@@ -8,6 +8,7 @@ import { personalitySystemPrompt } from "@/lib/personalities";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ROUTINE_SECTION, ROUTINE_UNAVAILABLE_LINE } from "@/lib/tools/specs/propose-routine.prompt";
+import { TEACH_SECTION } from "@/lib/tools/specs/draft-skill.prompt";
 import { IMAGE_SECTION } from "@/lib/tools/specs/generate-image.prompt";
 
 export interface SystemPromptOptions {
@@ -63,6 +64,13 @@ export interface SystemPromptOptions {
    * around it. Only with the tool, like every tool section.
    */
   imageGeneration?: boolean;
+  /**
+   * `draft_skill` is attached to this turn (src/lib/chat/skill-draft-tool.ts):
+   * adds TEACH_SECTION, which says how to gather the steps and that nothing is
+   * saved until the person reviews it. Only with the tool, which is only on
+   * when the person asked to teach something.
+   */
+  skillDrafts?: boolean;
   /**
    * The reply is an agent's, in its own thread or a room. Its routines are set
    * up through `propose_setup_change` (and its brief tells it to suggest
@@ -376,6 +384,8 @@ You write the content; the USER picks the download format. Never say you attache
   else if (opts.taskHandoff && !opts.voiceMode && !opts.agentThread) parts.push(ROUTINE_UNAVAILABLE_LINE);
   // Pictures in chat (G04): only with the tool, never on voice.
   if (opts.imageGeneration && !opts.voiceMode) parts.push(IMAGE_SECTION);
+  // Teaching a skill (Teach Juno): only with the tool, never on voice.
+  if (opts.skillDrafts && !opts.voiceMode) parts.push(TEACH_SECTION);
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.

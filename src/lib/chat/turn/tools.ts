@@ -13,6 +13,7 @@ import { codeExecutionNote } from "@/lib/chat/prompt-sections";
 import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
 import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
+import { createDraftSkillTool, skillDraftActivity } from "@/lib/chat/skill-draft-tool";
 import { createGenerateImageTool } from "@/lib/chat/image-tool";
 import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
@@ -163,7 +164,14 @@ export async function buildNativeTools({
   conversationId,
   conversation,
   userMessageId,
-  approvals: { taskToolOn, routineToolOn = false, imageToolOn = false, agentConfigToolsOn, agentContext },
+  approvals: {
+    taskToolOn,
+    routineToolOn = false,
+    imageToolOn = false,
+    skillDraftToolOn = false,
+    agentConfigToolsOn,
+    agentContext,
+  },
   appliedSkill,
   conversationModelId,
   requestedEffort,
@@ -191,7 +199,7 @@ export async function buildNativeTools({
   conversation: { projectId: string | null; taskApprovalMode?: string | null };
   userMessageId: string | null;
   approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext"> &
-    Partial<Pick<TurnApprovals, "routineToolOn" | "imageToolOn">>;
+    Partial<Pick<TurnApprovals, "routineToolOn" | "imageToolOn" | "skillDraftToolOn">>;
   appliedSkill: TurnSkill["appliedSkill"];
   conversationModelId: string;
   requestedEffort: ReasoningEffort | undefined;
@@ -403,6 +411,22 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // A skill the person is teaching, drafted for them to review
+  // (src/lib/chat/skill-draft-tool.ts). It creates nothing: the card under the
+  // reply opens the Teach page, whose Save is the only write.
+  const skillDraftTool =
+    skillDraftToolOn && userMessageId
+      ? createDraftSkillTool({
+          user,
+          userMessageId,
+          conversationId,
+          activeConnectors: activeConnectors.map((connector) => ({ id: connector.id, label: connector.label })),
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          onDraft: (draft) => {
+            sendActivity(skillDraftActivity(draft));
+          },
+        })
+      : null;
   // Pictures in chat (src/lib/chat/image-tool.ts): one activity row per call,
   // re-sent in place as it moves; the files are linked to the answer on save.
   const imageTool =
@@ -423,6 +447,7 @@ export async function buildNativeTools({
   const nativeTools = [
     taskTool,
     routineTool,
+    skillDraftTool,
     imageTool,
     handoffTool,
     ...agentConfigTools,
