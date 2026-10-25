@@ -15,7 +15,13 @@ import { START_TASK_TOOL_ID, taskActivityTitle, taskTitleFromArgs } from "@/lib/
 import { HAND_OFF_TOOL_ID, handoffActivityTitle, handoffDetailFromArgs } from "@/lib/chat/handoff-tool";
 import { clientToolProgress, clientToolRun } from "@/lib/tools/wire";
 import type { ToolOutcomeStatus, ToolRunRecord } from "@/lib/tools/types";
-import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail, ClientToolProgress } from "@/types/chat";
+import type {
+  ChatFinishReason,
+  ClientActivityEvent,
+  ClientAppliedConditions,
+  ClientToolDetail,
+  ClientToolProgress,
+} from "@/types/chat";
 
 /*
  * Turn pipeline — activity and output shaping shared by the private and the
@@ -37,7 +43,9 @@ export function privateAssistantMessage(
   usage: { totalInput: number; output: number; cost: number },
   finishReason: ChatFinishReason,
   activity: ClientActivityEvent[],
-  routing: RoutingReceipt | null = null
+  routing: RoutingReceipt | null = null,
+  /** What the turn ran with (effort sent, search offered, usage basis); the frame is its only record. */
+  applied: ClientAppliedConditions | null = null
 ) {
   return {
     id: `private-${Date.now()}`,
@@ -57,6 +65,7 @@ export function privateAssistantMessage(
     costUsd: usage.cost || undefined,
     ...cacheTokenFields(acc),
     ...(routing ? { routing } : {}),
+    ...(applied ? { applied } : {}),
   };
 }
 
