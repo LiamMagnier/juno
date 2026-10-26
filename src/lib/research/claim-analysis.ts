@@ -395,7 +395,7 @@ interface TextFacts {
   /** Per figure, by its offset. */
   figures: Map<number, FigureMemo> | null;
   lowercase: Set<string> | null;
-  nameEvidence: { names: Map<string, Array<readonly [number, number]>>; headlines: Edges } | null;
+  nameEvidence: NameEvidence | null;
 }
 
 /** What one figure of a text has been read as, filled in as each check asks. */
@@ -406,7 +406,7 @@ interface FigureMemo {
   date?: DateMention | null;
   grain?: FigureGrain;
   context?: { unit: string | null; next: string | null; before: Set<string> };
-  named?: string[];
+  named?: NamedSubject;
 }
 
 function figureMemo(text: string, n: NumericFact): FigureMemo {
@@ -535,6 +535,17 @@ const REPORTING_VERBS = new Set(
 const CORPORATE_SUFFIXES = new Set(
   "group inc incorporated corp corporation co company ltd limited plc llc lp ag sa nv se gmbh holdings holding international".split(" ")
 );
+/**
+ * Words that end an organisation's name and never a measure's: with one,
+ * a run of title-case words is a name on its own evidence ("Contoso Labs
+ * earned $3.0bn"). An allow-list, so a word missing from it only means
+ * the run needs other evidence (`readFigureNamedSubject`).
+ */
+const NAME_SUFFIXES = new Set(
+  ("group inc incorporated corp corporation co company ltd limited plc llc lp ag sa nv se gmbh " +
+    "labs laboratories technologies industries airlines airways motors pharmaceuticals therapeutics bancorp")
+    .split(" ")
+);
 
 interface ClauseWord {
   raw: string;
@@ -623,12 +634,27 @@ function figureSubject(text: string, n: NumericFact): { head: string | null; qua
   return { head, qualifier: qualifiesHead(text, words, headAt - 1) ? tokenForm(words[headAt - 1]!.raw) : null };
 }
 
+/** A figure's named subject (`figureNamedSubject`). */
+interface NamedSubject {
+  /** In `tokenForm`, a corporate suffix dropped; empty when the figure names no subject. */
+  words: string[];
+  /**
+   * Why the run reads as a name: it owns the measured noun ("Contoso's"),
+   * ends in an organisation's suffix (NAME_SUFFIXES), or — "elsewhere" —
+   * these words of it are names elsewhere in the passage in another run.
+   */
+  evidence: "possessive" | "suffix" | { elsewhere: string[] };
+}
+
+const NO_NAMED_SUBJECT: NamedSubject = { words: [], evidence: { elsewhere: [] } };
+
 /**
- * The name the passage makes a figure's subject, as `tokenForm` words; empty
- * when it names none. Two shapes only:
+ * The name the passage makes a figure's subject, as `tokenForm` words, and
+ * the evidence that it is a name; no words when it names none. Two shapes
+ * only:
  *
  *  - the measured noun is itself a name, or ends one: "Alpha Free includes
- *    5 GB", "while Southwind earned $2.1bn" — a run of title-case words
+ *    5 GB", "while Contoso Labs earned $3.0bn" — a run of title-case words
  *    directly before the figure's verb, not the object of a verb or a
  *    preposition ("told Reuters it made $3.9bn") and not one word opening a
  *    sentence, where any word is title case ("Revenue reached $4.3bn");
@@ -637,33 +663,40 @@ function figureSubject(text: string, n: NumericFact): { head: string | null; qua
  *
  * A legal or group suffix is dropped ("Northwind Group" is Northwind).
  *
- * Title case is weak evidence of a name, and this answer is what lets another
- * cited source's figure stand in for this passage's (`namesOtherSubject`), so
- * a run that may be anything else is no name:
+ * This answer is what lets another cited source's figure stand in for this
+ * passage's (`namesOtherSubject`), and title case alone is no evidence of a
+ * name: a measure is title case as often ("put Top Line at $3.9bn", "the
+ * company's Capital Expenditure came to", "Gross Written Premiums of"), and
+ * no list of measure nouns is ever complete. So a run counts only on
+ * evidence that does not rest on its own capitals (`NamedSubject.evidence`):
+ * it is a possessive owner, it ends in an organisation's suffix, or one of
+ * its words is a name elsewhere in the passage in ANOTHER run of words —
+ * "Alpha Free" beside "Alpha Pro", which `namesOtherSubject` accepts only
+ * when the claim writes that word as a name too. The same run written again
+ * is no evidence (a text that capitalises a measure capitalises it every
+ * time), and neither is a family of capitalised measures the claim never
+ * names ("Gross Receipts" beside "Gross Proceeds").
+ *
+ * Also no name, whatever the evidence:
  *
  *  - a run ending in a common noun ("Global Revenue was", "Company's
  *    revenue", "Its Revenue"): COMMON_SUBJECT_NOUNS, or a word the passage
  *    itself uses in lowercase (`isCommonNoun`; the claim is checked by the
  *    caller);
- *  - a run of several words opening a sentence, where every word may be title
- *    case for no reason ("Net Revenue was $3.9bn"), unless one of its words
- *    is a name elsewhere in the passage (`namedElsewhere`: "Alpha Free
- *    includes 5 GB" beside "Alpha Pro costs $20"). A possessive owner keeps
- *    the old reading: "Contoso's revenue" opening a sentence is a name;
  *  - anything in a headline-style sentence ("Global Revenue Was $3.9 Billion
  *    In 2024."), where every word is capitalised (`isHeadline`).
  */
-function figureNamedSubject(text: string, n: NumericFact): string[] {
+function figureNamedSubject(text: string, n: NumericFact): NamedSubject {
   const memo = figureMemo(text, n);
   memo.named ??= readFigureNamedSubject(text, n);
   return memo.named;
 }
 
-function readFigureNamedSubject(text: string, n: NumericFact): string[] {
+function readFigureNamedSubject(text: string, n: NumericFact): NamedSubject {
   const { words, headAt } = figureClause(text, n);
-  if (headAt < 0) return [];
-  if (inHeadline(text, n.start)) return [];
-  const nameRun = (end: number, possessive = false): string[] => {
+  if (headAt < 0) return NO_NAMED_SUBJECT;
+  if (inHeadline(text, n.start)) return NO_NAMED_SUBJECT;
+  const nameRun = (end: number, possessive = false): NamedSubject => {
     let start = end;
     while (start > 0) {
       const prev = words[start - 1]!;
@@ -673,22 +706,30 @@ function readFigureNamedSubject(text: string, n: NumericFact): string[] {
       start -= 1;
     }
     const run = words.slice(start, end + 1);
-    if (run.some((w) => NOT_A_SUBJECT.has(tokenForm(w.raw)))) return [];
-    const opening = opensSentence(text, run[0]!.start);
+    if (run.some((w) => NOT_A_SUBJECT.has(tokenForm(w.raw)))) return NO_NAMED_SUBJECT;
     // One title-case word opening a sentence may be any noun; as a possessive owner it is a name.
-    if (run.length === 1 && !possessive && opening) return [];
-    // Several, the same, unless the passage names one of them elsewhere.
-    if (opening && !possessive) {
-      const runStart = run[0]!.start;
-      const runEnd = run[run.length - 1]!.end;
-      if (!run.some((w) => namedElsewhere(text, tokenForm(w.raw), runStart, runEnd))) return [];
-    }
+    if (run.length === 1 && !possessive && opensSentence(text, run[0]!.start)) return NO_NAMED_SUBJECT;
     const before = words[start - 1]?.raw.toLowerCase();
-    if (before && (PREPOSITIONS.has(before) || TELLING_VERBS.has(before) || REPORTING_VERBS.has(before))) return [];
+    if (before && (PREPOSITIONS.has(before) || TELLING_VERBS.has(before) || REPORTING_VERBS.has(before))) return NO_NAMED_SUBJECT;
     const forms = run.map((w) => tokenForm(w.raw));
+    // The suffix may close the run, or follow it where it is read as a scope word ("Contoso Group earned": GROUP is skipped).
+    const after = words[end + 1];
+    const suffixed =
+      (forms.length > 1 && NAME_SUFFIXES.has(forms[forms.length - 1]!)) ||
+      (!possessive &&
+        after !== undefined &&
+        isTitleCase(after.raw) &&
+        NAME_SUFFIXES.has(tokenForm(after.raw)) &&
+        !/\S/.test(text.slice(words[end]!.end, after.start)));
     while (forms.length > 1 && CORPORATE_SUFFIXES.has(forms[forms.length - 1]!)) forms.pop();
-    if (isCommonNoun(text, forms[forms.length - 1]!)) return [];
-    return forms;
+    if (isCommonNoun(text, forms[forms.length - 1]!)) return NO_NAMED_SUBJECT;
+    if (possessive) return { words: forms, evidence: "possessive" };
+    if (suffixed) return { words: forms, evidence: "suffix" };
+    const runStart = run[0]!.start;
+    const runEnd = run[run.length - 1]!.end;
+    const key = nameEvidence(text).runAt.get(run[run.length - 1]!.start) ?? forms.join(" ");
+    const elsewhere = run.map((w) => tokenForm(w.raw)).filter((form) => namedElsewhere(text, form, runStart, runEnd, key));
+    return elsewhere.length > 0 ? { words: forms, evidence: { elsewhere } } : NO_NAMED_SUBJECT;
   };
   const head = words[headAt]!;
   if (isTitleCase(head.raw)) return nameRun(headAt);
@@ -696,10 +737,10 @@ function readFigureNamedSubject(text: string, n: NumericFact): string[] {
   for (const at of [headAt - 1, headAt - 2]) {
     const owner = words[at];
     if (!owner) break;
-    if (isPossessive(owner.raw)) return isTitleCase(owner.raw) ? nameRun(at, true) : [];
+    if (isPossessive(owner.raw)) return isTitleCase(owner.raw) ? nameRun(at, true) : NO_NAMED_SUBJECT;
     if (at === headAt - 1 && !qualifiesHead(text, words, at)) break;
   }
-  return [];
+  return NO_NAMED_SUBJECT;
 }
 
 /*
@@ -771,6 +812,21 @@ function sentenceSpans(text: string): Edges {
   return spans;
 }
 
+/** Where a word that reads as a name stands, and the run of title-case words it is part of. */
+interface NameMention {
+  start: number;
+  end: number;
+  /** The run's words in `tokenForm`, function words left out: "the European Central Bank" → "european central bank". */
+  run: string;
+}
+
+interface NameEvidence {
+  names: Map<string, NameMention[]>;
+  /** Per title-case word, by its offset: the run it is part of (`NameMention.run`). */
+  runAt: Map<number, string>;
+  headlines: Edges;
+}
+
 /**
  * Per text: the headline sentences, and where each word that reads as a name
  * stands — title case outside a headline, and either mid-sentence or
@@ -778,10 +834,11 @@ function sentenceSpans(text: string): Edges {
  * word opening a sentence on its own is no evidence: any word is title case
  * there.
  */
-function nameEvidence(text: string): NonNullable<TextFacts["nameEvidence"]> {
+function nameEvidence(text: string): NameEvidence {
   const facts = textFacts(text);
   if (facts.nameEvidence) return facts.nameEvidence;
-  const names = new Map<string, Array<readonly [number, number]>>();
+  const names = new Map<string, NameMention[]>();
+  const runAt = new Map<number, string>();
   const headlines: Array<readonly [number, number]> = [];
   for (const [start, end] of sentenceSpans(text)) {
     const sentence = text.slice(start, end);
@@ -790,6 +847,32 @@ function nameEvidence(text: string): NonNullable<TextFacts["nameEvidence"]> {
       continue;
     }
     const words = [...sentence.matchAll(WORD_RE)];
+    // Runs of title-case words with nothing but spaces between them.
+    const runOf: string[] = new Array(words.length).fill("");
+    for (let i = 0; i < words.length; ) {
+      if (!isTitleCase(words[i]![0])) {
+        i += 1;
+        continue;
+      }
+      let j = i + 1;
+      while (
+        j < words.length &&
+        isTitleCase(words[j]![0]) &&
+        !/\S/.test(sentence.slice(words[j - 1]!.index + words[j - 1]![0].length, words[j]!.index))
+      ) {
+        j += 1;
+      }
+      const key = words
+        .slice(i, j)
+        .map((m) => tokenForm(m[0]))
+        .filter((form) => !STOPWORDS.has(form) && !SENTENCE_STARTERS.has(form))
+        .join(" ");
+      for (let k = i; k < j; k += 1) {
+        runOf[k] = key;
+        runAt.set(start + words[k]!.index, key);
+      }
+      i = j;
+    }
     words.forEach((m, i) => {
       if (!isTitleCase(m[0])) return;
       const form = tokenForm(m[0]);
@@ -800,17 +883,21 @@ function nameEvidence(text: string): NonNullable<TextFacts["nameEvidence"]> {
       const joined = next && isTitleCase(next[0]) && !/\S/.test(sentence.slice(m.index + m[0].length, next.index));
       if (opensSentence(text, at) && !joined) return;
       const list = names.get(form) ?? [];
-      list.push([at, at + m[0].length]);
+      list.push({ start: at, end: at + m[0].length, run: runOf[i]! });
       names.set(form, list);
     });
   }
-  facts.nameEvidence = { names, headlines };
+  facts.nameEvidence = { names, runAt, headlines };
   return facts.nameEvidence;
 }
 
-/** Whether `form` reads as a name somewhere in the text outside [from, to). */
-function namedElsewhere(text: string, form: string, from: number, to: number): boolean {
-  return (nameEvidence(text).names.get(form) ?? []).some(([start, end]) => end <= from || start >= to);
+/**
+ * Whether `form` reads as a name somewhere in the text outside [from, to),
+ * in a run of words other than `run`: the same run written again is not
+ * independent evidence (`readFigureNamedSubject`).
+ */
+function namedElsewhere(text: string, form: string, from: number, to: number, run: string): boolean {
+  return (nameEvidence(text).names.get(form) ?? []).some((mention) => (mention.end <= from || mention.start >= to) && mention.run !== run);
 }
 
 /** Whether offset `at` lies in a headline-style sentence (`isHeadline`). */
@@ -867,12 +954,19 @@ function measuresSameThing(
  * plan").
  */
 function namesOtherSubject(claim: string, passage: string, p: NumericFact): boolean {
-  const name = figureNamedSubject(passage, p);
+  const { words: name, evidence } = figureNamedSubject(passage, p);
   if (name.length === 0) return false;
   // A run ending in a word the claim writes in lowercase ends in a common noun ("Cloud Revenue" against "revenue").
   if (lowercaseForms(claim).has(name[name.length - 1]!)) return false;
+  // A word shared with another run is a family name only when the claim names that family too: "Alpha Free" beside "Alpha Pro".
+  if (typeof evidence === "object" && !evidence.elsewhere.some((word) => titleCaseForms(claim).has(word))) return false;
   const claimWords = wordForms(claim);
   return name.some((word) => !claimWords.has(word));
+}
+
+/** Every word a text writes in title case, in `tokenForm`. */
+function titleCaseForms(text: string): Set<string> {
+  return new Set((text.match(WORD_RE) ?? []).filter(isTitleCase).map(tokenForm));
 }
 
 /** Where a clause ends, and where a sentence ends, for `figureDate`. */
@@ -2076,9 +2170,13 @@ function sentencesIn(text: string): string[] {
   return out;
 }
 
+/** A clause whose verb is elided after its auxiliary, negated or not: "but the House did", "but Beta did too". */
+const ELIDED_VERB =
+  /\b(?:(?:did|does|do|has|have|had|is|are|was|were|could|would|will|can|should)(?:\s+not)?(?:\s+(?:too|also|so))?|didn't|doesn't|don't|hasn't|haven't|hadn't|isn't|aren't|wasn't|weren't|couldn't|wouldn't|won't|can't)\s*[.!?]?$/i;
+
 /** A clause whose verb is elided after its negation: "but its profits did not", "though costs haven't". */
 const ELIDED_NEGATION =
-  /\b(?:(?:did|does|do|has|have|had|is|are|was|were|could|would|will|can|should)\s+not|didn't|doesn't|don't|hasn't|haven't|hadn't|isn't|aren't|wasn't|weren't|couldn't|wouldn't|won't|can't)[.!?]?$/i;
+  /\b(?:(?:did|does|do|has|have|had|is|are|was|were|could|would|will|can|should)\s+not|didn't|doesn't|don't|hasn't|haven't|hadn't|isn't|aren't|wasn't|weren't|couldn't|wouldn't|won't|can't)\s*[.!?]?$/i;
 
 /**
  * The clauses of a text: its sentences (`sentencesIn`), each split at
@@ -2241,14 +2339,18 @@ const IRREGULAR_PAST_FORMS = new Set(Object.values(IRREGULAR_PAST));
  * `predicate` is null when no verb is found; `pronoun` is the subject when
  * it is one personal pronoun ("It did not raise rates in 2024").
  */
-function clauseParts(clause: string): { subject: string; predicate: string | null; pronoun: string | null } {
+function clauseParts(clause: string): { subject: string; predicate: string | null; pronoun: string | null; elliptic: boolean } {
   const words = [...clause.matchAll(WORD_RE)];
   const lower = (i: number) => words[i]![0].toLowerCase().replace(/’/g, "'");
   let first = 0;
   while (first < words.length && CLAUSE_OPENERS.has(lower(first))) first += 1;
-  if (first >= words.length) return { subject: "", predicate: null, pronoun: null };
+  if (first >= words.length) return { subject: "", predicate: null, pronoun: null, elliptic: false };
   if (SUBJECT_PRONOUNS.has(lower(first)) && first + 1 < words.length) {
-    return { subject: words[first]![0], predicate: clause.slice(words[first + 1]!.index), pronoun: lower(first) };
+    return { subject: words[first]![0], predicate: clause.slice(words[first + 1]!.index), pronoun: lower(first), elliptic: false };
+  }
+  // "but not suspended", "and did not raise prices": joined on, the subject left out.
+  if (first > 0 && AUXILIARIES.has(lower(first))) {
+    return { subject: "", predicate: clause.slice(words[first]!.index), pronoun: null, elliptic: true };
   }
   let verb = -1;
   for (let j = first; j < words.length && verb < 0; j += 1) {
@@ -2263,7 +2365,7 @@ function clauseParts(clause: string): { subject: string; predicate: string | nul
       if (/\d/.test(after) || (next && DETERMINERS.has(next[0].toLowerCase()))) verb = j;
     }
   }
-  if (verb < 0) return { subject: "", predicate: null, pronoun: null };
+  if (verb < 0) return { subject: "", predicate: null, pronoun: null, elliptic: false };
   let from = first;
   if (PREPOSITIONS.has(lower(first))) {
     from = verb;
@@ -2280,6 +2382,7 @@ function clauseParts(clause: string): { subject: string; predicate: string | nul
     subject: clause.slice(subjectStart, verbStart).trim(),
     predicate: `${clause.slice(0, subjectStart)} ${clause.slice(verbStart)}`.trim(),
     pronoun: null,
+    elliptic: false,
   };
 }
 
@@ -2292,6 +2395,8 @@ interface ReadClause {
   tokens: Set<string>;
   /** `alignmentTokens` of the predicate alone; null when no verb was found. */
   predicate: Set<string> | null;
+  /** `alignmentTokens` of the subject, a pronoun read as the subject it stands for; null when no verb was found. */
+  subject: Set<string> | null;
   dates: DateMention[];
 }
 
@@ -2310,6 +2415,7 @@ function readingOf(text: string): { parts: ReturnType<typeof clauseParts>; read:
       parity: negationParity(text),
       tokens: alignmentTokens(text),
       predicate: parts.predicate === null ? null : alignmentTokens(parts.predicate),
+      subject: parts.predicate === null || parts.pronoun || parts.elliptic ? null : alignmentTokens(parts.subject),
       dates: extractDates(text),
     },
   };
@@ -2327,17 +2433,31 @@ function readingOf(text: string): { parts: ReturnType<typeof clauseParts>; read:
  * none, and a claim restating the denial lined up with the clause it denies.
  * Only a personal pronoun is resolved: "the company", "the regulator" may be
  * another entity, and are left to the predicate comparison.
+ *
+ * Ellipsis is read the same way. A clause joined on without a subject ("The
+ * dividend was cut, but not suspended") has the last subject named; a
+ * clause whose verb is left out after its auxiliary ("Revenue rose, but the
+ * dividend did not"; "The Senate did not pass the bill, but the House did")
+ * has the predicate of the clause before it. Its negation is still counted
+ * on the clause as written: "but the House did" denies nothing.
  */
 function readClauses(clauses: readonly string[]): ReadClause[] {
   let antecedent: string | null = null;
+  let lastPredicate: string | null = null;
   return clauses.map((text) => {
     const { parts, read } = readingOf(text);
-    if (parts.pronoun) {
-      return antecedent && parts.predicate
-        ? { ...read, tokens: alignmentTokens(`${antecedent} ${parts.predicate}`) }
-        : read;
+    const borrowsSubject = parts.pronoun !== null || parts.elliptic;
+    const borrowsPredicate =
+      !borrowsSubject && read.predicate !== null && read.predicate.size === 0 && ELIDED_VERB.test(text.trim());
+    if (!borrowsSubject && parts.subject && contentTokens(parts.subject).size > 0) antecedent = parts.subject;
+    if (!borrowsPredicate && read.predicate && read.predicate.size > 0) lastPredicate = parts.predicate;
+    if (borrowsSubject && antecedent && parts.predicate) {
+      return { ...read, tokens: alignmentTokens(`${antecedent} ${parts.predicate}`), subject: alignmentTokens(antecedent) };
     }
-    if (parts.subject && contentTokens(parts.subject).size > 0) antecedent = parts.subject;
+    if (borrowsPredicate && lastPredicate) {
+      const predicate = alignmentTokens(lastPredicate);
+      return { ...read, tokens: new Set([...read.tokens, ...predicate]), predicate };
+    }
     return read;
   });
 }
@@ -2413,16 +2533,44 @@ function bestCoveringClauses(clause: ReadClause, candidates: readonly ReadClause
 
 /**
  * The passage clauses a claim clause lines up with best on its PREDICATE —
- * subjects left out on both sides — at CLAUSE_MATCH_MIN at least; a tie
- * broken by the full alignment, then by the dates. Empty when the claim
- * clause has no predicate to compare.
+ * subjects left out on both sides — at CLAUSE_MATCH_MIN at least, with every
+ * clause whose predicate holds the claim clause's whole predicate ("…did not
+ * fine Apple in 2024 either"). Empty when the claim clause has no predicate
+ * to compare.
+ *
+ * When those clauses disagree with one another, only the subject can say
+ * which one the claim is about, and only when a best-matching clause names
+ * the claim clause's subject in the same words, no more and no fewer
+ * ("Alpha did not raise prices" beside "Beta raised prices", for a claim
+ * about Alpha; a pronoun counts as the subject it stands for); then the
+ * clauses that do are kept. "A rival vaccine" holds every word of "the
+ * vaccine" and is another vaccine. Otherwise every clause is kept: "Contoso Air added flights to Lisbon. The
+ * low-cost carrier did not add flights to Porto. Ryanair added flights to
+ * Porto." gives "Contoso Air did not add flights to Porto" two clauses with
+ * its predicate, neither naming Contoso Air, and the carrier may or may not
+ * be Contoso Air while Ryanair is not. Breaking that tie by the full
+ * alignment favoured the clause whose subject has fewer words of its own —
+ * the rival's — and declared the honest claim contradicted. Dates break
+ * what is left (`sameTimeOnly`).
  */
 function bestPredicateClauses(clause: ReadClause, candidates: readonly ReadClause[]): ReadClause[] {
   const own = clause.predicate;
   if (!own || own.size === 0) return [];
-  const tied = tiedBest(candidates, (c) => alignmentOf(own, c.predicate ?? c.tokens), CLAUSE_MATCH_MIN);
-  if (tied.length < 2) return tied;
-  return sameTimeOnly(clause, tiedBest(tied, (c) => fullAlignment(clause, c), Number.NEGATIVE_INFINITY));
+  const predicateOf = (c: ReadClause) => c.predicate ?? c.tokens;
+  const best = tiedBest(candidates, (c) => alignmentOf(own, predicateOf(c)), CLAUSE_MATCH_MIN);
+  if (best.length === 0) return best;
+  const holding = candidates.filter(
+    (c) => !best.includes(c) && shareOf(own, predicateOf(c)) === 1 && alignmentOf(own, predicateOf(c)) >= CLAUSE_MATCH_MIN
+  );
+  const picked = [...best, ...holding];
+  if (picked.every((c) => c.parity === picked[0]!.parity)) return sameTimeOnly(clause, picked);
+  const subject = clause.subject;
+  const named =
+    subject && subject.size > 0
+      ? picked.filter((c) => c.subject !== null && shareOf(subject, c.subject) === 1 && shareOf(c.subject, subject) === 1)
+      : [];
+  // Only a best match settles it: a clause that merely holds the predicate is there to stop a contradiction, never to make one.
+  return sameTimeOnly(clause, named.some((c) => best.includes(c)) ? named : picked);
 }
 
 /**

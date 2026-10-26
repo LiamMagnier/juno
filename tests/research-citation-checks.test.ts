@@ -755,13 +755,18 @@ test("corroboration still accepts a figure the passage pins on a subject the cla
   const corroborating = ["Southwind earned $2.1 billion in 2024."];
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso's revenue was $3.0 billion.",
-    "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso Group earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $3.0 billion.",
   ]) {
     const result = auditEvidence({ claim, passage, corroborating });
     assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
     assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
   }
+  // A capitalised word with nothing else saying it is a name may be a measure
+  // ("put Top Line at"): the figure stays this passage's, merely absent here.
+  const bare = auditEvidence({ claim, passage: "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.", corroborating });
+  assert.ok(!bare.reasons.some((r) => r.code === "stated_by_other_citation"));
+  assert.ok(bare.reasons.some((r) => r.code === "figure_absent"));
   // "Northwind Group" is Northwind: its figure is the claim's subject's.
   const group = auditEvidence({
     claim: "In 2024, Northwind's revenue was $4.3 billion.",
