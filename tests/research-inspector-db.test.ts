@@ -268,7 +268,9 @@ if (!DB_URL) {
       assert.equal(capacity.contested, true);
       assert.equal(capacity.rivals.length, 1);
       assert.equal(capacity.rivals[0]!.sourceIndex, 3);
-      assert.ok(capacity.rivals[0]!.codedReasons.every((reason) => reason.code === "figure_mismatch"));
+      // A rival carries figure findings only: proof, or (on its stricter basis) a different figure the judge reads.
+      const rivalCodes = capacity.rivals[0]!.codedReasons.map((reason) => reason.code);
+      assert.ok(rivalCodes.length > 0 && rivalCodes.every((code) => code === "figure_mismatch" || code === "figure_differs"), rivalCodes.join(", "));
       assert.deepEqual(capacity.unresolvedCitations, []);
       assert.equal(byText("4.8 out of 5").status, "unverified");
       const stale = byText("currently has 13.8 GW");
@@ -375,7 +377,8 @@ if (!DB_URL) {
       for (const claim of view.claims) {
         assert.equal(claim.status, "supported", claim.text);
         assert.deepEqual(claim.rivals.map((r) => r.sourceIndex), [4], `${claim.text}: ${JSON.stringify(claim.rivals.map((r) => r.passage))}`);
-        assert.ok(claim.rivals[0]!.codedReasons.every((reason) => reason.code === "figure_mismatch"));
+        const rivalCodes = claim.rivals[0]!.codedReasons.map((reason) => reason.code);
+        assert.ok(rivalCodes.length > 0 && rivalCodes.every((code) => code === "figure_mismatch" || code === "figure_differs"), rivalCodes.join(", "));
         assert.equal(claim.contested, true, claim.text);
       }
       assert.equal(view.summary.contested, 2);

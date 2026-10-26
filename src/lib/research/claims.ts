@@ -1166,18 +1166,6 @@ export async function loadCitationAuditForMessage(
       })
     : [];
   const rivalPassageById = new Map(rivalPassages.map((p) => [p.id, p]));
-  // Each source's passages, cut from its snapshot exactly as `storeCorpus`
-  // cut them, for the corroboration the audit applied to multi-source claims.
-  const passageTextsOf = new Map<string, string[]>();
-  const passagesOf = (sourceId: string): string[] => {
-    let texts = passageTextsOf.get(sourceId);
-    if (!texts) {
-      const snapshot = sourceById.get(sourceId)?.snapshot ?? "";
-      texts = splitPassages(snapshot, { maxPassages: MAX_PASSAGES_PER_SOURCE }).map((p) => p.text);
-      passageTextsOf.set(sourceId, texts);
-    }
-    return texts;
-  };
 
   const summary: CitationCounts = {
     claims: run.claims.length,
@@ -1237,11 +1225,6 @@ export async function loadCitationAuditForMessage(
           // The audit's own clock, so `source_stale` is the finding it made —
           // and absent on audits that never checked freshness at all.
           asOf: receipt.asOf,
-          // The claim's other cited sources, as the audit saw them. Absent on
-          // audits that predate the receipt, which never corroborated.
-          corroborating: (receipt.claimCitations?.get(claim.id)?.sourceIds ?? [])
-            .filter((id) => id !== source?.id)
-            .flatMap((id) => passagesOf(id)),
         });
         return {
           sourceIndex: source ? indexOf.get(source.id) ?? 0 : 0,

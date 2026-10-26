@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SUPPORTED_MIN, auditEvidence, repairReportFromClaims, type CitationJudge } from "@/lib/research/claim-analysis";
+import { SUPPORTED_MIN, auditEvidence, differsFromSupportingPassage, repairReportFromClaims, type CitationJudge } from "@/lib/research/claim-analysis";
 import { auditClaims, selectClaimsForAudit, type AuditSource } from "@/lib/research/citation-audit-core";
 
 /*
  * How the deterministic citation audit reads a SUBJECT: a source that names
  * a subject of several words once and then carries it on with a pronoun or
- * another name (the polarity check), and title case that is not a name (the
- * corroboration rule). The judge is stubbed credulous, so a pass means the
+ * another name (the polarity check), and title case that is not a name (what
+ * a passage cited beside the supporting one may dispute). The judge is stubbed credulous, so a pass means the
  * text checks did the work — and a false contradiction shows as one, because
  * it pre-empts the judge (judgeCalls 0).
  */
@@ -157,7 +157,7 @@ const TITLE_CASE_RIVALS = [
   "The results are in. Global Revenue Was $3.9 Billion In 2024, the release said.",
 ];
 
-test("a title-case or headline passage giving a different figure is never shown as support through another citation", async () => {
+test("a title-case or headline passage giving a different figure is never shown as support beside another citation", async () => {
   // Twelve: each passage against two ways the other source states the claim's figure.
   const report = "# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].";
   for (const two of ["Northwind: $4.3 billion.", "Northwind reported revenue of $4.3 billion, analysts said."]) {
@@ -166,14 +166,13 @@ test("a title-case or headline passage giving a different figure is never shown 
       const label = `${one} / ${two}: ${claim.status} ${JSON.stringify(claim.links.map((l) => [l.sourceIndex, l.stance, l.status, l.reasons.map((r) => r.code)]))}`;
       assert.notEqual(claim.status, "supported", label);
       assert.ok(!claim.links.some((l) => l.sourceIndex === 1 && l.status === "supported"), label);
-      assert.ok(!claim.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), label);
     }
   }
 });
 
 test("a run of title-case words ending in a common noun, or opening a sentence unnamed elsewhere, names no subject", () => {
   const claim = "In 2024, Northwind's revenue was $4.3 billion.";
-  const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];
+  const supporting = "Northwind's revenue was $4.3 billion in 2024.";
   for (const passage of [
     ...TITLE_CASE_RIVALS,
     "Net Revenue was $3.9 billion in 2024.",
@@ -182,16 +181,18 @@ test("a run of title-case words ending in a common noun, or opening a sentence u
     "The filing shows that Cloud Revenue was $3.9 billion in 2024.",
     "Company's revenue was $3.9 billion in 2024.",
   ]) {
-    const result = auditEvidence({ claim, passage, corroborating });
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    const result = auditEvidence({ claim, passage });
     assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    // Its capitals name nothing the claim does: beside the passage giving Northwind's $4.3 billion, its $3.9 billion
+    // may be Northwind's under another heading, and the claim reads as contested.
+    assert.equal(differsFromSupportingPassage(claim, passage, supporting), true, passage);
   }
 });
 
 test("a passage's owner is another entity only when the claim itself names it for another subject", () => {
-  const corroborating = ["Southwind earned $2.1 billion in 2024."];
+  const supporting = "Southwind earned $2.1 billion in 2024.";
   // The claim names Contoso, outside the clause of the figure in question: whatever its capitals, its figure is not
-  // the claim's.
+  // the claim's, and beside the passage that supports the claim it disputes nothing.
   const claim = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion; Contoso trailed both.";
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso Labs earned $1.0 billion, a filing by Contoso showed.",
@@ -200,13 +201,14 @@ test("a passage's owner is another entity only when the claim itself names it fo
     "Northwind earned $4.3 billion in 2024. Contoso's revenue was $1.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso earned $1.0 billion.",
   ]) {
-    const result = auditEvidence({ claim, passage, corroborating });
-    assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
-    assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    const result = auditEvidence({ claim, passage });
+    // Judged on its own text, the passage simply lacks the $2.1 billion: no other citation supplies it.
+    assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.equal(result.contradicted, false, passage);
+    assert.equal(differsFromSupportingPassage(claim, passage, supporting), false, passage);
   }
-  // Any other owner — a suffix, a possessive, one capitalised word, a name repeated — is one the claim never uses:
-  // no stand-in. The passage keeps its own figure, and since another source states the claim's, that is a doubt
-  // shown as one.
+  // Any other owner — a suffix, a possessive, one capitalised word, a name repeated — is one the claim never uses.
+  // The passage keeps its own figure, and beside the passage stating the claim's, that is a doubt shown as one.
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso Robotics earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso Robotics earned $3.0 billion.",
@@ -214,21 +216,21 @@ test("a passage's owner is another entity only when the claim itself names it fo
     "Northwind earned $4.3 billion in 2024, and Robotics Labs earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024. Robotics's revenue was $3.0 billion.",
   ]) {
-    const unnamed = auditEvidence({ claim, passage, corroborating });
-    assert.ok(!unnamed.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
-    assert.ok(unnamed.reasons.some((r) => r.code === "figure_differs"), passage);
+    const unnamed = auditEvidence({ claim, passage });
     assert.ok(unnamed.ceiling < SUPPORTED_MIN, passage);
+    assert.equal(unnamed.contradicted, false, passage);
+    assert.equal(differsFromSupportingPassage(claim, passage, supporting), true, passage);
   }
   // A name the claim uses inside the figure's own clause is the figure's subject, never "another" one.
   const own = auditEvidence({
     claim: "Southwind, unlike Contoso, earned $2.1 billion in 2024 while Contoso earned less.",
     passage: "Contoso's revenue was $1.0 billion in 2024.",
-    corroborating,
   });
-  assert.ok(!own.reasons.some((r) => r.code === "stated_by_other_citation"), own.reasons.map((r) => r.code).join(", "));
+  assert.ok(own.ceiling < SUPPORTED_MIN, own.reasons.map((r) => r.code).join(", "));
+  assert.equal(own.contradicted, false);
 });
 
-test("acronyms, nicknames, metonyms and defined terms for the claim's own subject never stand in (verifier round 5)", () => {
+test("acronyms, nicknames, metonyms and defined terms for the claim's own subject are never another entity (verifier round 5)", async () => {
   const cases: Array<[string, string, string]> = [
     ["Revenue at General Motors rose to $187 billion in 2024.", "In 2024, GM reported revenue of $172 billion.", "General Motors: $187 billion (2024)."],
     ["Revenue at International Business Machines rose to $62.8 billion in 2024.", "IBM's revenue rose to $61.0 billion in 2024.", "International Business Machines: $62.8 billion (2024)."],
@@ -241,23 +243,30 @@ test("acronyms, nicknames, metonyms and defined terms for the claim's own subjec
     ["Passenger numbers at Heathrow Airport reached 83.9 million in 2024.", "In 2024, Heathrow handled 79.2 million passengers.", "Passenger numbers reached 83.9 million at Heathrow Airport in 2024."],
   ];
   for (const [claim, passage, other] of cases) {
-    const result = auditEvidence({ claim, passage, corroborating: [other] });
+    const result = auditEvidence({ claim, passage });
     const codes = result.reasons.map((r) => r.code).join(", ");
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), `${passage}: ${codes}`);
     assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${codes}`);
     assert.equal(result.contradicted, false, `${passage}: ${codes}`);
+    // Cited beside a source that states the claim, the alias's own figure is never support, and a claim the other
+    // source carries reads as contested: the alias may well be the claim's subject. (The Johnsons' charity is named
+    // in neither source — the supporting one says "the charity" — so nothing ties "the Foundation" to the claim, and
+    // the claim rests on the source that states it.)
+    const [cited] = (await audit(`# R\n\n${claim.replace(/\.$/, "")} [1][2].`, [source(1, passage), source(2, other)])).claims;
+    const label = `${passage}: ${cited.status}${cited.contested ? " (contested)" : ""} ${JSON.stringify(cited.links.map((l) => [l.sourceIndex, l.status, l.reasons.map((r) => r.code)]))}`;
+    assert.ok(!cited.links.some((l) => l.sourceIndex === 1 && l.status === "supported"), label);
+    if (cited.status === "supported" && !/Johnsons/.test(claim)) assert.equal(cited.contested, true, label);
   }
 });
 
-test("a word shared with another run is a family name only when the claim names that family", () => {
-  // "Alpha Free" beside "Alpha Pro", for a claim about Alpha Pro: a sibling plan, and its figure is not the claim's.
-  const sibling = auditEvidence({
-    claim: "Alpha Pro includes 100 GB of storage, against 50 GB for Beta Plus.",
-    passage: "Alpha Pro costs $20 per month and includes 100 GB of storage. Alpha Free includes 5 GB of storage.",
-    corroborating: ["Beta Plus costs $15 per month and includes 50 GB of storage."],
-  });
-  assert.ok(sibling.reasons.some((r) => r.code === "stated_by_other_citation"), sibling.reasons.map((r) => r.code).join(", "));
-  assert.equal(sibling.ceiling, 1);
+test("a word shared with another run is a family name only when the claim names that family", async () => {
+  // "Alpha Free" beside "Alpha Pro", for a claim about Alpha Pro: a sibling plan, and its figure is not the claim's —
+  // no doubt beside the passage giving Beta Plus's 50 GB, which never supplies the figure this passage lacks either.
+  const siblingClaim = "Alpha Pro includes 100 GB of storage, against 50 GB for Beta Plus.";
+  const siblingPassage = "Alpha Pro costs $20 per month and includes 100 GB of storage. Alpha Free includes 5 GB of storage.";
+  const sibling = auditEvidence({ claim: siblingClaim, passage: siblingPassage });
+  assert.ok(sibling.reasons.some((r) => r.code === "figure_absent"), sibling.reasons.map((r) => r.code).join(", "));
+  assert.ok(sibling.ceiling < SUPPORTED_MIN);
+  assert.equal(differsFromSupportingPassage(siblingClaim, siblingPassage, "Beta Plus costs $15 per month and includes 50 GB of storage."), false);
   // A sibling only when the passage itself names the claim's own name beside it, and sets it apart by a word that is no
   // company ending and no clipping of the claim's own word (verifier round 6): otherwise it may be the claim's subject.
   for (const [claimText, passage, other] of [
@@ -266,21 +275,24 @@ test("a word shared with another run is a family name only when the claim names 
     ["Litware Labs raised $120 million in 2024.", "Litware Labs and Litware Laboratories both filed; Litware Laboratories raised $95 million in 2024.", "Litware Labs raised $120 million in 2024."],
     ["Contoso International's revenue was $2.2 billion in 2024.", "Contoso International and Contoso Intl reported; Contoso Intl's revenue was $1.9 billion in 2024.", "Contoso International's revenue was $2.2 billion in 2024."],
   ] as const) {
-    const result = auditEvidence({ claim: claimText, passage, corroborating: [other] });
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
-    assert.ok(result.ceiling < SUPPORTED_MIN, passage);
+    const result = auditEvidence({ claim: claimText, passage });
+    assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.equal(result.contradicted, false, passage);
+    // Cited beside a source that states the claim, the passage is still never shown as support.
+    const [cited] = (await audit(`# R\n\n${claimText.replace(/\.$/, "")} [1][2].`, [source(1, passage), source(2, other)])).claims;
+    assert.ok(!cited.links.some((l) => l.sourceIndex === 1 && l.status === "supported"), `${passage}: ${JSON.stringify(cited.links)}`);
   }
   // Two capitalised measures sharing a word, a family the claim never names.
   const claim = "In 2024, Northwind's revenue was $4.3 billion.";
-  const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];
+  const supporting = "Northwind's revenue was $4.3 billion in 2024.";
   for (const passage of [
     "On revenue, the group recorded Gross Receipts of $3.9 billion in 2024, and Gross Proceeds of $4.1 billion.",
     "On revenue in 2024, Top Line Growth was 9% and Top Line reached $3.9 billion.",
     "Gross Receipts rose 4% in 2024. On revenue, the group recorded Gross Receipts of $3.9 billion.",
   ]) {
-    const result = auditEvidence({ claim, passage, corroborating });
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    const result = auditEvidence({ claim, passage });
     assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.equal(differsFromSupportingPassage(claim, passage, supporting), true, passage);
   }
 });
 
@@ -299,7 +311,7 @@ const TITLE_CASE_MEASURES: Array<[claim: string, passage: string, measure: strin
   ["In 2024, Northwind's revenue was $4.3 billion [1][2].", "For 2024, Revenue Bookings were $3.9 billion, and revenue rose.", "Revenue Bookings"],
 ];
 
-test("a title-case measure giving a different figure is never shown as support through another citation, whatever its case", async () => {
+test("a title-case measure giving a different figure is never shown as support beside another citation, whatever its case", async () => {
   const judges: Record<string, CitationJudge> = {
     credulous,
     optimistic: async () => ({ verdict: "supported", strength: 0.8 }),
@@ -319,7 +331,6 @@ test("a title-case measure giving a different figure is never shown as support t
         const label = `${name} | ${one}: ${claim.status} ${JSON.stringify(claim.links.map((l) => [l.sourceIndex, l.status, l.reasons.map((r) => r.code)]))}`;
         assert.notEqual(claim.status, "supported", label);
         assert.ok(!claim.links.some((l) => l.sourceIndex === 1 && l.status === "supported"), label);
-        assert.ok(!claim.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), label);
         assert.notEqual(repairReportFromClaims(report, outcome.claims).report, report, label);
       }
     }

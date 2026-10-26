@@ -399,7 +399,7 @@ export function AuditFindings({ reasons }: { reasons: AuditReason[] }) {
                   someone" are both objections; only one of them means the
                   citation cannot be leaned on at all, and the ceiling is the
                   validator's own statement of which. A note that capped
-                  nothing (a figure found in another cited source) says so by
+                  nothing (a denial shown for a reader's review) says so by
                   printing no cap rather than "caps support at 100%". */}
               {reason.ceiling < 1 && (
                 <span className={cn("whitespace-nowrap font-mono tabular-nums", severity.tone)}>

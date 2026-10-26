@@ -431,9 +431,7 @@ const PERIOD_UNITS = new Set(["second", "minute", "hour", "day", "week", "month"
  * purpose — a word missing from it is read as the measured noun, or as its
  * qualifier when what precedes it says so (`qualifiesHead`: "the company
  * BOOKED revenue" is a verb, "its LOGISTICS revenue" a qualifier), and the
- * check it feeds can only take a contradiction away, never add one. It is
- * never what lets another cited source stand in for a passage: that gate
- * does not trust these guesses (see `strictlyAnotherEntity`).
+ * check it feeds can only take a contradiction away, never add one.
  */
 const FIGURE_SUBJECT_SKIP = new Set(
   (
@@ -919,12 +917,12 @@ function measuresSameThing(
 
 /*
  * Everything below decides one of two things the audit may settle WITHOUT the
- * judge — a figure contradiction (`unambiguousRival`) and another cited
- * source standing in for this passage (`strictlyAnotherEntity`) — so every
- * reading here is strict: a figure qualifies only on evidence a reader could
- * point at, and anything less is left to the judge. A wrong "no" here costs
- * a judge call; a wrong "yes" is a false contradiction or a disagreeing
- * passage shown as support.
+ * judge — a figure contradiction (`unambiguousRival`) and a rival figure the
+ * passage provably gives for another subject the claim names
+ * (`strictlyAnotherEntity`) — so every reading here is strict: a figure
+ * qualifies only on evidence a reader could point at, and anything less is
+ * left to the judge. A wrong "no" here costs a judge call or shows a doubt; a
+ * wrong "yes" is a false contradiction or a disagreeing passage hidden.
  */
 
 /** Words before a figure that make it approximate or a bound: "about $4bn", "more than 40%". */
@@ -1093,6 +1091,83 @@ function unambiguousCellRival(claim: string, n: NumericFact, cell: { row: string
   return about.has(cell.column) || (["price", "cost", "fee"].includes(cell.column) && PRICE_VERBS.has(verb));
 }
 
+/** Conjunctions that end one noun phrase and open the next clause's. */
+const PHRASE_CONJUNCTIONS = new Set("and but while whereas or nor yet".split(" "));
+
+/**
+ * The noun phrase a figure is given for, as far as its own clause shows it:
+ * the words from the start of the clause (or from after a verb of saying or
+ * telling, "that", a conjunction or another figure: "… carried 12.4 million
+ * passengers in 2024 and its revenue was") to the measured noun
+ * `figureClause` found, in `tokenForm`, with function words, determiners,
+ * scope words and figure verbs left out; and whether a preposition joins two
+ * of its words. Read backwards from the verb, "Youth unemployment in
+ * Freedonia was 14.2%" and "Spending on rail in Freedonia was $2.2bn" both
+ * end in "Freedonia", and the measured noun with whatever narrows it
+ * ("youth", "on rail") sits before the preposition, where `figureSubject`
+ * never looks.
+ */
+function subjectPhrase(text: string, n: NumericFact): { words: Set<string>; joined: boolean } {
+  const { words, headAt } = figureClause(text, n);
+  const out = new Set<string>();
+  if (headAt < 0) return { words: out, joined: false };
+  const { numbers } = figuresOf(text);
+  let start = 0;
+  for (let i = headAt - 1; i >= 0; i -= 1) {
+    const lower = words[i]!.raw.toLowerCase();
+    const next = words[i + 1]!;
+    if (
+      lower === "that" ||
+      REPORTING_VERBS.has(lower) ||
+      TELLING_VERBS.has(lower) ||
+      PHRASE_CONJUNCTIONS.has(lower) ||
+      numbers.some((m) => m.start >= words[i]!.end && m.end <= next.start)
+    ) {
+      start = i + 1;
+      break;
+    }
+  }
+  let joined = false;
+  for (let i = start; i <= headAt; i += 1) {
+    const raw = words[i]!.raw;
+    const lower = raw.toLowerCase();
+    if (PREPOSITIONS.has(lower)) {
+      if (out.size > 0) joined = true;
+      continue;
+    }
+    if (DETERMINERS.has(lower) || (skippedForSubject(raw) && !isAcronym(raw))) continue;
+    out.add(tokenForm(raw));
+  }
+  return { words: out, joined };
+}
+
+/**
+ * Words in a figure's own clause, before it, that make it an expectation, a
+ * hope, a plan or a supposition rather than a figure reported as fact:
+ * "Analysts expected revenue to reach", "Investors hoped revenue would hit",
+ * "Bankers estimated revenue would be", "A consensus of analysts put revenue
+ * at", "revenue would have been". Nouns that only look like these verbs
+ * ("the project cost", "the Pro plan costs", "the budget deficit") are left
+ * out.
+ */
+const SUPPOSED_BEFORE =
+  /\b(?:expect(?:s|ed|ing|ation|ations)?|hop(?:e|es|ed|ing)|estimat(?:e|es|ed|ing)|predict(?:s|ed|ing|ion|ions)?|projected|projecting|projections?|forecast(?:s|ed|ing|er|ers)?|anticipat(?:e|es|ed|ing)|targeted|targeting|targets? of|aimed|aiming|aims? (?:to|for)|planned|planning|plans? to|guidance|consensus|would|could have|might have|should have|put(?:s|ting)?\b[^.;]{0,80}\bat)\b/i;
+/** A clause before the figure's that opens a supposition: "Had fuel prices held, …", "If the strike had ended, …". */
+const SUPPOSITION_OPENING = /^\s*(?:had|if|were|unless|without|but for)\b/i;
+
+/**
+ * Whether a figure is supposed rather than reported: an expectation, a hope,
+ * an estimate, a plan or a counterfactual (`SUPPOSED_BEFORE`, or a sentence
+ * that opens with a supposition before the figure's clause). Such a figure
+ * for the claim's period is not the claim's actual figure stated otherwise,
+ * so it never proves a contradiction: the judge reads it.
+ */
+function figureSupposed(text: string, n: NumericFact): boolean {
+  const { clauseStart, sentenceStart } = figureScope(text, n);
+  if (SUPPOSED_BEFORE.test(text.slice(clauseStart, n.start))) return true;
+  return clauseStart > sentenceStart && SUPPOSITION_OPENING.test(text.slice(sentenceStart, clauseStart));
+}
+
 function unambiguousRival(
   claim: { text: string; dates: readonly DateMention[]; numbers: readonly NumericFact[] },
   n: NumericFact,
@@ -1101,6 +1176,8 @@ function unambiguousRival(
 ): boolean {
   if (figureApprox(claim.text, n) || figureApprox(passage.text, p)) return false;
   if (figureHedged(claim.text, n) || figureHedged(passage.text, p)) return false;
+  // An expected, hoped-for, estimated or hypothetical figure is not the claim's actual one stated otherwise.
+  if (figureSupposed(claim.text, n) || figureSupposed(passage.text, p)) return false;
   // The same money, named the same way: "$" against "US$" may be one figure, and is the judge's to read.
   if (n.kind === "currency" && (n.currency ?? "$") !== (p.currency ?? "$")) return false;
   // One figure rounding to the other at the coarser one's precision ("4.4 billion" for "4 billion", "3%" for
@@ -1117,6 +1194,11 @@ function unambiguousRival(
   const a = figureSubject(claim.text, n);
   const b = figureSubject(passage.text, p);
   if (a.head !== b.head || a.qualifier !== b.qualifier) return false;
+  // A noun phrase joined by a preposition is compared whole: "Youth unemployment in Freedonia" and "Spending on rail
+  // in Freedonia" end in the same name as "Unemployment in Freedonia" and "Spending on roads in Freedonia".
+  const pa = subjectPhrase(claim.text, n);
+  const pb = subjectPhrase(passage.text, p);
+  if ((pa.joined || pb.joined) && !sameWords(pa.words, pb.words)) return false;
   const ca = numberContext(claim.text, n);
   const cb = numberContext(passage.text, p);
   if (!a.head && (!ca.unit || ca.unit !== cb.unit || ca.next !== cb.next)) return false;
@@ -1520,9 +1602,8 @@ function siblingOfClaimName(claim: string, passage: string, owner: readonly stri
 
 /**
  * Whether the passage provably gives figure `p` for a DIFFERENT entity than
- * the one claim figure `n` is about: what lets another cited source's figure
- * stand in for this passage, and what keeps a rival figure from reading as a
- * disagreement. The proof has to come from the claim: the passage's owner is
+ * the one claim figure `n` is about: what keeps a rival figure from reading
+ * as a disagreement. The proof has to come from the claim: the passage's owner is
  * a name the claim itself uses for another subject (`claimNamesAnotherSubject`)
  * or a sibling of one (`siblingOfClaimName`).
  *
@@ -1539,22 +1620,6 @@ function strictlyAnotherEntity(claim: string, n: NumericFact, passage: string, p
   const owner = passageFigureOwner(passage, p);
   if (!owner) return false;
   return claimNamesAnotherSubject(claim, n, owner) || siblingOfClaimName(claim, passage, owner);
-}
-
-/**
- * Whether passage count `p` provably counts something else than claim figure
- * `n`: not the same quantity by unit and introducing phrase (`sameQuantity`),
- * and its unit is a word the claim never uses ("the three largest depots"
- * against "45,000 members"). A unit the claim names anywhere ("79.2 million
- * passengers" against "Passenger numbers … reached 83.9 million") may be the
- * claim's own quantity.
- */
-function provablyAnotherCount(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
-  if (sameQuantity(claim, n, passage, p)) return false;
-  const unit = numberContext(passage, p).unit;
-  if (!unit || /^\d/.test(unit)) return false;
-  const forms = wordForms(claim);
-  return !forms.has(unit) && !forms.has(tokenForm(unit));
 }
 
 /** Where a clause ends, and where a sentence ends, for `figureDate`. */
@@ -1746,9 +1811,8 @@ function rivalFigures(
 /**
  * Whether passage figure `p` is the evidence for a claim figure other than
  * `n`: equal to it, and given for the same date. `strict` also refuses the
- * pair when only one of the two is dated — the bar for letting another cited
- * source stand in for this passage, where a wrong guess shows a disagreeing
- * passage as support.
+ * pair when only one of the two is dated — the bar for setting a figure aside
+ * as no doubt at all, where a wrong guess hides a disagreeing figure.
  */
 function evidenceForAnotherFigure(
   claim: { text: string; dates: readonly DateMention[]; numbers: readonly NumericFact[] },
@@ -2706,7 +2770,6 @@ export interface AuditReason {
     | "passage_hedged"
     | "attribution_dropped"
     | "source_stale"
-    | "stated_by_other_citation"
     | "off_topic"
     | "thin_overlap";
   detail: string;
@@ -2897,59 +2960,29 @@ function opensSentence(text: string, at: number): boolean {
   return before === "" || /[.!?:]$/.test(before);
 }
 
-/**
- * Title-case words of a text, lowercased: the named subjects it talks about
- * (Northwind, Alpha, Plus).
- *
- * The first word of a sentence is skipped unless `withSentenceStarts`: any
- * word opens a sentence in title case, so "Revenue rose to $4.3bn" must not
- * make "revenue" a named subject. On the CLAIM side that is the strict
- * direction for the corroboration rule — fewer names, fewer to find
- * elsewhere. A name that opens the claim is lost to it, which only means its
- * figure has to be in the passage itself.
- */
-export function namedSubjects(text: string, opts: { withSentenceStarts?: boolean } = {}): Set<string> {
-  const out = new Set<string>();
-  for (const match of text.matchAll(/\b[A-Z][a-z][A-Za-z'’-]*/g)) {
-    if (!opts.withSentenceStarts && opensSentence(text, match.index)) continue;
-    const word = match[0].toLowerCase().replace(/['’]s$/, "");
-    if (word.length < 3 || STOPWORDS.has(word) || SENTENCE_STARTERS.has(word)) continue;
-    out.add(word);
-  }
-  return out;
+/** A day of the week as a text gives it. */
+interface DayMention {
+  day: string;
+  raw: string;
+  start: number;
+  end: number;
 }
 
-/** Every word of a text, lowercased, possessives cut: whether it mentions a name in any case. */
-function mentionedWords(text: string): Set<string> {
-  return new Set((text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []).map((w) => w.replace(/['’]s?$/, "")));
+const WEEKDAY_RE = /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi;
+
+function weekdaysIn(text: string): DayMention[] {
+  return [...text.matchAll(WEEKDAY_RE)].map((m) => ({ day: m[0].toLowerCase(), raw: m[0], start: m.index, end: m.index + m[0].length }));
 }
 
-/**
- * The figures and dates of the other cited sources that may stand in for this
- * passage — only those sources that cover a named subject of the claim this
- * passage does not mention, in any case (see `corroborating` on
- * `auditEvidence`). Each side is read in its strict direction: the claim's
- * names without sentence openers, the passage's mentions in any case, so a
- * common noun can only make the rule harder to meet.
- */
-function corroboratingFacts(
-  claim: string,
-  passage: string,
-  others: readonly string[] | undefined
-): Array<{ numbers: NumericFact[]; dates: DateMention[] }> {
-  if (!others?.length) return [];
-  const mentioned = mentionedWords(passage);
-  // A measured noun the claim capitalises ("Northwind's Receipts") is no subject the passage could leave out.
-  const missing = [...namedSubjects(claim)].filter(
-    (name) => !mentioned.has(name) && !COMMON_SUBJECT_NOUNS.has(tokenForm(name)) && !MEASURE_NOUNS.has(tokenForm(name)) && !lowercaseForms(claim).has(tokenForm(name))
-  );
-  if (missing.length === 0) return [];
-  return others
-    .filter((text) => {
-      const names = namedSubjects(text, { withSentenceStarts: true });
-      return missing.some((name) => names.has(name));
-    })
-    .map((text) => figuresOf(text));
+/** A change given as a multiple in words: "doubled", "trebled", "threefold", "halved". */
+const MULTIPLE_RE = /\b(?:doubl(?:ed|ing)|two-?fold|tripl(?:ed|ing)|trebl(?:ed|ing)|three-?fold|quadrupl(?:ed|ing)|four-?fold|halv(?:ed|ing))\b/gi;
+
+function multiplesIn(text: string): Array<{ factor: number; raw: string }> {
+  return [...text.matchAll(MULTIPLE_RE)].map((m) => {
+    const w = m[0].toLowerCase();
+    const factor = /^(?:doubl|two)/.test(w) ? 2 : /^(?:tripl|trebl|three)/.test(w) ? 3 : /^(?:quadrupl|four)/.test(w) ? 4 : 0.5;
+    return { factor, raw: m[0] };
+  });
 }
 
 /**
@@ -2971,18 +3004,6 @@ export function auditEvidence(opts: {
    * stored strength never paid for).
    */
   asOf?: Date | null;
-  /**
-   * The text of the OTHER sources this same claim cites. A comparison —
-   * "Alpha has 100 GB against Beta's 50 GB [1][2]" — takes one figure from
-   * each source, and judged one passage at a time it read as source [1]
-   * contradicting the 50 GB (it gives Alpha Free's 5 GB, same unit) and
-   * source [2] contradicting the 100. A figure or date the passage lacks is
-   * accepted from another cited source when that source covers a named
-   * subject of the claim THIS passage does not: so a second subject's figure
-   * is found where the claim says it is, while two sources disagreeing about
-   * the SAME subject still read as the contradiction they are.
-   */
-  corroborating?: readonly string[];
 }): EvidenceAudit {
   const { claim, passage } = opts;
   const claimType = opts.claimType ?? classify(claim);
@@ -3030,12 +3051,6 @@ export function auditEvidence(opts: {
   // ── Figures ──────────────────────────────────────────────────────────────
   const { dates: claimDates, numbers: claimNums } = figuresOf(claim);
   const { dates: passageDates, numbers: passageNums } = figuresOf(passage);
-  const elsewhere = corroboratingFacts(claim, passage, opts.corroborating);
-  const statedElsewhere = (raw: string) =>
-    cap(1, {
-      code: "stated_by_other_citation",
-      detail: `${raw} is not in this passage; another source cited for this sentence states it.`,
-    });
   const claimFacts = { text: claim, dates: claimDates, numbers: claimNums };
   const passageFacts = { text: passage, dates: passageDates, numbers: passageNums };
   for (const n of claimNums) {
@@ -3074,39 +3089,11 @@ export function auditEvidence(opts: {
       continue;
     }
     /*
-     * Another cited source may supply a figure this passage lacks, never one
-     * it may disagree with. So every figure in the passage that could be the
-     * same quantity — any amount of money or percentage, and a count in the
-     * same unit — has to be accounted for: the evidence for another of the
-     * claim's figures, or a figure the passage provably gives for a
-     * DIFFERENT entity (`strictlyAnotherEntity`: an owner the claim itself
-     * names for another subject, or a sibling of one). An owner the claim
-     * never names — an acronym, a nickname, "the Trust" — is unknown, and an
-     * amount in another currency is unchecked. A figure left over for the
-     * claim's own period is a doubt, and a doubt is shown as one:
-     * `figure_differs`.
+     * Each passage is judged on its own text: another source cited for the
+     * same sentence never supplies a figure this passage lacks, and never
+     * excuses one it may disagree with. A figure for what may be the same
+     * measure, under another name, is a doubt, and a doubt is shown as one.
      */
-    if (foreign.length === 0 && elsewhere.some((facts) => facts.numbers.some((p) => figuresAgree(n, p)))) {
-      const unaccounted = sameKind.filter(
-        (p) =>
-          !(p.kind === "plain" && provablyAnotherCount(claim, n, passage, p)) &&
-          !evidenceForAnotherFigure(claimFacts, n, passageFacts, p, { strict: true }) &&
-          !strictlyAnotherEntity(claim, n, passage, p)
-      );
-      if (unaccounted.length === 0) {
-        statedElsewhere(n.raw);
-        continue;
-      }
-      const doubt = unaccounted.filter((p) => samePeriodOrUnknown(claimFacts, n, passageFacts, p, opts.publishedAt?.getUTCFullYear()));
-      if (doubt.length > 0) {
-        cap(CEILING.figureAbsent, {
-          code: "figure_differs",
-          detail: `The figure ${n.raw} is not in this passage, which gives ${doubt.map((p) => p.raw).slice(0, 3).join(", ")} instead; another cited source states ${n.raw}, but nothing shows this passage is about something else.`,
-        });
-        continue;
-      }
-    }
-    // Without another source to stand in: a figure for what may be the same measure, under another name, is still a doubt.
     const doubtful = sameKind.filter(
       (p) =>
         measureMayMatch(claim, n, passage, p) &&
@@ -3130,14 +3117,44 @@ export function auditEvidence(opts: {
     });
   }
 
+  /*
+   * A multiple or a day of the week written as a word: the claim's "doubled"
+   * or "on Tuesday" against "tripled" or "on Thursday" in the clause of the
+   * passage the claim is about, the claim's own word nowhere in the passage.
+   * Never proof — "revenue tripled while profit doubled" is one clause away —
+   * so a doubt and a missing date, which the judge reads.
+   */
+  const focused = focusSentences(claim, passage);
+  const claimMultiples = multiplesIn(claim);
+  const claimDays = weekdaysIn(claim);
+  if (claimMultiples.length > 0 || claimDays.length > 0) {
+    const aboutClauses = focused.sentences.map((sentence) => bestMatchingClause(claim, sentence)).join(" ");
+    const passageMultiples = multiplesIn(passage);
+    for (const m of claimMultiples) {
+      if (passageMultiples.some((x) => x.factor === m.factor)) continue;
+      const other = multiplesIn(aboutClauses).find((x) => x.factor !== m.factor);
+      if (!other) continue;
+      cap(CEILING.figureAbsent, {
+        code: "figure_differs",
+        detail: `The passage says “${other.raw}” where the claim says “${m.raw}”; it may describe something else, so the text alone does not settle it.`,
+      });
+    }
+    const passageDays = weekdaysIn(passage);
+    for (const d of claimDays) {
+      if (passageDays.some((x) => x.day === d.day)) continue;
+      const other = weekdaysIn(aboutClauses).find((x) => x.day !== d.day);
+      if (!other) continue;
+      cap(CEILING.dateWrong, {
+        code: "date_absent",
+        detail: `The cited passage places this on ${other.raw}, not ${d.raw}.`,
+      });
+    }
+  }
+
   // ── Dates, and the publication/event trap ────────────────────────────────
   const pubYear = opts.publishedAt?.getUTCFullYear();
   for (const d of claimDates) {
     if (passageDates.some((p) => datesAgree(p, d))) continue;
-    if (elsewhere.some((facts) => facts.dates.some((p) => datesAgree(p, d)))) {
-      statedElsewhere(d.raw);
-      continue;
-    }
     if (pubYear != null && d.year === pubYear) {
       cap(CEILING.dateWrong, {
         code: "date_is_publication_date",
@@ -3156,7 +3173,6 @@ export function auditEvidence(opts: {
   // unrelated passage a negation difference says nothing.
   // Every sentence tied for the claim goes to the clause check, which picks
   // between them; the hedge and attribution checks below read the first.
-  const focused = focusSentences(claim, passage);
   const focus = focused.sentences[0]!;
   const denial = provePolarityContradiction(claim, passage);
   if (denial) {
@@ -3294,6 +3310,248 @@ export function differentPeriodForUndatedClaim(claim: string, supporting: string
   return differs;
 }
 
+/*
+ * ── Beside support: a cited passage that may disagree ────────────────────
+ *
+ * Each passage is audited on its own text (`auditEvidence`), and no other
+ * passage ever stands in for one. What a single passage cannot show is that
+ * it disagrees with what ANOTHER passage, the one that supported the claim,
+ * states: "IBM's revenue rose to $61.0 billion" says nothing provable about
+ * "Revenue at International Business Machines rose to $62.8 billion", but
+ * beside a passage that gives the $62.8 billion it is a second figure for
+ * what may be the same thing, and the reader is owed "sources disagree".
+ * `differsFromSupportingPassage` finds those. It only ever makes a supported
+ * claim contested — it never supports, contradicts or caps anything.
+ */
+
+/*
+ * Title-case words that name nothing even mid-sentence: the words of the
+ * claim's dates ("in March 2024") and the days of the week.
+ */
+const DATE_NAME_WORDS = new Set([...MONTHS, ...MONTHS.map((m) => m.slice(0, 3)), ...NOT_A_SUBJECT]);
+
+/**
+ * Title-case words of a text, lowercased: the named subjects it talks about
+ * (Northwind, Alpha, Plus). The first word of a sentence is skipped unless
+ * `withSentenceStarts`: any word opens a sentence in title case, so "Revenue
+ * rose to $4.3bn" must not make "revenue" a named subject.
+ */
+export function namedSubjects(text: string, opts: { withSentenceStarts?: boolean } = {}): Set<string> {
+  const out = new Set<string>();
+  for (const match of text.matchAll(/\b[A-Z][a-z][A-Za-z'’-]*/g)) {
+    if (!opts.withSentenceStarts && opensSentence(text, match.index)) continue;
+    const word = match[0].toLowerCase().replace(/['’]s$/, "");
+    if (word.length < 3 || STOPWORDS.has(word) || SENTENCE_STARTERS.has(word)) continue;
+    out.add(word);
+  }
+  return out;
+}
+
+/** Every word of a text, lowercased, possessives cut: whether it mentions a name in any case. */
+function mentionedWords(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []).map((w) => w.replace(/['’]s?$/, "")));
+}
+
+/**
+ * Whether the passage leaves out, in any case, a name the claim gives its
+ * subject mid-sentence that the supporting passage names: the passage may
+ * call the claim's subject something else ("IBM", "the Trust", "Britain"),
+ * or be about another one. A measured noun the claim capitalises
+ * ("Northwind's Receipts"), a word the claim also writes in lowercase and
+ * the words of a date ("March", "Tuesday") are no names.
+ */
+function leavesOutSupportedName(claim: string, passage: string, supporting: string): boolean {
+  const mentioned = mentionedWords(passage);
+  const missing = [...namedSubjects(claim)].filter((name) => {
+    const form = tokenForm(name);
+    return (
+      !mentioned.has(name) &&
+      !COMMON_SUBJECT_NOUNS.has(form) &&
+      !MEASURE_NOUNS.has(form) &&
+      !lowercaseForms(claim).has(form) &&
+      !DATE_NAME_WORDS.has(name)
+    );
+  });
+  if (missing.length === 0) return false;
+  const names = namedSubjects(supporting, { withSentenceStarts: true });
+  return missing.some((name) => names.has(name));
+}
+
+/**
+ * Whether passage count `p` provably counts something else than claim figure
+ * `n`: not the same quantity by unit and introducing phrase (`sameQuantity`),
+ * and its unit is a word the claim never uses ("the three largest depots"
+ * against "45,000 members").
+ */
+function provablyAnotherCount(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
+  if (sameQuantity(claim, n, passage, p)) return false;
+  const unit = numberContext(passage, p).unit;
+  if (!unit || /^\d/.test(unit)) return false;
+  const forms = wordForms(claim);
+  return !forms.has(unit) && !forms.has(tokenForm(unit));
+}
+
+/** Units that measure an amount of something rather than count things: never another word for the claim's count. */
+const MEASURE_UNITS = new Set(
+  ("tonne ton kg kilogram gram pound lb ounce litre liter gallon barrel bbl km kilometre kilometer mile metre meter foot feet " +
+    "inch acre hectare hour minute second day week month year quarter gb tb mb kb gw mw kw kwh mwh gwh twh watt degree " +
+    "percent point bp basis").split(" ")
+);
+
+/**
+ * Whether two counts are given by the same owner and the same verb, whatever
+ * their unit word: "Kestrel Air carried 11.2 million customers" against
+ * "Kestrel Air carried 12.4 million passengers". Every word of the claim
+ * figure's clause before it is in the passage figure's, and the word right
+ * before each is the same. A count in a unit of measure ("300,000 tonnes")
+ * counts no things.
+ */
+function sameCountClause(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
+  if (n.kind !== "plain" || p.kind !== "plain") return false;
+  const unit = numberContext(passage, p).unit;
+  if (unit && MEASURE_UNITS.has(unit)) return false;
+  const a = figureClause(claim, n).words;
+  const b = figureClause(passage, p).words;
+  const last = (words: readonly ClauseWord[]) => words[words.length - 1]?.raw.toLowerCase() ?? null;
+  if (!last(a) || last(a) !== last(b)) return false;
+  const content = (words: readonly ClauseWord[]) =>
+    new Set(words.map((w) => tokenForm(w.raw)).filter((f) => f.length >= 2 && !STOPWORDS.has(f)));
+  const ca = content(a);
+  const cb = content(b);
+  return ca.size > 0 && [...ca].every((f) => cb.has(f));
+}
+
+/** Content words of a text with its dates, days and figures cut out: the words of an event, whenever it was. */
+function eventWords(text: string): Set<string> {
+  const { dates, numbers } = figuresOf(text);
+  let cut = text;
+  for (const m of [...dates, ...numbers].sort((x, y) => y.start - x.start)) cut = cut.slice(0, m.start) + " " + cut.slice(m.end);
+  return new Set([...contentTokens(cut)].filter((t) => !/^[\d.,%$€£]+$/.test(t) && !NOT_A_SUBJECT.has(t)));
+}
+
+/** A clause that is only a date or a day, as a lead-in to the next one: "In 2021, …", "On Thursday, …". */
+const DATE_LEAD_IN = /^\s*(?:(?:in|on|by|during|since|as of|at the end of)\s+)?$/i;
+
+/**
+ * The clauses of the passage that tell the event of the claim's clause
+ * holding `raw` (a date or a day): each holds every content word of that
+ * clause, dates, days and figures aside — at least two of them — and comes
+ * with the clause before it in its sentence, which may be its date ("In
+ * 2021, …"). None when the claim's clause gives a figure: its date is the
+ * figure's period ("revenue was $4.3 billion in 2024"), and another year's
+ * figure is last year, not another date for the same event.
+ */
+function eventClauses(claim: string, raw: string, passage: string): Array<{ clause: string; lead: string | null }> {
+  const claimClause = clausesOf(claim).find((c) => c.includes(raw));
+  if (!claimClause || figuresOf(claimClause).numbers.length > 0) return [];
+  const words = eventWords(claimClause);
+  if (words.size < 2) return [];
+  const out: Array<{ clause: string; lead: string | null }> = [];
+  for (const sentence of sentencesIn(passage.replace(/\n+/g, " "))) {
+    const clauses = clausesOf(sentence);
+    clauses.forEach((clause, i) => {
+      const tokens = contentTokens(clause);
+      if ([...words].every((w) => tokens.has(w))) out.push({ clause, lead: i > 0 ? clauses[i - 1]! : null });
+    });
+  }
+  return out;
+}
+
+/** What is left of a lead-in clause once its dates and days are cut: a bare lead-in leaves only "In" or "On". */
+function leadInRest(lead: string, spans: ReadonlyArray<{ start: number; end: number }>): string {
+  let rest = lead;
+  for (const x of [...spans].sort((a, b) => b.start - a.start)) rest = rest.slice(0, x.start) + rest.slice(x.end);
+  return rest;
+}
+
+/**
+ * Whether the passage gives claim date `d` another date for the same event:
+ * a clause of the passage holding every content word of the claim's clause
+ * with `d` in it (dates and figures aside, at least two of them), dated —
+ * in that clause, or by a date-only lead-in before it — and by no date that
+ * agrees with `d`. "Quillon launched in Italy in May 2024" against "Quillon
+ * launched in Italy in March 2024"; never "Quillon, founded in 2019,
+ * launched in Italy", whose date is another clause's.
+ */
+function anotherDateForEvent(claim: string, d: DateMention, passage: string): boolean {
+  for (const { clause, lead } of eventClauses(claim, d.raw, passage)) {
+    let dates = extractDates(clause);
+    if (dates.length === 0 && lead) {
+      const leadDates = extractDates(lead);
+      if (leadDates.length > 0 && DATE_LEAD_IN.test(leadInRest(lead, leadDates))) dates = leadDates;
+    }
+    if (dates.length > 0 && !dates.some((x) => datesAgree(x, d))) return true;
+  }
+  return false;
+}
+
+/** `anotherDateForEvent` for a day of the week: "passed the bill on Thursday" against the claim's "on Tuesday". */
+function anotherDayForEvent(claim: string, day: DayMention, passage: string): boolean {
+  for (const { clause, lead } of eventClauses(claim, day.raw, passage)) {
+    let days = weekdaysIn(clause);
+    if (days.length === 0 && lead) {
+      const leadDays = weekdaysIn(lead);
+      if (leadDays.length > 0 && DATE_LEAD_IN.test(leadInRest(lead, leadDays))) days = leadDays;
+    }
+    if (days.length > 0 && !days.some((x) => x.day === day.day)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether `passage`, cited for the claim beside `supporting` (the passage
+ * that supported it), gives a different figure or date for something the
+ * supporting passage states as the claim does. For each claim figure the
+ * passage lacks and the supporting passage gives: a figure of the same kind
+ * in the passage, for the claim's period or none, that is not the evidence
+ * for another of the claim's figures (`evidenceForAnotherFigure`) or a figure
+ * the passage provably gives for another subject the claim names
+ * (`strictlyAnotherEntity`), and either
+ *  - the passage leaves out a name the claim and the supporting passage give
+ *    the subject (`leavesOutSupportedName`), so it may be that subject under
+ *    another name — a count in a unit the claim never uses aside
+ *    (`provablyAnotherCount`); or
+ *  - it is a count by the same owner and verb, in any unit word but a unit of
+ *    measure (`sameCountClause`).
+ * For each claim date or day of the week the passage lacks and the
+ * supporting passage gives: the passage dates the same event otherwise
+ * (`anotherDateForEvent`, `anotherDayForEvent`).
+ */
+export function differsFromSupportingPassage(claim: string, passage: string, supporting: string): boolean {
+  if (passage === supporting) return false;
+  const c = figuresOf(claim);
+  const p = figuresOf(passage);
+  const s = figuresOf(supporting);
+  const claimFacts = { text: claim, dates: c.dates, numbers: c.numbers };
+  const passageFacts = { text: passage, dates: p.dates, numbers: p.numbers };
+  const supportFacts = { text: supporting, dates: s.dates, numbers: s.numbers };
+  let unnamed: boolean | null = null;
+  for (const n of c.numbers) {
+    const states = (facts: typeof passageFacts) =>
+      facts.numbers.some((q) => comparable(n, q) && (figuresAgree(n, q) || rangeHolds(facts, q, n.value)));
+    if (states(passageFacts) || !states(supportFacts)) continue;
+    for (const q of p.numbers) {
+      if (!comparable(n, q)) continue;
+      if (!samePeriodOrUnknown(claimFacts, n, passageFacts, q)) continue;
+      if (evidenceForAnotherFigure(claimFacts, n, passageFacts, q, { strict: true }) || strictlyAnotherEntity(claim, n, passage, q)) continue;
+      if (sameCountClause(claim, n, passage, q)) return true;
+      unnamed ??= leavesOutSupportedName(claim, passage, supporting);
+      if (unnamed && !(q.kind === "plain" && provablyAnotherCount(claim, n, passage, q))) return true;
+    }
+  }
+  for (const d of c.dates) {
+    if (p.dates.some((x) => datesAgree(x, d)) || !s.dates.some((x) => datesAgree(x, d))) continue;
+    if (anotherDateForEvent(claim, d, passage)) return true;
+  }
+  const passageDays = weekdaysIn(passage);
+  const supportDays = weekdaysIn(supporting);
+  for (const day of weekdaysIn(claim)) {
+    if (passageDays.some((x) => x.day === day.day) || !supportDays.some((x) => x.day === day.day)) continue;
+    if (anotherDayForEvent(claim, day, passage)) return true;
+  }
+  return false;
+}
+
 /**
  * Whether a present-tense claim rests on a source too old to say anything
  * about the present. Null when the check does not apply or passes.
@@ -3389,8 +3647,6 @@ export async function validateClaimAgainstPassage(opts: {
   publishedAt?: Date | null;
   /** When the audit runs, for the freshness check. See `auditEvidence`. */
   asOf?: Date | null;
-  /** The claim's other cited sources' text. See `auditEvidence`. */
-  corroborating?: readonly string[];
   judge: CitationJudge;
 }): Promise<LinkVerdict> {
   const claimType = opts.claimType ?? classify(opts.claim);
@@ -3400,7 +3656,6 @@ export async function validateClaimAgainstPassage(opts: {
     passage: opts.passage,
     publishedAt: opts.publishedAt,
     asOf: opts.asOf,
-    corroborating: opts.corroborating,
   });
 
   if (audit.contradicted) {

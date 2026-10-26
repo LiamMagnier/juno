@@ -37,6 +37,7 @@ import {
   claimsForAudit,
   contentTokens,
   differentPeriodForUndatedClaim,
+  differsFromSupportingPassage,
   extractClaims,
   extractDates,
   extractNumbers,
@@ -174,18 +175,27 @@ export function figureFromAnotherPeriod(
 }
 
 /**
- * Whether a link's findings say its passage gives a different figure for what
- * may be the claim's own quantity and period (`figure_differs`): a
- * disagreement the text cannot settle, which the judge reads and the reader
- * is shown. Beside a supported claim it makes the claim contested — sources
- * disagree — and it never makes a claim contradicted on its own.
+ * Whether a link's passage may disagree with the claim: its findings say it
+ * gives a different figure for what may be the claim's own quantity and
+ * period (`figure_differs`), or a denial the text cannot line up with the
+ * claim (`negation_unresolved`); or, read beside the passage that supported
+ * the claim, it gives another figure or date for something that passage
+ * states (`differsFromSupportingPassage`). A disagreement the text cannot
+ * settle, which the reader is shown: beside a supported claim it makes the
+ * claim contested — sources disagree — and it never makes a claim
+ * contradicted on its own, nor supported.
  */
 export function disputesFigure(claim: string, reasons: readonly AuditReason[], passage: string, supporting: string | null): boolean {
   // A denial the text could not line up with the claim is shown the same way: the reader is told sources may disagree.
   if (reasons.some((reason) => reason.code === "negation_unresolved")) return true;
-  if (!reasons.some((reason) => reason.code === "figure_differs")) return false;
-  if (!disagreesForSamePeriod(reasons)) return false;
-  return !figureFromAnotherPeriod(claim, reasons, passage, supporting);
+  if (
+    reasons.some((reason) => reason.code === "figure_differs") &&
+    disagreesForSamePeriod(reasons) &&
+    !figureFromAnotherPeriod(claim, reasons, passage, supporting)
+  ) {
+    return true;
+  }
+  return supporting !== null && differsFromSupportingPassage(claim, passage, supporting);
 }
 
 /** The claims one audit checks: extraction, capped with the table share kept to its slots. */
@@ -253,34 +263,31 @@ export async function auditClaims(opts: {
   for (const claim of opts.claims) {
     const claimType = claim.type as ClaimType;
     const candidates = selectPassagesForClaim(claim, passagesBySource);
-    // For each cited source, the text of the claim's OTHER cited sources: a
-    // comparison takes one figure from each, and no single passage holds both.
-    const corroboratingFor = (sourceIndex: number) =>
-      claim.citations
-        .filter((n) => n !== sourceIndex)
-        .flatMap((n) => (passagesBySource.get(n) ?? []).map((passage) => passage.text));
     /*
      * The deterministic audit is free, so it runs on every candidate first and
      * the model is spent only on the one it cannot decide. Ranking by the
      * audit's own ceiling also means the passage most likely to actually carry
      * the claim is the one that gets checked — a citation names a SOURCE, not a
      * passage, and picking the wrong paragraph marks a true claim unsupported.
+     *
+     * Each passage is audited on its own text. Another source cited for the
+     * same sentence never stands in for a figure or a date a passage lacks,
+     * and never excuses one it gives differently: a passage that disagrees is
+     * recorded as the disagreement it is (below), and the claim reads as
+     * contested.
      */
     const ranked = candidates
       .map((candidate) => {
         const source = sourceByIndex.get(candidate.sourceIndex);
-        const corroborating = corroboratingFor(candidate.sourceIndex);
         return {
           ...candidate,
           source,
-          corroborating,
           audit: auditEvidence({
             claim: claim.text,
             claimType,
             passage: candidate.passage.text,
             publishedAt: source?.publishedAt ?? null,
             asOf,
-            corroborating,
           }),
         };
       })
@@ -311,7 +318,6 @@ export async function auditClaims(opts: {
         sourceTitle: candidate.source?.title,
         publishedAt: candidate.source?.publishedAt ?? null,
         asOf,
-        corroborating: candidate.corroborating,
         judge: opts.judge,
       });
       verdicts.push(verdict);

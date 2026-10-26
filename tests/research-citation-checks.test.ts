@@ -5,6 +5,7 @@ import {
   STALE_FOR_PRESENT_DAYS,
   auditEvidence,
   bestMatchingClause,
+  differsFromSupportingPassage,
   extractClaims,
   namedSubjects,
   repairReportFromClaims,
@@ -366,18 +367,22 @@ test("an unsupported verdict reached only against a search preview is unverified
 
 // ── False contradictions the whole-report eval found ─────────────────────────
 
-test("a comparison citing one source per subject is not read as each source contradicting the other", async () => {
+test("a comparison citing one source per subject is not read as each source contradicting the other, nor carried by the other", async () => {
   const outcome = await audit("# R\n\nAlpha Pro includes twice the storage of Beta Plus, at 100 GB against 50 GB [1][2].", [
     source(1, "Alpha Pro costs $20 per month and includes 100 GB of storage. Alpha Free includes 5 GB of storage."),
     source(2, "Beta Plus costs $15 per month and includes 50 GB of storage. Beta Basic includes 2 GB of storage."),
   ]);
   const [claim] = outcome.claims;
-  assert.equal(claim.status, "supported");
+  // Each source gives its own subject's figure and never the other's: no disagreement, so nothing contradicts and
+  // nothing is contested. And each passage is judged on its own text — another citation never supplies the figure a
+  // passage lacks — so neither carries the whole sentence: it reads as not established, never as supported.
+  assert.notEqual(claim.status, "contradicted");
   assert.equal(claim.contested, false);
-  assert.ok(claim.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation" && r.ceiling === 1)));
+  assert.ok(claim.links.length > 0 && claim.links.every((l) => l.stance === "supports" && l.status !== "supported"), JSON.stringify(claim.links));
+  assert.ok(claim.links.every((l) => l.reasons.some((r) => r.code === "figure_absent")), JSON.stringify(claim.links));
 });
 
-test("corroboration never masks two sources disagreeing about the same subject, nor a misattributed figure", async () => {
+test("two sources disagreeing about the same subject are shown, and a misattributed figure is contradicted", async () => {
   // Same subject, different figures: still a disagreement.
   const same = await audit("# R\n\nSpringfield's population was 812,000 in mid-2025 [1][2].", [
     source(1, "Springfield's population was 812,000 in mid-2025, the statistics office said."),
@@ -388,7 +393,6 @@ test("corroboration never masks two sources disagreeing about the same subject, 
   const misattributed = auditEvidence({
     claim: "Alpha Pro costs $15 per month.",
     passage: "Alpha Pro costs $20 per month and includes 100 GB of storage.",
-    corroborating: ["Beta Plus costs $15 per month and includes 50 GB of storage."],
   });
   assert.equal(misattributed.contradicted, true);
 });
@@ -401,10 +405,11 @@ test("named subjects skip the first word of every sentence, sentence starters an
   assert.deepEqual([...namedSubjects("Revenue rose. Alpha Pro is cheaper.", { withSentenceStarts: true })].sort(), ["alpha", "pro", "revenue"]);
 });
 
-test("corroboration never hides a cited passage that gives a different figure: a sentence-opening common noun", async () => {
-  // "Revenue" opens the claim; it used to count as a named subject that [1]
-  // (which says "revenue") lacks, so [2]'s $4.3bn stood in for [1] and the
-  // $3.9bn passage was recorded as SUPPORT.
+test("another citation never hides a cited passage that gives a different figure: a sentence-opening common noun", async () => {
+  // "Revenue" opens the claim. When another cited source could stand in for a
+  // passage, it counted as a named subject that [1] (which says "revenue")
+  // lacked, so [2]'s $4.3bn stood in for [1] and the $3.9bn passage was
+  // recorded as SUPPORT.
   const report = "# R\n\nRevenue rose to $4.3 billion in 2024 [1][2].";
   const one = source(1, "The company said revenue rose to $3.9 billion in 2024, below its own guidance.");
   const undated = await audit(report, [one, source(2, "Revenue reached $4.3 billion, the chief executive told investors.")]);
@@ -419,9 +424,9 @@ test("corroboration never hides a cited passage that gives a different figure: a
   assert.ok(dated.claims[0].links.some((l) => l.sourceIndex === 1 && l.stance === "contradicts"));
 });
 
-test("corroboration never hides a cited passage that gives a different figure: a subject one passage leaves unnamed", async () => {
+test("another citation never hides a cited passage that gives a different figure: a subject one passage leaves unnamed", async () => {
   // [1] says "the company" where the claim says "Northwind": the name is
-  // missing from [1], [2] has it, and [2]'s figure used to mask [1]'s.
+  // missing from [1], [2] has it, and [2]'s figure once masked [1]'s.
   const outcome = await audit("# R\n\nIn 2024, Northwind's revenue rose to $4.3 billion [1][2].", [
     source(1, "The company's revenue rose to $3.9 billion in 2024, its annual report shows."),
     source(2, "Northwind's revenue rose to $4.3 billion in 2024, the wire reported."),
@@ -431,26 +436,23 @@ test("corroboration never hides a cited passage that gives a different figure: a
   assert.equal(claim.contested, true);
   const fromOne = claim.links.filter((l) => l.sourceIndex === 1);
   assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), JSON.stringify(claim.links));
-  assert.ok(!fromOne.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")));
 });
 
-test("corroboration never hides a cited passage that gives a different figure: a verb read as the measured noun's qualifier", async () => {
+test("another citation never hides a cited passage that gives a different figure: a verb read as the measured noun's qualifier", async () => {
   // "booked revenue of" read "booked" as a narrower revenue, so the $3.9bn
   // was no rival and [2]'s $4.3bn stood in for it: [1] was shown as support.
-  const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];
   for (const verb of ["booked", "achieved", "logged", "registered", "delivered", "announced", "disclosed", "secured", "expects", "forecast", "targets"]) {
     const passage = `The company ${verb} revenue of $3.9 billion in 2024, its annual filing shows.`;
-    const result = auditEvidence({ claim: "In 2024, Northwind's revenue was $4.3 billion.", passage, corroborating });
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), verb);
+    const result = auditEvidence({ claim: "In 2024, Northwind's revenue was $4.3 billion.", passage });
     assert.ok(result.ceiling < SUPPORTED_MIN, `${verb}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.equal(result.contradicted, false, verb);
   }
   // A verb read as the measured noun itself.
   const head = auditEvidence({
     claim: "In 2024, Northwind's revenue was $4.3 billion.",
     passage: "The company tallied $3.9 billion in revenue in 2024.",
-    corroborating,
   });
-  assert.ok(!head.reasons.some((r) => r.code === "stated_by_other_citation"));
+  assert.ok(head.ceiling < SUPPORTED_MIN, head.reasons.map((r) => r.code).join(", "));
 
   // End to end: [1] is never the support, and the claim is not supported on it.
   const outcome = await audit("# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].", [
@@ -460,7 +462,6 @@ test("corroboration never hides a cited passage that gives a different figure: a
   const [claim] = outcome.claims;
   assert.notEqual(claim.status, "supported");
   assert.ok(!claim.links.some((l) => l.sourceIndex === 1 && l.status === "supported"), JSON.stringify(claim.links));
-  assert.ok(!claim.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")));
 });
 
 test("a page's figure for the claim's year is not the evidence for the claim's equal figure of another year", async () => {
@@ -474,9 +475,10 @@ test("a page's figure for the claim's year is not the evidence for the claim's e
   assert.equal(previousYear.contradicted, false);
   assert.ok(previousYear.reasons.some((r) => r.code === "figure_absent"));
 
-  // With corroboration: [1] gives $3.9bn for 2024 ("the company's", not
-  // Northwind's: a disagreement the judge reads, never one the text settles)
-  // and is never shown as support, whether or not [2] carries the claim on its own.
+  // Cited beside another source: [1] gives $3.9bn for 2024 ("the company's",
+  // not Northwind's: a disagreement the judge reads, never one the text
+  // settles) and is never shown as support, whether or not [2] carries the
+  // claim on its own.
   const report = "# R\n\nIn 2024, Northwind's revenue was $4.3 billion, up from $3.9 billion in 2023 [1][2].";
   const one = source(1, "In 2024, the company's revenue was $3.9 billion, its annual filing shows, after $3.6 billion in 2023.");
   for (const two of ["Northwind: revenue $4.3 billion.", "Northwind's revenue was $4.3 billion in 2024, up from $3.9 billion in 2023."]) {
@@ -484,16 +486,17 @@ test("a page's figure for the claim's year is not the evidence for the claim's e
     const fromOne = audited.links.filter((l) => l.sourceIndex === 1);
     assert.ok(fromOne.length > 0 && fromOne.every((l) => l.status !== "supported"), `${two}: ${JSON.stringify(audited.links)}`);
     assert.ok(fromOne.every((l) => l.reasons.some((r) => r.code === "figure_differs")), `${two}: ${JSON.stringify(audited.links)}`);
-    assert.ok(!audited.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), two);
     assert.notEqual(audited.status, "contradicted", two);
     if (audited.status === "supported") assert.equal(audited.contested, true, two);
   }
-  // The honest year-over-year comparison across two sources still corroborates.
+  // An honest comparison across two sources, one subject each: neither disagrees, so nothing is contradicted or
+  // contested — and neither carries the other's figure, so the sentence is not supported by either alone.
   const honest = await audit("# R\n\nNorthwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion [1][2].", [
     source(1, "Northwind earned $4.3 billion in 2024, its report says."),
     source(2, "Southwind earned $2.1 billion in 2024, its report says."),
   ]);
-  assert.equal(honest.claims[0].status, "supported");
+  assert.notEqual(honest.claims[0].status, "contradicted");
+  assert.notEqual(honest.claims[0].status, "supported");
   assert.equal(honest.claims[0].contested, false);
 });
 
@@ -745,11 +748,10 @@ test("when passage clauses tie for the claim and disagree with each other, the t
   assert.equal(auditEvidence({ claim: "Northwind was profitable in 2024.", passage: pronoun }).contradicted, true);
 });
 
-// ── Corroboration: a title-case word in front of the measured noun is not a subject ──
+// ── A title-case word in front of the measured noun is not a subject ──────────
 
-test("corroboration never hides a cited passage that gives a different figure: who was told, when, where", async () => {
+test("another citation never hides a cited passage that gives a different figure: who was told, when, where", async () => {
   const claim = "In 2024, Northwind's revenue was $4.3 billion.";
-  const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];
   for (const passage of [
     "The company told Reuters revenue was $3.9 billion in 2024.",
     "The company said Monday revenue was $3.9 billion in 2024.",
@@ -757,9 +759,9 @@ test("corroboration never hides a cited passage that gives a different figure: w
     "Speaking in London revenue was $3.9 billion in 2024.",
     "The company told Reuters it made $3.9 billion in 2024.",
   ]) {
-    const result = auditEvidence({ claim, passage, corroborating });
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    const result = auditEvidence({ claim, passage });
     assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.equal(result.contradicted, false, passage);
   }
 
   const report = "# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].";
@@ -770,16 +772,16 @@ test("corroboration never hides a cited passage that gives a different figure: w
       // "revenue" with no owner may be Northwind's: the disagreement is shown and judged, never settled as a contradiction.
       assert.ok(fromOne.length > 0 && fromOne.every((l) => l.status !== "supported"), `${one} / ${two}: ${JSON.stringify(audited.links)}`);
       assert.ok(fromOne.every((l) => l.reasons.some((r) => r.code === "figure_differs")), `${one} / ${two}: ${JSON.stringify(audited.links)}`);
-      assert.ok(!audited.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), `${one} / ${two}`);
       assert.notEqual(audited.status, "contradicted", `${one} / ${two}`);
       if (audited.status === "supported") assert.equal(audited.contested, true, `${one} / ${two}`);
     }
   }
 });
 
-test("corroboration accepts a figure the passage pins on another subject the claim names, never on a name the claim never uses", () => {
-  const corroborating = ["Southwind earned $2.1 billion in 2024."];
-  // The claim names Contoso for another subject than the $2.1 billion is about: its figure is not the claim's.
+test("beside the passage that supports it, a figure for another subject the claim names is no doubt; one for a name the claim never uses is", () => {
+  const supporting = "Southwind earned $2.1 billion in 2024.";
+  // The claim names Contoso for another subject than the $2.1 billion is about: its figure is not the claim's, and
+  // beside the supporting passage it disputes nothing.
   const three = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion; Contoso trailed both.";
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso's revenue was $1.0 billion.",
@@ -787,13 +789,16 @@ test("corroboration accepts a figure the passage pins on another subject the cla
     "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $1.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso earned $1.0 billion.",
   ]) {
-    const result = auditEvidence({ claim: three, passage, corroborating });
-    assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
-    assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    const result = auditEvidence({ claim: three, passage });
+    // Each passage is judged on its own text: the $2.1 billion is simply not in it. No other citation supplies it.
+    assert.ok(result.reasons.some((r) => r.code === "figure_absent"), `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.ok(result.ceiling < SUPPORTED_MIN, passage);
+    assert.equal(result.contradicted, false, passage);
+    assert.equal(differsFromSupportingPassage(three, passage, supporting), false, passage);
   }
   // A name the claim never uses is unknown, not another entity: for all the text shows it is Southwind by another
-  // name ("GM's" for General Motors, "the Trust's" for Northwind REIT). The passage keeps its figure, and since
-  // another source states the claim's, that is a doubt shown as one — never a stand-in.
+  // name ("GM's" for General Motors, "the Trust's" for Northwind REIT). Beside the passage that states the claim's
+  // figure, its own figure is a doubt shown as one.
   const two = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion.";
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso's revenue was $3.0 billion.",
@@ -802,20 +807,19 @@ test("corroboration accepts a figure the passage pins on another subject the cla
     "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while SW earned $3.0 billion.",
   ]) {
-    const result = auditEvidence({ claim: two, passage, corroborating });
-    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
-    assert.ok(result.reasons.some((r) => r.code === "figure_differs"), `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    const result = auditEvidence({ claim: two, passage });
     assert.ok(result.ceiling < SUPPORTED_MIN, passage);
+    assert.equal(result.contradicted, false, passage);
+    assert.equal(differsFromSupportingPassage(two, passage, supporting), true, passage);
   }
-  // Title case is not: a capitalised measure ("put Top Line at") leaves the figure this passage's, and a doubt.
-  const measure = auditEvidence({ claim: three, passage: "Northwind earned $4.3 billion in 2024, while Top Line reached $3.0 billion.", corroborating });
-  assert.ok(!measure.reasons.some((r) => r.code === "stated_by_other_citation"), measure.reasons.map((r) => r.code).join(", "));
-  assert.ok(measure.ceiling < SUPPORTED_MIN);
+  // Title case is not a name: a capitalised measure ("Top Line reached") leaves the figure this passage's, and a doubt.
+  const measure = "Northwind earned $4.3 billion in 2024, while Top Line reached $3.0 billion.";
+  assert.ok(auditEvidence({ claim: three, passage: measure }).ceiling < SUPPORTED_MIN);
+  assert.equal(differsFromSupportingPassage(three, measure, supporting), true);
   // "Northwind Group" is Northwind: its figure is the claim's subject's.
   const group = auditEvidence({
     claim: "In 2024, Northwind's revenue was $4.3 billion.",
     passage: "Northwind Group's revenue was $3.9 billion in 2024.",
-    corroborating: ["Northwind's revenue was $4.3 billion in 2024."],
   });
   assert.equal(group.contradicted, true);
 });

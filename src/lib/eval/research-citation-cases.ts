@@ -29,7 +29,13 @@
  * other strict misses are the stub judge's to make: relapse-trial's "approved
  * … in 2026" against a page whose denial names no year reads as unsupported,
  * and the two dates-and-lists dates are lenient (a wrong date read as
- * unsupported rather than contradicted).
+ * unsupported rather than contradicted). One strict miss is the audit's by
+ * design: storage-plans-table's "twice the storage of Beta Plus, at 100 GB
+ * against 50 GB [1][2]", labelled supported, takes one figure from each
+ * source, and each passage is judged on its own text — another cited source
+ * never stands in for a figure a passage lacks, because the same stand-in
+ * showed passages giving a different figure as support — so it reads as not
+ * established.
  * Where a careful reader could defensibly give either of two labels (a wrong
  * date is "contradicted" to some readers and "unsupported" to others) the
  * primary label is the stricter reading and `accept` names the other, so the

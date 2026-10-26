@@ -40,7 +40,6 @@ test("auditing many claims against the same long passage reuses what the passage
     auditEvidence({
       claim: `Segment ${i} revenue was $${(i + 3).toFixed(1)} million in 2003, up ${i}%.`,
       passage: page,
-      corroborating: [page.slice(0, 5000)],
     });
   }
   const elapsed = performance.now() - started;

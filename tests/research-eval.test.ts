@@ -76,9 +76,11 @@ for (const name of ["optimistic", "credulous"] as const) {
     // The stub judges rubber-stamp, so these floors measure the deterministic audit alone. It now settles a
     // contradiction only when the text proves it (claim-polarity.ts), so the contradictions a reader needs a
     // qualifier or a meaning for — a denial with no year where the claim names one, "not designed to assess
-    // long-term safety" — are the judge's, and read here as the stub leaves them.
+    // long-term safety" — are the judge's, and read here as the stub leaves them. And each passage is judged on
+    // its own text: no other citation stands in for a figure a passage lacks, so storage-plans-table's two-source
+    // comparison ("100 GB against 50 GB [1][2]", labelled supported) reads as not established — 32 of 38 strict.
     assert.ok(m.lenientAccuracy >= 0.92, renderScorecard(m));
-    assert.ok(m.strictAccuracy >= 0.85, renderScorecard(m));
+    assert.ok(m.strictAccuracy >= 0.84, renderScorecard(m));
   });
 
   test(`${name} judge: contradictions are called contradictions, and nothing else is`, async () => {
