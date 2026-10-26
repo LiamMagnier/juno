@@ -198,21 +198,24 @@ test("a run of title-case words names a subject only on evidence beyond its capi
     "Northwind earned $4.3 billion in 2024, while Contoso Group earned $3.0 billion.",
     // A possessive owner.
     "Northwind earned $4.3 billion in 2024. Contoso's revenue was $3.0 billion.",
+    // One word capitalised mid-sentence, the subject of what earned the figure, no noun the texts use otherwise.
+    "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
   ]) {
     const result = auditEvidence({ claim, passage, corroborating });
     assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
     assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
   }
-  // Title case alone, opening a sentence or not, named again or not: no stand-in, the figure is merely absent here.
+  // A run of title-case words with no suffix, opening a sentence or not, named again or not: no stand-in. The
+  // passage keeps its own figure, and since another source states the claim's, that is a doubt shown as one.
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso Robotics earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso Robotics earned $3.0 billion.",
-    "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso Robotics earned $3.0 billion. Contoso Robotics is based in Ohio.",
   ]) {
     const unnamed = auditEvidence({ claim, passage, corroborating });
     assert.ok(!unnamed.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
-    assert.ok(unnamed.reasons.some((r) => r.code === "figure_absent"), passage);
+    assert.ok(unnamed.reasons.some((r) => r.code === "figure_differs"), passage);
+    assert.ok(unnamed.ceiling < SUPPORTED_MIN, passage);
   }
 });
 
@@ -384,8 +387,10 @@ test("the verifier's rival cases end to end: the judge is asked and the report i
 
 test("an elided clause reads as the subject or the verb it leaves out", () => {
   const cases: Array<[claim: string, passage: string, contradicted: boolean]> = [
-    // A subject left out ("but not suspended") and a verb left out ("but the dividend did not").
-    ["The dividend was suspended in 2024.", "Profits fell in 2024. The dividend was cut, but not suspended.", true],
+    // A subject left out ("but not suspended") and a verb left out ("but the dividend did not"). The denial
+    // carries no year where the claim names one: it may be about another, and the judge reads it.
+    ["The dividend was suspended in 2024.", "Profits fell in 2024. The dividend was cut, but not suspended.", false],
+    ["The dividend was suspended.", "Profits fell in 2024. The dividend was cut, but not suspended.", true],
     ["The dividend was not suspended in 2024.", "Profits fell in 2024. The dividend was cut, but not suspended.", false],
     ["Revenue rose, profits rose, and the dividend rose.", "Revenue rose, profits rose, but the dividend did not.", true],
     ["Sales rose in 2024, and profits rose too.", "Sales rose in 2024, but profits did not.", true],

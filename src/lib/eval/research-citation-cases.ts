@@ -22,10 +22,14 @@
  * false support: relapse-trial's "The trial showed the drug is safe in the
  * long term", labelled contradicted, is audited supported because the judge
  * accepts the trial's efficacy paragraph; the "not designed to assess
- * long-term safety" paragraph is recorded as a contradiction, so the claim is
- * shown CONTESTED, but its label is wrong. The other two strict misses
- * (dates-and-lists) are lenient: a wrong date read as unsupported rather than
- * contradicted.
+ * long-term safety" paragraph is a denial the text cannot line up with the
+ * claim (`negation_unresolved`), recorded beside the support, so the claim is
+ * shown CONTESTED, but its label is wrong. The deterministic audit settles a
+ * contradiction only when the text proves it (claim-polarity.ts), so the
+ * other strict misses are the stub judge's to make: relapse-trial's "approved
+ * … in 2026" against a page whose denial names no year reads as unsupported,
+ * and the two dates-and-lists dates are lenient (a wrong date read as
+ * unsupported rather than contradicted).
  * Where a careful reader could defensibly give either of two labels (a wrong
  * date is "contradicted" to some readers and "unsupported" to others) the
  * primary label is the stricter reading and `accept` names the other, so the

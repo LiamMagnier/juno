@@ -245,7 +245,7 @@ test("a segment or a previous year in an UNCITED source is not a rival either", 
   }
 });
 
-test("a figure for a narrower subject is not a contradiction; the same subject with a scope word is", () => {
+test("a figure for a narrower subject is not a contradiction; the same owner's figure is; another wording of the owner is left to the judge", () => {
   const segment = auditEvidence({
     claim: "Northwind's revenue was $4.3 billion in 2024.",
     passage: "Northwind's logistics revenue was $1.8 billion in 2024.",
@@ -257,12 +257,21 @@ test("a figure for a narrower subject is not a contradiction; the same subject w
     passage: "Northwind's revenue was $4.3 billion in 2024.",
   });
   assert.equal(narrowerClaim.contradicted, false);
+  // The claim's own owner, measure and year: settled by the text.
+  const same = auditEvidence({ claim: "Northwind's revenue was $4.3 billion in 2024.", passage: "Northwind's revenue was $3.9 billion in 2024." });
+  assert.equal(same.contradicted, true);
+  assert.ok(same.reasons.some((r) => r.code === "figure_mismatch"));
+  // No owner, or another word for it: it may be Northwind's revenue, and only a reader can say. A disagreement
+  // the judge reads (and a supported claim shows as contested), never a contradiction with the judge skipped.
   for (const passage of [
     "Total revenue was $3.9 billion in 2024.",
     "The company's revenue was $3.9 billion in 2024.",
     "Revenue for the year was $3.9 billion in 2024.",
   ]) {
-    assert.equal(auditEvidence({ claim: "Northwind's revenue was $4.3 billion in 2024.", passage }).contradicted, true, passage);
+    const result = auditEvidence({ claim: "Northwind's revenue was $4.3 billion in 2024.", passage });
+    assert.equal(result.contradicted, false, passage);
+    assert.ok(result.reasons.some((r) => r.code === "figure_differs"), `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.ok(result.ceiling < SUPPORTED_MIN, passage);
   }
 });
 
@@ -277,7 +286,8 @@ test("an uncited source giving a different figure for the same thing and date is
   assert.equal(claim.status, "supported", "an uncited source never decides the verdict");
   assert.equal(claim.rivals.length, 1);
   assert.equal(claim.rivals[0].sourceIndex, 2);
-  assert.ok(claim.rivals[0].reasons.every((r) => r.code === "figure_mismatch"));
+  // "On a stricter basis" may be another measure: a rival the text cannot settle (`figure_differs`) is still surfaced.
+  assert.ok(claim.rivals[0].reasons.every((r) => r.code === "figure_mismatch" || r.code === "figure_differs"));
   assert.equal(claim.contested, true);
   assert.ok(claim.links.every((l) => claim.citations.includes(l.sourceIndex)), "a rival is never a link");
 });
@@ -464,15 +474,18 @@ test("a page's figure for the claim's year is not the evidence for the claim's e
   assert.equal(previousYear.contradicted, false);
   assert.ok(previousYear.reasons.some((r) => r.code === "figure_absent"));
 
-  // With corroboration: [1] gives $3.9bn for 2024 and is never shown as
-  // support, whether or not [2] carries the claim on its own.
+  // With corroboration: [1] gives $3.9bn for 2024 ("the company's", not
+  // Northwind's: a disagreement the judge reads, never one the text settles)
+  // and is never shown as support, whether or not [2] carries the claim on its own.
   const report = "# R\n\nIn 2024, Northwind's revenue was $4.3 billion, up from $3.9 billion in 2023 [1][2].";
   const one = source(1, "In 2024, the company's revenue was $3.9 billion, its annual filing shows, after $3.6 billion in 2023.");
   for (const two of ["Northwind: revenue $4.3 billion.", "Northwind's revenue was $4.3 billion in 2024, up from $3.9 billion in 2023."]) {
     const [audited] = (await audit(report, [one, source(2, two)])).claims;
     const fromOne = audited.links.filter((l) => l.sourceIndex === 1);
-    assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), `${two}: ${JSON.stringify(audited.links)}`);
+    assert.ok(fromOne.length > 0 && fromOne.every((l) => l.status !== "supported"), `${two}: ${JSON.stringify(audited.links)}`);
+    assert.ok(fromOne.every((l) => l.reasons.some((r) => r.code === "figure_differs")), `${two}: ${JSON.stringify(audited.links)}`);
     assert.ok(!audited.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), two);
+    assert.notEqual(audited.status, "contradicted", two);
     if (audited.status === "supported") assert.equal(audited.contested, true, two);
   }
   // The honest year-over-year comparison across two sources still corroborates.
@@ -556,12 +569,12 @@ test("clause against clause still catches a clause the passage negates", () => {
 });
 
 test("a one-clause claim is denied by an elided negation in another clause, and only by one about it", () => {
-  // The "not" that answers "profits rose" sits in a clause with no verb; the
-  // clause sharing the most words is about sales.
-  for (const claim of ["Profits rose in 2024.", "Northwind's profits rose in 2024."]) {
-    const result = auditEvidence({ claim, passage: "Northwind's sales rose sharply in 2024, but its profits did not." });
-    assert.equal(result.contradicted, true, claim);
-  }
+  // The "not" that answers "profits rose" sits in a clause with no verb, and
+  // "its profits" are Northwind's: the elided clause denies the claim's own words.
+  const passage = "Northwind's sales rose sharply in 2024, but its profits did not.";
+  assert.equal(auditEvidence({ claim: "Northwind's profits rose in 2024.", passage }).contradicted, true);
+  // Profits with no owner are not "its profits" in the same words: the judge reads it.
+  assert.equal(auditEvidence({ claim: "Profits rose in 2024.", passage }).contradicted, false);
   for (const passage of [
     "Revenue rose in 2024, but costs did not.",
     "Revenue rose in 2024, but revenue did not rise in Europe.",
@@ -687,15 +700,22 @@ test("the flip of a claim restating a pronoun sentence is still caught", () => {
     ["The firm was profitable in 2024.", "The firm was profitable in 2023. It was not profitable in 2024."],
     ["The company pays a dividend.", "The company paid a dividend in 2019. It does not pay a dividend now."],
     ["The vaccine was approved for children.", "The vaccine was approved for adults in 2021. It was not approved for children."],
-    ["Northwind was profitable in 2024.", "Northwind was profitable in 2023. The company was not profitable in 2024, its filing shows."],
+    ["Northwind was profitable in 2024.", "Northwind was profitable in 2023. It was not profitable in 2024, its filing shows."],
     ["The firm was profitable in 2024.", "The firm was profitable in 2023, but it was not profitable in 2024."],
     // A negation with "do" puts the verb in its bare form.
     ["The regulator approved the merger.", "The regulator approved the acquisition in 2021. It did not approve the merger."],
-    ["Northwind raised prices in 2025.", "Northwind raised prices in 2024, but the company did not raise prices in 2025."],
+    ["Northwind raised prices in 2025.", "Northwind raised prices in 2024, but it did not raise prices in 2025."],
     ["The firm met its emissions target.", "The firm met its sales target in 2022, although it did not meet its emissions target."],
   ]) {
     const result = auditEvidence({ claim: claim!, passage: passage! });
     assert.ok(result.reasons.some((r) => r.code === "polarity_mismatch"), `${claim} <> ${passage}`);
+  }
+  // Another name ("the company") may be another entity: it is never the proof of a contradiction. The judge reads it.
+  for (const [claim, passage] of [
+    ["Northwind was profitable in 2024.", "Northwind was profitable in 2023. The company was not profitable in 2024, its filing shows."],
+    ["Northwind raised prices in 2025.", "Northwind raised prices in 2024, but the company did not raise prices in 2025."],
+  ]) {
+    assert.equal(auditEvidence({ claim: claim!, passage: passage! }).contradicted, false, `${claim} <> ${passage}`);
   }
   // The faithful versions of those last three stand.
   for (const [claim, passage] of [
@@ -715,10 +735,14 @@ test("when passage clauses tie for the claim and disagree with each other, the t
     const result = auditEvidence({ claim, passage });
     assert.equal(result.contradicted, false, `${claim}: ${result.reasons.map((r) => r.code).join(", ")}`);
   }
-  // A date breaks the tie: the clause about another year is not the claim's.
+  // A date rules the other clause out, but "the company" is still only possibly Northwind: no proof either way.
   const dated = "Northwind was profitable in 2023. The company was not profitable in 2024.";
   assert.equal(auditEvidence({ claim: "Northwind was not profitable in 2024.", passage: dated }).contradicted, false);
-  assert.equal(auditEvidence({ claim: "Northwind was profitable in 2024.", passage: dated }).contradicted, true);
+  assert.equal(auditEvidence({ claim: "Northwind was profitable in 2024.", passage: dated }).contradicted, false);
+  // With a pronoun the denial is Northwind's own, and the clause about 2023 cannot speak for 2024.
+  const pronoun = "Northwind was profitable in 2023. It was not profitable in 2024.";
+  assert.equal(auditEvidence({ claim: "Northwind was not profitable in 2024.", passage: pronoun }).contradicted, false);
+  assert.equal(auditEvidence({ claim: "Northwind was profitable in 2024.", passage: pronoun }).contradicted, true);
 });
 
 // ── Corroboration: a title-case word in front of the measured noun is not a subject ──
@@ -743,8 +767,11 @@ test("corroboration never hides a cited passage that gives a different figure: w
     for (const two of ["Northwind's revenue was $4.3 billion, the wire reported.", "Northwind reported $4.3 billion."]) {
       const [audited] = (await audit(report, [source(1, one), source(2, two)])).claims;
       const fromOne = audited.links.filter((l) => l.sourceIndex === 1);
-      assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), `${one} / ${two}: ${JSON.stringify(audited.links)}`);
+      // "revenue" with no owner may be Northwind's: the disagreement is shown and judged, never settled as a contradiction.
+      assert.ok(fromOne.length > 0 && fromOne.every((l) => l.status !== "supported"), `${one} / ${two}: ${JSON.stringify(audited.links)}`);
+      assert.ok(fromOne.every((l) => l.reasons.some((r) => r.code === "figure_differs")), `${one} / ${two}: ${JSON.stringify(audited.links)}`);
       assert.ok(!audited.links.some((l) => l.reasons.some((r) => r.code === "stated_by_other_citation")), `${one} / ${two}`);
+      assert.notEqual(audited.status, "contradicted", `${one} / ${two}`);
       if (audited.status === "supported") assert.equal(audited.contested, true, `${one} / ${two}`);
     }
   }
@@ -762,11 +789,14 @@ test("corroboration still accepts a figure the passage pins on a subject the cla
     assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
     assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
   }
-  // A capitalised word with nothing else saying it is a name may be a measure
-  // ("put Top Line at"): the figure stays this passage's, merely absent here.
+  // One word capitalised mid-sentence, the subject of what earned the figure, and no noun the claim or passage
+  // uses otherwise: a name the claim never refers to, which is evidence enough.
   const bare = auditEvidence({ claim, passage: "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.", corroborating });
-  assert.ok(!bare.reasons.some((r) => r.code === "stated_by_other_citation"));
-  assert.ok(bare.reasons.some((r) => r.code === "figure_absent"));
+  assert.ok(bare.reasons.some((r) => r.code === "stated_by_other_citation"), bare.reasons.map((r) => r.code).join(", "));
+  // Title case is not: a capitalised measure ("put Top Line at") leaves the figure this passage's, and a doubt.
+  const measure = auditEvidence({ claim, passage: "Northwind earned $4.3 billion in 2024, while Top Line reached $3.0 billion.", corroborating });
+  assert.ok(!measure.reasons.some((r) => r.code === "stated_by_other_citation"), measure.reasons.map((r) => r.code).join(", "));
+  assert.ok(measure.ceiling < SUPPORTED_MIN);
   // "Northwind Group" is Northwind: its figure is the claim's subject's.
   const group = auditEvidence({
     claim: "In 2024, Northwind's revenue was $4.3 billion.",
@@ -847,7 +877,8 @@ test("the same part of the year giving a different figure still disagrees; anoth
     ["Q4 2024 revenue was $1.2 billion.", "Revenue in the fourth quarter of 2024 was $1.4 billion.", true],
     ["Revenue in December 2024 was $0.4 billion.", "December 2024 revenue was $0.5 billion.", true],
     ["Full-year revenue was $4.3 billion in 2024.", "Revenue for the year was $3.9 billion in 2024.", true],
-    ["Northwind's revenue was $4.3 billion in 2024.", "Full-year revenue rose to $3.9 billion in 2024 on a strong fourth quarter.", true],
+    // The year's figure, but no owner where the claim names Northwind: a disagreement for the judge (figure_differs).
+    ["Northwind's revenue was $4.3 billion in 2024.", "Full-year revenue rose to $3.9 billion in 2024 on a strong fourth quarter.", false],
     ["Northwind's revenue was $4.3 billion in 2024.", "Northwind's revenue was $3.9 billion in 2024, the quarterly statistics show.", true],
     // A reading at a date is a moment, not a month's worth.
     ["Installed capacity reached 16.5 GW at the end of June 2026.", "Installed capacity stood at 15.1 GW at the end of June 2026.", true],
@@ -859,6 +890,11 @@ test("the same part of the year giving a different figure still disagrees; anoth
     const result = auditEvidence({ claim, passage });
     assert.equal(result.contradicted, contradicted, `${claim} <> ${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
   }
+  assert.ok(
+    auditEvidence({ claim: "Northwind's revenue was $4.3 billion in 2024.", passage: "Full-year revenue rose to $3.9 billion in 2024 on a strong fourth quarter." }).reasons.some(
+      (r) => r.code === "figure_differs"
+    )
+  );
 });
 
 test("an undated figure is not contested by a paragraph its own words place in another period", async () => {

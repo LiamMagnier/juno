@@ -73,8 +73,12 @@ for (const name of ["optimistic", "credulous"] as const) {
 
   test(`${name} judge: labels match the human judgement`, async () => {
     const m = await card(name);
-    assert.ok(m.lenientAccuracy >= 0.95, renderScorecard(m));
-    assert.ok(m.strictAccuracy >= 0.9, renderScorecard(m));
+    // The stub judges rubber-stamp, so these floors measure the deterministic audit alone. It now settles a
+    // contradiction only when the text proves it (claim-polarity.ts), so the contradictions a reader needs a
+    // qualifier or a meaning for — a denial with no year where the claim names one, "not designed to assess
+    // long-term safety" — are the judge's, and read here as the stub leaves them.
+    assert.ok(m.lenientAccuracy >= 0.92, renderScorecard(m));
+    assert.ok(m.strictAccuracy >= 0.85, renderScorecard(m));
   });
 
   test(`${name} judge: contradictions are called contradictions, and nothing else is`, async () => {
@@ -82,14 +86,17 @@ for (const name of ["optimistic", "credulous"] as const) {
     // Precision first: a false contradiction rewrites an honest sentence as
     // "Conflicting evidence:" — the accusation this audit must never make.
     assert.equal(m.contradictionPrecision, 1, renderScorecard(m));
-    // Recall is reported honestly rather than rounded up: a date the source
-    // states differently is still read as "not established" (unsupported),
-    // not as a contradiction. Every such miss is lenient — never "supported".
-    assert.ok(m.contradictionRecall >= 0.6, renderScorecard(m));
+    // Recall is reported honestly rather than rounded up, and it is lower than
+    // the heuristics that guessed: only the figure contradictions the text
+    // settles on its own are called here (16% for 6%, 90,000 for 9,000, $18
+    // for $15). A wrong date, an altered quotation and a denial carrying no
+    // year are read as "not established"; a denial the text cannot line up is
+    // shown as contested. None of them ever reads as clean support.
+    assert.ok(m.contradictionRecall >= 0.35, renderScorecard(m));
     for (const result of m.results) {
       for (const claim of result.claims) {
         if (claim.expected?.label !== "contradicted" || claim.actual.label === "contradicted") continue;
-        assert.ok(claim.lenient || claim.falseSupport, `${claim.claim}: ${claim.actual.label}`);
+        assert.ok(claim.actual.label !== "supported" || claim.actual.contested, `${claim.claim}: ${claim.actual.label}`);
       }
     }
   });
@@ -97,7 +104,9 @@ for (const name of ["optimistic", "credulous"] as const) {
   test(`${name} judge: every audit miss that reads "supported" still shows the reader the disagreement`, async () => {
     // Known gap, tolerated here and stated in research-citation-cases.ts:
     // relapse-trial's "safe in the long term" is a false support (shown as
-    // contested). One, and never without the contested flag.
+    // contested: the "not designed to assess long-term safety" paragraph is a
+    // denial the text cannot settle, recorded as needing review). One, and
+    // never without the contested flag.
     const m = await card(name);
     assert.ok(m.falseSupports.length <= 1, renderScorecard(m));
     for (const miss of m.falseSupports) {

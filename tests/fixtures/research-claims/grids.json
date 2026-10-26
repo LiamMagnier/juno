@@ -1,0 +1,467 @@
+{
+  "grids": [
+    {
+      "id": "pol",
+      "from": "probe-research-1/scripts/pol.ts",
+      "axes": [
+        [
+          {"S":"The airline","A":"It","sl":"the airline","al":"it","s0":"the airline"},
+          {"S":"Contoso","A":"The firm","sl":"Contoso","al":"the firm","s0":"contoso"},
+          {"S":"The new drug","A":"The treatment","sl":"the new drug","al":"the treatment","s0":"the new drug"},
+          {"S":"The city council","A":"The council","sl":"the city council","al":"the council","s0":"the city council"},
+          {"S":"Globex","A":"It","sl":"Globex","al":"it","s0":"globex"}
+        ],
+        [
+          {"T":"expanded into Brazil in 2023","X":"didn't expand into Brazil in 2023","O":"expanded into Mexico in 2021"},
+          {"T":"didn't expand into Brazil in 2023","X":"expanded into Brazil in 2023","O":"expanded into Mexico in 2021"},
+          {"T":"is listed on the Nasdaq exchange","X":"isn't listed on the Nasdaq exchange","O":"is listed on the London exchange"},
+          {"T":"isn't listed on the Nasdaq exchange","X":"is listed on the Nasdaq exchange","O":"is listed on the London exchange"},
+          {"T":"signed the climate pledge","X":"never signed the climate pledge","O":"signed the trade agreement"},
+          {"T":"never signed the climate pledge","X":"signed the climate pledge","O":"signed the trade agreement"},
+          {"T":"reached its hiring goal in 2024","X":"did not reach its hiring goal in 2024","O":"reached its revenue goal in 2024"},
+          {"T":"did not reach its hiring goal in 2024","X":"reached its hiring goal in 2024","O":"reached its revenue goal in 2024"},
+          {"T":"offers free shipping to members","X":"no longer offers free shipping to members","O":"offers discounts to students"},
+          {"T":"no longer offers free shipping to members","X":"offers free shipping to members","O":"offers discounts to students"},
+          {"T":"won the tender for the bridge","X":"did not win the tender for the bridge","O":"won the tender for the tunnel"},
+          {"T":"did not win the tender for the bridge","X":"won the tender for the bridge","O":"won the tender for the tunnel"},
+          {"T":"has a licence to operate in France","X":"does not have a licence to operate in France","O":"has a licence to operate in Spain"},
+          {"T":"does not have a licence to operate in France","X":"has a licence to operate in France","O":"has a licence to operate in Spain"}
+        ]
+      ],
+      "forms": [
+        {"name":"form1","passage":"{S} {O}. {A} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form2","passage":"{S} {T}. {A} also {O}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form3","passage":"According to its annual filing, {sl} {O}. {A} {T}, the filing adds.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form4","passage":"{S} {O}; {al} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form5","passage":"In a statement on Monday, {s0} confirmed that {al} {T}. {S} {O}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form6","passage":"{S} {O}, while {al} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]}
+      ]
+    },
+    {
+      "id": "v1-battery",
+      "from": "probe-research-2/scripts/v1-battery.ts",
+      "axes": [
+        [
+          {"S":"The European Commission","O":"fined Google in 2024","t":"fined Apple in 2024","tNeg":"did not fine Apple in 2024","$cross":[[{"a":"it","A":"It"},{"a":"the regulator","A":"The regulator"},{"a":"the Brussels-based regulator","A":"The Brussels-based regulator"},{"a":"the EU executive","A":"The EU executive"}],[{"rs":"Japan","RS":"Japan"},{"rs":"South Korea's competition watchdog","RS":"South Korea's competition watchdog"},{"rs":"the UK regulator","RS":"The UK regulator"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"Northwind Traders","O":"opened a store in Leeds","t":"opened a store in York","tNeg":"did not open a store in York","$cross":[[{"a":"it","A":"It"},{"a":"the grocer","A":"The grocer"},{"a":"the family-owned grocer","A":"The family-owned grocer"},{"a":"the chain","A":"The chain"}],[{"rs":"Tesco","RS":"Tesco"},{"rs":"its biggest rival","RS":"Its biggest rival"},{"rs":"Aldi","RS":"Aldi"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"The Bank of England","O":"raised rates in May","t":"raised rates in August","tNeg":"did not raise rates in August","$cross":[[{"a":"it","A":"It"},{"a":"the bank","A":"The bank"},{"a":"the UK central bank","A":"The UK central bank"},{"a":"Threadneedle Street","A":"Threadneedle Street"}],[{"rs":"the Fed","RS":"The Fed"},{"rs":"the European Central Bank","RS":"The European Central Bank"},{"rs":"Norway's central bank","RS":"Norway's central bank"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"Contoso Air","O":"added flights to Lisbon","t":"added flights to Porto","tNeg":"did not add flights to Porto","$cross":[[{"a":"it","A":"It"},{"a":"the airline","A":"The airline"},{"a":"the low-cost carrier","A":"The low-cost carrier"},{"a":"the Dublin-based carrier","A":"The Dublin-based carrier"}],[{"rs":"Ryanair","RS":"Ryanair"},{"rs":"its main competitor","RS":"Its main competitor"},{"rs":"easyJet","RS":"EasyJet"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"Litware","O":"acquired a startup in Berlin","t":"acquired Proseware","tNeg":"did not acquire Proseware","$cross":[[{"a":"it","A":"It"},{"a":"the company","A":"The company"},{"a":"the Seattle software maker","A":"The Seattle software maker"},{"a":"the firm","A":"The firm"}],[{"rs":"Microsoft","RS":"Microsoft"},{"rs":"a private equity group","RS":"A private equity group"},{"rs":"Oracle","RS":"Oracle"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"Senator Ruiz","O":"voted for the amendment","t":"voted for the bill","tNeg":"did not vote for the bill","$cross":[[{"a":"she","A":"She"},{"a":"the senator","A":"The senator"},{"a":"the first-term Arizona senator","A":"The first-term Arizona senator"},{"a":"the Democrat","A":"The Democrat"}],[{"rs":"Senator Park","RS":"Senator Park"},{"rs":"every Republican","RS":"Every Republican"},{"rs":"her colleague from Ohio","RS":"Her colleague from Ohio"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"Globex","O":"won the tender for the tunnel","t":"won the tender for the bridge","tNeg":"did not win the tender for the bridge","$cross":[[{"a":"it","A":"It"},{"a":"the contractor","A":"The contractor"},{"a":"the Swiss engineering group","A":"The Swiss engineering group"},{"a":"the builder","A":"The builder"}],[{"rs":"Initech","RS":"Initech"},{"rs":"a Spanish consortium","RS":"A Spanish consortium"},{"rs":"Hooli","RS":"Hooli"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"The city council","O":"approved the housing plan","t":"approved the stadium plan","tNeg":"did not approve the stadium plan","$cross":[[{"a":"it","A":"It"},{"a":"the council","A":"The council"},{"a":"the twelve-member body","A":"The twelve-member body"},{"a":"councillors","A":"Councillors"}],[{"rs":"the county board","RS":"The county board"},{"rs":"the state legislature","RS":"The state legislature"},{"rs":"the mayor","RS":"The mayor"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"Fabrikam","O":"settled the patent case","t":"settled the antitrust case","tNeg":"did not settle the antitrust case","$cross":[[{"a":"it","A":"It"},{"a":"the company","A":"The company"},{"a":"the chipmaker","A":"The chipmaker"},{"a":"the Austin-based firm","A":"The Austin-based firm"}],[{"rs":"Intel","RS":"Intel"},{"rs":"two co-defendants","RS":"Two co-defendants"},{"rs":"its supplier","RS":"Its supplier"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]},
+          {"S":"The museum","O":"reopened its west wing","t":"reopened its east wing","tNeg":"did not reopen its east wing","$cross":[[{"a":"it","A":"It"},{"a":"the institution","A":"The institution"},{"a":"the 19th-century gallery","A":"The 19th-century gallery"},{"a":"the venue","A":"The venue"}],[{"rs":"the library","RS":"The library"},{"rs":"the city archive","RS":"The city archive"},{"rs":"the opera house","RS":"The opera house"}],[{"AT":"{tNeg}","RT":"{t}","CLAIM":"{S} {tNeg}."},{"AT":"{t}","RT":"{tNeg}","CLAIM":"{S} {t}."}]]}
+        ]
+      ],
+      "forms": [
+        {"name":"form0","passage":"{S} {O}. {A} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form1","passage":"{RS} {RT}. {S} {O}. {A} {AT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form2","passage":"{S} {O}. {A} {AT}, while {rs} {RT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form3","passage":"{S} {O}, but {a} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form4","passage":"{S} {O}. {A} {AT}, officials said. {RS} {RT}, according to filings.","cases":[{"kind":"honest","claim":"{CLAIM}"}]}
+      ]
+    },
+    {
+      "id": "v1-grid",
+      "from": "probe-research-2/scripts/v1-grid.ts",
+      "axes": [
+        [
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"Fabrikam"},
+          {"S":"Fabrikam","a":"it","A":"It","sl":"Fabrikam","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"Fabrikam"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The Danish shipping giant Maersk"},
+          {"S":"The Danish shipping giant Maersk","a":"it","A":"It","sl":"the Danish shipping giant Maersk","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The Danish shipping giant Maersk"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The committee"},
+          {"S":"The International Olympic Committee","a":"the committee","A":"The committee","sl":"the International Olympic Committee","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The committee"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"Senator Elena Ruiz"},
+          {"S":"Senator Elena Ruiz","a":"she","A":"She","sl":"Senator Elena Ruiz","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"Senator Elena Ruiz"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The mayor of Springfield"},
+          {"S":"The mayor of Springfield","a":"he","A":"He","sl":"the mayor of Springfield","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The mayor of Springfield"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"have signed the data-sharing agreement","X":"have not signed the data-sharing agreement","O":"have signed the trade agreement","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"have not signed the data-sharing agreement","X":"have signed the data-sharing agreement","O":"have signed the trade agreement","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"support the proposed tax","X":"do not support the proposed tax","O":"support the proposed tariff","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"do not support the proposed tax","X":"support the proposed tax","O":"support the proposed tariff","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"were fined by the regulator in 2023","X":"were not fined by the regulator in 2023","O":"were fined by the regulator in 2021","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"were not fined by the regulator in 2023","X":"were fined by the regulator in 2023","O":"were fined by the regulator in 2021","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"cut their workforce in 2024","X":"never cut their workforce in 2024","O":"cut their marketing budget in 2024","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"never cut their workforce in 2024","X":"cut their workforce in 2024","O":"cut their marketing budget in 2024","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"Wingtip Toys and Litware"},
+          {"S":"Wingtip Toys and Litware","a":"they","A":"They","sl":"Wingtip Toys and Litware","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"Wingtip Toys and Litware"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The operator"},
+          {"S":"The national rail operator","a":"the operator","A":"The operator","sl":"the national rail operator","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The operator"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"opened an office in Lagos in 2024","X":"did not open an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"did not open an office in Lagos in 2024","X":"opened an office in Lagos in 2024","O":"opened an office in Nairobi in 2024","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"has signed the data-sharing agreement","X":"has not signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"has not signed the data-sharing agreement","X":"has signed the data-sharing agreement","O":"has signed the trade agreement","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"supports the proposed tax","X":"does not support the proposed tax","O":"supports the proposed tariff","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"does not support the proposed tax","X":"supports the proposed tax","O":"supports the proposed tariff","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"was fined by the regulator in 2023","X":"was not fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"was not fined by the regulator in 2023","X":"was fined by the regulator in 2023","O":"was fined by the regulator in 2021","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"cut its workforce in 2024","X":"never cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"never cut its workforce in 2024","X":"cut its workforce in 2024","O":"cut its marketing budget in 2024","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"will attend the summit in Geneva","X":"won't attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The bank"},
+          {"S":"The Brazilian central bank","a":"the bank","A":"The bank","sl":"the Brazilian central bank","T":"won't attend the summit in Geneva","X":"will attend the summit in Geneva","O":"will attend the summit in Paris","F5":"The bank"}
+        ]
+      ],
+      "forms": [
+        {"name":"form0","passage":"{S} {O}. {A} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form1","passage":"{S} {O}. Reporters asked about the plans on Tuesday. {A} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form2","passage":"{S} {O}, and {a} {T}, according to people familiar with the matter.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form3","passage":"Last week {sl} {O}. However, {a} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form4","passage":"{F5} {T}. {S} {O}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form5","passage":"In a filing, {sl} confirmed that {a} {T}; {a} {O}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"form6","passage":"{S} {O} — but {a} {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"honest","claim":"{S} {O}."},{"kind":"contradiction","claim":"{S} {X}."}]}
+      ]
+    },
+    {
+      "id": "battery2",
+      "from": "probe-research-2/scripts/battery2.ts",
+      "axes": [
+        [
+          {"S":"The European Investment Bank","A":"The lender","P":"It","p":"it","al":"the lender","sl":"the European Investment Bank"},
+          {"S":"Northwind Traders","A":"The retailer","P":"It","p":"it","al":"the retailer","sl":"Northwind Traders"},
+          {"S":"Contoso Air","A":"The airline","P":"It","p":"it","al":"the airline","sl":"Contoso Air"},
+          {"S":"The Harlow city council","A":"The council","P":"It","p":"it","al":"the council","sl":"the Harlow city council"},
+          {"S":"Dr. Maria Chen","A":"The researcher","P":"She","p":"she","al":"the researcher","sl":"Dr. Maria Chen"},
+          {"S":"The Ministry of Finance","A":"The ministry","P":"It","p":"it","al":"the ministry","sl":"the Ministry of Finance"},
+          {"S":"Fabrikam and Litware","A":"The two firms","P":"They","p":"they","al":"the two firms","sl":"Fabrikam and Litware"},
+          {"S":"Senator James Holt","A":"The senator","P":"He","p":"he","al":"the senator","sl":"Senator James Holt"}
+        ],
+        [
+          {"base":"open","past":"opened","obj":"an office"},
+          {"base":"raise","past":"raised","obj":"fees"},
+          {"base":"launch","past":"launched","obj":"a pilot scheme"},
+          {"base":"sell","past":"sold","obj":"its bonds"},
+          {"base":"approve","past":"approved","obj":"the merger"},
+          {"base":"hire","past":"hired","obj":"new staff"}
+        ],
+        [
+          {"y":"in Spain","n":"in Italy","Y":"In Spain","N":"In Italy"},
+          {"y":"in 2023","n":"in 2024","Y":"In 2023","N":"In 2024"},
+          {"y":"in March","n":"in June","Y":"In March","N":"In June"}
+        ]
+      ],
+      "forms": [
+        {"name":"S yes. P no.","passage":"{S} {past} {obj} {y}. {P} did not {base} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes. A no.","passage":"{S} {past} {obj} {y}. {A} did not {base} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S no. P yes.","passage":"{S} did not {base} {obj} {n}. {P} {past} {obj} {y}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S no. A yes.","passage":"{S} did not {base} {obj} {n}. {A} {past} {obj} {y}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes. X. P no.","passage":"{S} {past} {obj} {y}. Observers welcomed the move. {P} did not {base} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes. X. A no.","passage":"{S} {past} {obj} {y}. Observers welcomed the move. {A} did not {base} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes, but p no.","passage":"{S} {past} {obj} {y}, but {p} did not {base} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes; a, however, no.","passage":"{S} {past} {obj} {y}; {al}, however, did not {base} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"Y, S yes. N, p didn't.","passage":"{Y}, {sl} {past} {obj}. {N}, {p} didn't.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes. P never n.","passage":"{S} {past} {obj} {y}. {P} never {past} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} never {past} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]},
+        {"name":"S yes. A has not n.","passage":"{S} {past} {obj} {y}. {A} has not {past} {obj} {n}.","cases":[{"kind":"honest","claim":"{S} has not {past} {obj} {n}."},{"kind":"honest","claim":"{S} {past} {obj} {y}."},{"kind":"contradiction","claim":"{S} {past} {obj} {n}."},{"kind":"contradiction","claim":"{S} did not {base} {obj} {y}."}]}
+      ]
+    },
+    {
+      "id": "butnot-grid",
+      "from": "probe-research-2/scripts/butnot-grid.ts",
+      "axes": [
+        [
+          {"S":"The European Investment Bank"},
+          {"S":"Northwind Traders"},
+          {"S":"Contoso Air"},
+          {"S":"The city council"},
+          {"S":"Dr. Maria Chen"},
+          {"S":"The ministry"},
+          {"S":"Fabrikam"},
+          {"S":"The regulator"}
+        ],
+        [
+          {"base":"open","past":"opened","s3":"opens","obj":"an office"},
+          {"base":"raise","past":"raised","s3":"raises","obj":"fees"},
+          {"base":"launch","past":"launched","s3":"launches","obj":"a pilot scheme"},
+          {"base":"sell","past":"sold","s3":"sells","obj":"its bonds"},
+          {"base":"approve","past":"approved","s3":"approves","obj":"the merger"},
+          {"base":"hire","past":"hired","s3":"hires","obj":"new staff"}
+        ],
+        [
+          {"a":"in Spain","b":"in Italy"},
+          {"a":"in Ohio","b":"in Texas"},
+          {"a":"for adults","b":"for children"},
+          {"a":"in the north","b":"in the south"}
+        ]
+      ],
+      "forms": [
+        {"name":"past, comma","passage":"{S} {past} {obj} {a}, but not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."},{"kind":"contradiction","claim":"{S} {past} {obj} {b}."}]},
+        {"name":"past, no comma","passage":"{S} {past} {obj} {a} but not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."},{"kind":"contradiction","claim":"{S} {past} {obj} {b}."}]},
+        {"name":"present, comma","passage":"{S} {s3} {obj} {a}, but not {b}.","cases":[{"kind":"honest","claim":"{S} does not {base} {obj} {b}."},{"kind":"contradiction","claim":"{S} {s3} {obj} {b}."}]}
+      ]
+    },
+    {
+      "id": "butnot-grid-object",
+      "from": "probe-research-2/scripts/butnot-grid.ts",
+      "axes": [
+        [
+          {"S":"The European Investment Bank"},
+          {"S":"Northwind Traders"},
+          {"S":"Contoso Air"},
+          {"S":"The city council"},
+          {"S":"Dr. Maria Chen"},
+          {"S":"The ministry"},
+          {"S":"Fabrikam"},
+          {"S":"The regulator"}
+        ],
+        [
+          {"a":"the first offer","b":"the second offer"},
+          {"a":"cars","b":"trucks"},
+          {"a":"the east wing","b":"the west wing"}
+        ],
+        [
+          {"base":"accept","past":"accepted"},
+          {"base":"cover","past":"covered"},
+          {"base":"renovate","past":"renovated"}
+        ]
+      ],
+      "forms": [
+        {"name":"object contrast","passage":"{S} {past} {a}, but not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {b}."},{"kind":"contradiction","claim":"{S} {past} {b}."}]}
+      ]
+    },
+    {
+      "id": "families",
+      "from": "probe-research-2/scripts/families.ts",
+      "axes": [
+        [
+          {"S":"Northwind Traders","sl":"Northwind Traders"},
+          {"S":"The European Investment Bank","sl":"the European Investment Bank"},
+          {"S":"Contoso Air","sl":"Contoso Air"},
+          {"S":"The city council","sl":"the city council"},
+          {"S":"Fabrikam","sl":"Fabrikam"},
+          {"S":"The regulator","sl":"the regulator"}
+        ],
+        [
+          {"base":"open","past":"opened","obj":"an office"},
+          {"base":"raise","past":"raised","obj":"fees"},
+          {"base":"launch","past":"launched","obj":"a pilot scheme"},
+          {"base":"sell","past":"sold","obj":"its bonds"}
+        ],
+        [
+          {"a":"in Spain","b":"in Italy"},
+          {"a":"in Ohio","b":"in Texas"},
+          {"a":"for adults","b":"for children"}
+        ]
+      ],
+      "forms": [
+        {"name":"and not in b","passage":"{S} {past} {obj} {a} and not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"rather than b","passage":"{S} {past} {obj} {a} rather than {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"only a, not b","passage":"{S} {past} {obj} only {a}, not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"a — not b","passage":"{S} {past} {obj} {a} — not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"not b but a (neg)","passage":"{S} {past} {obj} not {b} but {a}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"not b but a (pos)","passage":"{S} {past} {obj} not {b} but {a}.","cases":[{"kind":"honest","claim":"{S} {past} {obj} {a}."}]},
+        {"name":"a, not b (pos)","passage":"{S} {past} {obj} {a}, not {b}.","cases":[{"kind":"honest","claim":"{S} {past} {obj} {a}."}]},
+        {"name":"a, not b (neg)","passage":"{S} {past} {obj} {a}, not {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"but not b (pos)","passage":"{S} {past} {obj} {a}, but not {b}.","cases":[{"kind":"honest","claim":"{S} {past} {obj} {a}."}]},
+        {"name":"instead of b (pos)","passage":"{S} {past} {obj} {a} instead of {b}.","cases":[{"kind":"honest","claim":"{S} {past} {obj} {a}."}]},
+        {"name":"unlike b (pos)","passage":"Unlike its rivals, {sl} {past} {obj} {a}.","cases":[{"kind":"honest","claim":"{S} {past} {obj} {a}."}]},
+        {"name":"did not b. did a (neg)","passage":"{S} did not {base} {obj} {b}. It {past} {obj} {a} instead.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"did not b, but did a (pos)","passage":"{S} did not {base} {obj} {b}, but it {past} {obj} {a}.","cases":[{"kind":"honest","claim":"{S} {past} {obj} {a}."}]},
+        {"name":"neither b nor c (neg)","passage":"{S} {past} {obj} {a}, but neither {b} nor in Greece.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]},
+        {"name":"yes a; no b; (neg)","passage":"{S} {past} {obj} {a}; it did not {base} {obj} {b}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {b}."}]}
+      ]
+    },
+    {
+      "id": "fronted-grid",
+      "from": "probe-research-2/scripts/fronted-grid.ts",
+      "axes": [
+        [
+          {"S":"The European Investment Bank","sl":"the European Investment Bank","a":"the lender","p":"it","P":"It"},
+          {"S":"Northwind Traders","sl":"Northwind Traders","a":"the retailer","p":"it","P":"It"},
+          {"S":"Contoso Air","sl":"Contoso Air","a":"the airline","p":"it","P":"It"},
+          {"S":"The Harlow city council","sl":"the Harlow city council","a":"the council","p":"it","P":"It"},
+          {"S":"Senator James Holt","sl":"Senator James Holt","a":"the senator","p":"he","P":"He"},
+          {"S":"Fabrikam and Litware","sl":"Fabrikam and Litware","a":"the two firms","p":"they","P":"They"}
+        ],
+        [
+          {"base":"open","past":"opened","obj":"an office"},
+          {"base":"raise","past":"raised","obj":"fees"},
+          {"base":"launch","past":"launched","obj":"a pilot scheme"},
+          {"base":"approve","past":"approved","obj":"the merger"}
+        ],
+        [
+          {"y":"in 2023","n":"in 2024","Y":"In 2023","N":"In 2024"},
+          {"y":"in March","n":"in June","Y":"In March","N":"In June"},
+          {"y":"in Spain","n":"in Italy","Y":"In Spain","N":"In Italy"}
+        ]
+      ],
+      "forms": [
+        {"name":"Fy, S yes. Fn, P no(full).","passage":"{Y}, {sl} {past} {obj}. {N}, {p} did not {base} {obj}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]},
+        {"name":"Fy, S yes. Fn, A no(full).","passage":"{Y}, {sl} {past} {obj}. {N}, {a} did not {base} {obj}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]},
+        {"name":"S yes y. Fn, P no(full).","passage":"{S} {past} {obj} {y}. {N}, {p} did not {base} {obj}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]},
+        {"name":"S yes y. Fn, A no(full).","passage":"{S} {past} {obj} {y}. {N}, {a} did not {base} {obj}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]},
+        {"name":"Fy S yes. Fn A no (no comma).","passage":"{Y} {sl} {past} {obj}. {N} {a} did not {base} {obj}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]},
+        {"name":"S yes y. P didn't n.","passage":"{S} {past} {obj} {y}. {P} didn't {n}.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]},
+        {"name":"S yes y. Fn, P didn't.","passage":"{S} {past} {obj} {y}. {N}, {p} didn't.","cases":[{"kind":"honest","claim":"{S} did not {base} {obj} {n}."}]}
+      ]
+    },
+    {
+      "id": "p-grid",
+      "from": "probe-research-eval/r3/p-grid.ts",
+      "axes": [
+        [
+          {"S":"The firm"},
+          {"S":"Northwind"},
+          {"S":"The drug"},
+          {"S":"The company"},
+          {"S":"The plant"},
+          {"S":"The service"}
+        ],
+        [
+          {"pos":"was profitable","neg":"was not profitable"},
+          {"pos":"paid a dividend","neg":"did not pay a dividend"},
+          {"pos":"was approved","neg":"was not approved"},
+          {"pos":"met its target","neg":"did not meet its target"},
+          {"pos":"raised prices","neg":"did not raise prices"},
+          {"pos":"grew","neg":"did not grow"}
+        ],
+        [
+          {"x1":"in 2023","x2":"in 2024"},
+          {"x1":"for adults","x2":"for children"},
+          {"x1":"in Asia","x2":"in Europe"}
+        ]
+      ],
+      "forms": [
+        {"name":"pos x1, but it neg x2","passage":"{S} {pos} {x1}, but it {neg} {x2}.","cases":[{"kind":"honest","claim":"{S} {neg} {x2}."},{"kind":"honest","claim":"{S} {pos} {x1}."},{"kind":"contradiction","claim":"{S} {pos} {x2}."},{"kind":"contradiction","claim":"{S} {neg} {x1}."}]},
+        {"name":"pos x1. It neg x2","passage":"{S} {pos} {x1}. It {neg} {x2}.","cases":[{"kind":"honest","claim":"{S} {neg} {x2}."},{"kind":"honest","claim":"{S} {pos} {x1}."},{"kind":"contradiction","claim":"{S} {pos} {x2}."},{"kind":"contradiction","claim":"{S} {neg} {x1}."}]},
+        {"name":"neg x1, but it pos x2","passage":"{S} {neg} {x1}, but it {pos} {x2}.","cases":[{"kind":"honest","claim":"{S} {pos} {x2}."},{"kind":"honest","claim":"{S} {neg} {x1}."},{"kind":"contradiction","claim":"{S} {neg} {x2}."},{"kind":"contradiction","claim":"{S} {pos} {x1}."}]},
+        {"name":"neg x1. It pos x2","passage":"{S} {neg} {x1}. It {pos} {x2}.","cases":[{"kind":"honest","claim":"{S} {pos} {x2}."},{"kind":"honest","claim":"{S} {neg} {x1}."},{"kind":"contradiction","claim":"{S} {neg} {x2}."},{"kind":"contradiction","claim":"{S} {pos} {x1}."}]}
+      ]
+    },
+    {
+      "id": "grid-len",
+      "from": "probe-research-eval/r4/scripts/grid-len.ts",
+      "axes": [
+        [
+          {"S":"The regulator"},
+          {"S":"Northwind"},
+          {"S":"The airline"},
+          {"S":"The national regulator"},
+          {"S":"Northwind Logistics"},
+          {"S":"The budget airline"},
+          {"S":"The European Central Bank"},
+          {"S":"Northwind Logistics Group"},
+          {"S":"The new budget airline"}
+        ],
+        [
+          {"T":"was profitable in 2024","X":"was not profitable in 2024","O":"was profitable in 2023"},
+          {"T":"was not profitable in 2024","X":"was profitable in 2024","O":"was profitable in 2023"},
+          {"T":"approved the merger","X":"did not approve the merger","O":"approved the acquisition in 2021"},
+          {"T":"did not approve the merger","X":"approved the merger","O":"approved the acquisition in 2021"},
+          {"T":"raised prices in 2025","X":"did not raise prices in 2025","O":"raised prices in 2024"},
+          {"T":"did not raise prices in 2025","X":"raised prices in 2025","O":"raised prices in 2024"},
+          {"T":"met its emissions target","X":"did not meet its emissions target","O":"met its sales target in 2022"},
+          {"T":"did not meet its emissions target","X":"met its emissions target","O":"met its sales target in 2022"}
+        ]
+      ],
+      "forms": [
+        {"name":"S o. It t.","passage":"{S} {O}. It {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]},
+        {"name":"S o, but it t.","passage":"{S} {O}, but it {T}.","cases":[{"kind":"honest","claim":"{S} {T}."},{"kind":"contradiction","claim":"{S} {X}."}]}
+      ]
+    },
+    {
+      "id": "pol-adv-alias",
+      "from": "r4/scripts/pol-adv.ts",
+      "axes": [
+        [
+          {"S":"The European Commission","O":"fined Google in 2024","t":"fined Apple in 2024","tNeg":"did not fine Apple in 2024","$cross":[[{"a":"the regulator","A":"The regulator"},{"a":"the Commission","A":"The Commission"},{"a":"the EU executive","A":"The EU executive"}],[{"rs":"Japan","RS":"Japan"},{"rs":"the UK regulator","RS":"The UK regulator"},{"rs":"the US Federal Trade Commission","RS":"The US Federal Trade Commission"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]},
+          {"S":"The Bank of England","O":"raised rates in May","t":"raised rates in August","tNeg":"did not raise rates in August","$cross":[[{"a":"the central bank","A":"The central bank"},{"a":"the Bank","A":"The Bank"},{"a":"Threadneedle Street","A":"Threadneedle Street"}],[{"rs":"the Bank of Canada","RS":"The Bank of Canada"},{"rs":"the European Central Bank","RS":"The European Central Bank"},{"rs":"the Fed","RS":"The Fed"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]},
+          {"S":"The new vaccine","O":"was approved for adults in 2021","t":"was approved for children","tNeg":"was not approved for children","$cross":[[{"a":"the shot","A":"The shot"},{"a":"the vaccine","A":"The vaccine"},{"a":"the jab","A":"The jab"}],[{"rs":"a rival vaccine","RS":"A rival vaccine"},{"rs":"the older vaccine","RS":"The older vaccine"},{"rs":"an experimental shot","RS":"An experimental shot"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]},
+          {"S":"Northwind Traders","O":"opened a store in Leeds","t":"opened a store in York","tNeg":"did not open a store in York","$cross":[[{"a":"the grocer","A":"The grocer"},{"a":"Northwind","A":"Northwind"},{"a":"the chain","A":"The chain"}],[{"rs":"Northwind Logistics","RS":"Northwind Logistics"},{"rs":"Tesco","RS":"Tesco"},{"rs":"a rival grocer","RS":"A rival grocer"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]},
+          {"S":"Senator Ruiz","O":"voted for the amendment","t":"voted for the bill","tNeg":"did not vote for the bill","$cross":[[{"a":"the senator","A":"The senator"},{"a":"Ruiz","A":"Ruiz"},{"a":"the Democrat","A":"The Democrat"}],[{"rs":"Senator Park","RS":"Senator Park"},{"rs":"another senator","RS":"Another senator"},{"rs":"every Republican","RS":"Every Republican"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]},
+          {"S":"The city council","O":"approved the housing plan","t":"approved the stadium plan","tNeg":"did not approve the stadium plan","$cross":[[{"a":"the council","A":"The council"},{"a":"councillors","A":"Councillors"},{"a":"the body","A":"The body"}],[{"rs":"the county council","RS":"The county council"},{"rs":"the mayor","RS":"The mayor"},{"rs":"the state","RS":"The state"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]},
+          {"S":"Acme Robotics","O":"sells its robots in Japan","t":"sells its robots in China","tNeg":"does not sell its robots in China","$cross":[[{"a":"the startup","A":"The startup"},{"a":"Acme","A":"Acme"},{"a":"the company","A":"The company"}],[{"rs":"Acme Logistics","RS":"Acme Logistics"},{"rs":"a rival","RS":"A rival"},{"rs":"Fabrikam","RS":"Fabrikam"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","CLAIM":"{S} {tNeg}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","CLAIM":"{S} {t}."}]]}
+        ]
+      ],
+      "forms": [
+        {"name":"form0","passage":"{S} {O}. {A} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form1","passage":"{RS} {RT}. {S} {O}. {A} {AT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form2","passage":"{S} {O}. {A} {AT}, while {rs} {RT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]},
+        {"name":"form3","passage":"{S} {O}, but {a} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{CLAIM}"}]}
+      ]
+    },
+    {
+      "id": "pol-adv-exact",
+      "from": "r4/scripts/pol-adv.ts",
+      "axes": [
+        [
+          {"S":"The European Commission","O":"fined Google in 2024","t":"fined Apple in 2024","tNeg":"did not fine Apple in 2024","$cross":[[{"rs":"Japan","RS":"Japan"},{"rs":"the UK regulator","RS":"The UK regulator"},{"rs":"the US Federal Trade Commission","RS":"The US Federal Trade Commission"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"it","A":"It"},{"a":"the European Commission","A":"The European Commission"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]},
+          {"S":"The Bank of England","O":"raised rates in May","t":"raised rates in August","tNeg":"did not raise rates in August","$cross":[[{"rs":"the Bank of Canada","RS":"The Bank of Canada"},{"rs":"the European Central Bank","RS":"The European Central Bank"},{"rs":"the Fed","RS":"The Fed"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"it","A":"It"},{"a":"the Bank of England","A":"The Bank of England"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]},
+          {"S":"The new vaccine","O":"was approved for adults in 2021","t":"was approved for children","tNeg":"was not approved for children","$cross":[[{"rs":"a rival vaccine","RS":"A rival vaccine"},{"rs":"the older vaccine","RS":"The older vaccine"},{"rs":"an experimental shot","RS":"An experimental shot"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"it","A":"It"},{"a":"the new vaccine","A":"The new vaccine"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]},
+          {"S":"Northwind Traders","O":"opened a store in Leeds","t":"opened a store in York","tNeg":"did not open a store in York","$cross":[[{"rs":"Northwind Logistics","RS":"Northwind Logistics"},{"rs":"Tesco","RS":"Tesco"},{"rs":"a rival grocer","RS":"A rival grocer"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"it","A":"It"},{"a":"Northwind Traders","A":"Northwind Traders"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]},
+          {"S":"Senator Ruiz","O":"voted for the amendment","t":"voted for the bill","tNeg":"did not vote for the bill","$cross":[[{"rs":"Senator Park","RS":"Senator Park"},{"rs":"another senator","RS":"Another senator"},{"rs":"every Republican","RS":"Every Republican"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"she","A":"She"},{"a":"Senator Ruiz","A":"Senator Ruiz"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]},
+          {"S":"The city council","O":"approved the housing plan","t":"approved the stadium plan","tNeg":"did not approve the stadium plan","$cross":[[{"rs":"the county council","RS":"The county council"},{"rs":"the mayor","RS":"The mayor"},{"rs":"the state","RS":"The state"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"it","A":"It"},{"a":"the city council","A":"The city council"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]},
+          {"S":"Acme Robotics","O":"sells its robots in Japan","t":"sells its robots in China","tNeg":"does not sell its robots in China","$cross":[[{"rs":"Acme Logistics","RS":"Acme Logistics"},{"rs":"a rival","RS":"A rival"},{"rs":"Fabrikam","RS":"Fabrikam"}],[{"as":"","rsx":""},{"as":" either","rsx":""},{"as":"","rsx":" too"},{"as":", officials said","rsx":""},{"as":" at all","rsx":" as well"}],[{"a":"it","A":"It"},{"a":"Acme Robotics","A":"Acme Robotics"}],[{"AT":"{tNeg}{as}","RT":"{t}{rsx}","HONEST":"{S} {tNeg}.","FLIP":"{S} {t}."},{"AT":"{t}{as}","RT":"{tNeg}{rsx}","HONEST":"{S} {t}.","FLIP":"{S} {tNeg}."}]]}
+        ]
+      ],
+      "forms": [
+        {"name":"form0","passage":"{S} {O}. {A} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{HONEST}"},{"kind":"contradiction","claim":"{FLIP}"}]},
+        {"name":"form1","passage":"{RS} {RT}. {S} {O}. {A} {AT}.","cases":[{"kind":"honest","claim":"{HONEST}"},{"kind":"contradiction","claim":"{FLIP}"}]},
+        {"name":"form2","passage":"{S} {O}. {A} {AT}, while {rs} {RT}.","cases":[{"kind":"honest","claim":"{HONEST}"},{"kind":"contradiction","claim":"{FLIP}"}]},
+        {"name":"form3","passage":"{S} {O}, but {a} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{HONEST}"},{"kind":"contradiction","claim":"{FLIP}"}]}
+      ]
+    }
+  ]
+}

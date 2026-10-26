@@ -173,6 +173,21 @@ export function figureFromAnotherPeriod(
   return differentPeriodForUndatedClaim(claim, supporting, passage);
 }
 
+/**
+ * Whether a link's findings say its passage gives a different figure for what
+ * may be the claim's own quantity and period (`figure_differs`): a
+ * disagreement the text cannot settle, which the judge reads and the reader
+ * is shown. Beside a supported claim it makes the claim contested — sources
+ * disagree — and it never makes a claim contradicted on its own.
+ */
+export function disputesFigure(claim: string, reasons: readonly AuditReason[], passage: string, supporting: string | null): boolean {
+  // A denial the text could not line up with the claim is shown the same way: the reader is told sources may disagree.
+  if (reasons.some((reason) => reason.code === "negation_unresolved")) return true;
+  if (!reasons.some((reason) => reason.code === "figure_differs")) return false;
+  if (!disagreesForSamePeriod(reasons)) return false;
+  return !figureFromAnotherPeriod(claim, reasons, passage, supporting);
+}
+
 /** The claims one audit checks: extraction, capped with the table share kept to its slots. */
 export function selectClaimsForAudit(report: string, maxClaims: number): ExtractedClaim[] {
   return claimsForAudit(extractClaims(report), Math.max(1, Math.floor(maxClaims)));
@@ -273,6 +288,8 @@ export async function auditClaims(opts: {
 
     const verdicts: LinkVerdict[] = [];
     const links: AuditedLink[] = [];
+    /** The passage each link was recorded against, by link. */
+    const linkPassages: string[] = [];
     /** The passage whose verdict supported the claim, when one did. */
     let supporting: string | null = null;
     let sawFullText = false;
@@ -308,6 +325,7 @@ export async function auditClaims(opts: {
         reasons: verdict.reasons,
         judged: !settledByText,
       });
+      linkPassages.push(candidate.passage.text);
       // One honest supporting passage is what a citation is for; checking the
       // rest with the judge would spend the budget re-proving a settled claim.
       if (verdict.status === "supported") {
@@ -336,8 +354,12 @@ export async function auditClaims(opts: {
      * the two paragraphs pin their figures to (`figureFromAnotherPeriod`).
      */
     for (const candidate of ranked.slice(next)) {
-      if (!candidate.audit.contradicted || !disagreesForSamePeriod(candidate.audit.reasons)) continue;
-      if (figureFromAnotherPeriod(claim.text, candidate.audit.reasons, candidate.passage.text, supporting)) continue;
+      // A figure the text cannot settle is recorded beside support only: it makes the claim contested, never contradicted.
+      const disputed = supporting !== null && disputesFigure(claim.text, candidate.audit.reasons, candidate.passage.text, supporting);
+      if (!disputed) {
+        if (!candidate.audit.contradicted || !disagreesForSamePeriod(candidate.audit.reasons)) continue;
+        if (figureFromAnotherPeriod(claim.text, candidate.audit.reasons, candidate.passage.text, supporting)) continue;
+      }
       verdicts.push({
         status: "contradicted",
         stance: "contradicts",
@@ -355,6 +377,7 @@ export async function auditClaims(opts: {
         reasons: candidate.audit.reasons,
         judged: false,
       });
+      linkPassages.push(candidate.passage.text);
     }
 
     const resolved = resolveClaimStatus(verdicts, { judgeCapReached });
@@ -372,7 +395,10 @@ export async function auditClaims(opts: {
 
     const unresolvedCitations = claim.citations.filter((n) => n < 1 || n > corpusSize);
     const rivals = index ? rivalEvidence(claim, claimType, index, asOf, supporting) : [];
-    const contested = status === "supported" && (links.some((link) => link.stance === "contradicts") || rivals.length > 0);
+    const contested =
+      status === "supported" &&
+      (links.some((link, i) => link.stance === "contradicts" || disputesFigure(claim.text, link.reasons, linkPassages[i]!, supporting)) ||
+        rivals.length > 0);
 
     // The freshness finding names the defect in the repair only when it is
     // what held the claim under the bar, i.e. the claim is partly supported
@@ -459,7 +485,7 @@ function rivalEvidence(
       publishedAt: entry.source.publishedAt,
       asOf,
     });
-    const mismatches = audit.reasons.filter((reason) => reason.code === "figure_mismatch");
+    const mismatches = audit.reasons.filter((reason) => reason.code === "figure_mismatch" || reason.code === "figure_differs");
     if (mismatches.length === 0 || !disagreesForSamePeriod(audit.reasons)) continue;
     if (figureFromAnotherPeriod(claim.text, mismatches, entry.passage.text, supporting)) continue;
     seenSources.add(entry.sourceIndex);

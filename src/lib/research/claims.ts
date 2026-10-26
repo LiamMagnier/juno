@@ -36,6 +36,7 @@ import {
 import {
   auditClaims,
   disagreesForSamePeriod,
+  disputesFigure,
   figureFromAnotherPeriod,
   readAuditReceipt,
   selectClaimsForAudit,
@@ -1212,27 +1213,14 @@ export async function loadCitationAuditForMessage(
           passage: passage.text,
           publishedAt: source.publishedAt ?? null,
         });
-        const codedReasons = audit.reasons.filter((reason) => reason.code === "figure_mismatch");
+        const codedReasons = audit.reasons.filter((reason) => reason.code === "figure_mismatch" || reason.code === "figure_differs");
         // Recomputed like a link's reasons: a rival this build would no
         // longer call one is not shown on the strength of an old receipt.
         if (codedReasons.length === 0 || !disagreesForSamePeriod(audit.reasons)) return [];
         if (figureFromAnotherPeriod(claim.text, codedReasons, passage.text, supporting)) return [];
         return [{ sourceIndex: indexOf.get(source.id) ?? 0, passage: passage.text, locator: passage.locator, codedReasons }];
       });
-    const contested =
-      status === "supported" && (claim.links.some((link) => link.stance === "contradicts") || rivals.length > 0);
-    if (contested) summary.contested = (summary.contested ?? 0) + 1;
-    const unresolved = receipt.claimCitations?.get(claim.id)?.unresolved ?? (receipt.claimCitations ? [] : null);
-    if (unresolved?.length) summary.unresolvedCitations = (summary.unresolvedCitations ?? 0) + 1;
-    return {
-      id: claim.id,
-      text: claim.text,
-      type: claim.type,
-      status,
-      supportStrength: claim.supportStrength,
-      label: supportLabel(status, claim.supportStrength),
-      answerSpan: claim.answerSpan,
-      links: claim.links.map((link) => {
+    const links: ClaimAuditLinkView[] = claim.links.map((link) => {
         const source = sourceById.get(link.passage.sourceId);
         /*
          * Reasons are recomputed rather than stored. ResearchClaimLink has no
@@ -1264,7 +1252,25 @@ export async function loadCitationAuditForMessage(
           reasons: audit.reasons.map((r) => r.detail),
           codedReasons: audit.reasons,
         };
-      }),
+      });
+    // As the audit decided it: a cited passage that contradicts the claim, one whose figure may be
+    // the claim's own but differs (`disputesFigure`), or an uncited rival.
+    const contested =
+      status === "supported" &&
+      (links.some((link) => link.stance === "contradicts" || disputesFigure(claim.text, link.codedReasons, link.passage, supporting)) ||
+        rivals.length > 0);
+    if (contested) summary.contested = (summary.contested ?? 0) + 1;
+    const unresolved = receipt.claimCitations?.get(claim.id)?.unresolved ?? (receipt.claimCitations ? [] : null);
+    if (unresolved?.length) summary.unresolvedCitations = (summary.unresolvedCitations ?? 0) + 1;
+    return {
+      id: claim.id,
+      text: claim.text,
+      type: claim.type,
+      status,
+      supportStrength: claim.supportStrength,
+      label: supportLabel(status, claim.supportStrength),
+      answerSpan: claim.answerSpan,
+      links,
       rivals,
       contested,
       unresolvedCitations: unresolved,
