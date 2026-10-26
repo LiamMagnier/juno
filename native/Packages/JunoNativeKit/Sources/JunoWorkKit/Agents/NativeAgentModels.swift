@@ -735,9 +735,14 @@ public struct NativeAgentPatch: Equatable, Sendable {
     public var pinned: Bool?
     /// Person-only, like the web's "Runs on": no agent tool sends it.
     public var executionTarget: NativeAgentExecutionTarget?
-    /// The Mac it should prefer (a WorkHost id). Set-only here: nil sends
-    /// nothing, so it never clears a preference made on the web.
+    /// The Mac it should prefer (a WorkHost id). Nil sends nothing, so it
+    /// never clears a preference made on the web by accident; clearing is
+    /// `clearsPreferredHost`.
     public var preferredHostID: String?
+    /// "Any of your Macs": sends `preferredHostId: null`, which clears a
+    /// stored Mac, as the web's Mac list does. Ignored when `preferredHostID`
+    /// names a Mac.
+    public var clearsPreferredHost: Bool
 
     public init(
         name: String? = nil,
@@ -751,7 +756,8 @@ public struct NativeAgentPatch: Equatable, Sendable {
         proactive: Bool? = nil,
         pinned: Bool? = nil,
         executionTarget: NativeAgentExecutionTarget? = nil,
-        preferredHostID: String? = nil
+        preferredHostID: String? = nil,
+        clearsPreferredHost: Bool = false
     ) {
         self.name = name
         self.role = role
@@ -765,13 +771,14 @@ public struct NativeAgentPatch: Equatable, Sendable {
         self.pinned = pinned
         self.executionTarget = executionTarget
         self.preferredHostID = preferredHostID
+        self.clearsPreferredHost = clearsPreferredHost
     }
 
     /// The server refuses an empty patch ("Nothing to change").
     public var isEmpty: Bool {
         name == nil && role == nil && avatar == nil && style == nil && instructions == nil
             && approvalMode == nil && connectorIDs == nil && status == nil && proactive == nil
-            && pinned == nil && executionTarget == nil && preferredHostID == nil
+            && pinned == nil && executionTarget == nil && preferredHostID == nil && !clearsPreferredHost
     }
 }
 

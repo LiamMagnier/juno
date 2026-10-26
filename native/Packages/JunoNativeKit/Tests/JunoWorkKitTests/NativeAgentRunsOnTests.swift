@@ -89,6 +89,50 @@ final class NativeAgentRunsOnTests: XCTestCase {
         XCTAssertNil(NativeAgentMacChoice.patch("a", target: .mac, preferredHostID: "a"), "already chosen")
     }
 
+    func testAnyOfYourMacsClearsAStoredMac() {
+        // It used to send nothing, so a Mac chosen once could not be cleared
+        // from the iPhone. Now null, as the web's chooseMac(null) sends.
+        XCTAssertEqual(
+            NativeAgentMacChoice.patch(nil, target: .mac, preferredHostID: "a"),
+            NativeAgentPatch(clearsPreferredHost: true)
+        )
+        XCTAssertNil(NativeAgentMacChoice.patch(nil, target: .mac, preferredHostID: nil), "already any Mac")
+        // A cloud agent moved to "any of your Macs": the target and the clear together.
+        XCTAssertEqual(
+            NativeAgentMacChoice.patch(nil, target: .cloud, preferredHostID: "a"),
+            NativeAgentPatch(executionTarget: .mac, clearsPreferredHost: true)
+        )
+    }
+
+    func testClearingSendsNullOnTheWireAndNothingElseDoes() {
+        XCTAssertEqual(NativeAgentsClient.patchBody(NativeAgentPatch(clearsPreferredHost: true)), ["preferredHostId": .null])
+        XCTAssertFalse(NativeAgentPatch(clearsPreferredHost: true).isEmpty, "a clear is a change the server accepts")
+        XCTAssertEqual(
+            NativeAgentsClient.patchBody(NativeAgentPatch(executionTarget: .mac, clearsPreferredHost: true)),
+            ["executionTarget": .string("mac"), "preferredHostId": .null]
+        )
+        // A named Mac wins over the flag; an unrelated patch leaves the Mac alone.
+        XCTAssertEqual(
+            NativeAgentsClient.patchBody(NativeAgentPatch(preferredHostID: "b", clearsPreferredHost: true)),
+            ["preferredHostId": .string("b")]
+        )
+        XCTAssertNil(NativeAgentsClient.patchBody(NativeAgentPatch(pinned: true))["preferredHostId"])
+        XCTAssertNil(NativeAgentsClient.patchBody(NativeAgentPatch(executionTarget: .mac))["preferredHostId"])
+    }
+
+    func testAnyOfYourMacsIsARowWhenThereIsAChoiceOrItIsInForce() {
+        XCTAssertTrue(NativeAgentMacChoice.offersAnyMac(chosen: nil, hostCount: 1), "in force")
+        XCTAssertTrue(NativeAgentMacChoice.offersAnyMac(chosen: "a", hostCount: 2), "a choice to make")
+        XCTAssertFalse(NativeAgentMacChoice.offersAnyMac(chosen: "a", hostCount: 1), "one Mac, and it is the one")
+    }
+
+    func testAMacNotPairedForWorkPicksFromTheSameListAsTheIPhone() {
+        // An unpaired Mac's "Your Mac" sends no host, so it meets the same
+        // "Pick which Mac" refusal; it gets the list instead of a dead end.
+        XCTAssertTrue(NativeAgentMacChoice.listsMacs(thisMacHostID: nil))
+        XCTAssertFalse(NativeAgentMacChoice.listsMacs(thisMacHostID: "host-this-mac"), "a paired Mac is This Mac")
+    }
+
     func testTheChosenMacIsThePreferredOneOnlyWhileItRunsThereAndIsListed() {
         let hosts = [host("a"), host("b")]
         XCTAssertEqual(NativeAgentMacChoice.chosen(target: .mac, preferredHostID: "b", among: hosts), "b")

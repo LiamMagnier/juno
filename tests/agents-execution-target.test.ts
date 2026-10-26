@@ -387,10 +387,11 @@ test("the iPhone can pick which Mac, so Your Mac is never a dead-end Pick which 
   // Where the choice can be made when nothing can be listed: not a dead end.
   assert.match(choice, /static let elsewhere = "Pick which Mac it uses in the Alevr Mac app or on the web\."/);
 
-  // Shown on a device that is not a Mac, while it runs on a Mac or once "Your
-  // Mac" is chosen there; picking sends the target and the Mac together.
-  assert.match(profile, /if thisMac == nil && \(agent\.executionTarget == \.mac \|\| choosingMac\) \{\s*macList\(agent\)\s*\}/);
-  assert.match(profile, /if thisMac == nil \{ choosingMac = target == \.mac \}/);
+  // Shown on a device that cannot name itself as the Mac (the iPhone, or a Mac
+  // not paired for Work), while it runs on a Mac or once "Your Mac" is chosen
+  // there; picking sends the target and the Mac together.
+  assert.match(profile, /if listsMacs && \(agent\.executionTarget == \.mac \|\| choosingMac\) \{\s*macList\(agent\)\s*\}/);
+  assert.match(profile, /if listsMacs \{ choosingMac = target == \.mac \}/);
   assert.match(choice, /return NativeAgentPatch\(executionTarget: \.mac, preferredHostID: hostID\)/);
   assert.match(profile, /act\("runs-on"\) \{ await model\.update\(id: agent\.id, patch\) \}/);
   assert.match(profile, /\.task\(id: agent\.id\) \{ await model\.loadWorkHosts\(\) \}/);
@@ -401,4 +402,35 @@ test("the iPhone can pick which Mac, so Your Mac is never a dead-end Pick which 
   assert.match(load.slice(0, 600), /let hosts = try await workClient\.hosts\(for: accountID\)/);
   assert.match(load, /hosts\.filter \{ \$0\.revokedAt == nil \}/);
   assert.match(model, /workHosts = \[\]\s*workHostsLoaded = false\s*workHostsLoadFailed = false/);
+});
+
+test("the native Mac list can clear a stored Mac, and a Mac not paired for Work gets the list too", () => {
+  const profile = read(PROFILE_SWIFT);
+  const choice = profile.slice(profile.indexOf("enum NativeAgentMacChoice {"));
+  // An unpaired Mac (thisMac.hostID == nil) sends no host for "Your Mac" and
+  // meets the same "Pick which Mac" refusal, so it lists the Macs as the
+  // iPhone does. Not `thisMac == nil` any more, anywhere.
+  assert.match(profile, /private var listsMacs: Bool \{ NativeAgentMacChoice\.listsMacs\(thisMacHostID: thisMac\?\.hostID\) \}/);
+  assert.match(choice, /static func listsMacs\(thisMacHostID: String\?\) -> Bool \{\s*thisMacHostID == nil\s*\}/);
+  assert.doesNotMatch(profile, /if thisMac == nil/);
+  // "Any of your Macs" is chosen like any Mac (no `if let id` swallowing it)...
+  assert.match(profile, /set: \{ id in chooseMac\(id, for: agent\) \}/);
+  assert.match(profile, /private func chooseMac\(_ hostID: String\?, for agent: NativeAgent\)/);
+  // ...and clears the stored Mac with null, measured against the stored id.
+  assert.match(
+    choice,
+    /guard let hostID else \{\s*if target == \.mac \{\s*return preferredHostID == nil \? nil : NativeAgentPatch\(clearsPreferredHost: true\)\s*\}\s*return NativeAgentPatch\(executionTarget: \.mac, clearsPreferredHost: true\)\s*\}/
+  );
+  const client = read("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeAgentsClient.swift");
+  assert.match(client, /\} else if patch\.clearsPreferredHost \{[^}]*body\["preferredHostId"\] = \.null/);
+  const models = read("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeAgentModels.swift");
+  assert.match(models, /preferredHostID == nil && !clearsPreferredHost/);
+  // The row shows when the web shows it: a choice to make, or in force.
+  assert.match(choice, /static func offersAnyMac\(chosen: String\?, hostCount: Int\) -> Bool \{\s*chosen == nil \|\| hostCount >= 2\s*\}/);
+  assert.match(profile, /if NativeAgentMacChoice\.offersAnyMac\(chosen: chosen, hostCount: hosts\.count\) \{/);
+  const panel = read("src/components/agents/agent-panel.tsx");
+  assert.match(panel, /if \(host === null && hostsState\.hosts\.length < 2 && !current\) return null;/);
+  assert.match(panel, /void onSave\(\{ preferredHostId: id \}\)/, "the web sends null for Any");
+  // The server accepts null as "any switched-on Mac".
+  assert.match(read("src/lib/agents/domain.ts"), /preferredHostId: z\.string\(\)\.trim\(\)\.min\(1\)\.max\(200\)\.nullable\(\)\.optional\(\),\n  \}\)\n  \.refine/);
 });

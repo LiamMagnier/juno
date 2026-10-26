@@ -26,8 +26,8 @@ public struct NativeAgentProfileView: View {
     @State private var busy: String?
     @State private var costQuestion: NativeAgentCostQuestion?
     @State private var customizing = false
-    /// The iPhone's Mac list is open: "Your Mac" was chosen here (see
-    /// `macList`). The Mac app has `thisMac` and never opens it.
+    /// The Mac list is open: "Your Mac" was chosen here (see `macList`). Only
+    /// on a device that cannot name itself as the Mac (`listsMacs`).
     @State private var choosingMac = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nativeAgentThisMac) private var thisMac
@@ -549,19 +549,26 @@ public struct NativeAgentProfileView: View {
                         .accessibilityIdentifier("juno.agents.profile.allow-work")
                 }
             }
-            if thisMac == nil && (agent.executionTarget == .mac || choosingMac) {
+            if listsMacs && (agent.executionTarget == .mac || choosingMac) {
                 macList(agent)
             }
         }
     }
 
-    /// Which Mac, on a device that is not one (the iPhone, with no
-    /// `thisMac`): the web's Mac list under "Your Mac". Shown while the agent
-    /// runs on a Mac, and from the moment "Your Mac" is chosen, so a move the
-    /// server refuses for want of a named Mac (an agent with routines, on an
-    /// account with several Macs: "Pick which Mac") is one pick away instead
+    /// Whether this device picks the Mac from a list: it cannot name itself as
+    /// the Mac. The iPhone (no `thisMac`), and a Mac not paired for Work yet
+    /// (`thisMac.hostID == nil`), whose "Your Mac" sends no host and so meets
+    /// the same "Pick which Mac" refusal the iPhone does.
+    private var listsMacs: Bool { NativeAgentMacChoice.listsMacs(thisMacHostID: thisMac?.hostID) }
+
+    /// Which Mac, on a device that cannot name itself as the Mac
+    /// (`listsMacs`): the web's Mac list under "Your Mac". Shown while the
+    /// agent runs on a Mac, and from the moment "Your Mac" is chosen, so a move
+    /// the server refuses for want of a named Mac (an agent with routines, on
+    /// an account with several Macs: "Pick which Mac") is one pick away instead
     /// of a dead end. Picking sends the target and the Mac together, as the
-    /// web's `chooseMac` does. With no list to offer, it says where the choice
+    /// web's `chooseMac` does; "Any of your Macs" sends `preferredHostId: null`
+    /// and clears a stored Mac. With no list to offer, it says where the choice
     /// can be made instead.
     @ViewBuilder
     private func macList(_ agent: NativeAgent) -> some View {
@@ -584,12 +591,10 @@ public struct NativeAgentProfileView: View {
                     "Which Mac",
                     selection: Binding<String?>(
                         get: { chosen },
-                        set: { id in
-                            if let id { chooseMac(id, for: agent) }
-                        }
+                        set: { id in chooseMac(id, for: agent) }
                     )
                 ) {
-                    if chosen == nil {
+                    if NativeAgentMacChoice.offersAnyMac(chosen: chosen, hostCount: hosts.count) {
                         Text(NativeAgentMacChoice.anyMac).tag(String?.none)
                     }
                     ForEach(hosts) { host in
@@ -620,9 +625,10 @@ public struct NativeAgentProfileView: View {
 
     private func chooseTarget(_ target: NativeAgentExecutionTarget, for agent: NativeAgent) {
         guard target != agent.executionTarget else { return }
-        // On the iPhone the Mac list opens with the choice, so a move refused
-        // for want of a named Mac is one pick away (`macList`).
-        if thisMac == nil { choosingMac = target == .mac }
+        // Where the Mac is picked from a list (the iPhone, or a Mac not paired
+        // yet) it opens with the choice, so a move refused for want of a named
+        // Mac is one pick away (`macList`).
+        if listsMacs { choosingMac = target == .mac }
         // On this Mac, prefer this Mac; elsewhere any Mac switched on for Work.
         // A nil host sends nothing, so a Mac chosen on the web stays chosen.
         let host = target == .mac ? thisMac?.hostID : nil
@@ -641,11 +647,11 @@ public struct NativeAgentProfileView: View {
         }
     }
 
-    /// Points the agent at one of the account's Macs from the iPhone's list:
-    /// that Mac alone when it already runs on a Mac, the target and the Mac
-    /// together otherwise (`NativeAgentMacChoice.patch`), as the web's
-    /// `chooseMac` sends them.
-    private func chooseMac(_ hostID: String, for agent: NativeAgent) {
+    /// Points the agent at one of the account's Macs from the list, or at any
+    /// of them (`hostID` nil): that choice alone when it already runs on a
+    /// Mac, the target and the choice together otherwise
+    /// (`NativeAgentMacChoice.patch`), as the web's `chooseMac` sends them.
+    private func chooseMac(_ hostID: String?, for agent: NativeAgent) {
         guard
             let patch = NativeAgentMacChoice.patch(
                 hostID,
@@ -998,8 +1004,9 @@ enum NativeAgentMacPlacement: Equatable {
     }
 }
 
-/// The iPhone's "Which Mac" list for an agent (the web's Mac list under "Your
-/// Mac" in `RunsOnSection`), as rules with no view in them.
+/// The "Which Mac" list for an agent on a device that cannot name itself as
+/// the Mac (the web's Mac list under "Your Mac" in `RunsOnSection`), as rules
+/// with no view in them.
 enum NativeAgentMacChoice {
     /// `RUNS_ON_MESSAGE` (agent-panel.tsx), word for word.
     static let anyMac = "Any of your Macs"
@@ -1035,14 +1042,36 @@ enum NativeAgentMacChoice {
         return preferredHostID
     }
 
+    /// Whether the list is shown here: on the iPhone (no Mac of its own) and
+    /// on a Mac not paired for Work (no host id), which cannot be "This Mac".
+    static func listsMacs(thisMacHostID: String?) -> Bool {
+        thisMacHostID == nil
+    }
+
+    /// Whether "Any of your Macs" is a row, as on the web: when there is a
+    /// choice to make (two Macs or more), or when it is what is in force (no
+    /// Mac chosen). With one Mac and that Mac chosen there is nothing to clear.
+    static func offersAnyMac(chosen: String?, hostCount: Int) -> Bool {
+        chosen == nil || hostCount >= 2
+    }
+
     /// What picking `hostID` sends, or nil when it is already the choice: the
     /// Mac alone for an agent already on a Mac, else the target and the Mac
     /// together, so a move refused for want of a named Mac goes through.
+    /// `hostID` nil is "Any of your Macs": `preferredHostId: null`, which
+    /// clears a stored Mac, as the web's `chooseMac(null)` sends it. Measured
+    /// against the stored preference, not the row shown, like `macChoiceSaves`.
     static func patch(
-        _ hostID: String,
+        _ hostID: String?,
         target: NativeAgentExecutionTarget,
         preferredHostID: String?
     ) -> NativeAgentPatch? {
+        guard let hostID else {
+            if target == .mac {
+                return preferredHostID == nil ? nil : NativeAgentPatch(clearsPreferredHost: true)
+            }
+            return NativeAgentPatch(executionTarget: .mac, clearsPreferredHost: true)
+        }
         if target == .mac {
             return hostID == preferredHostID ? nil : NativeAgentPatch(preferredHostID: hostID)
         }

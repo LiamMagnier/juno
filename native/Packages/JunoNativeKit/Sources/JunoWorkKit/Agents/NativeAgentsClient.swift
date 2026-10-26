@@ -83,7 +83,7 @@ public struct NativeAgentsClient: Sendable {
         let response = try await send(
             .patch,
             "/api/agents/\(id)",
-            body: .object(patchBody(patch)),
+            body: .object(Self.patchBody(patch)),
             for: accountID
         )
         return try decodeAgent(try require(response, named: "agent"))
@@ -369,7 +369,7 @@ public struct NativeAgentsClient: Sendable {
         var body: [String: JunoJSONValue] = [
             "name": .string(draft.name.trimmingCharacters(in: .whitespacesAndNewlines)),
             "role": .string(draft.role.trimmingCharacters(in: .whitespacesAndNewlines)),
-            "avatar": avatarBody(draft.avatar),
+            "avatar": Self.avatarBody(draft.avatar),
             "style": .string(draft.style.rawValue),
             "instructions": .string(draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines)),
             "approvalMode": .string(draft.approvalMode.rawValue),
@@ -387,7 +387,8 @@ public struct NativeAgentsClient: Sendable {
         return body
     }
 
-    private func patchBody(_ patch: NativeAgentPatch) -> [String: JunoJSONValue] {
+    /// The PATCH body: only what the patch names. Internal for the tests.
+    static func patchBody(_ patch: NativeAgentPatch) -> [String: JunoJSONValue] {
         var body: [String: JunoJSONValue] = [:]
         if let name = patch.name {
             body["name"] = .string(name.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -395,7 +396,7 @@ public struct NativeAgentsClient: Sendable {
         if let role = patch.role {
             body["role"] = .string(role.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        if let avatar = patch.avatar { body["avatar"] = avatarBody(avatar) }
+        if let avatar = patch.avatar { body["avatar"] = Self.avatarBody(avatar) }
         if let style = patch.style { body["style"] = .string(style.rawValue) }
         if let instructions = patch.instructions {
             body["instructions"] = .string(instructions.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -414,11 +415,14 @@ public struct NativeAgentsClient: Sendable {
         }
         if let preferredHostID = patch.preferredHostID {
             body["preferredHostId"] = .string(preferredHostID)
+        } else if patch.clearsPreferredHost {
+            // "Any of your Macs": null clears the stored Mac (`patchAgentSchema`).
+            body["preferredHostId"] = .null
         }
         return body
     }
 
-    private func avatarBody(_ avatar: JunoAgentAvatar) -> JunoJSONValue {
+    private static func avatarBody(_ avatar: JunoAgentAvatar) -> JunoJSONValue {
         .object([
             "shape": .string(avatar.shape.rawValue),
             "tone": .string(avatar.tone.rawValue),
