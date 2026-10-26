@@ -392,6 +392,7 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedColors.secondaryForeground": perSurfaceInk,
             "JunoGeneratedColors.destructiveForeground": "A glyph on a filled destructive chip; native status is ink, never a filled chip.",
             "JunoGeneratedColors.successForeground": "A glyph on a filled success chip; native status is ink, never a filled chip.",
+            "JunoGeneratedColors.iconMuted": "The web's resting glyph ink for its own icon family (globals.css); the apps tint SF Symbols with the system's hierarchical secondary.",
             "JunoGeneratedColors.success": "The success fill. Unread while `junoSuccess` is still the shipped text ramp (JunoStatus.swift).",
             "JunoGeneratedColors.primaryInk": "Superseded per accent by JunoGeneratedAccentPalette.ink, which every accent block sets.",
             "JunoGeneratedColors.ring": "Superseded per accent by JunoGeneratedAccentPalette.ring, which every accent block sets.",
