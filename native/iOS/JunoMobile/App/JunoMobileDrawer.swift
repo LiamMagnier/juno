@@ -20,8 +20,8 @@ import SwiftUI
 ///
 /// Top to bottom, as the brief lays it out: brand, search, New chat, the
 /// product's destinations, Projects (collapsible, the five most recent and a
-/// way to the rest), Pinned, one Recent list newest first, and a footer that says who
-/// is signed in and on what plan.
+/// way to the rest), one Recent list (the pinned chats first, then newest
+/// first), and a footer that says who is signed in and on what plan.
 struct JunoMobileSidebarDrawer: View {
   @Binding var selection: JunoMobileSection
   let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -102,11 +102,13 @@ struct JunoMobileSidebarDrawer: View {
     groups.first { $0.bucket == .pinned }?.conversations ?? []
   }
 
-  /// Every chat that is neither pinned nor archived, as one Recent list,
-  /// newest first (owner, Oct 11: "Recent" in place of Yesterday, Previous
-  /// 7 days and the rest of the date folds).
+  /// Every chat that is not archived, as one Recent list (owner, Oct 11:
+  /// "Recent" in place of Yesterday, Previous 7 days and the rest of the date
+  /// folds): the pinned chats first, each keeping its pin mark, then the rest
+  /// newest first (owner, 2026-10-26: "Pinned chats" is no longer a section
+  /// of its own, as on the web and the Mac).
   private var recentChats: [NativeConversation] {
-    groups
+    pinnedChats + groups
       .filter { $0.bucket != .pinned }
       .flatMap(\.conversations)
       .sorted { $0.lastMessageAt > $1.lastMessageAt }
@@ -319,8 +321,9 @@ struct JunoMobileSidebarDrawer: View {
   ) -> some View {
     JunoMobileConversationRow(
       title: conversation.title,
-      // The section header already says so, in both layouts.
-      pinned: false,
+      // A pinned chat leads Recent and carries its pin mark there: no
+      // heading says so any more, in either layout.
+      pinned: pinned,
       pending: conversation.isPending,
       selected: !incognito && selection == .chat
         && conversationModel?.selectedConversationID == conversation.id,
@@ -444,7 +447,7 @@ struct JunoMobileSidebarDrawer: View {
       .listRowSeparator(.hidden)
       .listRowBackground(Color.clear)
 
-      if pinnedChats.isEmpty && recentChats.isEmpty {
+      if recentChats.isEmpty {
         Text("No recent conversations")
           .junoFont(size: 15, relativeTo: .body)
           .foregroundStyle(Color.junoSecondaryInk)
@@ -455,20 +458,9 @@ struct JunoMobileSidebarDrawer: View {
           .listRowBackground(Color.clear)
       }
 
-      if !pinnedChats.isEmpty {
-        Section {
-          ForEach(pinnedChats) { conversationRow($0, pinned: true) }
-        } header: {
-          sectionLabel("sidebar.pinned")
-        }
-        .listRowInsets(JunoMobileDrawerMetrics.rowInsets)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-      }
-
       if !recentChats.isEmpty {
         Section {
-          ForEach(recentChats) { conversationRow($0, pinned: false) }
+          ForEach(recentChats) { conversationRow($0, pinned: $0.pinned) }
         } header: {
           sectionLabel("Recent")
         }
@@ -795,8 +787,8 @@ extension JunoMobileSidebarDrawer {
 
   /// The iPad column: the Mac's sidebar, row for row.
   ///
-  /// New chat and Search first, then the destinations, then pinned projects,
-  /// pinned chats and one Recent list. No brand header (the window chrome and
+  /// New chat and Search first, then the destinations, then pinned projects
+  /// and one Recent list, which the pinned chats lead. No brand header (the window chrome and
   /// the greeting already carry it) and no attention card: Code and Work say
   /// what is waiting on their own rows.
   var sidebarList: some View {
@@ -848,21 +840,10 @@ extension JunoMobileSidebarDrawer {
         .listRowBackground(Color.clear)
       }
 
-      if !pinnedChats.isEmpty {
-        Section {
-          ForEach(pinnedChats) { conversationRow($0, pinned: true) }
-        } header: {
-          sidebarSectionLabel("Pinned chats")
-        }
-        .listRowInsets(JunoMobileDrawerMetrics.sidebarRowInsets)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-      }
-
       let recent = recentChats
       if !recent.isEmpty {
         Section {
-          ForEach(recent) { conversationRow($0, pinned: false) }
+          ForEach(recent) { conversationRow($0, pinned: $0.pinned) }
         } header: {
           sidebarSectionLabel("Recent")
         }
@@ -1052,19 +1033,22 @@ struct JunoMobileConversationRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: JunoSpace.tight) {
-        if pinned {
-          JunoIconView(.pin, size: 12)
-            .foregroundStyle(Color.junoTertiaryInk)
-        }
         Text(title)
           .junoFont(size: JunoMobileDrawerMetrics.rowLabel(sidebar: sidebar), relativeTo: .body)
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
         Spacer(minLength: 0)
+        // One trailing mark, in the Mac's order: a send still pending, then
+        // the pin. The pin trails the title, as on the web and the Mac, in
+        // secondary ink because a pin mark has to clear 3:1.
         if pending {
           JunoIconView(.refresh, size: 12)
             .junoSecondaryInk()
+        } else if pinned {
+          JunoIconView(.pin, size: 12)
+            .junoSecondaryInk()
+            .accessibilityHidden(true)
         }
       }
       // The drawer's glyph-less edge (16pt with the list's inset); the iPad
@@ -1081,6 +1065,8 @@ struct JunoMobileConversationRow: View {
     }
     .buttonStyle(JunoSidebarPressStyle())
     .frame(minWidth: JunoLayout.touchTarget, minHeight: JunoLayout.touchTarget)
+    // The pin mark is silent; the row says it, as the Mac's does.
+    .accessibilityValue(pinned ? Text("Pinned") : Text(verbatim: ""))
   }
 }
 

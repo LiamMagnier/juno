@@ -351,7 +351,7 @@ function ScopeCardBody({
                   aria-label={phraseText([{ parts: [{ phrase: questionLabel }, { kind: "number", value: i + 1 }] }], locale)}
                   data-no-auto-translate
                   onChange={(e) => setDraft((d) => editQuestion(d, question.key, e.target.value))}
-                  className="min-h-9 flex-1 resize-none rounded-field border border-transparent bg-transparent px-2 py-1.5 text-body text-foreground [field-sizing:content] hover:border-input focus-visible:border-primary focus-visible:outline-none disabled:opacity-60"
+                  className="min-h-9 flex-1 resize-none rounded-field border border-transparent bg-transparent px-2 py-1.5 text-body text-foreground [field-sizing:content] hover:border-input focus-visible:border-foreground/60 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] focus-visible:outline-none disabled:opacity-60"
                 />
                 {canRemoveQuestion(draft) && (
                   <Pressable

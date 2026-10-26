@@ -3,9 +3,9 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useApp } from "@/components/app/app-provider";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { splitDisplayLink } from "@/components/settings/format";
 import { formatEur as formatPrice } from "@/lib/price-display";
 
 interface ReferralsResponse {
@@ -50,6 +50,7 @@ export function ReferralCard() {
 
   if (!data) return null;
   const reward = formatPrice(data.rewardEur, locale);
+  const { lead, tail } = splitDisplayLink(data.link);
 
   const copy = async () => {
     try {
@@ -67,23 +68,26 @@ export function ReferralCard() {
       title="Invite a friend"
       description={`When someone you invite starts a paid plan, you each get ${reward} of usage.`}
     >
+      {/* The link as words under the label, not a 256px mono field that cut
+          the code (the one part a person recognises) mid-glyph on a phone.
+          The scheme goes and nothing is cut: a link too long for the column
+          breaks after its path, so the code moves whole onto a second line
+          (a host breaks inside only if it alone is wider than the column).
+          Truncating the host left "app.alevr.example.co…" and a gap before
+          the code. Copy still copies the whole URL. */}
       <SettingRow
         label="Your link"
-        htmlFor="referral-link"
-        wide
+        description={
+          <span className="block min-w-0" translate="no">
+            <span className="[overflow-wrap:anywhere]">{lead}</span>
+            <wbr />
+            <span className="whitespace-nowrap text-foreground">{tail}</span>
+          </span>
+        }
         control={
-          <div className="flex w-full items-center gap-2 @[34rem]/pane:w-auto">
-            <Input
-              id="referral-link"
-              readOnly
-              value={data.link}
-              onFocus={(e) => e.currentTarget.select()}
-              className="min-w-0 flex-1 font-mono text-ui @[34rem]/pane:w-64 @[34rem]/pane:flex-none"
-            />
-            <Button variant="outline" size="sm" onClick={() => void copy()}>
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={() => void copy()} aria-label={copied ? "Copied" : "Copy your link"}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
         }
       />
       <SettingRow

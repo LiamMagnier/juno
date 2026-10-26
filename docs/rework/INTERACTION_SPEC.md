@@ -1009,6 +1009,10 @@ Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer t
 #### S10 · The bell (F1)
 - The record of past events lives behind a quiet bell in the sidebar header. When unseen records exist, the bell's glyph is its filled form; after the popover is opened it returns to outline. **No dot, no count.**
 
+#### S11 · Pinned chats (F1)
+- **Owner decision, 2026-10-26: pinned chats lead Recent; "Pinned chats" is not a section of its own.** Chat's list is Needs you, Orbit, Pinned projects, Recent. The pinned chats are the first rows under the Recent heading, newest first among themselves, each keeping its pin mark (the filled pin in the row's trailing slot, as before); every other chat follows, newest first. Pin and Unpin stay in the row menu: unpinning drops the row into its place by date, pinning lifts it to the head of the list. Recent's fold folds the pinned rows with the rest. The separate heading cost a row of height between Pinned projects and Recent and, on a laptop-height window (1280×800, 1280×900, 1440×900, 1536×864), kept Recent's first row off the first screen. Web, Mac and iPhone/iPad draw the same list (`pinnedFirst` in `sidebar-lists.ts`, `DesktopChatSidebarContent.recent`, `JunoMobileSidebarDrawer.recentChats`; `juno-shell-v1.json` lists Chat's sections). Code keeps its own "Pinned sessions" shape. This supersedes the separate "Pinned" fold in PRODUCT_REFOUNDATION §4.1 and "Pinned chats" in TWO_PRODUCTS.md; keep it unless the owner says otherwise.
+- Where S5 and §4.4 say "Pinned", read the pinned head of Recent.
+
 ---
 
 ### 2.7 Menus, popovers, tooltips, dialogs, sheets, toasts

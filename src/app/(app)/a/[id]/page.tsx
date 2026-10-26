@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { DesignWorkspace } from "@/components/design/design-workspace";
+import { PageRoot } from "@/components/app/page-root";
 import type { ArtifactType } from "@/lib/message-content";
 import { chatArtifactPath, parseVersionParam, resolveArtifactView } from "@/lib/artifact-links";
 import { ArtifactReadView } from "./artifact-read-view";
@@ -59,31 +60,35 @@ export default async function ArtifactPage({
     // A document this build cannot parse is not a 404: the editor says so
     // itself, with the migration's own reason.
     return (
-      <DesignWorkspace
-        artifactId={artifact.id}
-        title={artifact.title}
-        version={view.version}
-        content={body.content}
-        conversationId={artifact.conversationId}
-      />
+      <PageRoot>
+        <DesignWorkspace
+          artifactId={artifact.id}
+          title={artifact.title}
+          version={view.version}
+          content={body.content}
+          conversationId={artifact.conversationId}
+        />
+      </PageRoot>
     );
   }
 
   return (
-    <ArtifactReadView
-      id={artifact.id}
-      type={type}
-      title={artifact.title}
-      language={artifact.language}
-      version={view.version}
-      latest={view.latest}
-      versions={available}
-      // A design's older version is drawn from its poster, so its document —
-      // up to 200 000 characters of JSON — never rides into the page payload.
-      content={type === "DESIGN" ? "" : body.content}
-      // Null when the artifact has no chat (made outside one, or its chat was
-      // deleted): it is still its owner's, and there is nothing to open.
-      chatHref={artifact.conversationId ? chatArtifactPath(artifact.conversationId, artifact.identifier) : null}
-    />
+    <PageRoot>
+      <ArtifactReadView
+        id={artifact.id}
+        type={type}
+        title={artifact.title}
+        language={artifact.language}
+        version={view.version}
+        latest={view.latest}
+        versions={available}
+        // A design's older version is drawn from its poster, so its document —
+        // up to 200 000 characters of JSON — never rides into the page payload.
+        content={type === "DESIGN" ? "" : body.content}
+        // Null when the artifact has no chat (made outside one, or its chat was
+        // deleted): it is still its owner's, and there is nothing to open.
+        chatHref={artifact.conversationId ? chatArtifactPath(artifact.conversationId, artifact.identifier) : null}
+      />
+    </PageRoot>
   );
 }

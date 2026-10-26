@@ -207,7 +207,12 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
    It is an exception, not a precedent: nothing else gets a height tween, and
    a second one needs the same argument written down here.
 9. **Loops are for live state only.** Thinking, streaming and recording may
-   pulse. Nothing idle loops.
+   pulse. Nothing idle loops. *The one exception is an agent's face*
+   (docs/design/AGENTS.md §4.2, by the owner's direction): its rest life is
+   blinks and slow gaze drifts at 48 px and up and slow blinks only at 20
+   and 28 px, as Grok Bot's faces have. It is event driven (still between
+   events, never a continuous float), runs only while the face is on screen,
+   and stops entirely under reduced motion, where every state is a still.
 10. **Reduced motion is honoured everywhere.** `motion-safe:` /
     `motion-reduce:` variants in CSS and `useReducedMotion()` in framer. Under
     reduced motion, travel and scale collapse and fades keep their timing.

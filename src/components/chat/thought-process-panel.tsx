@@ -105,7 +105,7 @@ function Prose({ text, className }: { text: string; className?: string }) {
           // `text-body` and its own 1.6 leading. The 0.9375rem/1.72 this used to
           // hand-write was `text-body` spelled longhand with a made-up leading,
           // and it was the reason this surface shared a rhythm with nothing.
-          className="whitespace-pre-wrap break-words font-sans text-body text-foreground/80"
+          className="whitespace-pre-wrap break-words font-sans text-body text-foreground"
         >
           {p}
         </p>
@@ -119,9 +119,10 @@ function Prose({ text, className }: { text: string; className?: string }) {
  *
  * `toSteps` returns null for every provider that streamed unbroken prose —
  * Anthropic, Zhipu, Mistral, Google — and for every message persisted before
- * parts were carried. Those runs render one `Full reasoning trace` step and say
- * so in its detail line. A two-option switch with one honest option would be an
- * invitation to a summary this app would then have to invent.
+ * parts were carried. Those runs render one `Full reasoning trace` step, open,
+ * with the trace's opening as its detail line. A two-option switch with one
+ * honest option would be an invitation to a summary this app would then have
+ * to invent.
  *
  * The control is no longer a SegmentedControl floating beside a section
  * heading: it is a radio group inside the filter menu, because it is a view
@@ -166,6 +167,13 @@ function useReasoningView(): [ReasoningView, (next: ReasoningView) => void] {
 
 const COPY_REVERT_MS = 1400;
 
+/** Two lines of copy say the same thing: case, spacing and a trailing ellipsis
+ *  or full stop aside. */
+function sameWords(a: string, b: string): boolean {
+  const norm = (t: string) => t.toLowerCase().replace(/[\s.…]+$/u, "").replace(/\s+/g, " ").trim();
+  return norm(a) === norm(b);
+}
+
 /** How long a collapsing body stays mounted after its row closes — the
  *  grid-rows transition is `--dur-base` (220ms) and the node has to outlive it
  *  or the panel snaps shut instead of closing. */
@@ -207,8 +215,9 @@ const HEADER_LABEL = {
  * The hero's corner of the construction: nested orbits at the homepage's 1.5
  * ratio, flattened as Memory's constellation is, in fractions of the drawing's
  * box (the right two thirds of the hero). While the run works, one presence
- * arc draws itself onto the third orbit and ends on a point; at rest the
- * orbits stay and the arc is gone, which is the calm.
+ * arc draws itself onto the third orbit and ends on a point. At rest the whole
+ * drawing is gone: once the run is over it carries nothing, and the recap
+ * sentence needs that space.
  */
 const HERO_RINGS = [0, 1, 2, 3].map((k) => {
   const rx = 0.11 * 1.5 ** k;
@@ -234,7 +243,7 @@ function StepMarker({ step }: { step: Step }) {
     // drawn in the same dots the live marker uses, at rest.
     return <span className="tpp-lattice tpp-cell [--_ink:currentColor]" aria-hidden="true" />;
   }
-  if (step.kind === "tool" && step.icon) {
+  if ((step.kind === "tool" || step.kind === "remember") && step.icon) {
     return <ReceiptGlyph kind={step.icon} className="size-3" />;
   }
   const Glyph =
@@ -242,7 +251,7 @@ function StepMarker({ step }: { step: Step }) {
       ? ComposerIcons.web
       : step.kind === "tool"
         ? AppIcons.connections
-        : step.kind === "memory"
+        : step.kind === "memory" || step.kind === "remember"
           ? ComposerIcons.memory
           : step.kind === "notice"
             ? CodeIcons.error
@@ -558,6 +567,30 @@ export function ThoughtProcessPanel({
       .filter((s) => s.steps.length > 0);
   }, [visible]);
 
+  /* THE REASONING READS OPEN. A person who pressed "Open full trace" came to
+   * read what the model thought; landing on that trace folded shut is one
+   * more find-and-click between them and it. The first time a think step with
+   * a prose body appears (the unbroken trace, or the newest of the provider's
+   * parts) it opens, once. The ref is the guard: a reader who folds it away
+   * is never overridden by a later tick. Before paint, so it arrives open
+   * rather than unfolding under the reader's eye. */
+  const traceStepId = React.useMemo(() => {
+    let newest: string | null = null;
+    for (const s of allSteps) {
+      if (s.kind !== "think" || s.body?.type !== "prose") continue;
+      if (s.id === "reason-full") return s.id;
+      newest = s.id;
+    }
+    return newest;
+  }, [allSteps]);
+  const traceOpenedRef = React.useRef(false);
+  React.useLayoutEffect(() => {
+    if (traceOpenedRef.current || !traceStepId) return;
+    traceOpenedRef.current = true;
+    setMounted((m) => new Set([...m, traceStepId]));
+    setOpen((o) => new Set([...o, traceStepId]));
+  }, [traceStepId]);
+
   const toolsMissingDetail = allSteps.some((s) => s.kind === "tool" && !s.body);
 
   /* ── AUTO-FOLLOW ─────────────────────────────────────────────────────────
@@ -687,7 +720,17 @@ export function ThoughtProcessPanel({
       : HEADER_LABEL.done;
 
   const summary = React.useMemo(() => toRunSummary(run, finishNote), [run, finishNote]);
-  const recapSentence = streaming ? (live?.message ?? "Thinking") : summary;
+  /* While it works, the sentence under the state word earns its line only when
+   * it names something: a query, a page, a file, a call, or the reasoning's
+   * own headline. "Writing" under "Writing" above "Writing the answer" said
+   * one fact three times. With nothing to name, the line is not drawn. */
+  const runningLabel = run.steps.find((s) => s.running)?.label;
+  const liveSentence = live?.message ?? null;
+  const repeatsState =
+    !liveSentence ||
+    sameWords(liveSentence, statusWord) ||
+    (runningLabel !== undefined && sameWords(liveSentence, runningLabel));
+  const recapSentence = streaming ? (repeatsState ? null : liveSentence) : summary;
 
   const toolCalls = run.calls.filter((c) => !c.warn).length;
 
@@ -774,7 +817,14 @@ export function ThoughtProcessPanel({
       tabIndex={-1}
       aria-labelledby={`${id}-title`}
       data-state={streaming ? "live" : run.stopped ? "stopped" : "done"}
-      className={cn("tpp flex size-full flex-col focus:outline-none", sheet ? "bg-transparent" : "tpp-enter bg-card")}
+      // `--tpp-ground` is the surface the panel sits on: the dock's card, or
+      // the sheet's popover. The sticky phase headings and the step markers
+      // paint it so they read as the page, not as bands and discs of a
+      // second grey (in a dark sheet, card and popover differ).
+      className={cn(
+        "tpp flex size-full flex-col focus:outline-none",
+        sheet ? "bg-transparent [--tpp-ground:var(--popover)]" : "tpp-enter bg-card [--tpp-ground:var(--card)]",
+      )}
     >
       {/* ── HEADER — one row, 48px ───────────────────────────────────────── */}
       {/* `min-h-12`, not `h-12`: `pt-safe` pads INTO a fixed height, so on a
@@ -856,7 +906,14 @@ export function ThoughtProcessPanel({
               </TooltipTrigger>
               <TooltipContent side="bottom">Filter steps</TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="end" sideOffset={6} className={MENU_W}>
+            {/* The full available height, not the shared 24rem cap: this menu
+                runs to a dozen rows, and the cap sliced "Collapse all" under
+                its rounded edge with room to spare below. */}
+            <DropdownMenuContent
+              align="end"
+              sideOffset={6}
+              className={cn(MENU_W, "max-h-[var(--radix-dropdown-menu-content-available-height,32rem)]")}
+            >
               <DropdownMenuItem
                 onSelect={() => {
                   setFindOpen(true);
@@ -1032,14 +1089,20 @@ export function ThoughtProcessPanel({
               serif, the sentence under it, the figures that mean something,
               then the lattice, which carries the trajectory while the run
               works and rests as the hero's hairline once it has finished. */}
-          <div className="relative -mx-4 overflow-hidden px-4 pb-5 pt-5">
-            <DotRings
-              rings={HERO_RINGS}
-              arcs={streaming ? HERO_ARCS : undefined}
-              stagger={0.08}
-              draw={1.6}
-              className="tpp-orbits !left-auto !w-[60%]"
-            />
+          <div className="relative -mx-4 overflow-hidden px-4 pb-5 pt-5 @container/hero">
+            {/* The orbits are the LIVE mark, so they draw only while the run
+                works, and only where the hero is wide enough that they sit
+                clear of the sentence. At rest they said nothing and lay under
+                the recap; in a phone sheet or the 26rem dock they crossed it. */}
+            {streaming && (
+              <DotRings
+                rings={HERO_RINGS}
+                arcs={HERO_ARCS}
+                stagger={0.08}
+                draw={1.6}
+                className="tpp-orbits !left-auto hidden !w-[60%] @[36rem]/hero:block"
+              />
+            )}
             <div className="relative">
               <h2 ref={heroRef} id={`${id}-title`} className="tpp-display tpp-rise text-foreground" style={{ ["--i" as string]: 0 }}>
                 <span className="sr-only">Thought process: </span>
@@ -1049,17 +1112,22 @@ export function ThoughtProcessPanel({
                   {statusWord}
                 </span>
               </h2>
-              {/* `min-h` holds two lines so the box never changes height when
-                  the sentence does. Keyed on `streaming` so the settle is a
-                  crossfade rather than a rewrite. */}
-              <p
-                className="tpp-rise mt-2.5 min-h-[2.75rem] max-w-[34ch] text-pretty text-ui leading-[1.55] text-muted-foreground"
-                style={{ ["--i" as string]: 1 }}
-              >
-                <span key={streaming ? "live" : "done"} className="tpp-swap block">
-                  {recapSentence}
-                </span>
-              </p>
+              {/* `min-h` holds two lines so the box keeps its height while the
+                  sentence changes. With no sentence to say (a live phase whose
+                  only words are the state word above) there is no slot at
+                  all: an empty two-line hole read as something failing to
+                  load. Keyed on `streaming` so the settle is a crossfade
+                  rather than a rewrite. */}
+              {recapSentence && (
+                <p
+                  className="tpp-rise mt-2.5 min-h-[2.75rem] max-w-[34ch] text-pretty text-ui leading-[1.55] text-muted-foreground"
+                  style={{ ["--i" as string]: 1 }}
+                >
+                  <span key={streaming ? "live" : "done"} className="tpp-swap block">
+                    {recapSentence}
+                  </span>
+                </p>
+              )}
 
               {figures.length > 0 && (
                 <dl className="tpp-rise mt-4 flex flex-wrap gap-y-3" style={{ ["--i" as string]: 2 }}>
@@ -1140,7 +1208,7 @@ export function ThoughtProcessPanel({
                     speak in six. */}
                 <h3
                   id={`${id}-phase-${section.key}`}
-                  className="sticky top-0 z-10 -mx-4 flex items-baseline justify-between gap-2 bg-card px-4 pb-2 pt-5"
+                  className="sticky top-0 z-10 -mx-4 flex items-baseline justify-between gap-2 bg-[hsl(var(--tpp-ground))] px-4 pb-2 pt-5"
                 >
                   <span className="tpp-h3 text-foreground">{PHASE_LABEL[section.key]}</span>
                   <span className="tpp-annot">{plural(section.steps.length, "step")}</span>
@@ -1187,7 +1255,7 @@ export function ThoughtProcessPanel({
                 // press snapped instead of dipping.
                 className="pressable group/details -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-2 rounded-control px-2 py-2 text-left hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
               >
-                <span className="tpp-h3 !text-body-lg text-foreground/85 group-hover/details:text-foreground">Details</span>
+                <span className="tpp-h3 !text-body-lg text-foreground">Details</span>
                 <span className="flex items-center gap-2">
                   {/* What is inside, before it is opened: the model's name is
                       the one fact most people open Details for. */}
@@ -1216,7 +1284,7 @@ export function ThoughtProcessPanel({
                       {detailRows.map((f) => (
                         <React.Fragment key={f.label}>
                           <dt className="tpp-annot pt-px">{f.label}</dt>
-                          <dd className="min-w-0 break-words text-ui text-foreground/85">{f.value}</dd>
+                          <dd className="min-w-0 break-words text-ui text-foreground">{f.value}</dd>
                         </React.Fragment>
                       ))}
                     </dl>
@@ -1339,15 +1407,23 @@ function StepRow({
   const bodyId = `${id}-body-${step.id}`;
   const openable = !!step.body;
   const linkable = step.kind === "source" && !!step.source && isRenderableSourceUrl(step.source.url);
+  // An in-app page (a saved memory's row): same tab, no outbound mark.
+  const inApp = !openable && !linkable && !!step.href;
+  // Open, a reasoning step's body starts with the very words its detail line
+  // previews: the preview steps aside rather than print them twice.
+  const showDetail = !!step.detail && !(expanded && step.body?.type === "prose");
 
   const row = cn(
     "relative grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto_1.75rem] items-start gap-x-2.5",
     "min-h-8 rounded-control px-0 py-1.5 text-left coarse:min-h-11",
+    // One line in a 44px touch row sits on the row's middle, not pinned to
+    // its top over a band of dead fill.
+    !showDetail && "coarse:items-center",
     "hover:bg-accent motion-reduce:transition-none",
     // A pressable row takes its timing from `.pressable` (hover fill on
     // --dur-fast, dip on --dur-press). `transition-colors` sat beside it and,
     // being a utility, replaced that list — so every press snapped.
-    openable || linkable
+    openable || linkable || inApp
       ? "pressable motion-reduce:active:scale-100"
       : "transition-colors duration-fast ease-out-soft",
     expanded && "bg-secondary hover:bg-secondary",
@@ -1360,8 +1436,8 @@ function StepRow({
   const marker = (
     <span
       className={cn(
-        "col-start-1 row-start-1 flex size-5 items-center justify-center rounded-full bg-card",
-        step.running ? "text-presence" : step.failed ? "text-warning" : "text-muted-foreground/80",
+        "col-start-1 row-start-1 flex size-5 items-center justify-center rounded-full bg-[hsl(var(--tpp-ground))]",
+        step.running ? "text-presence" : step.failed ? "text-warning" : "text-muted-foreground",
         expanded && "bg-secondary",
       )}
     >
@@ -1376,8 +1452,8 @@ function StepRow({
   const label = (
     <span
       className={cn(
-        "col-start-2 row-start-1 flex min-w-0 items-baseline gap-1.5 truncate text-ui",
-        step.running ? "font-medium text-foreground" : step.failed ? "text-warning" : "text-foreground/85",
+        "col-start-2 row-start-1 flex min-w-0 items-baseline gap-1.5 text-ui",
+        step.running ? "font-medium text-foreground" : step.failed ? "text-warning" : "text-foreground",
       )}
     >
       {openable && (
@@ -1386,19 +1462,32 @@ function StepRow({
         <ChevronRight
           aria-hidden="true"
           className={cn(
-            "size-3 shrink-0 translate-y-px text-muted-foreground/50 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3 shrink-0 translate-y-px text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
             expanded && "rotate-90",
           )}
         />
       )}
-      <span className="min-w-0 truncate">
+      {/* Up to two lines, broken at words. A CSS ellipsis on one line cut
+          source titles mid-word on a phone ("…evidence fr…") or left a
+          space before it ("…four-day week …"). */}
+      <span className="line-clamp-2 min-w-0 break-words text-pretty">
         <Highlight text={step.label} query={query} />
       </span>
     </span>
   );
 
-  const detail = step.detail ? (
-    <span className="col-start-2 row-start-2 mt-0.5 min-w-0 truncate text-caption text-muted-foreground">
+  // The detail line wraps rather than ending mid-word on a narrow sheet. A
+  // saved fact IS the row's content, already capped by the producer, and a
+  // reasoning preview is already cut at a word (previewLine, 90 characters):
+  // three lines hold it whole at a 360 phone's 248px column, so the reader
+  // sees the preview's own ellipsis, after a whole word, and no other.
+  const detail = showDetail && step.detail ? (
+    <span
+      className={cn(
+        "col-start-2 row-start-2 mt-0.5 min-w-0 break-words text-pretty text-caption text-muted-foreground",
+        step.kind !== "remember" && "line-clamp-3",
+      )}
+    >
       <Highlight text={step.detail} query={query} />
     </span>
   ) : null;
@@ -1408,9 +1497,9 @@ function StepRow({
    * and a call can have measured 30s and still have failed. Wrapped in one flex
    * cell rather than two grid cells so the pair stays one right-aligned block. */
   const figure = (
-    <span className="col-start-3 row-start-1 flex shrink-0 items-baseline gap-2 pt-px">
+    <span className={cn("col-start-3 row-start-1 flex shrink-0 items-baseline gap-2 pt-px", !showDetail && "coarse:pt-0")}>
       {step.failed && step.kind === "tool" && (
-        <span className="font-mono text-caption text-warning/80">Failed</span>
+        <span className="font-mono text-caption text-warning">Failed</span>
       )}
       {step.ms !== null && (
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
@@ -1582,6 +1671,10 @@ function StepRow({
         >
           {inner}
         </a>
+      ) : inApp ? (
+        <a data-step-row href={step.href} className={row}>
+          {inner}
+        </a>
       ) : (
         // No payload behind it, so no control over it — and a URL that fails
         // the renderable guard never becomes an anchor. A button that opens an
@@ -1599,6 +1692,10 @@ function StepRow({
         <div
           className={cn(
             "pointer-events-none absolute right-0 top-0.5 flex w-7 justify-center opacity-0 transition-opacity duration-fast ease-out-soft group-hover/step:pointer-events-auto group-hover/step:opacity-100 group-focus-within/step:pointer-events-auto group-focus-within/step:opacity-100 motion-reduce:transition-none coarse:pointer-events-auto coarse:opacity-100",
+            // Its 36px touch target centred on the label's line: the 44px
+            // row's middle when the label is alone, the first line (16px
+            // down) when a detail line follows.
+            showDetail ? "coarse:-top-0.5" : "coarse:top-1",
             copied && "pointer-events-auto opacity-100",
           )}
         >
@@ -1729,7 +1826,7 @@ function MemoryBody({
     memory.sourceRef && !["manual", "edit", "forget"].includes(memory.sourceRef) ? `/chat/${memory.sourceRef}` : null;
   return (
     <div className="pt-1">
-      <p className="break-words text-ui text-foreground/85">{memory.content}</p>
+      <p className="break-words text-ui text-foreground">{memory.content}</p>
       {state.error ? (
         // The current dead-end error — a bare red caption with no retry — gets
         // a way out. An error a reader cannot act on is a status light.

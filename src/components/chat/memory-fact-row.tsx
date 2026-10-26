@@ -266,7 +266,7 @@ export function MemoryFactRow({
               }
             }}
             disabled={busy === "edit"}
-            className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-ui text-foreground outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 motion-reduce:transition-none"
+            className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-ui text-foreground outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft focus-visible:border-foreground/40 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] motion-reduce:transition-none"
           />
           <div className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground">
             <button

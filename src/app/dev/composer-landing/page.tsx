@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { ComposerLandingFixture } from "./fixture";
 
 /**
@@ -17,5 +18,9 @@ import { ComposerLandingFixture } from "./fixture";
  */
 export default function ComposerLandingDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <ComposerLandingFixture />;
+  return (
+    <PageRoot>
+      <ComposerLandingFixture />
+    </PageRoot>
+  );
 }

@@ -66,6 +66,9 @@ import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
 import { reducedMotionAt } from "@/lib/motion-preference";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { InlineTitleInput, useCodeSessionActions } from "@/components/code/v2/session-actions";
+// `.title-fade`: the Chat rows' truncation, which this list shares (it is also
+// drawn outside the sidebar, by the Code workspace, so it imports the rule).
+import "@/components/app/sidebar-column.css";
 
 interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
 
@@ -142,7 +145,9 @@ function WorkRow({
       <div data-flip={t.id} className="flex min-h-11 items-center rounded-control px-1">
         <InlineTitleInput
           initial={t.title}
-          className="h-8 w-full rounded-control border border-input bg-background px-2 text-nav outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // It opens focused: a pressed or autofocused field steps its edge
+          // up, and only the keyboard gets the 2px line (`kbd-focus:`).
+          className="h-8 w-full rounded-control border border-input bg-background px-2 text-nav outline-none focus-visible:border-foreground/60 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]"
           onCommit={(value) => {
             setRenaming(false);
             if (value.trim() && value.trim() !== t.title) actions.rename(t.id, value);
@@ -156,7 +161,7 @@ function WorkRow({
     <>
       <span className="flex min-w-0 items-center gap-2">
         <span
-          className={cn("min-w-0 flex-1 truncate text-nav", t.unread && "font-medium text-foreground")}
+          className={cn("title-fade min-w-0 flex-1 text-nav", t.unread && "font-medium text-foreground")}
           onDoubleClick={actions ? (e) => (e.preventDefault(), setRenaming(true)) : undefined}
         >
           {t.title}
@@ -179,11 +184,14 @@ function WorkRow({
         </span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
-        <span className="min-w-0 shrink truncate">{t.project}</span>
+        {/* `title-fade-hug`: this label is as wide as its text, so the
+            always-on fallback mask would fade the end of a name that fits
+            (sidebar-column.css). */}
+        <span className="title-fade title-fade-hug min-w-0 shrink">{t.project}</span>
         {where && (
           <>
             <Icon name={t.pr ? "pull-request" : "branch"} size={12} className="shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{where}</span>
+            <span className="title-fade min-w-0 flex-1">{where}</span>
           </>
         )}
       </span>
@@ -322,7 +330,8 @@ export function CodeWorkList({
               type="button"
               className="flex h-7 max-w-full select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground motion-reduce:transition-none coarse:h-11"
             >
-              <span className="shell-annot min-w-0 truncate">{project ?? "All projects"}</span>
+              {/* As wide as its text, like the row's project name: `title-fade-hug`. */}
+              <span className="shell-annot title-fade title-fade-hug min-w-0">{project ?? "All projects"}</span>
               <ChevronDown aria-hidden className="size-3 shrink-0" />
             </button>
           </DropdownMenuTrigger>

@@ -6,6 +6,7 @@ import { Pricing } from "@/components/landing/pricing";
 import "@/components/landing/overview.css";
 import { PricingGallery, type PricingView } from "./gallery";
 import "@/components/billing/plans.css";
+import { PageRoot } from "@/components/app/page-root";
 
 /**
  * Dev-only gallery for every surface that shows plans and prices, rendered
@@ -66,7 +67,11 @@ export default async function PricingDevPage({
           <Pricing locale={lang} />
         </div>
       ) : (
-        <PricingGallery view={view as PricingView} plan={plan} usedShare={used} billing={billing} />
+        // The fragment is erased, so the page's place holds `[nav, gallery]`:
+        // the gallery is an item of a list and takes PageRoot like a root does.
+        <PageRoot>
+          <PricingGallery view={view as PricingView} plan={plan} usedShare={used} billing={billing} />
+        </PageRoot>
       )}
     </>
   );

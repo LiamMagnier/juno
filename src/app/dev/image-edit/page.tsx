@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { ImageEditGallery } from "./gallery";
 
 /**
@@ -19,10 +20,12 @@ export default async function ImageEditDevPage({
   if (process.env.NODE_ENV === "production") notFound();
   const { theme, model, open } = await searchParams;
   return (
-    <ImageEditGallery
-      dark={theme === "dark"}
-      model={typeof model === "string" ? model : undefined}
-      startOpen={open === "1"}
-    />
+    <PageRoot>
+      <ImageEditGallery
+        dark={theme === "dark"}
+        model={typeof model === "string" ? model : undefined}
+        startOpen={open === "1"}
+      />
+    </PageRoot>
   );
 }

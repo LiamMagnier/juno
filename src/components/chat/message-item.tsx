@@ -543,7 +543,9 @@ function BubbleEditor({
 
   return (
     <div className="w-full duration-fast motion-safe:animate-fade-in">
-      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-primary focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] motion-reduce:transition-none">
+      {/* It opens focused, so focus is an edge, not a ring: the keyboard's
+          2px line only follows the keyboard (`kbd-focus-within:`). */}
+      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/30 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] motion-reduce:transition-none">
         <textarea
           ref={ref}
           value={value}
@@ -1083,8 +1085,10 @@ export const MessageItem = React.memo(function MessageItem({
           </div>
         )}
         {!editing && !message.pending && !isVoice && (
+          // The pager is LAST, flush with the bubble's edge: at rest the
+          // hidden Copy and Edit keep their width, and with the pager first
+          // that width pushed it ~115px in from the bubble, off its line.
           <div className="mt-1 flex items-center">
-            {pager}
             <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
               <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
@@ -1108,9 +1112,10 @@ export const MessageItem = React.memo(function MessageItem({
                 </IconAction>
               )}
               {/* No branch glyph here: editing IS branching on a question
-                  (the pager above switches between wordings), and a new chat
+                  (the pager switches between wordings), and a new chat
                   is branched from an answer's More menu, one verb in one place. */}
             </div>
+            {pager}
           </div>
         )}
       </div>
@@ -1475,6 +1480,15 @@ export const MessageItem = React.memo(function MessageItem({
                     <CornerDownRight className="size-3.5" /> Continue
                   </Button>
                 )}
+                {/* A reply that failed partway keeps what arrived, and the
+                    notice offers the way forward it names ("Click Try again"):
+                    same shape and place as Continue, which wins when the
+                    finish reason allows writing past the kept text. */}
+                {message.error && onRegenerate && isLast && !busy && !canContinue && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => onRegenerate()} className="h-7 gap-1.5">
+                    <ActionIcons.refresh className="size-3.5" /> Try again
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -1506,7 +1520,10 @@ export const MessageItem = React.memo(function MessageItem({
             More. The model · tokens · cost receipt sits at the far end of the
             row and shows only while the turn is hovered or focused (TurnMeta);
             on phones it stays in More. */}
-        {!isVoice && !message.streaming && !message.error && (
+        {/* A kept partial answer (failed partway) still gets the row: Copy
+            copies what arrived, and the thumbs, Regenerate and More apply to
+            it as to any answer. A failure with no text has its own card. */}
+        {!isVoice && !message.streaming && (!message.error || hasPartialWithError) && (
           <div className="mt-1.5 flex items-center">
             {pager}
             <div

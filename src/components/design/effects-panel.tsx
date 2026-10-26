@@ -1395,7 +1395,7 @@ export function Section({ title, action, children }: { title: string; action?: R
  * rather than declaring a second copy of it.
  */
 export const fieldClass =
-  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-caption tabular-nums outline-none transition-colors duration-fast ease-out-soft focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-caption tabular-nums outline-none transition-colors duration-fast ease-out-soft focus-visible:border-foreground/40 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] disabled:opacity-50 coarse:min-h-9";
 
 /**
  * The row every inspector field is built on: the label INSIDE the control's
@@ -1415,7 +1415,7 @@ export const fieldClass =
  * being legible again rather than permanently lost.
  */
 const FIELD_ROW =
-  "flex h-6 w-full min-w-0 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast ease-out-soft focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20 coarse:h-9";
+  "flex h-6 w-full min-w-0 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast ease-out-soft focus-within:border-foreground/40 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:h-9";
 
 /** The control inside a `FIELD_ROW`. No border and no padding of its own: the
  *  row draws those, and a bordered input inside a bordered row reads as a field

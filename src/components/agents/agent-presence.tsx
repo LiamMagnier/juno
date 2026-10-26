@@ -5,17 +5,16 @@ import { AgentFace } from "@/components/agents/agent-face";
 import type { AgentAvatar } from "@/lib/agents/avatar";
 import type { AgentState } from "@/lib/agents/domain";
 import { cn } from "@/lib/utils";
-import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /** States in which an agent is busy on its own: the line carries a slow light. */
 export const IN_PROGRESS_STATES: ReadonlySet<AgentState> = new Set(["working", "thinking"]);
 
 /**
- * An agent's face on its halo: a soft wash of its own tone, so an agent is
- * recognised by colour before its name is read. The halo also carries state
- * the way the voice glow does in Chat: quiet at rest, breathing while it
- * works, a slow turning light while it thinks, fuller while it waits on you
- * (agent-face.css, "Presence").
+ * An agent present on the page: its face with rest life on (it blinks, it
+ * glances now and then, it notices you), at a fixed size so a row never
+ * shifts as the face moves. Where a second copy of the same agent sits on the
+ * page, draw that one as `<AgentFace still>` so only one copy moves. No halo or glow behind it: the face is flat and its state is in
+ * its own drawing (agent-face.tsx).
  */
 export function AgentPresence({
   avatar,
@@ -23,9 +22,8 @@ export function AgentPresence({
   size,
   name,
   className,
-  spread = 0.45,
-  haloScale,
   gaze = false,
+  direct = false,
   transitionName,
 }: {
   avatar: AgentAvatar;
@@ -34,35 +32,24 @@ export function AgentPresence({
   size: number;
   name?: string;
   className?: string;
-  /** How far the halo reaches beyond the face, as a fraction of its size. */
+  /** Kept for callers; there is no halo any more. */
   spread?: number;
-  /** Halo diameter as a multiple of the face size. */
+  /** Kept for callers; there is no halo any more. */
   haloScale?: number;
-  /** Eyes follow the pointer while it is near. Off under reduced motion. */
+  /** The face looks toward the pointer while it is near. Off under reduced motion and on touch. */
   gaze?: boolean;
+  /** A preview a person drives: each state change plays at once, without the smoothing (agent-face.tsx). */
+  direct?: boolean;
   /** A view-transition name, so the face carries across a navigation. */
   transitionName?: string;
 }) {
-  const ref = React.useRef<HTMLSpanElement | null>(null);
-  useGaze(ref, gaze && state !== "sleeping" && state !== "done");
-  const effectiveSpread = haloScale !== undefined ? (haloScale - 1) / 2 : spread;
-
   return (
     <span
-      ref={ref}
       data-state={state}
       className={cn("agent-presence", className)}
-      style={
-        {
-          width: size,
-          height: size,
-          "--presence-tone": `var(--agent-${avatar.tone})`,
-          "--halo-spread": effectiveSpread,
-          viewTransitionName: transitionName,
-        } as React.CSSProperties
-      }
+      style={{ width: size, height: size, viewTransitionName: transitionName } as React.CSSProperties}
     >
-      <AgentFace avatar={avatar} state={state} size={size} name={name} />
+      <AgentFace avatar={avatar} state={state} size={size} name={name} live look={gaze} direct={direct} />
     </span>
   );
 }
@@ -90,61 +77,4 @@ export function AgentStatusLine({
       <span key={text}>{text}</span>
     </span>
   );
-}
-
-/**
- * Sets `--gaze-x` / `--gaze-y` (each -1 to 1) on the element from the pointer's
- * position relative to it: full strength nearby, easing back to centre with
- * distance. One pointer listener per face, throttled to a frame.
- */
-function useGaze(ref: React.RefObject<HTMLSpanElement | null>, enabled: boolean) {
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!enabled || !el) return;
-    if (prefersReducedMotion()) return;
-    if (window.matchMedia?.("(pointer: coarse)").matches) return;
-    let frame = 0;
-    let visible = true;
-    const observer =
-      typeof IntersectionObserver !== "undefined"
-        ? new IntersectionObserver(([entry]) => {
-            visible = entry?.isIntersecting ?? true;
-          })
-        : null;
-    observer?.observe(el);
-    const reset = () => {
-      el.style.setProperty("--gaze-x", "0");
-      el.style.setProperty("--gaze-y", "0");
-      el.style.setProperty("--gx", "0");
-      el.style.setProperty("--gy", "0");
-    };
-    const onMove = (event: PointerEvent) => {
-      if (!visible || frame) return;
-      const { clientX, clientY } = event;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const rect = el.getBoundingClientRect();
-        const dx = clientX - (rect.left + rect.width / 2);
-        const dy = clientY - (rect.top + rect.height / 2);
-        const distance = Math.hypot(dx, dy);
-        const reach = Math.max(260, rect.width * 5);
-        const strength = Math.max(0, 1 - distance / reach);
-        const nx = distance ? (dx / distance) * strength : 0;
-        const ny = distance ? (dy / distance) * strength : 0;
-        el.style.setProperty("--gaze-x", nx.toFixed(3));
-        el.style.setProperty("--gaze-y", ny.toFixed(3));
-        el.style.setProperty("--gx", (nx * 2.4).toFixed(3));
-        el.style.setProperty("--gy", (ny * 1.8).toFixed(3));
-      });
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    document.addEventListener("pointerleave", reset);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerleave", reset);
-      observer?.disconnect();
-      if (frame) cancelAnimationFrame(frame);
-      reset();
-    };
-  }, [ref, enabled]);
 }

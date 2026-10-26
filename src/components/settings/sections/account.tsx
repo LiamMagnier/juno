@@ -19,46 +19,33 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
-import { useSaveStates } from "@/components/settings/save-status";
-import { useSettingsSave } from "@/components/settings/use-settings-save";
-import { openSettings } from "@/components/settings/settings-sections";
+import { SaveStatus, useSaveStates } from "@/components/settings/save-status";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { AccountSecuritySection } from "@/components/auth/account-security";
 import { UsernameRow } from "@/components/settings/sections/account-username";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { PLANS } from "@/lib/plans";
-import type { PushPreferences } from "@/lib/notify/types";
-import {
-  disableWebPush,
-  enableWebPush,
-  updateWebPushPrefs,
-  webPushStatus,
-  type WebPushState,
-} from "@/lib/notify/web-push-client";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { initialsFor } from "@/components/settings/format";
 
-function initials(name: string | null, email: string | null) {
-  return (name || email || "U").slice(0, 2);
-}
 
 /**
- * Who you are to Juno, how you sign in, how it may notify you, and how to
- * leave.
+ * Who you are to Juno, how you sign in, and how to leave.
  *
  * The profile says the email once. It used to appear three times on this one
  * section (the page header's lede, under the name, and beside the Change
- * button in Sign-in). The name is shown, not edited: it is edited in one
- * place, Personalization, where it is what Juno calls you. The usage
- * dashboard that sat here moved to Plan & usage, beside the budget it spends.
+ * button in Sign-in). "Change name" edits the name here, in a small dialog,
+ * through the same write Personalization's field makes; it used to move the
+ * reader to another section to do it. The usage dashboard that sat here moved
+ * to Plan & usage, beside the budget it spends, and the notification switches
+ * live once, in Notifications.
  */
 export function AccountSection() {
   const router = useRouter();
-  const { user, quota, settings, features } = useApp();
-  const save = useSettingsSave();
+  const { user, quota } = useApp();
   const saves = useSaveStates();
   const plan = PLANS[quota.plan];
   const email = user.email ?? "";
@@ -83,6 +70,35 @@ export function AccountSection() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // The name, edited in place. The same PATCH Personalization's field sends:
+  // a User column, server-rendered into the bootstrap, so a refresh is what
+  // makes the sidebar and the greeting agree.
+  const [nameOpen, setNameOpen] = React.useState(false);
+  const [nameDraft, setNameDraft] = React.useState(user.name ?? "");
+  const [savingName, setSavingName] = React.useState(false);
+  const nameChanged = nameDraft.trim() !== (user.name ?? "");
+  const saveName = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = nameDraft.trim();
+    if (!nameChanged || savingName) return;
+    setSavingName(true);
+    const ok = await saves.track("name", async () => {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: value }),
+      }).catch(() => null);
+      if (!res?.ok) {
+        toast.error("Couldn’t save your name.");
+        return false;
+      }
+      router.refresh();
+      return true;
+    });
+    setSavingName(false);
+    if (ok) setNameOpen(false);
   };
 
   // Deletion: guarded by typing the address, posting to the rate-limited route.
@@ -132,7 +148,7 @@ export function AccountSection() {
                       {...(requiresViewerCredentials(avatar) ? { referrerPolicy: "no-referrer" } : {})}
                     />
                   )}
-                  <AvatarFallback className="font-sans text-ui">{initials(user.name, user.email)}</AvatarFallback>
+                  <AvatarFallback className="font-sans text-ui">{initialsFor(user.name, user.email)}</AvatarFallback>
                 </Avatar>
                 <span
                   className={cn(
@@ -168,12 +184,20 @@ export function AccountSection() {
               <Badge variant="secondary" className="font-sans" translate="no">
                 {plan.name}
               </Badge>
+              <SaveStatus state={saves.status("name")} />
             </div>
             <p className="truncate text-ui text-muted-foreground" translate="no">
               {email}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openSettings("personalization")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setNameDraft(user.name ?? "");
+              setNameOpen(true);
+            }}
+          >
             Change name
           </Button>
         </div>
@@ -184,47 +208,6 @@ export function AccountSection() {
           with the sign-in form in components/auth: the same flow, read
           together. */}
       <AccountSecuritySection email={email} />
-
-      <SettingsGroup
-        title="Notifications"
-        description={
-          features.email ? undefined : "Email isn’t set up on this server yet. Your email choices are kept for when it is."
-        }
-      >
-        {features.webPush && features.webPushPublicKey ? (
-          <BrowserNotificationRows publicKey={features.webPushPublicKey} />
-        ) : null}
-        <SettingRow
-          label="Budget alerts"
-          htmlFor="email-budget"
-          description="An email when you reach 80% of your monthly budget."
-          status={saves.status("emailBudgetAlerts")}
-          control={
-            <Switch
-              id="email-budget"
-              checked={settings.emailBudgetAlerts}
-              onCheckedChange={(emailBudgetAlerts) =>
-                void saves.track("emailBudgetAlerts", () => save({ emailBudgetAlerts }))
-              }
-            />
-          }
-        />
-        <SettingRow
-          label="Weekly digest"
-          htmlFor="email-digest"
-          description="A recap of your usage every Monday."
-          status={saves.status("emailWeeklyDigest")}
-          control={
-            <Switch
-              id="email-digest"
-              checked={settings.emailWeeklyDigest}
-              onCheckedChange={(emailWeeklyDigest) =>
-                void saves.track("emailWeeklyDigest", () => save({ emailWeeklyDigest }))
-              }
-            />
-          }
-        />
-      </SettingsGroup>
 
       <SettingsGroup tone="destructive">
         <SettingRow
@@ -238,6 +221,38 @@ export function AccountSection() {
           }
         />
       </SettingsGroup>
+
+      <Dialog open={nameOpen} onOpenChange={(next) => (savingName ? undefined : setNameOpen(next))}>
+        <DialogContent className="max-w-md">
+          <form onSubmit={(e) => void saveName(e)} className="grid gap-4">
+            <DialogHeader>
+              <DialogTitle>Change your name</DialogTitle>
+              <DialogDescription>{`What ${PRODUCT_NAME} calls you in greetings, and the name shown in the sidebar.`}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="account-name">Name</Label>
+              <Input
+                id="account-name"
+                value={nameDraft}
+                maxLength={80}
+                placeholder="Your name"
+                autoComplete="given-name"
+                onChange={(e) => setNameDraft(e.target.value)}
+                disabled={savingName}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setNameOpen(false)} disabled={savingName}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!nameChanged} loading={savingName}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteOpen}
@@ -287,124 +302,6 @@ export function AccountSection() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
-  );
-}
-
-/**
- * Notifications on this browser: its Web Push subscription, and the two
- * switches every push destination carries (a phone and a Mac have the same
- * pair).
- *
- * Per browser, not per account. The subscription IS the preference, so it
- * lives with the browser that holds it: turning it on here says nothing about
- * the laptop at work. Nothing is registered and nothing prompts until the
- * switch is pressed (src/lib/notify/web-push-client.ts).
- *
- * Absent where this browser cannot do it at all (iOS Safari in a tab, a
- * private window with service workers off), rather than a switch that can
- * only fail. Blocked is shown, because that one the reader can change.
- */
-function BrowserNotificationRows({ publicKey }: { publicKey: string }) {
-  const saves = useSaveStates();
-  const [state, setState] = React.useState<WebPushState | null>(null);
-  const [prefs, setPrefs] = React.useState<PushPreferences | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    void webPushStatus(publicKey).then((status) => {
-      if (cancelled) return;
-      setState(status.state);
-      setPrefs(status.prefs);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [publicKey]);
-
-  if (state === null || state === "unsupported") return null;
-
-  const turn = (on: boolean) => {
-    if (!on) {
-      setState("off");
-      void saves.track("webPush", async () => {
-        await disableWebPush();
-        return true;
-      });
-      return;
-    }
-    // Started in the click itself, before anything is awaited: the browser
-    // shows its permission prompt only while the gesture that asked is live.
-    const enabling = enableWebPush(publicKey);
-    setState("on");
-    void saves.track("webPush", async () => {
-      const result = await enabling;
-      if (!result.ok) {
-        setState(result.reason === "denied" ? "denied" : result.reason === "unsupported" ? "unsupported" : "off");
-        return false;
-      }
-      const status = await webPushStatus(publicKey);
-      setState(status.state);
-      setPrefs(status.prefs);
-      return status.state === "on";
-    });
-  };
-
-  const setPref = (key: keyof PushPreferences, value: boolean) => {
-    if (!prefs) return;
-    const previous = prefs;
-    setPrefs({ ...prefs, [key]: value });
-    void saves.track(key, async () => {
-      const ok = await updateWebPushPrefs({ [key]: value });
-      if (!ok) setPrefs(previous);
-      return ok;
-    });
-  };
-
-  const denied = state === "denied";
-  return (
-    <>
-      <SettingRow
-        label="Notifications on this browser"
-        htmlFor="web-push"
-        description={
-          denied
-            ? "Blocked in your browser settings. Allow notifications for this site there, then come back."
-            : `A notification from this browser when a task needs you or something finishes, even when ${PRODUCT_NAME} isn’t open.`
-        }
-        status={saves.status("webPush")}
-        control={<Switch id="web-push" checked={state === "on"} disabled={denied} onCheckedChange={turn} />}
-      />
-      {state === "on" && prefs ? (
-        <>
-          <SettingRow
-            label="When something needs you"
-            htmlFor="web-push-needs-you"
-            description="Approvals and questions a task or an agent is waiting on."
-            status={saves.status("notifyNeedsYou")}
-            control={
-              <Switch
-                id="web-push-needs-you"
-                checked={prefs.notifyNeedsYou}
-                onCheckedChange={(on) => setPref("notifyNeedsYou", on)}
-              />
-            }
-          />
-          <SettingRow
-            label="Updates"
-            htmlFor="web-push-updates"
-            description="Finished tasks, and ideas your agents want to share."
-            status={saves.status("notifyUpdates")}
-            control={
-              <Switch
-                id="web-push-updates"
-                checked={prefs.notifyUpdates}
-                onCheckedChange={(on) => setPref("notifyUpdates", on)}
-              />
-            }
-          />
-        </>
-      ) : null}
     </>
   );
 }

@@ -653,17 +653,17 @@ const config: Config = {
         // 6px (SOFT_UI.md §2.4), down from 8: the workhorse entrance should be
         // felt as settling, not as arriving from somewhere. `src/lib/motion.ts`
         // mirrors the offset (SHIFT.rise) — change both.
-        // Agents (docs/design/agents-rework/DIRECTION.md): a face changing its
-        // look in the studio, and a new agent arriving. Spring overshoot, once.
+        // Agents (docs/design/AGENTS.md §4.2): a face changing its look in
+        // the studio, and an agent greeting in its empty thread. Plain expo
+        // ease-outs: a face never overshoots (the one pop in the system is
+        // the needs-you ball).
         "studio-swap": {
-          "0%": { opacity: "0.55", transform: "scale(calc(1 - 0.1 * var(--motion-shift, 1)))" },
-          "60%": { opacity: "1", transform: "scale(calc(1 + 0.04 * var(--motion-shift, 1)))" },
-          "100%": { opacity: "1", transform: "scale(1)" },
+          "0%": { opacity: "0.55", transform: "scale(calc(1 - 0.06 * var(--motion-shift, 1)))" },
+          "100%": { opacity: "1", transform: "none" },
         },
         "agent-arrive": {
-          "0%": { opacity: "0", transform: "scale(calc(1 - 0.4 * var(--motion-shift, 1))) translateY(calc(12px * var(--motion-shift, 1)))" },
-          "55%": { opacity: "1", transform: "scale(calc(1 + 0.06 * var(--motion-shift, 1))) translateY(0)" },
-          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+          "0%": { opacity: "0", transform: "scale(calc(1 - 0.08 * var(--motion-shift, 1))) translateY(calc(8px * var(--motion-shift, 1)))" },
+          "100%": { opacity: "1", transform: "none" },
         },
         // `turn-in` (420ms out of a 4px blur) is RETIRED (spec C1): no entrance
         // blurs, and the assistant turn's root does not animate at all. The
@@ -902,8 +902,8 @@ const config: Config = {
         // An answer part arriving mid-stream: 4px × shift over the base rung,
         // no blur. Keyframe in globals.css.
         "settle-part": "settle-part var(--dur-base) var(--ease-out-soft) both",
-        "studio-swap": "studio-swap var(--dur-emphasis) var(--ease-spring) both",
-        "agent-arrive": "agent-arrive var(--dur-emphasis) var(--ease-spring) both",
+        "studio-swap": "studio-swap var(--dur-emphasis) cubic-bezier(0.16, 1, 0.3, 1) both",
+        "agent-arrive": "agent-arrive var(--dur-emphasis) cubic-bezier(0.16, 1, 0.3, 1) both",
         // Drawers (sheet.tsx). Enter on the drawer curve at --dur-base — a
         // 280px panel wants ~240ms — and leave faster on the accelerate, as
         // every exit here does.
@@ -994,6 +994,15 @@ const config: Config = {
     // `coarse:` → touch devices, for 44px hit areas (WCAG AA).
     plugin(({ addVariant, addUtilities }) => {
       addVariant("coarse", "@media (pointer: coarse)");
+      // `kbd-focus:` → a text field's KEYBOARD focus. `focus-visible:` cannot
+      // say it: a text field matches :focus-visible on every focus, a click
+      // and a script's autofocus included. lib/input-modality.ts mirrors how
+      // the person last moved focus to <html data-modality>, so a field's
+      // pointer focus can stay a darker edge (`focus-visible:`) and only the
+      // keyboard gets the ring. `kbd-focus-within:` is the same for a box
+      // drawn around a text field (a field row, an inline editor).
+      addVariant("kbd-focus", ":root[data-modality=keyboard] &:focus-visible");
+      addVariant("kbd-focus-within", ":root[data-modality=keyboard] &:has(:is(input, textarea, [contenteditable]):focus-visible)");
       // iOS notch/home-indicator breathing room (composer, sheets, full-bleed layouts).
       addUtilities({
         ".pt-safe": { paddingTop: "env(safe-area-inset-top, 0px)" },

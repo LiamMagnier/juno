@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, X } from "@/components/ui/icons";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
+import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import {
@@ -628,8 +629,11 @@ function Poster({
           className={cn("absolute inset-0 h-full w-full object-cover", status === "error" ? "opacity-20" : "opacity-45")}
         />
       ) : null}
+      {/* A still: the header above already carries the live face, and only
+          one copy moves. Resting, never "sleeping": a computer that is
+          asleep is not a paused agent, and the dormant grey would say so. */}
       <div className="absolute inset-0 grid place-items-center">
-        <AgentPresence avatar={agent.avatar} state={status === "error" ? "blocked" : "sleeping"} size={64} haloScale={2.4} />
+        <AgentFace avatar={agent.avatar} state={status === "error" ? "blocked" : agent.status === "paused" ? "sleeping" : "idle"} size={64} still />
       </div>
     </div>
   );

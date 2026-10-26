@@ -73,6 +73,9 @@ export function ComposerTray({
     macApp.open(null);
   };
 
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  useWholeProjectWord(rowRef, !params && !projectName);
+
   const change = (panel: Panel, next: boolean) => {
     setOpen(next ? panel : null);
     if (!next) return;
@@ -104,6 +107,7 @@ export function ComposerTray({
               className="composer-tray__item--project"
               label={projectName ? `Project: ${projectName}` : "Select project"}
               tooltip
+              align="end"
             >
               <AppIcons.projects aria-hidden="true" className="size-4" motion="none" />
               <span className="composer-tray__project-label truncate">{projectLabel}</span>
@@ -115,13 +119,35 @@ export function ComposerTray({
     );
   }
 
+  // No project yet: the one word, "Project", as the media row says it. The
+  // old "Select project" was cut to "Select proj…" on every phone under
+  // ~400px (the row is full there), mid-word on the most-seen control; the
+  // verb lives on in the accessible name. A chosen project's own name may
+  // still run long: it ends on the ellipsis and its tooltip has it whole.
   return (
     <div className="composer-tray" data-disabled={disabled ? "" : undefined}>
-      <div className="composer-tray__row">
-        <TrayMenu panel="project" open={open} onChange={change} render={projectPanel} disabled={disabled}>
-          <AppIcons.projects aria-hidden="true" className="size-4" motion="none" />
-          <span className="truncate">{projectName ?? "Select project"}</span>
-        </TrayMenu>
+      <div ref={rowRef} className="composer-tray__row">
+        <Tooltip>
+          <TrayMenu
+            panel="project"
+            open={open}
+            onChange={change}
+            render={projectPanel}
+            disabled={disabled}
+            label={projectName ? `Project: ${projectName}` : "Select project"}
+            tooltip
+            className="composer-tray__item--project-row"
+          >
+            <AppIcons.projects aria-hidden="true" className="size-4" motion="none" />
+            {/* Under 340px (a 320 phone) even the one word was cut to "Pr…":
+                the control drops it and keeps its icon and its name, as the
+                media row's does (composer.css). Above that the word is
+                measured (useWholeProjectWord): whole, or not drawn. */}
+            <span className="composer-tray__project-word truncate">{projectName ?? "Project"}</span>
+          </TrayMenu>
+          {/* Always a tooltip: the word may be dropped (icon only) with no project chosen. */}
+          <TooltipContent>{projectName ?? "Select project"}</TooltipContent>
+        </Tooltip>
 
         {appsPanel ? (
           <TrayMenu panel="apps" open={open} onChange={change} render={appsPanel} disabled={disabled}>
@@ -163,7 +189,52 @@ export function ComposerTray({
   );
 }
 
-function TrayMenu({
+/**
+ * "Project" whole or not at all. With no project chosen the row's first
+ * control says the one word, and on a narrow phone the row is full: at 340 to
+ * 356px the English row with no apps on cut it to "Proj…" (the 344px Fold
+ * cover screen among them), three apps' marks still cut it at 375, and a
+ * missing Skills or the word as translated move that line again, so no one
+ * breakpoint can draw it. The row is measured with the word in, and marked
+ * `data-tight` (composer.css) when the word would be cut: the control keeps its icon, its tooltip and its
+ * accessible name, as the media row's does (useEdgeFades,
+ * composer-media-params.tsx). Measured with the word in every time, so the two
+ * states never chase each other. A chosen project's own name is left to its
+ * ellipsis; its tooltip has it whole.
+ */
+function useWholeProjectWord(rowRef: React.RefObject<HTMLDivElement | null>, enabled: boolean) {
+  React.useLayoutEffect(() => {
+    const row = rowRef.current;
+    const word = row?.querySelector<HTMLElement>(".composer-tray__project-word");
+    if (!enabled || !row || !word) return;
+    const text = document.createRange();
+    const update = () => {
+      row.removeAttribute("data-tight");
+      // Reading the widths lays the row out with the word in; that frame is
+      // never painted. Fractional widths: scrollWidth and clientWidth round,
+      // and a word 0.3px too wide still ends on the ellipsis ("Proje…" at
+      // 355 and 356px, where both read 43).
+      text.selectNodeContents(word);
+      if (text.getBoundingClientRect().width > word.getBoundingClientRect().width) row.setAttribute("data-tight", "");
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return () => row.removeAttribute("data-tight");
+    // The row for the window; its controls for a neighbour that grows (the
+    // apps' marks, a web font arriving); the text for AutoTranslate's swap.
+    const resize = new ResizeObserver(update);
+    resize.observe(row);
+    for (const el of row.children) resize.observe(el);
+    const mutate = new MutationObserver(update);
+    mutate.observe(row, { childList: true, subtree: true, characterData: true });
+    return () => {
+      resize.disconnect();
+      mutate.disconnect();
+      row.removeAttribute("data-tight");
+    };
+  }, [rowRef, enabled]);
+}
+
+export function TrayMenu({
   panel,
   open,
   onChange,
@@ -172,6 +243,7 @@ function TrayMenu({
   className,
   label,
   tooltip,
+  align = "start",
   children,
 }: {
   panel: Panel;
@@ -180,25 +252,32 @@ function TrayMenu({
   render: () => React.ReactNode;
   disabled?: boolean;
   className?: string;
-  /** The accessible name, when the visible label may be hidden (the compact Project control). */
+  /** The accessible name, when the visible label is shorter than it or may be hidden (the Project controls). */
   label?: string;
   /** Wrapped in a Tooltip by the caller: the trigger doubles as its tooltip trigger. */
   tooltip?: boolean;
+  /** Which edge of the chip the panel lines up with: the end for the media row's control pinned at the tray's end. */
+  align?: "start" | "end";
   children: React.ReactNode;
 }) {
-  const align = tooltip ? "end" : "start";
   const isOpen = open === panel;
-  const trigger = (
-    <DropdownMenuTrigger asChild disabled={disabled}>
-      <button type="button" className={cn("composer-tray__item", className)} aria-label={label}>
-        {children}
-        <ChevronDown aria-hidden="true" className="composer-tray__chevron size-3.5" motion="none" />
-      </button>
-    </DropdownMenuTrigger>
+  const button = (
+    <button type="button" className={cn("composer-tray__item", className)} aria-label={label}>
+      {children}
+      <ChevronDown aria-hidden="true" className="composer-tray__chevron size-3.5" motion="none" />
+    </button>
   );
+  // The menu's trigger is the OUTER one. Each Radix trigger stamps its own
+  // data-state and then spreads the props its parent Slot handed it, so the
+  // outer trigger's data-state wins. With the tooltip outside, an open menu
+  // read data-state="closed" (aria-expanded="true"): no open fill and no
+  // turned chevron on the Project chip, while Apps and Skills showed both.
+  // The same order as the + button (composer-plus-menu.tsx).
   return (
     <DropdownMenu open={isOpen} onOpenChange={(next) => onChange(panel, next)}>
-      {tooltip ? <TooltipTrigger asChild>{trigger}</TooltipTrigger> : trigger}
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        {tooltip ? <TooltipTrigger asChild>{button}</TooltipTrigger> : button}
+      </DropdownMenuTrigger>
       <DropdownMenuContent
         // At the chip (owner, 2026-10-04): just above it, over the composer,
         // and below it only when there is no room above. Radix flips and
