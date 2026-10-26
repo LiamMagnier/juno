@@ -238,16 +238,28 @@ test("fuzz end to end: odd shapes as cited and uncited passages never take a rep
 test("a claim whose checks throw is left unverified with the reason, and every other claim is audited", async () => {
   const report =
     "# R\n\nFerrolux produced 2.3 million tonnes of steel in 2023 [1]. Northwind's revenue was $4.3 billion in 2024 [2]. Tandor Rail carried 41 million passengers in 2024 [3].";
-  // A judge that fails on one claim only: the stand-in for any error inside one claim's checks.
-  const judge: CitationJudge = async ({ claim }) => {
-    if (claim.includes("Northwind")) throw new Error("boom in one claim's checks");
-    return { verdict: "supported", strength: 0.95 };
-  };
+  // A passage the checks cannot read: the stand-in for any error inside one
+  // claim's checks. (A throwing JUDGE is different: it must fail the whole
+  // audit, see the next test.)
+  const judge: CitationJudge = async () => ({ verdict: "supported", strength: 0.95 });
+  const unreadable = source(2, "placeholder");
+  unreadable.passages = [
+    {
+      // Readable while the corpus is indexed; throws once one claim's own
+      // checks (auditOne) read it, which is the path the catch protects.
+      get text(): string {
+        if (new Error().stack?.includes("auditOne")) throw new Error("boom in one claim's checks");
+        return "Northwind's revenue was $4.3 billion in 2024.";
+      },
+      locator: "chars:0",
+      ordinal: 0,
+    },
+  ];
   const outcome = await audit(
     report,
     [
       source(1, "Ferrolux produced 2.3 million tonnes of steel in 2023."),
-      source(2, "Northwind's revenue was $4.3 billion in 2024."),
+      unreadable,
       source(3, "Tandor Rail carried 41 million passengers in 2024."),
     ],
     judge
@@ -264,4 +276,16 @@ test("a claim whose checks throw is left unverified with the reason, and every o
   assert.equal(ferrolux!.auditError, null);
   assert.equal(outcome.counts.unverified, 1);
   assert.equal(outcome.counts.supported, 2);
+});
+
+test("a failing judge still fails the whole audit, so the run is recorded as degraded", async () => {
+  // Only the checks' own errors are caught per claim. A model call that fails
+  // (timeout, provider down) must reach the caller as before, not leave every
+  // claim quietly unverified with the audit reported as complete.
+  const failing: CitationJudge = async () => {
+    throw new Error("provider timeout");
+  };
+  const report = "Ferrolux produced 2.3 million tonnes of steel in 2023 [1].";
+  const sources = [source(1, "Ferrolux said it made a record amount of steel last year, more than ever before.")];
+  await assert.rejects(audit(report, sources, failing), /provider timeout/);
 });

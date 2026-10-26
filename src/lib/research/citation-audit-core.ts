@@ -291,6 +291,20 @@ export async function auditClaims(opts: {
   };
   const out: AuditedClaim[] = [];
   let judgeCalls = 0;
+  /*
+   * The judge's own failures (the model call timing out, the provider down)
+   * are not "a sentence the checks cannot read": they still fail the whole
+   * audit, as before, so the run records it as degraded instead of quietly
+   * returning every claim unverified. Tagged here so the per-claim catch
+   * below can tell the two apart.
+   */
+  const judge: CitationJudge = async (input) => {
+    try {
+      return await opts.judge(input);
+    } catch (error) {
+      throw new JudgeFailure(error);
+    }
+  };
 
   /** One claim's audit. Anything it throws is caught by the loop below, never by the report. */
   const auditOne = async (claim: ExtractedClaim): Promise<AuditedClaim> => {
@@ -351,7 +365,7 @@ export async function auditClaims(opts: {
         sourceTitle: candidate.source?.title,
         publishedAt: candidate.source?.publishedAt ?? null,
         asOf,
-        judge: opts.judge,
+        judge,
       });
       verdicts.push(verdict);
       if (!candidate.source?.truncated) sawFullText = true;
@@ -493,6 +507,8 @@ export async function auditClaims(opts: {
     try {
       audited = await auditOne(claim);
     } catch (error) {
+      // A judge failure is the caller's to handle (see `judge` above).
+      if (error instanceof JudgeFailure) throw error.original;
       /*
        * One sentence the checks cannot read — in the claim, a cited passage
        * or an uncited one — must never take the whole report's audit down:
@@ -509,6 +525,14 @@ export async function auditClaims(opts: {
   }
 
   return { claims: out, judgeCalls, counts };
+}
+
+/** An error thrown by the judge itself, carried past the per-claim catch untouched. */
+class JudgeFailure extends Error {
+  constructor(readonly original: unknown) {
+    super(original instanceof Error ? original.message : String(original));
+    this.name = "JudgeFailure";
+  }
 }
 
 /** A claim whose checks threw: unverified, no links, the error kept as its reason. */
