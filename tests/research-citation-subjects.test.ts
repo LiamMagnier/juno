@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SUPPORTED_MIN, auditEvidence, differsFromSupportingPassage, repairReportFromClaims, type CitationJudge } from "@/lib/research/claim-analysis";
-import { auditClaims, selectClaimsForAudit, type AuditSource } from "@/lib/research/citation-audit-core";
+import {
+  SUPPORTED_MIN,
+  auditEvidence,
+  differsFromSupportingPassage,
+  repairReportFromClaims,
+  supportingPassageDifference,
+  type CitationJudge,
+} from "@/lib/research/claim-analysis";
+import { auditClaims, figureFromAnotherPeriod, selectClaimsForAudit, type AuditSource } from "@/lib/research/citation-audit-core";
 
 /*
  * How the deterministic citation audit reads a SUBJECT: a source that names
@@ -482,4 +489,106 @@ test("a sentence with an elided clause, cited verbatim, is supported end to end 
       assert.equal(repairReportFromClaims(report, outcome.claims).report, report, sentence);
     }
   }
+});
+
+// ── Round 8: a doubt beside support is neutral, about the same thing, and judged on each passage's own text ──
+
+/** Honest multi-citation claims (probe-research-ns-1 cases3/cases4, ns-2 multi-06): the other source counts another thing. */
+const ANOTHER_THING_COUNTED: Array<[claim: string, other: string]> = [
+  ["Corvane Shipping bought 12 vessels in 2023.", "Corvane Shipping bought 3 ports in 2023."],
+  ["Belgrove Council built 2,300 homes in 2023.", "Belgrove Council built 14 schools in 2023."],
+  ["Quenby Bank closed 120 branches in 2024.", "Quenby Bank closed 30,000 dormant accounts in 2024."],
+  ["Calderra Telecom added 400,000 subscribers in 2024.", "Calderra Telecom added 1,200 masts in 2024."],
+  ["Velloso acquired 3 companies in 2024.", "Velloso acquired 1,100 patents in 2024."],
+  ["Ferrolux closed 7 plants in 2024.", "Ferrolux closed 2 mines in 2024."],
+  ["Calderra Telecom had 6.1 million subscribers in June 2024.", "Calderra Telecom had 2.3 million broadband subscribers in June 2024."],
+  ["Brenmark Foods sold 2.1 million cases of soup in 2024.", "Brenmark Foods sold 800,000 shares in 2024."],
+  ["Mirelle Foods hired 900 people in 2023.", "Mirelle Foods hired 12 senior managers from rivals in 2023."],
+  ["Drayfield Motors sold 182,000 vehicles in 2024.", "Drayfield Motors sold 410 dealerships' worth of stock in 2024."],
+  ["Saltmarsh Retail opened 40 stores in 2024.", "Saltmarsh Retail opened 3 distribution centres in 2024."],
+  ["Tandor Rail ordered 40 trains in 2023.", "Tandor Rail ordered 900 seats for its lounges in 2023."],
+  ["Penhallow Hospital hired 300 nurses in 2024.", "Penhallow Hospital hired 45 consultants in 2024."],
+  ["Brisk Logistics added 600 lorries in 2024.", "Brisk Logistics added 4 depots in 2024."],
+];
+
+test("another thing counted for the same owner is no disagreement, beside support or anywhere (round 8)", async () => {
+  for (const [claim, other] of ANOTHER_THING_COUNTED) {
+    assert.equal(differsFromSupportingPassage(claim, other, claim), false, other);
+    const [cited] = (await audit(`# R\n\n${claim.replace(/\.$/, "")} [1][2].`, [source(1, other), source(2, claim)])).claims;
+    const label = `${other}: ${JSON.stringify(cited.links.map((l) => [l.sourceIndex, l.stance, l.status, l.reasons.map((r) => r.code)]))}`;
+    assert.equal(cited.status, "supported", label);
+    assert.equal(cited.contested, false, label);
+    assert.ok(!cited.links.some((l) => l.stance !== "supports"), label);
+  }
+});
+
+test("the same thing under another unit word, or under another tense, is still a doubt beside support", () => {
+  for (const [claim, other, supporting] of [
+    ["Kestrel Air carried 12.4 million passengers in 2024.", "Kestrel Air carried 11.2 million fliers in 2024.", null],
+    ["Halden Burgers operated 520 restaurants in 2024.", "Halden Burgers operated 480 outlets in 2024.", null],
+    ["Pell Motors delivered 410,000 vehicles in 2024.", "Pell Motors delivered 372,000 units in 2024.", null],
+    ["Halvorsen Freight operated 64 ships in 2024.", "Halvorsen Freight operated 58 vessels in 2024.", null],
+    ["Halvorsen Freight bought 30 ships in 2024.", "Halvorsen Freight bought two dozen ships in 2024.", null],
+    ["Corvane Shipping operates 96 vessels.", "Corvane Shipping operated 81 vessels in 2024.", "Corvane Shipping operated 96 vessels in 2024."],
+  ] as const) {
+    const note = supportingPassageDifference(claim, other, supporting ?? claim);
+    assert.ok(note, other);
+    assert.equal(note.code, "differs_from_support");
+    assert.equal(note.ceiling, 1, "a note caps nothing");
+    assert.doesNotMatch(note.detail, /contradict/i);
+  }
+});
+
+test("a doubt beside support is a neutral link with its own explanation: never 'contradicts', never a verdict (round 8)", async () => {
+  // [1] counts "fliers" where the claim counts passengers: its own findings say only that the figure is absent, and the
+  // note says what the doubt is — the same owner and verb give another count of what may be the same people.
+  const claimText = "Kestrel Air carried 12.4 million passengers in 2024.";
+  const other = "Kestrel Air carried 11.2 million fliers in 2024.";
+  const [claim] = (await audit("# R\n\nKestrel Air carried 12.4 million passengers in 2024 [1][2].", [source(1, other), source(2, claimText)])).claims;
+  assert.equal(claim.status, "supported");
+  assert.equal(claim.contested, true);
+  const doubt = claim.links.find((l) => l.sourceIndex === 1);
+  assert.ok(doubt, JSON.stringify(claim.links));
+  assert.equal(doubt.stance, "differs");
+  assert.equal(doubt.status, "unverified");
+  assert.equal(doubt.judged, false);
+  assert.ok(!claim.links.some((l) => l.stance === "contradicts" || l.status === "contradicted"));
+  const note = doubt.reasons.find((r) => r.code === "differs_from_support");
+  assert.ok(note, JSON.stringify(doubt.reasons));
+  assert.match(note.detail, /11\.2 million/);
+  assert.match(note.detail, /12\.4 million/);
+  assert.match(note.detail, /may disagree/);
+  assert.ok(!doubt.reasons.some((r) => r.code === "figure_mismatch" || r.code === "polarity_mismatch"));
+  // A figure the passage's own text cannot settle (`figure_differs`) is recorded the same way: neutral.
+  const [own] = (
+    await audit("# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].", [
+      source(1, "Net Revenue was $3.9 billion in 2024."),
+      source(2, "Northwind's revenue was $4.3 billion in 2024."),
+    ])
+  ).claims;
+  assert.equal(own.contested, true);
+  assert.ok(own.links.some((l) => l.sourceIndex === 1 && l.stance === "differs" && l.status === "unverified"), JSON.stringify(own.links));
+});
+
+test("an undated claim: the supporting passage's year never excuses another passage's figure (round 8, cases5)", async () => {
+  // Each disagreeing passage is judged on its own text: a newer, older or same-year figure is a doubt shown.
+  for (const [claim, disagreeing, supporting] of [
+    ["Corvane Shipping operates 96 vessels.", "Corvane Shipping operated 81 vessels in 2024.", "Corvane Shipping operated 96 vessels in 2024."],
+    ["Corvane Shipping operates 96 vessels.", "Corvane Shipping operated 81 vessels in 2025.", "Corvane Shipping operated 96 vessels in 2021."],
+    ["Velloso employs 12,000 people in Brazil.", "Velloso employed 9,500 people in Brazil in 2026.", "Velloso employed 12,000 people in Brazil in 2020."],
+    ["Penhallow Hospital has 900 beds.", "Penhallow Hospital had 720 beds in 2025.", "Penhallow Hospital had 900 beds in 2025."],
+  ] as const) {
+    const [cited] = (await audit(`# R\n\n${claim.replace(/\.$/, "")} [1][2].`, [source(1, disagreeing), source(2, supporting)])).claims;
+    const label = `${disagreeing}: ${JSON.stringify(cited.links.map((l) => [l.sourceIndex, l.stance, l.status, l.reasons.map((r) => r.code)]))}`;
+    assert.equal(cited.status, "supported", label);
+    assert.equal(cited.contested, true, label);
+    assert.ok(cited.links.some((l) => l.sourceIndex === 1 && l.stance !== "supports"), label);
+    assert.ok(!cited.links.some((l) => l.status === "contradicted"), label);
+  }
+  // The period excuse reads the passage alone: the same call, whatever passage supported the claim.
+  const reasons = auditEvidence({ claim: "Velloso employs 12,000 people in Brazil.", passage: "Velloso employed 9,500 people in Brazil in 2026." }).reasons;
+  assert.equal(figureFromAnotherPeriod("Velloso employs 12,000 people in Brazil.", reasons, "Velloso employed 9,500 people in Brazil in 2026."), false);
+  const earlier = "A year earlier, Northwind's revenue was $3.9 billion.";
+  const earlierReasons = auditEvidence({ claim: "Northwind's revenue was $4.3 billion.", passage: earlier }).reasons;
+  assert.equal(figureFromAnotherPeriod("Northwind's revenue was $4.3 billion.", earlierReasons, earlier), true);
 });

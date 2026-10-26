@@ -102,7 +102,8 @@ export interface CitationAuditRival {
 
 export interface CitationAuditLink {
   sourceIndex: number;
-  stance: "supports" | "contradicts";
+  /** `differs`: neutral — a cited passage that may disagree beside the one that supports the claim, never a contradiction. */
+  stance: "supports" | "contradicts" | "differs";
   strength: number | null;
   passage: string;
   locator: string | null;
@@ -321,6 +322,9 @@ export const AUDIT_COPY = {
    */
   contested: "contested",
   sourcesDisagree: "Sources disagree",
+  // A cited passage that may disagree beside the supporting one: a doubt the text cannot settle, never "contradicts".
+  mayDiffer: "may differ",
+  mayDifferPassage: "this passage may give a different figure or date",
   // Neutral on purpose: a claim is contested by a different figure (a rival)
   // or by a cited passage saying the opposite (polarity), and the passages
   // shown below it say which.

@@ -438,11 +438,12 @@ function ClaimRow({
                 key={`${link.sourceIndex}-${i}`}
                 className={cn(
                   "inline-flex h-6 items-center gap-1 rounded-full border border-border/70 bg-card px-2 font-mono text-caption",
-                  link.stance === "contradicts" && "border-destructive/40 text-destructive-ink"
+                  link.stance === "contradicts" && "border-destructive/40 text-destructive-ink",
+                  link.stance === "differs" && "border-warning/45 text-warning-foreground"
                 )}
               >
                 [{link.sourceIndex}]
-                {link.stance === "contradicts" ? " contradicts" : ""}
+                {link.stance === "contradicts" ? " contradicts" : link.stance === "differs" ? ` ${AUDIT_COPY.mayDiffer}` : ""}
               </span>
             ))}
             {claim.contested && (

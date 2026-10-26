@@ -27,7 +27,7 @@
  * src/lib/research/claims.ts and re-exports this surface.
  */
 
-import { findUnresolvedDenial, measureGroupOf, provePolarityContradiction, readPropositions } from "@/lib/research/claim-polarity";
+import { findUnresolvedDenial, measureGroupOf, provePolarityContradiction, readPropositions, stemOf } from "@/lib/research/claim-polarity";
 import { assessSource } from "@/lib/research/source-policy";
 
 // ---------------------------------------------------------------------------
@@ -37,8 +37,14 @@ import { assessSource } from "@/lib/research/source-policy";
 export type ClaimType = "fact" | "statistic" | "quote" | "prediction" | "opinion";
 /** ResearchClaim.status. */
 export type ClaimStatus = "unverified" | "supported" | "contradicted" | "unsupported";
-/** ResearchClaimLink.stance. */
-export type LinkStance = "supports" | "contradicts";
+/**
+ * ResearchClaimLink.stance. `differs` is neutral: a cited passage that may
+ * disagree with the claim beside one that supports it — a figure or a date
+ * the text cannot settle as the claim's own. It makes a supported claim
+ * contested, and is never a contradiction: only a passage whose own text
+ * proves the opposite `contradicts`.
+ */
+export type LinkStance = "supports" | "contradicts" | "differs";
 
 /**
  * What the UI says out loud. The schema has four statuses, but "unsupported
@@ -1784,6 +1790,30 @@ function figureRelativePeriod(text: string, n: NumericFact): string | null {
   return null;
 }
 
+/** A relative period named from the present rather than from another period of the text: "last year", "two years ago", "next year". */
+const PRESENT_RELATIVE = /\bago\b|^(?:the )?(?:last|next|coming|this) /i;
+
+/**
+ * `figureRelativePeriod`, for a period named relative to another period the
+ * text states — "a year earlier", "the prior year", "the year before", "the
+ * following year" — and never to the present ("last year", "two years ago",
+ * "next year"): the figure's own words then say it is a comparison figure,
+ * not the period the text is about.
+ */
+function figureComparisonPeriod(text: string, n: NumericFact): string | null {
+  const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
+  const global = new RegExp(RELATIVE_PERIOD.source, "gi");
+  for (const segment of [text.slice(clauseStart, clauseEnd), text.slice(sentenceStart, clauseStart)]) {
+    for (const m of segment.matchAll(global)) {
+      if (PRESENT_RELATIVE.test(m[0])) continue;
+      if (m[2]) return "next:1";
+      const count = m[1] ? COUNT_WORDS[m[1].toLowerCase()] ?? Number(m[1]) : 1;
+      return `previous:${count}`;
+    }
+  }
+  return null;
+}
+
 /**
  * The passage figures that give a different value than the claim's figure
  * `n` for the same thing: the contradiction behind `figure_mismatch`.
@@ -2771,7 +2801,9 @@ export interface AuditReason {
     | "attribution_dropped"
     | "source_stale"
     | "off_topic"
-    | "thin_overlap";
+    | "thin_overlap"
+    /** Beside the passage that supported the claim, this one may give another figure or date for the same thing: a note. */
+    | "differs_from_support";
   detail: string;
   /**
    * The support ceiling THIS reason imposed, 0..1 — the severity, stated once
@@ -3265,23 +3297,29 @@ export function auditEvidence(opts: {
 
 /**
  * For a claim that names no date: whether a passage that gives a different
- * figure is about another period than the passage that supports it, so the
- * difference is not a disagreement. "Northwind's revenue was $4.3 billion",
- * supported by an annual report's "$4.3 billion in 2024", is not disputed by
- * the same report's "$3.9 billion in 2023": each figure is pinned to its own
- * year and the years differ. Nor by "A year earlier, revenue was $3.9
- * billion", "… in the prior year" or "… two years ago": a figure its own
- * words place before (or after) another period is not the period of the one
- * beside it, dated or not (`figureRelativePeriod`). A fiscal year is a date
- * ("FY2023", `extractDates`).
+ * figure says, in its own words, that the figure is another period's — so the
+ * difference is not a disagreement with the claim. Judged on the passage's
+ * own text alone: no other passage, the supporting one included, ever says
+ * which period the claim is about, or excuses a figure another passage pins
+ * to another year (an undated "operates 96 vessels" supported by "96 vessels
+ * in 2021" is disputed by "81 vessels in 2025", and by "81 vessels in 2024"
+ * beside "96 vessels in 2024" alike).
+ *
+ * What excuses a figure is a period its own clause or lead-in names relative
+ * to ANOTHER period of the text (`figureComparisonPeriod`): "A year earlier,
+ * revenue was $3.9 billion", "… in the prior year", "the year before". A date
+ * ("in 2023", "FY2023") and a period named relative to the present ("last
+ * year", "two years ago", "next year") say when the figure was, not that it
+ * is not the claim's: for a claim that names no period, either may be the
+ * claim's own, and the difference is a disagreement the reader is shown —
+ * as a doubt beside support, never a contradiction.
  *
  * False — record the disagreement — whenever the claim is dated (the date
- * checks already decide that: `disagreesForSamePeriod`), whenever a differing
- * figure neither carries a date of its own nor places itself relative to
- * another period, when the supporting figure carries no date for a dated
- * rival to differ from, and when the two dates agree.
+ * checks already decide that: `disagreesForSamePeriod`), and whenever any
+ * differing figure is not placed relative to another period, or is placed
+ * the way the claim's own figure is.
  */
-export function differentPeriodForUndatedClaim(claim: string, supporting: string, conflicting: string): boolean {
+export function differentPeriodForUndatedClaim(claim: string, conflicting: string): boolean {
   const claimDates = extractDates(claim);
   if (claimDates.length > 0) return false;
   const facts = (text: string) => {
@@ -3289,21 +3327,16 @@ export function differentPeriodForUndatedClaim(claim: string, supporting: string
     return { text, dates, numbers: extractNumbers(text, dates) };
   };
   const claimFacts = facts(claim);
-  const supportFacts = facts(supporting);
   const conflictFacts = facts(conflicting);
   let differs = false;
   for (const n of claimFacts.numbers) {
     if (conflictFacts.numbers.some((p) => figuresAgree(n, p))) continue;
     const rivals = rivalFigures(claimFacts, n, conflictFacts);
     if (rivals.length === 0) continue;
-    const support = supportFacts.numbers.find((p) => figuresAgree(n, p));
-    const supportAt = support ? figureDate(supporting, support, supportFacts.dates) : null;
-    const supportRelative = support ? figureRelativePeriod(supporting, support) : null;
+    const claimRelative = figureRelativePeriod(claim, n);
     for (const rival of rivals) {
-      const relative = figureRelativePeriod(conflicting, rival);
-      if (relative && relative !== supportRelative) continue;
-      const at = figureDate(conflicting, rival, conflictFacts.dates);
-      if (!supportAt || !at || datesAgree(at, supportAt)) return false;
+      const relative = figureComparisonPeriod(conflicting, rival);
+      if (!relative || relative === claimRelative) return false;
     }
     differs = true;
   }
@@ -3377,18 +3410,71 @@ function leavesOutSupportedName(claim: string, passage: string, supporting: stri
   return missing.some((name) => names.has(name));
 }
 
-/**
- * Whether passage count `p` provably counts something else than claim figure
- * `n`: not the same quantity by unit and introducing phrase (`sameQuantity`),
- * and its unit is a word the claim never uses ("the three largest depots"
- * against "45,000 members").
+/*
+ * Unit words that count the same things, for reading a count beside the
+ * passage that supports the claim (`countsSameThing`). Wider than
+ * UNIT_SYNONYMS on purpose, and used nowhere else: what it decides is only
+ * ever a doubt shown beside support ("may differ"), never a finding on a
+ * passage of its own, so "11.2 million fliers" for "12.4 million passengers"
+ * may be the same count while "3 ports" for "12 vessels" is not.
  */
-function provablyAnotherCount(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
-  if (sameQuantity(claim, n, passage, p)) return false;
-  const unit = numberContext(passage, p).unit;
-  if (!unit || /^\d/.test(unit)) return false;
+const COUNT_ALIASES: ReadonlyArray<ReadonlySet<string>> = [
+  "passenger traveller traveler flyer flier rider holidaymaker tourist visitor customer people person",
+  "store shop outlet branch location restaurant site",
+  "home house dwelling residence household property",
+  "employee worker staff staffer personnel people person",
+  "customer subscriber sub user client account member household people person",
+  "vehicle car",
+  "ship vessel boat",
+  "aircraft plane jet airliner",
+  "flight departure service",
+  "job position role post",
+  "student pupil",
+  "visitor tourist guest",
+  "delivery shipment",
+  "barrel bbl bpd",
+].map((group) => new Set(group.split(" ").map(stemOf)));
+/** Counters that name no kind of thing of their own: "372,000 units" may be the claim's 410,000 vehicles. */
+const GENERIC_COUNTERS = new Set(["unit"].map(stemOf));
+/**
+ * Words between a count and what it counts that say nothing of WHAT is
+ * counted: a scale ("two dozen ships") or a rate or a scope ("1,150 weekly
+ * departures", "40 new stores").
+ */
+const COUNT_SCALE_WORDS = new Set(
+  "dozen score hundred thousand million billion trillion pair weekly daily monthly yearly annual new additional extra more total".split(" ")
+);
+
+/**
+ * Whether passage count `p` counts the same thing as claim count `n`, on
+ * positive evidence only: the same quantity by unit (`sameQuantity`), a unit
+ * word that counts the same things (COUNT_ALIASES — "fliers" for
+ * "passengers", "outlets" for "restaurants", "vessels" for "ships") or no
+ * kind of thing at all ("units"), or a unit word the claim itself uses
+ * ("79.2 million passengers" against "passenger numbers reached 83.9
+ * million"). A count of another thing for the same owner — "3 ports" against
+ * "12 vessels", "800,000 shares" against "2.1 million cases of soup", "2.3
+ * million broadband subscribers" against "6.1 million subscribers" — is
+ * another quantity, and no disagreement with the claim's. (An amount of
+ * money or a percentage carries its own unit; whether it is the claim's
+ * measure under another heading is read by the checks around it.)
+ */
+function countsSameThing(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
+  if (sameQuantity(claim, n, passage, p)) return true;
+  const unitOf = (text: string, x: NumericFact) => {
+    const context = numberContext(text, x);
+    return context.unit && COUNT_SCALE_WORDS.has(context.unit) ? context.next : context.unit;
+  };
+  const theirs = unitOf(passage, p);
+  if (!theirs || /^\d/.test(theirs)) return false;
+  const ours = unitOf(claim, n);
+  if (ours && !/^\d/.test(ours)) {
+    const [a, b] = [stemOf(ours), stemOf(theirs)];
+    if (a === b || GENERIC_COUNTERS.has(a) || GENERIC_COUNTERS.has(b)) return true;
+    if (COUNT_ALIASES.some((group) => group.has(a) && group.has(b))) return true;
+  }
   const forms = wordForms(claim);
-  return !forms.has(unit) && !forms.has(tokenForm(unit));
+  return forms.has(theirs) || forms.has(tokenForm(theirs));
 }
 
 /** Units that measure an amount of something rather than count things: never another word for the claim's count. */
@@ -3399,12 +3485,13 @@ const MEASURE_UNITS = new Set(
 );
 
 /**
- * Whether two counts are given by the same owner and the same verb, whatever
- * their unit word: "Kestrel Air carried 11.2 million customers" against
- * "Kestrel Air carried 12.4 million passengers". Every word of the claim
- * figure's clause before it is in the passage figure's, and the word right
- * before each is the same. A count in a unit of measure ("300,000 tonnes")
- * counts no things.
+ * Whether two counts are given by the same owner and the same verb: "Kestrel
+ * Air carried 11.9 million travellers" against "Kestrel Air carried 12.4
+ * million passengers". Every word of the claim figure's clause before it is
+ * in the passage figure's, and the word right before each is the same, in
+ * any tense ("operates" and "operated" alike, `stemOf`). A
+ * count in a unit of measure ("300,000 tonnes") counts no things. Whether the
+ * two count the same thing is `countsSameThing`'s to say, and asked first.
  */
 function sameCountClause(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
   if (n.kind !== "plain" || p.kind !== "plain") return false;
@@ -3412,10 +3499,11 @@ function sameCountClause(claim: string, n: NumericFact, passage: string, p: Nume
   if (unit && MEASURE_UNITS.has(unit)) return false;
   const a = figureClause(claim, n).words;
   const b = figureClause(passage, p).words;
-  const last = (words: readonly ClauseWord[]) => words[words.length - 1]?.raw.toLowerCase() ?? null;
+  // In any tense: an undated "operates 96 vessels" and a dated "operated 81 vessels in 2024" are the same verb.
+  const last = (words: readonly ClauseWord[]) => (words.length > 0 ? stemOf(words[words.length - 1]!.raw) : null);
   if (!last(a) || last(a) !== last(b)) return false;
   const content = (words: readonly ClauseWord[]) =>
-    new Set(words.map((w) => tokenForm(w.raw)).filter((f) => f.length >= 2 && !STOPWORDS.has(f)));
+    new Set(words.filter((w) => tokenForm(w.raw).length >= 2 && !STOPWORDS.has(tokenForm(w.raw))).map((w) => stemOf(w.raw)));
   const ca = content(a);
   const cb = content(b);
   return ca.size > 0 && [...ca].every((f) => cb.has(f));
@@ -3473,29 +3561,29 @@ function leadInRest(lead: string, spans: ReadonlyArray<{ start: number; end: num
  * launched in Italy in March 2024"; never "Quillon, founded in 2019,
  * launched in Italy", whose date is another clause's.
  */
-function anotherDateForEvent(claim: string, d: DateMention, passage: string): boolean {
+function anotherDateForEvent(claim: string, d: DateMention, passage: string): DateMention | null {
   for (const { clause, lead } of eventClauses(claim, d.raw, passage)) {
     let dates = extractDates(clause);
     if (dates.length === 0 && lead) {
       const leadDates = extractDates(lead);
       if (leadDates.length > 0 && DATE_LEAD_IN.test(leadInRest(lead, leadDates))) dates = leadDates;
     }
-    if (dates.length > 0 && !dates.some((x) => datesAgree(x, d))) return true;
+    if (dates.length > 0 && !dates.some((x) => datesAgree(x, d))) return dates[0]!;
   }
-  return false;
+  return null;
 }
 
 /** `anotherDateForEvent` for a day of the week: "passed the bill on Thursday" against the claim's "on Tuesday". */
-function anotherDayForEvent(claim: string, day: DayMention, passage: string): boolean {
+function anotherDayForEvent(claim: string, day: DayMention, passage: string): DayMention | null {
   for (const { clause, lead } of eventClauses(claim, day.raw, passage)) {
     let days = weekdaysIn(clause);
     if (days.length === 0 && lead) {
       const leadDays = weekdaysIn(lead);
       if (leadDays.length > 0 && DATE_LEAD_IN.test(leadInRest(lead, leadDays))) days = leadDays;
     }
-    if (days.length > 0 && !days.some((x) => x.day === day.day)) return true;
+    if (days.length > 0 && !days.some((x) => x.day === day.day)) return days[0]!;
   }
-  return false;
+  return null;
 }
 
 /**
@@ -3503,53 +3591,82 @@ function anotherDayForEvent(claim: string, day: DayMention, passage: string): bo
  * that supported it), gives a different figure or date for something the
  * supporting passage states as the claim does. For each claim figure the
  * passage lacks and the supporting passage gives: a figure of the same kind
- * in the passage, for the claim's period or none, that is not the evidence
- * for another of the claim's figures (`evidenceForAnotherFigure`) or a figure
- * the passage provably gives for another subject the claim names
- * (`strictlyAnotherEntity`), and either
+ * in the passage, for the claim's period or none — for a count, one that
+ * counts the same thing (`countsSameThing`: never another thing counted for
+ * the same owner, "3 ports" against "12 vessels") — that is
+ * not the evidence for another of the claim's figures
+ * (`evidenceForAnotherFigure`) or a figure the passage provably gives for
+ * another subject the claim names (`strictlyAnotherEntity`), and either
+ *  - it is a count by the same owner and verb (`sameCountClause`); or
  *  - the passage leaves out a name the claim and the supporting passage give
  *    the subject (`leavesOutSupportedName`), so it may be that subject under
- *    another name — a count in a unit the claim never uses aside
- *    (`provablyAnotherCount`); or
- *  - it is a count by the same owner and verb, in any unit word but a unit of
- *    measure (`sameCountClause`).
+ *    another name.
  * For each claim date or day of the week the passage lacks and the
  * supporting passage gives: the passage dates the same event otherwise
  * (`anotherDateForEvent`, `anotherDayForEvent`).
+ *
+ * It never contradicts, supports or caps anything: what it finds is a doubt
+ * the text cannot settle, recorded beside the claim with the neutral finding
+ * `supportingPassageDifference` words, and it makes a supported claim
+ * contested at most.
  */
 export function differsFromSupportingPassage(claim: string, passage: string, supporting: string): boolean {
-  if (passage === supporting) return false;
+  return supportingPassageDifference(claim, passage, supporting) !== null;
+}
+
+/**
+ * `differsFromSupportingPassage` as the finding a reader is shown: which of
+ * the passage's figures or dates may disagree with which of the supporting
+ * passage's, in neutral words. A note, not an objection — it caps nothing
+ * (ceiling 1), and the passage's own findings stay as they were.
+ */
+export function supportingPassageDifference(claim: string, passage: string, supporting: string): AuditReason | null {
+  if (passage === supporting) return null;
   const c = figuresOf(claim);
   const p = figuresOf(passage);
   const s = figuresOf(supporting);
   const claimFacts = { text: claim, dates: c.dates, numbers: c.numbers };
   const passageFacts = { text: passage, dates: p.dates, numbers: p.numbers };
   const supportFacts = { text: supporting, dates: s.dates, numbers: s.numbers };
+  const note = (theirs: string, ours: string, what: "figure" | "date" | "day"): AuditReason => ({
+    code: "differs_from_support",
+    detail:
+      what === "figure"
+        ? `This passage gives ${theirs} where the passage that supports the claim gives ${ours}, for what may be the same measure, so the sources may disagree.`
+        : `This passage dates the same event ${theirs} where the passage that supports the claim gives ${ours}, so the sources may disagree.`,
+    ceiling: 1,
+  });
   let unnamed: boolean | null = null;
   for (const n of c.numbers) {
-    const states = (facts: typeof passageFacts) =>
-      facts.numbers.some((q) => comparable(n, q) && (figuresAgree(n, q) || rangeHolds(facts, q, n.value)));
-    if (states(passageFacts) || !states(supportFacts)) continue;
+    const statedBy = (facts: typeof passageFacts) =>
+      facts.numbers.find((q) => comparable(n, q) && (figuresAgree(n, q) || rangeHolds(facts, q, n.value)));
+    const supported = statedBy(supportFacts);
+    if (statedBy(passageFacts) || !supported) continue;
     for (const q of p.numbers) {
       if (!comparable(n, q)) continue;
       if (!samePeriodOrUnknown(claimFacts, n, passageFacts, q)) continue;
+      if (q.kind === "plain" && !countsSameThing(claim, n, passage, q)) continue;
       if (evidenceForAnotherFigure(claimFacts, n, passageFacts, q, { strict: true }) || strictlyAnotherEntity(claim, n, passage, q)) continue;
-      if (sameCountClause(claim, n, passage, q)) return true;
+      if (sameCountClause(claim, n, passage, q)) return note(q.raw, supported.raw, "figure");
       unnamed ??= leavesOutSupportedName(claim, passage, supporting);
-      if (unnamed && !(q.kind === "plain" && provablyAnotherCount(claim, n, passage, q))) return true;
+      if (unnamed) return note(q.raw, supported.raw, "figure");
     }
   }
   for (const d of c.dates) {
-    if (p.dates.some((x) => datesAgree(x, d)) || !s.dates.some((x) => datesAgree(x, d))) continue;
-    if (anotherDateForEvent(claim, d, passage)) return true;
+    const supported = s.dates.find((x) => datesAgree(x, d));
+    if (p.dates.some((x) => datesAgree(x, d)) || !supported) continue;
+    const theirs = anotherDateForEvent(claim, d, passage);
+    if (theirs) return note(theirs.raw, supported.raw, "date");
   }
   const passageDays = weekdaysIn(passage);
   const supportDays = weekdaysIn(supporting);
   for (const day of weekdaysIn(claim)) {
-    if (passageDays.some((x) => x.day === day.day) || !supportDays.some((x) => x.day === day.day)) continue;
-    if (anotherDayForEvent(claim, day, passage)) return true;
+    const supported = supportDays.find((x) => x.day === day.day);
+    if (passageDays.some((x) => x.day === day.day) || !supported) continue;
+    const theirs = anotherDayForEvent(claim, day, passage);
+    if (theirs) return note(theirs.raw, supported.raw, "day");
   }
-  return false;
+  return null;
 }
 
 /**

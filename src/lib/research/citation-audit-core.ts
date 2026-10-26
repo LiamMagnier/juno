@@ -17,8 +17,12 @@
  *    second cited source the deterministic audit had ALREADY found to give a
  *    different figure was never recorded: the claim read "supported" with the
  *    disagreement thrown away. Text-settled contradictions in cited passages
- *    are now kept as `contradicts` links whatever the verdict, and a supported
- *    claim with one is `contested`.
+ *    are now kept as `contradicts` links whatever the verdict; a passage that
+ *    only MAY disagree beside support (a figure the text cannot settle) is
+ *    kept as a neutral `differs` link; and a supported claim with either is
+ *    `contested`.
+ *  - NO SINGLE SENTENCE TAKES THE AUDIT DOWN. A claim whose checks throw is
+ *    left unverified with the reason (`auditError`); the rest are audited.
  *  - RIVAL FIGURES. A statistic is also compared against the passages of the
  *    corpus sources it did NOT cite. A report that cites the one page with an
  *    old figure while two other pages it read give a new one is the quiet
@@ -44,6 +48,7 @@ import {
   resolveClaimStatus,
   selectPassagesForClaim,
   supportLabel,
+  supportingPassageDifference,
   validateClaimAgainstPassage,
   type AuditReason,
   type CitationJudge,
@@ -72,7 +77,11 @@ export interface AuditSource {
   truncated: boolean;
 }
 
-/** A passage of a CITED source that a verdict was recorded against. */
+/**
+ * A passage of a CITED source that a verdict was recorded against — or, with
+ * stance `differs` and status `unverified`, a passage recorded beside the
+ * supporting one because it may disagree: neutral, no verdict, no judge call.
+ */
 export interface AuditedLink {
   sourceIndex: number;
   ordinal: number;
@@ -80,7 +89,7 @@ export interface AuditedLink {
   strength: number;
   status: ClaimStatus;
   reasons: AuditReason[];
-  /** A judge call was spent on this pair. False for text-settled contradictions. */
+  /** A judge call was spent on this pair. False for text-settled contradictions and for doubts. */
   judged: boolean;
 }
 
@@ -108,6 +117,12 @@ export interface AuditedClaim extends ExtractedClaim {
   judgeCapReached: boolean;
   /** YYYY-MM-DD of the stale source behind a present-tense claim held to partly supported. */
   staleSince: string | null;
+  /**
+   * The audit could not read this claim or one of its cited passages (an
+   * error inside the checks): the claim is left unverified, with this as the
+   * reason, and the rest of the report is audited as usual. Null otherwise.
+   */
+  auditError: string | null;
 }
 
 export interface AuditCounts {
@@ -156,46 +171,63 @@ export function disagreesForSamePeriod(reasons: readonly AuditReason[]): boolean
 }
 
 /**
- * Whether a figure contradiction recorded beside a SUPPORTED claim is
- * another period's figure, for a claim that names no period at all:
- * `disagreesForSamePeriod` has no date of the claim's to go on, so an
- * undated "revenue was $4.3 billion" read its own source's "$3.9 billion in
- * 2023" paragraph as "Sources disagree" while the supporting paragraph said
- * "$4.3 billion in 2024" (`differentPeriodForUndatedClaim`). A polarity
- * contradiction is not about a figure, and is always kept.
+ * Whether a figure contradiction recorded beside a claim's verdict is another
+ * period's figure, for a claim that names no period at all
+ * (`differentPeriodForUndatedClaim`): `disagreesForSamePeriod` has no date of
+ * the claim's to go on, and a passage whose own words place its figure in a
+ * period before or after another one it states ("A year earlier, revenue was
+ * $3.9 billion") is not giving the claim's figure. Judged on the passage's
+ * own text: the supporting passage's year never says which period the claim
+ * is about, and never excuses a figure the passage pins to another year — an
+ * undated claim beside "81 vessels in 2025" is disputed whatever year the
+ * supporting "96 vessels" carries. A polarity contradiction is not about a
+ * figure, and is always kept.
  */
-export function figureFromAnotherPeriod(
-  claim: string,
-  reasons: readonly AuditReason[],
-  passage: string,
-  supporting: string | null
-): boolean {
-  if (!supporting || reasons.some((reason) => reason.code === "polarity_mismatch")) return false;
-  return differentPeriodForUndatedClaim(claim, supporting, passage);
+export function figureFromAnotherPeriod(claim: string, reasons: readonly AuditReason[], passage: string): boolean {
+  if (reasons.some((reason) => reason.code === "polarity_mismatch")) return false;
+  return differentPeriodForUndatedClaim(claim, passage);
 }
 
 /**
- * Whether a link's passage may disagree with the claim: its findings say it
- * gives a different figure for what may be the claim's own quantity and
- * period (`figure_differs`), or a denial the text cannot line up with the
- * claim (`negation_unresolved`); or, read beside the passage that supported
- * the claim, it gives another figure or date for something that passage
- * states (`differsFromSupportingPassage`). A disagreement the text cannot
- * settle, which the reader is shown: beside a supported claim it makes the
- * claim contested — sources disagree — and it never makes a claim
- * contradicted on its own, nor supported.
+ * Whether a passage's own findings say it may disagree with the claim: a
+ * different figure for what may be the claim's own quantity and period
+ * (`figure_differs`), or a denial the text cannot line up with the claim
+ * (`negation_unresolved`). A disagreement the text cannot settle.
  */
-export function disputesFigure(claim: string, reasons: readonly AuditReason[], passage: string, supporting: string | null): boolean {
+export function disputedByOwnText(claim: string, reasons: readonly AuditReason[], passage: string): boolean {
   // A denial the text could not line up with the claim is shown the same way: the reader is told sources may disagree.
   if (reasons.some((reason) => reason.code === "negation_unresolved")) return true;
-  if (
+  return (
     reasons.some((reason) => reason.code === "figure_differs") &&
     disagreesForSamePeriod(reasons) &&
-    !figureFromAnotherPeriod(claim, reasons, passage, supporting)
-  ) {
-    return true;
-  }
+    !figureFromAnotherPeriod(claim, reasons, passage)
+  );
+}
+
+/**
+ * Whether a link's passage may disagree with the claim: by its own findings
+ * (`disputedByOwnText`), or, read beside the passage that supported the
+ * claim, because it gives another figure or date for the same thing that
+ * passage states (`differsFromSupportingPassage`). A disagreement the text
+ * cannot settle, which the reader is shown: beside a supported claim it is
+ * recorded as a neutral `differs` link and makes the claim contested —
+ * sources disagree — and it never makes a claim contradicted, nor supported.
+ */
+export function disputesFigure(claim: string, reasons: readonly AuditReason[], passage: string, supporting: string | null): boolean {
+  if (disputedByOwnText(claim, reasons, passage)) return true;
   return supporting !== null && differsFromSupportingPassage(claim, passage, supporting);
+}
+
+/**
+ * The findings a `differs` link is recorded with: the passage's own, plus,
+ * when only the supporting passage shows the doubt, the neutral note that
+ * names both figures (`supportingPassageDifference`). Null when the passage
+ * disputes nothing.
+ */
+export function doubtBesideSupport(claim: string, reasons: readonly AuditReason[], passage: string, supporting: string): AuditReason[] | null {
+  if (disputedByOwnText(claim, reasons, passage)) return [...reasons];
+  const note = supportingPassageDifference(claim, passage, supporting);
+  return note ? [...reasons, note] : null;
 }
 
 /** The claims one audit checks: extraction, capped with the table share kept to its slots. */
@@ -260,7 +292,8 @@ export async function auditClaims(opts: {
   const out: AuditedClaim[] = [];
   let judgeCalls = 0;
 
-  for (const claim of opts.claims) {
+  /** One claim's audit. Anything it throws is caught by the loop below, never by the report. */
+  const auditOne = async (claim: ExtractedClaim): Promise<AuditedClaim> => {
     const claimType = claim.type as ClaimType;
     const candidates = selectPassagesForClaim(claim, passagesBySource);
     /*
@@ -274,7 +307,7 @@ export async function auditClaims(opts: {
      * same sentence never stands in for a figure or a date a passage lacks,
      * and never excuses one it gives differently: a passage that disagrees is
      * recorded as the disagreement it is (below), and the claim reads as
-     * contested.
+     * contested. If any of it throws, the claim alone is left unverified.
      */
     const ranked = candidates
       .map((candidate) => {
@@ -356,34 +389,56 @@ export async function auditClaims(opts: {
      * report's "$3.9 billion in 2023" paragraph beside its "$4.3 billion in
      * 2024" one is last year, not a disagreement, and a segment's figure is
      * already not "the same thing" (`measuresSameThing`). For a claim that
-     * names no year, the previous-year paragraph is recognised by the years
-     * the two paragraphs pin their figures to (`figureFromAnotherPeriod`).
+     * names no year, only a figure whose own words place it in another
+     * period ("A year earlier, …") is set aside (`figureFromAnotherPeriod`):
+     * which year the supporting paragraph gives says nothing about the claim.
      */
     for (const candidate of ranked.slice(next)) {
-      // A figure the text cannot settle is recorded beside support only: it makes the claim contested, never contradicted.
-      const disputed = supporting !== null && disputesFigure(claim.text, candidate.audit.reasons, candidate.passage.text, supporting);
-      if (!disputed) {
-        if (!candidate.audit.contradicted || !disagreesForSamePeriod(candidate.audit.reasons)) continue;
-        if (figureFromAnotherPeriod(claim.text, candidate.audit.reasons, candidate.passage.text, supporting)) continue;
+      const { reasons } = candidate.audit;
+      const passage = candidate.passage.text;
+      // A contradiction the text settles, for the claim's own period: the passage contradicts the claim.
+      if (candidate.audit.contradicted && disagreesForSamePeriod(reasons) && !figureFromAnotherPeriod(claim.text, reasons, passage)) {
+        verdicts.push({
+          status: "contradicted",
+          stance: "contradicts",
+          strength: 0,
+          label: "contradicted",
+          reasons,
+          degraded: false,
+        });
+        links.push({
+          sourceIndex: candidate.sourceIndex,
+          ordinal: candidate.passage.ordinal,
+          stance: "contradicts",
+          strength: 0,
+          status: "contradicted",
+          reasons,
+          judged: false,
+        });
+        linkPassages.push(passage);
+        continue;
       }
-      verdicts.push({
-        status: "contradicted",
-        stance: "contradicts",
-        strength: 0,
-        label: "contradicted",
-        reasons: candidate.audit.reasons,
-        degraded: false,
-      });
+      /*
+       * A disagreement the text cannot settle — a figure that may be the
+       * claim's own, a denial it cannot line up, or another figure for what
+       * the supporting passage states — is recorded beside support only, as
+       * a neutral `differs` link: it makes the claim contested and is shown
+       * with what the passage says, never as a contradiction and never as a
+       * verdict on the claim.
+       */
+      if (supporting === null) continue;
+      const doubt = doubtBesideSupport(claim.text, reasons, passage, supporting);
+      if (!doubt) continue;
       links.push({
         sourceIndex: candidate.sourceIndex,
         ordinal: candidate.passage.ordinal,
-        stance: "contradicts",
+        stance: "differs",
         strength: 0,
-        status: "contradicted",
-        reasons: candidate.audit.reasons,
+        status: "unverified",
+        reasons: doubt,
         judged: false,
       });
-      linkPassages.push(candidate.passage.text);
+      linkPassages.push(passage);
     }
 
     const resolved = resolveClaimStatus(verdicts, { judgeCapReached });
@@ -400,10 +455,12 @@ export async function auditClaims(opts: {
     const label = supportLabel(status, supportStrength);
 
     const unresolvedCitations = claim.citations.filter((n) => n < 1 || n > corpusSize);
-    const rivals = index ? rivalEvidence(claim, claimType, index, asOf, supporting) : [];
+    const rivals = index ? rivalEvidence(claim, claimType, index, asOf) : [];
     const contested =
       status === "supported" &&
-      (links.some((link, i) => link.stance === "contradicts" || disputesFigure(claim.text, link.reasons, linkPassages[i]!, supporting)) ||
+      (links.some(
+        (link, i) => link.stance !== "supports" || disputesFigure(claim.text, link.reasons, linkPassages[i]!, supporting)
+      ) ||
         rivals.length > 0);
 
     // The freshness finding names the defect in the repair only when it is
@@ -415,10 +472,7 @@ export async function auditClaims(opts: {
         ? sourceByIndex.get(best.sourceIndex)?.publishedAt?.toISOString().slice(0, 10) ?? null
         : null;
 
-    tally(counts, status, supportStrength);
-    if (contested) counts.contested += 1;
-    if (unresolvedCitations.length > 0) counts.unresolvedCitations += 1;
-    out.push({
+    return {
       ...claim,
       status,
       supportStrength,
@@ -430,10 +484,50 @@ export async function auditClaims(opts: {
       previewOnly,
       judgeCapReached,
       staleSince,
-    });
+      auditError: null,
+    };
+  };
+
+  for (const claim of opts.claims) {
+    let audited: AuditedClaim;
+    try {
+      audited = await auditOne(claim);
+    } catch (error) {
+      /*
+       * One sentence the checks cannot read — in the claim, a cited passage
+       * or an uncited one — must never take the whole report's audit down:
+       * every other claim would go unchecked and the judge's spend be lost.
+       * The claim it hit is left UNVERIFIED (nobody could vouch for it either
+       * way), with the reason, and the audit carries on.
+       */
+      audited = unverifiedAfterError(claim, corpusSize, error);
+    }
+    tally(counts, audited.status, audited.supportStrength);
+    if (audited.contested) counts.contested += 1;
+    if (audited.unresolvedCitations.length > 0) counts.unresolvedCitations += 1;
+    out.push(audited);
   }
 
   return { claims: out, judgeCalls, counts };
+}
+
+/** A claim whose checks threw: unverified, no links, the error kept as its reason. */
+function unverifiedAfterError(claim: ExtractedClaim, corpusSize: number, error: unknown): AuditedClaim {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    ...claim,
+    status: "unverified",
+    supportStrength: null,
+    label: supportLabel("unverified", null),
+    links: [],
+    rivals: [],
+    contested: false,
+    unresolvedCitations: claim.citations.filter((n) => n < 1 || n > corpusSize),
+    previewOnly: false,
+    judgeCapReached: false,
+    staleSince: null,
+    auditError: `The audit could not check this claim (${message.slice(0, 200)}), so it is left unverified.`,
+  };
 }
 
 function tally(counts: AuditCounts, status: ClaimStatus, strength: number | null) {
@@ -453,16 +547,11 @@ function tally(counts: AuditCounts, status: ClaimStatus, strength: number | null
  * and the claim's own citations already carry the polarity check. And only
  * where the claim's own dates are all in the passage: "revenue was $3.9bn in
  * 2023" is not a rival to "$4.3bn in 2024", it is last year — nor, for a
- * claim that names no year, to the "$4.3bn in 2024" passage that supports it
- * (`figureFromAnotherPeriod`).
+ * claim that names no year, is a figure its own words place in another
+ * period ("a year earlier", `figureFromAnotherPeriod`). The passage is judged
+ * on its own text: the year the supporting passage gives never excuses it.
  */
-function rivalEvidence(
-  claim: ExtractedClaim,
-  claimType: ClaimType,
-  index: readonly IndexedPassage[],
-  asOf: Date | null,
-  supporting: string | null
-): RivalEvidence[] {
+function rivalEvidence(claim: ExtractedClaim, claimType: ClaimType, index: readonly IndexedPassage[], asOf: Date | null): RivalEvidence[] {
   const claimDates = extractDates(claim.text);
   if (extractNumbers(claim.text, claimDates).length === 0) return [];
   const claimTokens = contentTokens(claim.text);
@@ -484,16 +573,23 @@ function rivalEvidence(
   for (const { entry } of scored.slice(0, RIVAL_CANDIDATES)) {
     if (rivals.length >= MAX_RIVALS_PER_CLAIM) break;
     if (seenSources.has(entry.sourceIndex)) continue;
-    const audit = auditEvidence({
-      claim: claim.text,
-      claimType,
-      passage: entry.passage.text,
-      publishedAt: entry.source.publishedAt,
-      asOf,
-    });
+    let audit: ReturnType<typeof auditEvidence>;
+    try {
+      audit = auditEvidence({
+        claim: claim.text,
+        claimType,
+        passage: entry.passage.text,
+        publishedAt: entry.source.publishedAt,
+        asOf,
+      });
+    } catch {
+      // An uncited passage the checks cannot read is no rival: it never changes the claim's verdict, and one bad
+      // sentence in the corpus must not take the claim's own audit down with it.
+      continue;
+    }
     const mismatches = audit.reasons.filter((reason) => reason.code === "figure_mismatch" || reason.code === "figure_differs");
     if (mismatches.length === 0 || !disagreesForSamePeriod(audit.reasons)) continue;
-    if (figureFromAnotherPeriod(claim.text, mismatches, entry.passage.text, supporting)) continue;
+    if (figureFromAnotherPeriod(claim.text, mismatches, entry.passage.text)) continue;
     seenSources.add(entry.sourceIndex);
     rivals.push({ sourceIndex: entry.sourceIndex, ordinal: entry.passage.ordinal, reasons: mismatches });
   }

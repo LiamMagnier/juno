@@ -209,17 +209,26 @@ test("the same source restating the same figure for the same year still contests
   assert.equal(outcome.claims[0].contested, true);
 });
 
-test("an undated figure is not contested by another year's figure when its support names its own year", async () => {
+test("an undated figure beside another year's figure is a doubt shown, never excused by its support's year and never a contradiction", async () => {
   const report = "# R\n\nNorthwind's revenue was $4.3 billion [1].";
   const supporting = "Northwind's revenue was $4.3 billion in 2024, the annual report says.";
   const lastYear = "Northwind's revenue was $3.9 billion in 2023, the previous annual report said.";
-  // The same source's previous-year paragraph, and an uncited source's.
-  for (const sources of [[source(1, `${supporting}\n\n${lastYear}`)], [source(1, supporting), source(2, lastYear)]]) {
-    const [claim] = (await audit(report, sources)).claims;
+  // Judged on its own text, the 2023 paragraph gives another figure for a claim that names no year: which year the
+  // supporting paragraph gives says nothing about the claim's (round 8). The same source's paragraph is recorded as a
+  // neutral doubt beside the support, and an uncited source's as a rival; neither is ever a contradiction.
+  {
+    const [claim] = (await audit(report, [source(1, `${supporting}\n\n${lastYear}`)])).claims;
     assert.equal(claim.status, "supported");
-    assert.equal(claim.contested, false, JSON.stringify(claim.links));
+    assert.equal(claim.contested, true, JSON.stringify(claim.links));
+    assert.ok(!claim.links.some((l) => l.stance === "contradicts" || l.status === "contradicted"), JSON.stringify(claim.links));
+    assert.ok(claim.links.some((l) => l.ordinal === 1 && l.stance === "differs" && l.status === "unverified"), JSON.stringify(claim.links));
+  }
+  {
+    const [claim] = (await audit(report, [source(1, supporting), source(2, lastYear)])).claims;
+    assert.equal(claim.status, "supported");
+    assert.equal(claim.contested, true);
     assert.ok(claim.links.every((l) => l.stance === "supports"));
-    assert.deepEqual(claim.rivals, []);
+    assert.equal(claim.rivals.length, 1);
   }
   // Still a disagreement: the same year, an undated rival, or an undated support.
   for (const body of [
@@ -435,7 +444,8 @@ test("another citation never hides a cited passage that gives a different figure
   assert.equal(claim.status, "supported");
   assert.equal(claim.contested, true);
   const fromOne = claim.links.filter((l) => l.sourceIndex === 1);
-  assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "contradicts"), JSON.stringify(claim.links));
+  // A figure the text cannot settle as the claim's (`figure_differs`) is a doubt beside support, never "contradicts".
+  assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance === "differs" && l.status === "unverified"), JSON.stringify(claim.links));
 });
 
 test("another citation never hides a cited passage that gives a different figure: a verb read as the measured noun's qualifier", async () => {
@@ -837,7 +847,14 @@ test("a verb read as the measured noun's qualifier no longer hides a disagreemen
     const [claim] = (await audit("# R\n\nIn 2024, Northwind's revenue was $4.3 billion [1][2].", [source(1, one), two])).claims;
     assert.equal(claim.status, "supported", one);
     assert.equal(claim.contested, true, `${one}: ${JSON.stringify(claim.links)}`);
-    assert.ok(claim.links.some((l) => l.sourceIndex === 1 && l.stance === "contradicts"), one);
+    // Recorded beside the support: as "contradicts" only where its own text settles it (the owner named, the
+    // figure stated), and otherwise as a neutral doubt.
+    const fromOne = claim.links.filter((l) => l.sourceIndex === 1);
+    assert.ok(fromOne.length > 0 && fromOne.every((l) => l.stance !== "supports"), one);
+    for (const l of fromOne) {
+      if (l.stance === "contradicts") assert.ok(l.reasons.some((r) => r.code === "figure_mismatch"), `${one}: ${JSON.stringify(l)}`);
+      else assert.equal(l.status, "unverified", one);
+    }
   }
 });
 
@@ -918,16 +935,26 @@ test("the same part of the year giving a different figure still disagrees; anoth
 test("an undated figure is not contested by a paragraph its own words place in another period", async () => {
   const report = "# R\n\nNorthwind's revenue was $4.3 billion [1].";
   const supporting = "Northwind's revenue was $4.3 billion in 2024, the annual report says.";
+  // Placed by its own words before or after ANOTHER period it states: a comparison figure, not the claim's.
   for (const other of [
     "A year earlier, revenue was $3.9 billion.",
     "Revenue was $3.9 billion in the prior year.",
-    "Revenue in FY2023 was $3.9 billion.",
-    "Northwind's revenue was $3.9 billion two years ago.",
+    "Revenue was $3.9 billion the year before.",
     "Fourth-quarter revenue was $1.2 billion.",
   ]) {
+    for (const body of [`${supporting}\n\n${other}`, `Northwind's revenue was $4.3 billion, the annual report says.\n\n${other}`]) {
+      const [claim] = (await audit(report, [source(1, body)])).claims;
+      assert.equal(claim.status, "supported", other);
+      assert.equal(claim.contested, false, `${other}: ${JSON.stringify(claim.links)}`);
+    }
+  }
+  // A date, or a period named from the present, says when the figure was — not that it is not the claim's, which
+  // names no period (round 8: the supporting paragraph's "2024" never decides that). A doubt, never a contradiction.
+  for (const other of ["Revenue in FY2023 was $3.9 billion.", "Northwind's revenue was $3.9 billion two years ago."]) {
     const [claim] = (await audit(report, [source(1, `${supporting}\n\n${other}`)])).claims;
     assert.equal(claim.status, "supported", other);
-    assert.equal(claim.contested, false, `${other}: ${JSON.stringify(claim.links)}`);
+    assert.equal(claim.contested, true, `${other}: ${JSON.stringify(claim.links)}`);
+    assert.ok(!claim.links.some((l) => l.stance === "contradicts" || l.status === "contradicted"), other);
   }
   // The same relative period giving another figure is still a disagreement.
   const [same] = (

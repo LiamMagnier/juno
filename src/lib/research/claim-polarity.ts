@@ -679,9 +679,15 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
   // Inversion after "nor"/"neither": "nor did it signal a cut".
   let inverted: { aux: Token; subjectEnd: number } | null = null;
   if (AUX.has(tokens[0]!.low) && tokens[1] && (SUBJECT_PRONOUNS.has(tokens[1].low) || DETERMINERS.has(tokens[1].low) || tokens[1].cap)) {
-    for (let j = 2; j < Math.min(tokens.length, 8); j += 1) {
+    // A determiner is never a subject on its own: "Did the strike not cost …", "Should the board vote …" — the noun
+    // after it is part of the subject, however much it looks like a verb ("strike", "board", "plan").
+    const firstVerbAt = DETERMINERS.has(tokens[1].low) ? 3 : 2;
+    for (let j = firstVerbAt; j < Math.min(tokens.length, 8); j += 1) {
       if (verbBase(tokens[j]!.low) && verbForm(tokens[j]!.low) === "base") {
-        inverted = { aux: tokens[0]!, subjectEnd: j };
+        // "Did the strike not cost …": the negator belongs to the verb group, not to the subject.
+        let subjectEnd = j;
+        while (subjectEnd > firstVerbAt - 1 && NEGATORS.has(tokens[subjectEnd - 1]!.low)) subjectEnd -= 1;
+        inverted = { aux: tokens[0]!, subjectEnd };
         break;
       }
     }
@@ -901,9 +907,11 @@ function readSubject(tokens: Token[]): Subject | null {
     owned = words.slice(1).map((t) => t.low).join(" ");
   }
   const core = words.filter((t, i) => !(i === 0 && (t.low === "the" || t.low === "a" || t.low === "an")));
+  // A bare article ("the", "a") names no subject at all: nothing is read, rather than a subject with no head.
+  if (core.length === 0) return null;
   const key = core.map((t) => t.low.replace(/\.$/, "")).join(" ");
   const ofAt = core.findIndex((t) => t.low === "of" || t.low === "from" || t.low === "at" || t.low === "in");
-  const headTok = (ofAt > 0 ? core[ofAt - 1] : core[core.length - 1])!;
+  const headTok = (ofAt > 0 ? core[ofAt - 1] : core[core.length - 1]) ?? core[core.length - 1]!;
   const names = core.filter((t) => t.cap && !TITLES.has(t.low)).map((t) => t.low.replace(/(?:'s|')$/, "").replace(/\.$/, ""));
   const proper = core.some((t) => (t.cap && !t.first && !TITLES.has(t.low)) || /^[A-Z]{2,}$/.test(t.raw)) || (core.length > 1 && core.slice(1).some((t) => t.cap));
   const coordinated = core.some((t) => t.low === "and" || t.low === "&");

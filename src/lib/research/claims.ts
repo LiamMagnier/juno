@@ -22,6 +22,7 @@ import {
   sourceTypeOf,
   splitPassages,
   supportLabel,
+  supportingPassageDifference,
   type AuditReason,
   type CitationJudge,
   type ClaimStatus,
@@ -310,6 +311,19 @@ interface StoredSource {
 }
 
 /**
+ * `auditEvidence` for the inspector, which re-derives every link's findings:
+ * a passage the checks cannot read shows no findings rather than taking the
+ * whole inspector down.
+ */
+function auditOrNull(opts: Parameters<typeof auditEvidence>[0]): ReturnType<typeof auditEvidence> | null {
+  try {
+    return auditEvidence(opts);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Persist the corpus, then extract, link and validate the report's claims.
  *
  * Returns null when the report carries no load-bearing claims at all — a
@@ -470,6 +484,8 @@ export async function recordCitationAudit(opts: {
   const repairableClaims: RepairableClaim[] = [];
   /** Per claim row: the sources it cited (by id, so a renumbering cannot move them) and the markers that named nothing. */
   const claimCitations: Record<string, { sourceIds: string[]; unresolved: number[] }> = {};
+  /** Per claim row: why its checks could not run (`auditError`), for the claims left unverified by an error. */
+  const auditErrors: Record<string, string> = {};
   const rivals: Array<{ claimId: string; sourceId: string; passageId: string }> = [];
 
   for (const claim of outcome.claims) {
@@ -489,6 +505,7 @@ export async function recordCitationAudit(opts: {
       const passageId = passageIdOf.get(`${link.sourceIndex}:${link.ordinal}`);
       if (passageId) await upsertLink(row.id, passageId, link.stance, link.strength);
     }
+    if (claim.auditError) auditErrors[row.id] = claim.auditError;
     claimCitations[row.id] = {
       sourceIds: claim.citations.map((n) => sourceIdOf.get(n)).filter((id): id is string => !!id),
       unresolved: claim.unresolvedCitations,
@@ -590,6 +607,8 @@ export async function recordCitationAudit(opts: {
         asOf: asOf.toISOString(),
         claimCitations,
         rivals,
+        // Claims whose checks threw and were left unverified, with the reason. Present only when there are any.
+        ...(Object.keys(auditErrors).length > 0 ? { auditErrors } : {}),
         judgeCalls,
         // Beside `judgeCalls` because the two answer different questions: one
         // says how much checking was done, the other what the checking cost.
@@ -1195,17 +1214,18 @@ export async function loadCitationAuditForMessage(
         const passage = rivalPassageById.get(r.passageId);
         const source = passage ? sourceById.get(passage.sourceId) : undefined;
         if (!passage || !source) return [];
-        const audit = auditEvidence({
+        const audit = auditOrNull({
           claim: claim.text,
           claimType: claim.type as ClaimType,
           passage: passage.text,
           publishedAt: source.publishedAt ?? null,
         });
+        if (!audit) return [];
         const codedReasons = audit.reasons.filter((reason) => reason.code === "figure_mismatch" || reason.code === "figure_differs");
         // Recomputed like a link's reasons: a rival this build would no
         // longer call one is not shown on the strength of an old receipt.
         if (codedReasons.length === 0 || !disagreesForSamePeriod(audit.reasons)) return [];
-        if (figureFromAnotherPeriod(claim.text, codedReasons, passage.text, supporting)) return [];
+        if (figureFromAnotherPeriod(claim.text, codedReasons, passage.text)) return [];
         return [{ sourceIndex: indexOf.get(source.id) ?? 0, passage: passage.text, locator: passage.locator, codedReasons }];
       });
     const links: ClaimAuditLinkView[] = claim.links.map((link) => {
@@ -1217,7 +1237,7 @@ export async function loadCitationAuditForMessage(
          * give, so a reader can never be told a reason the current validator
          * no longer stands behind.
          */
-        const audit = auditEvidence({
+        const audit = auditOrNull({
           claim: claim.text,
           claimType: claim.type as ClaimType,
           passage: link.passage.text,
@@ -1226,21 +1246,31 @@ export async function loadCitationAuditForMessage(
           // and absent on audits that never checked freshness at all.
           asOf: receipt.asOf,
         });
+        const stance = link.stance as LinkStance;
+        const codedReasons = audit ? [...audit.reasons] : [];
+        // A doubt beside support is shown with the note naming both figures, as the audit recorded it.
+        let note: AuditReason | null = null;
+        try {
+          note = stance === "differs" && supporting ? supportingPassageDifference(claim.text, link.passage.text, supporting) : null;
+        } catch {
+          note = null;
+        }
+        if (note) codedReasons.push(note);
         return {
           sourceIndex: source ? indexOf.get(source.id) ?? 0 : 0,
-          stance: link.stance as LinkStance,
+          stance,
           strength: link.strength,
           passage: link.passage.text,
           locator: link.passage.locator,
-          reasons: audit.reasons.map((r) => r.detail),
-          codedReasons: audit.reasons,
+          reasons: codedReasons.map((r) => r.detail),
+          codedReasons,
         };
       });
-    // As the audit decided it: a cited passage that contradicts the claim, one whose figure may be
-    // the claim's own but differs (`disputesFigure`), or an uncited rival.
+    // As the audit decided it: a cited passage that contradicts the claim or may disagree with it (`differs`),
+    // one whose figure may be the claim's own but differs (`disputesFigure`), or an uncited rival.
     const contested =
       status === "supported" &&
-      (links.some((link) => link.stance === "contradicts" || disputesFigure(claim.text, link.codedReasons, link.passage, supporting)) ||
+      (links.some((link) => link.stance !== "supports" || disputesFigure(claim.text, link.codedReasons, link.passage, supporting)) ||
         rivals.length > 0);
     if (contested) summary.contested = (summary.contested ?? 0) + 1;
     const unresolved = receipt.claimCitations?.get(claim.id)?.unresolved ?? (receipt.claimCitations ? [] : null);
