@@ -61,10 +61,19 @@ public enum PreviewProfileFixtures {
             let weekend = NativeProfileDays.weekdayMondayFirst(date) >= 5
             let roll = next()
             let gap = (120...134).contains(back) || (40...44).contains(back)
-            if gap || roll < (weekend ? 0.62 : 0.18) { continue }
+            let quiet = gap || roll < (weekend ? 0.62 : 0.18)
+            // The enormous day is always drawn: when 23 days back fell on a
+            // weekend the roll could drop it, and the peak (and its test)
+            // changed with the weekday. The draws it would have used are
+            // still taken, so every other day stays as it was.
+            if back == 23 {
+                if !quiet { _ = next(); _ = next() }
+                days.append((date, 4_200_000))
+                continue
+            }
+            if quiet { continue }
             let base = weekend ? 60_000.0 : 380_000.0
-            var tokens = Int(base * (0.2 + 3.2 * next() * next()))
-            if back == 23 { tokens = 4_200_000 }
+            let tokens = Int(base * (0.2 + 3.2 * next() * next()))
             days.append((date, tokens))
         }
         let peak = days.max { $0.1 < $1.1 } ?? (today, 0)
