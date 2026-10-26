@@ -195,13 +195,15 @@ export function formatAgo(ms: number, nowMs: number): string {
  * An avatar's initials: the first letters of the first and last names ("Liam
  * Magnier" → "LM"), one letter for a one-word name ("Liam" → "L", not the
  * "LI" the first two letters gave), else the email's first letter.
+ * Locale-free upper case: the server and a Turkish browser would otherwise
+ * draw "I" and "İ" and fail hydration (the fallback is CSS-uppercased anyway).
  */
 export function initialsFor(name: string | null | undefined, email: string | null | undefined): string {
   const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
   const first = (word: string | undefined) => (word ? Array.from(word)[0] ?? "" : "");
-  if (words.length > 1) return (first(words[0]) + first(words[words.length - 1])).toLocaleUpperCase();
-  if (words.length === 1) return first(words[0]).toLocaleUpperCase();
-  return (first((email ?? "").trim()) || "U").toLocaleUpperCase();
+  if (words.length > 1) return (first(words[0]) + first(words[words.length - 1])).toUpperCase();
+  if (words.length === 1) return first(words[0]).toUpperCase();
+  return (first((email ?? "").trim()) || "U").toUpperCase();
 }
 
 /** "Sep 14": a day inside the last month, without the year. */

@@ -323,16 +323,28 @@ function useChipFit({
       const drawnName = nameEl.getBoundingClientRect().width;
       const effortEl = chip.querySelector(".model-chip-effort");
       const drawnEffort = effortEl ? effortEl.getBoundingClientRect().width : 0;
-      // The chip without its name, mark or effort: padding, gaps, paid modes, chevron.
-      const bare = chipWidth - drawnName - drawnEffort - (mark ? markCost : 0);
+      // Pro's word is " Pro" after a name and "Pro" alone, so it comes out as
+      // drawn and goes back per rung. Left inside `bare`, the measure changed
+      // with the rung on screen and two rungs could each pick the other, every
+      // frame (a GPT-5.6 model with Pro on, on a phone).
+      const proEl = chip.querySelector(".model-chip-pro");
+      const drawnPro = proEl ? proEl.getBoundingClientRect().width : 0;
+      // The chip without its name, mark, effort or Pro: padding, gaps, speed, chevron.
+      const bare = chipWidth - drawnName - drawnEffort - drawnPro - (mark ? markCost : 0);
       const phone = !window.matchMedia("(min-width: 640px)").matches;
       const ladder = chipLabelLadder(name, { phone, effort: !!effortLabel, suffix: pro });
       const measurer = textMeasurer(nameEl);
       const effortCost = effortLabel ? measurer.width(` ${effortLabel}`) : 0;
+      // Same font as the name (composer.css only recolours the word).
+      const proCost = pro ? { named: measurer.width(" Pro"), alone: measurer.width("Pro") } : null;
       const at = pickChipLabel(
         ladder,
         (label) =>
-          bare + (label.mark ? markCost : 0) + measurer.width(label.text) + (label.effort ? effortCost : 0) <=
+          bare +
+            (label.mark ? markCost : 0) +
+            measurer.width(label.text) +
+            (label.effort ? effortCost : 0) +
+            (proCost ? (label.text === "" ? proCost.alone : proCost.named) : 0) <=
           room + 0.5,
       );
       measurer.done();
@@ -581,7 +593,7 @@ export function ModelSelector({
           <span className="model-chip-effort composer-model-chip__effort shrink-0 whitespace-pre"> {effortLabel}</span>
         ) : null}
         {/* No space before "Pro" when the name has stepped out (the mark leads alone). */}
-        {pro ? <span className="composer-model-chip__effort shrink-0 whitespace-pre">{fit && fit.text === "" ? "Pro" : " Pro"}</span> : null}
+        {pro ? <span className="model-chip-pro composer-model-chip__effort shrink-0 whitespace-pre">{fit && fit.text === "" ? "Pro" : " Pro"}</span> : null}
       </span>
       {speed !== "off" ? (
         // The panel's own bolt, so the chip and the switch that set it read
