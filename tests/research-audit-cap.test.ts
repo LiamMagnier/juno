@@ -75,12 +75,54 @@ test("an audit whose only gaps are unchecked claims completes with no paid revis
 });
 
 test("the audit's cap is the run's judgeCalls and its claim cap the scope's targetClaims (B22)", () => {
+  // The decision loop moved to citation-audit-core.ts (where the behaviour is
+  // tested directly, below); claims.ts must still hand it the run's own caps.
   const claims = readSource("src/lib/research/claims.ts");
   assert.match(claims, /const judgeCap = Math\.max\(1, Math\.floor\(opts\.maxJudgeCalls \?\? MAX_JUDGE_CALLS\)\);/);
-  assert.match(claims, /if \(!settledByText && judgeCalls >= judgeCap\) \{\n\s+judgeCapReached = verdicts\.length === 0;/);
-  assert.match(claims, /resolveClaimStatus\(verdicts, \{ judgeCapReached \}\)/);
-  assert.match(claims, /claimsForAudit\(extractClaims\(opts\.report\), Math\.max\(1, Math\.floor\(opts\.maxClaims \?\? MAX_CLAIMS\)\)\)/);
+  assert.match(claims, /selectClaimsForAudit\(opts\.report, opts\.maxClaims \?\? MAX_CLAIMS\)/);
+  assert.match(claims, /auditClaims\(\{[\s\S]*?judgeCap,[\s\S]*?\}\)/);
+  const core = readSource("src/lib/research/citation-audit-core.ts");
+  assert.match(core, /if \(!settledByText && judgeCalls >= judgeCap\) \{\n\s+judgeCapReached = verdicts\.length === 0;/);
+  assert.match(core, /resolveClaimStatus\(verdicts, \{ judgeCapReached \}\)/);
+  assert.match(core, /claimsForAudit\(extractClaims\(report\), Math\.max\(1, Math\.floor\(maxClaims\)\)\)/);
   const run = readSource("src/lib/research/run.ts");
   assert.match(run, /maxJudgeCalls: plan\.envelope\?\.judgeCalls/);
   assert.match(run, /maxClaims: plan\.scope \? targetClaimsFor\(plan\.scope\.questions\) : undefined/);
+});
+
+test("past the judge's cap, claims are unverified — and a contradiction the text settles still costs nothing", async () => {
+  const { auditClaims, selectClaimsForAudit } = await import("@/lib/research/citation-audit-core");
+  const report = [
+    "# Report",
+    "",
+    "Northwind reported revenue of $4.3 billion for the 2024 financial year [1].",
+    "",
+    "Southwind employed 12,000 people at the end of 2024 [2].",
+    "",
+    "Eastwind's plant produced 40,000 tonnes of steel in 2024 [3].",
+  ].join("\n");
+  const passage = (text: string) => [{ text, locator: `chars:0-${text.length}`, ordinal: 0 }];
+  const sources = [
+    { index: 1, title: "A", url: "https://a.example/r", publishedAt: null, truncated: false, passages: passage("Northwind reported revenue of $4.3 billion for the 2024 financial year, its filing shows.") },
+    { index: 2, title: "B", url: "https://b.example/r", publishedAt: null, truncated: false, passages: passage("Southwind employed 12,000 people at the end of 2024, the annual report says.") },
+    // Gives a different tonnage for the same plant and year: settled by the text alone.
+    { index: 3, title: "C", url: "https://c.example/r", publishedAt: null, truncated: false, passages: passage("Eastwind's plant produced 25,000 tonnes of steel in 2024, the company said.") },
+  ];
+  let calls = 0;
+  const outcome = await auditClaims({
+    claims: selectClaimsForAudit(report, 40),
+    sources,
+    judge: async () => {
+      calls += 1;
+      return { verdict: "supported", strength: 0.9 };
+    },
+    judgeCap: 1,
+  });
+  assert.equal(calls, 1, "the cap is a hard ceiling on judge calls");
+  assert.equal(outcome.judgeCalls, 1);
+  const [first, second, third] = outcome.claims;
+  assert.equal(first.status, "supported");
+  assert.equal(second.status, "unverified", "no verdict because of the cap is unverified, never unsupported");
+  assert.equal(second.judgeCapReached, true);
+  assert.equal(third.status, "contradicted", "a figure mismatch needs no judge, so the cap does not hide it");
 });

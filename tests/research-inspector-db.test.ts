@@ -131,6 +131,12 @@ if (!DB_URL) {
       assert.equal(view.claims[0]?.status, "supported");
       assert.equal(view.claims[0]?.links[0]?.sourceIndex, 1);
       assert.equal(view.claims[0]?.links[0]?.passage, passage.text);
+      // An audit recorded before read states, rivals and invented-citation
+      // receipts existed reads back as "not known", never as "opened" / "none".
+      assert.equal(view.sources[0]?.readState, null);
+      assert.equal(view.claims[0]?.unresolvedCitations, null);
+      assert.deepEqual(view.claims[0]?.rivals, []);
+      assert.equal(view.claims[0]?.contested, false);
 
       assert.equal(
         await claims.loadCitationAuditForMessage(other.id, message.id),
@@ -141,6 +147,243 @@ if (!DB_URL) {
     } finally {
       await prisma.user.delete({ where: { id: owner.id } });
       await prisma.user.delete({ where: { id: other.id } });
+    }
+  });
+
+  test("records how each source was read, disagreement and invented citations, and the inspector reads them back", async () => {
+    const claims = await import("@/lib/research/claims");
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const owner = await prisma.user.create({
+      data: { email: `research-audit-e2e-${suffix}@example.invalid`, name: "Research audit e2e" },
+    });
+    try {
+      const report = [
+        "# Fleet report",
+        "",
+        "Installed capacity reached 16.5 GW at the end of June 2026 [1]. Reviewers rated the mobile app 4.8 out of 5 [2].",
+        "",
+        "The fleet currently has 13.8 GW of capacity installed [4]. The operator was founded in Aberdeen in 2019 [9].",
+      ].join("\n");
+      const conversation = await prisma.conversation.create({ data: { userId: owner.id, title: "Audit e2e" } });
+      const message = await prisma.message.create({
+        data: { conversationId: conversation.id, role: "ASSISTANT", content: report },
+      });
+      const run = await prisma.researchRun.create({
+        data: { userId: owner.id, conversationId: conversation.id, goal: "Fleet capacity", state: "validating_citations" },
+      });
+      const bodies = {
+        opened: "Installed capacity reached 16.5 GW at the end of June 2026, the department's quarterly statistics show. Three projects reached full output in the quarter.",
+        preview: "A capable app for fleet operators. We tested it for a month and found the dashboard fast and the mobile app solid.",
+        rival: "On a stricter basis installed capacity stood at 15.1 GW at the end of June 2026, the industry review found. It counts a project only once every turbine exports power.",
+        old: "The fleet currently has 13.8 GW of capacity installed, the largest in Europe. Further projects are planned for later in the decade.",
+      };
+      const rows = await Promise.all(
+        (["opened", "preview", "rival", "old"] as const).map((key, i) =>
+          prisma.researchSource.create({
+            data: {
+              userId: owner.id,
+              runId: run.id,
+              url: `https://src${i + 1}.example/${key}`,
+              canonicalUrl: `https://src${i + 1}.example/${key}`,
+              title: `Source ${key}`,
+              snapshot: bodies[key],
+              publishedAt: key === "old" ? new Date("2023-02-10T00:00:00Z") : new Date("2026-09-25T00:00:00Z"),
+            },
+          })
+        )
+      );
+      // The run's ledger: three pages opened by a fetching stage, the preview
+      // only ever seen as search-provider text, and the READ stage's
+      // bookkeeping line for every source (which is not a fetch).
+      const ledger = [
+        ...[rows[0]!, rows[2]!, rows[3]!].map((row) => ({ url: row.url, title: row.title })),
+        ...rows.map((row) => ({ url: row.url, title: row.title, ranked: true })),
+      ];
+      for (const [i, payload] of ledger.entries()) {
+        await prisma.researchEvent.create({ data: { userId: owner.id, runId: run.id, seq: i + 1, kind: "source_read", payload } });
+      }
+
+      const result = await claims.recordCitationAudit({
+        userId: owner.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        runId: run.id,
+        goal: "Fleet capacity",
+        report,
+        sources: rows.map((row) => ({
+          sourceId: row.id,
+          url: row.url,
+          title: row.title,
+          body: row.snapshot ?? "",
+          publishedAt: row.publishedAt,
+        })),
+        judge: async () => ({ verdict: "supported", strength: 0.95 }),
+        asOf: new Date("2026-10-25T12:00:00Z"),
+      });
+      assert.ok(result);
+      assert.equal(result.claims, 4);
+      assert.equal(result.supported, 1);
+      assert.equal(result.contested, 1, "the uncited review gives 15.1 GW for the same date");
+      assert.equal(result.unverified, 1, "the rating was checked only against a preview");
+      assert.equal(result.partiallySupported, 1, "a 2023 page cannot say what is installed now");
+      assert.equal(result.unsupported, 1);
+      assert.equal(result.unresolvedCitations, 1);
+      assert.doesNotMatch(result.report, /\[9\]/, "a citation to a source the corpus does not have never survives");
+      assert.match(result.report, /Possibly out of date: The fleet currently has 13\.8 GW/);
+
+      const audit = await prisma.researchEvent.findFirst({
+        where: { runId: run.id, userId: owner.id, kind: "citation_audit" },
+        orderBy: { seq: "desc" },
+        select: { payload: true },
+      });
+      const payload = audit?.payload as Record<string, unknown>;
+      assert.deepEqual(payload.readStates, {
+        [rows[0]!.id]: "opened",
+        [rows[1]!.id]: "search_preview",
+        [rows[2]!.id]: "opened",
+        [rows[3]!.id]: "opened",
+      });
+      assert.deepEqual(payload.truncatedSources, [rows[1]!.id]);
+      assert.equal(payload.asOf, "2026-10-25T12:00:00.000Z");
+      assert.equal((payload.rivals as unknown[]).length, 1);
+      // A rival is never written as a link: the sources pill and the native
+      // evidence list read links as "the claims that cite this source".
+      const rivalLinks = await prisma.researchClaimLink.count({ where: { passage: { sourceId: rows[2]!.id } } });
+      assert.equal(rivalLinks, 0);
+
+      const view = await claims.loadCitationAuditForMessage(owner.id, message.id);
+      assert.ok(view);
+      assert.deepEqual(
+        view.sources.map((source) => [source.index, source.readState, source.truncated]),
+        [
+          [1, "opened", false],
+          [2, "search_preview", true],
+          [3, "opened", false],
+          [4, "opened", false],
+        ]
+      );
+      const byText = (needle: string) => view.claims.find((claim) => claim.text.includes(needle))!;
+      const capacity = byText("16.5 GW");
+      assert.equal(capacity.status, "supported");
+      assert.equal(capacity.contested, true);
+      assert.equal(capacity.rivals.length, 1);
+      assert.equal(capacity.rivals[0]!.sourceIndex, 3);
+      // A rival carries figure findings only: proof, or (on its stricter basis) a different figure the judge reads.
+      const rivalCodes = capacity.rivals[0]!.codedReasons.map((reason) => reason.code);
+      assert.ok(rivalCodes.length > 0 && rivalCodes.every((code) => code === "figure_mismatch" || code === "figure_differs"), rivalCodes.join(", "));
+      assert.deepEqual(capacity.unresolvedCitations, []);
+      assert.equal(byText("4.8 out of 5").status, "unverified");
+      const stale = byText("currently has 13.8 GW");
+      assert.equal(stale.label, "partially supported");
+      assert.ok(stale.links.some((link) => link.codedReasons.some((reason) => reason.code === "source_stale")));
+      assert.deepEqual(byText("founded in Aberdeen").unresolvedCitations, [9]);
+      assert.equal(view.summary.contested, 1);
+      assert.equal(view.summary.unresolvedCitations, 1);
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+      await prisma.$disconnect();
+    }
+  });
+
+  test("the inspector re-derives rivals: a quarter or an earlier year an older receipt named is not shown, a real rival is", async () => {
+    const claims = await import("@/lib/research/claims");
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const owner = await prisma.user.create({
+      data: { email: `research-audit-periods-${suffix}@example.invalid`, name: "Research audit periods" },
+    });
+    try {
+      const report = [
+        "# Results",
+        "",
+        "Northwind's revenue was $4.3 billion [1]. In 2024, Northwind's revenue reached $4.3 billion [1].",
+      ].join("\n");
+      const conversation = await prisma.conversation.create({ data: { userId: owner.id, title: "Audit periods" } });
+      const message = await prisma.message.create({
+        data: { conversationId: conversation.id, role: "ASSISTANT", content: report },
+      });
+      const run = await prisma.researchRun.create({
+        data: { userId: owner.id, conversationId: conversation.id, goal: "Northwind revenue", state: "validating_citations" },
+      });
+      const bodies = {
+        annual: "Northwind's revenue was $4.3 billion in 2024, the annual report says. The board proposed a higher dividend.",
+        quarter: "Northwind's fourth-quarter revenue was $1.2 billion in 2024, the earnings release shows. Margins were steady.",
+        earlier: "A year earlier, Northwind's revenue was $3.9 billion, the previous filing shows. Costs fell slightly.",
+        restated: "Northwind's revenue was $4.1 billion in 2024 after the restatement, the auditors found. The gap was booked late.",
+      };
+      const keys = ["annual", "quarter", "earlier", "restated"] as const;
+      const rows = await Promise.all(
+        keys.map((key, i) =>
+          prisma.researchSource.create({
+            data: {
+              userId: owner.id,
+              runId: run.id,
+              url: `https://periods${i + 1}.example/${key}`,
+              canonicalUrl: `https://periods${i + 1}.example/${key}`,
+              title: `Source ${key}`,
+              snapshot: bodies[key],
+              publishedAt: new Date("2026-09-25T00:00:00Z"),
+            },
+          })
+        )
+      );
+      const result = await claims.recordCitationAudit({
+        userId: owner.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        runId: run.id,
+        goal: "Northwind revenue",
+        report,
+        sources: rows.map((row) => ({
+          sourceId: row.id,
+          url: row.url,
+          title: row.title,
+          body: row.snapshot ?? "",
+          publishedAt: row.publishedAt,
+        })),
+        judge: async () => ({ verdict: "supported", strength: 0.95 }),
+        asOf: new Date("2026-10-25T12:00:00Z"),
+      });
+      assert.ok(result);
+      assert.equal(result.claims, 2);
+      assert.equal(result.supported, 2);
+      assert.equal(result.contested, 2, "the restated figure for the same year disagrees with both");
+
+      const event = await prisma.researchEvent.findFirst({
+        where: { runId: run.id, userId: owner.id, kind: "citation_audit" },
+        orderBy: { seq: "desc" },
+        select: { id: true, payload: true },
+      });
+      assert.ok(event);
+      const payload = event.payload as Record<string, unknown>;
+      const recorded = payload.rivals as Array<{ claimId: string; sourceId: string; passageId: string }>;
+      // This build records only the restated figure: not the quarter, not the year before.
+      assert.deepEqual([...new Set(recorded.map((r) => r.sourceId))], [rows[3]!.id]);
+
+      // A receipt from an older build that also named the quarter and the
+      // earlier year: the inspector recomputes, and shows neither.
+      const claimIds = [...new Set(recorded.map((r) => r.claimId))];
+      assert.equal(claimIds.length, 2);
+      const passageOf = async (sourceId: string) =>
+        (await prisma.researchPassage.findFirstOrThrow({ where: { sourceId, userId: owner.id }, select: { id: true } })).id;
+      const stale = [];
+      for (const claimId of claimIds) {
+        for (const row of [rows[1]!, rows[2]!]) stale.push({ claimId, sourceId: row.id, passageId: await passageOf(row.id) });
+      }
+      await prisma.researchEvent.update({ where: { id: event.id }, data: { payload: { ...payload, rivals: [...recorded, ...stale] } } });
+
+      const view = await claims.loadCitationAuditForMessage(owner.id, message.id);
+      assert.ok(view);
+      assert.equal(view.claims.length, 2);
+      for (const claim of view.claims) {
+        assert.equal(claim.status, "supported", claim.text);
+        assert.deepEqual(claim.rivals.map((r) => r.sourceIndex), [4], `${claim.text}: ${JSON.stringify(claim.rivals.map((r) => r.passage))}`);
+        const rivalCodes = claim.rivals[0]!.codedReasons.map((reason) => reason.code);
+        assert.ok(rivalCodes.length > 0 && rivalCodes.every((code) => code === "figure_mismatch" || code === "figure_differs"), rivalCodes.join(", "));
+        assert.equal(claim.contested, true, claim.text);
+      }
+      assert.equal(view.summary.contested, 2);
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
       await prisma.$disconnect();
     }
   });

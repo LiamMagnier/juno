@@ -114,6 +114,9 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
                   {link.stance === "contradicts" && (
                     <span className="font-mono text-caption text-destructive-ink">this passage contradicts it</span>
                   )}
+                  {link.stance === "differs" && (
+                    <span className="font-mono text-caption text-warning-foreground">{AUDIT_COPY.mayDifferPassage}</span>
+                  )}
                 </div>
                 <p className="mt-1.5 text-body leading-snug text-foreground/90">{claim.text}</p>
                 <blockquote className="mt-1.5 border-l-2 border-border pl-3 text-body leading-relaxed text-muted-foreground">

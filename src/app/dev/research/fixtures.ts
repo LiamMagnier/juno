@@ -246,6 +246,20 @@ export const AUDIT: CitationAudit = {
         { sourceIndex: 1, stance: "supports", strength: 0.86, passage: "Seasonal COP remained above 2.0 in every monitored home, including through a week at -21 °C.", locator: null, codedReasons: [] },
         { sourceIndex: 2, stance: "supports", strength: 0.7, passage: "Modern units can operate efficiently at temperatures as low as -20 °C.", locator: null, codedReasons: [] },
       ],
+      // The disagreement states (citation-audit-core.ts): supported by its own
+      // citations, while a source it did not cite gives a different figure.
+      contested: true,
+      unresolvedCitations: [],
+      rivals: [
+        {
+          sourceIndex: 3,
+          passage: "Across the monitored homes the seasonal COP averaged 1.8 in the coldest region, below the manufacturer's rating.",
+          locator: "chars:1200-1320",
+          codedReasons: [
+            { code: "figure_mismatch", detail: "The passage gives 1.8 where the claim says 2.", ceiling: 0 },
+          ],
+        },
+      ],
     },
     {
       id: "c2",
@@ -291,8 +305,10 @@ export const AUDIT: CitationAudit = {
     sourceType: null,
     duplicateOfIndex: null,
     truncated: false,
+    // One page whose text came from the search provider rather than a fetch.
+    readState: i === 2 ? ("search_text" as const) : ("opened" as const),
   })),
-  summary: { claims: 4, supported: 2, partiallySupported: 1, unsupported: 0, contradicted: 0, unverified: 1, duplicateSources: 0 },
+  summary: { claims: 4, supported: 2, partiallySupported: 1, unsupported: 0, contradicted: 0, unverified: 1, duplicateSources: 0, contested: 1, unresolvedCitations: 0 },
 };
 
 let seq = 0;

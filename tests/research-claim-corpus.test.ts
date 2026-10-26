@@ -1,0 +1,534 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { SUPPORTED_MIN, auditEvidence, repairReportFromClaims, type CitationJudge } from "@/lib/research/claim-analysis";
+import { auditClaims, selectClaimsForAudit, type AuditSource } from "@/lib/research/citation-audit-core";
+
+/*
+ * The consolidated regression corpus of the deterministic citation audit:
+ * every repro the verifiers and the fixer ever wrote against it (the probe
+ * scripts of six review rounds), as data under
+ * tests/fixtures/research-claims/. Hand-written cases are copied as they
+ * were; generators ("8 subjects x 6 predicates x 4 contrasts") are kept as
+ * grids the test expands. Each case says where it came from.
+ *
+ * Three promises, each asserted over the whole corpus:
+ *
+ *  - an honest claim is never contradicted by the text alone. A false
+ *    contradiction skips the judge, sets the ceiling to 0 and rewrites the
+ *    sentence as "Conflicting evidence: …" — the accusation this audit must
+ *    never make;
+ *  - a passage that gives a different figure is never shown as support.
+ *    Each passage is judged on its own text — no other citation stands in
+ *    for a figure or a date it lacks, or excuses one it gives differently —
+ *    and beside a passage that supports the claim, it leaves the claim
+ *    contested, never cleanly supported;
+ *  - a real contradiction is still caught at least as often as the base
+ *    branch caught it (its auditEvidence, recorded in baseline.json), which
+ *    guessed — and paid for its recall with thousands of false contradictions.
+ *
+ * Kinds. pairs: `honest` (must not be contradicted), `contradiction` (a real
+ * one: counted when contradicted), `disagree` (a passage with a different
+ * figure, and in `corroborating` the text of another source that states the
+ * claim's: never at the supported ceiling). reports, run through the whole audit with
+ * a judge that rubber-stamps: `honest` (no claim contradicted, no "Conflicting
+ * evidence"), `disagree` (the sources in `disagreeing` never shown as
+ * support, and a supported claim contested), `contradiction` (contradicted
+ * or contested).
+ *
+ * `known`: a repro that still breaks one of these promises on this build, for
+ * a reason outside the fix it was added with, says so in its fixture. The
+ * strict tests skip it, and the round that added it bounds how many there are
+ * — a known miss is recorded, never silently dropped from the corpus.
+ */
+
+const DIR = join(__dirname, "fixtures", "research-claims");
+
+type PairKind = "honest" | "contradiction" | "disagree";
+interface PairCase {
+  id: string;
+  from: string;
+  kind: PairKind;
+  claim: string;
+  passage: string;
+  corroborating?: string[];
+  /** Still breaks a promise on this build, and why (see the header). */
+  known?: string;
+}
+interface ReportCase {
+  id: string;
+  from: string;
+  kind: "honest" | "disagree" | "contradiction";
+  report: string;
+  sources: string[];
+  disagreeing?: number[];
+  judge?: "credulous" | "optimistic";
+  /** Still breaks a promise on this build, and why (see the header). */
+  known?: string;
+}
+type Row = Record<string, unknown>;
+interface Grid {
+  id: string;
+  from: string;
+  axes: Row[][];
+  /** `corroborating`: the text of another source that states the claim, filled from the row like the passage. */
+  forms: Array<{ name: string; passage: string; corroborating?: string[]; cases: Array<{ kind: PairKind; claim: string }> }>;
+}
+
+/** The cartesian product of the axes, rows merged; a row's `$cross` crosses it with axes of its own. */
+function product(axes: Row[][]): Row[] {
+  let out: Row[] = [{}];
+  for (const axis of axes) {
+    const next: Row[] = [];
+    for (const left of out) for (const right of axis) next.push({ ...left, ...right });
+    out = next;
+  }
+  return out.flatMap((row) => {
+    const { $cross, ...rest } = row as Row & { $cross?: Row[][] };
+    return $cross ? product([[rest], ...$cross]) : [rest];
+  });
+}
+
+/** `{field}` placeholders filled from the row, repeatedly (a field may hold placeholders of its own). */
+function fill(template: string, row: Row): string {
+  let text = template;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const next = text.replace(/\{(\w+)\}/g, (m, key: string) => (typeof row[key] === "string" ? (row[key] as string) : m));
+    if (next === text) break;
+    text = next;
+  }
+  assert.doesNotMatch(text, /\{\w+\}/, `unfilled placeholder in ${JSON.stringify(text)}`);
+  return text;
+}
+
+/** The key baseline.json records a pair by. */
+function keyOf(c: { kind: string; claim: string; passage: string; corroborating?: string[] }): string {
+  return createHash("sha1").update(JSON.stringify([c.kind, c.claim, c.passage, c.corroborating ?? []])).digest("hex").slice(0, 12);
+}
+
+const familyOf = (id: string) => id.split("/")[0]!.replace(/-\d{3}$/, "");
+
+function loadCorpus() {
+  const explicit = (JSON.parse(readFileSync(join(DIR, "pairs.json"), "utf8")) as { cases: PairCase[] }).cases;
+  const grids = (JSON.parse(readFileSync(join(DIR, "grids.json"), "utf8")) as { grids: Grid[] }).grids;
+  const reports = (JSON.parse(readFileSync(join(DIR, "reports.json"), "utf8")) as { cases: ReportCase[] }).cases;
+  const all: PairCase[] = [...explicit];
+  for (const grid of grids) {
+    const rows = product(grid.axes);
+    grid.forms.forEach((form, fi) =>
+      rows.forEach((row, ri) => {
+        const passage = fill(form.passage, row);
+        const corroborating = form.corroborating?.map((text) => fill(text, row));
+        form.cases.forEach((c, ci) =>
+          all.push({ id: `${grid.id}/${fi}/${ri}/${ci}`, from: grid.from, kind: c.kind, claim: fill(c.claim, row), passage, ...(corroborating ? { corroborating } : {}) })
+        );
+      })
+    );
+  }
+  // Deduplicated on the text; the same text under two labels is a corpus error.
+  const conflicts: string[] = [];
+  const pairs = new Map<string, PairCase>();
+  for (const c of all) {
+    const text = JSON.stringify([c.claim, c.passage, c.corroborating ?? []]);
+    const seen = pairs.get(text);
+    if (!seen) pairs.set(text, c);
+    else if (seen.kind !== c.kind) conflicts.push(`${seen.id} (${seen.kind}) and ${c.id} (${c.kind}): ${c.claim} <= ${c.passage}`);
+  }
+  const byReport = new Map<string, ReportCase>();
+  for (const r of reports) {
+    const text = JSON.stringify([r.report, r.sources, r.judge ?? "credulous"]);
+    const seen = byReport.get(text);
+    if (!seen) byReport.set(text, r);
+    else if (seen.kind !== r.kind) conflicts.push(`${seen.id} and ${r.id}`);
+  }
+  return { pairs: [...pairs.values()], reports: [...byReport.values()], conflicts };
+}
+
+const corpus = loadCorpus();
+const baseline = JSON.parse(readFileSync(join(DIR, "baseline.json"), "utf8")) as { contradictionsCaught: string[]; honestContradicted: string[] };
+
+const JUDGES: Record<"credulous" | "optimistic", CitationJudge> = {
+  credulous: async () => ({ verdict: "supported", strength: 0.95 }),
+  optimistic: async () => ({ verdict: "supported", strength: 0.8 }),
+};
+
+function sourcesOf(bodies: readonly string[]): AuditSource[] {
+  return bodies.map((body, i) => ({
+    index: i + 1,
+    title: `Source ${i + 1}`,
+    url: `https://s${i + 1}.example/page`,
+    publishedAt: null,
+    truncated: false,
+    passages: body.split(/\n{2,}/).map((text, ordinal) => ({ text, locator: `chars:${ordinal}`, ordinal })),
+  }));
+}
+
+async function auditReport(r: ReportCase) {
+  const outcome = await auditClaims({
+    claims: selectClaimsForAudit(r.report, 40),
+    sources: sourcesOf(r.sources),
+    judge: JUDGES[r.judge ?? "credulous"],
+    judgeCap: 100,
+    asOf: new Date("2026-10-25T12:00:00Z"),
+  });
+  return { outcome, repaired: repairReportFromClaims(r.report, outcome.claims).report };
+}
+
+const show = (c: PairCase) => `${c.id} [${c.from}] ${c.claim} <= ${c.passage}`;
+
+test("the corpus is consolidated: deduplicated, labelled once, and large", () => {
+  assert.deepEqual(corpus.conflicts, [], "one text, two labels");
+  const kinds = (k: PairKind) => corpus.pairs.filter((c) => c.kind === k).length;
+  assert.ok(corpus.pairs.length + corpus.reports.length >= 300, `${corpus.pairs.length} pairs and ${corpus.reports.length} reports`);
+  assert.ok(kinds("honest") >= 100 && kinds("contradiction") >= 100 && kinds("disagree") >= 50, "every kind is represented");
+  for (const kind of ["honest", "disagree", "contradiction"] as const) {
+    assert.ok(corpus.reports.some((r) => r.kind === kind), `no ${kind} report`);
+  }
+  console.log(
+    `corpus: ${corpus.pairs.length} pairs (${kinds("honest")} honest, ${kinds("contradiction")} contradictions, ${kinds("disagree")} disagreeing figures) and ${corpus.reports.length} reports`
+  );
+});
+
+test("an honest claim is never contradicted by the text alone (base: thousands)", () => {
+  const honest = corpus.pairs.filter((c) => c.kind === "honest" && !c.known);
+  const contradicted = honest.filter((c) => auditEvidence({ claim: c.claim, passage: c.passage }).contradicted);
+  const baseFalse = new Set(baseline.honestContradicted);
+  console.log(`false contradictions: ${contradicted.length} of ${honest.length} honest pairs (base ${honest.filter((c) => baseFalse.has(keyOf(c))).length})`);
+  assert.deepEqual(contradicted.map(show), []);
+});
+
+test("a passage giving a different figure is never left at the supported ceiling", () => {
+  const disagree = corpus.pairs.filter((c) => c.kind === "disagree" && !c.known);
+  const supported = disagree.filter((c) => auditEvidence({ claim: c.claim, passage: c.passage }).ceiling >= SUPPORTED_MIN);
+  console.log(`false supports: ${supported.length} of ${disagree.length} disagreeing passages`);
+  assert.deepEqual(supported.map(show), []);
+});
+
+test("real contradictions are caught at least as often as the base branch caught them", () => {
+  const real = corpus.pairs.filter((c) => c.kind === "contradiction");
+  const caught = new Set(real.filter((c) => auditEvidence({ claim: c.claim, passage: c.passage }).contradicted));
+  const baseCaught = new Set(baseline.contradictionsCaught);
+  const base = real.filter((c) => baseCaught.has(keyOf(c)));
+  // Per family, for the record: where base is ahead, it is a subject carried by another name ("the firm", "the
+  // treatment", "the regulator") or a denial without the claim's year — never proof, so the judge's to read.
+  const families = new Map<string, { n: number; now: number; base: number }>();
+  for (const c of real) {
+    const f = families.get(familyOf(c.id)) ?? { n: 0, now: 0, base: 0 };
+    f.n += 1;
+    if (caught.has(c)) f.now += 1;
+    if (baseCaught.has(keyOf(c))) f.base += 1;
+    families.set(familyOf(c.id), f);
+  }
+  console.log(`real contradictions caught: ${caught.size} of ${real.length} (base ${base.length})`);
+  for (const [family, f] of families) console.log(`  ${family.padEnd(24)} ${String(f.now).padStart(5)} / ${String(f.n).padEnd(5)} base ${f.base}`);
+  assert.ok(caught.size >= base.length, `caught ${caught.size}, base caught ${base.length}`);
+});
+
+test("end to end: honest reports keep every claim uncontradicted and unrewritten", async () => {
+  const bad: string[] = [];
+  const honest = corpus.reports.filter((r) => r.kind === "honest" && !r.known);
+  for (const r of honest) {
+    const { outcome, repaired } = await auditReport(r);
+    if (outcome.claims.some((c) => c.status === "contradicted") || /Conflicting evidence/.test(repaired)) {
+      bad.push(`${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")}: ${outcome.claims.map((c) => c.status).join(", ")}`);
+    }
+  }
+  console.log(`end to end, false contradictions: ${bad.length} of ${honest.length} honest reports`);
+  assert.deepEqual(bad, []);
+});
+
+/**
+ * Disagreeing reports that read as supported and uncontested: a figure the passage gives for a named unit of the
+ * company ("the unit known as Northwind Retail"), not the claim's measure; and a figure written in words — "a fifth",
+ * "a quarter", "half", "five billion dollars" — which the audit does not read as a figure at all. Such a passage is
+ * never shown as support; its disagreement is simply not seen, and the claim rests on the source that states it.
+ */
+const KNOWN_CLEAN = new Set([
+  "corr-adv-023",
+  "c3-fs-money-e2e-003",
+  "c3b-fs-numword-ctl-e2e-002",
+  "c3b-fs-numword-e2e-003",
+  "c3b-fs-numword-ctl-e2e-003",
+  "c3b-fs-numword-e2e-004",
+  "c3b-fs-numword-ctl-e2e-004",
+  "c3b-fs-numword-e2e-012",
+  "c3b-fs-numword-ctl-e2e-012",
+]);
+
+test("end to end: a disagreeing source is never shown as support, and a supported claim it disputes is contested", async () => {
+  const shownAsSupport: string[] = [];
+  const clean: Array<{ id: string; desc: string }> = [];
+  let contested = 0;
+  const disagree = corpus.reports.filter((r) => r.kind === "disagree" && !r.known);
+  for (const r of disagree) {
+    const { outcome } = await auditReport(r);
+    const against = new Set(r.disagreeing ?? []);
+    for (const claim of outcome.claims) {
+      const fromThem = claim.links.filter((l) => against.has(l.sourceIndex));
+      const desc = `${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}: ${claim.status}${claim.contested ? " (contested)" : ""} ${JSON.stringify(claim.links.map((l) => [l.sourceIndex, l.status, l.reasons.map((x) => x.code)]))}`;
+      // Each passage is judged on its own text: no other citation turns a disagreeing source into support.
+      if (fromThem.some((l) => l.status === "supported")) shownAsSupport.push(desc);
+      if (claim.status === "supported" && claim.contested) contested += 1;
+      // A disagreeing figure or date the audit cannot place as another quantity, period or entity leaves the claim
+      // contested — counted whether or not the disagreeing source was ever recorded as a link (a claim another
+      // source supports first need never reach it).
+      if (claim.status === "supported" && !claim.contested) clean.push({ id: r.id, desc });
+    }
+  }
+  console.log(`end to end, false supports: ${shownAsSupport.length} of ${disagree.length} reports; supported and contested ${contested}; supported and clean ${clean.length}`);
+  assert.deepEqual(shownAsSupport, []);
+  assert.deepEqual(clean.filter((c) => !KNOWN_CLEAN.has(c.id)).map((c) => c.desc), []);
+});
+
+/** Findings that tell a reader the passage may say otherwise. */
+const DISAGREEMENT = new Set(["polarity_mismatch", "figure_mismatch", "figure_differs", "negation_unresolved"]);
+
+/**
+ * A claim a real contradiction is shown against: contradicted, contested (supported, beside a source that
+ * disagrees), or not supported with the disagreement among its findings ("Northwind opened 12 stores and closed
+ * three" against "… It did not close any stores": the "three" is absent and the denial is quoted).
+ */
+const readsAsDisagreement = (c: { status: string; contested: boolean; links: ReadonlyArray<{ reasons: ReadonlyArray<{ code: string }> }> }) =>
+  c.status === "contradicted" || c.contested || (c.status !== "supported" && c.links.some((l) => l.reasons.some((r) => DISAGREEMENT.has(r.code))));
+
+/**
+ * Real contradictions that read as clean support end to end. A part-of-year phrase in a clause about something
+ * else ("as fourth-quarter sales jumped"), which the period reading takes for the figure's own; and, from the
+ * round-7 repros, a denial the text gives a subject only through "the airline" or "she" after a sentence naming
+ * two, "Neither … nor", and "Not Kestrel Air but Brightwater Air": each the conservative direction, read by the
+ * judge, and a regression floor.
+ */
+const KNOWN_MISSED = new Set(["grain-rival-003", "c3-pron-e2e-005", "c3-pron-e2e-025", "c3-butnot-e2e-016", "c3-butnot-e2e-030"]);
+
+test("end to end: a real disagreement still reads as one", async () => {
+  const missed: Array<{ id: string; desc: string }> = [];
+  const contradictions = corpus.reports.filter((r) => r.kind === "contradiction" && !r.known);
+  for (const r of contradictions) {
+    const { outcome } = await auditReport(r);
+    if (!outcome.claims.some(readsAsDisagreement)) missed.push({ id: r.id, desc: `${r.id} ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}` });
+  }
+  console.log(`end to end, disagreements caught: ${contradictions.length - missed.length} of ${contradictions.length}`);
+  assert.deepEqual(missed.filter((m) => !KNOWN_MISSED.has(m.id)).map((m) => m.desc), []);
+});
+
+// ── Round 5: the verifier's fresh repros (probe-research-c1) and the fixer's own (r5), as floors ────────────
+
+const ROUND5 = (from: string) => from.startsWith("probe-research-c1/") || from.startsWith("r5/");
+
+test("round 5: every fresh real contradiction is caught, or its denial or figure shown for review", () => {
+  const real = corpus.pairs.filter((c) => c.kind === "contradiction" && ROUND5(c.from));
+  const audits = real.map((c) => ({ c, audit: auditEvidence({ claim: c.claim, passage: c.passage }) }));
+  const caught = audits.filter((x) => x.audit.contradicted);
+  const unflagged = audits.filter((x) => !x.audit.contradicted && !x.audit.reasons.some((r) => DISAGREEMENT.has(r.code)));
+  const baseCaught = new Set(baseline.contradictionsCaught);
+  console.log(
+    `round 5 contradictions: ${caught.length} of ${real.length} caught by the text, ${real.length - unflagged.length} caught or flagged (base caught ${real.filter((c) => baseCaught.has(keyOf(c))).length}, and contradicted ${corpus.pairs.filter((c) => c.kind === "honest" && ROUND5(c.from) && new Set(baseline.honestContradicted).has(keyOf(c))).length} honest pairs doing it)`
+  );
+  // Never silent: "the carrier did not cut fares", "Neither Northwind nor Contoso raised prices", "Every carrier
+  // except Fabrikam", "and nor did Contoso", "not in 2023 as some outlets reported", "The Food and Drug
+  // Administration did not approve" for the claim's "the agency" — each at least quoted for review.
+  assert.deepEqual(unflagged.map((x) => show(x.c)), []);
+  // A floor on what the text settles alone (122 of 144 when these were added; base caught 134 by guessing, and
+  // paid with 756 false contradictions on the same rounds' honest pairs). The rest are proved only by reading
+  // "the carrier" as the claim's airline or "Neither … nor" as two denials, which is the judge's to do.
+  assert.ok(caught.length >= 122, `caught ${caught.length}`);
+});
+
+test("round 5 end to end: a fresh real contradiction never reads as cleanly supported", async () => {
+  const missed: string[] = [];
+  const reports = corpus.reports.filter((r) => r.kind === "contradiction" && ROUND5(r.from));
+  for (const r of reports) {
+    const { outcome } = await auditReport(r);
+    if (!outcome.claims.some(readsAsDisagreement)) missed.push(`${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}`);
+  }
+  console.log(`round 5 end to end, contradictions shown: ${reports.length - missed.length} of ${reports.length}`);
+  assert.deepEqual(missed, []);
+});
+
+// ── Round 6: the verifier's fresh repros (probe-research-c2) and the fixer's own (r6), as floors ────────────
+
+const ROUND6 = (from: string) => from.startsWith("probe-research-c2/") || from.startsWith("r6/");
+
+test("round 6: what narrows a figure or a denial defers to the judge, and the rest is still caught", () => {
+  const round = corpus.pairs.filter((c) => ROUND6(c.from));
+  const audits = round.map((c) => ({ c, audit: auditEvidence({ claim: c.claim, passage: c.passage }) }));
+  const honest = audits.filter((x) => x.c.kind === "honest");
+  const real = audits.filter((x) => x.c.kind === "contradiction");
+  const disagree = audits.filter((x) => x.c.kind === "disagree");
+  const baseCaught = new Set(baseline.contradictionsCaught);
+  const baseFalse = new Set(baseline.honestContradicted);
+  const caught = real.filter((x) => x.audit.contradicted);
+  const unflagged = real.filter((x) => !x.audit.contradicted && !x.audit.reasons.some((r) => DISAGREEMENT.has(r.code)));
+  const atCeiling = disagree.filter((x) => x.audit.ceiling >= SUPPORTED_MIN);
+  console.log(
+    `round 6: false contradictions ${honest.filter((x) => x.audit.contradicted).length} of ${honest.length} honest pairs (base ${honest.filter((x) => baseFalse.has(keyOf(x.c))).length}); ` +
+      `false supports ${atCeiling.length} of ${disagree.length}; contradictions ${caught.length} of ${real.length} caught by the text, ` +
+      `${real.length - unflagged.length} caught or flagged (base caught ${real.filter((x) => baseCaught.has(keyOf(x.c))).length})`
+  );
+  // A figure narrowed by the words after it ("in Europe", "excluding acquisitions", "a month on average"), a denied or
+  // falsely reported clause, a denial narrowed by a reason, a count, a quantifier, a part of the year or a clause beside
+  // it, a company ending or clipped name, a figure half a step above the claim's, a count in a synonym unit: each is the
+  // judge's to read, so none of them contradicts or reads as support. The figures and denials that are not narrowed are still
+  // proof: 187 of the 192 contradictions when these were added (base caught 190, and contradicted 1,514 of these honest
+  // pairs doing it). The other five are the claim's subject by a description ("the regulator", "the heater maker",
+  // "the scooter maker", "the toymaker") or one clause of a two-place claim ("in Europe and in Asia"), each shown for
+  // review.
+  assert.deepEqual(honest.filter((x) => x.audit.contradicted).map((x) => show(x.c)), []);
+  assert.deepEqual(atCeiling.map((x) => show(x.c)), []);
+  assert.deepEqual(unflagged.map((x) => show(x.c)), []);
+  assert.ok(caught.length >= 187, `caught ${caught.length}`);
+});
+
+test("round 6 end to end: no honest repro is contradicted, no disagreeing one reads as cleanly supported", async () => {
+  const bad: string[] = [];
+  const reports = corpus.reports.filter((r) => ROUND6(r.from));
+  let contested = 0;
+  for (const r of reports) {
+    const { outcome, repaired } = await auditReport(r);
+    const desc = `${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}: ${outcome.claims.map((c) => `${c.status}${c.contested ? " (contested)" : ""}`).join(", ")}`;
+    if (r.kind === "honest" && (outcome.claims.some((c) => c.status === "contradicted") || /Conflicting evidence/.test(repaired))) bad.push(desc);
+    if (r.kind === "disagree") {
+      if (outcome.claims.some((c) => c.status === "supported" && !c.contested)) bad.push(desc);
+      contested += outcome.claims.filter((c) => c.status === "supported" && c.contested).length;
+    }
+    if (r.kind === "contradiction" && !outcome.claims.some(readsAsDisagreement)) bad.push(desc);
+  }
+  console.log(`round 6 end to end: ${reports.length - bad.length} of ${reports.length} reports read right (${contested} disagreeing ones supported and contested)`);
+  assert.deepEqual(bad, []);
+});
+
+// ── Round 7: the verifier's fresh repros (probe-research-c3), as floors ────────────────────────────────────
+
+const ROUND7 = (from: string) => from.startsWith("probe-research-c3/");
+
+test("round 7: no other citation stands in; a modified measured noun or a supposed figure is no rival; the rest is still caught", () => {
+  const round = corpus.pairs.filter((c) => ROUND7(c.from));
+  const audits = round.map((c) => ({ c, audit: auditEvidence({ claim: c.claim, passage: c.passage }) }));
+  const honest = audits.filter((x) => x.c.kind === "honest");
+  const real = audits.filter((x) => x.c.kind === "contradiction");
+  const disagree = audits.filter((x) => x.c.kind === "disagree");
+  const baseCaught = new Set(baseline.contradictionsCaught);
+  const baseFalse = new Set(baseline.honestContradicted);
+  const caught = real.filter((x) => x.audit.contradicted);
+  const flagged = real.filter((x) => x.audit.contradicted || x.audit.reasons.some((r) => DISAGREEMENT.has(r.code)));
+  const atCeiling = disagree.filter((x) => x.audit.ceiling >= SUPPORTED_MIN);
+  console.log(
+    `round 7: false contradictions ${honest.filter((x) => x.audit.contradicted).length} of ${honest.length} honest pairs (base ${honest.filter((x) => baseFalse.has(keyOf(x.c))).length}); ` +
+      `false supports ${atCeiling.length} of ${disagree.length}; contradictions ${caught.length} of ${real.length} caught by the text, ` +
+      `${flagged.length} caught or flagged (base caught ${real.filter((x) => baseCaught.has(keyOf(x.c))).length})`
+  );
+  // "Youth unemployment in Freedonia", "Spending on rail in Freedonia", "Unemployment among young people in
+  // Freedonia" against the claim's "Unemployment in Freedonia" / "Spending on roads in Freedonia": the measured noun
+  // and what narrows it sit before the preposition, so the phrases are compared whole and never proved rivals. An
+  // expected, hoped-for, estimated or hypothetical figure ("Analysts expected revenue to reach", "would have been",
+  // "Had fuel prices held, …") is not the actual figure stated otherwise. Each is the judge's to read.
+  assert.deepEqual(honest.filter((x) => x.audit.contradicted).map((x) => show(x.c)), []);
+  // A different date, a count under another unit word, a figure in words, "tripled" for "doubled", "on Thursday"
+  // for "on Tuesday": each passage is judged on its own text, so none reaches the supported ceiling.
+  assert.deepEqual(atCeiling.map((x) => show(x.c)), []);
+  // 46 of 62 caught by the text when these were added, 58 caught or flagged (base caught 54, and contradicted 161 of
+  // these honest pairs doing it).
+  assert.ok(caught.length >= 46, `caught ${caught.length}`);
+  assert.ok(flagged.length >= 58, `caught or flagged ${flagged.length}`);
+});
+
+test("round 7 end to end: no honest repro is contradicted; a disagreeing one is never support and leaves its claim contested", async () => {
+  const bad: string[] = [];
+  const reports = corpus.reports.filter((r) => ROUND7(r.from));
+  let contested = 0;
+  let shown = 0;
+  let contradictions = 0;
+  for (const r of reports) {
+    const { outcome, repaired } = await auditReport(r);
+    const desc = `${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}: ${outcome.claims
+      .map((c) => `${c.status}${c.contested ? " (contested)" : ""} ${JSON.stringify(c.links.map((l) => [l.sourceIndex, l.status, l.reasons.map((x) => x.code)]))}`)
+      .join(", ")}`;
+    if (r.kind === "honest" && (outcome.claims.some((c) => c.status === "contradicted") || /Conflicting evidence/.test(repaired))) bad.push(desc);
+    if (r.kind === "disagree") {
+      const against = new Set(r.disagreeing ?? []);
+      if (outcome.claims.some((c) => c.links.some((l) => against.has(l.sourceIndex) && l.status === "supported"))) bad.push(desc);
+      if (!KNOWN_CLEAN.has(r.id) && outcome.claims.some((c) => c.status === "supported" && !c.contested)) bad.push(desc);
+      contested += outcome.claims.filter((c) => c.status === "supported" && c.contested).length;
+    }
+    if (r.kind === "contradiction") {
+      contradictions += 1;
+      if (outcome.claims.some(readsAsDisagreement)) shown += 1;
+      else if (!KNOWN_MISSED.has(r.id)) bad.push(desc);
+    }
+  }
+  console.log(
+    `round 7 end to end: ${reports.length - bad.length} of ${reports.length} reports read right (${contested} disagreeing ones supported and contested; ${shown} of ${contradictions} contradictions shown)`
+  );
+  assert.deepEqual(bad, []);
+});
+
+// ── Round 8: both verifiers' repros (probe-research-ns-1, probe-research-ns-2), as floors ─────────────────
+
+const ROUND8 = (from: string) => from.startsWith("probe-research-ns-1/") || from.startsWith("probe-research-ns-2/");
+
+test("round 8: the repros are in the corpus, and the residuals they found outside this round's fixes are marked known and bounded", () => {
+  const pairs = corpus.pairs.filter((c) => ROUND8(c.from));
+  const reports = corpus.reports.filter((r) => ROUND8(r.from));
+  assert.ok(pairs.length >= 500 && reports.length >= 500, `${pairs.length} pairs, ${reports.length} reports`);
+  const known = [...pairs, ...reports].filter((c) => c.known);
+  const byReason = new Map<string, number>();
+  for (const c of known) byReason.set(c.known!, (byReason.get(c.known!) ?? 0) + 1);
+  console.log(`round 8: ${pairs.length} pairs and ${reports.length} reports; known residuals ${known.length}`);
+  for (const [reason, n] of byReason) console.log(`  ${String(n).padStart(3)}  ${reason}`);
+  // When these were added: false contradictions are another entity sharing a generic word ("Belgrove Rail" for
+  // "Tandor Rail"), a subset owner ("Tandor Rail's busiest line") and two forecast wordings ("should reach", "saw …
+  // at"); the rest are figures in words, fractions, multipliers, quarters, seasons and decades the audit does not
+  // read, a bound ("over 10 million"), and a denial after an appositive or an alias. None is a crash, a false red
+  // label, or a passage another citation excuses. Lower these bounds as they are fixed; never raise them.
+  const count = (reason: string) => byReason.get(reason) ?? 0;
+  assert.ok(count("false contradiction by the text alone") <= 6, "pair false contradictions");
+  assert.ok(count("honest claim contradicted end to end") <= 6, "end-to-end false contradictions");
+  assert.ok(count("the disagreeing passage reaches the supported ceiling on its own text") <= 22, "pair false supports");
+  assert.ok(count("the disagreeing source is shown as support") <= 9, "end-to-end false supports");
+  assert.ok(count("the disagreement is not seen: supported and uncontested") <= 33, "disagreements not seen");
+  assert.ok(count("the contradiction reads as clean support") <= 27, "contradictions missed");
+});
+
+test("round 8: no sentence takes the audit down, and a doubt beside support is never a contradiction", async () => {
+  const reports = corpus.reports.filter((r) => ROUND8(r.from));
+  const bad: string[] = [];
+  let honestContested = 0;
+  let honest = 0;
+  for (const r of reports) {
+    const { outcome } = await auditReport(r);
+    const desc = `${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}: ${outcome.claims
+      .map((c) => `${c.status}${c.contested ? " (contested)" : ""} ${JSON.stringify(c.links.map((l) => [l.sourceIndex, l.stance, l.reasons.map((x) => x.code)]))}`)
+      .join(", ")}`;
+    // Never a crash: every claim of every repro is audited.
+    if (outcome.claims.some((c) => c.auditError)) bad.push(`audit error: ${desc}`);
+    // A link is "contradicts" only when its own text settles it; a doubt beside support is "differs", unverified.
+    for (const c of outcome.claims) {
+      for (const l of c.links) {
+        if (l.stance === "contradicts" && !l.reasons.some((x) => x.code === "figure_mismatch" || x.code === "polarity_mismatch") && l.judged === false) {
+          bad.push(`unproved contradicts link: ${desc}`);
+        }
+        if (l.stance === "differs" && l.status !== "unverified") bad.push(`doubt with a verdict: ${desc}`);
+      }
+    }
+    if (r.kind === "honest" && !r.known) {
+      honest += 1;
+      if (outcome.claims.some((c) => c.contested)) honestContested += 1;
+      // An honest report's sources never read "contradicts", nor does any other count of the same owner (vessels
+      // against ports, schools against homes, shares against cases of soup) make it contested.
+      if (outcome.claims.some((c) => c.links.some((l) => l.status === "contradicted"))) bad.push(`honest with a contradicted link: ${desc}`);
+      if (/-(?:hcnt|hobj)-e2e-|^ns2-multi-e2e-006$/.test(r.id) && outcome.claims.some((c) => c.contested)) bad.push(`another thing counted reads as a dispute: ${desc}`);
+    }
+    // An undated claim beside a disagreeing figure: the supporting passage's year never excuses it (cases5.ts).
+    if (r.kind === "disagree" && /-xper-e2e-/.test(r.id) && outcome.claims.some((c) => c.status === "supported" && !c.contested)) {
+      bad.push(`another period's support excused a disagreement: ${desc}`);
+    }
+  }
+  // 23 of the 257 honest round-8 reports end contested when this was added, every one by a figure or a denial in the
+  // passage's own text (a forecast, a modified measure, another product, "but not", an undated claim beside a dated
+  // figure) or an uncited counterfactual: shown as a doubt, never as a contradiction. Lower this bound; never raise it.
+  console.log(`round 8 end to end: ${reports.length - bad.length} of ${reports.length} reports read right; honest contested ${honestContested} of ${honest}`);
+  assert.deepEqual(bad, []);
+  assert.ok(honestContested <= 23, `honest contested ${honestContested}`);
+});
