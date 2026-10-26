@@ -72,7 +72,7 @@ import type { ResearchEffort } from "@/lib/research/domain";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+import { ReasoningSlider, type SpeedTier } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { useFileDrop } from "@/components/library/library-drop-zone";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
@@ -152,7 +152,7 @@ import type {
 } from "@/types/chat";
 import { plainReturnSends } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
-import { inputModality, installInputModality } from "@/lib/input-modality";
+import { installInputModality } from "@/lib/input-modality";
 
 /**
  * The chat field's id, so a card in the transcript can put the cursor in it.
@@ -891,14 +891,12 @@ function ComposerImpl({
   const shellRef = React.useRef<HTMLDivElement>(null);
   /*
    * Focus from the keyboard draws one ring around the whole composer; focus
-   * from a pointer only darkens its edge (C1). A text field matches
-   * :focus-visible on every focus, so the composer remembers whether a
-   * pointer pressed it just before, and focus it gives itself (on load, after
-   * a send or a closed layer) is keyboard focus only when the person was
-   * actually using the keyboard (lib/input-modality.ts).
+   * from a pointer only darkens its edge (C1). ComposerShell decides which,
+   * from the live input modality (lib/input-modality.ts), so focus the
+   * composer gives itself (on load, after a send or a closed layer) rings
+   * only when the person is actually using the keyboard, and a press drops
+   * the ring.
    */
-  const pointerFocus = React.useRef(false);
-  const [keyboardFocus, setKeyboardFocus] = React.useState(false);
   React.useEffect(installInputModality, []);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   /** Which side of the composer its layers open toward: below on the home, above in the dock. */
@@ -2725,6 +2723,7 @@ function ComposerImpl({
             label: voiceCanSeeImages ? "Add photos and files" : "Add files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
+            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             onSelect: () => fileInputRef.current?.click(),
@@ -2752,6 +2751,7 @@ function ComposerImpl({
             label: "Add photos and files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
+            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             onSelect: () => fileInputRef.current?.click(),
@@ -2777,6 +2777,7 @@ function ComposerImpl({
             label: "Sketch",
             icon: Pencil,
             detail: "/sketch",
+            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             // After the menu has handed focus back, so the sheet keeps it.
@@ -2857,11 +2858,26 @@ function ComposerImpl({
    * is (composer-menu.tsx, "Where they open"). Only the typed layers (the "/"
    * and @ palettes) still open outside the box, at the caret.
    */
-  /** The effort, in words, only when it is not the model's usual one (C17: "Opus Deep"). */
+  /**
+   * The effort, in words, only when it is not the model's usual one (C17:
+   * "Opus Deep"). Compared AFTER clamping: a stored preference the model has
+   * no tier for (the default "high", Free's "low") is sent as the model's own
+   * default, so the chip must not name that default as if it were a choice.
+   */
+  const effectiveEffort = resolved ? clampReasoningEffort(resolved, reasoningEffort) : null;
   const effortLabel =
-    !isAuto && resolved && effortOptions.length >= 2 && reasoningEffort !== defaultReasoning(resolved)
-      ? effortOptions.find((option) => option.value === clampReasoningEffort(resolved, reasoningEffort))?.label
+    !isAuto && resolved && effortOptions.length >= 2 && effectiveEffort !== defaultReasoning(resolved)
+      ? effortOptions.find((option) => option.value === effectiveEffort)?.label
       : undefined;
+  /**
+   * The paid modes in force, for the chip: what the request will actually
+   * run with (the server applies a tier only where the model has it, and so
+   * does this). They multiply the price of every turn and persist across
+   * chats in the composer prefs, so the chip shows them with the panel shut.
+   */
+  const chipSpeed: SpeedTier =
+    ultraFast && ultraFastRate != null ? "ultra" : fastMode && canFastMode ? "fast" : "off";
+  const chipPro = proMode && canProMode;
 
   /** The field's accessible name (C1). The placeholder is a hint, never the name. */
   const fieldLabel =
@@ -2987,10 +3003,6 @@ function ComposerImpl({
           // The box every layer the composer opens is placed outside of.
           ref={shellRef}
           frame={frame === "landing" ? "home" : "dock"}
-          keyboardFocus={keyboardFocus}
-          onPointerDownCapture={() => {
-            pointerFocus.current = true;
-          }}
           dimmed={controlsLocked && !steerMode}
           className={cn(
             "max-h-[600px]",
@@ -3341,11 +3353,6 @@ function ComposerImpl({
                   aria-label={fieldLabel}
                   value={text}
                   onChange={(e) => setDraftText(e.target.value)}
-                  onFocus={() => {
-                    setKeyboardFocus(!pointerFocus.current && inputModality() === "keyboard");
-                    pointerFocus.current = false;
-                  }}
-                  onBlur={() => setKeyboardFocus(false)}
                   onScroll={onFieldScroll}
                   onKeyDown={onKeyDown}
                   onPaste={onPaste}
@@ -3410,14 +3417,22 @@ function ComposerImpl({
                 <div className={cn("shrink-0", controlsLocked && "pointer-events-none")}>{taskModeControl}</div>
               )}
               {/* The model chip — and, inside its popover, the thinking effort
-                  for that model (`thinkingControl`). One chip for one decision. */}
-              <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>
+                  for that model (`thinkingControl`). One chip for one decision.
+                  A FLEX slot, not a block: the chip is inline-flex, and a
+                  block parent let it keep its whole label's width while the
+                  slot shrank, so on a 360px phone it spilled under the mic
+                  and taps on its chevron went to Dictate. As a flex item its
+                  own `min-w-0` holds, and its label steps down to fit
+                  (model-chip-label.ts). */}
+              <div className={cn("flex min-w-0", controlsLocked && "pointer-events-none")}>
                 <ModelSelector
                   value={model}
                   onChange={changeModel}
                   disabled={controlsLocked}
                   thinking={thinkingControl}
                   effortLabel={effortLabel}
+                  speed={chipSpeed}
+                  pro={chipPro}
                   inComposer
                 />
               </div>

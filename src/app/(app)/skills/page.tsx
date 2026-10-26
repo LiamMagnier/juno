@@ -1,4 +1,5 @@
 import { SkillsLibraryPage } from "@/components/skills/skills-library-page";
+import { PageRoot } from "@/components/app/page-root";
 
 /**
  * The skills library: your own skills in a flat list, and one folder per
@@ -13,5 +14,9 @@ import { SkillsLibraryPage } from "@/components/skills/skills-library-page";
  * hand (src/lib/work-url-migration.ts).
  */
 export default function SkillsPage() {
-  return <SkillsLibraryPage />;
+  return (
+    <PageRoot>
+      <SkillsLibraryPage />
+    </PageRoot>
+  );
 }

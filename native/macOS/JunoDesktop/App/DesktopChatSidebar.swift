@@ -14,8 +14,9 @@ import SwiftUI
 ///
 /// Top to bottom: the Search button pinned above the list, a headerless block
 /// of navigation rows, then the conversation sections — Needs you (Phase 5),
-/// Pinned projects, Pinned chats and Recent — and the account footer pinned
-/// below. It is the web's information architecture (`app-sidebar.tsx`) in the
+/// Orbit, Pinned projects and Recent, which the pinned chats lead — and the
+/// account footer pinned below. It is the web's information architecture
+/// (`app-sidebar.tsx`) in the
 /// platform's own mechanics: `List(selection:)` owns the arrow keys,
 /// type-select and VoiceOver, the section headers are the system's
 /// collapsible headers, and the column itself is the system's floating glass
@@ -72,7 +73,6 @@ struct DesktopChatSidebar: View {
     var openArchivedChats: (() -> Void)? = nil
 
     @AppStorage("juno.sidebar.projects.expanded") private var pinnedProjectsOpen = true
-    @AppStorage("juno.sidebar.pinned.expanded") private var pinnedChatsOpen = true
     @AppStorage("juno.sidebar.recent.expanded") private var recentOpen = true
     /// How many Recent rows are drawn. Grows a page at a time as the last one
     /// scrolls into view (§2.1), so a four-year history is not four thousand
@@ -122,12 +122,11 @@ struct DesktopChatSidebar: View {
     var body: some View {
         let all = chats
         let excluded = Set(needsYou.map(\.id))
-        let pinned = DesktopChatSidebarContent.pinned(from: all, excluding: excluded)
         let recent = DesktopChatSidebarContent.recent(from: all, excluding: excluded)
         let projects = pinnedProjects
 
         return ScrollViewReader { proxy in
-            list(pinned: pinned, recent: recent, projects: projects, all: all)
+            list(recent: recent, projects: projects, all: all)
                 // Rename… from the title menu (or a row menu reached through
                 // search) names a chat whose row may be folded away, past the
                 // loaded page of Recent, or scrolled out of sight — and the
@@ -135,13 +134,12 @@ struct DesktopChatSidebar: View {
                 // first; otherwise the command would do nothing anyone can see.
                 .onChange(of: renamingConversationID) { _, id in
                     guard let id else { return }
-                    reveal(id, pinned: pinned, recent: recent, proxy: proxy)
+                    reveal(id, recent: recent, proxy: proxy)
                 }
         }
     }
 
     private func list(
-        pinned: [NativeConversation],
         recent: [NativeConversation],
         projects: [NativeProject],
         all: [NativeConversation]
@@ -176,24 +174,22 @@ struct DesktopChatSidebar: View {
                     }
                 }
 
-                if !pinned.isEmpty {
-                    DesktopSidebarHeadingRow(JunoShellChatSidebar.Heading.pinned.label) {
-                        pinnedChatsOpen.toggle()
-                    }
-                    if pinnedChatsOpen {
-                        ForEach(pinned) { conversationRow($0) }
-                    }
-                }
-
                 if !recent.isEmpty {
-                    // One Recent list, newest first, under one heading (owner,
-                    // Oct 11: "Recent" in place of Yesterday, Previous 7 days
-                    // and the other date folds). Paged, so a long history
-                    // still lays out one page at a time.
-                    DesktopSidebarHeadingRow(JunoShellChatSidebar.Heading.recent.label)
-                    ForEach(Array(recent.prefix(recentLimit))) { conversation in
-                        conversationRow(conversation)
-                            .onAppear { loadMoreIfLast(conversation, in: recent) }
+                    // One Recent list under one heading (owner, Oct 11:
+                    // "Recent" in place of Yesterday, Previous 7 days and the
+                    // other date folds). The pinned chats lead it, each with
+                    // its pin mark, then the rest newest first (owner,
+                    // 2026-10-26: "Pinned chats" is no longer a section of its
+                    // own). Paged, so a long history still lays out one page
+                    // at a time.
+                    // Folds like Pinned projects; the pinned head folds with
+                    // the rest, as on the web (INTERACTION_SPEC S11).
+                    DesktopSidebarHeadingRow(JunoShellChatSidebar.Heading.recent.label, action: { recentOpen.toggle() })
+                    if recentOpen {
+                        ForEach(Array(recent.prefix(recentLimit))) { conversation in
+                            conversationRow(conversation)
+                                .onAppear { loadMoreIfLast(conversation, in: recent) }
+                        }
                     }
                 } else if isBootstrapping {
                     DesktopSidebarLoadingRows()
@@ -474,7 +470,7 @@ struct DesktopChatSidebar: View {
     /// A conversation's row.
     ///
     /// - Parameter isCanonical: whether this is the chat's own row — in Needs
-    ///   you, Pinned chats or Recent — rather than the copy a pinned project
+    ///   you or Recent — rather than the copy a pinned project
     ///   lists under itself. A project chat is drawn twice, and only one of
     ///   the two may open the rename field: two fields for one rename take
     ///   focus from each other, and the one losing it commits, which ended the
@@ -514,15 +510,11 @@ struct DesktopChatSidebar: View {
     /// column lands in a field the reader can see.
     private func reveal(
         _ id: String,
-        pinned: [NativeConversation],
         recent: [NativeConversation],
         proxy: ScrollViewProxy
     ) {
         if needsYou.contains(where: { $0.id == id }) {
             // Its section never folds.
-        } else if pinned.contains(where: { $0.id == id }) {
-            filterToNeedsYou = false
-            pinnedChatsOpen = true
         } else if let index = recent.firstIndex(where: { $0.id == id }) {
             filterToNeedsYou = false
             recentOpen = true
@@ -613,6 +605,7 @@ enum DesktopChatSidebarContent {
         return count == 1 ? "1 run is waiting on you." : "\(count) runs are waiting on you."
     }
 
+    /// The pinned chats, newest first: the head of Recent.
     static func pinned(
         from chats: [NativeConversation],
         excluding needsYou: Set<String> = []
@@ -620,15 +613,19 @@ enum DesktopChatSidebarContent {
         chats.filter { $0.pinned && !needsYou.contains($0.id) }
     }
 
-    /// One flat list with no date folds, newest first, under one Recent
-    /// heading. Project chats stay here as well as
-    /// under their project, as on the web: a project is a workspace rather than
-    /// a filing.
+    /// One flat list with no date folds under one Recent heading: the pinned
+    /// chats first, each keeping its pin mark, then every other chat newest
+    /// first (owner decision, 2026-10-26: "Pinned chats" is no longer a
+    /// section of its own; the web's `pinnedFirst`, `sidebar-lists.ts`).
+    /// Unpinning a chat drops it into its place by date. Project chats stay
+    /// here as well as under their project, as on the web: a project is a
+    /// workspace rather than a filing.
     static func recent(
         from chats: [NativeConversation],
         excluding needsYou: Set<String> = []
     ) -> [NativeConversation] {
-        chats.filter { !$0.pinned && !needsYou.contains($0.id) }
+        pinned(from: chats, excluding: needsYou)
+            + chats.filter { !$0.pinned && !needsYou.contains($0.id) }
     }
 
     /// The chats whose titles hold every word of `query`, ignoring case and
@@ -693,8 +690,8 @@ enum DesktopChatSidebarContent {
 
 // MARK: - Section heading
 
-/// One voice for every heading in the column: Pinned projects, Pinned chats,
-/// Recent, Agents and Needs you at rest (the web's `text-label
+/// One voice for every heading in the column: Pinned projects, Recent,
+/// Agents and Needs you at rest (the web's `text-label
 /// text-muted-foreground`). The ink is stated, not left to the list's header
 /// style, which draws near 1.7:1 on the vibrant column.
 struct DesktopSidebarHeading: View {

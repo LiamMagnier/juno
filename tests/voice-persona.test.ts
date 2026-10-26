@@ -218,7 +218,7 @@ test("no call, an ended one or a failed one: the face is what it was", () => {
   assert.equal(threadAgentState({ ...agent, state: "waiting" }, false, null), "waiting");
 });
 
-test("the pupils follow the level only while listening, and only where motion is wanted", () => {
+test("the pupils follow the level only while listening, and only where motion is wanted", async () => {
   const header = src("src/components/agents/agent-thread-header.tsx");
   assert.match(header, /const listening = state === "listening" && !!levelRef;/);
   assert.match(header, /if \(!listening \|\| !levelRef \|\| !face\) return;/);
@@ -230,16 +230,17 @@ test("the pupils follow the level only while listening, and only where motion is
   assert.match(chat, /threadAgentState\(agent, chat\.isBusy, taskSessions, voiceOpen \? voicePhaseOf\(realtimeVoice\) : null\)/);
   assert.match(chat, /levelRef=\{voiceOpen \? realtimeVoice\.levelRef : undefined\}/);
 
-  const css = src("src/components/agents/agent-face.css");
-  const still = css.indexOf('.agent-face[data-state="listening"] .agent-face__eye { transform: scale(1.15); }');
-  const motion = css.indexOf("@media (prefers-reduced-motion: no-preference)", still);
-  const driven = css.indexOf('.agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }');
-  assert.ok(still > 0 && motion > still && driven > motion, "the level-driven scale sits inside the motion block, after the still one");
-  // Reduced motion keeps the still face: no level, and no eased state changes.
-  const reduced = css.indexOf("@media (prefers-reduced-motion: reduce)");
-  assert.ok(reduced > 0, "a reduced-motion block exists");
-  assert.match(css.slice(reduced), /^@media \(prefers-reduced-motion: reduce\) \{\s*\.agent-face :is\([^)]*\.agent-face__eye[^)]*\) \{ transition: none; \}/);
-  assert.doesNotMatch(css.slice(reduced, css.indexOf("}\n", css.indexOf("transition: none;", reduced)) + 2), /--level/);
+  // The face (face-rig.ts) reads the level only while listening, and only with
+  // motion on: under reduced motion it draws the still pose, which ignores it.
+  const rig = src("src/components/agents/face-rig.ts");
+  assert.match(rig, /if \(rt\.seg\.state === "listening"\) \{\s+const raw = getComputedStyle\(rt\.el\)\.getPropertyValue\("--level"\);/);
+  assert.match(rig, /const P = rt\.reduced \? stillPose\(rt\.seg\.state, rt\.ctx\) : poseAt\(rt\.seg, T, rt\.ctx\);/);
+  const { faceCtx, poseAt, stillPose } = await import("../src/components/agents/face-rig");
+  const { sizeClass } = await import("../src/components/agents/face-geometry");
+  const ctx = (level: number) => ({ ...faceCtx({ shape: "orb", eyes: "soft", px: 34, size: sizeClass(34) }, "none", 1, true), level });
+  const seg = { state: "listening" as const, at: -60, snap: null };
+  assert.ok(poseAt(seg, 0, ctx(1)).eH > poseAt(seg, 0, ctx(0)).eH, "the eyes open with the voice");
+  assert.equal(stillPose("listening", ctx(1)).eH, stillPose("listening", ctx(0)).eH, "the still face ignores the level");
 });
 
 test("the server still never reports listening", () => {

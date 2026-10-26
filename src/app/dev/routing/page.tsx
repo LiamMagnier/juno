@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { routeAuto } from "@/lib/router/decide";
 import { parsePaidTierAttestation } from "@/lib/router/data-policy";
 import { receiptFromDecision } from "@/lib/router/receipt";
+import { PageRoot } from "@/components/app/page-root";
 import { RoutingGallery, type RoutingCase } from "./gallery";
 
 /**
@@ -60,5 +61,9 @@ export default async function RoutingDevPage({
       })),
     };
   });
-  return <RoutingGallery cases={cases} only={typeof only === "string" ? only : undefined} />;
+  return (
+    <PageRoot>
+      <RoutingGallery cases={cases} only={typeof only === "string" ? only : undefined} />
+    </PageRoot>
+  );
 }

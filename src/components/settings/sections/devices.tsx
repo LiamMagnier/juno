@@ -6,6 +6,7 @@ import { CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
+import { ThisBrowserGroups } from "@/components/settings/sections/remote";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
@@ -64,7 +65,14 @@ export function DevicesSection() {
     };
   }, [load]);
 
-  return <DevicesView hosts={hosts} failed={failed} onRetry={() => void load()} />;
+  return (
+    <>
+      <DevicesView hosts={hosts} failed={failed} onRetry={() => void load()} />
+      {/* The Macs this browser drives, and the iPhone: once the Remote
+          section, a second list of the same Macs beside this one. */}
+      <ThisBrowserGroups />
+    </>
+  );
 }
 
 /** The Devices section, drawn from data: the dev gallery renders this with fixtures. */

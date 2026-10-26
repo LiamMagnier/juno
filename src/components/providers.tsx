@@ -10,6 +10,7 @@ import { AutoTranslate } from "@/components/i18n/auto-translate";
 import { MotionConfig } from "framer-motion";
 import { useUiPref } from "@/lib/ui-prefs";
 import { framerReducedMotion } from "@/lib/motion-preference";
+import { installInputModality } from "@/lib/input-modality";
 
 /** Settings › Appearance › Motion reaches framer-motion too, not only CSS: Reduced holds it still, Full lets it move on a device that reduces. */
 function MotionPreference({ children }: { children: React.ReactNode }) {
@@ -41,6 +42,11 @@ export function Providers({
    */
   nonce?: string;
 }) {
+  // How the person moves focus, tracked from the first page on and mirrored
+  // to <html data-modality>, which every text field's focus ring reads
+  // (lib/input-modality.ts). Installed here, not by the first composer, so a
+  // keyboard user arriving at a chat from Settings is already known.
+  React.useEffect(installInputModality, []);
   return (
     // Hydrate with the server-resolved session so the client doesn't fetch
     // /api/auth/session on first paint, and don't refetch on window focus —

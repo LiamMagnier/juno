@@ -1,5 +1,6 @@
 import { AgentHire } from "@/components/agents/agent-hire";
 import { AgentsHome } from "@/components/agents/agents-home";
+import { PageRoot } from "@/components/app/page-root";
 
 /**
  * "New agent": the team page with its field focused. A new agent starts from
@@ -13,7 +14,15 @@ export default async function NewAgentPage({
 }) {
   const { template, form } = await searchParams;
   if (form === "1" || form === "true") {
-    return <AgentHire initialTemplate={typeof template === "string" ? template : null} />;
+    return (
+      <PageRoot>
+        <AgentHire initialTemplate={typeof template === "string" ? template : null} />
+      </PageRoot>
+    );
   }
-  return <AgentsHome focusComposer />;
+  return (
+    <PageRoot>
+      <AgentsHome focusComposer />
+    </PageRoot>
+  );
 }

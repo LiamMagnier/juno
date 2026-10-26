@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { MemoryGallery } from "./gallery";
 
 /**
@@ -17,5 +18,9 @@ export default async function MemoryDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { state } = await searchParams;
-  return <MemoryGallery state={state ?? "full"} />;
+  return (
+    <PageRoot>
+      <MemoryGallery state={state ?? "full"} />
+    </PageRoot>
+  );
 }

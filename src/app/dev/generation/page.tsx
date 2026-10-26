@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { GenerationGallery } from "./gallery";
 
 /**
@@ -18,5 +19,9 @@ export default async function GenerationDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { only, theme } = await searchParams;
-  return <GenerationGallery only={typeof only === "string" ? only : undefined} dark={theme === "dark"} />;
+  return (
+    <PageRoot>
+      <GenerationGallery only={typeof only === "string" ? only : undefined} dark={theme === "dark"} />
+    </PageRoot>
+  );
 }

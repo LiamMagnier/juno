@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { OrbitGallery } from "./gallery";
 
 /**
@@ -18,5 +19,9 @@ export default async function OrbitDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { only } = await searchParams;
-  return <OrbitGallery only={typeof only === "string" ? only : undefined} />;
+  return (
+    <PageRoot>
+      <OrbitGallery only={typeof only === "string" ? only : undefined} />
+    </PageRoot>
+  );
 }

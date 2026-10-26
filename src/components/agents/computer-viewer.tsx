@@ -1048,7 +1048,7 @@ export function ComputerViewer({
                 autoCorrect="off"
                 spellCheck={false}
                 placeholder="Paste or type, then press Type"
-                className="min-w-0 flex-1 rounded-control border border-border bg-background px-3 py-1.5 text-body-lg text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11 sm:text-ui"
+                className="min-w-0 flex-1 rounded-control border border-border bg-background px-3 py-1.5 text-body-lg text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-foreground/40 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:min-h-11 sm:text-ui"
               />
               <button
                 type="button"

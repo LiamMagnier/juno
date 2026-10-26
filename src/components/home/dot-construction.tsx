@@ -19,13 +19,14 @@ import { ConstructionScene, RingsScene, type ArcSpec, type LineSpec, type RingSp
  * drawing spans (default: the box's width), `--construction-zoom` scales it,
  * `--dots-pitch` spaces the dots, and `--dots-ink/-presence/-sub/-strength/
  * -glow` colour them. Reduced motion, and `animate={false}`, draw the final
- * frame once and never schedule another.
+ * frame once and never schedule another; `hold` draws on and then stops.
  */
 export function DotConstruction({
   ticks = true,
   trajectory = true,
   axis = true,
   animate = true,
+  hold = false,
   parallax = false,
   lamp = false,
   zoom,
@@ -36,6 +37,8 @@ export function DotConstruction({
   trajectory?: boolean;
   axis?: boolean;
   animate?: boolean;
+  /** Draw on once, then hold still: no sway, a trajectory that rests where it arrived, no frames after. Product surfaces. */
+  hold?: boolean;
   /** A few degrees of eased pointer tilt. Public hero surfaces only, never product pages. */
   parallax?: boolean;
   /** The pointer lights the dots near it, in presence at the centre. Fine pointers only; off under reduced motion. */
@@ -61,10 +64,11 @@ export function DotConstruction({
         trajectory,
         axis,
         animate,
+        hold,
         parallax,
         zoom: () => zoomRef.current?.get() ?? 1,
       }),
-    [ticks, trajectory, axis, animate, parallax],
+    [ticks, trajectory, axis, animate, hold, parallax],
   );
 
   React.useEffect(() => {

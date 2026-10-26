@@ -493,7 +493,7 @@ export function LayersPanel({
             hairline as the text and the whole row takes the focus edge. The
             glyph is a label here, not a tool being picked up, so it holds
             still when the field is hovered. */}
-        <label className="ml-auto flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast ease-out-soft focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20 coarse:h-9">
+        <label className="ml-auto flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast ease-out-soft focus-within:border-foreground/40 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:h-9">
           <Search className="size-3 text-muted-foreground" motion="none" aria-hidden />
           <input
             type="search"

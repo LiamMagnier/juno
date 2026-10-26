@@ -138,8 +138,8 @@ export function productOf(
 }
 
 /** A surface the plan does not include is SHOWN, never hidden — a missing
- *  segment reads as a missing feature. It renders at reduced ink with a
- *  sparkle in place of its product mark and routes to `/upgrade`. */
+ *  segment reads as a missing feature. It keeps the inactive segment's ink,
+ *  wears a lock in place of its product mark and routes to `/upgrade`. */
 function isLocked(product: Product, plan: PlanId | undefined, codeOpen = false): boolean {
   if (!plan) return false;
   // Code also opens for people who bring their own inference (a stored API
@@ -273,12 +273,17 @@ function Segment({
           data-jicon-articulate={locked ? undefined : ""}
           className={cn(
             "pressable jicon-trigger group relative flex h-7 items-center justify-center gap-1.5 rounded-control px-2 text-ui font-medium",
-            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-10",
-            locked
-              ? "text-muted-foreground/70 hover:text-muted-foreground"
-              : active
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground",
+            // `coarse:h-11`: 44px under a thumb, the drawer's own floor. The
+            // track's `p-0.5` sits outside it, so nothing else grows.
+            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-11",
+            /*
+             * One ink for every segment you are not in, locked or not: the
+             * column's own row ink, about 7:1 on the track. The locked one
+             * used to be muted at 70%, under AA, so a Free reader could not
+             * read the name of the thing being offered. The lock glyph in
+             * place of the product mark already says it is locked.
+             */
+            active && !locked ? "text-foreground" : "text-sidebar-foreground hover:text-foreground",
           )}
         >
           {active && (
@@ -333,11 +338,7 @@ function RailItem({
             // The expanded switch's recipe at rail size: a raised thumb that
             // travels inside a recessed track (see the nav above).
             "pressable group relative flex size-8 items-center justify-center rounded-control transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
-            locked
-              ? "text-muted-foreground/80 hover:text-muted-foreground"
-              : active
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground",
+            active && !locked ? "text-foreground" : "text-sidebar-foreground hover:text-foreground",
           )}
         >
           {active && (

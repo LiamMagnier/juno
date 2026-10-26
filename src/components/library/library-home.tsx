@@ -340,7 +340,7 @@ export function LibraryHome() {
                 }}
                 placeholder="Search the library"
                 aria-label="Search the library"
-                className="h-9 w-full min-w-0 rounded-field border border-foreground/10 bg-transparent pl-9 pr-9 text-ui text-foreground outline-none transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/[0.16] focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-foreground/[0.05] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16] dark:focus-visible:border-white/25 [&::-webkit-search-cancel-button]:hidden"
+                className="h-9 w-full min-w-0 rounded-field border border-foreground/10 bg-transparent pl-9 pr-9 text-ui text-foreground outline-none transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/[0.16] focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-foreground/[0.05] kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:ring-0 kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16] dark:focus-visible:border-white/25 [&::-webkit-search-cancel-button]:hidden"
               />
               {query ? (
                 <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-1.5 grid size-6 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.06] hover:text-foreground active:scale-90">

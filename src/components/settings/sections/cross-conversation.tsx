@@ -23,7 +23,7 @@ export function CrossConversationGroup() {
   return (
     <SettingsGroup
       title="Let conversations message each other"
-      description="An agent can list, read and message your other conversations. What it sends arrives as a message from that conversation, never as you, and it can't approve anything."
+      description="An agent can list, read and message your other conversations. What it sends arrives as a message from that conversation, never as you, and it can’t approve anything."
     >
       <SettingRow
         label="In Chat"

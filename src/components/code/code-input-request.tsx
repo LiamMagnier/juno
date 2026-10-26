@@ -29,7 +29,7 @@ export function CodeInputRequest({ question, plan, busy, answer, decide }: {
           if (await answer(question.questionId, draft.trim())) setSent(question.questionId);
         }}>
           {question.options && <p className="text-ui text-muted-foreground">{question.options.map((option) => option.label).join(" · ")}</p>}
-          <textarea aria-label="Your answer" value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={32000} rows={2} disabled={busy || waiting} className="w-full resize-y rounded-lg border border-input bg-background p-3 text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          <textarea aria-label="Your answer" value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={32000} rows={2} disabled={busy || waiting} className="w-full resize-y rounded-lg border border-input bg-background p-3 text-body focus-visible:outline-none focus-visible:border-foreground/60 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]" />
           <Button type="submit" disabled={busy || waiting || !draft.trim()} className="self-start">Send answer</Button>
         </form>
       ) : plan && (

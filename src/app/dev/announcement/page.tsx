@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { AnnouncementGallery } from "./gallery";
 
 /**
@@ -15,5 +16,9 @@ export default async function AnnouncementDevPage({ searchParams }: { searchPara
   const sp = await searchParams;
   const f = typeof sp.f === "string" ? sp.f : "video";
   const theme = sp.theme === "light" || sp.theme === "dark" ? sp.theme : undefined;
-  return <AnnouncementGallery initial={f} theme={theme} />;
+  return (
+    <PageRoot>
+      <AnnouncementGallery initial={f} theme={theme} />
+    </PageRoot>
+  );
 }

@@ -72,13 +72,17 @@ if (!DB_URL) {
   let shortOrdered: string[] = [];
 
   const params = (id: string) => ({ params: Promise.resolve({ id }) });
+  // Both pages hand Next a <PageRoot> around their client view
+  // (src/components/app/page-root.tsx, the facebook/react#35518 workaround);
+  // the view is that wrapper's only child.
+  const view = (root: unknown) => (root as { props: { children: Element } }).props.children;
   async function codePage(id: string) {
     const page = await import("@/app/(app)/code/[id]/page");
-    return (await page.default(params(id))) as unknown as Element;
+    return view(await page.default(params(id)));
   }
   async function chatPage(id: string, search: Record<string, string> = {}) {
     const page = await import("@/app/(app)/chat/[id]/page");
-    return (await page.default({ ...params(id), searchParams: Promise.resolve(search) })) as unknown as Element;
+    return view(await page.default({ ...params(id), searchParams: Promise.resolve(search) }));
   }
   async function walk(id: string, first: { initialMessages: Wire[]; initialHistory?: History }) {
     const route = await import("@/app/api/conversations/[id]/messages/route");

@@ -29,9 +29,13 @@ export const customizeHeaderClass =
  */
 export const customizeListClass = "ed-list -mx-3";
 
-/** A field's resting edge on these tabs: a hairline that firms on hover and focus. */
+/**
+ * A field's resting edge on these tabs: a hairline that firms on hover and
+ * focus, and one 2px `--ring` line for the keyboard (`kbd-focus:`), because
+ * `foreground/35` alone is about 2:1, under the 3:1 a focus mark needs.
+ */
 export const customizeFieldClass =
-  "border-foreground/[0.1] hover:border-foreground/20 focus-visible:border-foreground/35";
+  "border-foreground/[0.1] hover:border-foreground/20 focus-visible:border-foreground/35 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]";
 
 /** How a row arrives on first load: a 6px rise, dealt on the shared stagger. */
 export const customizeEnterClass = "motion-safe:animate-rise-in [animation-fill-mode:backwards]";

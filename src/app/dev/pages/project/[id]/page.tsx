@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { PagesGallery } from "../../gallery";
 import { STATES, type PageState } from "../../pages";
 
@@ -11,5 +12,9 @@ export default async function ProjectDevPage({
   if (process.env.NODE_ENV === "production") notFound();
   const { state } = await searchParams;
   const s = (STATES as readonly string[]).includes(String(state)) ? (state as PageState) : "ready";
-  return <PagesGallery key={s} page="project" state={s} />;
+  return (
+    <PageRoot>
+      <PagesGallery key={s} page="project" state={s} />
+    </PageRoot>
+  );
 }

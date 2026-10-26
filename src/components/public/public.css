@@ -10,8 +10,12 @@
 .alevr-public input { min-height: 44px; }
 .alevr-public button[type="submit"] { min-height: 44px; }
 .alevr-public .field-well { border-color: hsl(var(--input)); box-shadow: none; }
-.alevr-public .field-well:focus-within { border-color: hsl(var(--ring)); }
-.alevr-public :is(button, a, input):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+/* A pressed or autofocused field steps its edge up; it does not ring. Text
+   fields take their keyboard ring from Input (`kbd-focus:`): a field matches
+   :focus-visible on every focus, so an outline here drew a third line, 3px
+   off a near-black edge and halo, on every click into Email or Password. */
+.alevr-public .field-well:focus-within { border-color: hsl(var(--foreground) / .45); }
+.alevr-public :is(button, a):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
 .alevr-public .surface-raised, .alevr-public .surface-raised-lg, .alevr-public .stage-window { box-shadow: none; }
 .alevr-public .font-mono:not(code):not(pre) { font-family: var(--font-sans), Inter, sans-serif; }
 .alevr-public .stage { background: hsl(var(--muted)); }
@@ -58,7 +62,6 @@
 .alevr-auth-form input { min-height:48px; padding-top:12px; padding-bottom:12px; background:hsl(var(--background)); border-radius:8px; border-color:hsl(var(--foreground) / .3); transition:border-color var(--dur-exit) var(--ease-out-soft),background-color var(--dur-exit) var(--ease-out-soft); }
 .alevr-auth-form input::placeholder { color:hsl(var(--muted-foreground)); opacity:1; }
 .alevr-auth-form input:hover:not(:disabled) { border-color:hsl(var(--foreground) / .6); }
-.alevr-auth-form input:focus-visible { outline-offset:3px; }
 .alevr-auth-form button[type="submit"] { min-height:48px; border-radius:8px; margin-top:24px; }
 .alevr-auth-form form label { font-size:13px; }
 .alevr-access-footer { display:flex; width:100%; max-width:1408px; margin:auto; padding:20px 48px 24px; justify-content:space-between; align-items:center; gap:24px; border-top:1px solid hsl(var(--border)); }
