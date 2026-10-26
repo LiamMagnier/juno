@@ -386,14 +386,21 @@ test("a run the sweep ends is told to its owner, once, after every run is ended"
     store.indexOf("export async function expireUnclaimedCloudRuns("),
     store.indexOf("export async function reclaimStalledRuns(")
   );
-  // Only runs this call ended, through the fenced finishRun.
-  assert.match(sweep, /if \(ended\?\.finished\) \{\s*expired\.push\(run\.id\);\s*toNotify\.push\(\{ runId: run\.id, userId: run\.userId \}\);\s*\}/);
+  // Only runs this call ended, through the fenced terminal write; queued for a
+  // notice before, and whatever happens to, the billing written after it.
+  assert.match(sweep, /const ended = await commitRunEnding\(ending\)\.catch\(\(\) => null\);/);
+  assert.match(
+    sweep,
+    /if \(ended\?\.finished\) \{\s*expired\.push\(run\.id\);\s*toNotify\.push\(\{ runId: run\.id, userId: run\.userId \}\);[\s\S]*?await settleRunEnding\(ending, ended\)\.catch\(/
+  );
+  assert.doesNotMatch(sweep, /await finishRun\(/, "finishRun throws on a failed spend write after the run committed terminal");
   // After the loop that ends them, handed off to the never-throwing sequencer
   // rather than awaited, with the same deliverer the runner calls at a run's
   // terminal path.
   const notify = sweep.indexOf("  handOffEndedRunNotices(toNotify, async (run) => {");
   assert.ok(notify > 0, "the sweep notifies, without awaiting it");
-  assert.ok(notify > sweep.lastIndexOf("finishRun("), "after every finishRun");
+  assert.ok(notify > sweep.lastIndexOf("commitRunEnding("), "after every run is ended");
+  assert.ok(notify > sweep.lastIndexOf("settleRunEnding("), "and after every settlement was tried");
   assert.ok(notify < sweep.indexOf("return expired;"));
   assert.match(sweep, /const \{ deliverRunNotification \} = await import\("@\/lib\/work\/notify\/deliver"\);\s*await deliverRunNotification\(run\);/);
   // Nothing in the sweep waits on a delivery: not the sequencer, not the hand-off.
@@ -1066,4 +1073,14 @@ test("the goal runner's sweep starts and retries steps unattended; a person's pr
   assert.match(start, /startWorkRunForUser\(user, session, runBody, \{ unattended \}\)/);
   // "Later" keeps the draft, so the next pass lands on it by the same key.
   assert.equal((start.match(/if \(!isRetryLaterRefusal\((?:preflight|dispatched)\.body\)\) await discardDraft\(user\.id, session\.id\);/g) ?? []).length, 2);
+});
+
+test("finishRun is the terminal write then the billing, and other writers keep both", () => {
+  const store = read("src/lib/work/store.ts");
+  assert.match(
+    store,
+    /export async function finishRun\(input: FinishRunInput\): Promise<FinishRunResult> \{\s*const result = await commitRunEnding\(input\);\s*if \(result\.finished\) await settleRunEnding\(input, result\);\s*return result;\s*\}/
+  );
+  const settle = store.slice(store.indexOf("export async function settleRunEnding("));
+  assert.match(settle.slice(0, 900), /await recordWorkRunSpend\(\{[\s\S]*terminal: true,/);
 });

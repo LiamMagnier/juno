@@ -1306,12 +1306,27 @@ export type FinishRunResult =
  * The session's copy of the status is only updated when no later attempt
  * exists. A superseded run finishing after its replacement started would
  * otherwise stamp `cancelled` over a session that is busy running.
+ *
+ * Two writes, in order: the terminal row (`commitRunEnding`), then, only for
+ * the writer that ended it, the billing (`settleRunEnding`). A caller that
+ * must act on the ending whatever the billing does (the queued-run expiry
+ * sweep, which owes the owner a notice) calls the two itself.
  */
 export async function finishRun(input: FinishRunInput): Promise<FinishRunResult> {
+  const result = await commitRunEnding(input);
+  if (result.finished) await settleRunEnding(input, result);
+  return result;
+}
+
+/**
+ * The terminal write of `finishRun`, alone: ends the run once, and its session
+ * when no later attempt exists. Nothing is billed; `settleRunEnding` does that.
+ */
+export async function commitRunEnding(input: FinishRunInput): Promise<FinishRunResult> {
   const now = input.now ?? new Date();
   const status = statusForTerminalReason(input.reason);
 
-  const result = await prisma.$transaction(async (tx): Promise<FinishRunResult> => {
+  return prisma.$transaction(async (tx): Promise<FinishRunResult> => {
     const moved = await tx.workRun.updateMany({
       where: {
         id: input.runId,
@@ -1378,24 +1393,29 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
 
     return { finished: true, run, status };
   });
+}
 
-  // Billing and reservation settlement happen after the terminal row commits.
-  // This makes every terminal writer — runner, host relay, cancel route and
-  // lease sweeper — close the same hold exactly once, while the idempotent
-  // spend keys make a runner's follow-up billing call harmless.
-  if (result.finished) {
-    await recordWorkRunSpend({
-      userId: input.userId,
-      runId: input.runId,
-      model: result.run.effectiveModel ?? result.run.requestedModel,
-      cumulativeCostMicroUsd: input.usage?.costMicroUsd ?? result.run.costMicroUsd,
-      inputTokens: input.usage?.inputTokens ?? result.run.inputTokens,
-      outputTokens: input.usage?.outputTokens ?? result.run.outputTokens,
-      reservationRef: result.run.spendReservationRef,
-      terminal: true,
-    });
-  }
-  return result;
+/**
+ * Billing and reservation settlement for a run `commitRunEnding` just ended,
+ * after the terminal row commits. This makes every terminal writer — runner,
+ * host relay, cancel route and lease sweeper — close the same hold exactly
+ * once, while the idempotent spend keys make a runner's follow-up billing call
+ * harmless. Throws when the spend write fails; the run is terminal regardless.
+ */
+export async function settleRunEnding(
+  input: Pick<FinishRunInput, "runId" | "userId" | "usage">,
+  ended: Extract<FinishRunResult, { finished: true }>
+): Promise<void> {
+  await recordWorkRunSpend({
+    userId: input.userId,
+    runId: input.runId,
+    model: ended.run.effectiveModel ?? ended.run.requestedModel,
+    cumulativeCostMicroUsd: input.usage?.costMicroUsd ?? ended.run.costMicroUsd,
+    inputTokens: input.usage?.inputTokens ?? ended.run.inputTokens,
+    outputTokens: input.usage?.outputTokens ?? ended.run.outputTokens,
+    reservationRef: ended.run.spendReservationRef,
+    terminal: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1557,7 +1577,10 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
  * Each run it ends is then notified, as the runner notifies a run it ends:
  * `deliverRunNotification` follows the run's own notify policy (a routine's
  * setting, an agent's "tell me when it's done") and says "did not start".
- * Only runs this call actually ended (the fenced `finishRun` said so), after
+ * Only runs this call actually ended (the fenced `commitRunEnding` said so),
+ * whether or not the billing written after it (`settleRunEnding`) then fails.
+ * Through `finishRun`, a spend write that failed after the run had committed
+ * terminal threw, and the run was left ended with no notice. Notified after
  * all of them are ended, and handed off rather than awaited
  * (`handOffEndedRunNotices`): the sweep returns as soon as the runs are ended,
  * so neither the scheduler's tick (which fires every account's routines) nor
@@ -1608,17 +1631,26 @@ export async function expireUnclaimedCloudRuns(
   const toNotify: EndedRunRef[] = [];
   for (const run of stale) {
     const resumed = checkpointed.has(run.id);
-    const ended = await finishRun({
+    const ending: FinishRunInput = {
       runId: run.id,
       userId: run.userId,
       reason: resumed ? "interrupted" : "executor_unavailable",
       detail: resumed ? EXECUTOR_UNAVAILABLE_RESUME_DETAIL : EXECUTOR_UNAVAILABLE_DETAIL,
       queuedBefore: cutoff,
       now,
-    }).catch(() => null);
+    };
+    const ended = await commitRunEnding(ending).catch(() => null);
     if (ended?.finished) {
       expired.push(run.id);
       toNotify.push({ runId: run.id, userId: run.userId });
+      // The notice above no longer depends on this write: the run is ended
+      // whether or not its hold is released here.
+      await settleRunEnding(ending, ended).catch((error: unknown) => {
+        console.error("[work] could not settle the spend of an expired queued run", {
+          runId: run.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     }
   }
   // Not awaited: see the comment above. Imported here, as team-store.ts does,
