@@ -223,8 +223,25 @@ function comparable(a: NumericFact, b: NumericFact): boolean {
   return a.kind === b.kind && sameCurrency(a, b);
 }
 
-/** Whether `fine` rounds to `coarse` at the precision `coarse` is stated to. */
+/**
+ * Whether `fine` rounds to `coarse` at the precision `coarse` is stated to,
+ * half up: 6.5% and 6.8% round to 7%, 7.5% rounds to 8% and is not 7%.
+ */
 function roundsTo(fine: NumericFact, coarse: NumericFact): boolean {
+  const step = coarse.step ?? 0;
+  if (step <= 0) return fine.value === coarse.value;
+  const slack = 1e-9 * Math.max(Math.abs(fine.value), Math.abs(coarse.value), 1);
+  const d = fine.value - coarse.value;
+  return d >= -step / 2 - slack && d < step / 2 - slack;
+}
+
+/**
+ * Whether `fine` is within half a step of `coarse` either way: the bar for a
+ * doubt, not for agreement. "7.5%" for a stated "7%" is not the same figure
+ * (`roundsTo`), but a writer rounding half down, or cutting the decimal off,
+ * writes exactly that, so the text alone does not prove them rivals.
+ */
+function mayRoundTo(fine: NumericFact, coarse: NumericFact): boolean {
   const step = coarse.step ?? 0;
   if (step <= 0) return fine.value === coarse.value;
   const slack = 1e-9 * Math.max(Math.abs(fine.value), Math.abs(coarse.value), 1);
@@ -1026,12 +1043,16 @@ function figureOwner(text: string, n: NumericFact): { owner: string | null; cert
  * different value, not the evidence for another of the claim's figures) and
  * also: neither figure approximate, a bound, a range end or hedged; money in
  * the same currency, written the same way ("$" against "US$" is the judge's);
- * neither rounding to the other at the coarser one's precision ("3%" against
- * "3.25%"); both a level or both a change; the same measured noun and qualifier
- * (`figureSubject`), or for a figure that opens its clause the same unit and
- * the word after it ("70 people were injured"); the same owner as written,
- * or none on either side; the same date or none on either side, the same
- * part of a year, and neither placed relative to another period.
+ * neither within half a step of the other at the coarser one's precision
+ * ("3%" against "3.25%", "7%" against "7.5%"); both a level or both a change;
+ * the same measured noun and qualifier (`figureSubject`), or for a figure that
+ * opens its clause the same unit and the word after it ("70 people were
+ * injured"); a count in the same word for its unit ("travellers" is not
+ * "passengers" beyond doubt); nothing narrowing one figure that does not
+ * narrow the other (`figureQualifiers`: "in Europe", "excluding
+ * acquisitions", "a month on average", "among young people"); the same owner
+ * as written, or none on either side; the same date or none on either side,
+ * the same part of a year, and neither placed relative to another period.
  *
  * "The company's revenue", "Total revenue", "Revenue for the year" and "Net
  * revenue" against "Northwind's revenue" all fail it: each may be the
@@ -1083,8 +1104,8 @@ function unambiguousRival(
   // The same money, named the same way: "$" against "US$" may be one figure, and is the judge's to read.
   if (n.kind === "currency" && (n.currency ?? "$") !== (p.currency ?? "$")) return false;
   // One figure rounding to the other at the coarser one's precision ("4.4 billion" for "4 billion", "3%" for
-  // "3.25%") may be the same figure stated to other places: a doubt, not a different figure.
-  if (roundsTo(n, p) || roundsTo(p, n)) return false;
+  // "3.25%", "7%" for "7.5%" rounded down) may be the same figure stated to other places: a doubt, not a different figure.
+  if (mayRoundTo(n, p) || mayRoundTo(p, n)) return false;
   const cell = tableCellOf(claim.text, n);
   if (cell) {
     const db = figureDate(passage.text, p, passage.dates);
@@ -1096,11 +1117,14 @@ function unambiguousRival(
   const a = figureSubject(claim.text, n);
   const b = figureSubject(passage.text, p);
   if (a.head !== b.head || a.qualifier !== b.qualifier) return false;
-  if (!a.head) {
-    const ca = numberContext(claim.text, n);
-    const cb = numberContext(passage.text, p);
-    if (!ca.unit || ca.unit !== cb.unit || ca.next !== cb.next) return false;
-  }
+  const ca = numberContext(claim.text, n);
+  const cb = numberContext(passage.text, p);
+  if (!a.head && (!ca.unit || ca.unit !== cb.unit || ca.next !== cb.next)) return false;
+  // A count in another word for its unit ("11.9 million travellers" for "passengers") may be the same count or not.
+  if (n.kind === "plain" && ca.unit !== cb.unit) return false;
+  // Whatever narrows either figure must narrow both: "$1.1 billion in Europe", "excluding acquisitions", "a month on
+  // average", "among young people", "at its Ohio plant" — a segment, a basis or a rate, not a rival total.
+  if (!sameWords(figureQualifiers(claim, n), figureQualifiers(passage, p))) return false;
   const oa = figureOwner(claim.text, n);
   const ob = figureOwner(passage.text, p);
   if (!oa.certain || !ob.certain || oa.owner !== ob.owner) return false;
@@ -1109,6 +1133,103 @@ function unambiguousRival(
   if ((da || db) && !(da && db && datesAgree(da, db))) return false;
   if (!sameGrain(figureGrain(claim.text, n, claim.dates), figureGrain(passage.text, p, passage.dates))) return false;
   return figureRelativePeriod(claim.text, n) === null && figureRelativePeriod(passage.text, p) === null;
+}
+
+/** Words in a figure's own phrase that say how it moved, what it is compared with or that it is the whole year's: not what it measures. */
+const TAIL_NEUTRAL = new Set("up down rising falling rose fell compared respectively full whole year calendar annual annually".split(" "));
+/** Where a figure's own phrase ends: a new clause, a verb of saying, a comparison. */
+const TAIL_END = /\b(?:and|but|while|whereas|which|who|that|said|says|according|told|reported|wrote|noted|added|versus|vs|compared|against)\b/i;
+/** What opens a lead-in phrase that narrows the figure after it: "In Europe, …", "Excluding acquisitions, …". */
+const LEAD_QUALIFIER =
+  /^\s*(?:in|at|for|among|amongst|across|within|outside|excluding|including|excl|incl|ex|net of|before|after|on|from|by|per|barring|ignoring|adjusted|adjusting|stripping out|leaving out|not counting|counting)\b/i;
+/** Lead-in phrases that frame where a figure was said, not what it measures. */
+const LEAD_FRAMING = /\b(?:statement|filing|report|interview|letter|release|speech|presentation|update|call|according|said|says|told)\b/i;
+/**
+ * What opens a phrase after the figure's clause that still narrows it: "…,
+ * excluding acquisitions", "…, on a constant-currency basis", "…, mostly at
+ * its Ohio plant", "…, a month on average", "…, from subscriptions". "From"
+ * only without a figure of its own: "…, from $3.5 billion a year earlier" is
+ * a comparison.
+ */
+const TRAIL_QUALIFIER =
+  /^\s*(?:(?:mostly|mainly|largely|chiefly|primarily|partly|only|almost all|nearly all|all)\s+)?(?:in|at|for|among|amongst|across|within|outside|excluding|including|excl|incl|ex|net of|before|after|on|per|barring|ignoring|adjusted|adjusting|stripping out|leaving out|not counting|mostly|mainly|largely|chiefly|primarily|(?:a|an|each|every)\s+(?:day|week|month|quarter|year|hour))\b/i;
+const TRAIL_FROM = /^\s*(?:(?:mostly|mainly|largely|chiefly|primarily|partly|only)\s+)?from\b/i;
+/** A phrase or a next sentence that says what the figure covers: "…, a figure that excludes acquisitions", "That figure excludes …", "That was in Europe alone". */
+const COVERS =
+  /^\s*(?:(?:a|the|that|this|these|those|it|which)\s+)?(?:(?:figure|number|total|amount|sum|estimate|count|tally|data|statistic|figures|numbers)\s+)?(?:that\s+|which\s+)?(?:excludes?|excluding|includes?|including|covers?|counts?|reflects?|refers?|applies|relates?|(?:is|was|are|were)\s+(?:for|in|from|at|among|only|limited|based|net|before|after|excluding|including|on|per|outside|within))\b/i;
+
+/** Two sets with the same members. */
+function sameWords(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+/**
+ * The words that narrow a figure beyond its measured noun, owner and date:
+ * its own phrase after it, to the end of its clause or the next figure
+ * ("$1.1 billion in Europe", "$4.0 billion excluding acquisitions", "$360
+ * million a month on average", "9.8% among young people", "3,000 people at
+ * its Ohio plant"), and a lead-in phrase of its sentence that opens with a
+ * preposition or a basis ("In Europe, …", "Excluding acquisitions, …").
+ * Dates, function words and the unit right after the figure are left out;
+ * so is a lead-in that frames where it was said ("In its annual report, …").
+ */
+function figureQualifiers(facts: { text: string; dates: readonly DateMention[]; numbers: readonly NumericFact[] }, n: NumericFact): Set<string> {
+  const { text, dates, numbers } = facts;
+  const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
+  const out = new Set<string>();
+  const add = (from: number, to: number, unitFirst: boolean) => {
+    let span = text.slice(from, to);
+    for (const d of [...dates, ...numbers]) {
+      if (d.start >= from && d.end <= to) span = span.slice(0, d.start - from) + " ".repeat(d.end - d.start) + span.slice(d.end - from);
+    }
+    [...span.matchAll(WORD_RE)].forEach((m, i) => {
+      const form = tokenForm(m[0]);
+      if (STOPWORDS.has(form) || PREPOSITIONS.has(form) || TAIL_NEUTRAL.has(form) || form.length < 2) return;
+      // The unit the figure counts in ("3,000 people"), compared on its own (`sameQuantity`).
+      if (unitFirst && i === 0 && !/\S/.test(span.slice(0, m.index))) return;
+      out.add(form);
+    });
+  };
+  let end = clauseEnd;
+  const next = numbers.find((q) => q.start >= n.end);
+  if (next && next.start < end) end = next.start;
+  const cut = TAIL_END.exec(text.slice(n.end, end));
+  if (cut) end = n.end + cut.index;
+  add(n.end, end, true);
+  const pieces = (from: number, to: number) => {
+    const list: Array<{ from: number; text: string }> = [];
+    let at = from;
+    for (const piece of text.slice(from, to).split(/([,;:()]\s*|\s[-–—]\s)/)) {
+      list.push({ from: at, text: piece });
+      at += piece.length;
+    }
+    return list.filter((p) => /\w/.test(p.text));
+  };
+  // Lead-in phrases before the figure's clause, in its sentence.
+  if (clauseStart > sentenceStart) {
+    for (const piece of pieces(sentenceStart, clauseStart)) {
+      if (!LEAD_QUALIFIER.test(piece.text) || LEAD_FRAMING.test(piece.text)) continue;
+      add(piece.from, piece.from + piece.text.length, false);
+    }
+  }
+  // Phrases after it that still narrow it, up to the first that does not.
+  if (clauseEnd < text.length && !/^[.!?]/.test(text.slice(clauseEnd).trimStart())) {
+    const sentenceEnd = edgeStartFrom(textFacts(text).sentenceEdges ?? edgesOf(text, FIGURE_SENTENCE_EDGE), clauseEnd, text.length);
+    for (const piece of pieces(clauseEnd, sentenceEnd)) {
+      const end = piece.from + piece.text.length;
+      const from = TRAIL_FROM.test(piece.text) && !numbers.some((q) => q.start >= piece.from && q.end <= end);
+      if ((!TRAIL_QUALIFIER.test(piece.text) && !from && !COVERS.test(piece.text)) || LEAD_FRAMING.test(piece.text)) break;
+      add(piece.from, end, false);
+    }
+  }
+  // The next sentence, when it says what this figure covers ("That figure excludes acquisitions.").
+  const spans = sentenceSpans(text);
+  const at = spans.findIndex(([from, to]) => n.start >= from && n.start < to);
+  const following = at >= 0 ? spans[at + 1] : undefined;
+  if (following && COVERS.test(text.slice(following[0], following[1]))) add(following[0], following[1], false);
+  return out;
 }
 
 /**
@@ -1331,21 +1452,68 @@ function claimNamesAnotherSubject(claim: string, n: NumericFact, owner: readonly
   });
 }
 
+/*
+ * Words that end an organisation's name and say what kind of business it is:
+ * "Woodgrove Bank", "Woodgrove Bancorp" and "Woodgrove Financial" may be one
+ * company, its parent or its arm, and only a reader can tell which. Never
+ * what sets a sibling apart.
+ */
+const BUSINESS_NAME_WORDS = new Set(
+  ("bank bancorp bancshares banking financial finance capital securities investment partner industrie industry global worldwide " +
+    "system solution service enterprise brand trust venture media communication network software electronic insurance assurance " +
+    "trader trading retail health healthcare energy resource food pharma tech intl co air airline airway motor").split(" ")
+);
+
+/** Whether one name word is a clipping, an abbreviation or an expansion of the other: "Labs"/"Laboratories", "Intl"/"International". */
+function clippedForm(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length < 3 || short[0] !== long[0]) return false;
+  if (long.startsWith(short)) return true;
+  let at = 0;
+  for (const ch of long) if (ch === short[at]) at += 1;
+  return at >= short.length;
+}
+
+/** Whether `run` holds `part` as consecutive words. */
+function containsRun(run: readonly string[], part: readonly string[]): boolean {
+  for (let i = 0; i + part.length <= run.length; i += 1) if (part.every((w, k) => run[i + k] === w)) return true;
+  return false;
+}
+
 /**
  * Whether passage figure `p` is given for a sibling of a name the claim uses:
- * "Alpha Free" beside the claim's "Alpha Pro" — the same first word, and words
- * of its own the claim never uses and no text writes in lowercase. A run that
- * is itself a measure ("Gross Bookings") names no family.
+ * "Alpha Free" beside the claim's "Alpha Pro". The passage must name both —
+ * the claim's own name and the sibling — so the text itself shows they are
+ * two things; the sibling must share the first word and add a word of its
+ * own that the claim never uses, no text writes in lowercase, and that is no
+ * company ending ("Bancorp", "Holdings", "Financial") and no clipping or
+ * expansion of the claim's own word ("Labs" for "Laboratories", "Intl" for
+ * "International", "Pharma" for "Pharmaceuticals"): those may be the claim's
+ * subject under another name. A run that is itself a measure ("Gross
+ * Bookings") names no family.
  */
 function siblingOfClaimName(claim: string, passage: string, owner: readonly string[]): boolean {
   if (owner.length < 2) return false;
   const claimWords = wordForms(claim);
   const lowerIn = (form: string) => lowercaseForms(passage).has(form) || lowercaseForms(claim).has(form);
+  const passageRuns = titleCaseRuns(passage);
   for (const claimRun of titleCaseRuns(claim)) {
     if (claimRun.some((f) => MEASURE_NOUNS.has(f) || COMMON_SUBJECT_NOUNS.has(f) || BASIS_WORDS.has(f))) continue;
     if (claimRun[0] !== owner[0]) continue;
+    if (!passageRuns.some((run) => containsRun(run, claimRun))) continue;
     const own = owner.slice(1).filter((f) => !claimRun.includes(f));
-    if (own.length > 0 && own.every((f) => !lowerIn(f) && !claimWords.has(f) && !MEASURE_NOUNS.has(f) && !COMMON_SUBJECT_NOUNS.has(f))) return true;
+    const theirs = claimRun.slice(1).filter((f) => !owner.includes(f));
+    const setsApart = (f: string) =>
+      !lowerIn(f) &&
+      !claimWords.has(f) &&
+      !MEASURE_NOUNS.has(f) &&
+      !COMMON_SUBJECT_NOUNS.has(f) &&
+      !STRICT_NAME_SUFFIXES.has(f) &&
+      !CORPORATE_SUFFIXES.has(f) &&
+      !BUSINESS_NAME_WORDS.has(f) &&
+      !theirs.some((t) => clippedForm(f, t));
+    if (own.length > 0 && own.every(setsApart)) return true;
   }
   return false;
 }
@@ -1598,10 +1766,39 @@ function evidenceForAnotherFigure(
   });
 }
 
+/*
+ * Units a count is given in under more than one word, in `tokenForm`: "11.9
+ * million travellers" may be the "12.4 million passengers" a claim counts,
+ * and "480 shops" its "520 stores"; "people" may be any count of people.
+ * Such a pair is the same quantity for finding a disagreement, never for
+ * proving one (`unambiguousRival` wants the same word).
+ */
+const UNIT_SYNONYMS: ReadonlyArray<ReadonlySet<string>> = [
+  "passenger traveller traveler flyer rider people person",
+  "store shop outlet branch location",
+  "home house dwelling residence",
+  "employee worker staff personnel people person",
+  "job position role post",
+  "customer subscriber user client account people person",
+  "vehicle car",
+  "visitor tourist guest people person",
+  "student pupil people person",
+  "flight departure",
+  "tonne ton",
+  "delivery shipment",
+].map((group) => new Set(group.split(" ")));
+
+function unitSynonyms(a: string, b: string): boolean {
+  // `tokenForm` keeps the plural of a short word ("jobs", "tons").
+  const one = (w: string) => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
+  return UNIT_SYNONYMS.some((group) => group.has(one(a)) && group.has(one(b)));
+}
+
 /** Whether two figures could be the same quantity, whatever they are about: unit and introducing phrase only. */
 function sameQuantity(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
   const ca = numberContext(claim, a);
   const cb = numberContext(passage, b);
+  if (ca.unit && cb.unit && ca.unit !== cb.unit && a.kind === "plain" && unitSynonyms(ca.unit, cb.unit)) return true;
   if (ca.unit && cb.unit && ca.unit === cb.unit) {
     // A bare count of days (or months, or years) is only the same quantity
     // when it is the same thing being counted: the word after the unit has to

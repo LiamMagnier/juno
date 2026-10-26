@@ -258,6 +258,18 @@ test("a word shared with another run is a family name only when the claim names 
   });
   assert.ok(sibling.reasons.some((r) => r.code === "stated_by_other_citation"), sibling.reasons.map((r) => r.code).join(", "));
   assert.equal(sibling.ceiling, 1);
+  // A sibling only when the passage itself names the claim's own name beside it, and sets it apart by a word that is no
+  // company ending and no clipping of the claim's own word (verifier round 6): otherwise it may be the claim's subject.
+  for (const [claimText, passage, other] of [
+    ["Alpha Pro includes 100 GB of storage.", "Alpha Free includes 5 GB of storage.", "Alpha Pro includes 100 GB of storage."],
+    ["Woodgrove Bank's deposits rose to $4.3 billion in 2024.", "Woodgrove Bancorp's deposits rose to $3.9 billion in 2024.", "Woodgrove Bank's deposits rose to $4.3 billion in 2024."],
+    ["Litware Labs raised $120 million in 2024.", "Litware Labs and Litware Laboratories both filed; Litware Laboratories raised $95 million in 2024.", "Litware Labs raised $120 million in 2024."],
+    ["Contoso International's revenue was $2.2 billion in 2024.", "Contoso International and Contoso Intl reported; Contoso Intl's revenue was $1.9 billion in 2024.", "Contoso International's revenue was $2.2 billion in 2024."],
+  ] as const) {
+    const result = auditEvidence({ claim: claimText, passage, corroborating: [other] });
+    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.ok(result.ceiling < SUPPORTED_MIN, passage);
+  }
   // Two capitalised measures sharing a word, a family the claim never names.
   const claim = "In 2024, Northwind's revenue was $4.3 billion.";
   const corroborating = ["Northwind's revenue was $4.3 billion in 2024."];

@@ -13,10 +13,17 @@
  *  1. one proposition of the passage is the claim's own proposition with the
  *     opposite polarity — the same subject in the same surface form (or a
  *     personal pronoun, possessive or head-noun reference that resolves to it
- *     uniquely), the same verb, tense and modal, the same object, every one of
- *     the claim's time and place qualifiers, and nothing the negation could
- *     be about instead (a denial that adds a qualifier denies something
- *     narrower than the claim); and
+ *     uniquely), the same verb, tense and modal, the same object (a denial of
+ *     the act answers the claim's amount: "did not rise" against "rose 14%"),
+ *     every one of the claim's time and place qualifiers, and nothing the
+ *     negation could be about instead: a denial that adds a qualifier, a part
+ *     of the period ("at the end of 2023"), a reason ("because demand fell",
+ *     "due to inflation", "as planned"), a count ("once", "again", "three
+ *     times"), a quantifier ("all of its shares", "every store") or a reason,
+ *     time, condition or purpose clause beside it ("after regulators
+ *     objected", "so that it could win customers") denies something narrower
+ *     than the claim, and is proof only against a statement narrowed by the
+ *     same words; and
  *  2. no other proposition of the passage plausibly states the claim with
  *     the claim's own polarity: one whose subject may be the claim's (another
  *     name, a pronoun it cannot pin down, no subject at all) and whose verb
@@ -30,7 +37,13 @@
  * fronted date or place split off by a comma ("In 2023, the bank opened …")
  * belongs to the clause it introduces; a subject left out after "and"/"but"
  * is the previous one; hedged, conditional and attribution clauses state
- * nothing. Whatever the reader cannot place with certainty can only make a
+ * nothing. A "that" clause states something only after an affirmed verb of
+ * saying ("said that"); after a noun ("reports that", "rumours that"), a
+ * denied or hedged verb ("never said that") or a verb of doubt it states
+ * nothing, and denied, disputed or reported wrongly ("denied that",
+ * "rejected claims that", "wrongly reported that") it is read with the
+ * opposite polarity and never certain: shown for review, never proof.
+ * Whatever the reader cannot place with certainty can only make a
  * contradiction LESS likely: an unparsed proposition is never the proof in
  * (1), and always a candidate in (2). "not just", "not only", "not merely" +
  * verb is a focus, not a denial ("did not just raise prices, it also …"
@@ -205,6 +218,11 @@ const REPORTING = new Set(
     "explain explains explained warn warns warned estimate estimates estimated suggest suggests suggested indicate indicates indicated " +
     "insist insists insisted believe believes believed think thinks thought agree agrees agreed acknowledge acknowledges acknowledged " +
     "admit admits admitted deny denies denied disclose discloses disclosed reveal reveals revealed").split(" ")
+);
+/** Nouns whose "that" clause is a claim someone made, not a statement of the passage: "reports that", "rumours that". */
+const CLAIM_NOUNS = new Set(
+  ("suggestion suggestions rumour rumours rumor rumors allegation allegations accusation accusations assertion assertions speculation " +
+    "suspicion suspicions fear fears idea notion belief theory impression perception news word").split(" ")
 );
 /**
  * Frames that leave the verb after them unasserted: "was expected to rise",
@@ -400,6 +418,18 @@ export interface Proposition {
   adverbs: string[];
   /** Read with no guess in it: only such a proposition may prove a contradiction. */
   certain: boolean;
+  /**
+   * What its negation may be about instead of the whole predicate, when the
+   * words leave it open: a reason cut off ("did not raise prices because
+   * demand fell"), a count ("not once", "twice"), a quantifier ("not all of
+   * its shares"), or a reason, time or condition clause beside it ("after
+   * regulators objected", "unless costs rise"). A key naming what narrows it
+   * ("after:fee-introduc"); null when nothing does. Negated, it is the proof
+   * only against a statement narrowed by the same words ("Applications fell
+   * after the fee was introduced" against "did not fall after the fee was
+   * introduced"); it is still shown for review.
+   */
+  scope: string | null;
   kind: "full" | "vp" | "elided" | "remnant" | "relative";
   /** Text of the unit, for debugging. */
   text: string;
@@ -445,7 +475,11 @@ function verbScore(tokens: Token[], i: number, vpOnly: boolean): number {
   if (prev && prev.kind === "word" && /s$/.test(prevLow) && !/(?:ss|us|is)$/.test(prevLow) && !prev.possessive) return 1;
   // After a coordinated subject: "Wingtip Toys and Litware support the tax".
   if (tokens.slice(0, i).some((x) => x.low === "and" || x.low === "&") && !tokens.slice(0, i).some((x) => AUX.has(x.low))) return 1.5;
-  if (IRREGULAR_BASES.has(t.low) && ["cut", "put", "set", "hit", "cost", "let", "quit", "bid", "shut", "spread", "split", "forecast"].includes(t.low)) return 1.2;
+  if (IRREGULAR_BASES.has(t.low) && ["cut", "put", "set", "hit", "cost", "let", "quit", "bid", "shut", "spread", "split", "forecast"].includes(t.low)) {
+    // "Northwind cut its budget", "the council set a cap": a determiner or a figure after it makes it the verb.
+    const next = tokens[i + 1];
+    return next && (DETERMINERS.has(next.low) || POSSESSIVE_PRONOUNS.has(next.low) || next.kind === "num") ? 1.6 : 1.2;
+  }
   return 0;
 }
 
@@ -521,7 +555,7 @@ function unitsOf(tokens: Token[], sentence: number, question: boolean): Unit[] {
     }
     if (low === "that" && current.length > 0) {
       const prev = current[current.length - 1]!;
-      if (REPORTING.has(prev.low) || prev.low === "so") {
+      if (REPORTING.has(prev.low) || CLAIM_NOUNS.has(prev.low) || prev.low === "so") {
         flush("that");
         continue;
       }
@@ -552,6 +586,13 @@ interface Parsed {
   passive: boolean;
   /** The verb is left out after its auxiliary: "but the House did", "It didn't in Asia". */
   elided: boolean;
+  /**
+   * The verb, with no auxiliary, is a form its past shares with its base
+   * ("cut", "set", "put"): present only after a plural subject ("they cut"),
+   * past after a singular one ("Northwind cut", which would otherwise be
+   * "cuts"). Settled once the subject is read.
+   */
+  sameForm: boolean;
   rest: Token[];
   certain: boolean;
 }
@@ -680,7 +721,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
       else if (prev.low === "longer" && tokens[verbIndex - 2]?.low === "no") verbIndex -= 2;
       else break;
     }
-    if (verbIndex < 0) return { fronted, subjectTokens: tokens, verbIndex: -1, negated: false, asserted: true, modal: null, tense: null, verb: null, passive: false, elided: false, rest: [], certain: false };
+    if (verbIndex < 0) return { fronted, subjectTokens: tokens, verbIndex: -1, negated: false, asserted: true, modal: null, tense: null, verb: null, passive: false, elided: false, sameForm: false, rest: [], certain: false };
     subjectTokens = tokens.slice(0, verbIndex);
   }
   // Negators and "no" in the subject ("Neither company", "No analyst").
@@ -696,6 +737,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
   let sawHave = false;
   let sawDo = false;
   let verb: string | null = null;
+  let sameForm = false;
   let certain = true;
   const adverbs: Token[] = [];
   for (; i < tokens.length; i += 1) {
@@ -777,6 +819,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
       }
       verb = base;
       if (sawBe && (form === "past" || IRREGULAR[low])) passive = true;
+      sameForm = !tense && IRREGULAR[low] === low;
       if (!tense) tense = form === "past" ? "past" : form === "s" || form === "base" ? "present" : null;
       i += 1;
       break;
@@ -834,6 +877,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
     verb,
     passive,
     elided,
+    sameForm,
     rest,
     certain: certain && !focus,
   };
@@ -913,12 +957,26 @@ function timeKeys(tokens: Token[]): TimeKey[] {
   return keys;
 }
 
-/** Splits what follows the verb into its object, prepositional phrases, times and adverbs. */
-function readRest(rest: Token[]): { object: string[]; pps: PP[]; times: TimeKey[]; adverbs: string[] } {
+/** Words that make a phrase all or each of a set: a denial of "all of its shares" is not a denial of any. */
+const QUANTIFIERS = new Set("all every each both entire whole".split(" "));
+/** How many times: "did not raise rates once" (it raised them four times), "twice", "three times", "again". */
+const COUNT_ADVERBS = new Set("once twice thrice again".split(" "));
+const NUMBER_WORDS = new Set("two three four five six seven eight nine ten eleven twelve several many multiple numerous".split(" "));
+/** A part of the period a date names: "at the end of 2023" is not 2023, "the first week of March" is not March. */
+const PART_OF_PERIOD = new Set("end start beginning middle mid close turn half quarter week weeks month months first second third fourth".split(" "));
+
+/**
+ * Splits what follows the verb into its object, prepositional phrases, times
+ * and adverbs. `scope` names what it read that a negation may be about
+ * instead of the whole predicate (see `Proposition.scope`): a reason it was
+ * cut at, a count, a quantifier.
+ */
+function readRest(rest: Token[]): { object: string[]; pps: PP[]; times: TimeKey[]; adverbs: string[]; scope: string | null } {
   const object: string[] = [];
   const pps: PP[] = [];
   const adverbs: string[] = [];
   const times: TimeKey[] = [];
+  let scope: string | null = null;
   let pp: PP | null = null;
   const ppTokens: Token[] = [];
   const closePP = () => {
@@ -934,6 +992,10 @@ function readRest(rest: Token[]): { object: string[]; pps: PP[]; times: TimeKey[
       }
       if (tk.length > 0 && ppTokens.filter((t) => t.kind !== "punct" && !OBJECT_SKIP.has(t.low)).every((t) => isTimeish([t]) || PRESENT_MARKERS.has(t.low) || ["end", "start", "beginning", "middle", "mid", "half", "quarter", "first", "second", "third", "fourth", "last", "next", "this", "previous", "prior", "year", "month", "week", "the"].includes(t.low) || t.kind === "num")) {
         for (const k of tk) times.push(pp.prep === "in" || pp.prep === "during" || pp.prep === "on" || pp.prep === "at" || pp.prep === "for" || pp.prep === "of" ? k : `${pp.prep}:${k}`);
+        // "at the end of 2023", "in the middle of 2023": a part of the year, which a time of its own keeps apart from
+        // the whole year (a quarter, a half or a relative period already carries one).
+        const part = ppTokens.find((t) => PART_OF_PERIOD.has(t.low));
+        if (part && !tk.some((k) => /^(?:q\d|h\d|rel:)/.test(k))) times.push(`part:${part.low.replace(/s$/, "")}`);
       } else if (pp.stems.length > 0) pps.push(pp);
     }
     pp = null;
@@ -944,9 +1006,24 @@ function readRest(rest: Token[]): { object: string[]; pps: PP[]; times: TimeKey[
     if (t.kind === "punct") continue;
     const low = t.low;
     // A reason or a manner of plan ("because of the pandemic", "due to delays", "as planned"): about why, not what.
+    // A denial cut there may deny only the reason ("did not raise prices because demand fell; costs drove it").
     const next = rest[i + 1]?.low;
-    if (low === "because" || ((low === "due" || low === "owing" || low === "thanks") && next === "to") || (low === "as" && (next === "planned" || next === "expected" || next === "scheduled" || next === "promised"))) break;
+    if (low === "because" || ((low === "due" || low === "owing" || low === "thanks") && next === "to") || (low === "as" && (next === "planned" || next === "expected" || next === "scheduled" || next === "promised"))) {
+      scope = joinScope(scope, `${low}:${scopeStems(rest.slice(i + 1))}`);
+      break;
+    }
+    // "all of its shares", "every store"; not "at all", "after all", "above all", "in all".
+    if (QUANTIFIERS.has(low) && !(low === "all" && ["at", "after", "above", "in", "of"].includes(rest[i - 1]?.low ?? ""))) scope = joinScope(scope, `all:${low}`);
+    if (COUNT_ADVERBS.has(low) || (low === "times" && i > 0 && (rest[i - 1]!.kind === "num" || NUMBER_WORDS.has(rest[i - 1]!.low)))) {
+      scope = joinScope(scope, `count:${COUNT_ADVERBS.has(low) ? low : rest[i - 1]!.low}`);
+      if (COUNT_ADVERBS.has(low)) {
+        adverbs.push(low);
+        continue;
+      }
+    }
     if (NEGATORS.has(low) || low === "no" || low === "none" || low === "nothing") continue;
+    // "did not raise prices only in Ohio", "… just in Ohio": a focus inside the predicate, which a denial may be about.
+    if (FOCUS_PARTICLES.has(low)) scope = joinScope(scope, `focus:${low}`);
     if (low === "only") continue;
     // "to" + verb is a complement ("a licence to operate"), not a phrase about a place.
     const isPrep = PREPOSITIONS.has(low) && !(low === "to" && rest[i + 1] && verbBase(rest[i + 1]!.low) && verbForm(rest[i + 1]!.low) === "base");
@@ -963,7 +1040,7 @@ function readRest(rest: Token[]): { object: string[]; pps: PP[]; times: TimeKey[
       if (PRESENT_MARKERS.has(low)) times.push("now");
       continue;
     }
-    if ((isMannerAdverb(t) && !pp) || ["twice", "again", "sharply", "slightly", "strongly", "steadily"].includes(low)) {
+    if ((isMannerAdverb(t) && !pp) || ["sharply", "slightly", "strongly", "steadily"].includes(low)) {
       adverbs.push(stemOf(low));
       continue;
     }
@@ -985,7 +1062,21 @@ function readRest(rest: Token[]): { object: string[]; pps: PP[]; times: TimeKey[
     if (!OBJECT_SKIP.has(low)) object.push(stemOf(low));
   }
   closePP();
-  return { object, pps, times, adverbs };
+  return { object, pps, times, adverbs, scope };
+}
+
+/** Two scopes as one key: every part of each, sorted. */
+function joinScope(a: string | null, b: string | null): string | null {
+  if (a === null || b === null) return a ?? b;
+  return [...new Set([...a.split("+"), ...b.split("+")])].sort().join("+");
+}
+
+/** The content stems of a clause or phrase, for a scope key: "after the fee was introduced" → "fee-introduc". */
+function scopeStems(tokens: readonly Token[]): string {
+  return tokens
+    .filter((t) => t.kind !== "punct" && !OBJECT_SKIP.has(t.low) && !AUX.has(t.low) && !PREPOSITIONS.has(t.low) && !CONNECTORS.has(t.low))
+    .map((t) => stemOf(t.low))
+    .join("-");
 }
 
 // ── Remnants ─────────────────────────────────────────────────────────────────
@@ -1050,6 +1141,7 @@ function emptyProp(base: Partial<Proposition> & Pick<Proposition, "sentence" | "
     times: [],
     adverbs: [],
     certain: false,
+    scope: null,
     kind: "full",
     ...base,
   };
@@ -1121,6 +1213,54 @@ function sideSubjects(subjectWords: readonly Token[], negated: boolean): Array<{
   return out;
 }
 
+/**
+ * Verbs that deny the clause they report: "Northwind denied that it raised
+ * prices", "rejected claims that", "disputed reports that". The passage
+ * reports the opposite of that clause — said by someone, never proved.
+ */
+const DENYING = new Set("deny reject dispute refute dismiss rebut contest disprove debunk repudiate retract".split(" ").map(stemOf));
+/** Verbs that doubt the clause they report: it is neither stated nor denied. */
+const DOUBTING = new Set("doubt question challenge disbelieve".split(" ").map(stemOf));
+/** Verbs that vouch for a claim they take as their object: "confirmed reports that …" states it. */
+const CONFIRMING = new Set("confirm acknowledge admit verify corroborate accept".split(" ").map(stemOf));
+/** A reporting verb said to be wrong: "wrongly reported that", "It was mistakenly claimed that". */
+const FALSITY_ADVERBS = new Set("wrongly mistakenly falsely incorrectly erroneously inaccurately wrongfully misleadingly".split(" ").map(stemOf));
+const FALSITY_WORDS = new Set("false mistaken erroneous inaccurate incorrect wrong untrue baseless unfounded discredited debunked bogus fake".split(" "));
+/** A source said to be withdrawn or unchecked: what it says is not stated by the passage ("a since-retracted report said …"). */
+const RETRACTION_WORDS = new Set("retracted withdrawn unverified unconfirmed disputed contested".split(" "));
+/** The parts of a word, a hyphenated one ("since-retracted") split. */
+const wordParts = (tokens: readonly Token[]) => tokens.filter((t) => t.kind === "word").flatMap((t) => t.low.split("-"));
+/** What a "that" clause is in its sentence: asserted, a claim reported but not stated, or one reported as false. */
+type ComplementFrame = "asserted" | "unasserted" | "denied";
+/** Openers of a reason, time or condition clause: beside one, a denial may be about that clause alone. */
+const SUBORDINATORS = new Set("because since as after before when whenever while whilst until till once if unless".split(" "));
+/** A reason or purpose phrase split off by a comma: "…, because of the pandemic", "…, due to inflation". */
+const REASON_OPENER = /^(?:because|due to|owing to|thanks to|on account of|as a result of|in order to|so as to)\b/;
+/**
+ * How a "that" clause reads after the unit it completes (`tokens`, read as
+ * `props`). The passage states it only when that unit is an affirmed verb of
+ * saying taking it directly ("said that", "reported that"), or a verb that
+ * vouches for a claim ("confirmed reports that"). Denied, disputed, rejected
+ * or said to be wrong, it reports the opposite ("denied that it raised
+ * prices"); after a noun ("reports that", "rumours that"), a denied or hedged
+ * verb of saying ("did not say that", "may have said that") or a verb of
+ * doubt, it is a claim someone made, and states nothing.
+ */
+function complementFrame(tokens: readonly Token[], props: readonly Proposition[]): ComplementFrame {
+  const words = tokens.filter((t) => t.kind === "word");
+  const last = words[words.length - 1];
+  const governing = [...props].reverse().find((p) => p.verb !== null && p.kind !== "remnant") ?? null;
+  // "Reports that …", "The claim that …": a clause about a claim, not one.
+  if (!governing || !last) return "unasserted";
+  if (governing.negated || (governing.modal !== null && HEDGE_MODALS.has(governing.modal))) return "unasserted";
+  const verb = stemOf(governing.verb!);
+  if (DENYING.has(verb) || governing.adverbs.some((a) => FALSITY_ADVERBS.has(a)) || wordParts(words).some((w) => FALSITY_WORDS.has(w))) return "denied";
+  if (DOUBTING.has(verb) || wordParts(words).some((w) => RETRACTION_WORDS.has(w))) return "unasserted";
+  const takesItDirectly = governing.object.length === 0 && stemOf(last.low) === verb;
+  if (!takesItDirectly && !CONFIRMING.has(verb)) return "unasserted";
+  return "asserted";
+}
+
 function readText(text: string): ReadText {
   const props: Proposition[] = [];
   const subjects: Subject[] = [];
@@ -1140,7 +1280,7 @@ function readText(text: string): ReadText {
     let pendingFronted: Token[][] = [];
     let sentenceSubject: Subject | null = null;
     let sentenceLast: Proposition | null = null;
-    units.forEach((u) => {
+    const readUnit = (u: Unit) => {
       const unit = unitIndex++;
       const unitText = u.tokens.map((t) => t.raw).join(" ");
       const { tokens: body, opener, only } = stripOpeners(u.tokens);
@@ -1231,6 +1371,8 @@ function readText(text: string): ReadText {
           asserted: antecedent.asserted && !unasserted,
           kind: "remnant",
           certain: antecedent.certain && replaced.certain,
+          // A contrast says what its negation is about: the phrase it swaps in, whatever narrowed the clause before.
+          scope: replaced.scope,
           text: unitText,
         });
         return;
@@ -1308,10 +1450,14 @@ function readText(text: string): ReadText {
             adverbs: restInfo.adverbs,
             kind: "elided",
             certain: certain && antecedent.certain && restInfo.object.length === 0,
+            scope: joinScope(antecedent.scope, restInfo.scope),
             text: unitText,
           };
         }
       } else {
+        // "Northwind cut its budget": past after a singular subject or a name, unknown after a plural one.
+        const singular = !!subject && (subject.plural === false || subject.pronoun === "it" || subject.pronoun === "he" || subject.pronoun === "she" || (subject.proper && subject.plural === null && !subject.words.includes("and")));
+        const tense = parsed.sameForm ? (singular ? "past" : null) : parsed.tense;
         prop = {
           sentence: si,
           unit,
@@ -1319,7 +1465,7 @@ function readText(text: string): ReadText {
           negated: parsed.negated,
           asserted: parsed.asserted && !unasserted,
           modal: parsed.modal,
-          tense: parsed.tense,
+          tense,
           verb: parsed.verb,
           passive: parsed.passive,
           object: restInfo.object,
@@ -1327,6 +1473,7 @@ function readText(text: string): ReadText {
           times: [...frontedTimes, ...restInfo.times],
           adverbs: restInfo.adverbs,
           certain,
+          scope: joinScope(restInfo.scope, subjectWords.some((t) => QUANTIFIERS.has(t.low)) ? "all:subject" : null),
           kind: relative ? "relative" : subjectWords.length === 0 ? "vp" : "full",
           text: unitText,
         };
@@ -1380,6 +1527,72 @@ function readText(text: string): ReadText {
         sentenceSubject = subject;
         subjectHistory.push({ subject, sentence: si });
       }
+    };
+    /** The unit before, as read: what a "that" clause is the complement of, and what a reason or time clause qualifies. */
+    let previous: { tokens: Token[]; props: Proposition[]; subordinate: boolean } | null = null;
+    /** A frame a "that" clause was read in, carried to a verb phrase joined on to it ("denied that it raised prices and cut wages"). */
+    let frame: ComplementFrame = "asserted";
+    /** A reason, time or condition clause opened the sentence: the clause after it is qualified by it. */
+    let scopeNext: string | null = null;
+    /** "According to a since-retracted report, …", "According to a false report, …": the sentence is that report's. */
+    let sentenceFrame: ComplementFrame = "asserted";
+    let sentenceFraming = "";
+    const applyFrame = (ps: readonly Proposition[], how: ComplementFrame, framing: string) => {
+      for (const p of ps) {
+        if (how === "unasserted") p.asserted = false;
+        else if (how === "denied") {
+          // Denied, disputed or reported wrongly: the passage reports the opposite, and never proves it.
+          p.negated = !p.negated;
+          p.certain = false;
+          p.text = `${framing} ${p.text}`.trim();
+        }
+      }
+    };
+    units.forEach((u) => {
+      const start = props.length;
+      readUnit(u);
+      const mine = props.slice(start);
+      const { tokens: body, opener } = stripOpeners(u.tokens);
+      const connector = u.connector && u.connector !== "," && u.connector !== ";" ? u.connector : opener;
+      if (u.initial && body[0]?.low === "according") {
+        const parts = wordParts(u.tokens);
+        sentenceFrame = parts.some((w) => FALSITY_WORDS.has(w)) ? "denied" : parts.some((w) => RETRACTION_WORDS.has(w)) ? "unasserted" : "asserted";
+        sentenceFraming = u.tokens.map((t) => t.raw).join(" ");
+      } else if (sentenceFrame !== "asserted") applyFrame(mine, sentenceFrame, sentenceFraming);
+      // ── What a reported clause is: "Northwind denied that it raised prices" states nothing about prices.
+      if (u.connector === "that" && previous) {
+        frame = complementFrame(previous.tokens, previous.props);
+      } else if (!(mine.length > 0 && mine.every((p) => p.kind === "vp") && (u.connector === "and" || u.connector === "or"))) {
+        frame = "asserted";
+      }
+      if (u.connector === "that" && !previous) frame = "unasserted";
+      if (frame !== "asserted") applyFrame(mine, frame, previous ? previous.tokens.map((t) => t.raw).join(" ") : "");
+      // ── A reason, time or condition clause beside a denial: the denial may be about it alone. "as some outlets
+      // reported" comments on what was said, and a contrast ("in 2024, not in 2023 as first reported") already says
+      // what its negation is about.
+      const comment = connector === "as" && body.some((t) => REPORTING.has(t.low));
+      // "… so that it could win customers": a purpose, which a denial may be about alone.
+      const purpose = u.connector === "that" && previous?.tokens.filter((t) => t.kind === "word").pop()?.low === "so";
+      const reason = REASON_OPENER.test(u.tokens.filter((t) => t.kind === "word").map((t) => t.low).join(" "));
+      // "…, while Japan fined Apple", "…, while Contoso did not": a contrast with the clause before (its verb again, or
+      // left out), not a time it is narrowed to ("while the freeze was in force").
+      const contrast =
+        (connector === "while" || connector === "whilst") &&
+        !!previous &&
+        mine.some((p) => p.kind === "elided" || (p.verb !== null && previous!.props.some((q) => q.verb !== null && (q.verb === p.verb || synonyms(q.verb, p.verb)))));
+      const subordinate = (((connector !== null && SUBORDINATORS.has(connector)) || purpose) && hasVerb(body) && !comment && !contrast) || reason;
+      const narrow = (ps: readonly Proposition[], key: string) => {
+        for (const p of ps) if (p.kind !== "remnant") p.scope = joinScope(p.scope, key);
+      };
+      if (subordinate) {
+        const key = `${purpose ? "so" : connector}:${scopeStems(body)}`;
+        if (previous && !previous.subordinate) narrow(previous.props, key);
+        if (u.initial) scopeNext = key;
+      } else if (scopeNext !== null && mine.length > 0) {
+        narrow(mine, scopeNext);
+        scopeNext = null;
+      }
+      if (u.tokens.some((t) => t.kind !== "punct")) previous = { tokens: u.tokens, props: mine, subordinate };
     });
   });
   return { props, subjects };
@@ -1450,19 +1663,19 @@ function sameVoice(a: Proposition, b: Proposition): [Proposition, Proposition] |
 }
 
 /** The previous proposition with the remnant's phrase in place of the one it contrasts with. */
-function replaceIn(antecedent: Proposition, body: Token[]): Pick<Proposition, "object" | "pps" | "times"> & { certain: boolean } {
+function replaceIn(antecedent: Proposition, body: Token[]): Pick<Proposition, "object" | "pps" | "times" | "scope"> & { certain: boolean } {
   const info = readRest(body);
   const first = body.find((t) => t.kind !== "punct");
   if (first && PREPOSITIONS.has(first.low)) {
     // A phrase: in place of the one with the same preposition, else added.
     const swapped = swapQualifiers(antecedent, info.pps, info.times);
-    return { ...swapped, object: antecedent.object, certain: true };
+    return { ...swapped, object: antecedent.object, certain: true, scope: info.scope };
   }
   if (info.times.length > 0 && info.object.length === 0) {
-    return { ...swapQualifiers(antecedent, [], info.times), object: antecedent.object, certain: true };
+    return { ...swapQualifiers(antecedent, [], info.times), object: antecedent.object, certain: true, scope: info.scope };
   }
   // A noun phrase: in place of the object; the phrases after the object went with the contrasted one.
-  return { object: info.object, pps: info.pps, times: info.times.length > 0 ? info.times : antecedent.times, certain: antecedent.object.length > 0 };
+  return { object: info.object, pps: info.pps, times: info.times.length > 0 ? info.times : antecedent.times, certain: antecedent.object.length > 0, scope: info.scope };
 }
 
 function swapQualifiers(antecedent: Proposition, pps: PP[], times: TimeKey[]): Pick<Proposition, "pps" | "times"> {
@@ -1644,6 +1857,11 @@ function meaningfulTimes(p: Proposition): TimeKey[] {
 function exactOpposite(claimProp: Proposition, rawPassageProp: Proposition, named: readonly Subject[], claimSubjects: readonly Subject[]): boolean {
   const passageProp = inClaimVerb(claimProp, rawPassageProp);
   if (!passageProp.certain || !passageProp.asserted || passageProp.negated === claimProp.negated) return false;
+  // A denial that may be about a reason, a count, a quantifier or a clause beside it denies something narrower, on
+  // either side: "did not raise prices because demand fell", "did not sell all of its shares", "did not raise rates
+  // once". Only a statement narrowed by the same words answers it.
+  if (rawPassageProp.negated && rawPassageProp.scope !== null && rawPassageProp.scope !== claimProp.scope) return false;
+  if (claimProp.negated && claimProp.scope !== null && claimProp.scope !== rawPassageProp.scope) return false;
   const voiced = sameVoice(claimProp, passageProp);
   if (!voiced) return false;
   const [p, c] = voiced;
@@ -1651,7 +1869,11 @@ function exactOpposite(claimProp: Proposition, rawPassageProp: Proposition, name
   if ((c.modal ?? null) !== (p.modal ?? null)) return false;
   if (p.tense && c.tense && p.tense !== c.tense) return false;
   if (!subjectMatches(p.subject, c.subject, named, claimSubjects)) return false;
-  if (!sameStems(p.object, c.object)) return false;
+  // A denial of the act denies it by any amount: "did not rise in 2024" answers "rose 14% in 2024", "did not cut jobs"
+  // answers "cut 500 jobs". Only figures may be the claim's extra object, never a word of what was acted on.
+  const amountOnly =
+    rawPassageProp.negated && !claimProp.negated && subset(c.object, p.object) && p.object.filter((w) => !c.object.includes(w)).every((w) => /^[$£€]?\d/.test(w));
+  if (!sameStems(p.object, c.object) && !amountOnly) return false;
   // Every one of the claim's places and times, in the passage's statement.
   for (const pp of p.pps) if (!c.pps.some((x) => x.prep === pp.prep && sameStems(x.stems, pp.stems))) return false;
   const pt = meaningfulTimes(p);
@@ -1664,6 +1886,8 @@ function exactOpposite(claimProp: Proposition, rawPassageProp: Proposition, name
     if (c.adverbs.some((a) => !p.adverbs.includes(a))) return false;
   } else {
     if (ct.length > pt.length) return false;
+    // The same for a denying claim: "did not raise rates twice" is not contradicted by "raised rates".
+    if (claimProp.negated && p.adverbs.some((a) => !c.adverbs.includes(a))) return false;
   }
   return true;
 }
@@ -1706,8 +1930,9 @@ function plausiblyStates(claimProp: Proposition, rawPassageProp: Proposition, na
   if (d.verb !== p.verb && !synonyms(d.verb, p.verb)) return false;
   // A statement about another time of the verb ("taught at Stanford" against "still teaches there").
   if (p.tense && d.tense && p.tense !== d.tense) return false;
-  // A conflicting object, place or time rules it out; a missing one does not.
-  if (p.object.length > 0 && d.object.length > 0 && !subset(p.object, d.object) && !subset(d.object, p.object)) return false;
+  // A conflicting object, place or time rules it out; a missing one does not, nor one left as a pronoun ("it raised
+  // them because costs rose": what "them" is was not read).
+  if (p.object.length > 0 && d.object.length > 0 && !pronounObject(d) && !subset(p.object, d.object) && !subset(d.object, p.object)) return false;
   // "his assistant's contract" is not "his contract": an owner named in one object and not the other.
   const owners = (x: Proposition) => x.object.filter((w) => w.endsWith("'s"));
   if (!sameStems(owners(p), owners(d))) return false;
@@ -1722,6 +1947,11 @@ function plausiblyStates(claimProp: Proposition, rawPassageProp: Proposition, na
     if (sameKind.length > 0 && !sameKind.some((x) => timesAgree(t, x))) return false;
   }
   return true;
+}
+
+/** An object that is only "it" or "them": what it stands for was not read. */
+function pronounObject(p: Proposition): boolean {
+  return p.object.length === 1 && (p.object[0] === "it" || p.object[0] === "them");
 }
 
 /** Verbs a report uses for the same act, by bare form. */
@@ -1845,7 +2075,9 @@ function mayBeClaimSubject(claimSubject: Subject, other: Subject, named: readonl
     return subjectsEqual(claimSubject, antecedent) || !provablyDifferent(claimSubject, antecedent) || (!!owner && subjectsEqual(owner, antecedent));
   }
   const others = (than: Subject) => named.filter((s) => s.proper && !subjectsEqual(s, than) && provablyDifferent(than, s));
-  if (isDescription(other) && claimSubject.proper) {
+  // A name that opens the claim ("Proseware recalled its fans") is as much a name as one in mid-sentence: its capitals
+  // are no evidence, but the passage naming it as a subject is.
+  if (isDescription(other) && (claimSubject.proper || claimSubject.names.length > 0)) {
     return named.some((s) => subjectsEqual(s, claimSubject)) && others(claimSubject).length === 0;
   }
   if (isDescription(claimSubject) && other.proper) return others(other).length === 0;

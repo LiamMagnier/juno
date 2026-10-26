@@ -9,7 +9,7 @@ import { auditClaims, selectClaimsForAudit, type AuditSource } from "@/lib/resea
 /*
  * The consolidated regression corpus of the deterministic citation audit:
  * every repro the verifiers and the fixer ever wrote against it (the probe
- * scripts of five review rounds), as data under
+ * scripts of six review rounds), as data under
  * tests/fixtures/research-claims/. Hand-written cases are copied as they
  * were; generators ("8 subjects x 6 predicates x 4 contrasts") are kept as
  * grids the test expands. Each case says where it came from.
@@ -313,4 +313,56 @@ test("round 5 end to end: a fresh real contradiction never reads as cleanly supp
   }
   console.log(`round 5 end to end, contradictions shown: ${reports.length - missed.length} of ${reports.length}`);
   assert.deepEqual(missed, []);
+});
+
+// ── Round 6: the verifier's fresh repros (probe-research-c2) and the fixer's own (r6), as floors ────────────
+
+const ROUND6 = (from: string) => from.startsWith("probe-research-c2/") || from.startsWith("r6/");
+
+test("round 6: what narrows a figure or a denial defers to the judge, and the rest is still caught", () => {
+  const round = corpus.pairs.filter((c) => ROUND6(c.from));
+  const audits = round.map((c) => ({ c, audit: auditEvidence({ claim: c.claim, passage: c.passage, corroborating: c.corroborating }) }));
+  const honest = audits.filter((x) => x.c.kind === "honest");
+  const real = audits.filter((x) => x.c.kind === "contradiction");
+  const disagree = audits.filter((x) => x.c.kind === "disagree");
+  const baseCaught = new Set(baseline.contradictionsCaught);
+  const baseFalse = new Set(baseline.honestContradicted);
+  const caught = real.filter((x) => x.audit.contradicted);
+  const unflagged = real.filter((x) => !x.audit.contradicted && !x.audit.reasons.some((r) => DISAGREEMENT.has(r.code)));
+  const standIns = disagree.filter((x) => x.audit.reasons.some((r) => r.code === "stated_by_other_citation") || x.audit.ceiling >= SUPPORTED_MIN);
+  console.log(
+    `round 6: false contradictions ${honest.filter((x) => x.audit.contradicted).length} of ${honest.length} honest pairs (base ${honest.filter((x) => baseFalse.has(keyOf(x.c))).length}); ` +
+      `false supports ${standIns.length} of ${disagree.length}; contradictions ${caught.length} of ${real.length} caught by the text, ` +
+      `${real.length - unflagged.length} caught or flagged (base caught ${real.filter((x) => baseCaught.has(keyOf(x.c))).length})`
+  );
+  // A figure narrowed by the words after it ("in Europe", "excluding acquisitions", "a month on average"), a denied or
+  // falsely reported clause, a denial narrowed by a reason, a count, a quantifier, a part of the year or a clause beside
+  // it, a company ending or clipped name, a figure half a step above the claim's, a count in a synonym unit: each is the
+  // judge's to read, so none of them contradicts or stands in. The figures and denials that are not narrowed are still
+  // proof: 187 of the 192 contradictions when these were added (base caught 190, and contradicted 1,514 of these honest
+  // pairs doing it). The other five are the claim's subject by a description ("the regulator", "the heater maker",
+  // "the scooter maker", "the toymaker") or one clause of a two-place claim ("in Europe and in Asia"), each shown for
+  // review.
+  assert.deepEqual(honest.filter((x) => x.audit.contradicted).map((x) => show(x.c)), []);
+  assert.deepEqual(standIns.map((x) => show(x.c)), []);
+  assert.deepEqual(unflagged.map((x) => show(x.c)), []);
+  assert.ok(caught.length >= 187, `caught ${caught.length}`);
+});
+
+test("round 6 end to end: no honest repro is contradicted, no disagreeing one reads as cleanly supported", async () => {
+  const bad: string[] = [];
+  const reports = corpus.reports.filter((r) => ROUND6(r.from));
+  let contested = 0;
+  for (const r of reports) {
+    const { outcome, repaired } = await auditReport(r);
+    const desc = `${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}: ${outcome.claims.map((c) => `${c.status}${c.contested ? " (contested)" : ""}`).join(", ")}`;
+    if (r.kind === "honest" && (outcome.claims.some((c) => c.status === "contradicted") || /Conflicting evidence/.test(repaired))) bad.push(desc);
+    if (r.kind === "disagree") {
+      if (outcome.claims.some((c) => c.status === "supported" && !c.contested)) bad.push(desc);
+      contested += outcome.claims.filter((c) => c.status === "supported" && c.contested).length;
+    }
+    if (r.kind === "contradiction" && !outcome.claims.some(readsAsDisagreement)) bad.push(desc);
+  }
+  console.log(`round 6 end to end: ${reports.length - bad.length} of ${reports.length} reports read right (${contested} disagreeing ones supported and contested)`);
+  assert.deepEqual(bad, []);
 });

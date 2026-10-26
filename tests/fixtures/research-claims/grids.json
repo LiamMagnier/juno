@@ -557,6 +557,330 @@
         {"name":"sentence-initial owner","passage":"{poss} {m} was {y} in 2024.","corroborating":["{bare}: {x} (2024)."],"cases":[{"kind":"disagree","claim":"The {m} of {name} was {x} in 2024."}]},
         {"name":"mid-sentence owner","passage":"In 2024, {possMid} {m} was {y}.","corroborating":["{bare}: {x} (2024)."],"cases":[{"kind":"disagree","claim":"The {m} of {name} was {x} in 2024."}]}
       ]
+    },
+    {
+      "id": "r6-measure-tail",
+      "from": "r6/scripts/make-grids.py (measure: a figure narrowed by the words around it)",
+      "axes": [
+        [
+          {"O":"Northwind's","o":"Northwind's"},
+          {"O":"Contoso's","o":"Contoso's"},
+          {"O":"The museum's","o":"the museum's"},
+          {"O":"Fabrikam's","o":"Fabrikam's"}
+        ],
+        [
+          {"m":"revenue","x":"$4.3 billion","y":"$1.1 billion"},
+          {"m":"operating profit","x":"$610 million","y":"$150 million"},
+          {"m":"spending","x":"$2.1 billion","y":"$600 million"}
+        ],
+        [
+          {"q":"in Europe","Q":"In Europe"},
+          {"q":"excluding acquisitions","Q":"Excluding acquisitions"},
+          {"q":"from subscriptions","Q":"From subscriptions"},
+          {"q":"on a constant-currency basis","Q":"On a constant-currency basis"},
+          {"q":"before rebates","Q":"Before rebates"},
+          {"q":"at its Ohio unit","Q":"At its Ohio unit"},
+          {"q":"for its retail arm","Q":"For its retail arm"},
+          {"q":"a month on average","Q":"On average each month"},
+          {"q":"among new customers","Q":"Among new customers"},
+          {"q":"in constant currency","Q":"In constant currency"}
+        ]
+      ],
+      "forms": [
+        {"name":"qualifier after the figure","passage":"{O} {m} was {y} {q} in 2024.","cases":[{"kind":"honest","claim":"{O} {m} was {x} in 2024."}]},
+        {"name":"qualifier after the date","passage":"{O} {m} was {y} in 2024 {q}.","cases":[{"kind":"honest","claim":"{O} {m} was {x} in 2024."}]},
+        {"name":"qualifier after a comma","passage":"{O} {m} was {y} in 2024, {q}.","cases":[{"kind":"honest","claim":"{O} {m} was {x} in 2024."}]},
+        {"name":"qualifier as a lead-in","passage":"{Q}, {o} {m} was {y} in 2024.","cases":[{"kind":"honest","claim":"{O} {m} was {x} in 2024."}]},
+        {"name":"the claim's figure narrowed, the passage's the total","passage":"{O} {m} was {x} in 2024.","cases":[{"kind":"honest","claim":"{O} {m} was {y} {q} in 2024."}]},
+        {"name":"no qualifier: a rival total","passage":"{O} {m} was {y} in 2024, the annual report shows.","cases":[{"kind":"contradiction","claim":"{O} {m} was {x} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-attrib-deny",
+      "from": "r6/scripts/make-grids.py (attrib: a denied, disputed or rejected claim states nothing)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"},
+          {"S":"The regulator","s":"the regulator","pr":"it"},
+          {"S":"Dr. Maria Chen","s":"Dr. Maria Chen","pr":"she"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ],
+        [
+          {"f":"{S} denied that {pr} {p} {o} in 2024."},
+          {"f":"{S} denies {pr} {p} {o} in 2024."},
+          {"f":"{S} rejected claims that {pr} {p} {o} in 2024."},
+          {"f":"{S} disputed reports that {pr} {p} {o} in 2024."},
+          {"f":"{S} dismissed suggestions that {pr} had {p} {o} in 2024."},
+          {"f":"{S} refuted allegations that {pr} {p} {o} in 2024."},
+          {"f":"Reports that {s} {p} {o} in 2024 were false."},
+          {"f":"Rumours that {s} {p} {o} in 2024 proved unfounded."}
+        ]
+      ],
+      "forms": [
+        {"name":"denial frame","passage":"{f}","cases":[{"kind":"honest","claim":"{S} did not {b} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-attrib-false",
+      "from": "r6/scripts/make-grids.py (attrib: a report said to be wrong states nothing)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"},
+          {"S":"The regulator","s":"the regulator","pr":"it"},
+          {"S":"Dr. Maria Chen","s":"Dr. Maria Chen","pr":"she"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ],
+        [
+          {"g":"A blog mistakenly reported that {s} did not {b} {o} in 2024."},
+          {"g":"It was wrongly reported that {s} did not {b} {o} in 2024."},
+          {"g":"Analysts wrongly claimed that {s} did not {b} {o} in 2024."},
+          {"g":"Some outlets falsely said that {s} did not {b} {o} in 2024."},
+          {"g":"Nobody said that {s} did not {b} {o} in 2024."},
+          {"g":"A false report said that {s} did not {b} {o} in 2024."}
+        ]
+      ],
+      "forms": [
+        {"name":"falsity frame","passage":"{g}","cases":[{"kind":"honest","claim":"{S} {p} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-attrib-said",
+      "from": "r6/scripts/make-grids.py (attrib: a plain report still states its clause)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"},
+          {"S":"The regulator","s":"the regulator","pr":"it"},
+          {"S":"Dr. Maria Chen","s":"Dr. Maria Chen","pr":"she"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ]
+      ],
+      "forms": [
+        {"name":"said that","passage":"{S} said that {pr} did not {b} {o} in 2024.","cases":[{"kind":"contradiction","claim":"{S} {p} {o} in 2024."}]},
+        {"name":"plain denial","passage":"{S} did not {b} {o} in 2024, according to its annual report.","cases":[{"kind":"contradiction","claim":"{S} {p} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-scope",
+      "from": "r6/scripts/make-grids.py (scope: a denial narrowed by a reason, a count, a part of the year or a clause beside it)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"},
+          {"S":"The regulator","s":"the regulator","pr":"it"},
+          {"S":"Dr. Maria Chen","s":"Dr. Maria Chen","pr":"she"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ],
+        [
+          {"n":"in 2024 because demand fell"},
+          {"n":"in 2024 because of the cost"},
+          {"n":"in 2024 due to inflation"},
+          {"n":"in 2024 after the merger closed"},
+          {"n":"in 2024 until the deal closed"},
+          {"n":"in 2024 when costs fell"},
+          {"n":"in 2024 as planned"},
+          {"n":"once in 2024"},
+          {"n":"again in 2024"},
+          {"n":"twice in 2024"},
+          {"n":"three times in 2024"},
+          {"n":"at the end of 2024"},
+          {"n":"at the beginning of 2024"},
+          {"n":"in the middle of 2024"},
+          {"n":"in the first week of 2024"},
+          {"n":"in 2024 so that {pr} could win support"}
+        ]
+      ],
+      "forms": [
+        {"name":"narrowed denial","passage":"{S} did not {b} {o} {n}.","cases":[{"kind":"honest","claim":"{S} {p} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-scope-fronted",
+      "from": "r6/scripts/make-grids.py (scope: a reason or time clause before the denial)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"},
+          {"S":"The regulator","s":"the regulator","pr":"it"},
+          {"S":"Dr. Maria Chen","s":"Dr. Maria Chen","pr":"she"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ],
+        [
+          {"F":"After the merger closed"},
+          {"F":"Because demand fell"},
+          {"F":"When costs fell"},
+          {"F":"Until the deal closed"}
+        ]
+      ],
+      "forms": [
+        {"name":"fronted clause","passage":"{F} in 2024, {s} did not {b} {o}.","cases":[{"kind":"honest","claim":"{S} {p} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-scope-plain",
+      "from": "r6/scripts/make-grids.py (scope: the plain denial is still proof)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"},
+          {"S":"The regulator","s":"the regulator","pr":"it"},
+          {"S":"Dr. Maria Chen","s":"Dr. Maria Chen","pr":"she"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ]
+      ],
+      "forms": [
+        {"name":"plain denial","passage":"{S} did not {b} {o} in 2024.","cases":[{"kind":"contradiction","claim":"{S} {p} {o} in 2024."}]},
+        {"name":"denial at all","passage":"{S} did not {b} {o} at all in 2024.","cases":[{"kind":"contradiction","claim":"{S} {p} {o} in 2024."}]},
+        {"name":"same clause both sides","passage":"{S} {p} {o} in 2024 after the merger closed.","cases":[{"kind":"contradiction","claim":"{S} did not {b} {o} in 2024 after the merger closed."}]}
+      ]
+    },
+    {
+      "id": "r6-scope-quant",
+      "from": "r6/scripts/make-grids.py (scope: a denial of all, every, each or both)",
+      "axes": [
+        [
+          {"S":"Northwind","s":"Northwind","pr":"it"},
+          {"S":"The city council","s":"the city council","pr":"it"},
+          {"S":"Contoso Air","s":"Contoso Air","pr":"it"}
+        ],
+        [
+          {"b":"sell","p":"sold","o":"shares in Contoso","q":"all of its shares in Contoso"},
+          {"b":"close","p":"closed","o":"stores in Ohio","q":"all its stores in Ohio"},
+          {"b":"raise","p":"raised","o":"fees","q":"all of its fees"},
+          {"b":"repair","p":"repaired","o":"roads","q":"every road"},
+          {"b":"sell","p":"sold","o":"plants","q":"both of its plants"},
+          {"b":"renew","p":"renewed","o":"leases","q":"each of its leases"}
+        ]
+      ],
+      "forms": [
+        {"name":"quantified denial","passage":"{S} did not {b} {q} in 2024.","cases":[{"kind":"honest","claim":"{S} {p} {o} in 2024."}]},
+        {"name":"quantified denial, part kept","passage":"{S} did not {b} {q} in 2024; some were kept.","cases":[{"kind":"honest","claim":"{S} {p} {o} in 2024."}]},
+        {"name":"plain denial","passage":"{S} did not {b} {o} in 2024.","cases":[{"kind":"contradiction","claim":"{S} {p} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-suffix",
+      "from": "r6/scripts/make-grids.py (suffix: an owner that differs only by a company ending or a short form)",
+      "axes": [
+        [
+          {"A":"Woodgrove"},
+          {"A":"Contoso"},
+          {"A":"Litware"},
+          {"A":"Proseware"},
+          {"A":"Fabrikam"}
+        ],
+        [
+          {"e1":"Bank","e2":"Bancorp","e2p":"Bancorp's"},
+          {"e1":"Bank","e2":"Financial","e2p":"Financial's"},
+          {"e1":"Bank","e2":"Capital","e2p":"Capital's"},
+          {"e1":"Labs","e2":"Laboratories","e2p":"Laboratories'"},
+          {"e1":"Technologies","e2":"Tech","e2p":"Tech's"},
+          {"e1":"International","e2":"Intl","e2p":"Intl's"},
+          {"e1":"Pharmaceuticals","e2":"Pharma","e2p":"Pharma's"},
+          {"e1":"Airways","e2":"Airlines","e2p":"Airlines'"},
+          {"e1":"Airlines","e2":"Air","e2p":"Air's"},
+          {"e1":"Traders","e2":"Trading","e2p":"Trading's"},
+          {"e1":"Systems","e2":"Solutions","e2p":"Solutions'"},
+          {"e1":"Group","e2":"Holdings","e2p":"Holdings'"},
+          {"e1":"Motors","e2":"Motor Company","e2p":"Motor Company's"}
+        ],
+        [
+          {"x":"$4.3 billion","y":"$3.9 billion"},
+          {"x":"$640 million","y":"$590 million"}
+        ]
+      ],
+      "forms": [
+        {"name":"possessive","passage":"{A} {e2p} revenue was {y} in 2024.","corroborating":["Revenue at {A} {e1} was {x} in 2024."],"cases":[{"kind":"disagree","claim":"Revenue at {A} {e1} was {x} in 2024."}]},
+        {"name":"subject of reported","passage":"{A} {e2} reported revenue of {y} in 2024.","corroborating":["Revenue at {A} {e1} was {x} in 2024."],"cases":[{"kind":"disagree","claim":"Revenue at {A} {e1} was {x} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-unit-synonym",
+      "from": "r6/scripts/make-grids.py (measure: a count in another word for its unit)",
+      "axes": [
+        [
+          {"A":"Fabrikam"},
+          {"A":"Tailspin"},
+          {"A":"Proseware"}
+        ],
+        [
+          {"v":"carried","u1":"passengers","u2":"travellers","x":"12.4 million","y":"11.9 million"},
+          {"v":"operated","u1":"stores","u2":"shops","x":"520","y":"480"},
+          {"v":"built","u1":"homes","u2":"houses","x":"3,200","y":"2,900"},
+          {"v":"employed","u1":"workers","u2":"employees","x":"12,000","y":"10,500"},
+          {"v":"cut","u1":"jobs","u2":"positions","x":"500","y":"450"},
+          {"v":"had","u1":"customers","u2":"subscribers","x":"2.1 million","y":"1.8 million"},
+          {"v":"shipped","u1":"tonnes","u2":"tons","x":"2.1 million","y":"1.8 million"}
+        ]
+      ],
+      "forms": [
+        {"name":"synonym unit","passage":"{A} {v} {y} {u2} in 2024.","corroborating":["{A} {v} {x} {u1} in 2024."],"cases":[{"kind":"disagree","claim":"{A} {v} {x} {u1} in 2024."}]}
+      ]
+    },
+    {
+      "id": "r6-round",
+      "from": "r6/scripts/make-grids.py (round: a figure half a step above the claim's rounds away from it)",
+      "axes": [
+        [
+          {"O":"Northwind's","o":"Northwind's"},
+          {"O":"Contoso's","o":"Contoso's"},
+          {"O":"The museum's","o":"the museum's"},
+          {"O":"Fabrikam's","o":"Fabrikam's"}
+        ],
+        [
+          {"m":"margin","x":"7%","y":"7.5%"},
+          {"m":"revenue","x":"$4 billion","y":"$4.5 billion"},
+          {"m":"market share","x":"12%","y":"12.5%"},
+          {"m":"workforce","x":"12 million","y":"12.5 million"}
+        ]
+      ],
+      "forms": [
+        {"name":"half a step up","passage":"{O} {m} was {y} in 2024.","corroborating":["{O} {m} was {x} in 2024."],"cases":[{"kind":"disagree","claim":"{O} {m} was {x} in 2024."}]}
+      ]
     }
   ]
 }
