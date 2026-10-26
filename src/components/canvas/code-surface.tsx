@@ -372,7 +372,9 @@ export function CodeSurface({
             className={cn(
               "absolute inset-0 size-full cursor-text resize-none overflow-hidden bg-transparent px-3 py-3 pr-8",
               "text-transparent caret-foreground outline-none",
-              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              // The caret says where a click went; the frame is for the
+              // keyboard only (a field matches :focus-visible on every focus).
+              "kbd-focus:ring-2 kbd-focus:ring-inset kbd-focus:ring-[hsl(var(--ring)/0.55)]",
               metrics,
               whitespace
             )}

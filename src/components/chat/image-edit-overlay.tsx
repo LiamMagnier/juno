@@ -225,8 +225,8 @@ export function ImageEditOverlay({
   const fieldRef = React.useRef<HTMLTextAreaElement>(null);
   const dragRef = React.useRef<Drag | null>(null);
   const flippedRef = React.useRef(false);
-  // How focus last moved, so the composer's keyboard ring (C1) only shows for keys.
-  const modalityRef = React.useRef<"pointer" | "keyboard">("pointer");
+  // The composer's keyboard ring (C1) is ComposerShell's own: it follows the
+  // shared input modality, so the Enter that opened this editor counts.
 
   const [sel, setSel] = React.useState<Selection>(EMPTY);
   const [past, setPast] = React.useState<Selection[]>([]);
@@ -241,7 +241,6 @@ export function ImageEditOverlay({
   const [frameSize, setFrameSize] = React.useState<{ width: number; height: number } | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
   const [helpOpen, setHelpOpen] = React.useState(false);
-  const [kbdFocus, setKbdFocus] = React.useState(false);
   // A phone's field holds one short line; the longer hint wraps under the row.
   const [narrow, setNarrow] = React.useState(false);
   const statusId = React.useId();
@@ -277,7 +276,6 @@ export function ImageEditOverlay({
     dragRef.current = null;
     flippedRef.current = false;
     setFrameSize(null);
-    modalityRef.current = "pointer";
     const el = imgRef.current;
     const complete = !!el?.complete;
     const decoded = complete && !!el?.naturalWidth;
@@ -487,7 +485,6 @@ export function ImageEditOverlay({
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     frameRef.current?.focus({ preventScroll: true });
-    setKbdFocus(false);
     const p = toNormalized(e);
     if (tool === "brush" && frameSize) {
       const stroke: Stroke = { points: [p.x, p.y], r: brush / 2 / frameSize.width, erase: e.altKey };
@@ -718,12 +715,6 @@ export function ImageEditOverlay({
           className="ie-root fixed inset-0 z-modal flex flex-col outline-none"
           aria-describedby={undefined}
           onKeyDown={handleRootKeyDown}
-          onKeyDownCapture={(e) => {
-            if (e.key === "Tab") modalityRef.current = "keyboard";
-          }}
-          onPointerDownCapture={() => {
-            modalityRef.current = "pointer";
-          }}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             // A phone would raise its keyboard over the picture; there the
@@ -950,7 +941,6 @@ export function ImageEditOverlay({
             <ComposerShell
               className="mx-auto max-w-[44rem]"
               frame="dock"
-              keyboardFocus={kbdFocus}
               field={
                 <textarea
                   ref={fieldRef}
@@ -962,8 +952,6 @@ export function ImageEditOverlay({
                       handleSubmit();
                     }
                   }}
-                  onFocus={() => setKbdFocus(modalityRef.current === "keyboard")}
-                  onBlur={() => setKbdFocus(false)}
                   rows={1}
                   placeholder={placeholder}
                   aria-label="Describe the change"

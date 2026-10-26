@@ -209,7 +209,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
                         aria-hidden="true"
                         className={cn(
                           "grid size-4 place-items-center rounded-full border transition-colors duration-fast",
-                          on ? "border-foreground bg-foreground" : "border-foreground/20"
+                          on ? "border-foreground bg-foreground" : "border-foreground/50"
                         )}
                       >
                         <span className={cn("size-1.5 rounded-full bg-background transition-transform duration-base ease-out-soft", on ? "scale-100" : "scale-0")} />

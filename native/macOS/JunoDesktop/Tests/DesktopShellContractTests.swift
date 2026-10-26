@@ -88,8 +88,9 @@ import Testing
         // Contract v2 moved Notifications out of the column into headerActions.
         #expect(JunoShellChatSidebar.Action.allCases == [.new, .search])
         #expect(JunoShellChatSidebar.Action.new.label == "New chat")
+        // No "Pinned chats": the pinned chats lead Recent (owner, 2026-10-26).
         #expect(JunoShellChatSidebar.Heading.allCases.map(\.label) == [
-            "Needs you", "Orbit", "Pinned projects", "Pinned chats", "Recent",
+            "Needs you", "Orbit", "Pinned projects", "Recent",
         ])
         #expect(JunoShellChatSidebar.emptyLines.count == 2)
     }

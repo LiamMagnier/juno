@@ -19,6 +19,7 @@ export const STATES = [
   "approval",
   "reconnecting",
   "error",
+  "blocked",
   "ended",
   "dictation",
 ] as const;
@@ -107,6 +108,19 @@ export const SCENES: Record<Exclude<GlowState, "lab">, Scene> = {
   reconnecting: { call: () => at({ status: "reconnecting" }), you: room, alevr: silent, stillAt: 1200 },
   error: {
     call: () => at({ status: "error", error: "Connection to the voice relay failed." }),
+    you: silent,
+    alevr: silent,
+    stillAt: 1200,
+  },
+  // The longest error the hook can raise (use-realtime-voice.ts,
+  // describeStartError), word for word: the line above the composer has to
+  // wrap it on a phone, not cut the half that says what to do.
+  blocked: {
+    call: () =>
+      at({
+        status: "error",
+        error: "Microphone access is blocked. Allow the microphone for this site in your browser settings, then restart voice.",
+      }),
     you: silent,
     alevr: silent,
     stillAt: 1200,

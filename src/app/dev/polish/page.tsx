@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { PolishGallery } from "./gallery";
 
 /**
@@ -18,5 +19,9 @@ import { PolishGallery } from "./gallery";
  */
 export default function PolishDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <PolishGallery />;
+  return (
+    <PageRoot>
+      <PolishGallery />
+    </PageRoot>
+  );
 }

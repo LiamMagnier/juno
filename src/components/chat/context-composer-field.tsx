@@ -31,6 +31,7 @@ import {
 } from "./context-editor-dom";
 import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type PaletteStatus } from "./context-composer-layers";
 import { ContextTokenMark } from "./context-token-mark";
+import { isEmptiedEditor } from "./context-editor-empty";
 import { plainReturnSends, useEnterKeyHint } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
 import { useReducedMotion } from "@/lib/motion-preference";
@@ -256,8 +257,9 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     const root = rootRef.current;
     if (!root) return;
     let result = readEditor(root);
-    // An emptied contenteditable keeps a stray <br>; clear it so the placeholder returns.
-    if (!result.text && root.childNodes.length) {
+    // An emptied contenteditable keeps a stray <br> (read as "\n"); clear it so
+    // `data-empty`, and with it the placeholder, returns (context-editor-empty.ts).
+    if (isEmptiedEditor(root)) {
       root.replaceChildren();
       result = { text: "", tokens: [] };
     }

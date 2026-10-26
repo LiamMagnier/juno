@@ -186,8 +186,9 @@
     /*
      * Agent faces (docs/design/AGENTS.md §4). The six hues of the account
      * accents, lifted to a mid lightness so the dark eyes read on every one of
-     * them: `--agent-ink` is the eyes and the marks, the same warm near-black
-     * in both themes, and every tone clears 4.5:1 against it. A face is never
+     * them: `--agent-ink` is the eyes, the same warm near-black in both
+     * themes, and every tone clears 5.4:1 against it (tightest: violet on
+     * charcoal, 5.49:1; tests/agents-face.test.ts checks). A face is never
      * the only carrier of an agent's state (the sentence beside it is), so
      * these are identity colours, not status colours. Projected to Swift by
      * `npm run design:tokens`, so the Mac and the iPhone draw the same face.
@@ -211,9 +212,8 @@
     --agent-amber: 39 80% 62%;
     --agent-sage: 105 24% 60%;
     --agent-ink: 30 14% 11%;
-    /* What is drawn OFF the body — the mark, the laptop, the thinking dots —
-       has the page behind it rather than the tone, so it takes the page's
-       contrast: ink on paper here, a warm off-white on charcoal below. */
+    /* Kept for the Swift token projection (the native faces); the web face
+       does not use it. */
     --agent-mark: 30 14% 11%;
     /*
      * MEASURED AGAINST THE CODE BLOCK, NOT THE PAGE, and both of these used to
@@ -1100,12 +1100,6 @@
    * accordion-down         B  a height fold; --dur-slow flattens to base
    * accordion-up           B  a height fold; --dur-slow flattens to base
    * agent-arrive           B
-   * agent-face-blink       C
-   * agent-face-breathe     C
-   * agent-face-dot         C
-   * agent-face-lift        C
-   * agent-face-look        C
-   * agent-face-settle      C
    * aicss-fade-in          A
    * aicss-ig-morph         C
    * aicss-todo-in          B
@@ -1217,6 +1211,29 @@
   :focus-visible {
     outline: var(--ring-width, 2px) solid hsl(var(--ring));
     outline-offset: 2px;
+  }
+
+  /* ...and only for keyboard users (lib/input-modality.ts mirrors how the
+     person last moved focus to <html data-modality>).
+
+     A text field matches :focus-visible on EVERY focus, a click or a script's
+     autofocus included, so the outline above bloomed on fields nobody had
+     tabbed to; they ring for the keyboard only. Their own keyboard ring is
+     the `kbd-focus:` variant (tailwind.config.ts); a pointer's focus is a
+     darker edge.
+
+     Anything else matches it on a script's focus() after a press on
+     something that is not focusable (a blank area, a clickable row) or
+     before the person has done anything at all (a dialog focusing its first
+     button on load). Those are not keyboard focus either. A key that moves
+     focus flips the modality before the focus lands, so the ring is there
+     on the first frame for a keyboard user. Not under forced colours, where
+     the outline is the system's focus mark and stays. */
+  @media (forced-colors: none) {
+    :root:is([data-modality="pointer"], [data-modality="none"]) :focus-visible,
+    :root:not([data-modality="keyboard"]) :is(textarea, input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"], [type="image"]), [contenteditable]:not([contenteditable="false"])):focus-visible {
+      outline-color: transparent;
+    }
   }
 
   /*
@@ -1954,9 +1971,24 @@
   /* No reduced-motion rule here, on purpose: the composer's edge is a colour
      cross-fade and a shadow, both Tier A (§4.7), so they keep their timing
      under the preference. A `transition: none` here used to cut them. */
-  /* Increase Contrast: the edge is a full line, not a tint (§1.7). */
+  /* Increase Contrast: the edge is a full line, not a tint (§1.7). Every state
+     steps UP from it, in both themes: focus may not fade the edge back to its
+     standard tint, and `.dark .composer-surface` (0,2,0) must not outrank the
+     contrast edge. The keyboard ring is the full --ring, not the soft 0.55. */
   @media (prefers-contrast: more) {
     .composer-surface { border-color: hsl(var(--foreground) / 0.45); }
+    .dark .composer-surface { border-color: hsl(var(--foreground) / 0.45); }
+    .composer-surface:focus-within,
+    .dark .composer-surface:focus-within { border-color: hsl(var(--foreground) / 0.65); }
+    .composer-surface[data-kbd-focus],
+    .dark .composer-surface[data-kbd-focus] { border-color: hsl(var(--ring)); }
+    .composer-surface[data-kbd-focus]::after { box-shadow: 0 0 0 1px hsl(var(--ring)); }
+  }
+  /* Forced colours drop box-shadow (the ::after ring) and force the border to
+     CanvasText in every state, so the keyboard ring would vanish. An outline
+     survives, in the system's focus colour. */
+  @media (forced-colors: active) {
+    .composer-surface[data-kbd-focus] { outline: 2px solid Highlight; outline-offset: 1px; }
   }
 
   /*
@@ -3396,8 +3428,13 @@
      without a fill behind them. */
   .prose-juno th, .prose-juno td { border-bottom: 1px solid hsl(var(--border)); padding: 0.5em 0.7em; text-align: left; vertical-align: top; }
   .prose-juno th { border-bottom-color: hsl(var(--foreground) / .28); font-weight: 600; white-space: nowrap; }
-  /* Figures line up down a column. */
-  .prose-juno td { font-variant-numeric: tabular-nums; }
+  /* Figures line up down a column — in the columns that hold figures, the
+     ones the model aligned right or centre. On every cell, tabular figures
+     also made Inter's hyphen tabular, so prose cells read "One - off". */
+  .prose-juno td:is([align="right"], [align="center"], [style*="right"], [style*="center"]) { font-variant-numeric: tabular-nums; }
+  /* A label column holds a few words before it wraps; a narrow table scrolls
+     (its wrapper does) rather than stacking "Support / bot, 40k- / token". */
+  .prose-juno td:first-child { min-width: 14ch; }
   .prose-juno :is(th, td):first-child { padding-left: 0; }
   .prose-juno :is(th, td):last-child { padding-right: 0; }
   .prose-juno tbody tr:last-child td { border-bottom: none; }
@@ -4235,116 +4272,8 @@
      behind. */
 }
 /* A quiet document surface shared by research planning, progress and reports. */
-/*
- * AGENT FACES (docs/design/AGENTS.md §4, drawn by components/agents/agent-face.tsx).
- *
- * The face is an agent's status bar, so its motion is state, never decoration:
- * only transform and opacity move (ICONS_AND_MOTION.md §2.2 rule 8), a state
- * change cross-fades the eyes on the fast rung (rule 7), and only the three
- * live states loop (rule 9) — `working` looks left and right and breathes,
- * `waiting` lifts the whole face every 2.4s (the one state that asks for the
- * reader), `thinking` runs the three-dot rhythm. `idle` is still, and blinks
- * only while the pointer is over the control that holds it. Every loop sits
- * behind `prefers-reduced-motion: no-preference`, so under the preference the
- * face stops and the eyes' SHAPE carries the state.
- *
- * `transform-box: fill-box` on every moving part, so an eye scales about its
- * own centre rather than the svg's origin, and `px` inside these transforms is
- * the drawing's own 64-unit space.
- */
-@layer components {
-  .agent-face__body { fill: hsl(var(--face-tone)); transform-box: fill-box; transform-origin: center; }
-  .agent-face__all,
-  .agent-face__eyes { transform-box: fill-box; transform-origin: center; }
-  /* Gaze (components/agents/agent-presence.tsx): a small, springy offset toward
-     the pointer. Only transform moves; still under reduced motion. */
-  .agent-face__gaze {
-    transform: translate(calc(var(--gaze-x, 0) * 2.4px), calc(var(--gaze-y, 0) * 1.8px));
-    transition: transform var(--dur-base) var(--ease-out-soft);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .agent-face__gaze { transform: none; transition: none; }
-  }
-  .agent-face__eye {
-    fill: hsl(var(--agent-ink));
-    transform-box: fill-box;
-    transform-origin: center;
-    transition:
-      transform var(--dur-fast) var(--ease-out-soft),
-      opacity var(--dur-fast) var(--ease-out-soft);
-  }
-  .agent-face__happy {
-    stroke: hsl(var(--agent-ink));
-    opacity: 0;
-    transform: scale(0.8);
-    transform-box: fill-box;
-    transform-origin: center;
-    transition:
-      transform var(--dur-fast) var(--ease-spring),
-      opacity var(--dur-fast) var(--ease-out-soft);
-  }
-  .agent-face__mark { fill: hsl(var(--agent-mark)); stroke: hsl(var(--agent-mark)); }
-  .agent-face__visor { fill: hsl(var(--agent-ink) / 0.18); }
-  .agent-face__dots circle { fill: hsl(var(--agent-mark)); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
-  .agent-face__prop { stroke: hsl(var(--agent-mark)); opacity: 0; transition: opacity var(--dur-base) var(--ease-out-soft); }
-  .agent-face__prop rect { fill: hsl(var(--background)); }
-
-  .agent-face[data-state="thinking"] .agent-face__eye { transform: translate(2px, -2px) scale(1, 0.7); }
-  .agent-face[data-state="working"] .agent-face__eye { transform: scale(1, 0.75); }
-  .agent-face[data-state="waiting"] .agent-face__eye { transform: scale(1.2); }
-  .agent-face[data-state="listening"] .agent-face__eye { transform: scale(1.15); }
-  .agent-face[data-state="blocked"] .agent-face__eye { transform: scale(1.3, calc(2 / var(--eye-h))); }
-  .agent-face[data-state="sleeping"] .agent-face__eye { transform: translate(0, 2px) scale(1.3, calc(2 / var(--eye-h))); }
-  .agent-face[data-state="done"] .agent-face__eye { opacity: 0; transform: scale(0.8); }
-  .agent-face[data-state="done"] .agent-face__happy { opacity: 1; transform: none; }
-  .agent-face[data-state="working"] .agent-face__prop { opacity: 1; }
-  /* Reduced motion keeps the dots, still: they are the state, not the loop. */
-  .agent-face[data-state="thinking"] .agent-face__dots circle { opacity: 0.55; }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look var(--loop) var(--ease-in-out) infinite; }
-    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe var(--loop) var(--ease-breathe) infinite; }
-    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift var(--loop) var(--ease-breathe) infinite; }
-    .agent-face[data-state="done"] .agent-face__all { animation: agent-face-settle var(--dur-emphasis) var(--ease-spring) 1 both; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot var(--loop-beat) var(--ease-in-out) infinite; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: calc(var(--loop-beat) / 6); }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: calc(var(--loop-beat) / 3); }
-    :is(a, button, [role="link"], [role="button"], [data-face-trigger]):hover .agent-face[data-state="idle"] .agent-face__eyes {
-      animation: agent-face-blink var(--dur-exit) var(--ease-in-out) 1;
-    }
-    /* `listening` is driven by audio, not a timer: the pupils widen with the
-       caller's level, which an open call writes as `--level` (0..1) on an
-       ancestor (agent-thread-header.tsx). No level, and it rests at the
-       static listening size above. */
-    .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
-  }
-}
-
-@keyframes agent-face-look {
-  0%, 100% { transform: translateX(-2.5px); }
-  50% { transform: translateX(2.5px); }
-}
-@keyframes agent-face-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.015); }
-}
-@keyframes agent-face-lift {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1.5px); }
-}
-@keyframes agent-face-settle {
-  0% { transform: scale(0.94); }
-  60% { transform: scale(1.03); }
-  100% { transform: scale(1); }
-}
-@keyframes agent-face-dot {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-@keyframes agent-face-blink {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(0.1); }
-}
+/* Agent faces are painted in components/agents/agent-face.css (imported at the
+   top of this file) and moved by face-rig.ts. */
 
 @layer components {
   .research-surface { @apply rounded-card border border-border bg-card p-4 sm:p-5; }
@@ -4660,9 +4589,16 @@
   @media (min-width: 768px) {
     .juno-content-panel { margin: 8px 8px 8px 0; border-radius: 14px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .07); isolation: isolate; }
   }
-  .context-token { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; margin: 0 1px; border-radius: 7px; background: hsl(var(--secondary)); color: hsl(var(--foreground)); white-space: nowrap; vertical-align: baseline; }
+  /* A token in a SENT turn (context-receipt.tsx; the composer's own chip is
+     composer.css). Its fill is one step off whatever it sits on, the ink at
+     7%, so it reads as a chip in the bubble in both themes: `--secondary`
+     was the light bubble's exact fill, so in light the chips vanished and
+     left only their padding ("Stripe , ask"). inline-block on a 24px line,
+     as the composer's chip, so the name shares the sentence's baseline and
+     the bubble's 27px lines never grow. */
+  .context-token { display: inline-block; height: 24px; line-height: 24px; padding: 0 6px 0 4px; margin: 0 1px; border-radius: 7px; background: hsl(var(--foreground) / 0.07); color: hsl(var(--foreground)); white-space: nowrap; vertical-align: baseline; }
   .context-token[data-selected] { outline: 1px solid hsl(var(--foreground)); outline-offset: 1px; }
-  .context-token-mark { display: inline-grid; width: 16px; height: 16px; place-items: center; vertical-align: middle; color: hsl(var(--muted-foreground)); }
+  .context-token-mark { display: inline-flex; width: 16px; height: 16px; margin-right: 4px; align-items: center; justify-content: center; line-height: 0; vertical-align: -3px; color: hsl(var(--muted-foreground)); }
   .context-composer-field:is(:empty, [data-empty])::before { content: attr(data-placeholder); color: hsl(var(--muted-foreground)); pointer-events: none; }
 }
 

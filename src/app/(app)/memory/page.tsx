@@ -1,5 +1,6 @@
 import { CustomizeFrame } from "@/components/customize/customize-nav";
 import { MemoryManager } from "@/components/memory/memory-manager";
+import { PageRoot } from "@/components/app/page-root";
 
 /*
  * The manager draws the page header itself, because the header's controls
@@ -9,8 +10,10 @@ import { MemoryManager } from "@/components/memory/memory-manager";
  */
 export default function MemoryPage() {
   return (
-    <CustomizeFrame current="memory">
-      <MemoryManager />
-    </CustomizeFrame>
+    <PageRoot>
+      <CustomizeFrame current="memory">
+        <MemoryManager />
+      </CustomizeFrame>
+    </PageRoot>
   );
 }

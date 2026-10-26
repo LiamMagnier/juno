@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { LibraryGallery } from "./gallery";
 
 /**
@@ -16,5 +17,9 @@ import { LibraryGallery } from "./gallery";
  */
 export default function LibraryDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <LibraryGallery />;
+  return (
+    <PageRoot>
+      <LibraryGallery />
+    </PageRoot>
+  );
 }

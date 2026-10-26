@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { DesignCanvasGallery } from "./gallery";
 
 /**
@@ -11,5 +12,9 @@ import { DesignCanvasGallery } from "./gallery";
  */
 export default function DesignCanvasDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <DesignCanvasGallery />;
+  return (
+    <PageRoot>
+      <DesignCanvasGallery />
+    </PageRoot>
+  );
 }

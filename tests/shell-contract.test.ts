@@ -410,11 +410,14 @@ test("the list's section headings are the contract's, in order, per product", ()
       label: perProduct(attribute(node, "label"), "Section"),
     })),
     // Orbit's head is a destination (it opens the roster), not a Section:
-    // the Orbit icon and `BRAND.orbit.label`, linking to /agents.
-    ...elements(APP_SIDEBAR, "JunoOrbit").map((node) => ({
-      node,
-      label: { chat: BrandNames.BRAND.orbit.label, code: BrandNames.BRAND.orbit.label },
-    })),
+    // `BRAND.orbit.label`, a link to /agents. (No glyph on it since the
+    // sidebar-nav polish: it sits on the headings' 16px edge.)
+    ...elements(APP_SIDEBAR, "Link")
+      .filter((node) => stringOf(attribute(node, "href")) === "/agents")
+      .map((node) => ({
+        node,
+        label: { chat: BrandNames.BRAND.orbit.label, code: BrandNames.BRAND.orbit.label },
+      })),
   ].sort((a, b) => a.node.getStart() - b.node.getStart());
 
   for (const product of PRODUCT_IDS) {
@@ -441,6 +444,40 @@ test("the list's section headings are the contract's, in order, per product", ()
       `${product}'s section headings`,
     );
   }
+});
+
+test("pinned chats lead Recent: Chat has no Pinned chats section, on the web or the Mac", () => {
+  /*
+   * Owner decision, 2026-10-26 (INTERACTION_SPEC S11): "Pinned chats" stops
+   * being its own section; the pinned chats are the head of Recent, each with
+   * its pin mark. Code's column keeps its own "Pinned sessions" shape.
+   */
+  assert.deepEqual(
+    CONTRACT.sidebar.chat.sections.map((section) => section.id),
+    ["needsYou", "agents", "pinnedProjects", "recent"],
+    "Chat's sections",
+  );
+  assert.ok(!CONTRACT.sidebar.chat.sections.some((section) => /pinned chats/i.test(section.label)));
+  assert.ok(CONTRACT.sidebar.code.sections.some((section) => section.id === "pinned"), "Code keeps Pinned sessions");
+
+  // The web draws the pinned chats inside Recent, ordered by `pinnedFirst`.
+  const sidebarText = SIDEBAR.getFullText();
+  assert.ok(!elements(SIDEBAR, "Section").some((node) => /Pinned chats/.test(attribute(node, "label")?.getText() ?? "")));
+  assert.match(sidebarText, /const recents = React\.useMemo\(\s*\(\) => pinnedFirst\(live\.filter\(\(c\) => !needsYouIds\.has\(c\.id\)\)\),/);
+
+  // The Mac's generated enum, and the Mac's own test of it, say the same list.
+  const generated = readFileSync(new URL("../native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift", import.meta.url), "utf8");
+  const chatEnum = generated.slice(generated.indexOf("enum JunoShellChatSidebar"), generated.indexOf("enum JunoShellCodeSidebar"));
+  const headingCases = [...chatEnum.slice(chatEnum.indexOf("enum Heading")).matchAll(/^\s+case (\w+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(headingCases, CONTRACT.sidebar.chat.sections.map((section) => section.id), "JunoShellChatSidebar.Heading");
+  const macTest = readFileSync(new URL("../native/macOS/JunoDesktop/Tests/DesktopShellContractTests.swift", import.meta.url), "utf8");
+  const asserted = macTest.match(/JunoShellChatSidebar\.Heading\.allCases\.map\(\\\.label\) == \[([^\]]*)\]/);
+  assert.ok(asserted, "DesktopShellContractTests asserts Chat's headings");
+  assert.deepEqual(
+    [...asserted[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]),
+    CONTRACT.sidebar.chat.sections.map((section) => section.label),
+    "the Mac test's list is the contract's",
+  );
 });
 
 test("the empty list says the contract's two lines", () => {

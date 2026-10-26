@@ -24,6 +24,7 @@ import {
   type StarterId,
   type StarterPrompt,
 } from "@/lib/home-starters";
+import { rowOverflow } from "@/components/chat/row-overflow";
 import "./home-starters.css";
 
 /*
@@ -51,6 +52,18 @@ const CHIP_GLYPH: Record<StarterId, React.ComponentType<{ className?: string; "a
 
 /** After the tray's own arrival (composer.css `chat-home-tray`, 260 ms in). */
 const CHIPS_ENTER_AFTER_MS = 420;
+
+/** Where a "New chat" press leaves focus: the sidebar column, a nav, the phone header. */
+const ARRIVED_FROM = ".app-sidebar-frame, nav, header";
+
+/** A desktop with a mouse or trackpad: the one place the caret may wait unasked (no phone keyboard pops up). */
+function finePointer(): boolean {
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function focusComposer() {
+  window.dispatchEvent(new CustomEvent("juno:composer-focus"));
+}
 
 function readPicks(): string | null {
   try {
@@ -94,6 +107,39 @@ export function HomeStarters({
   const [picks, setPicks] = React.useState<Partial<Record<StarterId, number>>>({});
   const listId = React.useId();
   const chipRefs = React.useRef(new Map<StarterId, HTMLButtonElement>());
+  const listRef = React.useRef<HTMLUListElement>(null);
+  const rowRef = React.useRef<HTMLDivElement>(null);
+
+  // ARRIVAL. A new chat on a desktop puts the caret in the composer, so typing
+  // works at once and a keyboard user is not sent through the whole sidebar to
+  // reach it. Only when focus is nowhere (a fresh load) or still on the control
+  // that brought the person here (New chat in the sidebar or header); never on
+  // a coarse pointer, where focus would raise the keyboard uninvited. The
+  // starters stay: they hide on input, not on focus. "New chat" pressed while
+  // already home does the same, since nothing remounts then. The caret comes
+  // without the keyboard ring: the composer rings only when the keyboard moved
+  // focus (lib/input-modality.ts), so a load or a click on New chat gets the
+  // soft focus edge and a Tab or Enter arrival gets the ring. This effect
+  // depends on that gate (tests/home-starters.test.ts pins both halves).
+  React.useEffect(() => {
+    if (!finePointer()) return;
+    let frame = 0;
+    const active = document.activeElement;
+    if (!hidden && (!active || active === document.body || active.closest(ARRIVED_FROM))) {
+      frame = requestAnimationFrame(focusComposer);
+    }
+    const again = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(focusComposer);
+    };
+    window.addEventListener("juno:new-chat", again);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("juno:new-chat", again);
+    };
+    // Arrival only: a later change (incognito off, a card answered) follows the person's own move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Device picks live in this browser; read after mount so the server render matches.
   React.useEffect(() => {
@@ -148,6 +194,28 @@ export function HomeStarters({
     if (!shown) setOpen(null);
   }, [shown]);
 
+  // THE PHONE ROW'S EDGES. Below 760px the chips are one sideways row that
+  // runs off the screen; an edge with more past it fades wide (home-starters.css),
+  // so the chip cut by the screen dissolves instead of showing "Pla" at full
+  // ink. The marks are written straight onto the row: a scroll never renders.
+  React.useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const mark = () => {
+      const { more, past } = rowOverflow(row);
+      row.toggleAttribute("data-more-start", past);
+      row.toggleAttribute("data-more-end", more);
+    };
+    mark();
+    row.addEventListener("scroll", mark, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(mark);
+    observer?.observe(row);
+    return () => {
+      row.removeEventListener("scroll", mark);
+      observer?.disconnect();
+    };
+  }, [chips.length]);
+
   // A reader in another language gets the prompts translated before they open.
   React.useEffect(() => {
     prefetchPhrases(chips.flatMap((id) => promptsFor(id, use).map((p) => p.phrase)));
@@ -180,16 +248,67 @@ export function HomeStarters({
     if (focusChip) requestAnimationFrame(() => chipRefs.current.get(focusChip)?.focus());
   };
 
+  // A chip opened from the keyboard hands focus to its first prompt, so Tab
+  // and the arrows walk what just opened rather than the chips after it (and,
+  // on a phone, the list drawn above the row). A pointer keeps focus where it
+  // clicked. Escape hands it back (closeList).
+  const toggle = (id: StarterId, keyboard: boolean) => {
+    const next = open === id ? null : id;
+    setOpen(next);
+    if (next && keyboard) requestAnimationFrame(() => listRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+  };
+
+  // The arrows walk the prompts and, off the edge nearest the chips, step back
+  // to the chip that opened them (the same place Escape lands), so the list
+  // never dead-ends. That edge is the top on a desktop, where the list hangs
+  // under the row, and the bottom on a phone, where it is drawn above it
+  // (home-starters.css, the composer's 760px breakpoint). The far edge holds.
+  const stepPrompt = (delta: 1 | -1) => {
+    const buttons = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const towardChips = window.matchMedia("(max-width: 760px)").matches ? 1 : -1;
+    const leaving = delta === -1 ? at === 0 : at === buttons.length - 1;
+    if (open && at >= 0 && leaving && delta === towardChips) {
+      chipRefs.current.get(open)?.focus();
+      return;
+    }
+    const to = at < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, at + delta));
+    buttons[to]?.focus();
+  };
+
+  const edgePrompt = (which: "first" | "last") => {
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>("button");
+    if (!buttons?.length) return;
+    buttons[which === "first" ? 0 : buttons.length - 1].focus();
+  };
+
   if (chips.length === 0) return null;
 
   return (
     <div
       className="home-starters"
       data-shown={shown ? "" : undefined}
+      // A chip's prompts are showing: the home field steps out (home-starters.css).
+      data-open={open ? "" : undefined}
       aria-hidden={!shown || undefined}
       inert={!shown}
     >
-      <div className="home-starters__chips no-scrollbar" role="group" aria-label={HOME_STARTER_COPY.groupLabel}>
+      <div
+        ref={rowRef}
+        className="home-starters__chips no-scrollbar"
+        role="group"
+        aria-label={HOME_STARTER_COPY.groupLabel}
+        // Escape closes the prompts from the chips too. A pointer leaves focus
+        // on the chip it pressed, and with the handler on the list alone
+        // Escape did nothing there: the list stayed open and the home field
+        // stayed faded out until the chip was pressed again.
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.stopPropagation();
+            closeList(open);
+          }
+        }}
+      >
         {chips.map((id, i) => {
           const Glyph = CHIP_GLYPH[id];
           const selected = open === id;
@@ -204,12 +323,16 @@ export function HomeStarters({
               aria-expanded={selected}
               aria-controls={selected ? listId : undefined}
               data-selected={selected ? "" : undefined}
-              onClick={() => setOpen(selected ? null : id)}
+              // `detail` counts clicks; 0 is Enter or Space on the focused chip.
+              onClick={(event) => toggle(id, event.detail === 0)}
               style={staggerDelay(i, "base", CHIPS_ENTER_AFTER_MS)}
               className={cn(
                 "home-starters__chip control-neu",
                 "inline-flex shrink-0 items-center gap-1.5 rounded-full py-1.5 pl-2.5 pr-3 font-sans text-ui font-normal leading-5 text-muted-foreground hover:text-foreground",
-                "[animation-fill-mode:backwards] motion-safe:animate-rise-in",
+                // The fill mode rides in the same variant as the shorthand so it
+                // lands after it: before its delay a chip waits unseen instead of
+                // showing, blinking out and rising back in.
+                "motion-safe:animate-rise-in motion-safe:[animation-fill-mode:backwards]",
                 selected && "text-foreground",
               )}
             >
@@ -223,6 +346,7 @@ export function HomeStarters({
       {open ? (
         <ul
           key={open}
+          ref={listRef}
           id={listId}
           aria-label={HOME_STARTER_COPY.promptsLabel}
           className="home-starters__prompts"
@@ -230,11 +354,17 @@ export function HomeStarters({
             if (event.key === "Escape") {
               event.stopPropagation();
               closeList(open);
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              stepPrompt(event.key === "ArrowDown" ? 1 : -1);
+            } else if (event.key === "Home" || event.key === "End") {
+              event.preventDefault();
+              edgePrompt(event.key === "Home" ? "first" : "last");
             }
           }}
         >
           {promptsFor(open, use).map((prompt, i) => (
-            <li key={`${prompt.phrase}${prompt.argument ?? ""}`} style={staggerDelay(i, "tight")} className="[animation-fill-mode:backwards] motion-safe:animate-rise-in">
+            <li key={`${prompt.phrase}${prompt.argument ?? ""}`} style={staggerDelay(i, "tight")} className="motion-safe:animate-rise-in motion-safe:[animation-fill-mode:backwards]">
               <button type="button" className="home-starters__prompt" onClick={() => pick(open, prompt)}>
                 <span>{prompt.phrase}</span>
                 {prompt.argument ? (

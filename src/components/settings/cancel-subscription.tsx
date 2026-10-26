@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useFormatLocale, formatDate } from "@/components/settings/format";
+import { cn } from "@/lib/utils";
 import type { CancellationRecap } from "@/lib/cancellation";
 
 /*
@@ -36,7 +37,9 @@ import type { CancellationRecap } from "@/lib/cancellation";
  *   - An App Store subscription cannot be cancelled here; the control says
  *     where it can be.
  *
- * Renders nothing for an account with no paid subscription.
+ * Renders nothing for an account with no paid subscription: no row, so no
+ * hairline over an empty band in the plan card. Each shape it does render is
+ * its own row of that card (ROW_CLASS), so the caller places it bare.
  */
 
 type Source = "stripe" | "app_store" | "none";
@@ -49,6 +52,9 @@ interface State {
 }
 
 const APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions";
+
+/** A row of the plan card: the card's hairline above, a row's padding around. */
+const ROW_CLASS = "py-4";
 
 export function CancelSubscription() {
   const router = useRouter();
@@ -96,7 +102,7 @@ export function CancelSubscription() {
 
   if (state.source === "app_store") {
     return (
-      <p className="text-ui text-muted-foreground">
+      <p className={cn(ROW_CLASS, "text-ui text-muted-foreground")}>
         <span>Bought through the App Store. To cancel, open your</span>{" "}
         <a href={APPLE_SUBSCRIPTIONS_URL} className="underline underline-offset-4" rel="noopener noreferrer">
           Apple ID subscriptions
@@ -111,7 +117,7 @@ export function CancelSubscription() {
 
   if (state.cancelAtPeriodEnd) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={cn(ROW_CLASS, "flex flex-wrap items-center gap-2")}>
         <span className="text-ui text-muted-foreground">
           {endsOn ? (
             <>
@@ -134,89 +140,95 @@ export function CancelSubscription() {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (sending) return;
-        if (next) {
-          setDone(null);
-          setError(null);
-        } else if (done === "cancelled") {
-          void load();
-          router.refresh();
-        }
-        setOpen(next);
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button variant="destructive-outline" size="sm">
-          Cancel subscription
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Cancel your subscription</DialogTitle>
-          <DialogDescription>Check the details below, then notify the cancellation.</DialogDescription>
-        </DialogHeader>
+    <div className={ROW_CLASS}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (sending) return;
+          if (next) {
+            setDone(null);
+            setError(null);
+          } else if (done === "cancelled") {
+            void load();
+            router.refresh();
+          }
+          setOpen(next);
+        }}
+      >
+        <DialogTrigger asChild>
+          {/* The plan card's own outline button, beside Change plan and
+              Manage billing in weight: plainly named and as visible as they
+              are (D215-1), not the loudest thing on the page. Red is kept
+              for the one irreversible press, "Notify cancellation". */}
+          <Button variant="outline" size="sm">
+            Cancel subscription
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel your subscription</DialogTitle>
+            <DialogDescription>Check the details below, then notify the cancellation.</DialogDescription>
+          </DialogHeader>
 
-        {done === "cancelled" ? (
-          <div className="space-y-4">
-            <p role="status" className="text-body text-foreground">
-              {recap.email ? (
-                <>
-                  <span>Cancellation received. A confirmation is on its way to</span> <span>{recap.email}</span>.
-                </>
-              ) : (
-                <span>Cancellation received.</span>
-              )}
-            </p>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button>Done</Button>
-              </DialogClose>
-            </DialogFooter>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-ui">
-              <dt className="text-muted-foreground">Name</dt>
-              <dd className="min-w-0 truncate">{recap.name ?? "—"}</dd>
-              <dt className="text-muted-foreground">Email</dt>
-              <dd className="min-w-0 truncate">{recap.email ?? "—"}</dd>
-              <dt className="text-muted-foreground">Plan</dt>
-              <dd translate="no">{recap.planName}</dd>
-              <dt className="text-muted-foreground">Reference</dt>
-              <dd className="min-w-0 truncate font-mono text-label" translate="no">
-                {recap.reference}
-              </dd>
-              <dt className="text-muted-foreground">Ends on</dt>
-              <dd>{endsOn ?? "The end of the current period"}</dd>
-            </dl>
-            <p className="text-ui text-muted-foreground">
-              You keep your plan until then and won’t be charged again. After that your account moves to Free, and
-              your conversations and files stay. You can undo this until it takes effect.
-            </p>
-            <p className="text-ui text-muted-foreground">
-              Want it to end sooner, with a refund for the days you won’t use? Write to support instead.
-            </p>
-            {error && (
-              <p role="alert" className="text-body text-destructive">
-                {error}
+          {done === "cancelled" ? (
+            <div className="space-y-4">
+              <p role="status" className="text-body text-foreground">
+                {recap.email ? (
+                  <>
+                    <span>Cancellation received. A confirmation is on its way to</span> <span>{recap.email}</span>.
+                  </>
+                ) : (
+                  <span>Cancellation received.</span>
+                )}
               </p>
-            )}
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="ghost" disabled={sending}>
-                  Keep subscription
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button>Done</Button>
+                </DialogClose>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-ui">
+                <dt className="text-muted-foreground">Name</dt>
+                <dd className="min-w-0 truncate">{recap.name ?? "—"}</dd>
+                <dt className="text-muted-foreground">Email</dt>
+                <dd className="min-w-0 truncate">{recap.email ?? "—"}</dd>
+                <dt className="text-muted-foreground">Plan</dt>
+                <dd translate="no">{recap.planName}</dd>
+                <dt className="text-muted-foreground">Reference</dt>
+                <dd className="min-w-0 truncate font-mono text-label" translate="no">
+                  {recap.reference}
+                </dd>
+                <dt className="text-muted-foreground">Ends on</dt>
+                <dd>{endsOn ?? "The end of the current period"}</dd>
+              </dl>
+              <p className="text-ui text-muted-foreground">
+                You keep your plan until then and won’t be charged again. After that your account moves to Free, and
+                your conversations and files stay. You can undo this until it takes effect.
+              </p>
+              <p className="text-ui text-muted-foreground">
+                Want it to end sooner, with a refund for the days you won’t use? Write to support instead.
+              </p>
+              {error && (
+                <p role="alert" className="text-body text-destructive">
+                  {error}
+                </p>
+              )}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="ghost" disabled={sending}>
+                    Keep subscription
+                  </Button>
+                </DialogClose>
+                <Button variant="destructive" onClick={() => void act("cancel")} loading={sending}>
+                  Notify cancellation
                 </Button>
-              </DialogClose>
-              <Button variant="destructive" onClick={() => void act("cancel")} loading={sending}>
-                Notify cancellation
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

@@ -195,9 +195,11 @@ export function ConnectorsView({
     const listed = new Set(list.map((r) => r.id));
     for (const id of policy?.blockedConnectors ?? []) {
       if (listed.has(id)) continue;
-      // The directory still knows its name when it is merely disconnected.
+      // The directory still knows its name when it is merely disconnected;
+      // one it no longer lists reads as a name ("Google drive"), not as the
+      // raw id ("google_drive").
       const known = connectors?.find((c) => c.id === id);
-      list.push({ id, label: known?.label ?? id, account: null, connected: false });
+      list.push({ id, label: known?.label ?? humaniseConnectorId(id), account: null, connected: false });
     }
     return list;
   }, [connectors, policy?.blockedConnectors]);
@@ -324,4 +326,9 @@ export function ConnectorsView({
       </SettingsGroup>
     </>
   );
+}
+
+/** A connector id the directory no longer lists, as words: "google_drive" → "Google drive". */
+function humaniseConnectorId(id: string): string {
+  return id.replace(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }

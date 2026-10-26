@@ -27,7 +27,8 @@ import {
   type ReceiptIconKind,
 } from "@/lib/chat/tool-receipt";
 import { activeRunId, readToolRun, runReceiptParts, type ToolRunView } from "@/lib/chat/tool-run";
-import type { ClientActivityEvent, ClientMemoryReceipt, ClientSource, ClientToolDetail } from "@/types/chat";
+import { finishReasonTitle } from "@/lib/finish-reason";
+import type { ChatFinishReason, ClientActivityEvent, ClientMemoryReceipt, ClientSource, ClientToolDetail } from "@/types/chat";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE FORM MUST BE INCAPABLE OF LYING.
@@ -174,10 +175,66 @@ export const STEP_LABEL = {
   thinking: "Thinking",
   writing: "Writing the answer",
   wrote: "Wrote the answer",
+  stoppedWriting: "Stopped while writing",
   searched: "Searched the web",
   reasoning: "Reasoning",
   fullTrace: "Full reasoning trace",
+  savedMemory: "Saved to memory",
+  forgotMemory: "Removed from memory",
 } as const;
+
+/**
+ * Whether an event is a page the run fetched or listed — a SOURCE.
+ *
+ * `url` alone does not make one. The "Memory updated" and "Forgotten" receipts
+ * (memory-lifecycle.ts) carry a `url` too, pointing at the person's own memory
+ * page, and counting them made every turn that saved a fact say "Read 1
+ * source" over a globe and a raw `/memory?entry=…` path. A source is a fetched
+ * web address: http(s), never a memory write, never a context row.
+ */
+export function isPageSource(e: Pick<ClientActivityEvent, "kind" | "url" | "memoryWrite">): e is typeof e & { url: string } {
+  return !!e.url && e.kind !== "context" && !e.memoryWrite && /^https?:\/\//i.test(e.url);
+}
+
+/** A write to the person's memory: the "Memory updated" or "Forgotten" receipt. */
+function isMemoryWrite(e: ClientActivityEvent): boolean {
+  return e.kind === "context" && (!!e.memoryWrite || e.title === "Memory updated" || e.title === "Forgotten");
+}
+
+/**
+ * The opening of a passage as ONE line: whitespace flattened, and when it is
+ * longer than `max`, cut at the last word boundary with the ellipsis set
+ * tight against the word. A raw `.slice(0, 90)` ended rows mid-word with no
+ * mark at all ("…give the pricing shape fi").
+ */
+export function previewLine(text: string | null | undefined, max = 90): string | null {
+  const flat = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  if (flat.length <= max) return flat;
+  const head = flat.slice(0, max);
+  const cut = head.lastIndexOf(" ");
+  // One unbroken run of characters (a URL, a hash) has no word to keep whole.
+  const kept = (cut > max / 2 ? head.slice(0, cut) : head).replace(/[\s,;:.\-–—(]+$/u, "");
+  return `${kept}…`;
+}
+
+/* The finish reasons that cut the answer short. The producer sends each as a
+ * `warning` titled by `finishReasonTitle` (chat-responses.ts), on the normal
+ * path and the partial one alike; `tool_calls` is a hand-off, not a cut. */
+const CUT_SHORT_TITLES: ReadonlySet<string> = new Set(
+  (["length", "network_error", "model_context_window_exceeded", "sensitive", "user_stopped", "error", "unknown"] as ChatFinishReason[]).map(
+    finishReasonTitle,
+  ),
+);
+
+/**
+ * Whether a notice row's label (the producer's `[title, detail].join(" · ")`)
+ * is the finish that cut the answer short: the reason beside a "Stopped
+ * while writing" row.
+ */
+export function isCutShortNotice(label: string): boolean {
+  return CUT_SHORT_TITLES.has(label.split(" · ")[0]);
+}
 
 export type PhaseKey = "research" | "think" | "write";
 
@@ -262,7 +319,9 @@ function sourceAccessOf(title: string): SourceAccess {
  * just do — and six shapes in one column is six answers to a question nobody
  * asked.
  * ───────────────────────────────────────────────────────────────────────────── */
-export type StepKind = "think" | "search" | "source" | "tool" | "memory" | "notice" | "write";
+/* `memory` is a fact the run DREW ON (an input, filed in Details); `remember`
+ * is one it SAVED or removed (an act, in the spine after the answer). */
+export type StepKind = "think" | "search" | "source" | "tool" | "memory" | "remember" | "notice" | "write";
 
 export interface Step {
   /** Event id, or `reason-${i}` for a provider reasoning part. Stable across
@@ -291,6 +350,9 @@ export interface Step {
     | { type: "prose"; text: string }
     | { type: "memory"; memory: ClientMemoryReceipt };
   source?: { url: string; domain: string; access: SourceAccess; citeIndex: number | null };
+  /** An in-app page the step opens (a saved memory's row on the Memory page).
+   *  Never an outside address: those are `source`s. */
+  href?: string;
 }
 
 export interface RunModel {
@@ -387,7 +449,7 @@ export function buildRun(
   const modelEv = events.find((e) => e.kind === "model");
   const effortEv = events.find((e) => e.kind === "reasoning" && e.title === T_EFFORT);
   const connectorsEv = events.find((e) => e.kind === "tool" && e.title === T_CONNECTORS);
-  const contextEv = events.find((e) => e.kind === "context" && e.title !== T_CORPUS);
+  const contextEv = events.find((e) => e.kind === "context" && e.title !== T_CORPUS && !isMemoryWrite(e));
   const memoryEv = events.find((e) => e.kind === "context" && e.title === "Remembered about you");
   const corpusEv = events.find((e) => e.kind === "context" && e.title === T_CORPUS);
   // Only deep research's per-query sends are real searches. "Preparing web
@@ -412,12 +474,13 @@ export function buildRun(
 
   // EVERY page the run reported, in emission order, with no cap and no sample.
   // The only thing dropped is a repeat of a URL already listed, because the same
-  // page arriving twice is one page.
+  // page arriving twice is one page. Only pages: a memory receipt carries a
+  // `url` to the Memory page and is a step of its own (see `isPageSource`).
   const sources: RunModel["sources"] = [];
   const sourceEvents: ClientActivityEvent[] = [];
   const seen = new Set<string>();
   for (const e of events) {
-    if (!e.url || seen.has(e.url)) continue;
+    if (!isPageSource(e) || seen.has(e.url)) continue;
     seen.add(e.url);
     const domain = domainOf(e.url);
     // The producer already truncated `detail` to 96 and already fell back to the
@@ -622,6 +685,22 @@ function buildSteps(input: {
     calls.flatMap((c) => (c.run ? [c.run] : [])),
     streaming,
   );
+  /* THE CALL IN FLIGHT. While a connector call has not answered, IT is what
+   * the turn is doing: its row runs, in the present tense, and the generic
+   * "Thinking" row stands down for it, as it does for a live run. Only the
+   * newest call, and only one with no ending recorded: an explicit `pending`,
+   * or (before the answer starts) no status, result or note at all. */
+  const plainCalls = calls.filter((c) => !c.warn && !c.run);
+  const lastCall = plainCalls[plainCalls.length - 1];
+  const lastTool = lastCall?.tool;
+  const liveCall =
+    streaming &&
+    liveRun === null &&
+    lastTool &&
+    (lastTool.resultNote === "pending" ||
+      (tWrite === null && lastTool.status === undefined && lastTool.result === undefined && lastTool.resultNote === undefined))
+      ? lastCall.id
+      : null;
 
   // ── RESEARCH: the searches the run ran, then the pages it came back with ──
   for (const e of searchEvs) {
@@ -660,8 +739,16 @@ function buildSteps(input: {
       phase: "research",
       label: s.title,
       // Only the exception is marked. A read page and a page whose producer
-      // never said carry no tag, which is this panel's idiom everywhere.
-      detail: s.access === "listed" ? `${s.domain} · listed` : s.domain,
+      // never said carry no tag, which is this panel's idiom everywhere. An
+      // untitled page's label already IS its domain: say it once.
+      detail:
+        s.title === s.domain
+          ? s.access === "listed"
+            ? "listed"
+            : null
+          : s.access === "listed"
+            ? `${s.domain} · listed`
+            : s.domain,
       ms: null,
       running: false,
       failed: false,
@@ -695,13 +782,12 @@ function buildSteps(input: {
        * dropped the 202 characters behind it, with no ellipsis and no way to
        * tell. So: a label only when the model wrote one; otherwise the part's
        * opening is the DETAIL line and the whole part is the body. */
-      const preview = part.body.replace(/\s+/g, " ").trim();
       steps.push({
         id: `reason-${i}`,
         kind: "think",
         phase: "think",
         label: part.title ?? STEP_LABEL.reasoning,
-        detail: preview ? preview.slice(0, 90) : null,
+        detail: previewLine(part.body),
         ms: null,
         running: false,
         failed: false,
@@ -714,7 +800,9 @@ function buildSteps(input: {
       kind: "think",
       phase: "think",
       label: STEP_LABEL.fullTrace,
-      detail: "This model streams one unbroken trace.",
+      // The trace's opening, as the parts branch does: what the model thought
+      // about, not a note on how the provider streams it.
+      detail: previewLine(trace),
       ms: null,
       running: false,
       failed: false,
@@ -760,20 +848,21 @@ function buildSteps(input: {
       continue;
     }
     const tool = call.tool;
+    const live = call.id === liveCall;
     // The one receipt vocabulary: "Searched the web", "Linear · Create issue".
     // A failure says why in one line under it; a success says nothing more.
     steps.push({
       id: call.id,
       kind: "tool",
       phase: "think",
-      label: receiptLabelForCall(tool?.server || call.server, tool?.name || call.name),
+      label: receiptLabelForCall(tool?.server || call.server, tool?.name || call.name, live),
       detail: receiptFailureReason(tool),
       icon: receiptIconKindForCall(tool?.name || call.name),
       // ABSENT, never zero, for the calls that never reached the network — an
       // unknown tool name, an unavailable connector, a refused action. A zero
       // would read as "the connector answered instantly".
-      ms: tool && typeof tool.durationMs === "number" ? tool.durationMs : null,
-      running: false,
+      ms: !live && tool && typeof tool.durationMs === "number" ? tool.durationMs : null,
+      running: live,
       failed: tool?.status === "failed",
       ...(tool ? { body: { type: "tool" as const, tool } } : {}),
     });
@@ -795,20 +884,48 @@ function buildSteps(input: {
   }
 
   // ── WRITE ─────────────────────────────────────────────────────────────────
+  // An answer the finish cut short (the output limit, a dropped stream, a
+  // stop) did not "write the answer": the row says where it stopped, in the
+  // warning ink, beside the Notice that says why.
+  const cutShort = !writeRunning && events.some((e) => e.kind === "warning" && CUT_SHORT_TITLES.has(e.title));
   if (tWrite !== null) {
     steps.push({
       id: "write",
       kind: "write",
       phase: "write",
-      label: writeRunning ? STEP_LABEL.writing : STEP_LABEL.wrote,
+      label: writeRunning ? STEP_LABEL.writing : cutShort ? STEP_LABEL.stoppedWriting : STEP_LABEL.wrote,
       detail: outputTokens ? `${outputTokens} tokens` : null,
       // A running step shows no figure at all: absence is this panel's idiom
       // for "not yet measured", and the header clock is the only clock.
       ms: writeRunning ? null : span(tWrite, tEnd),
-      running: writeRunning && liveRun === null,
-      failed: false,
+      running: writeRunning && liveRun === null && liveCall === null,
+      failed: cutShort,
     });
-  } else if (streaming && liveRun === null) {
+  }
+
+  // ── REMEMBER: what the turn saved to, or removed from, memory ────────────
+  // An act, not an input, and it happens after the answer is written, so it
+  // follows the write step. Never a source: its `url` is the person's own
+  // Memory page, which the row opens.
+  for (const e of events) {
+    if (!isMemoryWrite(e)) continue;
+    const removed = e.title === "Forgotten" || (!!e.memoryWrite && e.memoryWrite.saved.length === 0 && !!e.memoryWrite.forgotten?.length);
+    const href = e.url && e.url.startsWith("/") && !e.url.startsWith("//") ? e.url : undefined;
+    steps.push({
+      id: e.id,
+      kind: "remember",
+      phase: "write",
+      label: removed ? STEP_LABEL.forgotMemory : STEP_LABEL.savedMemory,
+      detail: e.detail?.trim() || null,
+      ms: null,
+      running: false,
+      failed: false,
+      icon: "memory",
+      ...(href ? { href } : {}),
+    });
+  }
+
+  if (tWrite === null && streaming && liveRun === null && liveCall === null) {
     /* THE RUNNING ROW, when the run has not started writing yet.
      *
      * Its label is the PHASE, not an invented action — "Researching", not

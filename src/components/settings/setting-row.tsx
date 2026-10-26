@@ -29,6 +29,7 @@ export function SettingsGroup({
   description,
   aside,
   tone = "default",
+  bare = false,
   children,
   className,
 }: {
@@ -48,6 +49,11 @@ export function SettingsGroup({
    * by a red box: the rows' own destructive ink says what they are.
    */
   tone?: "default" | "destructive";
+  /**
+   * The children draw their own surface (Code's master/detail list), so the
+   * group adds only its header: a card around a box was a box in a box.
+   */
+  bare?: boolean;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -59,8 +65,13 @@ export function SettingsGroup({
     // The irreversible group stands a little further off the groups above it.
     <section className={cn("pt-10 first:pt-0", tone === "destructive" && "pt-14", className)}>
       {hasHeader && (
-        <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-3">
-          <div className="min-w-0 flex-1">
+        // The aside wraps under the words on a narrow pane, as a long button
+        // does in SettingRow, rather than squeezing a description into a
+        // column four words wide ("Macs this browser can control" broke in
+        // two beside "Pair a Mac" on a phone). A bare title keeps its aside
+        // beside it at any width.
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 pb-3">
+          <div className={cn("min-w-0 flex-1", description ? "basis-[16rem]" : "basis-auto")}>
             {title != null && <h3 className="text-body font-medium text-foreground">{title}</h3>}
             {description && <p className="mt-1 max-w-[36rem] text-pretty text-ui text-muted-foreground">{description}</p>}
           </div>
@@ -69,7 +80,7 @@ export function SettingsGroup({
       )}
       {/* The irreversible group keeps the same card: its rows' destructive
           ink says what they are, and a red box would read as an error. */}
-      <div className={SETTINGS_CARD_CLASS}>{children}</div>
+      {bare ? children : <div className={SETTINGS_CARD_CLASS}>{children}</div>}
     </section>
   );
 }
@@ -77,13 +88,20 @@ export function SettingsGroup({
 /**
  * One setting.
  *
- * A compact control (a switch, a button, a short menu) stays on the right at
- * every width, and the label wraps instead. A `wide` control (a select, a
+ * A compact control (a switch, a button, a short menu) stays on the right,
+ * and the label wraps instead, until the text column would drop under 13rem:
+ * then (only on a pane under 34rem) the control wraps under the text,
+ * left-aligned, so a long button never crushes the words beside it. A `wide` control (a select, a
  * segmented control, a slider, a row of swatches) sits on the right once the
  * pane has 34rem, and below the label at full width under that: a 13rem
  * select beside a label in a 248px phone pane left the label no room at all.
  * The breakpoint reads `@container/pane`, which the modal and the page both
  * declare; outside a pane a wide row simply stacks.
+ *
+ * `inline` keeps a compact control beside the text at every width. It is for
+ * a switch with a small companion (a play glyph): at 84px the pair pushed the
+ * text column under 13rem on a 360px phone and dropped under the label, on
+ * the left, the one row in its card whose switch was not on the right.
  *
  * `status` is the row's save confirmation (see `useSaveStates`), drawn beside
  * the label and outside the <label> element so it never becomes part of the
@@ -95,6 +113,7 @@ export function SettingRow({
   htmlFor,
   control,
   wide = false,
+  inline = false,
   status,
   tone = "default",
   children,
@@ -107,6 +126,8 @@ export function SettingRow({
   control?: React.ReactNode;
   /** The control needs width of its own; it drops under the label on a narrow pane. */
   wide?: boolean;
+  /** A compact control that never wraps under the text, however narrow the pane. Ignored with `wide`. */
+  inline?: boolean;
   status?: SaveState;
   tone?: "default" | "destructive";
   /** Full-width content under the label row: a note, a nested list. */
@@ -121,11 +142,20 @@ export function SettingRow({
     <div className={cn("py-4", className)}>
       <div
         className={cn(
-          "flex items-center justify-between gap-x-8 gap-y-3",
-          wide && "flex-col items-stretch @[34rem]/pane:flex-row @[34rem]/pane:items-center"
+          "flex items-center justify-between gap-x-4 gap-y-3 @[34rem]/pane:gap-x-8",
+          wide
+            ? "flex-col items-stretch @[34rem]/pane:flex-row @[34rem]/pane:items-center"
+            : inline
+              ? "flex-nowrap"
+              : // A compact control that is long ("Sign out everywhere") wraps
+                // under the text on a narrow pane instead of squeezing the label
+                // into a column a word wide. A switch or a short button ("Sign
+                // out", "Change…") still fits beside 13rem on a phone, on the
+                // narrower gap. From 34rem it never wraps, as before.
+                "flex-wrap @[34rem]/pane:flex-nowrap"
         )}
       >
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", !wide && !inline && "basis-[13rem] grow")}>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5">
             <Label
               htmlFor={htmlFor}

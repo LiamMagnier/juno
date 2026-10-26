@@ -4,7 +4,7 @@ import * as React from "react";
 import { Dialog, DialogCloseButton, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { SettingsRail, settingsTabId } from "@/components/settings/settings-rail";
+import { SETTINGS_SECTION_MENU_ATTR, SettingsRail, settingsTabId } from "@/components/settings/settings-rail";
 import { SettingsPane } from "@/components/settings/settings-pane";
 import type { SettingsSectionId } from "@/components/settings/settings-sections";
 import { useModifierKeyLabel } from "@/components/ui/platform";
@@ -44,8 +44,9 @@ function CloseButton({ className }: { className?: string }) {
  *
  * NARROW (below md): a full-height sheet. A centred card with a 1rem margin
  * left a 88dvh box on a phone whose close button sat on top of the section
- * strip. Here the top bar holds the title and the close button, the strip
- * sits under it, and the pane has the rest. It rises 24px as it fades in.
+ * strip. Here the top bar holds the title and the close button, the rail's
+ * section menu sits under it, and the pane has the rest. It rises 24px as it
+ * fades in.
  *
  * KEYBOARD. Opened with ⌘, it appears without an entrance: an action taken
  * from the keyboard is expected to land at once, and animating it reads as
@@ -83,10 +84,14 @@ export function SettingsModal({
         sheet={false}
         aria-describedby={undefined}
         onOpenAutoFocus={(event) => {
+          // The open section's tab in the column; on a narrow window the rail
+          // is one section menu instead, and the hidden tab cannot take focus.
           const tab = document.getElementById(settingsTabId(section));
-          if (!tab) return;
+          const target =
+            tab && tab.offsetParent !== null ? tab : document.querySelector<HTMLElement>(`[${SETTINGS_SECTION_MENU_ATTR}]`);
+          if (!target || target.offsetParent === null) return;
           event.preventDefault();
-          tab.focus();
+          target.focus();
         }}
         className={cn(
           "flex flex-col gap-0 overflow-hidden p-0 sm:p-0",
@@ -103,17 +108,26 @@ export function SettingsModal({
       >
         <DialogTitle className="sr-only">Settings</DialogTitle>
 
-        <div className="flex shrink-0 items-center justify-between px-5 pb-1 pt-3 md:hidden" aria-hidden="true">
-          <span className="text-heading">Settings</span>
+        {/* The phone bar: the title and the close button on one row, centred
+            on each other. The button used to sit absolutely at `top-2`, its
+            middle 6px below the title's. */}
+        <div className="flex shrink-0 items-center justify-between pb-1 pl-5 pr-3 pt-2 md:hidden">
+          <span className="text-heading" aria-hidden="true">
+            Settings
+          </span>
+          <CloseButton className="static" />
         </div>
-        <CloseButton className="right-3 top-2 md:hidden" />
 
         <aside className="@container/rail shrink-0 border-b border-border/60 px-3 pb-2.5 md:flex md:w-60 md:flex-col md:border-b-0 md:border-r md:px-3 md:pb-3 md:pt-5">
           <div className="mb-3 hidden items-center justify-between px-2.5 md:flex" aria-hidden="true">
             <span className="text-heading">Settings</span>
             <Kbd>{modifier === "⌘" ? "⌘," : `${modifier}+,`}</Kbd>
           </div>
-          <SettingsRail active={section} onSelect={onSectionChange} />
+          {/* Its own scroller, as on the page: nineteen rows and three group
+              names are taller than the panel, and the last ones were cut off. */}
+          <div className="md:-mx-1 md:min-h-0 md:flex-1 md:overflow-y-auto md:px-1 no-scrollbar">
+            <SettingsRail active={section} onSelect={onSectionChange} />
+          </div>
         </aside>
 
         {/* The close button sits beside the scroller, not in it, so it stays

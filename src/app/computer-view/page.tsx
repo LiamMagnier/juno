@@ -7,6 +7,7 @@ import { consumeComputerHandoff } from "@/lib/computer/handoff";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { getCurrentUser } from "@/lib/session";
 import { ComputerViewer } from "@/components/agents/computer-viewer";
+import { PageRoot } from "@/components/app/page-root";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const dynamic = "force-dynamic";
@@ -57,15 +58,17 @@ export default async function ComputerViewPage({
   if (!agent) return <Expired />;
 
   return (
-    <ComputerViewer
-      agentId={grant.agentId}
-      agentName={agent.name}
-      initialMode={grant.mode}
-      handoffTicket={grant.ticket}
-      fullBleed
-      standaloneWindow={standaloneWindow}
-      embedded={!standaloneWindow}
-      inputTools
-    />
+    <PageRoot>
+      <ComputerViewer
+        agentId={grant.agentId}
+        agentName={agent.name}
+        initialMode={grant.mode}
+        handoffTicket={grant.ticket}
+        fullBleed
+        standaloneWindow={standaloneWindow}
+        embedded={!standaloneWindow}
+        inputTools
+      />
+    </PageRoot>
   );
 }

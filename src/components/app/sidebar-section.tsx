@@ -20,11 +20,18 @@ import { cn } from "@/lib/utils";
  * unmounted entirely, and a fill flying that far — or vanishing mid-flight
  * because its origin scrolled out of the well — is a projectile, not a
  * correction. Same recipe, same fill, no travel.
+ *
+ * FULL INK BELONGS TO THE SELECTED ROW ALONE. Hover used to raise a row's ink
+ * to `--foreground` as well as filling it, and the two fills are one rung
+ * apart, so with the pointer in the column the row under it and the row you
+ * are on looked the same — two "you are here"s. Hover is the fill now and
+ * nothing else; selection is the deeper fill AND the full ink (31.8% → 10.8%
+ * L in light), which is the step a glance can find.
  */
 export function listRowClass(active: boolean) {
   return active
     ? "sidebar-row-selected text-foreground"
-    : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground";
+    : "text-sidebar-foreground hover:bg-sidebar-hover";
 }
 
 /**
@@ -51,10 +58,12 @@ export function Section({
   action?: React.ReactNode;
 }) {
   return (
-    // `mt-5` ABOVE the heading that owns the break, so the first section sits
-    // on the scroller's own `pt-5` and every later one is separated from the
-    // list it follows by the same 20px.
-    <div className="group/section mt-5 first:mt-0">
+    // `mt-4` ABOVE the heading that owns the break, so the first section sits
+    // on the scroller's own `pt-4` and every later one is separated from the
+    // list it follows by the same 16px. `data-sidebar-section` is where the
+    // well lands when it brings a row of this section into view: on the
+    // heading, not on the row (app-sidebar.tsx, `revealOffset`).
+    <div data-sidebar-section="" className="group/section mt-4 first:mt-0">
       <div className="flex items-center">
         <button
           type="button"

@@ -456,30 +456,15 @@ export function ActivityTimeline({
             (inlineOpen || open) && "bg-accent text-foreground"
           )}
         >
-          <span aria-hidden="true" className="flex min-w-0 items-center gap-1.5 truncate">
-            {did.length ? (
-              <>
-                {did.map((part, i) => (
-                  <React.Fragment key={part}>
-                    {i > 0 ? <span className="shrink-0 text-ink-tertiary">·</span> : null}
-                    <span className={cn("inline-flex min-w-0 items-center gap-1.5", i === did.length - 1 ? "truncate" : "shrink-0")}>
-                      {i === sourcesClause ? <FaviconStack sources={run.sources} className="me-0.5" /> : null}
-                      <span className="truncate">{part}</span>
-                    </span>
-                  </React.Fragment>
-                ))}
-                {span ? (
-                  <>
-                    <span className="shrink-0 text-ink-tertiary">·</span>
-                    <span className="shrink-0 font-mono text-caption tabular-nums">{span}</span>
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <span className="truncate">{restingLine}</span>
-            )}
-            {run.note ? <span className="shrink-0 text-warning">{`· ${run.note}`}</span> : null}
-          </span>
+          <RestingLine
+            did={did}
+            sourcesClause={sourcesClause}
+            sourceCount={run.sourceCount}
+            sources={run.sources}
+            span={span}
+            note={run.note}
+            fallback={restingLine}
+          />
           <ChevronRight
             aria-hidden="true"
             className={cn(
@@ -584,6 +569,113 @@ export function ActivityTimeline({
  * button is read as the button's name rather than announced, and separate from
  * the clock, which is never spoken.
  */
+/**
+ * The resting line's clauses, fullest first, as the room runs out: the sources
+ * clause drops its verb ("Read 6 sources" to "6 sources", the sites' marks
+ * still lead it), then whole clauses step out from the end, the sources
+ * clause last. Never a clause cut mid-word: at 360 the line read "Searched
+ * the web · Read 2 so… · 9.0s". The time and the note are not clauses; they
+ * always stay. `sources` is the sources clause's index in `parts`, or -1.
+ */
+export function restingLadder(
+  did: readonly string[],
+  sourcesClause: number,
+  sourceCount: number,
+): { parts: string[]; sources: number }[] {
+  const ladder: { parts: string[]; sources: number }[] = [{ parts: [...did], sources: sourcesClause }];
+  let current = ladder[0];
+  if (sourcesClause >= 0 && sourcesClause < did.length) {
+    const parts = [...did];
+    parts[sourcesClause] = `${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`;
+    current = { parts, sources: sourcesClause };
+    ladder.push(current);
+  }
+  while (current.parts.length > 1) {
+    let drop = current.parts.length - 1;
+    if (drop === current.sources) drop -= 1;
+    const parts = current.parts.filter((_, i) => i !== drop);
+    current = { parts, sources: current.sources > drop ? current.sources - 1 : current.sources };
+    ladder.push(current);
+  }
+  return ladder;
+}
+
+function RestingLine({
+  did,
+  sourcesClause,
+  sourceCount,
+  sources,
+  span,
+  note,
+  fallback,
+}: {
+  did: string[];
+  sourcesClause: number;
+  sourceCount: number;
+  sources: React.ComponentProps<typeof FaviconStack>["sources"];
+  span: string | null;
+  note: string | null | undefined;
+  /** The line when the run did nothing to list ("Thought for 12s"). */
+  fallback: string;
+}) {
+  const lineRef = React.useRef<HTMLSpanElement>(null);
+  const key = `${did.join("\u0000")}|${sourcesClause}|${sourceCount}|${span}|${note ?? ""}`;
+  const ladder = React.useMemo(() => restingLadder(did, sourcesClause, sourceCount), [key]); // eslint-disable-line react-hooks/exhaustive-deps -- `key` spells out `did`.
+  const [fit, setFit] = React.useState({ key, at: 0 });
+  const at = fit.key === key ? Math.min(fit.at, ladder.length - 1) : 0;
+  const last = at === ladder.length - 1;
+  // Step down a rung while the line overflows its room. Every clause holds
+  // its width (shrink-0) until the last rung, so an overflow is measurable;
+  // a layout effect, so the reader never sees a rung that does not fit.
+  React.useLayoutEffect(() => {
+    const line = lineRef.current;
+    if (!line || last) return;
+    if (line.scrollWidth > line.clientWidth + 1) setFit({ key, at: at + 1 });
+  }, [key, at, last]);
+  // The room follows the column: a wider one starts again from the fullest line.
+  React.useEffect(() => {
+    const host = lineRef.current?.closest("button")?.parentElement;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    let width = host.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (host.clientWidth === width) return;
+      width = host.clientWidth;
+      setFit({ key, at: 0 });
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [key]);
+  const { parts, sources: sourcesAt } = ladder[at];
+  return (
+    <span ref={lineRef} aria-hidden="true" className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+      {parts.length ? (
+        <>
+          {parts.map((part, i) => (
+            <React.Fragment key={part}>
+              {i > 0 ? <span className="shrink-0 text-ink-tertiary">·</span> : null}
+              {/* Only a lone clause wider than the whole line may still end
+                  on an ellipsis: there is nothing left to step out. */}
+              <span className={cn("inline-flex items-center gap-1.5", last && i === parts.length - 1 ? "min-w-0" : "shrink-0")}>
+                {i === sourcesAt ? <FaviconStack sources={sources} className="me-0.5" /> : null}
+                <span className={cn(last && i === parts.length - 1 && "truncate")}>{part}</span>
+              </span>
+            </React.Fragment>
+          ))}
+          {span ? (
+            <>
+              <span className="shrink-0 text-ink-tertiary">·</span>
+              <span className="shrink-0 font-mono text-caption tabular-nums">{span}</span>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <span className="truncate">{fallback}</span>
+      )}
+      {note ? <span className="shrink-0 text-warning">{`· ${note}`}</span> : null}
+    </span>
+  );
+}
+
 function PhaseAnnouncer({ text }: { text: string }) {
   const spoken = useHeldPhase(text, 3000);
   return (

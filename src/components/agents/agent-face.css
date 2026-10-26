@@ -1,175 +1,98 @@
 /*
- * AGENT FACES: how they look and how they move (agent-face.tsx, face-rig.ts).
+ * AGENT FACES: paint only (agent-face.tsx; the motion is face-rig.ts).
  *
- * Layers, outermost first, and the one job each has:
- *   .agent-face__rig    whole-face one-shots: hover lift, press squash, the
- *                       reaction to a state change, the done hop
- *   .agent-face__all    the state's loop: breathing, the working bob, the
- *                       thinking sway, the waiting "over here"
- *   .agent-face__gaze   where it looks: --gx/--gy written by the rig
- *   .agent-face__eyes   the state's eye behaviour: reading, pondering
- *   .agent-face__lids   the blink: --blink written by the rig
- *   .agent-face__eye    each eye's resting shape for the state
- * Only transform and opacity move. `transform-box: fill-box` everywhere, so a
- * part scales about its own centre, and `px` is the drawing's 64-unit space.
+ * One flat tone per body, ink eyes, and the one live colour for the orbit.
+ * No gradient, gloss, glow, shadow or outline anywhere: tokens only, so both
+ * themes and every surface (the knockouts are real mask holes) just work.
+ *
+ *   body, dots                --agent-<tone> (through --face-tone)
+ *   eyes                      --agent-ink, the same in both themes, so an
+ *                             agent is the same agent in light and dark
+ *   orbit and its ball        --presence: running is the one live colour
+ *   stalled orbit (blocked)   --muted-foreground, its ball --destructive
+ *   waiting ball              --status-needs-you (the owner's needs-you
+ *                             ember, --signal, redefined for dark in
+ *                             globals.css), the colour the sidebar and the
+ *                             activity marks use; the notch's air separates
+ *                             it from a coral or amber body. Never
+ *                             --attention, which is for warnings only.
+ *   blocked bar (below 48 px) --destructive (the --status-blocked ink)
+ *   paused                    --agent-dormant (below) with a trace of its tone
  */
 
-.agent-face { --face-spring: cubic-bezier(0.34, 1.4, 0.64, 1); }
-.agent-face :is(.agent-face__rig, .agent-face__all, .agent-face__body, .agent-face__eyes, .agent-face__lids, .agent-face__eye, .agent-face__happy, .agent-face__thought circle, .agent-face__ground) {
-  transform-box: fill-box;
-  transform-origin: center;
+/* Paused paint. Face-local on purpose: every colour on :root in globals.css
+   is projected to the native apps' Swift tokens, and this one waits for the
+   native face port. A neutral grey, not a warm one: a warm grey with a
+   trace of amber or coral is khaki or mauve brown on charcoal, and beige on
+   paper. In light the body (with its 14% tone trace) clears 1.8 to 1.9:1 on
+   the page and the card, level with the amber body, the palette's floor, so
+   a paused face never fades out of a 20 px list; the dash ink clears 3:1 on
+   every dormant body (light 4.8 to 5.0:1, dark 3.3 to 3.5:1;
+   tests/agents-face.test.ts checks both). */
+.agent-face { overflow: visible; --agent-dormant: 220 6% 75%; --agent-dormant-ink: 0.74; }
+.dark .agent-face { --agent-dormant: 220 6% 44%; --agent-dormant-ink: 0.92; }
+.agent-face__body {
+  fill: hsl(var(--face-tone));
+  transition: fill var(--dur-emphasis) var(--ease-out-soft);
 }
-.agent-face :is(.agent-face__rig, .agent-face__all) { transform-origin: 50% 100%; }
-
-/* ---------- Drawing ---------- */
-.agent-face__body { fill: hsl(var(--face-tone)); }
-.agent-face__lit { stop-color: color-mix(in oklab, hsl(var(--face-tone)) 64%, white); }
-.agent-face__tone { stop-color: hsl(var(--face-tone)); }
-.agent-face__rim { stop-color: color-mix(in oklab, hsl(var(--face-tone)) 80%, black); }
-.agent-face__ground { fill: hsl(var(--agent-ink) / 0.14); }
-.dark .agent-face__ground { fill: hsl(0 0% 0% / 0.32); }
-.agent-face__pupil { fill: hsl(var(--agent-ink)); }
-.agent-face__glint { fill: hsl(0 0% 100% / 0.9); }
-.agent-face__happy { stroke: hsl(var(--agent-ink)); opacity: 0; transform: scale(0.7); }
-.agent-face__mark { fill: hsl(var(--agent-mark)); stroke: hsl(var(--agent-mark)); }
-.agent-face__visor { fill: hsl(var(--agent-ink) / 0.18); }
-.agent-face__thought circle { fill: hsl(var(--agent-mark)); opacity: 0; }
-.agent-face__workbars rect { fill: hsl(var(--agent-ink)); opacity: 0; }
-
-/* ---------- Rig-driven: gaze and blink ---------- */
-.agent-face__gaze {
-  transform: translate(calc(var(--gx, 0) * 1px), calc(var(--gy, 0) * 1px));
-  transition: transform 200ms var(--ease-out-soft);
+.agent-face__eye {
+  fill: hsl(var(--agent-ink));
+  transition: fill var(--dur-emphasis) var(--ease-out-soft);
 }
-.agent-face__lids {
-  transform: scaleY(var(--blink, 1));
-  transition: transform 80ms var(--ease-in-out), opacity 160ms var(--ease-out-soft);
+/* The ring blends only when a visible orbit changes kind (working ↔ blocked),
+   over --dur-base: in step with its ball's repaint (face-rig.ts repaintBall),
+   so the red ball never sits on a still-blue ring. */
+.agent-face__ring {
+  fill: none;
+  stroke: hsl(var(--presence));
+  stroke-linecap: round;
+  transition: stroke var(--dur-base) var(--ease-out-soft);
 }
-
-/* ---------- Resting eye shape per state ---------- */
-.agent-face__eye { transition: transform 260ms var(--face-spring); }
-.agent-face[data-state="thinking"] .agent-face__eye { transform: translate(1.6px, -2.4px) scale(1, 0.8); }
-.agent-face[data-state="working"] .agent-face__eye { transform: scale(1.02, 0.74); }
-.agent-face[data-state="waiting"] .agent-face__eye { transform: scale(1.2); }
-.agent-face[data-state="listening"] .agent-face__eye { transform: scale(1.15); }
-.agent-face[data-state="blocked"] .agent-face__eye { transform: scale(1.3, calc(2 / var(--eye-h))); }
-.agent-face[data-state="sleeping"] .agent-face__eye { transform: translate(0, 2px) scale(1.3, calc(2 / var(--eye-h))); }
-.agent-face[data-state="done"] .agent-face__lids { opacity: 0; }
-.agent-face[data-state="done"] .agent-face__happy { opacity: 1; transform: none; transition: transform 320ms var(--face-spring), opacity 160ms var(--ease-out-soft); }
-.agent-face[data-state="thinking"] .agent-face__thought circle { opacity: 0.6; }
-.agent-face[data-state="working"] .agent-face__workbars rect { opacity: 0.55; }
-.agent-face[data-state="blocked"] .agent-face__all { transform: rotate(-4deg) translateY(0.6px); }
-.agent-face[data-state="sleeping"] .agent-face__glint { opacity: 0; }
-
-/* ---------- Hover and press: it notices you ---------- */
-.agent-face__rig { transition: transform 420ms var(--face-spring); }
-.agent-face__eyes { transition: transform 260ms var(--face-spring); }
-
-/* ---------- Listening: the pupils follow the caller's voice ---------- */
-/* Feedback, not an idle loop (MOTION_AND_THINKING: voice shows the actual
-   audio envelope): an open call writes `--level` (0..1) on an ancestor
-   (agent-thread-header.tsx). The still 1.15 above is what reduced motion keeps. */
-@media (prefers-reduced-motion: no-preference) {
-  .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
+/* The ball never blends: blue to red through sRGB passes a magenta that is
+   in neither palette. The rig swaps its paint at the bottom of a dip, while
+   it is a third of its size (face-rig.ts repaintBall). */
+.agent-face__ball {
+  fill: hsl(var(--presence));
 }
+/* The orbit stalled (blocked, 48 px and up): it stands still in muted ink,
+   its ball in the blocked red at the bottom of the ring. The rig sets
+   data-tone, so an orbit keeps its paint while it leaves, and sets it while
+   the orbit is hidden too (data-off), when the paint switches with no
+   transition: an orbit appears in its own colours, and only a visible ring
+   that changes kind (working to blocked) blends, grey to blue. */
+.agent-face__ring[data-tone="stalled"] { stroke: hsl(var(--muted-foreground)); }
+.agent-face__ball[data-tone="stalled"] { fill: hsl(var(--destructive)); }
+.agent-face__ring[data-off],
+.agent-face__ball[data-off] { transition: none; }
+.agent-face__badge circle { fill: hsl(var(--status-needs-you)); }
+.agent-face__badge rect { fill: hsl(var(--destructive)); }
 
+/* Paused is dormant: a quiet grey with a trace of its tone, never a
+   desaturated tone (drained warm hues land on khaki and mauve brown, and a
+   faded face reads as a broken image), with its dashes in softened ink. It
+   says so with no motion at all, and never reads as done's happy eyes. Keyed
+   off the state as drawn (data-drawn, which the rig moves with the pose), not
+   as requested, so paint and pose never drift apart while a change is held. */
+.agent-face[data-drawn="sleeping"] .agent-face__body {
+  fill: color-mix(in oklab, hsl(var(--face-tone)) 14%, hsl(var(--agent-dormant)));
+}
+.agent-face[data-drawn="sleeping"] .agent-face__eye { fill: hsl(var(--agent-ink) / var(--agent-dormant-ink)); }
 @media (prefers-reduced-motion: reduce) {
-  .agent-face :is(.agent-face__gaze, .agent-face__lids, .agent-face__eye, .agent-face__rig, .agent-face__eyes, .agent-face__happy) { transition: none; }
+  .agent-face__body,
+  .agent-face__eye,
+  .agent-face__ring { transition-duration: var(--dur-fast); }
 }
 
-@keyframes agent-face-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.014, 1.022); }
-}
-@keyframes agent-face-sleep {
-  0%, 100% { transform: translateY(0.8px) scale(1); }
-  50% { transform: translateY(0.8px) scale(1.02, 1.035); }
-}
-@keyframes agent-face-sway {
-  0%, 100% { transform: rotate(-2.2deg); }
-  50% { transform: rotate(2.2deg); }
-}
-@keyframes agent-face-ponder {
-  0%, 100% { transform: translate(0, 0); }
-  35% { transform: translate(0.9px, -0.5px); }
-  70% { transform: translate(-0.4px, 0.3px); }
-}
-@keyframes agent-face-thought {
-  0% { opacity: 0; transform: translate(-2.5px, 2.5px) scale(0.4); }
-  30% { opacity: 0.85; transform: translate(0, 0) scale(1); }
-  70% { opacity: 0.85; transform: translate(0.4px, -0.4px) scale(1); }
-  100% { opacity: 0; transform: translate(1px, -1.5px) scale(0.8); }
-}
-@keyframes agent-face-bob {
-  0%, 100% { transform: translateY(0) scale(1.012, 0.986); }
-  45% { transform: translateY(-1.6px) scale(0.994, 1.008); }
-}
-@keyframes agent-face-ground {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  45% { transform: scale(0.86); opacity: 0.7; }
-}
-/* Reading: along a line, a quick return, along the next. */
-@keyframes agent-face-read {
-  0% { transform: translate(-2.2px, -0.5px); }
-  40% { transform: translate(2.2px, -0.5px); }
-  50% { transform: translate(-2.2px, 0.7px); }
-  90% { transform: translate(2.2px, 0.7px); }
-  100% { transform: translate(-2.2px, -0.5px); }
-}
-@keyframes agent-face-bar {
-  0%, 100% { opacity: 0.25; }
-  40% { opacity: 0.85; }
-}
-/* Waiting: still for a while, then a small "over here", then still again. */
-@keyframes agent-face-call {
-  0%, 62%, 100% { transform: translateY(0) rotate(0); }
-  70% { transform: translateY(-2.6px) rotate(-5deg); }
-  78% { transform: translateY(0) rotate(0); }
-  85% { transform: translateY(-1.2px) rotate(3.5deg); }
-  92% { transform: translateY(0) rotate(0); }
-}
-@keyframes agent-face-hop {
-  0% { transform: none; }
-  16% { transform: translateY(0.6px) scale(1.07, 0.9); }
-  44% { transform: translateY(-5.5px) scale(0.95, 1.06); }
-  70% { transform: translateY(0) scale(1.06, 0.93); }
-  86% { transform: scale(0.99, 1.01); }
-  100% { transform: none; }
-}
-@keyframes agent-face-hop-ground {
-  0%, 16%, 70%, 100% { transform: scale(1); opacity: 1; }
-  44% { transform: scale(0.7); opacity: 0.5; }
-}
-@keyframes agent-face-react {
-  0% { transform: scale(0.94); }
-  55% { transform: scale(1.04); }
-  100% { transform: none; }
+/* Reduced motion: a state change swaps still poses, softened by a 120 ms fade
+   rather than a hard cut. Opacity only, and shallow, so it never reads as a
+   flash. */
+.agent-face[data-swap] { animation: agent-face-swap var(--dur-fast, 120ms) var(--ease-out-soft, ease-out) both; }
+@keyframes agent-face-swap {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
-/* Presence inherits the shipped face; status is a real sentence, at rest. */
+/* Presence wraps the face; the status is a real sentence beside it. */
 .agent-presence { position: relative; display: inline-grid; place-items: center; }
 .agent-status-line { display: inline; }
 .agent-status-line[data-live] { color: hsl(var(--primary)); }
-
-/* ---------- The 3D body (agent-face.tsx Body3D) ---------- */
-.agent-face__tint { flood-color: hsl(var(--face-tone)); }
-.agent-face__spec {
-  mix-blend-mode: screen;
-  transition: transform 420ms var(--face-spring), opacity 200ms var(--ease-out-soft);
-}
-/* The light answers the pointer: on hover the highlight slides a little
-   toward the top-left key, as if the face turned toward you. */
-@media (hover: hover) and (pointer: fine) {
-  .agent-face:hover .agent-face__spec { transform: translate(-0.8px, -0.8px); }
-}
-.dark .agent-face__spec { opacity: 0.85; }
-/* The eyes sit ON the clay, so they get the faintest inset edge. */
-.agent-face__body[data-sculpted] ~ .agent-face__gaze .agent-face__pupil { filter: drop-shadow(0 0.4px 0 hsl(0 0% 100% / 0.35)); }
-@media (prefers-reduced-motion: reduce) {
-  .agent-face__spec { transition: none; }
-  .agent-face:hover .agent-face__spec { transform: none; }
-}
-/* A sculpted mark is lit ink: near-black on paper, warm off-white on charcoal
-   (--agent-mark), lifted toward white so the clay's shading still reads. */
-.agent-face__tint-ink { flood-color: color-mix(in oklab, hsl(var(--agent-mark)) 78%, white); }
-.dark .agent-face__tint-ink { flood-color: hsl(var(--agent-mark)); }

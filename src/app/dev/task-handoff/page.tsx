@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { TaskHandoffGallery } from "./gallery";
 
 /**
@@ -13,5 +14,9 @@ import { TaskHandoffGallery } from "./gallery";
  */
 export default function TaskHandoffDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <TaskHandoffGallery />;
+  return (
+    <PageRoot>
+      <TaskHandoffGallery />
+    </PageRoot>
+  );
 }

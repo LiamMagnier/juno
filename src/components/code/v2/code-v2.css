@@ -79,7 +79,16 @@
 :where(.cv2) button { background: none; color: inherit; padding: 0; }
 .cv2 button:disabled { cursor: default; }
 .cv2 a { color: inherit; text-decoration: none; }
-.cv2 :focus-visible { outline: 2px solid hsl(var(--ring) / 0.7); outline-offset: 1px; border-radius: 8px; }
+/* Not on text fields (`:where`, so the specificity stays 0,2,0): a field
+   matches :focus-visible on every focus, a click or an autofocus included,
+   so this ring, and its 8px radius, landed on every press into the Steer
+   pill (20px radius until clicked) or a key field. A pressed field steps its
+   edge up; the keyboard gets one 2px line over the edge. */
+.cv2 :focus-visible:where(:not(textarea, [contenteditable], input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"])))
+  { outline: 2px solid hsl(var(--ring) / 0.7); outline-offset: 1px; border-radius: 8px; }
+.cv2-keyfield input:focus, .cv2-budget:focus, .cv2-preview-url:focus { box-shadow: inset 0 0 0 1px var(--cv2-edge-focus); }
+:root[data-modality="keyboard"] :is(.cv2-mini input, .cv2-budget, .cv2-keyfield input, .cv2-preview-url, .cv2-answer):focus-visible
+  { outline: 2px solid hsl(var(--ring) / 0.55); outline-offset: -1px; }
 .cv2-mono { font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; letter-spacing: 0; }
 .cv2-m { font-weight: 500; }
 .cv2-mute { color: hsl(var(--muted-foreground)); }

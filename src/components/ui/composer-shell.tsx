@@ -9,6 +9,7 @@ import { AudioLines, Loader2, Send, Square } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { requiresViewerCredentials } from "@/lib/image-source";
+import { inputModality, isTextEntry, subscribeInputModality } from "@/lib/input-modality";
 import { spring, transition } from "@/lib/motion";
 import { cn, formatBytes } from "@/lib/utils";
 import { FilePreview } from "@/components/chat/file-preview";
@@ -67,12 +68,14 @@ export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<
   /** Where the composer stands: the home's composer is taller at rest than the dock's. */
   frame?: "home" | "dock";
   /**
-   * The field has focus from the keyboard: the edge becomes one ring in the
-   * presence ink (C1). Focus from a pointer only darkens the edge
-   * (`.composer-surface:focus-within`).
+   * Draw the keyboard ring regardless of focus: a gallery's still. Hosts
+   * leave it unset; the shell decides by itself (below).
    */
   keyboardFocus?: boolean;
 }
+
+/** On the server, and before hydration, nobody has used anything yet. */
+const noModality = () => "none" as const;
 
 const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(function ComposerShell(
   { field, leading, trailing, action, above, dimmed = false, fieldTierRef, frame, keyboardFocus = false, className, ...props },
@@ -82,11 +85,25 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
     "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none",
     dimmed && "opacity-60"
   );
+  /*
+   * THE KEYBOARD RING (C1), decided here so every composer on the shell gets
+   * it: chat, the image editor, Agents, Code, Compare, Work. The edge becomes
+   * one ring (`.composer-surface[data-kbd-focus]`) while the text field in
+   * the field tier has focus AND the person is using the keyboard
+   * (lib/input-modality.ts). A text field matches :focus-visible on every
+   * focus, so that alone would ring the composer when it focuses itself on
+   * load or after a send. The modality is live: a press anywhere, the field
+   * itself included, drops the ring at once, and a pointer's focus only
+   * darkens the edge (`.composer-surface:focus-within`).
+   */
+  const modality = React.useSyncExternalStore(subscribeInputModality, inputModality, noModality);
+  const [fieldFocused, setFieldFocused] = React.useState(false);
+  const ring = keyboardFocus || (fieldFocused && modality === "keyboard");
   return (
     <div
       ref={ref}
       data-frame={frame}
-      data-kbd-focus={keyboardFocus ? "" : undefined}
+      data-kbd-focus={ring ? "" : undefined}
       className={cn("composer-surface relative flex w-full flex-col rounded-composer", className)}
       {...props}
     >
@@ -103,12 +120,25 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             the box and over the tray beneath it. The field and the controls
             never give up height; this region does. */}
         <div className="min-h-0 shrink overflow-y-auto overscroll-contain [scrollbar-width:thin]">{above}</div>
-        <div className="shrink-0">{field}</div>
+        <div
+          className="shrink-0"
+          // Only the text field counts: an armed mark's button in this tier
+          // draws its own outline, and a field in a layer portalled out of
+          // it (React bubbles focus through portals) is not this one.
+          onFocus={(event) =>
+            setFieldFocused(event.currentTarget.contains(event.target) && isTextEntry(event.target))
+          }
+          onBlur={() => setFieldFocused(false)}
+        >
+          {field}
+        </div>
         {/* The V3 row: 6px over the controls, 10px under and at the sides,
             so the 34px `+` hangs just outside the 20px text column and the
             36px disc closes the right edge. Used a hundred times a day, so
-            its glyphs stay still under the pointer (I-7). */}
-        <div className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5 shrink-0">
+            its glyphs stay still under the pointer (I-7). `data-composer-row`
+            is how the model chip finds the row's slack when it picks the
+            label it has room for (model-selector.tsx, `useChipFit`). */}
+        <div data-composer-row="" className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5 shrink-0">
           <div className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
             {leading}
           </div>
@@ -118,8 +148,11 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
                 screen with nothing saying they existed. The row now shrinks
                 instead: `min-w-0` lets the model chip — the one control on it
                 carrying a long, truncatable string — give up its width first,
-                which is the right thing to lose. */}
-            {trailing && <div className={cn("flex min-w-0 items-center gap-1", dim)}>{trailing}</div>}
+                which is the right thing to lose. Under a coarse pointer
+                every control here is a 44px target whose glyph sits well
+                inside it, so the gap between them can halve without the
+                glyphs crowding: two pixels the model chip's label keeps. */}
+            {trailing && <div className={cn("flex min-w-0 items-center gap-1 coarse:gap-0.5", dim)}>{trailing}</div>}
             {action}
           </div>
         </div>

@@ -13,6 +13,17 @@ import {
 /** Pro, said once wherever the switch is drawn, in the settings' words for effort. */
 export const PRO_MODE_HELP = "The model's deeper reasoning mode. Slower and costs more.";
 
+/**
+ * What one press of the panel's Pro switch does, and what it costs: its
+ * tooltip, in the speed control's pattern (`speedTierAction`). Pro bills at
+ * the model's own per-token price (model-metrics.ts, supportsProMode) and
+ * spends more of them reasoning, so the cost is said as tokens, not as a
+ * multiplier the price list does not have.
+ */
+export function proModeAction(on: boolean): string {
+  return on ? "Turn off Pro" : "Turn on Pro · deeper reasoning, slower, uses more tokens";
+}
+
 /** The Ultrafast tier's description, naming the premium the reader agrees to. */
 export function ultraFastHelp(multiplier?: number): string {
   return multiplier ? `OpenAI's fastest tier, at ${multiplier}x the standard price.` : "OpenAI's fastest tier, at a premium.";
@@ -33,6 +44,23 @@ export function speedTierLabel(tier: SpeedTier, multiplier?: number): string {
 }
 
 /**
+ * What one press of the panel's speed control does, with its price: the
+ * tooltip. It names the NEXT step, not the current one, so the price is read
+ * before it is paid ("Turn on Fast · 2× price") and the three-step cycle is
+ * announced one step ahead ("Switch to Ultra fast · 6× price").
+ */
+export function speedTierAction(
+  tier: SpeedTier,
+  next: SpeedTier,
+  multipliers: { fast?: number; ultra?: number },
+): string {
+  const price = (m?: number) => (m ? ` · ${+m.toFixed(2)}× price` : "");
+  if (next === "off") return tier === "ultra" ? "Turn off Ultra fast" : "Turn off Fast";
+  if (next === "ultra") return `${tier === "off" ? "Turn on" : "Switch to"} Ultra fast${price(multipliers.ultra)}`;
+  return `Turn on Fast${price(multipliers.fast)}`;
+}
+
+/**
  * The next tier one press of the speed control lands on: Off → Fast → Ultra
  * fast → Off, skipping a tier the model does not have.
  */
@@ -45,21 +73,33 @@ export function nextSpeedTier(tier: SpeedTier, has: { fast: boolean; ultra: bool
 /**
  * The speed control's glyph: one web bolt for Fast, the same bolt twice,
  * overlapped about 3px, for Ultra fast. The second bolt springs in and out
- * (transform + opacity only), and holds still under reduced motion.
+ * (transform + opacity only), and holds still under reduced motion. The
+ * model chip ends on the same glyph while a tier is on (model-selector.tsx),
+ * so the switch and the chip read as one setting.
  */
-function SpeedGlyph({ tier }: { tier: SpeedTier }) {
+export function SpeedGlyph({
+  tier,
+  className,
+  boltClassName = "size-4",
+}: {
+  tier: SpeedTier;
+  className?: string;
+  boltClassName?: string;
+}) {
   const two = tier === "ultra";
   return (
-    <span aria-hidden className="relative inline-flex size-4 items-center justify-center">
+    <span aria-hidden className={cn("relative inline-flex size-4 items-center justify-center", className)}>
       <Zap
         className={cn(
-          "absolute size-4 transition-transform duration-base ease-spring motion-reduce:transition-none",
+          "absolute transition-transform duration-base ease-spring motion-reduce:transition-none",
+          boltClassName,
           two ? "-translate-x-[2px]" : "translate-x-0",
         )}
       />
       <Zap
         className={cn(
-          "absolute size-4 transition-[transform,opacity] duration-base ease-spring motion-reduce:transition-none",
+          "absolute transition-[transform,opacity] duration-base ease-spring motion-reduce:transition-none",
+          boltClassName,
           two ? "translate-x-[3px] opacity-100" : "translate-x-0 opacity-0",
         )}
       />
@@ -421,9 +461,10 @@ function EffortPanel({
   const hasUltra = !!onUltraFastChange;
   const showsSpeed = hasFast || hasUltra;
   const speedTier: SpeedTier = ultraFast && hasUltra ? "ultra" : fastMode && hasFast ? "fast" : "off";
-  const speedMultiplier = speedTier === "ultra" ? ultraFastMultiplier : speedTier === "fast" ? fastModeMultiplier : undefined;
+  const nextSpeed = nextSpeedTier(speedTier, { fast: hasFast, ultra: hasUltra });
+  const speedAction = speedTierAction(speedTier, nextSpeed, { fast: fastModeMultiplier, ultra: ultraFastMultiplier });
   const cycleSpeed = () => {
-    const next = nextSpeedTier(speedTier, { fast: hasFast, ultra: hasUltra });
+    const next = nextSpeed;
     if (next === "fast") onFastModeChange?.(true);
     else if (next === "ultra") onUltraFastChange?.(true);
     else if (speedTier === "ultra") onUltraFastChange?.(false);
@@ -434,6 +475,8 @@ function EffortPanel({
   const current = options[index];
   const head = panelStop(index, count);
   const canReset = defaultValue !== undefined && current?.value !== defaultValue;
+  const defaultLabel = options.find((option) => option.value === defaultValue)?.label;
+  const resetLabel = defaultLabel ? `Reset to default (${defaultLabel})` : "Reset to the model's default";
   const iconButton =
     "pressable grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:size-11";
   return (
@@ -448,7 +491,13 @@ function EffortPanel({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={speedTierLabel(speedTier, speedMultiplier)}
+                  // A toggle's name is the setting, and aria-pressed says
+                  // whether it is on: "Fast mode, toggle button, not
+                  // pressed". It used to be the current state ("Standard
+                  // speed, not pressed"), which read backwards. The step a
+                  // press takes, and its price, is the tooltip (its
+                  // description).
+                  aria-label={speedTier === "ultra" ? "Ultra fast mode" : "Fast mode"}
                   aria-pressed={speedTier !== "off"}
                   disabled={disabled}
                   onClick={cycleSpeed}
@@ -463,7 +512,7 @@ function EffortPanel({
                   <SpeedGlyph tier={speedTier} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{speedTierLabel(speedTier, speedMultiplier)}</TooltipContent>
+              <TooltipContent>{speedAction}</TooltipContent>
             </Tooltip>
           ) : null}
           {onProModeChange ? (
@@ -471,8 +520,11 @@ function EffortPanel({
               <TooltipTrigger asChild>
                 <button
                   type="button"
+                  // The setting's name; aria-pressed says whether it is on
+                  // ("Pro mode, toggle button, pressed"). "Pro on: …" said the
+                  // state twice. The press and its cost are the tooltip.
                   aria-pressed={proMode}
-                  aria-label={proMode ? "Pro on: deeper reasoning" : "Pro: deeper reasoning"}
+                  aria-label="Pro mode"
                   disabled={disabled}
                   onClick={() => onProModeChange(!proMode)}
                   className={cn(
@@ -487,7 +539,7 @@ function EffortPanel({
                   Pro
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{PRO_MODE_HELP}</TooltipContent>
+              <TooltipContent>{proModeAction(proMode)}</TooltipContent>
             </Tooltip>
           ) : null}
         </div>
@@ -496,10 +548,19 @@ function EffortPanel({
             {current?.label}
           </span>
           {panel ? (
+            // 24px to the eye on every screen, so the rung and its model stay
+            // one tight pair; under a coarse pointer the hit area reaches 10px
+            // past it above and below (44px), the way FilterChip's does.
+            // Growing the button itself to 44px pushed the name 34px under
+            // the rung and left reset floating between the two lines.
             <button
               type="button"
               onClick={panel.onOpenModels}
-              className="group inline-flex max-w-full items-center gap-0.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+              // The name alone ("Claude Opus 5.5") did not say this is how
+              // the model is changed.
+              aria-label={`Change model, currently ${panel.modelName}`}
+              aria-haspopup="dialog"
+              className="group relative inline-flex min-h-6 max-w-full items-center gap-0.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft after:absolute after:inset-x-0 hover:text-foreground coarse:after:-inset-y-2.5"
             >
               <span className="truncate" translate="no">{panel.modelName}</span>
               <ChevronRight className="size-3.5 shrink-0 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" aria-hidden="true" />
@@ -507,16 +568,23 @@ function EffortPanel({
           ) : null}
         </div>
         <div className="flex justify-end">
-        <button
-          type="button"
-          aria-label="Reset to the model's default"
-          title="Reset to the model's default"
-          disabled={disabled || !canReset}
-          onClick={() => defaultValue !== undefined && onChange(defaultValue)}
-          className={iconButton}
-        >
-          <RotateCcw className="size-4" />
-        </button>
+          {/* The product's tooltip, like the bolt's beside it (a native
+              title= drew a second tooltip style), naming the rung it goes
+              back to. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={resetLabel}
+                disabled={disabled || !canReset}
+                onClick={() => defaultValue !== undefined && onChange(defaultValue)}
+                className={iconButton}
+              >
+                <RotateCcw className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{resetLabel}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -524,7 +592,11 @@ function EffortPanel({
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.07] dark:bg-white/[0.08]">
           <div
             className={cn(
-              "absolute inset-0 rounded-full bg-foreground/85 transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none dark:bg-white/25",
+              // A mid-tone in both themes, the white knob marking the place.
+              // Light used to be near-black (foreground/85): at Max a solid
+              // black slab, the heaviest object in the composer, where dark
+              // mode drew the same control in a calm grey.
+              "absolute inset-0 rounded-full bg-foreground/[0.22] transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none dark:bg-white/25",
               index === 0 && "opacity-0",
             )}
             // The fill is a pill that holds the knob with the track's own 4px
@@ -570,7 +642,7 @@ function EffortPanel({
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-foreground/20 transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
+          className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
         />
       </div>
 

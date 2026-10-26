@@ -253,10 +253,35 @@ export interface StarterPrompt {
   phrase: string;
   /** A name that rides after the phrase untranslated (the Code project). */
   argument?: string;
+  /** The request waits on something only the person has (the role, the notes, the priorities). */
+  awaitsInput?: boolean;
 }
 
+/**
+ * The templates: prompts that are not worth sending until the person adds
+ * what they name ("a role I'll describe", "this paragraph", "my rough
+ * notes"). They land in the composer with an open slot after them (": "),
+ * so the caret waits a space past the request instead of glued to its last
+ * word. The list itself shows the phrase alone.
+ */
+const AWAITS_INPUT: ReadonlySet<string> = new Set<string>([
+  "Tighten this paragraph without changing what it says",
+  "Draft a cover letter for a role I’ll describe",
+  "Turn my rough notes into a clear one-page summary",
+  "Compare the best options for a decision I’m making, with sources",
+  "Build a market overview of a sector I’ll name, with the main players",
+  "Add a small feature I’ll describe, with tests",
+  "Plan my week around three priorities I’ll list",
+  "Quiz me on a topic I’m studying, one question at a time",
+]);
+
+/** What a template's slot opens with: the request, a colon, and room to type. */
+export const STARTER_SLOT = ": ";
+
 export function promptsFor(id: StarterId, use: Pick<RecentUse, "lastCodeProject">): StarterPrompt[] {
-  const fixed = HOME_STARTER_COPY.chips[id].prompts.map((phrase) => ({ phrase }));
+  const fixed = HOME_STARTER_COPY.chips[id].prompts.map((phrase) =>
+    AWAITS_INPUT.has(phrase) ? { phrase, awaitsInput: true } : { phrase },
+  );
   if (id === "code" && use.lastCodeProject) {
     return [{ phrase: HOME_STARTER_COPY.continueIn, argument: use.lastCodeProject }, ...fixed.slice(0, 2)];
   }
@@ -265,7 +290,9 @@ export function promptsFor(id: StarterId, use: Pick<RecentUse, "lastCodeProject"
 
 /** The text a prompt puts in the composer, given the phrase in the reader's language. */
 export function promptText(prompt: StarterPrompt, translatedPhrase: string = prompt.phrase): string {
-  return prompt.argument ? `${translatedPhrase} ${prompt.argument}` : translatedPhrase;
+  if (prompt.argument) return `${translatedPhrase} ${prompt.argument}`;
+  // A translation may already end on its own punctuation; the slot never doubles it.
+  return prompt.awaitsInput ? `${translatedPhrase.replace(/[\s:：.。…]+$/u, "")}${STARTER_SLOT}` : translatedPhrase;
 }
 
 /** `/code` prefilled with the task: it fills the composer and waits (src/lib/code-prefill.ts). */

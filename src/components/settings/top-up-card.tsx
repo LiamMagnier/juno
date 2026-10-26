@@ -41,7 +41,7 @@ export function TopUpCard() {
     // Back from a paid checkout: the credit is granted by the webhook, which
     // can land a moment after the redirect.
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("topup") === "1") {
-      toast.success("Top-up received. It's added as soon as the payment clears.");
+      toast.success("Top-up received. It’s added as soon as the payment clears.");
     }
     return () => {
       live = false;

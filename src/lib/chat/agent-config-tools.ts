@@ -12,7 +12,6 @@ import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ClientAgentChange, ClientAgentChangeItem } from "@/types/chat";
 import {
   AGENT_EYES,
-  AGENT_MARKS,
   AGENT_SHAPES,
   AGENT_TONES,
 } from "@/lib/agents/avatar";
@@ -137,7 +136,8 @@ export const CREATE_AGENT_TOOL: ToolDefinition = {
         faceShape: { type: "string", enum: [...AGENT_SHAPES], description: "Avatar face shape." },
         faceTone: { type: "string", enum: [...AGENT_TONES], description: "Avatar colour tone." },
         faceEyes: { type: "string", enum: [...AGENT_EYES], description: "Avatar eye style." },
-        faceMark: { type: "string", enum: [...AGENT_MARKS], description: "Avatar mark or accessory." },
+        // No faceMark: faces carry no accessory any more, so a stored mark is
+        // never drawn. Older calls that still send one are accepted below.
         autonomy: {
           type: "string",
           enum: [...WORK_PERMISSION_POLICIES],
@@ -187,7 +187,7 @@ export const UPDATE_AGENT_TOOL: ToolDefinition = {
         faceShape: { type: "string", enum: [...AGENT_SHAPES], description: "Avatar face shape." },
         faceTone: { type: "string", enum: [...AGENT_TONES], description: "Avatar colour tone." },
         faceEyes: { type: "string", enum: [...AGENT_EYES], description: "Avatar eye style." },
-        faceMark: { type: "string", enum: [...AGENT_MARKS], description: "Avatar mark or accessory." },
+        // No faceMark (see CREATE_AGENT_TOOL): a mark is never drawn.
         autonomy: {
           type: "string",
           enum: [...WORK_PERMISSION_POLICIES],

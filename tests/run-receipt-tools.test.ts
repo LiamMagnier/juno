@@ -451,7 +451,8 @@ test("provider parts become think steps; an unbroken trace becomes one", () => {
   const think = flat.steps.filter((s) => s.kind === "think");
   assert.equal(think.length, 1);
   assert.equal(think[0].label, "Full reasoning trace");
-  assert.equal(think[0].detail, "This model streams one unbroken trace.");
+  // Its second line is the trace's opening, as a part's is.
+  assert.equal(think[0].detail, "One unbroken block of thought.");
 });
 
 // ──────────────────────────────────────────────────────── toRunSummary

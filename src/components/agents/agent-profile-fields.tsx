@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { ChevronDown } from "@/components/ui/icons";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -15,15 +16,13 @@ import { AgentFace } from "@/components/agents/agent-face";
 import {
   AGENT_EYES,
   AGENT_EYES_LABEL,
-  AGENT_MARKS,
-  AGENT_MARK_LABEL,
   AGENT_SHAPES,
   AGENT_SHAPE_LABEL,
   AGENT_TONES,
   AGENT_TONE_LABEL,
   type AgentAvatar,
 } from "@/lib/agents/avatar";
-import { AGENT_STATE_LABEL, AGENT_STYLES, AGENT_STYLE_LABEL, AGENT_STYLE_SUMMARY, type AgentState, type AgentStyle } from "@/lib/agents/domain";
+import { AGENT_STYLES, AGENT_STYLE_LABEL, AGENT_STYLE_SUMMARY, type AgentState, type AgentStyle } from "@/lib/agents/domain";
 import {
   WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,
@@ -77,45 +76,84 @@ function useRovingRadio<T extends string>(values: readonly T[], value: T, onChan
 // The face
 // ---------------------------------------------------------------------------
 
-const PREVIEW_STATES: readonly AgentState[] = ["idle", "working", "waiting", "done"];
+/**
+ * The states a face can be tried in, in the order they happen, the one an
+ * agent enters most (thinking) included. Short labels, so the switcher is one
+ * row in the studio's and the hire flow's narrow columns.
+ */
+const PREVIEW_STATES: ReadonlyArray<SegmentedOption<AgentState>> = [
+  { value: "idle", label: "Ready" },
+  { value: "thinking", label: "Thinking" },
+  { value: "working", label: "Working" },
+  { value: "waiting", label: "Needs you" },
+  { value: "done", label: "Done" },
+];
+
+/**
+ * The one state switcher for a face preview, shared by the face studio and
+ * the hire flow: the house segmented control (one tab stop, arrows move),
+ * set tight so all five fit one row, unwrapped, in a 19rem column (about
+ * 295 px).
+ */
+export function FaceStatePicker({ value, onChange, className }: { value: AgentState; onChange: (next: AgentState) => void; className?: string }) {
+  return (
+    <SegmentedControl
+      value={value}
+      onChange={onChange}
+      options={PREVIEW_STATES}
+      ariaLabel="Preview a state"
+      size="sm"
+      columns="content"
+      optionClassName="whitespace-nowrap px-[5px] text-caption"
+      className={cn("gap-0.5", className)}
+    />
+  );
+}
 
 /**
  * The face at size, with the states it will show once it is working.
  *
  * Grok's avatar studio lets you check every state before you commit to a face;
  * this is the same idea at the size of one control. The person sees the
- * character move before they hire it — which is what the face is for.
+ * character move before they hire it — which is what the face is for — so it
+ * is alive as in the studio: it blinks, glances now and then and looks toward
+ * the pointer.
  */
-export function FacePreview({ avatar, name }: { avatar: AgentAvatar; name: string }) {
+export function FacePreview({ avatar, name, caption }: { avatar: AgentAvatar; name: string; caption?: React.ReactNode }) {
   const [state, setState] = React.useState<AgentState>("idle");
-  const radio = useRovingRadio(PREVIEW_STATES, state, setState);
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div data-face-trigger className="grid size-40 place-items-center rounded-panel border border-border bg-card">
-        <AgentFace avatar={avatar} state={state} size="lg" name={name || "New agent"} />
-      </div>
-      <div role="radiogroup" aria-label="Preview a state" className="flex flex-wrap justify-center gap-1" onKeyDown={radio.onKeyDown}>
-        {PREVIEW_STATES.map((option) => (
-          <button
-            key={option}
-            {...radio.props(option)}
-            className="rounded-control px-2.5 py-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground aria-checked:bg-selected aria-checked:text-foreground coarse:py-2"
-          >
-            {AGENT_STATE_LABEL[option]}
-          </button>
-        ))}
+    <div className="flex flex-col items-center">
+      {/* The column is as wide as the picker, so the face card and the picker
+          share their edges. Flex, not grid: a grid made the panel radius's
+          ::after a second row and set the face 15 px above centre. `direct`:
+          a state picked here plays at once, never held like an agent loop's. */}
+      <div className="flex w-fit max-w-full flex-col items-stretch gap-4">
+        <div data-face-trigger className="flex h-40 items-center justify-center rounded-panel border border-border bg-card after:hidden">
+          <AgentFace avatar={avatar} state={state} size="lg" name={name || "New agent"} live look direct />
+        </div>
+        {/* Who it is sits with its face, as in the studio: then the states to try. */}
+        {/* `w-0 min-w-full`: a long name or role wraps inside the column rather than widening it. */}
+        {caption ? <div className="-mt-1 w-0 min-w-full text-pretty break-words text-center">{caption}</div> : null}
+        <FaceStatePicker value={state} onChange={setState} />
       </div>
     </div>
   );
 }
 
-function SwatchRow<T extends string>({
+/**
+ * One row of look choices, shared by the face studio and the hire flow: flat
+ * tiles, the chosen one in the `--selected` fill with a darker edge.
+ * `className` lays the tiles out (the studio keeps nine shapes in one row,
+ * or five and four, never eight and an orphan).
+ */
+export function SwatchRow<T extends string>({
   label,
   values,
   value,
   onChange,
   render,
   name,
+  className,
 }: {
   label: string;
   values: readonly T[];
@@ -123,19 +161,20 @@ function SwatchRow<T extends string>({
   onChange: (next: T) => void;
   render: (option: T) => React.ReactNode;
   name: (option: T) => string;
+  className?: string;
 }) {
   const radio = useRovingRadio(values, value, onChange);
   return (
     <div>
       <p className="mb-1.5 font-mono text-label text-muted-foreground">{label}</p>
-      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5" onKeyDown={radio.onKeyDown}>
+      <div role="radiogroup" aria-label={label} className={className ?? "flex flex-wrap gap-1.5"} onKeyDown={radio.onKeyDown}>
         {values.map((option) => (
           <button
             key={option}
             {...radio.props(option)}
             aria-label={`${label}: ${name(option)}`}
             title={name(option)}
-            className={cn(tileClass, "grid size-11 place-items-center rounded-control p-0")}
+            className={cn(tileClass, "grid size-11 place-items-center rounded-control p-0 active:scale-95 motion-reduce:active:scale-100")}
           >
             {render(option)}
           </button>
@@ -145,31 +184,33 @@ function SwatchRow<T extends string>({
   );
 }
 
+/** The colour swatch, the shape's face and the eyes' crop, as both look pickers draw them. */
+export const lookSwatch = {
+  tone: (tone: AgentAvatar["tone"]) => <span aria-hidden="true" className="size-5 rounded-full" style={{ background: `hsl(var(--agent-${tone}))` }} />,
+  shape: (avatar: AgentAvatar, shape: AgentAvatar["shape"]) => <AgentFace avatar={{ ...avatar, shape, mark: "none" }} size={30} still />,
+  // The middle of a 44 px face facing straight out, so the cut itself shows:
+  // a whole 30 px face draws eyes a few pixels tall and the four look alike,
+  // and at the rest turn the far eye is foreshortened.
+  eyes: (avatar: AgentAvatar, eyes: AgentAvatar["eyes"]) => (
+    <span aria-hidden="true" className="grid size-[30px] place-items-center overflow-hidden rounded-full">
+      <AgentFace avatar={{ ...avatar, eyes, mark: "none" }} size={44} still pose="front" className="-m-[7px]" />
+    </span>
+  ),
+};
+
 export function FaceBuilder({ avatar, onChange }: { avatar: AgentAvatar; onChange: (next: AgentAvatar) => void }) {
   const set = <K extends keyof AgentAvatar>(key: K) => (next: AgentAvatar[K]) => onChange({ ...avatar, [key]: next });
   return (
     <div className="space-y-4">
+      {/* Colour, Shape, Eyes: the face studio's order. */}
+      <SwatchRow label="Colour" values={AGENT_TONES} value={avatar.tone} onChange={set("tone")} name={(option) => AGENT_TONE_LABEL[option]} render={lookSwatch.tone} />
       <SwatchRow
         label="Shape"
         values={AGENT_SHAPES}
         value={avatar.shape}
         onChange={set("shape")}
         name={(option) => AGENT_SHAPE_LABEL[option]}
-        render={(option) => <AgentFace avatar={{ ...avatar, shape: option, mark: "none" }} size="sm" />}
-      />
-      <SwatchRow
-        label="Colour"
-        values={AGENT_TONES}
-        value={avatar.tone}
-        onChange={set("tone")}
-        name={(option) => AGENT_TONE_LABEL[option]}
-        render={(option) => (
-          <span
-            aria-hidden="true"
-            className="size-5 rounded-full"
-            style={{ background: `hsl(var(--agent-${option}))` }}
-          />
-        )}
+        render={(option) => lookSwatch.shape(avatar, option)}
       />
       <SwatchRow
         label="Eyes"
@@ -177,16 +218,11 @@ export function FaceBuilder({ avatar, onChange }: { avatar: AgentAvatar; onChang
         value={avatar.eyes}
         onChange={set("eyes")}
         name={(option) => AGENT_EYES_LABEL[option]}
-        render={(option) => <AgentFace avatar={{ ...avatar, eyes: option, mark: "none" }} size="sm" />}
+        render={(option) => lookSwatch.eyes(avatar, option)}
       />
-      <SwatchRow
-        label="Mark"
-        values={AGENT_MARKS}
-        value={avatar.mark}
-        onChange={set("mark")}
-        name={(option) => AGENT_MARK_LABEL[option]}
-        render={(option) => <AgentFace avatar={{ ...avatar, mark: option }} size="sm" />}
-      />
+      {/* No Mark row: the stored mark is no longer drawn (it only tunes how
+          the face blinks and glances, face-rig.ts), so six swatches would
+          all look the same. The value is kept as it is (docs/design/AGENTS.md §4). */}
     </div>
   );
 }
