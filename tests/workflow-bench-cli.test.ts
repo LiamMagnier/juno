@@ -11,11 +11,13 @@
  *
  * The committed baseline records which offline workflows FAIL. This test
  * fails on a NEW failure (a product change broke a workflow the baseline
- * passes). A baseline failure that now passes (someone fixed calc.ts or the
- * injection scanner) does not turn CI red: it prints a notice asking for the
- * baseline to be re-recorded on purpose
+ * passes). A baseline failure that now passes does not turn CI red: it prints
+ * a notice asking for the baseline to be re-recorded on purpose
  * (`npm run bench:workflows -- run --run-id baseline-<date>`), so other
- * workstreams are not coupled to this one.
+ * workstreams are not coupled to this one. The current baseline,
+ * baseline-2026-10-25-r2, was re-recorded after the calculator and the
+ * injection scanner fixes made reasoning-03 and research-03 pass; it records
+ * no offline failure, so any offline failure now turns this red.
  */
 
 import assert from "node:assert/strict";
@@ -28,7 +30,7 @@ import { WORKFLOWS } from "../bench/workflows/lib/catalog";
 import { BENCH_DIR, REPO_ROOT } from "../bench/workflows/lib/fixtures";
 import type { BenchResults } from "../bench/workflows/lib/types";
 
-const BASELINE = path.join(BENCH_DIR, "results", "baseline-2026-10-25", "results.json");
+const BASELINE = path.join(BENCH_DIR, "results", "baseline-2026-10-25-r2", "results.json");
 const out = mkdtempSync(path.join(tmpdir(), "wb-cli-"));
 after(() => rmSync(out, { recursive: true, force: true }));
 
@@ -76,6 +78,18 @@ describe("workflow benchmark CLI", () => {
     for (const r of live) {
       assert.equal(r.state, "not_run");
       assert.ok(r.reason.length > 10);
+    }
+  });
+
+  it("the two product findings stay fixed: reasoning-03 (calculator) and research-03 (injection label) pass offline", () => {
+    const records = results().records.filter((r) => r.scope === "offline_pipeline");
+    for (const id of ["reasoning-03", "research-03"]) {
+      const record = records.find((r) => r.workflowId === id);
+      assert.equal(record?.state, "passed", `${id}: ${JSON.stringify(record?.checks.filter((c) => c.status !== "pass"))}`);
+    }
+    const baseline = JSON.parse(readFileSync(BASELINE, "utf8")) as BenchResults;
+    for (const id of ["reasoning-03", "research-03"]) {
+      assert.equal(baseline.records.find((r) => r.scope === "offline_pipeline" && r.workflowId === id)?.state, "passed", `${id} in the baseline`);
     }
   });
 

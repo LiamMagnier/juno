@@ -1,0 +1,45 @@
+{
+  "server": {
+    "registrations": 1,
+    "tokenRequests": [
+      {
+        "hasVerifier": true
+      }
+    ],
+    "requests": [
+      {
+        "method": "initialize",
+        "auth": true
+      },
+      {
+        "method": "notifications/initialized",
+        "auth": true
+      },
+      {
+        "method": "tools/list",
+        "auth": true
+      },
+      {
+        "method": "tools/call",
+        "auth": true,
+        "tool": "search_tickets",
+        "args": {
+          "query": "login"
+        }
+      }
+    ],
+    "unauthenticatedRejected": true
+  },
+  "client": {
+    "probeOk": true,
+    "probe": {
+      "ok": true,
+      "authHost": "localhost"
+    },
+    "toolsListed": [
+      "create_ticket",
+      "search_tickets"
+    ],
+    "callResult": "found 3 tickets for login"
+  }
+}

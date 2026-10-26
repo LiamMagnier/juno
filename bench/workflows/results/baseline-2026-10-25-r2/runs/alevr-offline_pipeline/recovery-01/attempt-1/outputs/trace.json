@@ -1,0 +1,30 @@
+{
+  "stopAt": 101.04,
+  "calls": 3,
+  "executions": [
+    {
+      "name": "slow_import",
+      "callId": "call-1",
+      "startedAt": 0.346
+    }
+  ],
+  "effects": [],
+  "results": [
+    {
+      "callId": "call-1",
+      "status": "cancelled",
+      "wasRunningOrQueued": true
+    },
+    {
+      "callId": "call-2",
+      "status": "cancelled",
+      "wasRunningOrQueued": true
+    },
+    {
+      "callId": "call-3",
+      "status": "cancelled",
+      "wasRunningOrQueued": true
+    }
+  ],
+  "threwAbort": true
+}

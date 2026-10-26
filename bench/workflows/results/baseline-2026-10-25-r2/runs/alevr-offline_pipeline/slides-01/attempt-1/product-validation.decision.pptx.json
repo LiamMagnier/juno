@@ -1,0 +1,15 @@
+{
+  "validator": "juno.work.deliverables.validate.v1",
+  "checkedAt": "2026-10-26T00:26:14.878Z",
+  "kind": "presentation",
+  "byteSize": 77594,
+  "ok": true,
+  "observations": [
+    "Unzipped the package and counted 5 slide parts."
+  ],
+  "problems": [],
+  "details": {
+    "slideCount": 5,
+    "missingAssetCount": 0
+  }
+}

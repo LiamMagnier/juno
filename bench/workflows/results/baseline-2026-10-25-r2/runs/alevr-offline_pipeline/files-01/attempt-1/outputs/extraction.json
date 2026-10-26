@@ -1,0 +1,108 @@
+{
+  "parser": "xlsx",
+  "parserVersion": "1",
+  "status": "ok",
+  "blocks": [
+    {
+      "type": "table",
+      "text": "id | customer | status | amount_eur",
+      "sheet": "Invoices",
+      "cellRange": "A1:D1",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I01 | customer: North | status: paid | amount_eur: 125.5",
+      "sheet": "Invoices",
+      "cellRange": "A2:D2",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I02 | customer: South | status: paid | amount_eur: 200",
+      "sheet": "Invoices",
+      "cellRange": "A3:D3",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I03 | customer: North | status: unpaid | amount_eur: 80.25",
+      "sheet": "Invoices",
+      "cellRange": "A4:D4",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I04 | customer: West | status: cancelled | amount_eur: 45",
+      "sheet": "Invoices",
+      "cellRange": "A5:D5",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I05 | customer: South | status: paid | amount_eur: 64.5",
+      "sheet": "Invoices",
+      "cellRange": "A6:D6",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I02 | customer: South | status: paid | amount_eur: 200",
+      "sheet": "Invoices",
+      "cellRange": "A7:D7",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "id: I06 | customer: West | status: unpaid | amount_eur: 30.75",
+      "sheet": "Invoices",
+      "cellRange": "A8:D8",
+      "heading": [
+        "Invoices"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "Amounts are in EUR.",
+      "sheet": "Notes",
+      "cellRange": "A1",
+      "heading": [
+        "Notes"
+      ],
+      "confidence": 1
+    },
+    {
+      "type": "table",
+      "text": "Amounts are in EUR.: Invoice I02 was exported twice by the billing system.",
+      "sheet": "Notes",
+      "cellRange": "A2",
+      "heading": [
+        "Notes"
+      ],
+      "confidence": 1
+    }
+  ],
+  "pageCount": 2
+}

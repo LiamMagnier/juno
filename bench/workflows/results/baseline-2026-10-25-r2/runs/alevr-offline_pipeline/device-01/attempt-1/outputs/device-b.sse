@@ -1,0 +1,159 @@
+id: 1
+data: {"type":"meta","conversationId":"bench-conversation","userMessageId":"bench-user-message","title":"Meridian","generationId":"bench-generation","resumable":true}
+
+id: 2
+data: {"type":"delta","text":"Sentence 1 of the Meridian answer — m"}
+
+id: 3
+data: {"type":"delta","text":"edian response 12 → 9 hours (é, 東京, 🚀"}
+
+id: 4
+data: {"type":"delta","text":"). Sentence 2 of the Meridian answer "}
+
+id: 5
+data: {"type":"delta","text":"— median response 12 → 9 hours (é, 東京"}
+
+id: 6
+data: {"type":"delta","text":", 🚀). Sentence 3 of the Meridian answ"}
+
+id: 7
+data: {"type":"delta","text":"er — median response 12 → 9 hours (é,"}
+
+id: 8
+data: {"type":"delta","text":" 東京, 🚀). Sentence 4 of the Meridian a"}
+
+id: 9
+data: {"type":"delta","text":"nswer — median response 12 → 9 hours "}
+
+id: 10
+data: {"type":"delta","text":"(é, 東京, 🚀). Sentence 5 of the Meridia"}
+
+id: 11
+data: {"type":"delta","text":"n answer — median response 12 → 9 hou"}
+
+id: 12
+data: {"type":"delta","text":"rs (é, 東京, 🚀). Sentence 6 of the Meri"}
+
+id: 13
+data: {"type":"delta","text":"dian answer — median response 12 → 9 "}
+
+id: 14
+data: {"type":"delta","text":"hours (é, 東京, 🚀). Sentence 7 of the M"}
+
+id: 15
+data: {"type":"delta","text":"eridian answer — median response 12 →"}
+
+id: 16
+data: {"type":"delta","text":" 9 hours (é, 東京, 🚀). Sentence 8 of th"}
+
+id: 17
+data: {"type":"delta","text":"e Meridian answer — median response 1"}
+
+id: 18
+data: {"type":"delta","text":"2 → 9 hours (é, 東京, 🚀). Sentence 9 of"}
+
+id: 19
+data: {"type":"delta","text":" the Meridian answer — median respons"}
+
+id: 20
+data: {"type":"delta","text":"e 12 → 9 hours (é, 東京, 🚀). Sentence 1"}
+
+id: 21
+data: {"type":"delta","text":"0 of the Meridian answer — median res"}
+
+id: 22
+data: {"type":"delta","text":"ponse 12 → 9 hours (é, 東京, 🚀). Senten"}
+
+id: 23
+data: {"type":"delta","text":"ce 11 of the Meridian answer — median"}
+
+id: 24
+data: {"type":"delta","text":" response 12 → 9 hours (é, 東京, 🚀). Se"}
+
+id: 25
+data: {"type":"delta","text":"ntence 12 of the Meridian answer — me"}
+
+id: 26
+data: {"type":"delta","text":"dian response 12 → 9 hours (é, 東京, 🚀)"}
+
+id: 27
+data: {"type":"delta","text":". Sentence 13 of the Meridian answer "}
+
+id: 28
+data: {"type":"delta","text":"— median response 12 → 9 hours (é, 東京"}
+
+id: 29
+data: {"type":"delta","text":", 🚀). Sentence 14 of the Meridian ans"}
+
+id: 30
+data: {"type":"delta","text":"wer — median response 12 → 9 hours (é"}
+
+id: 31
+data: {"type":"delta","text":", 東京, 🚀). Sentence 15 of the Meridian"}
+
+id: 32
+data: {"type":"delta","text":" answer — median response 12 → 9 hour"}
+
+id: 33
+data: {"type":"delta","text":"s (é, 東京, 🚀). Sentence 16 of the Meri"}
+
+id: 34
+data: {"type":"delta","text":"dian answer — median response 12 → 9 "}
+
+id: 35
+data: {"type":"delta","text":"hours (é, 東京, 🚀). Sentence 17 of the "}
+
+id: 36
+data: {"type":"delta","text":"Meridian answer — median response 12 "}
+
+id: 37
+data: {"type":"delta","text":"→ 9 hours (é, 東京, 🚀). Sentence 18 of "}
+
+id: 38
+data: {"type":"delta","text":"the Meridian answer — median response"}
+
+id: 39
+data: {"type":"delta","text":" 12 → 9 hours (é, 東京, 🚀). Sentence 19"}
+
+id: 40
+data: {"type":"delta","text":" of the Meridian answer — median resp"}
+
+id: 41
+data: {"type":"delta","text":"onse 12 → 9 hours (é, 東京, 🚀). Sentenc"}
+
+id: 42
+data: {"type":"delta","text":"e 20 of the Meridian answer — median "}
+
+id: 43
+data: {"type":"delta","text":"response 12 → 9 hours (é, 東京, 🚀). Sen"}
+
+id: 44
+data: {"type":"delta","text":"tence 21 of the Meridian answer — med"}
+
+id: 45
+data: {"type":"delta","text":"ian response 12 → 9 hours (é, 東京, 🚀)."}
+
+id: 46
+data: {"type":"delta","text":" Sentence 22 of the Meridian answer —"}
+
+id: 47
+data: {"type":"delta","text":" median response 12 → 9 hours (é, 東京,"}
+
+id: 48
+data: {"type":"delta","text":" 🚀). Sentence 23 of the Meridian answ"}
+
+id: 49
+data: {"type":"delta","text":"er — median response 12 → 9 hours (é,"}
+
+id: 50
+data: {"type":"delta","text":" 東京, 🚀). Sentence 24 of the Meridian "}
+
+id: 51
+data: {"type":"delta","text":"answer — median response 12 → 9 hours"}
+
+id: 52
+data: {"type":"delta","text":" (é, 東京, 🚀). "}
+
+id: 53
+data: {"type":"done","message":{"id":"bench-assistant-message","role":"ASSISTANT","content":"Sentence 1 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 2 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 3 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 4 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 5 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 6 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 7 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 8 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 9 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 10 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 11 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 12 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 13 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 14 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 15 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 16 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 17 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 18 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 19 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 20 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 21 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 22 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 23 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). Sentence 24 of the Meridian answer — median response 12 → 9 hours (é, 東京, 🚀). ","createdAt":"1970-01-01T00:00:00.000Z","attachments":[]},"artifacts":[],"memoryUpdated":false,"quota":{"plan":"PRO","used":1,"limit":100,"remaining":99},"finishReason":"stop"}
+
