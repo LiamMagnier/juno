@@ -27,6 +27,7 @@ import { isUserMcpConnectorId, userMcpConnectorId, userMcpRowId } from "@/lib/us
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { isRetryLaterRefusal } from "@/lib/work/executor-presence";
 import { resolveAgentDispatchTarget } from "@/lib/agents/run-context";
 import {
   AGENT_ROUTINE_CADENCE_LABEL,
@@ -1447,6 +1448,11 @@ export type StartAgentTaskOutcome =
  * put every start in front of a person (a handoff from another agent's thread,
  * src/lib/chat/handoff-tool.ts). The confirmation lands on the same key, so
  * answering it starts the draft that was asked about rather than a second one.
+ *
+ * `unattended` is for a caller with nobody watching (the goal runner's sweep):
+ * dispatch reads the cloud heartbeat as three answers, and a read that failed
+ * comes back as a `retryLater` refusal (`isRetryLaterRefusal`). Its draft is
+ * kept, like a `confirm`'s, so the next attempt on the same key lands on it.
  */
 export async function startAgentTask(
   user: AgentActor,
@@ -1457,6 +1463,8 @@ export async function startAgentTask(
     idempotencyKey: string;
     confirmExpensive?: boolean;
     askFirst?: boolean;
+    /** Nobody is watching: a heartbeat that could not be read means "later", not "no executor". */
+    unattended?: boolean;
     /**
      * Where the task came from when another crew member handed it over: the
      * delegation link (`WorkSession.parentSessionId` and friends). Stamped with
@@ -1527,12 +1535,14 @@ export async function startAgentTask(
     idempotencyKey: keys.run,
     ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
   });
-  const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true });
+  const unattended = input.unattended === true;
+  const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true, unattended });
   if (preflight.run) {
     return { kind: "started", sessionId: session.id, conversationId, replay: true };
   }
   if (!preflight.preflight || preflight.status >= 400) {
-    await discardDraft(user.id, session.id);
+    // "Try again later" keeps the draft for the retry on the same key.
+    if (!isRetryLaterRefusal(preflight.body)) await discardDraft(user.id, session.id);
     return { kind: "refused", status: preflight.status, body: preflight.body };
   }
   if ((preflight.preflight.requiresConfirmation || input.askFirst) && !input.confirmExpensive) {
@@ -1540,9 +1550,9 @@ export async function startAgentTask(
     // and so on this session, rather than making a second one.
     return { kind: "confirm", sessionId: session.id, estimatedCostMicroUsd: preflight.preflight.estimatedCostMicroUsd };
   }
-  const dispatched = await dispatch.startWorkRunForUser(user, session, runBody);
+  const dispatched = await dispatch.startWorkRunForUser(user, session, runBody, { unattended });
   if (!dispatched.run) {
-    await discardDraft(user.id, session.id);
+    if (!isRetryLaterRefusal(dispatched.body)) await discardDraft(user.id, session.id);
     return { kind: "refused", status: dispatched.status, body: dispatched.body };
   }
   await recordAgentEvent({

@@ -7,11 +7,15 @@ import {
   EXECUTOR_PRESENCE_CACHE_MS,
   EXECUTOR_UNAVAILABLE_DETAIL,
   EXECUTOR_UNAVAILABLE_RESUME_DETAIL,
+  EXECUTOR_UNKNOWN_ERROR,
   EXECUTOR_UNKNOWN_EXPLANATION,
   QUEUED_CLOUD_RUN_TTL_MS,
   cloudAvailabilityOverride,
   createCloudAvailabilityReader,
   executorKnownAbsent,
+  executorUnknownRefusal,
+  isRetryLaterRefusal,
+  planDespiteUnknownCloud,
   plannerCloudAvailability,
   heartbeatExpiry,
   heartbeatIsFresh,
@@ -93,7 +97,7 @@ test("with no executor, a cloud task is refused in words rather than queued", ()
 test("dispatch asks the heartbeat instead of holding a constant", () => {
   const dispatch = read("src/lib/work/dispatch.ts");
   assert.doesNotMatch(dispatch, /CLOUD_WORK_AVAILABLE/);
-  assert.match(dispatch, /const cloudAvailable = await cloudWorkAvailable\(now\);/);
+  assert.match(dispatch, /const cloudAvailable = availability === null \? await cloudWorkAvailable\(now\) : availability === "available";/);
   assert.equal((dispatch.match(/cloudAvailable,\n/g) ?? []).length >= 2, true, "both selections read it");
   // Refusing frees this account's dead queued runs from the concurrency cap.
   assert.match(dispatch, /if \(!cloudAvailable\) await expireUnclaimedCloudRuns\(\{ now, userId: user\.id \}\)/);
@@ -1003,4 +1007,63 @@ test("the Mac reads agentContext as system context only, never as a grant", () =
   assert.equal((host.match(/agentContext\(in: /g) ?? []).length, 1);
   const policy = host.slice(host.indexOf("private static func permissionPolicy("));
   assert.doesNotMatch(policy.slice(0, policy.indexOf("\n    }\n")), /agentContext/);
+});
+
+// ---------------------------------------------------------------------------
+// Unattended dispatch (the goal runner's sweep)
+// ---------------------------------------------------------------------------
+
+test("an unreadable heartbeat is 'try again later' for an unattended dispatch, never 'no cloud worker'", () => {
+  const later = executorUnknownRefusal();
+  assert.deepEqual(later, { error: EXECUTOR_UNKNOWN_ERROR, message: EXECUTOR_UNKNOWN_EXPLANATION, retryLater: true });
+  assert.equal(isRetryLaterRefusal(later), true);
+  // The honest "no" is not a "later".
+  const absent = refusalForSelection(selectTarget({ requested: "cloud", required: ["web_research"], hosts: [], cloudAvailable: false }));
+  assert.ok(absent);
+  assert.equal(isRetryLaterRefusal({ ...absent }), false);
+  assert.equal(isRetryLaterRefusal({ error: EXECUTOR_UNKNOWN_ERROR }), false, "the flag is part of the answer");
+  assert.equal(isRetryLaterRefusal(null), false);
+
+  // Selection planned both ways, as dispatch does on "unknown": a cloud task
+  // turns on the heartbeat, so it is owed; a task for an online Mac does not.
+  const select = (requested: "cloud" | "local", hosts: HostCapabilityView[]) => (cloudAvailable: boolean) =>
+    selectTarget({ requested, required: requested === "local" ? ["local_files"] : ["web_research"], hosts, cloudAvailable });
+  assert.equal(planDespiteUnknownCloud(select("cloud", []), () => null), null);
+  const onMac = planDespiteUnknownCloud(select("local", [{ ...offlineMac(), state: "online" }]), () => null);
+  assert.equal(onMac?.target, "local");
+  assert.equal(onMac?.hostId, "host-1");
+});
+
+test("dispatch reads three answers only when unattended, and settles 'unknown' before refusing", () => {
+  const dispatch = read("src/lib/work/dispatch.ts");
+  const start = dispatch.slice(dispatch.indexOf("export async function startWorkRunForUser("));
+  assert.match(start, /options: \{ preflightOnly\?: boolean; unattended\?: boolean \} = \{\}/);
+  assert.match(start, /const availability = options\.unattended \? await readCloudWorkAvailability\(\) : null;/);
+  const settle = start.indexOf("planDespiteUnknownCloud<TargetSelection | null>(selectWith, () => null)");
+  assert.ok(settle > 0);
+  const owed = start.indexOf("if (!selection) return refused(503, executorUnknownRefusal());");
+  assert.ok(owed > settle);
+  assert.ok(owed < start.indexOf("const refusal = refusalForSelection(selection);"), "before the no-executor refusal");
+  assert.ok(owed < start.indexOf("if (options.preflightOnly) {"), "a preflight is told too, before anything is counted");
+});
+
+test("the goal runner's sweep starts and retries steps unattended; a person's press does not", () => {
+  const goals = read("src/lib/agents/goal-runner.ts");
+  assert.match(goals, /export const defaultGoalRunnerDeps: GoalRunnerDeps = goalRunnerDeps\(\{ unattended: false \}\);/);
+  assert.match(goals, /export const unattendedGoalRunnerDeps: GoalRunnerDeps = goalRunnerDeps\(\{ unattended: true \}\);/);
+  assert.match(goals, /export async function sweepGoals\(now = new Date\(\), deps: GoalRunnerDeps = unattendedGoalRunnerDeps\)/);
+  assert.match(goals, /await startAgentTask\(user, agent, \{ title, goal: prompt, idempotencyKey, unattended \}\)/);
+  assert.match(goals, /await dispatch\.startWorkRunForUser\(user, session, body, \{ unattended \}\)/);
+  assert.match(goals, /return isRetryLaterRefusal\(body\) \? \{ ok: false, message, retryLater: true \} : \{ ok: false, message \};/);
+  // Both failure paths go through the one rule that leaves blockers alone on "later".
+  assert.equal((goals.match(/planStepNotStarted\(\{ step: "(?:start|retry)", result, blockers: goal\.blockers, now \}\)/g) ?? []).length, 2);
+  assert.equal((goals.match(/if \(planned\.blockers\) data\.blockers = /g) ?? []).length, 2);
+  assert.match(read("scripts/agent-reflector.ts"), /const driven = await sweepGoals\(\);/);
+
+  const store = read("src/lib/agents/store.ts");
+  const start = store.slice(store.indexOf("export async function startAgentTask("));
+  assert.match(start, /startWorkRunForUser\(user, session, runBody, \{ preflightOnly: true, unattended \}\)/);
+  assert.match(start, /startWorkRunForUser\(user, session, runBody, \{ unattended \}\)/);
+  // "Later" keeps the draft, so the next pass lands on it by the same key.
+  assert.equal((start.match(/if \(!isRetryLaterRefusal\((?:preflight|dispatched)\.body\)\) await discardDraft\(user\.id, session\.id\);/g) ?? []).length, 2);
 });

@@ -39,6 +39,7 @@ import {
   resolveApprovalMode,
   selectTarget,
   type HostCapabilityView,
+  type TargetSelection,
   type WorkCapability,
   type WorkDegradation,
   type WorkPermissionPolicy,
@@ -57,8 +58,8 @@ import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import { planRunCommand, refusalBody, startCommandPayload } from "@/lib/work/relay";
-import { cloudWorkAvailable, readExecutorPresence } from "@/lib/work/executor-heartbeat";
-import { executorKnownAbsent } from "@/lib/work/executor-presence";
+import { cloudWorkAvailable, readCloudWorkAvailability, readExecutorPresence } from "@/lib/work/executor-heartbeat";
+import { executorKnownAbsent, executorUnknownRefusal, planDespiteUnknownCloud } from "@/lib/work/executor-presence";
 import { estimateWorkRunCost, type WorkCostEstimate } from "@/lib/work/preflight-cost";
 import {
   effectiveHostState,
@@ -977,12 +978,20 @@ function refused(status: number, body: Record<string, unknown>, preflight: WorkC
  * written, so a caller can put the estimate in front of a person first. Only
  * the chat tool asks for it; the route never does, and a preflight answer is
  * never a response body anybody decodes.
+ *
+ * `unattended` is for a caller acting with nobody watching (the goal runner's
+ * sweep, scripts/agent-reflector.ts). It reads the cloud executor's heartbeat
+ * as three answers (`readCloudWorkAvailability`) instead of failing closed: a
+ * read that failed, where whether a worker is alive decides the run, is
+ * refused with `executorUnknownRefusal()` (`retryLater: true`), never with
+ * "No cloud worker is running", which such a caller would record as a
+ * blocker nobody can act on.
  */
 export async function startWorkRunForUser(
   user: WorkDispatchUser,
   session: WorkSession,
   body: StartWorkRunBody,
-  options: { preflightOnly?: boolean } = {}
+  options: { preflightOnly?: boolean; unattended?: boolean } = {}
 ): Promise<StartWorkRunResponse> {
   // Idempotency is checked before the rate limit and before the cap, so a
   // client retrying a dispatch whose response it never saw gets its run back
@@ -1076,7 +1085,11 @@ export async function startWorkRunForUser(
         select: { id: true },
       })) !== null
     : false;
-  const cloudAvailable = await cloudWorkAvailable(now);
+  // A person is told "no cloud worker" on a failed read (`cloudWorkAvailable`
+  // fails closed, and they can press again). An unattended caller reads the
+  // three-way answer: "unknown" is settled at selection below.
+  const availability = options.unattended ? await readCloudWorkAvailability() : null;
+  const cloudAvailable = availability === null ? await cloudWorkAvailable(now) : availability === "available";
   // Cloud is closed. Whatever this dispatch targets, runs this account queued
   // for a cloud worker that is not there must not block it: past the TTL they
   // are ended here (a no-op unless the executor has been gone that long), and
@@ -1095,7 +1108,7 @@ export async function startWorkRunForUser(
     explicit.length > 0
       ? explicit
       : inferCapabilities(session.goal, { hasAgentComputer }).capabilities;
-  const selection =
+  const selectWith = (cloudAvailable: boolean): TargetSelection =>
     explicit.length > 0
       ? selectTarget({
           requested: requestedTarget,
@@ -1110,6 +1123,16 @@ export async function startWorkRunForUser(
           cloudAvailable,
           hasAgentComputer,
         });
+  // Unattended, with a heartbeat that could not be read: planned both ways, as
+  // the scheduler plans a fire (`planDespiteUnknownCloud`). Where the answers
+  // agree the cloud played no part (a member set to run on an online Mac) and
+  // the run goes ahead; where they differ nothing can be decided on a failed
+  // read, so the caller is told to come back rather than refused.
+  const selection =
+    availability === "unknown"
+      ? planDespiteUnknownCloud<TargetSelection | null>(selectWith, () => null)
+      : selectWith(cloudAvailable);
+  if (!selection) return refused(503, executorUnknownRefusal());
 
   // No executor can serve this. Refusing is the entire reason `selectTarget`
   // returns a null target: a queued run with nothing able to claim it is a

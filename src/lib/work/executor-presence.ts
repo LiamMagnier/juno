@@ -168,6 +168,25 @@ export function planDespiteUnknownCloud<T>(plan: (cloudAvailable: boolean) => T,
 export const EXECUTOR_UNKNOWN_EXPLANATION =
   "Whether a cloud worker is running could not be checked, so this run is waiting until it can be.";
 
+/** The `error` of `executorUnknownRefusal`. */
+export const EXECUTOR_UNKNOWN_ERROR = "executor_unknown";
+
+/**
+ * What an unattended dispatch (`startWorkRunForUser(..., { unattended: true })`)
+ * answers when the heartbeat could not be read and whether a cloud worker is
+ * alive decides the run. Not a "no": nothing was started, and nothing was
+ * found wrong either, so the caller tries again on its next pass. It is never
+ * shown to a person as a reason the work cannot run.
+ */
+export function executorUnknownRefusal(): { error: typeof EXECUTOR_UNKNOWN_ERROR; message: string; retryLater: true } {
+  return { error: EXECUTOR_UNKNOWN_ERROR, message: EXECUTOR_UNKNOWN_EXPLANATION, retryLater: true };
+}
+
+/** Whether a dispatch refusal says "try again later" rather than "no". */
+export function isRetryLaterRefusal(body: Record<string, unknown> | null | undefined): boolean {
+  return body?.error === EXECUTOR_UNKNOWN_ERROR && body.retryLater === true;
+}
+
 /** Whether a heartbeat that expires at `expiresAt` still says an executor is alive. */
 export function heartbeatIsFresh(expiresAt: Date | null | undefined, now: Date): boolean {
   return expiresAt instanceof Date && expiresAt.getTime() > now.getTime();

@@ -93,6 +93,59 @@ export function parseBlockers(value: unknown): GoalBlocker[] {
     .slice(0, 6);
 }
 
+/** `blocker` first, replacing any of its kind, at most four. */
+export function withBlocker(existing: unknown, blocker: GoalBlocker): GoalBlocker[] {
+  return [blocker, ...parseBlockers(existing).filter((b) => b.kind !== blocker.kind)].slice(0, 4);
+}
+
+/** A step start or retry that did not go ahead, as the driver's deps report it. */
+export interface GoalStepNotStarted {
+  message: string;
+  /** The estimate needs the person's OK first. */
+  needsConfirmation?: boolean;
+  /**
+   * Nothing was found wrong: the cloud heartbeat could not be read, so whether
+   * a worker is alive is unknown (`isRetryLaterRefusal`). The next advance
+   * tries the same step again.
+   */
+  retryLater?: boolean;
+}
+
+/** The goal's line while a step waits on a heartbeat that could not be read. */
+export const GOAL_WAITING_ON_EXECUTOR_CHECK = "Waiting to check that a cloud worker is running";
+
+/**
+ * What a step that did not start writes on the goal. Pure: the driver applies it.
+ *
+ * A refusal is a decision for the person: a `needs_decision` blocker, and a
+ * `task_refused` line on the member the first time that refusal is seen. A
+ * confirmation is a question, so it is not a refusal. "Retry later" is
+ * neither: the unattended sweep could not read the cloud heartbeat, which
+ * says nothing about whether the step can run, so it leaves the blockers as
+ * they are, records nothing on the member, and only says what it is waiting
+ * for. Reading it as "no executor" is how a database hiccup used to put a
+ * false "No cloud worker is running" blocker on a goal for the person to clear.
+ */
+export function planStepNotStarted(input: {
+  step: "start" | "retry";
+  result: GoalStepNotStarted;
+  blockers: unknown;
+  now: Date;
+}): { blockers: GoalBlocker[] | null; nextAction: string; recordRefusal: boolean } {
+  const { result } = input;
+  if (result.retryLater) return { blockers: null, nextAction: GOAL_WAITING_ON_EXECUTOR_CHECK, recordRefusal: false };
+  const known = parseBlockers(input.blockers).some((b) => b.kind === "needs_decision" && b.text === result.message);
+  const blockers = withBlocker(input.blockers, { kind: "needs_decision", text: result.message, at: input.now.toISOString() });
+  if (input.step === "retry") {
+    return { blockers, nextAction: "Waiting for you: the retry could not start", recordRefusal: !known };
+  }
+  return {
+    blockers,
+    nextAction: result.needsConfirmation ? "Waiting for your OK to spend on the next step" : "Waiting for you: the next step could not start",
+    recordRefusal: !known && !result.needsConfirmation,
+  };
+}
+
 /** 0..100 from milestones; a goal without milestones reports 0 until achieved. */
 export function goalProgress(milestones: readonly GoalMilestone[], status: string): number {
   if (status === "achieved") return 100;
