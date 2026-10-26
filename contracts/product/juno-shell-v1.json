@@ -177,10 +177,6 @@
           "label": "Pinned projects"
         },
         {
-          "id": "pinned",
-          "label": "Pinned chats"
-        },
-        {
           "id": "recent",
           "label": "Recent"
         }

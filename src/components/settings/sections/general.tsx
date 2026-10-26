@@ -7,7 +7,9 @@ import { StatusIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { KeyboardGroup } from "@/components/settings/sections/preferences";
 import { useApp } from "@/components/app/app-provider";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
@@ -19,13 +21,21 @@ import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
 import { useUiPref, type ChatFont, type MotionPref, type TranscriptWidth } from "@/lib/ui-prefs";
-import { openSettings } from "@/components/settings/settings-sections";
-import { ChevronRight } from "@/components/ui/icons";
 
 /** The custom-colour swatch is the last option of the accent radiogroup, not a control beside it. */
 const CUSTOM_ACCENT = "__custom__";
 const ACCENT_OPTIONS: string[] = [...ACCENTS.map((a) => a.id), CUSTOM_ACCENT];
 const DEFAULT_CUSTOM_ACCENT = "#ea580c";
+
+/**
+ * The selected swatch's check, in the swatch's own ink (`swatchInk`, set
+ * inline on the button). `text-current` is load-bearing: Pressable's icon kind
+ * puts `text-muted-foreground` on the button, and globals.css repaints any
+ * `svg.ji` directly under a muted control WITHOUT a `text-*` class in
+ * `--icon-muted`, so the check came out grey on every swatch (1.6:1 on the
+ * default Graphite in light mode, 1.3:1 on Amber in dark).
+ */
+const SWATCH_GLYPH_CLASS = "check-morph size-4 text-current";
 
 const AccentSwatch = React.forwardRef<
   HTMLButtonElement,
@@ -51,8 +61,12 @@ const AccentSwatch = React.forwardRef<
       // where a ring's offset band is painted in a named colour and wore a
       // page-coloured halo inside the dialog. No hover scale: the ring is the
       // state.
+      // `coarse:size-8`, not 9: eight swatches of 36px did not fit one row of
+      // a phone pane, and the custom swatch wrapped onto a line of its own.
+      // The inset hairline is the swatch's edge: Graphite (11% lightness) sat
+      // on the dark page (10%) with none, a hole in the row until selected.
       className={cn(
-        "size-7 overflow-hidden hover:bg-transparent coarse:size-9",
+        "size-7 shrink-0 overflow-hidden shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.14)] hover:bg-transparent coarse:size-8",
         selected && "outline outline-2 outline-offset-2 outline-foreground focus-visible:outline-ring"
       )}
       style={{ background, color: swatchInk(inkAgainst ?? background) }}
@@ -117,7 +131,7 @@ const CustomPickerButton = React.forwardRef<
         {...rest}
       >
         {selected ? (
-          <StatusIcons.success className="check-morph size-4" />
+          <StatusIcons.success className={SWATCH_GLYPH_CLASS} />
         ) : (
           <Plus className="size-4 text-background" />
         )}
@@ -126,7 +140,8 @@ const CustomPickerButton = React.forwardRef<
   );
 });
 
-export function AppearanceSection() {
+/** Mode, accent and text size: the account's look, then this device's scale. */
+function VisualStyleGroup() {
   const { settings, setSettings } = useApp();
   const { setTheme } = useTheme();
   const save = useSettingsSave();
@@ -183,10 +198,6 @@ export function AppearanceSection() {
     setSettings({ accent });
   };
 
-  // A full reload, not router.refresh(): the locale decides `<html lang>`/`dir`
-  // server-side, and the already-translated DOM has to come back from the
-  // source catalog rather than be translated a second time in place.
-
   const accentIsPreset = ACCENTS.some((a) => a.id === settings.accent);
   const customAccent = !accentIsPreset && settings.accent.startsWith("#");
 
@@ -199,8 +210,7 @@ export function AppearanceSection() {
   );
 
   return (
-    <>
-      <SettingsGroup title="Visual style" description="Mode and accent follow your account everywhere you sign in.">
+    <SettingsGroup title="Visual style" description="Mode and accent follow your account everywhere you sign in.">
         <SettingBlock label="Mode" status={saves.status("theme")}>
           <ThemeCards value={settings.theme} onChange={setThemePref} />
         </SettingBlock>
@@ -210,7 +220,14 @@ export function AppearanceSection() {
           wide
           status={saves.status("accent")}
           control={
-            <div className="flex flex-wrap items-center gap-2.5 p-0.5" role="radiogroup" aria-label="Accent color">
+            // One row at every width: spread across the measure on a narrow
+            // pane (first swatch on the text column, the custom one at the
+            // card's edge), packed on the right beside the label from 34rem.
+            <div
+              className="flex w-full items-center justify-between gap-1 p-0.5 @[34rem]/pane:w-auto @[34rem]/pane:justify-end @[34rem]/pane:gap-2.5"
+              role="radiogroup"
+              aria-label="Accent color"
+            >
               {ACCENTS.map((a, i) => {
                 const selected = settings.accent === a.id;
                 return (
@@ -222,7 +239,7 @@ export function AppearanceSection() {
                     onClick={() => setAccent(a.id)}
                     {...accentOption(i)}
                   >
-                    {selected && <StatusIcons.success className="check-morph size-4" />}
+                    {selected && <StatusIcons.success className={SWATCH_GLYPH_CLASS} />}
                   </AccentSwatch>
                 );
               })}
@@ -275,10 +292,7 @@ export function AppearanceSection() {
             </div>
           }
         />
-      </SettingsGroup>
-
-      <ReadingGroup />
-    </>
+    </SettingsGroup>
   );
 }
 
@@ -425,7 +439,7 @@ const MOTION_OPTIONS: { value: MotionPref; label: string }[] = [
 ];
 const MOTION_DESCRIPTION: Record<MotionPref, string> = {
   system: "Follows your device’s motion setting.",
-  reduced: "Keeps fades and colour changes. Removes movement and looping animation.",
+  reduced: "Keeps fades and color changes. Removes movement and looping animation.",
   full: "Plays all animation, even if your device asks for less.",
 };
 
@@ -462,6 +476,7 @@ function ReadingGroup() {
   const [chatFont, setChatFont] = useUiPref("chatFont");
   const [width, setWidth] = useUiPref("transcriptWidth");
   const [motion, setMotion] = useUiPref("motion");
+  const [codeWrap, setCodeWrap] = useUiPref("codeWrap");
   return (
     <SettingsGroup title="Reading" description="Set for this device only.">
       <SettingBlock label="Chat font" description="The typeface replies and your messages are set in.">
@@ -482,6 +497,15 @@ function ReadingGroup() {
           options={WIDTH_OPTIONS.map((w) => ({ value: w.value, label: w.label, thumb: <WidthThumb measure={w.measure} /> }))}
         />
       </SettingBlock>
+      {/* How a reply sets its code: a reading choice, beside the font and
+          the measure. It was half of a "Capabilities" section filed under
+          Coding, though it applies to every chat. */}
+      <SettingRow
+        label="Wrap long code lines"
+        htmlFor="reading-codewrap"
+        description="Code in replies wraps to the column instead of scrolling sideways."
+        control={<Switch id="reading-codewrap" checked={codeWrap} onCheckedChange={setCodeWrap} />}
+      />
       <SettingRow
         label="Motion"
         description={MOTION_DESCRIPTION[motion]}
@@ -496,16 +520,38 @@ function ReadingGroup() {
 
 /* ——— General ——————————————————————————————————————————————————————————— */
 
-
+/**
+ * The section Settings opens on: how the app looks and reads, how you type to
+ * it, and its language, the way ChatGPT's General holds theme, accent and
+ * language together.
+ *
+ * Appearance and Keyboard were sections of their own, which left this one a
+ * single dropdown on an otherwise blank page (and a "More" group of links to
+ * the rows beside it). The contract already sends `appearance` here, as the
+ * Mac does.
+ */
 export function GeneralSection() {
+  return (
+    <>
+      <VisualStyleGroup />
+      <ReadingGroup />
+      <KeyboardGroup />
+      <LanguageGroup />
+    </>
+  );
+}
+
+function LanguageGroup() {
   const { settings } = useApp();
   const save = useSettingsSave();
+  // A full reload, not router.refresh(): the locale decides `<html lang>`/`dir`
+  // server-side, and the already-translated DOM has to come back from the
+  // source catalog rather than be translated a second time in place.
   const setUiLocale = async (uiLocale: string) => {
     if (await save({ uiLocale })) window.location.reload();
   };
   return (
-    <>
-      <SettingsGroup title="Language">
+    <SettingsGroup title="Language">
         <SettingRow
           label="Interface language"
           description="Replies follow Response language in Personalization."
@@ -528,27 +574,6 @@ export function GeneralSection() {
             </Select>
           }
         />
-      </SettingsGroup>
-      <SettingsGroup title="More">
-        {[
-          { id: "appearance", label: "Appearance", description: "Mode, accent, chat font, width and motion." },
-          { id: "notifications", label: "Notifications", description: "When a reply finishes, and what reaches your inbox." },
-          { id: "keyboard", label: "Keyboard", description: "Send with Enter or ⌘ Enter, and every shortcut." },
-        ].map((link) => (
-          <button
-            key={link.id}
-            type="button"
-            onClick={() => openSettings(link.id)}
-            className="group flex w-full items-center gap-4 py-4 text-left"
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block text-body font-medium text-foreground">{link.label}</span>
-              <span className="mt-0.5 block text-ui text-muted-foreground">{link.description}</span>
-            </span>
-            <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground" />
-          </button>
-        ))}
-      </SettingsGroup>
-    </>
+    </SettingsGroup>
   );
 }

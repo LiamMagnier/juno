@@ -7,6 +7,7 @@ import { ChatView } from "@/components/chat/chat-view";
 import { CodeSessionViewLazy as CodeSessionView } from "@/components/code/code-session-view-lazy";
 import { agentForThread, pendingAgentStarter } from "@/lib/agents/store";
 import { loadRoomDetail } from "@/lib/agents/room-store";
+import { PageRoot } from "@/components/app/page-root";
 
 export default async function ConversationPage({
   params,
@@ -47,12 +48,14 @@ export default async function ConversationPage({
     // The legacy Code surface pages like the chat one: the newest page here,
     // older turns as the reader scrolls back.
     return (
-      <CodeSessionView
-        conversation={thread.conversation}
-        initialMessages={thread.messages}
-        initialHistory={thread.history}
-        initialArtifacts={thread.artifacts}
-      />
+      <PageRoot>
+        <CodeSessionView
+          conversation={thread.conversation}
+          initialMessages={thread.messages}
+          initialHistory={thread.history}
+          initialArtifacts={thread.artifacts}
+        />
+      </PageRoot>
     );
   }
 
@@ -86,5 +89,5 @@ export default async function ConversationPage({
       initialRoom={room}
     />
   );
-  return chat;
+  return <PageRoot>{chat}</PageRoot>;
 }

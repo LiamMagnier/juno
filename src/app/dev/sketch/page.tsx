@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { SketchGallery } from "./gallery";
 
 /**
@@ -16,5 +17,9 @@ export default async function SketchDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { open } = await searchParams;
-  return <SketchGallery openOnLoad={open === "1"} />;
+  return (
+    <PageRoot>
+      <SketchGallery openOnLoad={open === "1"} />
+    </PageRoot>
+  );
 }

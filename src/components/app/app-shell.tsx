@@ -25,9 +25,17 @@ import { duration, transition } from "@/lib/motion";
 import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
 
-/** The phone drawer's sheet, with the sidebar rungs re-based for its ground (see the note at its use). */
+/**
+ * The phone drawer's sheet, with the sidebar rungs re-based for its ground
+ * (see the note at its use).
+ *
+ * ON THE GROUND'S OWN HUE, 225°. The rungs were written at 48°, left over
+ * from the warm palette, so in dark mode the Chat/Code track and the selected
+ * row came out olive (rgb 65 63 58) on the cool grey drawer, the one stray
+ * colour in the column. The lightness steps are unchanged.
+ */
 export const DRAWER_CLASS =
-  "p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_24%] md:hidden";
+  "p-0 dark:[--sidebar-accent:225_5%_24%] dark:[--sidebar-border:225_5%_22%] dark:[--sidebar-hover:225_5%_21%] dark:[--sidebar-selected:225_5%_24%] md:hidden";
 
 const COLLAPSE_KEY = "juno:sidebar-collapsed";
 const WIDTH_KEY = "juno:sidebar:width";
@@ -644,7 +652,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             always had one: the product switch's track draws with it directly. */}
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetContent className={DRAWER_CLASS} title="Conversations" edgeSwipe>
-            <AppSidebar product={product} />
+            <AppSidebar product={product} drawer />
           </SheetContent>
         </Sheet>
 

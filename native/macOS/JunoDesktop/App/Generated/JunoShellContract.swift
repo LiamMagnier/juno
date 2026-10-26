@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "b3aa72375ebf7eb5b933b06fa97ce00d5a3a8153e7b053add70586a18b56b486"
+    static let digest = "a8c3d24b2d489560717d16801ad7bbb2ee245bc9641b0363f22b28e025d30536"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -242,7 +242,6 @@ enum JunoShellChatSidebar {
         case needsYou
         case agents
         case pinnedProjects
-        case pinned
         case recent
 
         /// The web's words.
@@ -251,7 +250,6 @@ enum JunoShellChatSidebar {
             case .needsYou: "Needs you"
             case .agents: "Orbit"
             case .pinnedProjects: "Pinned projects"
-            case .pinned: "Pinned chats"
             case .recent: "Recent"
             }
         }

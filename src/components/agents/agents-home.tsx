@@ -3,15 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { intentPrefetch } from "@/lib/intent-prefetch";
-import { ArrowRight, Hand, MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
+import { ArrowRight } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader, AppPageHeaderSkeleton } from "@/components/app/app-page";
-import { useApp } from "@/components/app/app-provider";
+import { useApp, useOptionalApp } from "@/components/app/app-provider";
 import { ComposerShell, ComposerPrimaryAction, composerFieldClass } from "@/components/ui/composer-shell";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import {
@@ -24,11 +22,11 @@ import {
 } from "@/lib/agents/new-agent";
 import { cn } from "@/lib/utils";
 import { AgentPresence } from "./agent-presence";
-import { OrbitStage } from "./orbit-stage";
+import { OrbitCrew } from "./orbit-stage";
 import { formatAgo, localStateSentence } from "./agent-bits";
-import { announceAgentsChanged, hireAgent, updateAgent } from "./agents-transport";
+import { announceAgentsChanged, hireAgent } from "./agents-transport";
 import { useAgents } from "./use-agents";
-import { AGENT_NOUN, AGENT_STATE_NAMES, BRAND, FEATURE_NAMES } from "@/lib/brand/names";
+import { AGENT_NOUN, BRAND, FEATURE_NAMES } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 import { staggerDelay } from "@/lib/motion";
 import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
@@ -37,15 +35,15 @@ import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
  * Orbit, the agents home (docs/rework/brand/ORBIT_SYSTEM.md; design V3 crew
  * scenes; critique 1).
  *
- * The page opens on your agents themselves: a lineup of the shipped faces at a
- * size where form and state both read, each with its name in the serif, its
- * role, and its state in words (colour and pose never carry it alone). Above
- * them, a new agent starts by saying what it should take care of; the agent
- * then sets itself up in conversation. Below them, what needs you: every
- * attention item the same object, saying what is needed and who asked.
+ * What needs you leads (every attention item the same object, saying what is
+ * needed and who asked), then your crew: one tile per agent, its live face at
+ * a size where form and state both read, its name in the serif, its role, and
+ * its state in words (colour and pose never carry it alone). Below them, a
+ * new agent starts by saying what it should take care of; the agent then sets
+ * itself up in conversation.
  *
- * No card per agent and no status pills or dots: the face is the object and
- * the words under it are its state.
+ * One object per agent and each fact once (docs/design/AGENTS.md §4.3): no
+ * second list of the same agents, no status pills or dots.
  */
 
 /**
@@ -86,34 +84,28 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
   if (ordered.length === 0) return <FirstAgent />;
 
   const attention = ordered.filter(needsYou);
+  const asked = new Set(attention.map((agent) => agent.id));
 
   return (
     <AppPage measure="wide">
-      <AppPageHeader
-        backdrop
-        heading={BRAND.orbit.label}
-        lede={<TeamSentence agents={ordered} />}
-        className={TITLE_FINISH}
-      />
-
-      {/* The stage: the team in orbit around you (orbit-stage.tsx). A picture
-          with shortcuts; the roster below is the list a keyboard and a
-          screen reader use. */}
-      <div className={cn("max-w-3xl", RISE)} style={stagger(1)}>
-        <OrbitStage agents={ordered} hrefOf={agentHref} />
-      </div>
+      {/* No lede: the crew's own lines say who is ready, what runs next and
+          what is under way, so a calm "everyone is caught up" only said it twice. */}
+      <AppPageHeader heading={BRAND.orbit.label} className={TITLE_FINISH} />
 
       {attention.length > 0 ? (
-        <section aria-labelledby="orbit-needs-you" className="mt-6 max-w-3xl">
+        <section aria-labelledby="orbit-needs-you" className="max-w-3xl">
           <h2 id="orbit-needs-you" className="mb-3 flex items-center gap-2 text-ui font-medium text-foreground">
             {FEATURE_NAMES.needsYou.label}
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[hsl(var(--attention)/0.14)] px-1.5 font-mono text-caption tabular-nums text-[hsl(var(--attention))]">
-              {attention.length}
-            </span>
+            {/* A count only when there is more than one card to count. */}
+            {attention.length > 1 ? (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-signal-wash px-1.5 font-mono text-caption tabular-nums text-status-needs-you-ink">
+                {attention.length}
+              </span>
+            ) : null}
           </h2>
           <ul className="flex flex-col gap-2">
             {attention.map((agent, index) => (
-              <li key={agent.id} className={RISE} style={stagger(Math.min(ordered.length, 6) + 2 + index)}>
+              <li key={agent.id} className={RISE} style={stagger(1 + index)}>
                 <Attention agent={agent} />
               </li>
             ))}
@@ -121,20 +113,14 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
         </section>
       ) : null}
 
-      {/* The roster: one row per agent, the face, who it is, what it is doing
-          now and when it last did something, and the way in. */}
-      <section aria-labelledby="orbit-roster" className="mt-8 max-w-3xl">
-        <h2 id="orbit-roster" className="mb-2 text-ui font-medium text-foreground">
+      {/* The crew: one tile per agent, its live face, who it is and what it
+          is doing (orbit-stage.tsx). The list a keyboard and a screen reader
+          use; it is named aloud, and on screen only under the cards. */}
+      <section aria-labelledby="orbit-crew" className={cn("max-w-3xl", attention.length > 0 ? "mt-8" : "-mt-1")}>
+        <h2 id="orbit-crew" className={attention.length > 0 ? "mb-1 text-ui font-medium text-foreground" : "sr-only"}>
           {`Your ${AGENT_NOUN.plural}`}
-          <span className="ml-2 font-normal tabular-nums text-muted-foreground">{ordered.length}</span>
         </h2>
-        <ul aria-label={BRAND.orbit.description} className="flex flex-col divide-y divide-foreground/[0.06] rounded-card border border-foreground/[0.08] bg-card">
-          {ordered.map((agent, index) => (
-            <li key={agent.id} className={cn("min-w-0", RISE)} style={stagger(index + 2)}>
-              <RosterRow agent={agent} onChanged={refresh} />
-            </li>
-          ))}
-        </ul>
+        <OrbitCrew agents={ordered} asked={asked} hrefOf={agentHref} onChanged={refresh} />
       </section>
 
       <section aria-label={`New ${AGENT_NOUN.singular}`} className={cn("mt-8 max-w-3xl pb-16", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
@@ -144,163 +130,54 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
   );
 }
 
-/** "Your agents. Mira needs your answer and Ines is blocked; Otto and Rhea are working." Only what is happening. */
-function TeamSentence({ agents }: { agents: readonly ClientAgent[] }) {
-  const waiting = agents.filter((a) => a.state === "waiting" || (a.needsYou > 0 && a.state !== "blocked"));
-  const blocked = agents.filter((a) => a.state === "blocked");
-  const busy = agents.filter((a) => (a.state === "working" || a.state === "thinking") && !waiting.includes(a));
-  const names = (list: readonly ClientAgent[]) =>
-    list.length === 1 ? list[0].name : list.length === 2 ? `${list[0].name} and ${list[1].name}` : `${list[0].name} and ${list.length - 1} others`;
-  const asks: string[] = [];
-  if (waiting.length) asks.push(`${names(waiting)} ${waiting.length === 1 ? "needs" : "need"} your answer`);
-  if (blocked.length) asks.push(`${names(blocked)} ${blocked.length === 1 ? "is" : "are"} blocked`);
-  const doing = busy.length ? `${names(busy)} ${busy.length === 1 ? "is" : "are"} working` : "";
-  const body = asks.length ? `${asks.join(" and ")}${doing ? `; ${doing}` : ""}.` : doing ? `${doing.charAt(0).toUpperCase()}${doing.slice(1)}.` : "Everyone is caught up.";
-  return <>{`${BRAND.orbit.description}. ${body}`}</>;
-}
-
-/** The state under a face, in words: the live sentence while it matters, else the plain state. */
-function stateWords(agent: ClientAgent): string {
-  if (agent.status === "paused") return "Paused";
-  if (agent.state === "waiting" || (agent.needsYou > 0 && agent.state !== "blocked")) return AGENT_STATE_NAMES.needsAnswer;
-  if (agent.state === "idle") return AGENT_STATE_NAMES.ready;
-  if (agent.state === "blocked") {
-    const reason = localStateSentence(agent, agent.state);
-    return reason ? `Blocked: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}` : AGENT_STATE_NAMES.blocked;
-  }
-  return localStateSentence(agent, agent.state) || AGENT_STATE_NAMES.working;
-}
-
-function RosterRow({ agent, onChanged }: { agent: ClientAgent; onChanged: () => void }) {
-  const waiting = agent.state === "waiting" || (agent.needsYou > 0 && agent.state !== "blocked");
-  const words = stateWords(agent);
-  const paused = agent.status === "paused";
-  const router = useRouter();
-  const href = agentHref(agent);
-  const last = agent.task ? formatAgo(agent.task.lastActivityAt) : null;
-  const act = async (patch: Parameters<typeof updateAgent>[1]) => {
-    const outcome = await updateAgent(agent.id, patch);
-    if (outcome.kind === "ok") {
-      announceAgentsChanged();
-      onChanged();
-    }
-  };
-  return (
-    <div className="group/row relative flex items-center gap-4 px-4 py-3" data-state={agent.state}>
-      {/* Full prefetch on aim (lib/intent-prefetch.ts): a viewport prefetch of
-          a force-dynamic route stops at its loading boundary. The link covers
-          the row; the menu sits above it. */}
-      <Link
-        href={href}
-        prefetch={false}
-        {...intentPrefetch(router, href)}
-        data-face-trigger
-        aria-label={`${agent.name}${agent.role ? `, ${agent.role}` : ""}. ${words}`}
-        className="absolute inset-0 rounded-card transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-      />
-      <span className="pointer-events-none relative shrink-0 transition-transform duration-base ease-out-soft group-hover/row:-translate-y-0.5 motion-reduce:transition-none">
-        <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : agent.state} size={48} spread={0.2} />
-      </span>
-      <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate font-serif text-heading font-normal leading-tight tracking-[-0.015em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
-          {agent.role ? <span className="truncate text-ui text-muted-foreground">{agent.role}</span> : null}
-        </span>
-        <StateLine agent={agent} words={words} waiting={waiting} paused={paused} />
-      </span>
-      {last ? <span className="pointer-events-none relative hidden shrink-0 text-caption tabular-nums text-muted-foreground @[36rem]/page:inline">{last}</span> : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label={`More for ${agent.name}`}
-          className="relative grid size-8 shrink-0 place-items-center rounded-control text-muted-foreground transition-[background-color,color] duration-fast ease-out-soft hover:bg-foreground/[0.05] hover:text-foreground data-[state=open]:bg-foreground/[0.05]"
-        >
-          <MoreHorizontal className="size-4" aria-hidden="true" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-40">
-          <DropdownMenuItem onSelect={() => void act({ pinned: !agent.pinnedAt })}>
-            <Pin className="size-4" aria-hidden="true" /> {agent.pinnedAt ? "Unpin" : "Pin"}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void act({ status: paused ? "active" : "paused" })}>
-            {paused ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
-            {paused ? "Resume" : "Pause"}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
+/**
+ * What the lead of a Needs you card says after the agent's name: the one
+ * nuance the task's status carries (an approval, a usage window, a Mac that
+ * went to sleep), so the line under the task never has to repeat it.
+ */
+function attentionLead(agent: ClientAgent): string {
+  const status = agent.task?.status;
+  if (status === "host_offline") return "is waiting for your Mac";
+  if (agent.state === "blocked") return status === "budget_exceeded" ? "ran out of usage" : "is blocked";
+  return status === "waiting_approval" ? "needs your approval" : "asked";
 }
 
 /**
- * The state under a face, set so it can be read at a glance without a dot:
- * a wait is the attention ink with the raised hand the sidebar uses for it,
- * a block is the error ink, work names its task in full ink after a quiet
- * verb, and a pause or rest steps back to muted. The words always carry it;
- * the ink and the glyph only make the scan faster.
+ * One thing waiting on you: the ask itself leads (the task, or the agent's
+ * own words), with who asked, the nuance and when above it and the way in
+ * beside it (under it on a narrow page, so the ask is never cut). The section
+ * heading already says it needs you and the crew below shows the face, so the
+ * card neither repeats "needs your answer" nor draws the face a second time.
+ * A plain card on the neutral hairline: the needs-you ember is spent on the
+ * face's ball and the button's words, never on a stripe.
  */
-function StateLine({ agent, words, waiting, paused }: { agent: ClientAgent; words: string; waiting: boolean; paused: boolean }) {
-  const blocked = !paused && agent.state === "blocked";
-  const busy = !paused && !waiting && (agent.state === "working" || agent.state === "thinking");
-  const task = busy ? agent.task?.title : null;
-  const lead = task && words.endsWith(task) ? words.slice(0, words.length - task.length).trimEnd() : null;
-  return (
-    <span
-      className={cn(
-        "mt-0.5 line-clamp-2 max-w-full text-ui leading-5 transition-colors duration-base ease-out-soft",
-        waiting
-          ? "font-medium text-[hsl(var(--attention))]"
-          : blocked
-            ? "text-destructive-ink"
-            : paused || agent.state === "idle" || agent.state === "sleeping"
-              ? "text-muted-foreground"
-              : "text-foreground",
-      )}
-      aria-live="polite"
-    >
-      {waiting ? <Hand className="mr-1 inline size-3.5 -translate-y-px align-middle motion-safe:animate-pop-in" aria-hidden="true" /> : null}
-      {paused ? <Pause className="mr-1 inline size-3 -translate-y-px align-middle" aria-hidden="true" /> : null}
-      {lead ? (
-        <>
-          <span className="text-muted-foreground">{lead}</span> {task}
-        </>
-      ) : (
-        words
-      )}
-    </span>
-  );
-}
-
-/** One thing waiting on you: who, what kind of wait, where and when, then the words and the way in. */
-function Attention({ agent }: { agent: ClientAgent }) {
+export function Attention({ agent }: { agent: ClientAgent }) {
   const blocked = agent.state === "blocked";
   const sentence = localStateSentence(agent, agent.state);
-  const where = agent.task?.title;
+  const where = agent.task?.title?.trim() || null;
   const when = agent.task ? formatAgo(agent.task.lastActivityAt) : null;
   const href = agent.task?.conversationId ? `/chat/${encodeURIComponent(agent.task.conversationId)}` : agentHref(agent);
-  // "Waiting on you" under "needs your answer" said the same thing twice;
-  // the task is the news, so it leads and a generic sentence steps aside.
-  const generic = !sentence || /^waiting on you\.?$/i.test(sentence.trim());
+  // Each fact once (AGENTS.md §4.3). The server's sentence is a template
+  // round the task's title ("Has a question about <title>", "Blocked before
+  // finishing <title>"), so under the title it only says it again; it shows
+  // only when it is the agent's own words (a reason it gave).
+  const generic = !sentence || /^waiting on you\.?$/i.test(sentence.trim()) || (where !== null && sentence.includes(where));
   return (
     <Link
       href={href}
       className={cn(
-        "group/attn relative flex items-center gap-4 overflow-hidden rounded-card border bg-card py-3.5 pl-5 pr-4",
-        "transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:bg-accent/40 active:scale-[.995] motion-reduce:active:scale-100",
+        "group/attn relative flex flex-col items-start gap-3 rounded-card border border-foreground/[0.08] bg-card py-3.5 pl-4 pr-4 @[40rem]/page:flex-row @[40rem]/page:items-center @[40rem]/page:gap-4",
+        "transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.14] hover:bg-accent/40 active:scale-[.995] motion-reduce:active:scale-100",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
-        blocked ? "border-destructive/25 hover:border-destructive/40" : "border-[hsl(var(--attention)/0.28)] hover:border-[hsl(var(--attention)/0.45)]",
       )}
     >
-      {/* The kind of wait, as an edge: attention for a question, error for a block. */}
-      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-[3px]", blocked ? "bg-destructive" : "bg-[hsl(var(--attention))]")} />
-      <span className="shrink-0">
-        <AgentPresence avatar={agent.avatar} state={agent.state} size={36} spread={0.2} />
-      </span>
-      <span className="min-w-0 flex-1">
+      <span className="w-full min-w-0 flex-1">
         <span className="block text-ui leading-5 text-muted-foreground">
           <span className="font-medium text-foreground">{agent.name}</span>{" "}
-          {blocked ? <span className="font-medium text-destructive-ink">is blocked</span> : <span className="font-medium text-[hsl(var(--attention))]">needs your answer</span>}
-          {when ? <span>{` · ${when}`}</span> : null}
+          <span className={blocked ? "font-medium text-destructive-ink" : undefined}>{attentionLead(agent)}</span>
+          {when ? <span className="whitespace-nowrap">{` · ${when}`}</span> : null}
         </span>
-        <span className="mt-0.5 block truncate text-body font-medium leading-6 text-foreground">{where ?? sentence}</span>
+        <span className="mt-0.5 line-clamp-2 text-pretty text-body font-medium leading-6 text-foreground">{where ?? sentence}</span>
         {where && !generic ? <span className="mt-0.5 block text-pretty text-ui leading-5 text-muted-foreground">{sentence}</span> : null}
       </span>
       <span className="inline-flex shrink-0 items-center gap-1.5 rounded-control bg-foreground px-3 py-1.5 text-ui font-medium text-background transition-[gap] duration-fast ease-out-soft group-hover/attn:gap-2.5 motion-reduce:transition-none">
@@ -334,17 +211,28 @@ function FirstAgent() {
   );
 }
 
+/** A small, stable salt from a string (FNV-1a, mod 997): the same on the server and the client. */
+function hashSalt(key: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % 997;
+}
+
 /** Creates the agent from what was written and opens its thread, where it sets itself up in conversation. */
 function useCreateAgent(team: readonly ClientAgent[]) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [arrived, setArrived] = React.useState(false);
-  // The salt picks the next face and name. Drawn on the client before first
-  // paint rather than during render: a render-time Math.random gave the server
-  // and the browser different faces, and React threw the hydrated tree away.
-  const [salt, setSalt] = React.useState(0);
-  React.useLayoutEffect(() => setSalt(Math.floor(Math.random() * 997)), []);
+  // The salt picks the next face and name: from the person, so the server and
+  // the browser draw the same one from the first painted frame (a random salt
+  // drawn after hydration swapped one face for another as the page loaded),
+  // and different people still meet different first agents.
+  const userId = useOptionalApp()?.user.id ?? "";
+  const salt = React.useMemo(() => hashSalt(userId), [userId]);
   const face = React.useMemo(() => nextFace(team, salt), [team, salt]);
   const name = React.useMemo(() => nextName(team, salt), [team, salt]);
   const request = React.useRef<{ key: string; text: string } | null>(null);
@@ -402,10 +290,10 @@ function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; auto
         event.preventDefault();
         void create(value);
       }}
-      className="rounded-panel border border-foreground/[0.1] bg-background p-2 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/[0.2] has-[textarea:focus-visible]:shadow-[0_0_0_3px_hsl(var(--ring)/0.18)]"
+      className="rounded-panel border border-foreground/[0.1] bg-background p-2 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/[0.2] kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]"
     >
       <div className="px-2.5 pt-2.5">
-        <label htmlFor={id} className="block text-ui font-medium text-foreground/80">
+        <label htmlFor={id} className="block text-ui font-medium text-foreground">
           {`What should a new ${AGENT_NOUN.singular} take care of?`}
         </label>
         <textarea
@@ -545,11 +433,11 @@ function AgentsHomeSkeleton() {
     <AppPage measure="wide">
       <div role="status" aria-label={`Loading your ${AGENT_NOUN.plural}`}>
         <AppPageHeaderSkeleton headingWidth="w-32" />
-        <Skeleton className="h-[118px] w-full max-w-3xl rounded-panel" />
-        <div className="mt-8 grid max-w-3xl grid-cols-2 gap-1 border-t border-foreground/[0.07] pt-6 @[40rem]/page:grid-cols-3 @[60rem]/page:grid-cols-5">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="flex flex-col items-center gap-3 py-4">
-              <Skeleton className="size-24 rounded-full" />
+        {/* The crew's shape: tiles of a face, a name and a role. */}
+        <div className="grid max-w-3xl grid-cols-2 gap-x-2 gap-y-3 @[40rem]/page:grid-cols-4 @[40rem]/page:gap-x-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex flex-col items-center gap-2.5 pb-4 pt-5">
+              <Skeleton className="size-[72px] rounded-full @[40rem]/page:size-[120px]" />
               <Skeleton className="h-4 w-16" />
               <Skeleton className="h-3 w-20" />
             </div>

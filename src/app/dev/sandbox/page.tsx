@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { SandboxGallery } from "./gallery";
 
 /**
@@ -11,5 +12,9 @@ import { SandboxGallery } from "./gallery";
  */
 export default function SandboxDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <SandboxGallery />;
+  return (
+    <PageRoot>
+      <SandboxGallery />
+    </PageRoot>
+  );
 }

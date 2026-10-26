@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { PagesGallery } from "./gallery";
 import { PAGES, STATES, type PageName, type PageState } from "./pages";
 
@@ -31,5 +32,9 @@ export default async function PagesDevPage({
   const state = (STATES as readonly string[]).includes(String(params.state))
     ? (params.state as PageState)
     : "ready";
-  return <PagesGallery key={`${page}-${state}`} page={page} state={state} />;
+  return (
+    <PageRoot>
+      <PagesGallery key={`${page}-${state}`} page={page} state={state} />
+    </PageRoot>
+  );
 }

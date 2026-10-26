@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { RemotePairBrowser, type RemotePairStep } from "@/components/code/remote-pair-browser";
+import { PageRoot } from "@/components/app/page-root";
 
 /**
  * Dev-only gallery for the web half of remote control pairing
@@ -16,5 +17,9 @@ export default async function RemotePairDevPage({ searchParams }: { searchParams
     paired: { kind: "paired", deviceName: "Studio Mac" },
     denied: { kind: "denied", deviceName: "Studio Mac" },
   };
-  return <RemotePairBrowser initialStep={steps[step ?? "code"] ?? steps.code} initialCode={step === "code" ? "K7QM-4MZ" : "K7QM-4MZP"} />;
+  return (
+    <PageRoot>
+      <RemotePairBrowser initialStep={steps[step ?? "code"] ?? steps.code} initialCode={step === "code" ? "K7QM-4MZ" : "K7QM-4MZP"} />
+    </PageRoot>
+  );
 }

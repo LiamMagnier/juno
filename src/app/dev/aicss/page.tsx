@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { AicssGallery } from "./gallery";
 
 /**
@@ -11,5 +12,9 @@ import { AicssGallery } from "./gallery";
  */
 export default function AicssDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <AicssGallery />;
+  return (
+    <PageRoot>
+      <AicssGallery />
+    </PageRoot>
+  );
 }

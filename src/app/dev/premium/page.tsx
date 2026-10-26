@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { PremiumGallery } from "./gallery";
 
 /**
@@ -28,10 +29,12 @@ export default async function PremiumDevPage({
   if (process.env.NODE_ENV === "production") notFound();
   const { only, peak, dictation } = await searchParams;
   return (
-    <PremiumGallery
-      only={typeof only === "string" ? only : undefined}
-      voicePeak={peak === "1"}
-      dictation={typeof dictation === "string" ? dictation : undefined}
-    />
+    <PageRoot>
+      <PremiumGallery
+        only={typeof only === "string" ? only : undefined}
+        voicePeak={peak === "1"}
+        dictation={typeof dictation === "string" ? dictation : undefined}
+      />
+    </PageRoot>
   );
 }

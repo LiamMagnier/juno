@@ -21,12 +21,21 @@ export interface ChoiceOption<T extends string> {
 }
 
 /**
- * The trigger's look is SelectTrigger's recipe, restated because the two sit
- * in the same column of rows and have to read as one control: the inset
- * field, the input hairline, the field radius, the touch height.
+ * Settings' one dropdown trigger. ChoiceMenu, ModelTrigger and SelectTrigger
+ * sit in the same column of rows and have to be one control, so this is
+ * SelectTrigger's rest, hover and open state to the alpha: the faint
+ * `foreground/[0.14]` hairline over a `0.025` tint (`white/[0.12]` over
+ * `0.03` in dark), one step toward ink on hover and while open, the field
+ * radius, the touch height.
+ *
+ * It used to draw the `--input` boundary instead (rgb 134,137,141 on the
+ * light page), a mid-grey outline beside the soft Select fields in the same
+ * card; a trigger named by its text and a chevron needs no 3:1 edge, which is
+ * what Select and Input already rely on. Keyboard focus is Input's: one
+ * continuous 2px line in `--ring` at 0.55 (`kbd-focus:`), no halo.
  */
 export const choiceTriggerClass =
-  "surface-inset group flex h-9 w-full min-w-0 items-center justify-between gap-2 whitespace-nowrap rounded-field border border-input px-3.5 text-left text-ui transition-[color,border-color] duration-base ease-out-soft hover:border-foreground/60 focus-visible:border-foreground/70 disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11";
+  "group flex h-9 w-full min-w-0 items-center justify-between gap-2 whitespace-nowrap rounded-field border border-foreground/[0.14] bg-foreground/[0.025] px-3.5 text-left text-ui text-foreground transition-[color,border-color,box-shadow,background-color] duration-base ease-out-soft hover:border-foreground/25 data-[state=open]:border-foreground/25 dark:border-white/[0.12] dark:bg-white/[0.03] dark:hover:border-white/25 dark:data-[state=open]:border-white/25 focus-visible:outline-none kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11";
 
 /**
  * One choice from a short list whose options need a sentence each to tell

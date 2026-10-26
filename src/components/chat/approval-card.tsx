@@ -15,6 +15,7 @@ import type {
   ClientActionApproval,
 } from "@/lib/action-approval";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { formatClock, useUiLocale } from "@/lib/i18n-format";
 import { TIMING } from "@/lib/interaction";
 import { PERMISSION_GRANT_LABEL } from "@/lib/permissions/taxonomy";
 
@@ -90,6 +91,119 @@ const STATUS_COPY: Record<ActionReceiptStatus, string> = {
     `The arguments or your permissions changed after this was raised, so ${PRODUCT_NAME} cancelled it and will ask again.`,
   blocked: `Your permissions blocked this, so ${PRODUCT_NAME} never sent it.`,
 };
+
+/*
+ * THE RECEIPT — what the card folds to once it is answered (or can no longer
+ * be). A decided action is history: the payload, the "cannot take it back"
+ * warning and the future-tense "Exactly what will be sent" were the question,
+ * and a finished turn that keeps asking it reads as a wall of stale alarms.
+ * So the card becomes one line, past tense, with what was sent one press away
+ * (SPEC §7.10, DECISIONS U1: the run's own approvals fold the same way).
+ *
+ * The outcome words, by variant. Short, because they follow the headline on
+ * one line: "Post message in Slack · You declined this · 14:02".
+ */
+const RECEIPT_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer",
+  allowed: "Allowed, in progress",
+  executing: "In progress",
+  executed: "Done",
+  failed: "Failed",
+  denied: "You declined this",
+  expired: "Expired, nothing sent",
+  superseded: "Cancelled, will ask again",
+  blocked: "Blocked by your settings",
+};
+
+const TASK_RECEIPT_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer",
+  allowed: "Starting",
+  executing: "Starting",
+  executed: "Started",
+  failed: "Could not start",
+  denied: "Not started",
+  expired: "Expired, not started",
+  superseded: "Cancelled, not started",
+  blocked: "Blocked by your settings",
+};
+
+const HANDOFF_RECEIPT_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer",
+  allowed: "Handing off",
+  executing: "Handing off",
+  executed: "Handed off",
+  failed: "Could not hand off",
+  denied: "Not handed off",
+  expired: "Expired, not handed off",
+  superseded: "Cancelled, not handed off",
+  blocked: "Blocked by your settings",
+};
+
+const AGENT_CONFIG_RECEIPT_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer",
+  allowed: "Updating",
+  executing: "Updating",
+  executed: "Updated",
+  failed: "Could not update",
+  denied: "Declined, nothing changed",
+  expired: "Expired, nothing changed",
+  superseded: "Cancelled, nothing changed",
+  blocked: "Blocked by your settings",
+};
+
+/** The receipt's disclosure, in the tense of what became of the action. */
+const RECEIPT_DETAIL_LABEL = {
+  sent: "What was sent",
+  notSent: "What would have been sent",
+  taskTold: "What the task was told",
+  taskNotTold: "What the task would have been told",
+  handoffTold: "What they were told",
+  handoffNotTold: "What they would have been told",
+  changed: "What changed",
+  notChanged: "What would have changed",
+} as const;
+
+/** Statuses after which nothing left Alevr. */
+const NOTHING_SENT: ReadonlySet<ActionReceiptStatus> = new Set(["denied", "expired", "superseded", "blocked"]);
+
+/** The past tense of the verbs `approvalVerb` names, for the done receipt. */
+const PAST_VERB: Record<string, string> = {
+  send: "Sent",
+  post: "Posted",
+  publish: "Published",
+  delete: "Deleted",
+  remove: "Removed",
+  create: "Created",
+  update: "Updated",
+  change: "Changed",
+  add: "Added",
+  move: "Moved",
+  archive: "Archived",
+  read: "Read",
+  search: "Searched",
+  write: "Wrote",
+  pay: "Paid",
+  transfer: "Transferred",
+};
+
+/** "Post message" in Slack, done: "Posted message in Slack". Null when the verb is not one we know. */
+export function pastActionPhrase(toolName: string, connectorLabel: string): string | null {
+  const words = toolName.split("__").at(-1)?.replace(/_/g, " ").trim() ?? "";
+  const match = /(?:^|\s)(send|post|publish|delete|remove|create|update|change|add|move|archive|read|search|write|pay|transfer)\s+(.+)/i.exec(words);
+  if (!match) return null;
+  const past = PAST_VERB[match[1].toLowerCase()];
+  return past ? `${past} ${match[2]} in ${connectorLabel}` : null;
+}
+
+/** A clock time, drawn after mount: the server's time zone is not the reader's. */
+function useClockText(iso: string | null | undefined): string | null {
+  const locale = useUiLocale();
+  const [text, setText] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setText(iso ? formatClock(new Date(iso), locale) || null : null);
+  }, [iso, locale]);
+  return text;
+}
 
 const DECISION_COPY: Record<ActionApprovalDecision, string> = {
   allow_once: `Allowed once. ${PRODUCT_NAME} is carrying out the action now.`,
@@ -371,11 +485,16 @@ function useCountdown(expiresAt: string, active: boolean): number | null {
   return remaining;
 }
 
+/** A countdown is shown only inside the last day: further off, a ticking clock is noise (and minutes:seconds ran to eight digits). */
+const COUNTDOWN_WITHIN_MS = 24 * 60 * 60 * 1_000;
+
 function formatCountdown(ms: number): string {
   const total = Math.ceil(ms / 1_000);
-  const minutes = Math.floor(total / 60);
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
   const seconds = total % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const ss = String(seconds).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${ss}` : `${minutes}:${ss}`;
 }
 
 /**
@@ -392,7 +511,7 @@ function formatDetailValue(value: unknown): string {
 type Outcome =
   | { kind: "idle" }
   | { kind: "sending"; decision: ActionApprovalDecision }
-  | { kind: "done"; message: string }
+  | { kind: "done"; message: string; decision: ActionApprovalDecision }
   | { kind: "refused"; code: RefusalCode | null; message: string; terminal: boolean };
 
 /** Named verbs come from the tool identifier, never its untrusted arguments. */
@@ -486,9 +605,16 @@ export function ApprovalCard({
         ? AGENT_CONFIG_DECISION_COPY
         : DECISION_COPY;
 
+  // Answered from this card: once it turns into its receipt, focus moves to
+  // the receipt (below), because the button that was pressed is gone and
+  // focus would otherwise fall to the page.
+  const answeredHere = React.useRef(false);
+  const receiptRef = React.useRef<HTMLButtonElement>(null);
+
   const decide = React.useCallback(
     async (decision: ActionApprovalDecision) => {
       if (Date.now() - visibleAt.current < TIMING.approvalArm) return;
+      answeredHere.current = true;
       setOutcome({ kind: "sending", decision });
       let response: Response;
       try {
@@ -512,6 +638,7 @@ export function ApprovalCard({
         if (updated) setDecided(updated);
         setOutcome({
           kind: "done",
+          decision,
           message:
             body?.replay === true
               ? `${decisionCopy[decision]} ${REPLAY_COPY.message}`
@@ -596,6 +723,186 @@ export function ApprovalCard({
   const danger = current.riskClass === "destructive_or_sensitive";
   const expiryLine = task ? taskCopy.footnote : `Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`;
 
+  /* ── THE RECEIPT ─────────────────────────────────────────────────────────
+   * Once nobody can answer it, the card is a receipt. While the answer is
+   * being sent it stays the card (the verb shows its own progress); a refusal
+   * that leaves the question open keeps it too. */
+  const receipt = !answerable && !sending;
+  React.useEffect(() => {
+    if (!receipt || !answeredHere.current) return;
+    answeredHere.current = false;
+    // Only when focus was dropped with the button; a reader who has moved on
+    // (the composer, another card) keeps their place.
+    const active = document.activeElement;
+    if (!active || active === document.body) receiptRef.current?.focus({ preventScroll: true });
+  }, [receipt]);
+  const receiptStatus: ActionReceiptStatus =
+    current.status !== "pending"
+      ? current.status
+      : outcome.kind === "done"
+        ? outcome.decision === "deny"
+          ? "denied"
+          : "allowed"
+        : expired
+          ? "expired"
+          : "pending";
+  const receiptCopy = handoff
+    ? HANDOFF_RECEIPT_COPY
+    : task
+      ? TASK_RECEIPT_COPY
+      : agentConfig
+        ? AGENT_CONFIG_RECEIPT_COPY
+        : RECEIPT_COPY;
+  const pastPhrase = !task && !agentConfig && receiptStatus === "executed" ? pastActionPhrase(current.toolName, current.connectorLabel) : null;
+  const receiptHeadline = task
+    ? (taskTitle ?? settledTitle)
+    : agentConfig
+      ? (agentConfigPreview?.headline ?? settledTitle)
+      : (pastPhrase ?? settledTitle);
+  // The headline already says it happened ("Posted message in Slack"); the
+  // outcome word adds only what it does not say.
+  const receiptOutcome =
+    receiptStatus === "pending"
+      ? null
+      : pastPhrase
+        ? current.decision === "allow_scope"
+          ? PERMISSION_GRANT_LABEL.always_allow
+          : null
+        : handoff && receiptStatus === "executed" && teammate
+          ? `${receiptCopy.executed} to ${teammate}`
+          : receiptCopy[receiptStatus];
+  const receiptWarn = receiptStatus === "failed" || (outcome.kind === "refused" && outcome.terminal);
+  const nothingSent = NOTHING_SENT.has(receiptStatus) || receiptStatus === "pending";
+  const receiptDetailLabel = handoff
+    ? nothingSent
+      ? RECEIPT_DETAIL_LABEL.handoffNotTold
+      : RECEIPT_DETAIL_LABEL.handoffTold
+    : task
+      ? nothingSent
+        ? RECEIPT_DETAIL_LABEL.taskNotTold
+        : RECEIPT_DETAIL_LABEL.taskTold
+      : agentConfig
+        ? nothingSent
+          ? RECEIPT_DETAIL_LABEL.notChanged
+          : RECEIPT_DETAIL_LABEL.changed
+        : nothingSent
+          ? RECEIPT_DETAIL_LABEL.notSent
+          : RECEIPT_DETAIL_LABEL.sent;
+  const receiptAt = receiptStatus === "executed" ? (current.completedAt ?? current.decidedAt) : current.decidedAt;
+  const receiptTime = useClockText(receipt ? receiptAt : null);
+
+  const mark =
+    handoff || agentConfig ? (
+      <AppIcons.agents className="size-4" />
+    ) : task ? (
+      <AppIcons.work className="size-4" />
+    ) : (
+      <ConnectorMark id={current.connectorId} className="size-4" />
+    );
+
+  /* The exact payload, quoted: a neutral rule, not a box inside the card. The
+   * question shows it up front; the receipt keeps a task's or a setup
+   * change's behind its disclosure. */
+  const payload = (
+    <div className="pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
+      {task ? (
+        <>
+          <p className="text-nav font-medium text-foreground">{taskTitle ?? current.preview}</p>
+          {(teammate || taskEstimate) && (
+            <p className="mt-0.5 text-ui tabular-nums text-muted-foreground">
+              {teammate && (
+                <>
+                  To <span className="text-foreground">{teammate}</span>
+                </>
+              )}
+              {teammate && taskEstimate && <span aria-hidden="true">{" · "}</span>}
+              {taskEstimate && (
+                <>
+                  Estimated cost <span className="text-foreground">{taskEstimate}</span>
+                </>
+              )}
+            </p>
+          )}
+        </>
+      ) : agentConfig ? (
+        <>
+          <p className="text-nav text-foreground">{agentConfigPreview?.headline ?? current.preview}</p>
+          {agentConfigPreview && agentConfigPreview.changes.length > 0 && (
+            <dl className="mt-1.5 space-y-1">
+              {agentConfigPreview.changes.map((item, idx) => (
+                <div key={`${item.label}-${idx}`} className="flex flex-wrap items-baseline gap-x-2 text-ui">
+                  <dt className="text-muted-foreground">{item.label}</dt>
+                  <dd className="text-foreground">
+                    {item.from ? (
+                      <>
+                        <span className="text-muted-foreground">{item.from}</span>
+                        <span className="mx-1.5 text-muted-foreground" aria-hidden="true">
+                          →
+                        </span>
+                        <span className="font-medium">{item.to}</span>
+                      </>
+                    ) : (
+                      <span className="font-medium">{item.to}</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-ui text-muted-foreground">
+            <span className="font-medium text-foreground">{current.connectorLabel}</span>{" "}
+            <span className="font-mono">{current.toolName}</span>
+          </p>
+          <p className="mt-0.5 text-nav text-foreground">{current.preview}</p>
+        </>
+      )}
+    </div>
+  );
+
+  const argumentList =
+    task && taskBrief ? (
+      <p className="whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground">{taskBrief}</p>
+    ) : detailRows.length === 0 ? (
+      <p className="text-ui leading-relaxed text-muted-foreground">This call sends no arguments.</p>
+    ) : (
+      <dl className="space-y-1.5">
+        {detailRows.map(([key, value]) => (
+          <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
+            <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
+            <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
+              {formatDetailValue(value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+
+  const disclosure = (label: string, className?: string) => (
+    <button
+      type="button"
+      onClick={() => setDetailOpen((v) => !v)}
+      aria-expanded={detailOpen}
+      aria-controls={detailOpen ? detailId : undefined}
+      className={cn(
+        "inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
+        "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none",
+        className
+      )}
+    >
+      <ChevronRight
+        className={cn(
+          "size-3.5 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+          detailOpen && "rotate-90"
+        )}
+        aria-hidden="true"
+      />
+      {label}
+    </button>
+  );
+
   return (
     <section
       // A group, not a landmark: a transcript can hold several of these, and one
@@ -609,92 +916,99 @@ export function ApprovalCard({
         // A flat tone step, radius 12, no border, no shadow, no warning wash
         // (INTERACTION_SPEC T6, critique 1): the attention words in the title
         // are what make it stand out from the prose, not a tinted box.
-        "@container my-5 w-full rounded-field bg-muted px-4 pb-4 pt-3.5 contrast-more:border contrast-more:border-border",
+        "@container w-full rounded-field bg-muted contrast-more:border contrast-more:border-border",
+        receipt ? "my-3" : "my-5 px-4 pb-4 pt-3.5",
         "motion-safe:animate-rise-in motion-reduce:animate-fade-in [animation-fill-mode:backwards]"
       )}
     >
-      <header className="flex items-start gap-3">
-        <span aria-hidden="true" className="mt-px flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-          {handoff || agentConfig ? (
-            <AppIcons.agents className="size-4" />
-          ) : task ? (
-            <AppIcons.work className="size-4" />
-          ) : (
-            <ConnectorMark id={current.connectorId} className="size-4" />
+      {receipt ? (
+        // One line: the mark, what happened in the past tense, how it ended,
+        // when. The whole line is the disclosure for what was sent, so a
+        // phone gets the full-width target and the headline keeps its line;
+        // the label beside the caret shows where there is room for it.
+        <button
+          ref={receiptRef}
+          type="button"
+          onClick={() => setDetailOpen((v) => !v)}
+          aria-expanded={detailOpen}
+          aria-controls={detailOpen ? detailId : undefined}
+          className={cn(
+            "flex min-h-11 w-full items-center gap-3 rounded-field py-1.5 pl-3.5 pr-3 text-left motion-safe:animate-fade-in",
+            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
           )}
-        </span>
-        <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-foreground/75")}>
-          {answerable ? (
-            <>
-              <NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}
-            </>
-          ) : (
-            settledTitle
+        >
+          <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+            {mark}
+          </span>
+          <span id={labelId} className="min-w-0 flex-1 text-ui text-foreground">
+            {receiptHeadline}
+            {/* Each phrase holds together ("Allowed, in progress" never
+                splits across lines at a phone's width). The line may break
+                only after a separator, which stays at the end of the line it
+                follows (a no-break space before it), never leading the next. */}
+            {receiptOutcome && (
+              <>
+                <span className="text-muted-foreground">{"\u00a0· "}</span>
+                <span className={cn("whitespace-nowrap", receiptWarn ? "text-warning" : "text-muted-foreground")}>{receiptOutcome}</span>
+              </>
+            )}
+            {receiptTime && (
+              <>
+                <span className="text-muted-foreground">{"\u00a0· "}</span>
+                <span className="whitespace-nowrap tabular-nums text-muted-foreground">
+                  <time dateTime={receiptAt ?? undefined}>{receiptTime}</time>
+                </span>
+              </>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-ui text-muted-foreground">
+            <span className="sr-only">{receiptDetailLabel}</span>
+            <span aria-hidden="true" className="hidden @[30rem]:inline">
+              {receiptDetailLabel}
+            </span>
+            <ChevronRight
+              className={cn(
+                "size-3.5 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                detailOpen && "rotate-90"
+              )}
+              aria-hidden="true"
+            />
+          </span>
+        </button>
+      ) : (
+        <header className="flex items-start gap-3">
+          <span aria-hidden="true" className="mt-px flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+            {mark}
+          </span>
+          <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-foreground/75")}>
+            {answerable ? (
+              <>
+                <NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}
+              </>
+            ) : (
+              settledTitle
+            )}
+          </p>
+          {!task && !agentConfig && answerable && (
+            <span className="mt-0.5 shrink-0 text-ui text-muted-foreground">{risk.label}</span>
           )}
-        </p>
-        {!task && !agentConfig && answerable && (
-          <span className="mt-0.5 shrink-0 text-ui text-muted-foreground">{risk.label}</span>
-        )}
-      </header>
+        </header>
+      )}
 
+      {receipt ? (
+        <Collapse open={detailOpen}>
+          {/* On the headline's column. A connector call's exact arguments ARE
+              what was sent, so they stand alone (the preview sentence above
+              them only repeated the text); a task keeps its title over the
+              brief, and a setup change its list of changes. */}
+          <div id={detailId} className="space-y-2.5 pb-3.5 pl-[2.875rem] pr-3.5 pt-0.5">
+            {task || agentConfig ? payload : null}
+            {!agentConfig && argumentList}
+          </div>
+        </Collapse>
+      ) : (
       <div className="mt-2.5 @[28rem]:ml-8">
-        {/* The exact payload, quoted: a neutral rule, not a box inside the card. */}
-        <div className="pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
-          {task ? (
-            <>
-              <p className="text-nav font-medium text-foreground">{taskTitle ?? current.preview}</p>
-              {(teammate || taskEstimate) && (
-                <p className="mt-0.5 text-ui tabular-nums text-muted-foreground">
-                  {teammate && (
-                    <>
-                      To <span className="text-foreground">{teammate}</span>
-                    </>
-                  )}
-                  {teammate && taskEstimate && <span aria-hidden="true">{" · "}</span>}
-                  {taskEstimate && (
-                    <>
-                      Estimated cost <span className="text-foreground">{taskEstimate}</span>
-                    </>
-                  )}
-                </p>
-              )}
-            </>
-          ) : agentConfig ? (
-            <>
-              <p className="text-nav text-foreground">{agentConfigPreview?.headline ?? current.preview}</p>
-              {agentConfigPreview && agentConfigPreview.changes.length > 0 && (
-                <dl className="mt-1.5 space-y-1">
-                  {agentConfigPreview.changes.map((item, idx) => (
-                    <div key={`${item.label}-${idx}`} className="flex flex-wrap items-baseline gap-x-2 text-ui">
-                      <dt className="text-muted-foreground">{item.label}</dt>
-                      <dd className="text-foreground">
-                        {item.from ? (
-                          <>
-                            <span className="text-muted-foreground">{item.from}</span>
-                            <span className="mx-1.5 text-muted-foreground" aria-hidden="true">
-                              →
-                            </span>
-                            <span className="font-medium">{item.to}</span>
-                          </>
-                        ) : (
-                          <span className="font-medium">{item.to}</span>
-                        )}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-ui text-muted-foreground">
-                <span className="font-medium text-foreground">{current.connectorLabel}</span>{" "}
-                <span className="font-mono">{current.toolName}</span>
-              </p>
-              <p className="mt-0.5 text-nav text-foreground">{current.preview}</p>
-            </>
-          )}
-        </div>
+        {payload}
 
         {(!task || answerable) && !agentConfig && (
           <p className="mt-2.5 text-ui leading-relaxed text-foreground/75">{task ? taskCopy.description : risk.detail}</p>
@@ -716,43 +1030,10 @@ export function ApprovalCard({
 
         {!agentConfig && (
           <div className="mt-1.5">
-            <button
-              type="button"
-              onClick={() => setDetailOpen((v) => !v)}
-              aria-expanded={detailOpen}
-              aria-controls={detailOpen ? detailId : undefined}
-              className={cn(
-                "-ml-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
-                "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
-              )}
-            >
-              <ChevronRight
-                className={cn(
-                  "size-3.5 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                  detailOpen && "rotate-90"
-                )}
-                aria-hidden="true"
-              />
-              {handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent"}
-            </button>
+            {disclosure(handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent", "-ml-2")}
             <Collapse open={detailOpen}>
               <div id={detailId} className="pb-1 pt-1.5">
-                {task && taskBrief ? (
-                  <p className="whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground">{taskBrief}</p>
-                ) : detailRows.length === 0 ? (
-                  <p className="text-ui leading-relaxed text-muted-foreground">This call sends no arguments.</p>
-                ) : (
-                  <dl className="space-y-1.5">
-                    {detailRows.map(([key, value]) => (
-                      <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
-                        <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
-                        <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
-                          {formatDetailValue(value)}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
+                {argumentList}
               </div>
             </Collapse>
           </div>
@@ -793,39 +1074,49 @@ export function ApprovalCard({
             </QuietButton>
           </div>
         )}
-
-        {/* Always mounted: a region inserted at the same moment its text appears
-            is frequently not announced at all. */}
-        <p
-          role="status"
-          aria-live="polite"
-          className={cn(
-            "flex items-start gap-1.5 text-ui leading-relaxed",
-            resultText ? "mt-2.5" : "sr-only",
-            outcome.kind === "refused" ? "text-foreground" : "text-muted-foreground"
-          )}
-        >
-          {outcome.kind === "refused" && resultText && (
-            <StatusIcons.warning className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--attention))]" aria-hidden="true" />
-          )}
-          {resultText}
-        </p>
-
-        {answerable && !sending && untouched && (
-          <p className="mt-2.5 text-ui text-muted-foreground">
-            {expiryLine}
-            {remaining !== null && (
-              <>
-                {" "}
-                <span aria-hidden="true" className="tabular-nums">
-                  {`${formatCountdown(remaining)} left.`}
-                </span>
-                <span className="sr-only">Answer this request before {new Date(current.expiresAt).toLocaleTimeString()}</span>
-              </>
-            )}
-          </p>
-        )}
       </div>
+      )}
+
+      {/* Always mounted, at the same place in both shapes: a region inserted
+          at the same moment its text appears is frequently not announced at
+          all, and the card folding into its receipt must not remount it. On
+          the receipt it is heard, not seen, unless it carries a refusal: the
+          line above already says how it ended. */}
+      <p
+        role="status"
+        aria-live="polite"
+        className={cn(
+          "flex items-start gap-1.5 text-ui leading-relaxed",
+          receipt
+            ? outcome.kind === "refused" && resultText
+              ? "pb-3 pl-[2.875rem] pr-3.5"
+              : "sr-only"
+            : resultText
+              ? "mt-2.5 @[28rem]:ml-8"
+              : "sr-only",
+          outcome.kind === "refused" ? "text-foreground" : "text-muted-foreground"
+        )}
+      >
+        {outcome.kind === "refused" && resultText && (
+          <StatusIcons.warning className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--attention))]" aria-hidden="true" />
+        )}
+        {resultText}
+      </p>
+
+      {answerable && !sending && untouched && (
+        <p className="mt-2.5 text-ui text-muted-foreground @[28rem]:ml-8">
+          {expiryLine}
+          {remaining !== null && remaining <= COUNTDOWN_WITHIN_MS && (
+            <>
+              {" "}
+              <span aria-hidden="true" className="tabular-nums">
+                {`${formatCountdown(remaining)} left.`}
+              </span>
+              <span className="sr-only">Answer this request before {new Date(current.expiresAt).toLocaleTimeString()}</span>
+            </>
+          )}
+        </p>
+      )}
     </section>
   );
 }

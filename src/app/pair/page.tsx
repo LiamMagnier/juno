@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { PublicState } from "@/components/public/public-frame";
 import { Button } from "@/components/ui/button";
 import { RemotePairBrowser } from "@/components/code/remote-pair-browser";
+import { PageRoot } from "@/components/app/page-root";
 import { getCurrentUser } from "@/lib/session";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -57,5 +58,9 @@ export default async function PairPage({ searchParams }: { searchParams: Promise
       </PublicState>
     );
   }
-  return <RemotePairBrowser />;
+  return (
+    <PageRoot>
+      <RemotePairBrowser />
+    </PageRoot>
+  );
 }

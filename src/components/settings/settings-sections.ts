@@ -1,5 +1,5 @@
-import { Bell, Keyboard, KeyRound, Sparkles, Sun, Smartphone, Users, ShieldAlert, Terminal, type IconComponent } from "@/components/ui/icons";
-import { CodeIcons, SettingsIcons } from "@/lib/app-icons";
+import { Bell, type IconComponent } from "@/components/ui/icons";
+import { AppIcons, CodeIcons, SettingsIcons } from "@/lib/app-icons";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /**
@@ -35,24 +35,27 @@ export const SETTINGS_SECTIONS = [
  * Sections the web draws that the shared shell contract does not carry yet.
  *
  * SETTINGS_SECTIONS is the contract (contracts/product/juno-shell-v1.json,
- * mirrored into the Mac app); these are web-only panes for per-device
- * preferences. They sit in the same rail, in their groups, and resolve before
- * the contract's aliases (so `/settings?section=appearance` opens Appearance
- * on both platforms).
+ * mirrored into the Mac app); these are the web's own. Two, so the rail is
+ * twelve rows, the size of ChatGPT's and Claude's give or take the Macs and
+ * Code this product also covers. Every other web-only pane was folded into
+ * the section a reader would look for it in, and its old id still opens
+ * that section (RETIRED_WEB_SECTIONS):
+ *
+ *   Appearance, Keyboard     -> General (the contract already aliases
+ *                               `appearance` there; General was otherwise one
+ *                               dropdown)
+ *   Capabilities             -> retired: Wrap long code lines is a Reading
+ *                               setting (General), conversations messaging
+ *                               each other is Memory's
+ *   Remote                   -> Devices, as "This browser": two sections
+ *                               listed your Macs, with two ways to revoke
+ *   Connections, Agents,
+ *   Permissions              -> Code, one section like Claude's: four rows
+ *                               that each held one part of how Code runs
  */
 export const WEB_SETTINGS_SECTIONS = [
-  { id: "appearance", label: "Appearance", icon: Sun },
   { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "capabilities", label: "Capabilities", icon: Sparkles },
-  { id: "keyboard", label: "Keyboard", icon: Keyboard },
-  // Alevr Code v2: your own API keys (BYOK). Web-only until the Mac's
-  // Connections settings (code-v2 mac lane) land in the shell contract.
-  { id: "connections", label: "Connections", icon: KeyRound },
-  { id: "remote", label: "Remote", icon: Smartphone },
-  { id: "code", label: "Session preferences", icon: Terminal },
-  { id: "code-agent", label: "Agents", icon: Users },
-  { id: "code-permissions", label: "Permissions", icon: ShieldAlert },
-  { id: "code-keyboard", label: "Code shortcuts", icon: Keyboard },
+  { id: "code", label: "Code", icon: AppIcons.code },
 ] as const satisfies readonly { id: string; label: string; icon: IconComponent }[];
 
 type SharedSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
@@ -65,36 +68,52 @@ export type SettingsSectionMeta = { id: SettingsSectionId; label: string; icon: 
  * screen, what the assistant can do and reach, then the account.
  */
 export const SETTINGS_GROUPS: { label: string; ids: SettingsSectionId[] }[] = [
-  { label: "Personal", ids: ["general", "appearance", "notifications", "personalization", "memory", "models", "voice", "keyboard", "account", "data", "billing"] },
-  { label: "Integrations", ids: ["connectors", "connections", "remote", "devices"] },
-  { label: "Coding", ids: ["code", "code-agent", "code-permissions", "code-keyboard", "capabilities"] },
+  { label: "Personal", ids: ["general", "notifications", "personalization", "memory", "models", "voice", "account", "data", "billing"] },
+  { label: "Integrations", ids: ["connectors", "devices"] },
+  { label: "Coding", ids: ["code"] },
 ];
 
-/** Words a search in the rail should find each section by (its rows' labels). */
+/**
+ * Words a search in the rail should find each section by: its rows' labels,
+ * and the everyday words people type for them ("cancel subscription", "dark
+ * mode", "log out"), which are rarely the words a row is titled with.
+ */
 export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
-  remote: "remote pair QR iPhone Mac computer browser revoke access",
-  code: "session defaults work log generation image video music",
-  "code-agent": "agents subagents team orchestration roles budget",
-  "code-permissions": "permissions ask plan full access edits commands",
-  "code-keyboard": "code keyboard shortcuts hotkeys",
-  general: "language interface locale send enter shortcut",
-  appearance: "theme light dark system mode accent color colour text size font chat font serif mono width transcript motion animation reduce",
-  notifications: "notify notification alert sound chime email budget digest background reply",
-  personalization: "name instructions custom personality style tone response language about you",
-  keyboard: "shortcuts keys hotkeys keyboard send enter",
-  capabilities: "tools follow-up suggestions code wrap memory apps models voice conversations message each other cross",
-  memory: "memory remember saved memories sensitive learn background",
-  models: "model default favourite favorite fast mode pinned",
-  connectors: "apps connectors integrations mcp permissions github google",
-  connections: "api key keys byok own key anthropic openai gemini xai grok deepseek subscription code",
-  voice: "voice read aloud speech dictation tts",
-  devices: "devices mac computer host permissions code",
-  account: "profile picture name username handle email password security two-step sign out delete account sessions",
-  data: "export import data privacy shared links delete conversations chatgpt claude",
-  billing: "plan upgrade billing usage spend limit invoice subscription",
+  code: "code session defaults work log generation image video music agents subagents team orchestration roles budget permissions access ask auto edits commands connections subscriptions api key keys byok own key anthropic openai gemini xai grok deepseek claude chatgpt",
+  general:
+    "language interface locale appearance theme light dark system mode dark mode light mode accent color colour text size font chat font serif mono width transcript motion animation reduce reading wrap long code lines keyboard shortcuts keys hotkeys send enter return capabilities",
+  notifications: "notify notification alert sound sounds chime email budget digest background reply push browser",
+  personalization: "name nickname call you instructions custom instructions personality style tone response language about you",
+  memory: "memory remember saved memories forget sensitive health money learn background conversations message each other cross capabilities",
+  models: "model default model auto favourite favorite fast mode pinned thinking effort web search labs train training",
+  connectors: "apps connectors integrations mcp permissions github google lockdown approval actions",
+  voice: "voice read aloud speech dictation tts sound sounds chime chimes call calls",
+  devices: "devices mac macs computer host permissions remote pair paired unpair QR iPhone browser revoke access",
+  account: "profile picture photo avatar name username handle email password security two-step 2fa mfa two-factor authentication sign out log out logout delete account sessions",
+  data: "export import data privacy shared links delete conversations delete chats delete all archive chatgpt claude",
+  billing: "plan upgrade downgrade billing usage spend limit invoice invoices receipt receipts refund refunds vat tax subscription cancel subscription budget ceiling cap payment method card pro invite invites friend friends referral referrals refer reward rewards invitation invitations",
 };
 
 export const ALL_SETTINGS_SECTIONS: readonly SettingsSectionMeta[] = [...SETTINGS_SECTIONS, ...WEB_SETTINGS_SECTIONS];
+
+/**
+ * Does a section answer a search? Every word the reader typed has to start a
+ * word in the section's name or its keywords, in any order: "dark mode" finds
+ * Appearance, "cancel subscription" finds Plan & usage, and "voice" no longer
+ * finds Plan & usage through "invoice". A plain substring test on the whole
+ * query found neither of the first two and the third by accident.
+ *
+ * The word start is "not after a letter or digit" rather than `\b`, which in
+ * JavaScript only knows ASCII letters.
+ */
+export function settingsSectionMatches(section: SettingsSectionMeta, query: string): boolean {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const haystack = `${section.label} ${SETTINGS_KEYWORDS[section.id]}`.toLowerCase();
+  return words.every((word) =>
+    new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u").test(haystack)
+  );
+}
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "general";
 
@@ -129,6 +148,25 @@ const ALIASES: Record<string, SettingsSectionId> = {
   privacy: "data",
 };
 
+/**
+ * Web-only sections that were folded into another, so a bookmark, an old
+ * `juno:settings` detail or a link elsewhere in the product (Code's "Use your
+ * own API key" opens `connections`) still lands on the section that now holds
+ * it. Kept out of ALIASES, which is the shell contract's list
+ * (tests/shell-contract.test.ts) and which the Mac app mirrors: these are the
+ * web's own retirements, and the Mac keeps its own sections. `appearance` is
+ * not here: the contract already aliases it to General.
+ */
+const RETIRED_WEB_SECTIONS: Record<string, SettingsSectionId> = {
+  keyboard: "general",
+  "code-keyboard": "general",
+  capabilities: "general",
+  remote: "devices",
+  connections: "code",
+  "code-agent": "code",
+  "code-permissions": "code",
+};
+
 export function isSettingsSectionId(value: unknown): value is SettingsSectionId {
   return typeof value === "string" && ALL_SETTINGS_SECTIONS.some((s) => s.id === value);
 }
@@ -136,6 +174,7 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
 export function resolveSettingsSection(value: unknown): SettingsSectionId {
   if (isSettingsSectionId(value)) return value;
   if (typeof value === "string" && value in ALIASES) return ALIASES[value];
+  if (typeof value === "string" && value in RETIRED_WEB_SECTIONS) return RETIRED_WEB_SECTIONS[value];
   return DEFAULT_SETTINGS_SECTION;
 }
 

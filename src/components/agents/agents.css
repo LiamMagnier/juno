@@ -11,46 +11,38 @@
 @supports not (backdrop-filter: blur(1px)) { .agent-thread-bar { background: hsl(var(--background)); } }
 
 
-/* ---------- Orbit stage (orbit-stage.tsx) ---------- */
-.orbit-ring {
-  fill: none;
-  stroke: hsl(var(--foreground) / 0.12);
-  stroke-width: 1.25;
-  stroke-dasharray: 1.5 5;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
+/* ---------- Orbit crew (orbit-stage.tsx) ----------
+   One tile per agent and nothing drawn round the faces: no card, core, ring
+   or glow. An agent's last activity is said only on hover or focus (its
+   line is kept, so the tile never jumps); without hover it is left out. */
+.orbit-crew { --crew-face: var(--crew-desk-face, 120px); }
+.orbit-crew__when { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
+.orbit-crew__agent:hover .orbit-crew__when,
+.orbit-crew__agent:focus-within .orbit-crew__when { opacity: 1; }
+@media (hover: none) {
+  .orbit-crew__when { display: none; }
 }
-.orbit-ring--outer { stroke: hsl(var(--foreground) / 0.08); }
-/* The core: you. A soft presence glow the rings turn around, breathing slowly. */
-.orbit-core {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 7rem;
-  height: 7rem;
-  translate: -50% -50%;
-  border-radius: 999px;
-  background:
-    radial-gradient(closest-side, hsl(var(--presence) / 0.32), hsl(var(--presence) / 0.1) 55%, transparent 100%);
-  filter: blur(2px);
-  z-index: 0;
+/* On a phone the crew is two columns of 72 px faces, so the first screen
+   holds what needs you and the whole crew. `zoom` scales the layout box with
+   the drawing (the face keeps its size class). */
+@container page (max-width: 39.99rem) {
+  .orbit-crew__face { zoom: var(--crew-phone-zoom, 0.6); }
+  .orbit-crew { --crew-face: var(--crew-phone-face, 72px); }
 }
-.orbit-core::after {
-  content: "";
-  position: absolute;
-  inset: 42%;
-  border-radius: 999px;
-  background: hsl(var(--presence));
-  box-shadow: 0 0 18px 4px hsl(var(--presence) / 0.45);
+/* On touch the tile's menu stays shown (nothing hovers), so it moves off the
+   face's shoulder to the end of the name's line: the tile's top padding, the
+   face, the name's margin, centred on its 24 px line. */
+@media (pointer: coarse) {
+  .orbit-crew .orbit-crew__more { top: calc(2rem + var(--crew-face, 120px) - 4px); }
 }
+/* Arrival: each agent rises into place in turn, once. Opacity and travel only. */
 @media (prefers-reduced-motion: no-preference) {
-  .orbit-core { animation: orbit-breathe 6s var(--ease-in-out, ease-in-out) infinite; }
+  .orbit-crew__agent {
+    animation: orbit-crew-in var(--dur-slow, 320ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max)) * var(--stagger-tile));
+  }
 }
-@keyframes orbit-breathe {
-  0%, 100% { scale: 1; opacity: 0.85; }
-  50% { scale: 1.12; opacity: 1; }
-}
-.orbit-name {
-  background: hsl(var(--background) / 0.9);
-  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.06);
+@keyframes orbit-crew-in {
+  from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); }
+  to { opacity: 1; transform: none; }
 }

@@ -7,7 +7,9 @@ test("unified settings includes every section once and resolves Remote and Codin
   const ids = SETTINGS_GROUPS.flatMap(group => group.ids);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(new Set(ids), new Set(ALL_SETTINGS_SECTIONS.map(section => section.id)));
-  for (const [input, expected] of [["appearance", "appearance"], ["remote", "remote"], ["connections", "connections"], ["code", "code"], ["code-agent", "code-agent"], ["code-permissions", "code-permissions"]]) {
+  // Appearance is General's now (the contract's alias), Remote is Devices',
+  // and Connections, Agents and Permissions are the one Code section's.
+  for (const [input, expected] of [["appearance", "general"], ["remote", "devices"], ["connections", "code"], ["code", "code"], ["code-agent", "code"], ["code-permissions", "code"]]) {
     assert.equal(resolveSettingsSection(input), expected);
   }
 });

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   BookOpen,
@@ -43,6 +43,12 @@ import type { ClientConversation } from "@/types/chat";
 import { BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { shortcutGroups } from "@/lib/shortcut-groups";
 import { useReducedMotion } from "@/lib/motion-preference";
+import { chordKeys, chordLabel, isAppleModifier, keyCap } from "@/components/app/key-chord";
+import { focusSnippet, matchMarks, SNIPPET_LEAD_WIDE, SNIPPET_TAIL_WIDE } from "@/components/app/palette-text";
+import { chipRevealScroll } from "@/components/app/chip-strip";
+import { PHONE_QUERY, useMediaQuery } from "@/hooks/use-media-query";
+import "@/components/app/palette.css";
+import "@/components/app/sidebar-column.css";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
@@ -73,6 +79,10 @@ type PaletteItem = {
  * `bg-primary/15` deliberately, not `bg-accent`: `accent` is the highlighted
  * row's own fill, so a mark painted with it would vanish on exactly the row the
  * user is looking at.
+ *
+ * `-mx-0.5` takes back the tint's `px-0.5`, so the letters do not move: a
+ * match inside a word ("Pric" in "Pricing") read as "Pric ing", the word
+ * split by four pixels of padding.
  */
 function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] }) {
   if (marks.length === 0) return <>{text}</>;
@@ -81,7 +91,7 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
   marks.forEach((mark, i) => {
     if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
     parts.push(
-      <mark key={i} className="rounded-micro bg-primary/15 px-0.5 text-primary">
+      <mark key={i} className="-mx-0.5 rounded-micro bg-primary/15 px-0.5 text-primary">
         {text.slice(mark.start, mark.end)}
       </mark>
     );
@@ -89,21 +99,6 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
   });
   if (cursor < text.length) parts.push(text.slice(cursor));
   return <>{parts}</>;
-}
-
-/** "⌘⇧O" → ["⌘", "⇧", "O"]; "Esc" → ["Esc"]. Modifier glyphs are one key each. */
-function splitKeys(hint: string): string[] {
-  const out: string[] = [];
-  let word = "";
-  for (const ch of hint) {
-    if ("⌘⇧⌥⌃↵↑↓".includes(ch)) {
-      if (word) out.push(word);
-      word = "";
-      out.push(ch);
-    } else word += ch;
-  }
-  if (word) out.push(word);
-  return out;
 }
 
 /** Compact relative time for the trailing meta ("Just now", "2d", "3mo"). */
@@ -141,6 +136,7 @@ function PaletteShell({
   onQueryChange,
   items,
   emptyState,
+  lead,
   filters,
   notices,
   status,
@@ -155,6 +151,12 @@ function PaletteShell({
   onQueryChange: (v: string) => void;
   items: PaletteItem[];
   emptyState: React.ReactNode;
+  /**
+   * Drawn above the rows when there are rows: the command menu's "nothing
+   * matched" note over its one remaining row, the hand-off to full search.
+   * Presentation only (aria-hidden): say the same thing through `status`.
+   */
+  lead?: React.ReactNode;
   /** Optional controls between the input and the listbox (search filters). */
   filters?: React.ReactNode;
   /** Optional "here is what could not be searched" strip above the results. */
@@ -176,6 +178,9 @@ function PaletteShell({
   onCloseAutoFocus?: (event: Event) => void;
 }) {
   const [active, setActive] = React.useState(0);
+  // Key hints in the platform's own spelling: "⌘⇧O" on Apple, "Ctrl Shift O"
+  // elsewhere (key-chord.ts).
+  const mod = useModifierKeyLabel();
   const baseId = React.useId();
   const listboxId = `${baseId}-listbox`;
   const optionId = React.useCallback((cmdId: string) => `${baseId}-opt-${cmdId}`, [baseId]);
@@ -255,17 +260,23 @@ function PaletteShell({
         // times a day, so it is rightly the fastest overlay in the product. Only the
         // `!` goes, now that DialogContent no longer ships a competing
         // tailwindcss-animate chain for it to beat.
-        // The window material is the popover's (BRAND_IDENTITY: popovers may be
-        // translucent, 20px blur), cut with a 1px hairline at foreground 10%
-        // rather than the border token, the homepage's product-window finish.
+        // The window material is the popover's, OPAQUE (FLAT_UI.md, spec D15:
+        // no backdrop-filter in product chrome). It was `bg-popover/88` under a
+        // 20px blur, so the page behind ghosted through the results and the
+        // reader's own chat titles sat on a moving smear. Cut with a 1px
+        // hairline at foreground 10% rather than the border token, the
+        // homepage's product-window finish.
         // `sm:p-0` is load-bearing: DialogContent ships `sm:p-6`, which `p-0`
         // alone does not cancel, so the list sat 24px inside the shell and its
         // rows were not concentric with it. Now the list's `p-2` (8) inside the
         // shell's `rounded-panel` (16) holds `rounded-control` (8) rows.
         // Entrance: the shared pop-in keyframe on the homepage curve
         // (expo out), from 0.97 and 6px above, origin at the top edge, where the
-        // window hangs from. Reduced motion zeroes both through the tokens.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-foreground/10 bg-popover/[0.88] p-0 backdrop-blur-[20px] backdrop-saturate-150 [--motion-scale-from:0.97] [--pop-shift:-6px] contrast-more:bg-popover sm:p-0 data-[state=open]:[animation:pop-in_260ms_cubic-bezier(0.16,1,0.3,1)_both] data-[state=closed]:animate-pop-out dark:border-white/10"
+        // window hangs from, on the `base` rung (220ms) — it was a 260ms
+        // literal, off the duration ladder. The 0.97 start is written behind
+        // `motion-safe:` so reduced motion's own scale token still wins; the
+        // travel already rides `--motion-shift`, so that leaves a plain fade.
+        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-foreground/10 bg-popover p-0 motion-safe:[--motion-scale-from:0.97] [--pop-shift:-6px] sm:p-0 data-[state=open]:[animation:pop-in_var(--dur-base)_var(--ease-out-expo)_both] data-[state=closed]:animate-pop-out dark:border-white/10"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();
@@ -287,7 +298,7 @@ function PaletteShell({
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="h-full w-full bg-transparent text-body-lg tracking-[-0.011em] outline-none placeholder:text-muted-foreground/80"
+            className="h-full w-full bg-transparent text-body-lg tracking-[-0.011em] outline-none placeholder:text-muted-foreground"
             // `ariaLabel`, not the placeholder. The placeholder is one word
             // now ("Search"), and a one-word accessible name on the only input
             // of an overlay is thinner than what a screen reader had before —
@@ -390,6 +401,7 @@ function PaletteShell({
            * stretching, and the arrow keys move it one row in ~120ms. Reduced
            * motion snaps it.
            */}
+          {items.length > 0 && lead ? <div aria-hidden="true">{lead}</div> : null}
           {items.length === 0
             ? emptyState
             : items.map((c, i) => {
@@ -470,7 +482,11 @@ function PaletteShell({
                         // and hangs its glyph and meta off the TITLE rather
                         // than off the centre of the pair.
                         c.snippet ? "items-start py-2 coarse:py-2.5" : "h-9 items-center coarse:h-11",
-                        isActive ? "text-foreground" : "text-foreground/75"
+                        // Every row at full ink. Inactive rows were drawn at
+                        // 75%, so the reader's own chat titles read greyed out
+                        // until the cursor reached them; the fill below is what
+                        // marks the active row, and its glyph steps up with it.
+                        "text-foreground"
                       )}
                     >
                       {/* A PLAIN GLYPH, not a plated one. Every row used to
@@ -508,11 +524,18 @@ function PaletteShell({
                         <Icon />
                       </span>
                       <span className="relative min-w-0 flex-1">
-                        <span className="block truncate">
+                        {/* A title that does not fit fades out rather than
+                            ending in "…" (sidebar-column.css), as the
+                            sidebar's rows do. */}
+                        <span className="title-fade block">
                           <Marked text={c.label} marks={c.labelMarks ?? []} />
                         </span>
+                        {/* Up to two lines, and cut so its match is in view
+                            (`focusSnippet`): one truncated line put the
+                            highlighted word past the edge on a phone, so a
+                            body hit looked unrelated to the query. */}
                         {c.snippet && (
-                          <span className="mt-0.5 block truncate text-ui leading-[1.45] text-muted-foreground">
+                          <span className="mt-0.5 line-clamp-2 text-ui leading-[1.45] text-muted-foreground">
                             <Marked text={c.snippet.text} marks={c.snippet.marks} />
                           </span>
                         )}
@@ -524,10 +547,18 @@ function PaletteShell({
                         <span className="relative shrink-0 font-mono text-caption tabular-nums text-muted-foreground">{c.meta}</span>
                       )}
                       {c.hint && (
+                        // The shortcuts sheet's convention, so one chord is
+                        // drawn one way everywhere: a cap per glyph on a Mac
+                        // (⌘ ⇧ O), and elsewhere ONE cap spelled as Windows and
+                        // Linux write a chord, "Ctrl+Shift+O" (`chordLabel`),
+                        // as the sidebar and the sheet draw it. Three word caps
+                        // here beside one in the sheet read as two products.
                         <span className="relative flex shrink-0 items-center gap-1">
-                          {splitKeys(c.hint).map((k, ki) => (
-                            <Kbd key={ki}>{k}</Kbd>
-                          ))}
+                          {isAppleModifier(mod) ? (
+                            chordKeys(c.hint, mod).map((k, ki) => <Kbd key={ki}>{k}</Kbd>)
+                          ) : (
+                            <Kbd>{chordLabel(c.hint, mod)}</Kbd>
+                          )}
                         </span>
                       )}
                     </button>
@@ -705,6 +736,7 @@ function SearchPalette() {
   const [result, setResult] = React.useState<UnifiedSearchResult | null>(null);
   const [searching, setSearching] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const narrow = useMediaQuery(PHONE_QUERY);
 
   const go = React.useCallback(
     (href: string) => {
@@ -714,17 +746,33 @@ function SearchPalette() {
     [router]
   );
 
+  /*
+   * A query handed over with the event (`detail.query`): the command menu's
+   * last row, "Search messages and files for …", sends what the reader typed
+   * there, so one keyboard path reaches full-text search without typing it
+   * twice. Held in a ref because the reset below runs AFTER this listener on
+   * open and would clear it; the reset seeds the field from it instead.
+   */
+  const seedQuery = React.useRef("");
   React.useEffect(() => {
-    const openSearch = () => setOpen(true);
+    const openSearch = (event: Event) => {
+      const seeded = (event as CustomEvent<{ query?: unknown } | null>).detail?.query;
+      seedQuery.current = typeof seeded === "string" ? seeded : "";
+      // Already open (the reset will not run again): take the query now.
+      if (seedQuery.current) setQuery(seedQuery.current);
+      setOpen(true);
+    };
     window.addEventListener("juno:search", openSearch);
     return () => window.removeEventListener("juno:search", openSearch);
   }, []);
 
   // A fresh surface every time: the previous query's results behind a cleared
-  // input would be read as results for the empty one.
+  // input would be read as results for the empty one. A handed-over query is
+  // the one exception, and it is taken once.
   React.useEffect(() => {
     if (!open) return;
-    setQuery("");
+    setQuery(seedQuery.current);
+    seedQuery.current = "";
     setType("all");
     setDateWindow("any");
     setProjectId("");
@@ -838,13 +886,19 @@ function SearchPalette() {
         group: group.label,
         label: hit.title,
         meta: hit.locator ?? relativeTime(hit.updatedAt),
-        snippet: hit.snippet,
+        // Cut to the match on a phone row only; a wider row has room for
+        // the server's whole window (palette-text.ts).
+        snippet: hit.snippet
+          ? narrow
+            ? focusSnippet(hit.snippet)
+            : focusSnippet(hit.snippet, SNIPPET_LEAD_WIDE, SNIPPET_TAIL_WIDE)
+          : null,
         labelMarks: hit.titleMarks,
         icon: SEARCH_TYPE_ICONS[hit.type],
         run: () => go(hit.href),
       }))
     );
-  }, [trimmed, recents, result, go]);
+  }, [trimmed, recents, result, go, narrow]);
 
   // Only the sources that came back short say anything, and each says what it
   // was: "still being indexed" and "could not be read" are different problems
@@ -861,7 +915,7 @@ function SearchPalette() {
       <div className="border-b border-foreground/[0.07] bg-secondary/70 px-4 py-2 dark:border-white/[0.07]">
         {shown.map((c) => (
           <p key={c.type} className="text-caption leading-snug text-muted-foreground">
-            <span className="text-foreground/80">{SEARCH_TYPE_LABELS[c.type]}:</span> {c.detail}
+            <span className="text-foreground">{SEARCH_TYPE_LABELS[c.type]}:</span> {c.detail}
           </p>
         ))}
         {list.length > shown.length && (
@@ -874,31 +928,117 @@ function SearchPalette() {
   }, [result, trimmed]);
 
   /*
-   * ONE STRIP, ONE LINE, and it scrolls.
+   * THE KIND OF THING SCROLLS; WHEN AND WHERE STAY IN VIEW.
    *
    * This was two stacked rows — eight type chips above, four date chips and a
    * project Select below — which is thirteen controls in 64px directly under
-   * the field and directly above the results. Every one of them is a filter on
-   * a search you have not read yet, and together they were the reason this
-   * surface read as a console: you typed a word and were handed a control
-   * panel.
+   * the field and directly above the results, and read as a control panel.
+   * Then it was one scrolling row of all fourteen, which hid the date chips
+   * and the project filter off the right edge (1193px of chips in a 614px
+   * strip, 1245 in 332 on a phone) behind a scrollbar macOS and iOS do not
+   * draw, sliced the ninth chip mid-pill, and lost a "Past week" left on the
+   * moment the strip re-mounted at its start: a filter you cannot see is a
+   * filter you will not remember is on.
    *
-   * They are one horizontally-scrolling row now, in the order you would reach
-   * for them — what kind of thing, then when, then which project. Nothing is
-   * removed and nothing is hidden behind a disclosure: a filter you cannot see
-   * is a filter you will not remember is on, and a stuck filter silently
-   * returning nothing is the worst failure this surface has. `no-scrollbar` is
-   * deliberately NOT used here, so the strip shows it continues.
+   * Now the type chips alone scroll, and their strip fades at whichever end
+   * continues (`chip-scroller`, palette.css). When and which project are two
+   * compact Selects pinned at the end of the line, outside the scroller, so
+   * whatever they are set to is always on screen, drawn filled when it is not
+   * the default as a pressed chip is. On a phone they take a second line
+   * rather than squeezing the chips to nothing.
    */
+  const chipStrip = React.useRef<HTMLDivElement>(null);
+  const hasQuery = trimmed.length > 0;
+  /* The pressed type chip is brought into the strip: on a new query the
+     strip mounts at its start, and a pressed "Tasks" off the right end is
+     the stuck filter this layout exists to prevent. The strip scrolls and
+     nothing else does (not `scrollIntoView`, which would move the dialog),
+     with 32px of margin so the chip clears the strip's edge fade.
+
+     AGAIN WHENEVER THE STRIP CHANGES WIDTH, not once. At remount the Selects
+     beside it have not drawn their values yet, so the strip is wider than it
+     will be a frame later; one measurement taken then left "Tasks" pressed
+     and off the right edge after an emptied field was typed into again. The
+     math is on layout offsets (`chipRevealScroll`), which a running open
+     animation's transform does not skew.
+
+     AND AGAIN AFTER EITHER SELECT CLOSES. While a Select hands focus back to
+     its trigger, the trigger is laid out for an instant without its value,
+     so the strip beside it is briefly ~60px wider and the browser clamps the
+     strip's scroll to that wider box ("Tasks" pressed, "Past week" picked:
+     272 became 212 and "Tasks" sat just off the edge). The strip ends the
+     frame at the width it started, so no resize is ever observed; the frame
+     after the close is when the pressed chip is brought back. */
+  const revealPressedChip = React.useCallback(() => {
+    const strip = chipStrip.current;
+    const chip = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!strip || !chip) return;
+    const next = chipRevealScroll({
+      chipLeft: chip.offsetLeft,
+      chipWidth: chip.offsetWidth,
+      scrollLeft: strip.scrollLeft,
+      clientWidth: strip.clientWidth,
+      scrollWidth: strip.scrollWidth,
+    });
+    if (next !== null) strip.scrollLeft = next;
+  }, []);
+  React.useLayoutEffect(() => {
+    const strip = chipStrip.current;
+    if (!strip) return;
+    revealPressedChip();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(revealPressedChip);
+    observer.observe(strip);
+    const pressed = strip.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (pressed) observer.observe(pressed);
+    return () => observer.disconnect();
+  }, [type, hasQuery, revealPressedChip]);
+  // Not `preventDefault`: the trigger still takes focus back as usual.
+  const afterFilterClose = React.useCallback(() => {
+    requestAnimationFrame(revealPressedChip);
+  }, [revealPressedChip]);
+  const filterSelectClass = (isSet: boolean) =>
+    cn(
+      // Deliberately overrides `.field-well` (select.tsx), which paints a fill
+      // and an inset shadow: these triggers sit in a strip of chips, not in a
+      // form, so they take the FilterChip pill shape, height and fills.
+      // `shadow-none` is what cancels the well's inset — a groove under a
+      // 28px pill reads as damage — and it has to be a utility, because
+      // utilities are emitted after the components layer.
+      // `w-auto`: the trigger is a full-width field by default. The `dark:`
+      // fills repeat the light ones because the field's own `dark:` border
+      // and fill would otherwise win in dark mode, and the Select would be
+      // the one boxed control in a strip of pills.
+      //
+      // FOCUS IS THE CHIPS' FOCUS. The field's own `focus-visible:` primary
+      // border, 3px halo and background fill are not under the keyboard-only
+      // gate (lib/input-modality.ts), so a date or project picked with the
+      // mouse left a near-black edge and a halo on its pill until focus moved:
+      // a heavy border in a strip of soft pills. They are cancelled here, so
+      // the pill keeps its rest or set look; a keyboard user gets the 2px
+      // ring outline every FilterChip beside it draws (the trigger's own
+      // `focus-visible:outline-none` would otherwise leave it no mark at all).
+      "h-7 w-auto shrink-0 gap-1.5 rounded-full border px-2.5 py-0 text-label shadow-none focus-visible:shadow-none kbd-focus:outline kbd-focus:outline-2 kbd-focus:outline-offset-2 kbd-focus:outline-ring coarse:min-h-11",
+      isSet
+        ? "border-border bg-foreground/10 text-foreground focus-visible:border-border focus-visible:bg-foreground/10 dark:border-border dark:bg-foreground/10"
+        : "border-transparent bg-secondary text-muted-foreground hover:border-transparent hover:text-foreground focus-visible:border-transparent focus-visible:bg-secondary dark:border-transparent dark:bg-secondary"
+    );
   const filters = trimmed ? (
     // `min-w-0`: the dialog lays its children out on a grid, and a grid
     // item's automatic minimum is its content's width, which for a strip of
-    // fourteen chips is wider than the dialog. Without it the strip did not
-    // scroll; it widened the whole column, so every result row ran past the
-    // dialog's right edge and lost its trailing time.
+    // chips is wider than the dialog. Without it the strip did not scroll; it
+    // widened the whole column, so every result row ran past the dialog's
+    // right edge and lost its trailing time.
     <div className="min-w-0 border-b border-foreground/[0.07] px-3 py-2 dark:border-white/[0.07]">
-      <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-        <div role="group" aria-label="Filter by type" className="flex shrink-0 gap-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+        <div
+          ref={chipStrip}
+          role="group"
+          aria-label="Filter by type"
+          // `relative`: the strip is its chips' offset parent, which is what
+          // `chipRevealScroll` measures against.
+          className="chip-scroller no-scrollbar relative flex min-w-0 flex-[1_1_12rem] gap-1 overflow-x-auto"
+        >
           <FilterChip active={type === "all"} onClick={() => setType("all")}>
             Everything
           </FilterChip>
@@ -908,57 +1048,42 @@ function SearchPalette() {
             </FilterChip>
           ))}
         </div>
-        {/* A hairline between the two groups, because "Everything · Chats · …"
-            and "Any time · Today · …" are two questions and a gap alone does
-            not say so at this chip spacing. */}
-        <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-foreground/10" />
-        <div role="group" aria-label="Filter by date" className="flex shrink-0 gap-1">
-          {SEARCH_WINDOWS.map((w) => (
-            <FilterChip key={w} active={dateWindow === w} onClick={() => setDateWindow(w)}>
-              {SEARCH_WINDOW_LABELS[w]}
-            </FilterChip>
-          ))}
-        </div>
-        {projects.length > 0 && <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-foreground/10" />}
-        {projects.length > 0 && (
-          // The Radix Select, not a native <select>. This was the only OS popup
-          // list in the app shell: its menu ignored --popover, the border tokens
-          // and the pop-in/out pair, so the last control in a strip of five
-          // FilterChips opened in a completely different material — and it had no
-          // chevron, so it did not even look like it opened anything. `ALL` stands
-          // in for the empty value because Radix reserves "" for "no selection".
-          <Select
-            value={projectId || ALL_PROJECTS}
-            onValueChange={(v) => setProjectId(v === ALL_PROJECTS ? "" : v)}
-          >
-            <SelectTrigger
-              aria-label="Filter by project"
-              // Deliberately overrides `.field-well` (select.tsx), which paints a
-              // fill and an inset shadow: this trigger is the last chip in the
-              // strip, not a form field, so it takes the FilterChip pill shape,
-              // height and recessed-on-popover fill instead. It used to carry
-              // `ml-auto` to pin itself right in a two-row layout; in one
-              // scrolling row that would have pushed it past the chips it
-              // belongs beside. `shadow-none` is what
-              // cancels the well's inset — a groove under a 24px pill reads as
-              // damage — and it has to be a utility, because utilities are emitted
-              // after the components layer and nothing else can beat that class
-              // from a call site. The fill was `bg-muted/50`, which resolved to
-              // ~11.3% on a 13% panel and so left the chip with no fill at all.
-              className="h-7 max-w-[10rem] shrink-0 gap-1.5 rounded-full border-transparent bg-secondary px-2.5 py-0 text-label text-muted-foreground shadow-none hover:text-foreground coarse:min-h-11"
-            >
+        <div className="flex shrink-0 items-center gap-1">
+          <Select value={dateWindow} onValueChange={(v) => setDateWindow(v as SearchWindow)}>
+            <SelectTrigger aria-label="Filter by date" className={filterSelectClass(dateWindow !== "any")}>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="max-w-[16rem]">
-              <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  <span className="truncate">{p.name || "Untitled project"}</span>
+            <SelectContent onCloseAutoFocus={afterFilterClose}>
+              {SEARCH_WINDOWS.map((w) => (
+                <SelectItem key={w} value={w}>
+                  {SEARCH_WINDOW_LABELS[w]}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        )}
+          {projects.length > 0 && (
+            // The Radix Select, not a native <select>: the OS popup list
+            // ignored --popover, the border tokens and the pop-in/out pair.
+            // `ALL` stands in for the empty value because Radix reserves ""
+            // for "no selection".
+            <Select
+              value={projectId || ALL_PROJECTS}
+              onValueChange={(v) => setProjectId(v === ALL_PROJECTS ? "" : v)}
+            >
+              <SelectTrigger aria-label="Filter by project" className={cn(filterSelectClass(projectId !== ""), "max-w-[10rem]")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-w-[16rem]" onCloseAutoFocus={afterFilterClose}>
+                <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span className="truncate">{p.name || "Untitled project"}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
     </div>
   ) : null;
@@ -975,13 +1100,29 @@ function SearchPalette() {
   // 200ms at a time; placeholder rows at the result row's own geometry keep the
   // list's height and say loading instead. The sidebar already answers the
   // identical situation this way.
-  // rounded-menu on the placeholders, tracking the result row they stand in for
-  // — a skeleton drawn at a different radius from the thing that replaces it is
-  // a visible re-shape at the moment the results land.
+  //
+  // AND EACH PLACEHOLDER IS A RESULT ROW, not a grey bar: the 16px glyph in
+  // its 20px slot on the rows' 16px edge, a title line and a shorter snippet
+  // line on the 46px text edge, at the two-line row's own padding, dealt on
+  // the `tight` stagger the rows arrive on. Five full-width slabs said
+  // "loading" and nothing about what was coming. Three of them, 61px each,
+  // fill the list's 13rem floor, so the overlay keeps its height.
   const emptyState = searching ? (
-    <div className="space-y-1" aria-hidden="true">
-      {[...Array(5)].map((_, i) => (
-        <div key={i} className="skeleton h-9 rounded-control" style={staggerDelay(i, "tight")} />
+    <div aria-hidden="true">
+      {["62%", "48%", "70%"].map((width, i) => (
+        <div key={i} className="flex items-start gap-2.5 px-2 py-2 coarse:py-2.5">
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <span className="skeleton size-4 rounded-xs" style={staggerDelay(i, "tight")} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex h-6 items-center">
+              <span className="skeleton block h-3 rounded-full" style={{ width, ...staggerDelay(i, "tight") }} />
+            </span>
+            <span className="mt-0.5 flex h-[1.1875rem] items-center">
+              <span className="skeleton block h-2.5 w-2/5 rounded-full" style={staggerDelay(i, "tight")} />
+            </span>
+          </span>
+        </div>
       ))}
     </div>
   ) : failed ? (
@@ -1045,12 +1186,24 @@ function SearchPalette() {
 
 /**
  * SURFACE B — Command menu. Keyboard-first (⌘K, plus the "juno:command-palette"
- * event). A fuller palette: quick actions, recent chats, and every navigation
- * destination + the theme toggle and shortcuts sheet. A typed query filters
- * across all three groups.
+ * event).
+ *
+ * AT REST IT LEADS WITH THE READER'S OWN WORK: the five most recent chats,
+ * then six actions (new chat, new code session, search, the sidebar, the
+ * inbox, settings). It used to open on twenty-four commands — "New routine",
+ * "Open pull requests", "Roadmap…" — before the first chat, so the one thing
+ * a person most often opens it for was below the fold of a 560px overlay.
+ * Every other destination, the code sessions, the projects, the agents and
+ * the rest of Settings are still here and one word away: a typed query
+ * searches all of them, best match first.
+ *
+ * AND A QUERY NEVER DEAD-ENDS. It ends on "Search messages and files for …",
+ * which hands the words to the search surface, so a sentence that matches no
+ * title still goes somewhere on Enter.
  */
 function CommandMenu() {
   const router = useRouter();
+  const pathname = usePathname();
   // The rows' key hints print the platform's own modifier: a Windows or Linux
   // reader was shown "⌘" for four shortcuts their keyboard cannot make.
   const mod = useModifierKeyLabel();
@@ -1158,7 +1311,8 @@ function CommandMenu() {
     };
   }, [open]);
 
-  const q = query.trim().toLowerCase();
+  const typed = query.trim();
+  const q = typed.toLowerCase();
 
   const items = React.useMemo<PaletteItem[]>(() => {
     /*
@@ -1188,9 +1342,26 @@ function CommandMenu() {
     };
     const matches = (label: string, keywords?: string) =>
       !q || atWordStart(label.toLowerCase(), q) || (keywords ? atWordStart(keywords, q) : false);
+    /*
+     * How well a row answers the query, so the best answer is the row Enter
+     * runs. A label that starts with the query beats one with the query at a
+     * later word, which beats a keyword; a title that merely contains it (the
+     * chats' substring rule) ranks with a keyword. Typing `new` puts New chat
+     * ahead of a chat about "the new Florence plan", and typing `sync` still
+     * opens the chat about the sync worker.
+     */
+    const score = (label: string, keywords?: string) => {
+      const l = label.toLowerCase();
+      if (l.startsWith(q)) return 3;
+      if (atWordStart(l, q)) return 2;
+      if (l.includes(q) || (keywords ? atWordStart(keywords, q) : false)) return 1;
+      return 0;
+    };
 
-    // Five sections: Actions (things to start and places to go), Chats, Code
-    // sessions, Projects, Settings. A typed query filters across all five.
+    /* What the menu shows before anything is typed: the actions a person
+       reaches for daily. The rest are matched, not listed. */
+    const AT_REST = new Set(["new-chat", "new-code", "search-everything", "toggle-sidebar", "notifications"]);
+
     const actions: PaletteItem[] = [
       {
         id: "new-chat",
@@ -1288,7 +1459,7 @@ function CommandMenu() {
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "memory", group: "Actions", label: `Open ${FEATURE_NAMES.memory.label}`, icon: ComposerIcons.memory, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
-    ].filter((c) => matches(c.label, c.keywords));
+    ].filter((c) => (q ? matches(c.label, c.keywords) : AT_REST.has(c.id)));
 
     /*
      * CODE SESSIONS ARE ROWS HERE NOW.
@@ -1311,14 +1482,28 @@ function CommandMenu() {
     const byRecency = (a: ClientConversation, b: ClientConversation) =>
       new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     const chatRows = live.filter((c) => c.kind !== "code");
+    /*
+     * AT REST, THE CHAT YOU ARE IN IS NOT A ROW. The first row is the one
+     * Enter runs, and it was the open chat itself (the newest by recency), so
+     * ⌘K then Enter went nowhere and the commonest thing this menu is opened
+     * for, going back to the chat before, took an arrow press first. Leaving
+     * it out makes the default row the previous chat: ⌘K, Enter is alt-tab.
+     * A typed query still finds it, since a title typed out is a request for
+     * that chat. Read from the address, not from `activeConversationId`,
+     * which keeps the last chat after you leave it for another page.
+     */
+    const openChatId = pathname?.match(/^\/chat\/([^/]+)/)?.[1] ?? null;
     const chats: PaletteItem[] = (
       q
         ? chatRows.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6)
-        : [...chatRows].sort(byRecency).slice(0, 5)
+        : chatRows.filter((c) => c.id !== openChatId).sort(byRecency).slice(0, 5)
     ).map((c) => ({
       id: "recent-" + c.id,
       group: "Chats",
       label: c.title || "New chat",
+      // The typed words, marked in the title, as the search palette marks
+      // them: the two surfaces share a shell and now a highlight.
+      labelMarks: q ? matchMarks(c.title || "New chat", typed) : undefined,
       meta: relativeTime(c.lastMessageAt),
       icon: AppIcons.conversation,
       run: () => go("/chat/" + c.id),
@@ -1326,13 +1511,12 @@ function CommandMenu() {
 
     const codeRows = live.filter((c) => c.kind === "code");
     const codeSessions: PaletteItem[] = (
-      q
-        ? codeRows.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6)
-        : [...codeRows].sort(byRecency).slice(0, 4)
+      q ? codeRows.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6) : []
     ).map((c) => ({
       id: "code-session-" + c.id,
       group: "Code sessions",
       label: c.title || "Untitled session",
+      labelMarks: matchMarks(c.title || "Untitled session", typed),
       meta: c.codeWorkspaceName || relativeTime(c.lastMessageAt),
       icon: AppIcons.code,
       run: () => go("/chat/" + c.id),
@@ -1340,21 +1524,25 @@ function CommandMenu() {
 
     const projectRows: PaletteItem[] = (
       q
-        ? projects.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6)
-        : [...projects].sort((a, b) => Number(b.starred) - Number(a.starred) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 4)
+        ? [...projects]
+            .sort((a, b) => Number(b.starred) - Number(a.starred) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+            .filter((p) => p.name.toLowerCase().includes(q))
+            .slice(0, 6)
+        : []
     ).map((p) => ({
       id: "project-" + p.id,
       group: "Projects",
       label: p.name || "Untitled project",
+      labelMarks: matchMarks(p.name || "Untitled project", typed),
       meta: p.starred ? "Pinned" : relativeTime(p.updatedAt),
       icon: AppIcons.projects,
       run: () => go("/projects/" + p.id),
     }));
-    if (matches("All projects", "projects workspaces group")) {
+    if (q && matches("All projects", "projects workspaces group")) {
       projectRows.push({ id: "projects", group: "Projects", label: "All projects", icon: AppIcons.projects, run: () => go("/projects") });
     }
 
-    const settings: PaletteItem[] = [
+    const allSettings: PaletteItem[] = [
       { id: "settings", group: "Settings", label: "Settings", icon: AppIcons.settings, keywords: "preferences account theme", run: () => go("/settings") },
       { id: "upgrade", group: "Settings", label: "Plans & upgrade", icon: SettingsIcons.billing, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       {
@@ -1381,24 +1569,72 @@ function CommandMenu() {
           setShortcutsOpen(true);
         },
       },
-    ].filter((c) => matches(c.label, c.keywords));
+    ];
+    const settings = q ? allSettings.filter((c) => matches(c.label, c.keywords)) : [];
+    // At rest, Settings itself closes the short Actions list.
+    if (!q) {
+      const settingsRow = allSettings.find((c) => c.id === "settings");
+      if (settingsRow) actions.push({ ...settingsRow, group: "Actions" });
+    }
 
     const agentRows: PaletteItem[] = (
-      q
-        ? sidebarAgents.filter((a) => matches(a.name, `${a.role} agent teammate`))
-        : sidebarAgents.slice(0, 5)
+      q ? sidebarAgents.filter((a) => matches(a.name, `${a.role} agent teammate`)) : []
     ).map((a) => ({
       id: "agent-" + a.id,
       group: "Agents",
       label: a.name,
+      labelMarks: matchMarks(a.name, typed, { wordStartOnly: true }),
       meta: a.role || a.stateSentence,
       icon: AppIcons.agents,
       run: () => go(a.conversationId ? `/chat/${a.conversationId}` : `/agents/${a.id}`),
     }));
 
-    return [...actions, ...agentRows, ...chats, ...codeSessions, ...projectRows, ...settings];
-  }, [conversations, projects, sidebarAgents, q, go, resolvedTheme, toggleTheme, mod]);
+    // The reader's own things first, then the doors. With a query, each group
+    // is ordered by its own best match and the groups by theirs, ties keeping
+    // this order (the sort is stable).
+    const groups = [chats, codeSessions, projectRows, agentRows, actions, settings];
+    if (!q) return groups.flat();
+    const best = (rows: PaletteItem[]) => Math.max(0, ...rows.map((r) => score(r.label, r.keywords)));
+    const ranked = groups
+      .filter((rows) => rows.length > 0)
+      .map((rows) => [...rows].sort((a, b) => score(b.label, b.keywords) - score(a.label, a.keywords)))
+      .sort((a, b) => best(b) - best(a))
+      .flat();
+    // The way out of a query no title answers: the full-text surface, with the
+    // words already in its field (SearchPalette seeds from `detail.query`).
+    ranked.push({
+      id: "search-messages",
+      group: "Search",
+      label: `Search messages and files for “${typed}”`,
+      icon: AppIcons.search,
+      run: () => {
+        setOpen(false);
+        window.dispatchEvent(new CustomEvent("juno:search", { detail: { query: typed } }));
+      },
+    });
+    return ranked;
+  }, [conversations, projects, sidebarAgents, q, typed, go, resolvedTheme, toggleTheme, mod, pathname]);
 
+
+  /*
+   * NOTHING MATCHED, SAID OUT LOUD. A query no chat or command answers still
+   * leaves one row, the hand-off to full search, so the list was never empty
+   * and its "No matches" state never drew: the reader got that one row at the
+   * top of a 13rem box with 150px of blank under it, which looked half
+   * loaded. The note says what happened and the row under it says what Enter
+   * will do; together they fill the box. ONE sentence each: a second line
+   * here ("Enter searches inside your messages and files") only restated the
+   * row beneath it.
+   */
+  const nothingMatched = q !== "" && items.length === 1 && items[0].id === "search-messages";
+  const lead = nothingMatched ? (
+    <div className="flex flex-col items-center px-3 pb-5 pt-6 text-center motion-safe:animate-fade-in">
+      <span className="mb-3 flex size-10 items-center justify-center rounded-card border border-foreground/[0.07] bg-secondary text-muted-foreground">
+        <SearchX className="size-5" motion="none" aria-hidden="true" />
+      </span>
+      <p className="text-body text-foreground">No chats or commands match “{typed}”.</p>
+    </div>
+  ) : null;
 
   // The same anatomy as the search surface's empty state, so the two
   // palettes that share this shell also share what "nothing" looks like.
@@ -1416,11 +1652,19 @@ function CommandMenu() {
         open={open}
         onOpenChange={setOpen}
         ariaLabel="Command menu"
-        placeholder="Search or start a chat"
+        // What it does today: it jumps. "Search or start a chat" promised a
+        // chat from a typed sentence, and Enter on one did nothing; until
+        // /chat takes a prefill, the field says what Enter will do.
+        placeholder="Jump to a chat or command"
         query={query}
         onQueryChange={setQuery}
         items={items}
         emptyState={emptyState}
+        lead={lead}
+        status={nothingMatched ? `No chats or commands match. Enter searches inside your messages and files.` : undefined}
+        // Each keystroke re-ranks the list, so the cursor goes back to the
+        // best match rather than staying on whatever row now sits at its index.
+        resetKey={q}
         onCloseAutoFocus={onCloseAutoFocus}
       />
       <ShortcutsSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
@@ -1441,31 +1685,62 @@ export function CommandPalette() {
 function ShortcutsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const mod = useModifierKeyLabel();
   const groups = React.useMemo(() => shortcutGroups(mod), [mod]);
+  // BALANCED COLUMNS: Everywhere (6) and Products (2) beside Composer (8) and
+  // Responses (3) left the right column three rows and a heading longer, an
+  // empty block under Products. Everywhere and Responses (9) beside Composer
+  // and Products (10) end within a row of each other.
+  const columns = React.useMemo(() => {
+    const [everywhere, products, composer, responses, ...rest] = groups;
+    return [[everywhere, responses], [composer, products, ...rest]].map((c) => c.filter(Boolean));
+  }, [groups]);
+  const appleKeys = isAppleModifier(mod);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* max-w-lg and two columns from sm up: twenty rows in four groups do not
           fit one screen in a single 28rem column, and a shortcuts sheet you
-          have to scroll is a sheet you close and guess instead. The group heads
-          span both columns so a group never splits across them. */}
-      <DialogContent className="max-w-lg">
+          have to scroll is a sheet you close and guess instead.
+
+          TWO EXPLICIT COLUMNS, not CSS `columns`. The balancer decided where
+          each group landed, and the gap between groups was a bottom margin
+          it was free to drop at a column end, so "Responses" sat flush under
+          "Apps and tools" while "Products" had its 16px. Each column is now a
+          stack with one gap between its groups, and a group never splits.
+
+          40rem, not 32: at 512px a column was 216px, and off a Mac five
+          labels wrapped beside a "Ctrl+Shift+C" cap ("Copy the last /
+          response", "Focus the / composer"). Every row is one line now. */}
+      <DialogContent className="max-w-[40rem]">
         <DialogTitle>Keyboard shortcuts</DialogTitle>
-        <div className="mt-1 space-y-4 sm:columns-2 sm:gap-x-8 sm:space-y-0">
-          {groups.map((group) => (
-            <section key={group.title} className="break-inside-avoid sm:mb-4">
-              <p className="pb-1 font-mono text-label text-muted-foreground">{group.title}</p>
-              <ul className="divide-y divide-border/60">
-                {group.items.map((s) => (
-                  <li key={s.label} className="flex items-center justify-between gap-4 py-2 text-ui">
-                    <span className="text-foreground/90">{s.label}</span>
-                    <span className="flex shrink-0 items-center gap-1">
-                      {s.keys.map((k, i) => (
-                        <Kbd key={i}>{k}</Kbd>
-                      ))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+        <div className="mt-1 grid gap-4 sm:grid-cols-2 sm:gap-x-8">
+          {columns.map((column, ci) => (
+            <div key={ci} className="space-y-4">
+              {column.map((group) => (
+                <section key={group.title}>
+                  <p className="pb-1 font-mono text-label text-muted-foreground">{group.title}</p>
+                  <ul className="divide-y divide-border/60">
+                    {group.items.map((s) => (
+                      <li key={s.label} className="flex items-center justify-between gap-4 py-2 text-ui">
+                        <span className="text-foreground">{s.label}</span>
+                        {/* Each key as its platform writes it (`keyCap`), never
+                            a word beside a glyph: one cap per glyph on a Mac
+                            (⌘ ⇧ O), and elsewhere ONE cap spelled the way
+                            Windows and Linux write a chord, "Ctrl+Shift+O",
+                            as the sidebar's hints do (`chordLabel`). Three
+                            word caps side by side were twice as wide and
+                            wrapped "Copy the last response" onto three lines. */}
+                        <span className="flex shrink-0 items-center gap-1">
+                          {appleKeys ? (
+                            s.keys.map((k, i) => <Kbd key={i}>{k}</Kbd>)
+                          ) : (
+                            <Kbd>{s.keys.map((k) => keyCap(k, mod)).join("+")}</Kbd>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
           ))}
         </div>
       </DialogContent>

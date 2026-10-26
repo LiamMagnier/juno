@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { CrossConversationGallery } from "./gallery";
 
 /**
@@ -10,5 +11,9 @@ import { CrossConversationGallery } from "./gallery";
  */
 export default function CrossConversationDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <CrossConversationGallery />;
+  return (
+    <PageRoot>
+      <CrossConversationGallery />
+    </PageRoot>
+  );
 }

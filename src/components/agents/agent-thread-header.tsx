@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Monitor, MoreHorizontal, Pause, Play, Shapes, User } from "@/components/ui/icons";
+import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { localStateSentence } from "@/components/agents/agent-bits";
@@ -130,15 +131,29 @@ export function AgentThreadHeader({
     }
   };
 
-  const attention = state === "waiting" || state === "blocked" || agent.needsYou > 0;
+  // The sentence is inked by what it says, beside the face that says the
+  // same: the needs-you ember (never --attention, which is for warnings) for
+  // a wait, the blocked ink for a block, and the plain status line for
+  // anything else, even while another task needs you (a "Thinking" is never
+  // painted as an alert).
+  const asking = state === "waiting";
+  const blocked = state === "blocked";
   // Cloud work cannot start right now: said in words where the state goes,
   // rather than a thread that looks ready and then refuses every task.
-  const workNotice = attention ? null : threadWorkNotice(agent, state);
+  const workNotice = asking || blocked || agent.needsYou > 0 ? null : threadWorkNotice(agent, state);
   const profileOpen = activePanelTab === "profile";
+
+  // One live copy of a face per screen: while the profile's face or the empty
+  // thread's greeting (both larger) is up, this one is their still, so two
+  // copies of one agent never blink and glance out of step.
+  const greeting = useGreetingShown(agent.id);
+  const faceStill = profileOpen || greeting;
+  const { ref: barRef, roomy } = useBarRoom();
 
   return (
     <div
-      className="agent-thread-bar relative isolate flex shrink-0 justify-center px-4 py-2.5"
+      ref={barRef}
+      className="agent-thread-bar @container/bar relative isolate flex shrink-0 justify-center px-4 py-2.5"
       style={{ "--bar-tone": `var(--agent-${agent.avatar.tone})` } as React.CSSProperties}
     >
       <div className="flex w-full max-w-3xl items-center gap-3">
@@ -151,11 +166,20 @@ export function AgentThreadHeader({
           aria-label={`${agent.name}. ${workNotice ?? sentence}. Open profile`}
           aria-expanded={profileOpen}
         >
-          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
-          <span className="min-w-0 flex-1">
+          {faceStill ? (
+            <span className="agent-presence" style={{ width: 34, height: 34 }}>
+              <AgentFace avatar={agent.avatar} state={state} size={34} still />
+            </span>
+          ) : (
+            <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
+          )}
+          {/* A floor, so the labelled actions beside it never squeeze the
+              name and the state sentence out (the face never carries the
+              state alone). */}
+          <span className="min-w-[7rem] flex-1">
             <span className="block truncate font-serif text-body-lg leading-6 tracking-[-0.012em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
-            {attention ? (
-              <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite">
+            {asking || blocked ? (
+              <span className={cn("block truncate text-caption font-medium", asking ? "text-status-needs-you-ink" : "text-destructive-ink")} aria-live="polite">
                 {sentence}
               </span>
             ) : workNotice ? (
@@ -187,7 +211,10 @@ export function AgentThreadHeader({
               <TooltipContent>Computer</TooltipContent>
             </Tooltip>
           ) : null}
-          {/* Named actions where there is room (design: About, Appearance, Pause), icons on a phone. */}
+          {/* Named actions where the bar has room (design: About, Appearance,
+              Pause), icons when it is narrow. Keyed on the bar's own width,
+              not the viewport's: with the profile open the bar is half the
+              window. */}
           <Button
             type="button"
             size="sm"
@@ -197,14 +224,14 @@ export function AgentThreadHeader({
             className={cn("gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground", profileOpen && "bg-selected text-foreground")}
           >
             <User className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">{`About ${agent.name}`}</span>
-            <span className="sr-only sm:hidden">{`About ${agent.name}`}</span>
+            <span className="hidden @[40rem]/bar:inline">{`About ${agent.name}`}</span>
+            <span className="sr-only @[40rem]/bar:hidden">{`About ${agent.name}`}</span>
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setStudio(true)} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground md:inline-flex">
+          <Button type="button" size="sm" variant="ghost" onClick={() => setStudio(true)} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground @[44rem]/bar:inline-flex">
             <Shapes className="size-4" aria-hidden="true" />
             Appearance
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground md:inline-flex">
+          <Button type="button" size="sm" variant="ghost" onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground @[44rem]/bar:inline-flex">
             {agent.status === "paused" ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
             {agent.status === "paused" ? "Resume" : "Pause"}
           </Button>
@@ -222,10 +249,16 @@ export function AgentThreadHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuItem className="md:hidden" onSelect={() => setStudio(true)}>Appearance</DropdownMenuItem>
-              <DropdownMenuItem className="md:hidden" onSelect={() => void handlePauseResume()}>
-                {agent.status === "paused" ? "Resume" : "Pause"}
-              </DropdownMenuItem>
+              {/* The menu opens in a portal, outside the bar's container, so
+                  these two follow the bar's measured width instead. */}
+              {roomy ? null : (
+                <>
+                  <DropdownMenuItem onSelect={() => setStudio(true)}>Appearance</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void handlePauseResume()}>
+                    {agent.status === "paused" ? "Resume" : "Pause"}
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuItem
                 onSelect={() =>
                   void run("Pin", () => updateAgent(agent.id, { pinned: !agent.pinnedAt }))
@@ -285,6 +318,49 @@ function GREETING_RISE(step: number): React.CSSProperties {
   return { animationDelay: `${80 + step * 40}ms`, animationDuration: "var(--dur-slow)", animationTimingFunction: "cubic-bezier(.16, 1, .3, 1)", animationFillMode: "both" };
 }
 
+/*
+ * Which agents' greetings are on screen, so the header can draw its face
+ * still beside the greeting's live one (one live copy of a face per screen,
+ * docs/design/AGENTS.md §4.2). Both live in this file; the thread page needs
+ * to know nothing about it.
+ */
+const greetingsShown = new Map<string, number>();
+const greetingListeners = new Set<() => void>();
+function noteGreeting(agentId: string, delta: 1 | -1) {
+  const n = (greetingsShown.get(agentId) ?? 0) + delta;
+  if (n > 0) greetingsShown.set(agentId, n);
+  else greetingsShown.delete(agentId);
+  for (const listener of greetingListeners) listener();
+}
+function subscribeGreetings(listener: () => void) {
+  greetingListeners.add(listener);
+  return () => {
+    greetingListeners.delete(listener);
+  };
+}
+function useGreetingShown(agentId: string) {
+  return React.useSyncExternalStore(
+    subscribeGreetings,
+    () => greetingsShown.has(agentId),
+    () => false,
+  );
+}
+
+/** Whether the bar has room for its named actions (the same 44rem its container query uses), for the parts a portal takes out of it. */
+function useBarRoom() {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [roomy, setRoomy] = React.useState(true);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const rem = () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const observer = new ResizeObserver(([entry]) => setRoomy(entry.contentRect.width >= 44 * rem()));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, roomy };
+}
+
 export function AgentGreeting({
   agent,
   onSelectSuggestion: _onSelectSuggestion,
@@ -293,6 +369,10 @@ export function AgentGreeting({
   onSelectSuggestion?: (text: string) => void;
 }) {
   const paused = agent.status === "paused";
+  React.useEffect(() => {
+    noteGreeting(agent.id, 1);
+    return () => noteGreeting(agent.id, -1);
+  }, [agent.id]);
   return (
     <div className="flex flex-col items-center text-center" data-face-trigger>
       <span className="motion-safe:animate-agent-arrive">

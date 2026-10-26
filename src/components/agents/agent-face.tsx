@@ -1,150 +1,39 @@
 "use client";
 
 /**
- * An agent's face: its identity and its status bar in one drawing.
+ * An agent's face: its identity and its status bar in one drawing
+ * (docs/design/AGENTS.md §4).
  *
- * Grok Bot's insight, taken whole (docs/design/AGENTS.md §4): the face is
- * how a roster is read peripherally, and the eyes are how it says what the
- * agent is doing, so there is no spinner beside it.
+ * One flat mass in the agent's tone, two ink cuts for eyes, nothing bolted
+ * on: no outline, gradient, gloss, glow or shadow. The volume is in the
+ * motion: the eyes ride a sphere, so they foreshorten as the head turns and
+ * slide behind the limb when it goes round. The state language is drawn with
+ * Juno's own marks: while it works, the open ring with its ball terminal
+ * orbits the body in the presence colour; when it is done the ring closes and
+ * lets go; blocked, the ring stalls with its ball at the bottom; it thinks as
+ * three flat dots; it asks for you with a ball in a notch at its shoulder.
  *
- * Every number is from the table in AGENTS.md §4.2b, which the Swift face
- * (`JunoAgentFace.swift`) draws from too. Nothing is traced from a picture.
+ *  - face-geometry.ts  the bodies, eyes and orbit, and `drawFace(pose)`
+ *  - face-rig.ts       the states as poses over time, and the one clock
+ *  - agent-face.css    paint (tokens only) and the reduced-motion cross-fade
  *
- * Three layers of motion (docs/design/agents-rework/MOTION.md):
- *  - the rig (face-rig.ts) makes every face present: it blinks, glances
- *    around, looks at the pointer, and notices when you hover it;
- *  - the state is a behaviour, drawn in agent-face.css: working reads and
- *    bobs, thinking looks up with rising thought dots, waiting looks at you
- *    and lifts, done squints happily and hops once;
- *  - a change of state is a visible reaction (`data-react`), not a cut.
- * Reduced motion stops all of it; the eyes' SHAPE still carries the state.
+ * The server renders the state's still pose, which is also what reduced
+ * motion shows, so every state reads from a still frame. On the client the rig
+ * takes the element over and writes attribute diffs; React keeps the first
+ * frame as its props and never repaints over the rig.
  */
 
 import * as React from "react";
-import type { AgentAvatar, AgentShape, AgentEyes } from "@/lib/agents/avatar";
+import type { AgentAvatar } from "@/lib/agents/avatar";
 import { AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/domain";
+import { reducedMotionAt } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
-import { attachFaceRig, type FaceRigHandle } from "./face-rig";
+import { NO_EXTRAS, drawFace, sizeClass, type FaceFrame, type FaceSpec } from "./face-geometry";
+import { attachFaceRig, faceCtx, faceIdentity, frontPose, stillPose, type FaceConfig, type FaceRigHandle } from "./face-rig";
 
 export type AgentFaceSize = "xs" | "sm" | "md" | "lg" | "xl";
 
 const PX: Record<AgentFaceSize, number> = { xs: 20, sm: 28, md: 48, lg: 96, xl: 160 };
-
-interface ShapeSpec {
-  eyes: readonly [[number, number], [number, number]];
-  scale: number;
-}
-
-const SHAPES: Record<AgentShape, ShapeSpec> = {
-  tile: { eyes: [[24, 32], [40, 32]], scale: 0.9 },
-  halo: { eyes: [[25, 33], [39, 33]], scale: 0.85 },
-  prism: { eyes: [[25, 32], [39, 32]], scale: 0.85 },
-  orb: { eyes: [[24, 31], [40, 31]], scale: 1 },
-  pebble: { eyes: [[24, 32], [40, 32]], scale: 1 },
-  capsule: { eyes: [[26, 29], [38, 29]], scale: 0.9 },
-  petal: { eyes: [[26, 34], [42, 34]], scale: 1 },
-  bloom: { eyes: [[25, 32], [39, 32]], scale: 0.95 },
-  spark: { eyes: [[27, 33], [37, 33]], scale: 0.75 },
-};
-
-const EYES: Record<AgentEyes, { w: number; h: number; r: number }> = {
-  soft: { w: 7, h: 9, r: 2.5 },
-  round: { w: 6.5, h: 6.5, r: 3.25 },
-  tall: { w: 5, h: 11, r: 2.5 },
-  wide: { w: 10, h: 5.5, r: 2.75 },
-};
-
-function Body({ shape }: { shape: AgentShape }) {
-  switch (shape) {
-    case "tile":
-      return <path d="M21 6 H43 Q58 6 58 21 V43 Q58 58 43 58 H21 Q6 58 6 43 V21 Q6 6 21 6 Z" />;
-    case "halo":
-      return <path fillRule="evenodd" d="M32 4 A28 28 0 1 1 31.99 4 Z M32 9 A5 5 0 1 0 32.01 9 Z" />;
-    case "prism":
-      return <path d="M27 5 Q32 2 37 5 L55 16 Q60 19 60 25 V40 Q60 46 55 49 L37 60 Q32 63 27 60 L9 49 Q4 46 4 40 V25 Q4 19 9 16 Z" />;
-    case "orb":
-      return <circle cx={32} cy={33} r={26} />;
-    case "pebble":
-      return <rect x={6} y={9} width={52} height={48} rx={20} />;
-    case "capsule":
-      return <rect x={12} y={5} width={40} height={56} rx={20} />;
-    case "petal":
-      return <path d="M8 9 H34 C48 9 58 21 58 35 C58 49 47 59 33 59 C19 59 8 48 8 34 Z" />;
-    case "bloom":
-      return (
-        <>
-          <circle cx={22} cy={23} r={15} />
-          <circle cx={42} cy={23} r={15} />
-          <circle cx={22} cy={43} r={15} />
-          <circle cx={42} cy={43} r={15} />
-          <rect x={22} y={23} width={20} height={20} />
-        </>
-      );
-    case "spark":
-      return <path d="M32 5 C36 22 42 28 59 33 C42 38 36 44 32 61 C28 44 22 38 5 33 C22 28 28 22 32 5 Z" />;
-  }
-}
-
-/** The open ring with its ball terminal: 70° open at the upper right, ball at the gap's leading end. */
-function ringPath(): { arc: string; ball: [number, number] } {
-  const cx = 51;
-  const cy = 12;
-  const r = 4.6;
-  const at = (deg: number): [number, number] => {
-    const t = (deg * Math.PI) / 180;
-    return [Math.round((cx + r * Math.cos(t)) * 100) / 100, Math.round((cy + r * Math.sin(t)) * 100) / 100];
-  };
-  // Gap from -80° to -10° (clockwise from three o'clock, y down).
-  const start = at(-10);
-  const end = at(-80);
-  return { arc: `M${start[0]} ${start[1]} A${r} ${r} 0 1 1 ${end[0]} ${end[1]}`, ball: at(-45) };
-}
-const RING = ringPath();
-
-function Mark({ mark, eyes }: { mark: AgentAvatar["mark"]; eyes: ShapeSpec["eyes"] }) {
-  switch (mark) {
-    case "none":
-      return null;
-    case "ring":
-      return (
-        <g className="agent-face__mark" opacity={0.7}>
-          <path d={RING.arc} fill="none" strokeWidth={1.6} strokeLinecap="round" />
-          <circle cx={RING.ball[0]} cy={RING.ball[1]} r={1.4} stroke="none" />
-        </g>
-      );
-    case "spark":
-      return (
-        <path
-          className="agent-face__mark"
-          stroke="none"
-          d="M51 5 Q52.4 10.6 58 12 Q52.4 13.4 51 19 Q49.6 13.4 44 12 Q49.6 10.6 51 5 Z"
-        />
-      );
-    case "leaf":
-      return <path className="agent-face__mark" stroke="none" d="M44 18 C44 11 49 6 57 6 C57 13 52 18 44 18 Z" />;
-    case "antenna":
-      return (
-        <g className="agent-face__mark">
-          <path d="M32 8 L32 2.5" fill="none" strokeWidth={2} strokeLinecap="round" />
-          <circle cx={32} cy={2.5} r={2.2} stroke="none" />
-        </g>
-      );
-    case "visor": {
-      const [[lx, y], [rx]] = eyes;
-      return (
-        <rect
-          className="agent-face__visor"
-          x={lx - 7}
-          y={y - 6}
-          width={rx - lx + 14}
-          height={12}
-          rx={6}
-          stroke="none"
-        />
-      );
-    }
-  }
-}
 
 export interface AgentFaceProps {
   avatar: AgentAvatar;
@@ -159,117 +48,128 @@ export interface AgentFaceProps {
    */
   labelState?: AgentState;
   /**
-   * On the rig (face-rig.ts): blinks, glances, and looks at the pointer. On by
-   * default; off for faces that are pictures of a choice (the face studio's
-   * swatches), where twenty blinking faces would be noise.
+   * Rest life (face-rig.ts): it blinks, it glances around now and then, and
+   * blinks when you hover the control it belongs to; between those it is still. Off for faces that are
+   * pictures of a choice (pickers, swatches), where twenty blinking faces would
+   * be noise. State motion plays either way.
    */
   live?: boolean;
+  /** With `live`: the face looks toward the pointer while it is near. */
+  look?: boolean;
+  /**
+   * The state's still frame and nothing else, as under reduced motion: no
+   * clock, no pointer. For a second copy of a face that is alive elsewhere on
+   * the page (the Orbit roster under the stage), so only one copy moves.
+   */
+  still?: boolean;
+  /**
+   * With `still`: draw the face turned nearly to the viewer (frontPose), so
+   * the two eyes are near the same size and the cuts compare, yet still on a
+   * sphere and leaning the agent's way, never two upright bars (⏸). For
+   * pickers that compare eye cuts.
+   */
+  pose?: "front";
+  /**
+   * A preview a person drives (the studio, the hire flow's state buttons):
+   * each change plays at once, without the smoothing meant for agent loops.
+   */
+  direct?: boolean;
   className?: string;
 }
 
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
+
+/** Attribute bags from drawFace use SVG's names; React wants a few in camelCase. */
+const REACT_NAME: Record<string, string> = { "stroke-width": "strokeWidth", "clip-path": "clipPath" };
+function props(attrs: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key in attrs) out[REACT_NAME[key] ?? key] = attrs[key];
+  return out;
+}
+
 /**
- * The 3D body (2026-10): each shape is modelled and lit in Blender
- * (scripts/agent-bodies: the exact silhouette above, inflated into clay and
- * rendered front-orthographic on this 64-unit grid) as two greyscale passes.
- * The face tints them with its own tone here, so one render serves every
- * colour and the agent's hue stays a design-system token:
- *   shade  multiplied by the tone (white clay, diffuse light only)
- *   spec   screened on top (the coat's highlights on black)
- * Below 28 px the flat vector body is crisper, so small faces keep it.
+ * The still pose for a state, turned nearly to the viewer when asked
+ * (frontPose: the cuts compare, and still lean). Drawn with the agent's
+ * identity, as the live rig is, so the server's frame, a still copy and the
+ * live face rest the same way round.
  */
-function Body3D({ shape, tintId }: { shape: AgentShape; tintId: string }) {
-  return (
-    <>
-      <defs>
-        <filter id={tintId} x="0" y="0" width="1" height="1" colorInterpolationFilters="sRGB">
-          <feFlood className="agent-face__tint" result="tone" />
-          <feComposite in="tone" in2="SourceAlpha" operator="in" result="toned" />
-          <feBlend in="SourceGraphic" in2="toned" mode="multiply" />
-        </filter>
-        <filter id={`${tintId}-ink`} x="0" y="0" width="1" height="1" colorInterpolationFilters="sRGB">
-          <feFlood className="agent-face__tint-ink" result="tone" />
-          <feComposite in="tone" in2="SourceAlpha" operator="in" result="toned" />
-          <feBlend in="SourceGraphic" in2="toned" mode="multiply" />
-        </filter>
-      </defs>
-      <image className="agent-face__shade" href={`/agents/bodies/${shape}-shade.webp`} x={0} y={0} width={64} height={64} filter={`url(#${tintId})`} />
-      <image className="agent-face__spec" href={`/agents/bodies/${shape}-spec.webp`} x={0} y={0} width={64} height={64} />
-    </>
-  );
+function stillFor(config: FaceConfig, state: AgentState, pose?: "front") {
+  const P = stillPose(state, faceCtx(config.spec, config.mark, 0, false, config.identity));
+  return pose === "front" ? frontPose(P) : P;
 }
 
-/** A sculpted mark: the same two passes, tinted with the mark ink instead of the tone. */
-function Mark3D({ mark, tintId }: { mark: "ring" | "spark" | "leaf" | "antenna"; tintId: string }) {
-  return (
-    <g className="agent-face__mark3d">
-      <image href={`/agents/bodies/mark-${mark}-shade.webp`} x={0} y={0} width={64} height={64} filter={`url(#${tintId})`} />
-      <image className="agent-face__spec" href={`/agents/bodies/mark-${mark}-spec.webp`} x={0} y={0} width={64} height={64} />
-    </g>
-  );
-}
-
-/** The body's light: a soft top-left key, the tone itself, a deeper rim. */
-function Shading({ id }: { id: string }) {
-  return (
-    <defs>
-      <radialGradient id={id} cx="0.34" cy="0.26" r="0.86">
-        <stop offset="0" className="agent-face__lit" />
-        <stop offset="0.52" className="agent-face__tone" />
-        <stop offset="1" className="agent-face__rim" />
-      </radialGradient>
-    </defs>
-  );
-}
-
-export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = false, className }: AgentFaceProps) {
+export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = false, look = false, still = false, pose, direct = false, className }: AgentFaceProps) {
   const px = typeof size === "number" ? size : PX[size];
-  const spec = SHAPES[avatar.shape];
-  const cut = EYES[avatar.eyes];
-  const w = cut.w * spec.scale;
-  const h = cut.h * spec.scale;
-  const r = cut.r * spec.scale;
-  // The mark and the thinking/working details are dropped below 28px; the
-  // eyes never are. Light, catchlights and the ground shadow need room to read.
-  const detailed = px >= 28;
-  const rich = px >= 40;
-  const sculpted = px >= 28;
   const label = name ? `${name}, ${AGENT_STATE_LABEL[labelState ?? state].toLowerCase()}` : undefined;
-  const gradientId = `agent-face-${React.useId().replace(/:/g, "")}`;
+  const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const ids = React.useMemo(() => ({ mask: `agent-face-${uid}-k`, clip: `agent-face-${uid}-c`, body: `agent-face-${uid}-b` }), [uid]);
+  const sizeKey = sizeClass(px).key;
+  const config = React.useMemo<FaceConfig>(() => {
+    const spec: FaceSpec = { shape: avatar.shape, eyes: avatar.eyes, size: sizeClass(px), px };
+    const identity = faceIdentity({ shape: avatar.shape, tone: avatar.tone, eyes: avatar.eyes, mark: avatar.mark });
+    return { spec, mark: avatar.mark, identity, live, look: live && look, direct };
+    // sizeKey stands for sizeClass(px), which is a fresh object each call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatar.shape, avatar.tone, avatar.eyes, avatar.mark, px, sizeKey, live, look, direct]);
+
+  // The first frame, kept for the element's life: the server's picture, and
+  // the props React compares against, so it never writes over the rig.
+  const [initial] = React.useState<FaceFrame>(() => drawFace(config.spec, stillFor(config, state), NO_EXTRAS, ids));
+  // The state the first frame draws: the paint keys off the state as drawn
+  // (data-drawn), which the rig moves on when its pose does.
+  const [initialState] = React.useState<AgentState>(state);
+  // A still face is drawn by React from its props, every render.
+  const stillFrame = React.useMemo(
+    () => (still ? drawFace(config.spec, stillFor(config, state, pose), NO_EXTRAS, ids) : null),
+    [still, config, state, ids, pose],
+  );
   const ref = React.useRef<SVGSVGElement | null>(null);
   const rig = React.useRef<FaceRigHandle | null>(null);
+  const attached = React.useRef<FaceConfig | null>(null);
+  const stateRef = React.useRef(state);
+  stateRef.current = state;
 
-  React.useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const el = ref.current;
-    if (!el || !live) return;
-    const handle = attachFaceRig(el, state, px);
+    if (!el || still) return;
+    const handle = attachFaceRig(el, config, stateRef.current, ids);
     rig.current = handle;
+    attached.current = config;
     return () => {
       handle.release();
       rig.current = null;
     };
-    // The rig is attached once per element; state reaches it below.
+    // Attached once per element (the svg is keyed on `still`); state and config reach it below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, px]);
+  }, [still]);
 
-  // A change of state is a small visible reaction (a settle), not a cut.
-  const previous = React.useRef(state);
-  React.useEffect(() => {
+  // A still face swaps frames with the reduced-motion cross-fade; with motion
+  // allowed its paint transitions carry the swap, so a roster copy never dips.
+  const shownState = React.useRef(state);
+  useIsomorphicLayoutEffect(() => {
+    if (shownState.current === state) return;
+    shownState.current = state;
     rig.current?.setState(state);
     const el = ref.current;
-    if (!el || previous.current === state) return;
-    previous.current = state;
-    el.removeAttribute("data-react");
-    // Restart the one-shot even when two changes land in a row.
-    void el.getBoundingClientRect();
-    el.setAttribute("data-react", "");
-    const timer = window.setTimeout(() => el.removeAttribute("data-react"), 700);
-    return () => window.clearTimeout(timer);
-  }, [state]);
+    if (still && el && reducedMotionAt(el)) {
+      el.removeAttribute("data-swap");
+      void el.getBoundingClientRect();
+      el.setAttribute("data-swap", "");
+    }
+  }, [state, still]);
 
+  useIsomorphicLayoutEffect(() => {
+    if (attached.current === config) return;
+    attached.current = config;
+    rig.current?.configure(config);
+  }, [config]);
+
+  const f = stillFrame ?? initial;
   return (
     <svg
+      key={still ? "still" : "live"}
       ref={ref}
-      viewBox="0 0 64 64"
+      viewBox="-32 -32 64 64"
       width={px}
       height={px}
       role={label ? "img" : undefined}
@@ -277,68 +177,45 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
       aria-hidden={label ? undefined : true}
       focusable="false"
       data-state={state}
-      data-rich={rich ? "" : undefined}
-      className={cn("agent-face shrink-0 overflow-visible", className)}
+      data-drawn={still ? state : initialState}
+      className={cn("agent-face shrink-0", className)}
       style={{ "--face-tone": `var(--agent-${avatar.tone})` } as React.CSSProperties}
     >
-      {rich && !sculpted ? <Shading id={gradientId} /> : null}
-      {rich ? <ellipse className="agent-face__ground" cx={32} cy={62.5} rx={16} ry={2.4} /> : null}
-      <g className="agent-face__rig">
-        <g className="agent-face__all">
-          <g className="agent-face__body" data-sculpted={sculpted ? "" : undefined} style={rich && !sculpted ? { fill: `url(#${gradientId})` } : undefined}>
-            {sculpted ? <Body3D shape={avatar.shape} tintId={`${gradientId}-tint`} /> : <Body shape={avatar.shape} />}
+      <defs>
+        <clipPath id={ids.clip} clipPathUnits="userSpaceOnUse">
+          <use href={`#${ids.body}`} />
+        </clipPath>
+        {/* The cut-paper knockouts: where the orbit's front half and its ball
+            pass in front, and the needs-you notch. Real holes, so the page or
+            the card shows through. */}
+        <mask id={ids.mask} maskUnits="userSpaceOnUse" x={-2} y={-2} width={4} height={4}>
+          <rect x={-2} y={-2} width={4} height={4} fill="#fff" />
+          <path data-part="kRing" fill="none" stroke="#000" strokeLinecap="round" {...props(f.kRing)} />
+          <circle data-part="kBall" fill="#000" {...props(f.kBall)} />
+          <g data-part="kBodyT" {...props(f.kBodyT)}>
+            <rect data-part="kBadge" fill="#000" {...props(f.kBadge)} />
           </g>
-          {detailed && avatar.mark === "visor" ? <Mark mark="visor" eyes={spec.eyes} /> : null}
-          <g className="agent-face__gaze">
-            <g className="agent-face__eyes">
-              <g className="agent-face__lids">
-                {spec.eyes.map(([cx, cy], i) => (
-                  <g key={i} className="agent-face__eye" style={{ "--eye-h": h } as React.CSSProperties}>
-                    <rect className="agent-face__pupil" x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={r} />
-                    {rich ? (
-                      <circle
-                        className="agent-face__glint"
-                        cx={cx - w / 2 + Math.min(w, h) * 0.34}
-                        cy={cy - h / 2 + Math.min(w, h) * 0.34}
-                        r={Math.max(0.8, Math.min(w, h) * 0.17)}
-                      />
-                    ) : null}
-                  </g>
-                ))}
-              </g>
-              <g className="agent-face__happy" fill="none">
-                {spec.eyes.map(([cx, cy], i) => (
-                  <path
-                    key={i}
-                    d={`M${cx - 4} ${cy + 1.5} Q${cx} ${cy - 3.5} ${cx + 4} ${cy + 1.5}`}
-                    strokeWidth={2.4}
-                    strokeLinecap="round"
-                  />
-                ))}
-              </g>
+        </mask>
+      </defs>
+      <g data-part="g" {...props(f.g)}>
+        <path data-part="rBack" className="agent-face__ring" {...props(f.rBack)} />
+        <circle data-part="bBack" className="agent-face__ball" {...props(f.bBack)} />
+        <g data-part="masked" {...props(f.masked)}>
+          <circle data-part="d0" className="agent-face__body" {...props(f.d0)} />
+          <circle data-part="d1" className="agent-face__body" {...props(f.d1)} />
+          <g data-part="bodyT" {...props(f.bodyT)}>
+            <path data-part="body" className="agent-face__body" {...props(f.body)} />
+            <g data-part="eyes" {...props(f.eyes)}>
+              <path data-part="e0" className="agent-face__eye" {...props(f.e0)} />
+              <path data-part="e1" className="agent-face__eye" {...props(f.e1)} />
             </g>
           </g>
-          {detailed && avatar.mark !== "visor" ? (
-            sculpted && avatar.mark !== "none" ? (
-              <Mark3D mark={avatar.mark} tintId={`${gradientId}-tint-ink`} />
-            ) : (
-              <Mark mark={avatar.mark} eyes={spec.eyes} />
-            )
-          ) : null}
-          {detailed ? (
-            <g className="agent-face__thought">
-              <circle cx={49} cy={13} r={1.5} />
-              <circle cx={54} cy={8.5} r={2} />
-              <circle cx={60} cy={3.5} r={2.6} />
-            </g>
-          ) : null}
-          {detailed ? (
-            <g className="agent-face__workbars">
-              {[25, 30.5, 36].map((x) => (
-                <rect key={x} x={x} y={45} width={3} height={3} rx={1.5} />
-              ))}
-            </g>
-          ) : null}
+        </g>
+        <path data-part="rFront" className="agent-face__ring" {...props(f.rFront)} />
+        <circle data-part="bFront" className="agent-face__ball" {...props(f.bFront)} />
+        <g data-part="badgeT" className="agent-face__badge" {...props(f.badgeT)}>
+          <circle data-part="badgeBall" {...props(f.badgeBall)} />
+          <rect data-part="badgeBar" {...props(f.badgeBar)} />
         </g>
       </g>
     </svg>

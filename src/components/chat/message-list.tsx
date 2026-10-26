@@ -144,7 +144,14 @@ function MeasuredTurn({ message, observe, children }: {
   const ref = React.useRef<HTMLDivElement>(null);
   const key = message.renderKey ?? message.id;
   React.useLayoutEffect(() => ref.current ? observe(ref.current, key) : undefined, [observe, key]);
-  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className="pb-6">{children}</div>;
+  // Space pairs a question with its reply: a short step from a question down
+  // to its answer, a longer one from an answer to the next question, so a
+  // long thread scans as turns rather than as evenly spaced blocks. On a
+  // coarse pointer the question's own 44px actions sit under it at rest, so
+  // the answer's step grows to keep the pair reading as one. Heights are
+  // measured (observeRow), so windowing, the rail and the answer bed follow
+  // without knowing the rule.
+  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className={message.role === "USER" ? "pb-1" : "pb-8 coarse:pb-12"}>{children}</div>;
 }
 
 // The chat's turn actions arrive as new functions on every streamed token
@@ -368,8 +375,12 @@ export function MessageList(props: MessageListProps) {
         // The same column as the composer, and now literally the same gutter
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
+        // `pb-12`: at the end of the scroll range the newest answer's toolbar
+        // clears the 72px bottom fade (its row's own pb-8 plus these 48px);
+        // text still fades under the composer while the reader is scrolled up.
+        // The answer bed measures from this same box, so the pin holds.
         className={cn(
-          "page-gutter mx-auto w-full transcript-column pt-6",
+          "page-gutter mx-auto w-full transcript-column pt-6 pb-12",
           !entered && "motion-safe:animate-rise-in",
         )}
       >

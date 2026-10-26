@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { ShellFixture } from "./shell-fixture";
 
 /**
@@ -28,5 +29,9 @@ export default async function ShellDevPage({
   if (process.env.NODE_ENV === "production") notFound();
   const { quota, many, shell, w, drawer } = await searchParams;
   const width = Math.min(336, Math.max(224, Number(w) || 260));
-  return <ShellFixture nearCap={quota === "near"} many={many === "1"} shell={shell === "1"} drawer={drawer === "chat" || drawer === "code" ? drawer : undefined} width={width} />;
+  return (
+    <PageRoot>
+      <ShellFixture nearCap={quota === "near"} many={many === "1"} shell={shell === "1"} drawer={drawer === "chat" || drawer === "code" ? drawer : undefined} width={width} />
+    </PageRoot>
+  );
 }

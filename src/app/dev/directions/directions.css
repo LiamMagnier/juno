@@ -147,22 +147,9 @@ html.dark[data-direction] .product-switch-thumb {
 .dark [data-direction] ::selection,
 html.dark[data-direction] ::selection { background-color: hsl(var(--brand) / 0.34); }
 
-/* Faces: flat tone, no ground shadow, no catchlight, and still at rest.
-   Presence moves for thinking, working and waiting; an idle face does not
-   breathe. */
-[data-direction] :is(.agent-face__lit, .agent-face__rim) { stop-color: hsl(var(--face-tone)); }
-[data-direction] :is(.agent-face__ground, .agent-face__glint) { display: none; }
-[data-direction] .agent-face:is([data-state="idle"], [data-state="sleeping"]) .agent-face__all { animation: none; }
-[data-direction] .dir-face-offline .agent-face { filter: saturate(0); opacity: 0.55; }
-/* Hover is tonal: a row under the pointer does not lift or squash the face
-   in it. Each selector outranks the one in agent-face.css it answers. */
-[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible, :active) .agent-face:not([data-state="sleeping"]) .agent-face__rig,
-[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible, :active) .agent-face .agent-face__rig,
-[data-direction] .agent-face:not([data-state="sleeping"]):is(:hover, :active) .agent-face__rig,
-[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible) .agent-face:is([data-state="idle"], [data-state="waiting"], [data-state="done"]) .agent-face__eyes,
-[data-direction] .agent-face:is([data-state="idle"], [data-state="waiting"]):hover .agent-face__eyes {
-  transform: none;
-}
+/* No filter on an offline face: it is drawn paused (fixtures.ts maps offline
+   to `sleeping`), in the dormant paint. A desaturated or faded face reads as
+   a broken image (agent-face.css). */
 
 /* Graphite's switch is ink on and inverts in dark, so its light thumb
    would vanish on a light track: the thumb takes the ink there. */

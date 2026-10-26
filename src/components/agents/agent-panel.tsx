@@ -203,7 +203,7 @@ export function AgentProfile({
           <Section title={needsYou ? AGENT_STATE_NAMES.needsAnswer : "Working on"}>
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <p className={cn("text-body", needsYou ? "font-medium text-[hsl(var(--attention))]" : "text-foreground")}>
+                <p className={cn("text-body", needsYou ? "font-medium text-status-needs-you-ink" : "text-foreground")}>
                   {task?.title ?? localStateSentence(agent, agent.state)}
                 </p>
                 <button

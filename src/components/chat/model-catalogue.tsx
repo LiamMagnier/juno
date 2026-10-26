@@ -41,6 +41,8 @@
 import * as React from "react";
 import {
   ChevronDown,
+  ChevronLeft,
+  Info,
   LayoutGrid,
   Lock,
   Search,
@@ -56,7 +58,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
-import { type ModelId, type ModelInfo, type Modality } from "@/lib/models";
+import { resolveModel, type ModelId, type ModelInfo, type Modality } from "@/lib/models";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { PLANS, modelRequiredPlan } from "@/lib/plans";
@@ -75,6 +77,7 @@ import { EffortPanelContext } from "@/components/chat/reasoning-slider";
 import { cn } from "@/lib/utils";
 import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { catalogueCloseFocus } from "@/components/chat/catalogue-focus";
 
 type Filter = "all" | "favorites" | Provider;
 
@@ -111,6 +114,22 @@ function priceLabel(m: ModelInfo): string {
 }
 
 
+/**
+ * Auto's line under its name below `sm`, where the detail panel is folded
+ * away. Auto is the one row whose NAME does not say what it is, so it is the
+ * one row that gets a descriptive second line. Written to fit a 390px phone
+ * whole (27 characters): a line cut off with "…" reads as unfinished.
+ *
+ * Model rows get no descriptive line. One derived from each description's
+ * first sentence was tried and taken back out: at that width 74 of 78 lines
+ * were cut off mid-word, and two-line rows halved how many models the list
+ * shows. What a phone row has instead: an ⓘ that opens the detail panel's
+ * facts over the list, and, for a model that is being retired, a short
+ * warning line ("Retires 3 Dec 2026"), the one fact that must not wait for a
+ * tap.
+ */
+const AUTO_SUMMARY = "Best model for each message";
+
 /** Does this model answer the query? One predicate, so the rail's counts and
  *  the list can never disagree about what a search matches. */
 function matchesQuery(m: ModelInfo, q: string): boolean {
@@ -137,7 +156,7 @@ function SectionLabel({ children, count }: { children: React.ReactNode; count?: 
     <div aria-hidden className="flex items-center gap-2 px-2.5 pb-1 pt-3">
       <span className="shrink-0 text-caption font-medium text-muted-foreground">{children}</span>
       {count != null && (
-        <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">{count}</span>
+        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{count}</span>
       )}
       <span className="flex-1" />
     </div>
@@ -171,6 +190,32 @@ function EmptyBlock({
   );
 }
 
+/** A deprecated model's warning, short enough for a phone row's second line. */
+function retirementLabel(m: ModelInfo): string | null {
+  if (m.status !== "deprecated") return null;
+  return m.retiresOn ? `Retires ${formatRetirementDate(m.retiresOn)}` : "Deprecated";
+}
+
+/**
+ * The detail panel's (and the phone sheet's) line for a deprecated model,
+ * written from the same facts as the row's, so one surface never says
+ * "Retires 11 Dec 2026" on the row and "Retires Dec 11, 2026" beside it: the
+ * date from `retiresOn` through the one formatter, the way forward from
+ * `replacedBy` by the model's own name (else the "Use …" the stored note
+ * names). A note with no date (an access limit, no shutdown announced) is
+ * printed as written.
+ */
+export function retirementNote(
+  m: Pick<ModelInfo, "status" | "retiresOn" | "replacedBy" | "deprecationNote">,
+  nameOf: (id: string) => string | null,
+): string | null {
+  if (m.status !== "deprecated") return null;
+  const replacement = m.replacedBy ? nameOf(m.replacedBy) : null;
+  const use = replacement ? `Use ${replacement}` : (m.deprecationNote?.match(/(?:^|\.\s+)(Use\s.+?)\.?$/)?.[1] ?? null);
+  if (m.retiresOn) return [`Retires ${formatRetirementDate(m.retiresOn)}`, use].filter(Boolean).join(". ");
+  return m.deprecationNote ?? use ?? "Deprecated by the provider";
+}
+
 /**
  * One graded fact in the detail panel: the number, then a rule under it.
  *
@@ -179,7 +224,25 @@ function EmptyBlock({
  * `bg-secondary` — over 3:1 in both themes — and never the accent, which in
  * this surface means "selected" and nothing else.
  */
-function Stat({ label, value, unit, score }: { label: string; value: string; unit?: string; score: number }) {
+function Stat({
+  label,
+  value,
+  unit,
+  caption,
+  score,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  /**
+   * What the value is measured in, when the unit does not fit beside it
+   * ("per 1M tokens, in · out"). Its comma-separated phrases each hold
+   * together and the line breaks only between them: in a 112px column the
+   * whole caption ran 12px past its rule on one line.
+   */
+  caption?: string;
+  score: number;
+}) {
   return (
     <div>
       <div className="text-caption text-muted-foreground">{label}</div>
@@ -199,7 +262,48 @@ function Stat({ label, value, unit, score }: { label: string; value: string; uni
           style={{ transform: `scaleX(${Math.max(0, Math.min(10, score)) / 10})` }}
         />
       </div>
+      {/* Under the rule, so the rules of a row stay level with each other. */}
+      {caption && (
+        <div className="mt-1.5 text-micro text-muted-foreground">
+          {caption.split(", ").map((phrase, i, all) => (
+            <React.Fragment key={phrase}>
+              <span className="whitespace-nowrap">{i < all.length - 1 ? `${phrase},` : phrase}</span>
+              {i < all.length - 1 ? " " : null}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * A favourite's star, off or on: two cuts of one star in one cell, trading
+ * opacity and a small scale. The filled cut is the set's "on", and the swap is
+ * a cross-fade rather than a replace (ICONS_AND_MOTION.md §2.2.7). The detail
+ * panel's star and the phone rows' stars both draw it, so one press looks the
+ * same wherever it is made.
+ */
+function StarSwap({ on, className }: { on: boolean; className?: string }) {
+  return (
+    <span aria-hidden className="grid place-items-center">
+      <span
+        className={cn(
+          "col-start-1 row-start-1 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity",
+          on ? "scale-75 opacity-0" : "opacity-100",
+        )}
+      >
+        <Star className={className} />
+      </span>
+      <span
+        className={cn(
+          "col-start-1 row-start-1 grid place-items-center text-primary transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity",
+          on ? "opacity-100" : "scale-75 opacity-0",
+        )}
+      >
+        <Star weight="fill" className={className} />
+      </span>
+    </span>
   );
 }
 
@@ -219,6 +323,7 @@ function DetailPanel({
   starred,
   onUse,
   onToggleStar,
+  sheet,
 }: {
   model: ModelInfo | null;
   selected: boolean;
@@ -226,6 +331,12 @@ function DetailPanel({
   starred: boolean;
   onUse: () => void;
   onToggleStar: () => void;
+  /**
+   * The phone's copy: the same facts over the list, opened from a row's ⓘ
+   * (the side panel is folded away under `sm`), with a way back. Its back
+   * button takes focus, and Escape goes back rather than closing the popover.
+   */
+  sheet?: { onBack: () => void; backRef: React.RefObject<HTMLButtonElement | null> };
 }) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const modelId = model?.id;
@@ -233,7 +344,9 @@ function DetailPanel({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [modelId]);
 
-  const shell = "hidden w-[272px] shrink-0 flex-col border-l border-border/60 bg-muted/40 md:flex";
+  const shell = sheet
+    ? "absolute inset-0 z-10 flex flex-col bg-popover motion-safe:animate-fade-in motion-safe:[animation-duration:var(--dur-fast)]"
+    : "hidden w-[272px] shrink-0 flex-col border-l border-border/60 bg-muted/40 sm:flex";
   if (!model) {
     return (
       <div className={cn(shell, "items-center justify-center p-5")}>
@@ -251,8 +364,22 @@ function DetailPanel({
     model.agenticTools ? "Tools" : null,
   ].filter((c): c is string => !!c);
 
+  const priced = model.modality !== "audio" && metrics.inputUsdPerMTok + metrics.outputUsdPerMTok > 0;
   return (
-    <div className={shell}>
+    <div className={shell} role={sheet ? "dialog" : undefined} aria-label={sheet ? `${model.name} details` : undefined}>
+      {sheet && (
+        <div className="flex shrink-0 items-center border-b border-border/60 px-1.5 py-1">
+          <button
+            ref={sheet.backRef}
+            type="button"
+            onClick={sheet.onBack}
+            className="pressable inline-flex h-11 items-center gap-1 rounded-control pl-1.5 pr-3 text-ui text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:active:scale-100"
+          >
+            <ChevronLeft aria-hidden className="size-4" />
+            Models
+          </button>
+        </div>
+      )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
         {/* The words swap in place, unkeyed and unfaded: the cursor moves
             every ~33ms under a held arrow key or a pointer sweep, and a fade
@@ -261,20 +388,24 @@ function DetailPanel({
           <span className="grid size-10 shrink-0 place-items-center rounded-field border border-foreground/[0.07] bg-card dark:border-white/[0.08]">
             {auto ? <JunoMark className="size-5" /> : <ProviderLogo provider={model.provider} className="size-5" />}
           </span>
-          <span className="min-w-0 flex-1 truncate text-body font-medium text-foreground">{model.name}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-body font-medium text-foreground">{model.name}</span>
+            {/* The API id, for the people who want it; Auto has none (it was
+                printing the product's name here, in mono, as if it were one). */}
+            {!auto && (
+              <span className="block truncate font-mono text-micro text-muted-foreground">{model.providerModel}</span>
+            )}
+          </span>
         </div>
-        <p className="mt-0.5 font-mono text-micro text-muted-foreground">
-          {auto ? PRODUCT_NAME : model.providerModel}
-        </p>
 
         {model.description && (
           <p className="mt-3 text-caption leading-relaxed text-muted-foreground">{model.description}</p>
         )}
 
         {model.status === "deprecated" && (
-          <p className="mt-3 text-caption text-warning">
-            {model.deprecationNote ??
-              (model.retiresOn ? `Retires ${formatRetirementDate(model.retiresOn)}` : "Deprecated by the provider")}
+          // Pretty-wrapped: "Use Nano Banana / 2.1" left the version alone on a line.
+          <p className="mt-3 text-pretty text-caption text-warning">
+            {retirementNote(model, (id) => resolveModel(id)?.name ?? null)}
           </p>
         )}
 
@@ -291,27 +422,25 @@ function DetailPanel({
                 />
               )}
               {/* Inverted: the rule reads "how cheap", so a long bar is good news
-                      on every row in the panel rather than on some of them. */}
-              <Stat label="Cost" value={priceLabel(model)} score={11 - expensivenessScore(metrics)} />
+                      on every row in the panel rather than on some of them. The
+                      unit is said once, under it; a mono In / Out table used to
+                      repeat the same two prices directly below. */}
+              <Stat
+                label="Cost"
+                value={priceLabel(model)}
+                caption={priced ? "per 1M tokens, in · out" : undefined}
+                score={11 - expensivenessScore(metrics)}
+              />
             </div>
 
-            {model.modality !== "audio" && metrics.inputUsdPerMTok + metrics.outputUsdPerMTok > 0 && (
-              <dl className="mt-4 space-y-1 font-mono text-micro tabular-nums text-muted-foreground">
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt>In / MTok</dt>
-                  <dd>{formatPrice(metrics.inputUsdPerMTok)}</dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt>Out / MTok</dt>
-                  <dd>{formatPrice(metrics.outputUsdPerMTok)}</dd>
-                </div>
-              </dl>
-            )}
-
+            {/* Short items that wrap whole, never a joined string that broke
+                with a dangling "·" at the end of a line. */}
             {caps.length > 0 && (
-              <p className="mt-4 font-mono text-micro leading-relaxed text-muted-foreground">
-                {caps.join(" · ")}
-              </p>
+              <ul aria-label="Capabilities" className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-caption text-muted-foreground">
+                {caps.map((cap) => (
+                  <li key={cap}>{cap}</li>
+                ))}
+              </ul>
             )}
           </>
         )}
@@ -350,28 +479,11 @@ function DetailPanel({
                 aria-label={starred ? "Remove from favorites" : "Add to favorites"}
                 aria-pressed={starred}
                 onClick={onToggleStar}
+                // As tall as "Use this model" beside it under a coarse pointer
+                // (44px); icon-sm stops at 40 there.
+                className="coarse:size-11"
               >
-                {/* Two cuts of one star in one cell, trading opacity and a
-                    small scale: the filled cut is the set's "on", and the swap
-                    is a cross-fade rather than a replace (§2.2.7). */}
-                <span aria-hidden className="grid place-items-center">
-                  <span
-                    className={cn(
-                      "col-start-1 row-start-1 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity",
-                      starred ? "scale-75 opacity-0" : "opacity-100",
-                    )}
-                  >
-                    <Star className="size-3.5" />
-                  </span>
-                  <span
-                    className={cn(
-                      "col-start-1 row-start-1 grid place-items-center text-primary transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity",
-                      starred ? "opacity-100" : "scale-75 opacity-0",
-                    )}
-                  >
-                    <Star weight="fill" className="size-3.5" />
-                  </span>
-                </span>
+                <StarSwap on={starred} className="size-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{starred ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
@@ -423,7 +535,7 @@ function RailTile({
           className={cn(
             // `.pressable` carries the colour cross-fade AND the press dip on
             // their own rungs, so no transition-* utility sits beside it.
-            "pressable flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
+            "pressable flex size-8 shrink-0 items-center justify-center rounded-control outline-none coarse:size-11",
             "motion-reduce:active:scale-100",
             "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             active ? "surface-key text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -442,6 +554,42 @@ function RailTile({
   );
 }
 
+/**
+ * One filter on the phone's chip row: the rail's tiles, named, for the width
+ * at which the rail folds away. On is the same on tone the rail uses
+ * (`bg-selected`, FLAT_UI.md §3.1), never the accent.
+ */
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "pressable relative inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-caption font-medium outline-none",
+        // The touch target: 6px past the chip above and below, inside the
+        // row's own padding, so a thumb gets 44px and the eye a 32px chip.
+        "after:absolute after:inset-x-0 after:-inset-y-1.5",
+        "motion-reduce:active:scale-100",
+        "focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "border-transparent bg-selected text-foreground"
+          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 /** One group of rows in the list, with its past generations folded away. */
 type Group = { key: string; label: string; models: ModelInfo[]; legacy: ModelInfo[]; byModality: boolean };
 
@@ -457,6 +605,11 @@ function rowKeyFor(prefix: string, id: string) {
   return `${prefix}${id}`;
 }
 
+/** The row key of a group's "Past models" switch. */
+function legacyToggleKey(g: Pick<Group, "key" | "label">) {
+  return `${g.key || g.label}legacy-toggle`;
+}
+
 function rowDomId(key: string) {
   return `model-row-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 }
@@ -469,6 +622,7 @@ export function ModelCatalogue({
   onPick,
   thinking,
   side = "top",
+  returnFocusTo,
 }: {
   value: ModelId;
   /** The model `value` resolves to — computed once by the chip. */
@@ -481,14 +635,29 @@ export function ModelCatalogue({
   thinking?: React.ReactNode;
   /** The side the chip opens toward. */
   side?: "top" | "bottom";
+  /** Where focus goes on close when the popover has no trigger (opened from the thinking panel). */
+  returnFocusTo?: React.RefObject<HTMLElement | null>;
 }) {
   const { quota, models, settings } = useApp();
+  /** Closed by a press or focus elsewhere: focus stays where the person put it. */
+  const interactedOutside = React.useRef(false);
   const save = useSettingsSave();
   const plan = quota.plan;
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
   /** The row under the cursor (pointer or arrow keys), by ROW key. */
   const [cursorKey, setCursorKey] = React.useState<string | null>(null);
+  /** The row whose facts are open over the list (phone width, from its ⓘ). */
+  const [infoKey, setInfoKey] = React.useState<string | null>(null);
+  const infoBackRef = React.useRef<HTMLButtonElement>(null);
+  /**
+   * "Past models" groups the person opened or closed, by group. A group with
+   * no entry is open exactly when it holds the selected model: a superseded
+   * model in use (Nano Banana 2 after 2.1 shipped) used to open the catalogue
+   * with its row folded away, no check anywhere in sight and the arrow keys
+   * unable to reach it.
+   */
+  const [legacyToggles, setLegacyToggles] = React.useState<ReadonlyMap<string, boolean>>(() => new Map());
   /**
    * Read on mount rather than in an effect keyed on an `open` flag: this
    * component IS the open state now — the chip mounts it when the catalogue
@@ -499,6 +668,7 @@ export function ModelCatalogue({
   React.useEffect(() => setRecent(readRecent()), []);
   const rowRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
   const listViewportRef = React.useRef<HTMLDivElement>(null);
+  const searchRef = React.useRef<HTMLInputElement>(null);
   /**
    * Whether the pointer has genuinely MOVED since the last arrow key.
    *
@@ -510,6 +680,15 @@ export function ModelCatalogue({
   const pointerActive = React.useRef(false);
 
   const favorites = React.useMemo(() => new Set(settings.favoriteModels ?? []), [settings.favoriteModels]);
+  /**
+   * The favourites the list is GROUPED by: the set as it stood when the
+   * catalogue opened. Starring a row used to insert a Favorites group above
+   * it at once, which pushed every row under the pointer (or thumb) down a
+   * group and showed the starred model twice. The stars, the rail's count and
+   * the Favorites filter read the live set; the group catches up on the next
+   * open (this component is re-created per open).
+   */
+  const [groupFavorites] = React.useState(() => new Set(settings.favoriteModels ?? []));
   const toggleFavorite = (id: string) => {
     const next = favorites.has(id)
       ? (settings.favoriteModels ?? []).filter((m) => m !== id)
@@ -574,7 +753,7 @@ export function ModelCatalogue({
    */
   const groups = React.useMemo<Group[]>(() => {
     const out: Group[] = [];
-    const starred = filter === "all" && !q ? visible.filter((m) => favorites.has(m.id)) : [];
+    const starred = filter === "all" && !q ? visible.filter((m) => groupFavorites.has(m.id)) : [];
     if (starred.length) out.push({ key: "favorites:", label: "Favorites", models: sortByModality(starred), legacy: [], byModality: false });
     if (filter === "all" && !q && visible.length >= RECENT_MIN_LIST) {
       const seen = new Set(starred.map((m) => m.id));
@@ -593,12 +772,23 @@ export function ModelCatalogue({
       });
     }
     return out;
-  }, [visible, recent, favorites, filter, q]);
+  }, [visible, recent, groupFavorites, filter, q]);
 
-  /** Every row in render order, by row key, with the model each stands for. */
-  const { order, byKey } = React.useMemo(() => {
+  /** Whether a group's "Past models" is open: always while searching, else as toggled, else when it holds the selection. */
+  const legacyOpen = React.useCallback(
+    (g: Group) => !!q || (legacyToggles.get(g.key || g.label) ?? g.legacy.some((m) => m.id === value)),
+    [q, legacyToggles, value],
+  );
+
+  /**
+   * Every row in render order, by row key, with the model each stands for.
+   * A group's "Past models" switch is a row too (`toggles`), so the arrow
+   * keys and Enter reach it from the search field like any model.
+   */
+  const { order, byKey, toggles } = React.useMemo(() => {
     const order: string[] = [];
     const byKey = new Map<string, ModelInfo>();
+    const toggles = new Map<string, Group>();
     const push = (prefix: string, m: ModelInfo) => {
       const key = rowKeyFor(prefix, m.id);
       order.push(key);
@@ -607,10 +797,29 @@ export function ModelCatalogue({
     if (showAutoRow) push("", AUTO_MODEL_INFO);
     for (const g of groups) {
       for (const m of g.models) push(g.key, m);
-      if (q) for (const m of g.legacy) push(g.key, m);
+      // While searching every group is open and the switch does nothing: it
+      // is not drawn, so it is not in the path either.
+      if (g.legacy.length > 0 && !q) {
+        const key = legacyToggleKey(g);
+        order.push(key);
+        toggles.set(key, g);
+      }
+      // The past rows are in the arrow keys' path whenever they are on
+      // screen, under the prefix they are drawn with.
+      if (legacyOpen(g)) for (const m of g.legacy) push(`${g.key}legacy:`, m);
     }
-    return { order, byKey };
-  }, [groups, showAutoRow, q]);
+    return { order, byKey, toggles };
+  }, [groups, showAutoRow, legacyOpen, q]);
+
+  const toggleLegacy = (g: Group) => setLegacyToggles((prev) => new Map(prev).set(g.key || g.label, !legacyOpen(g)));
+
+  /**
+   * The cursor as drawn: the row it is on, or, while a search has left it on
+   * no row, the first result, so the row Enter would pick is lit and the
+   * panel describes it. Typing clears `cursorKey`; it used to leave the panel
+   * describing the model in use while Enter silently picked the first match.
+   */
+  const cursor = cursorKey && (byKey.has(cursorKey) || toggles.has(cursorKey)) ? cursorKey : q ? (order[0] ?? null) : null;
   const isLocked = (m: ModelInfo) => isModelLocked(m, plan);
   const select = onPick;
 
@@ -631,29 +840,47 @@ export function ModelCatalogue({
       // A row is a button: its own click handles Enter.
       if (e.target instanceof HTMLButtonElement) return;
       e.preventDefault();
-      const m = byKey.get(cursorKey ?? order[0]);
+      const at = cursor ?? order[0];
+      const toggle = toggles.get(at);
+      if (toggle) return toggleLegacy(toggle);
+      const m = byKey.get(at);
       if (m) select(m);
       return;
     }
     e.preventDefault();
     if (e.key === "Home") return moveCursorTo(order[0]);
     if (e.key === "End") return moveCursorTo(order[order.length - 1]);
-    const at = cursorKey ? order.indexOf(cursorKey) : -1;
+    const at = cursor ? order.indexOf(cursor) : -1;
     moveCursorTo(e.key === "ArrowDown" ? order[(at + 1) % order.length] : order[(at - 1 + order.length) % order.length]);
   };
 
-  const detailModel: ModelInfo | null = (cursorKey ? byKey.get(cursorKey) : null) ?? current ?? null;
+  const detailModel: ModelInfo | null = (cursor ? byKey.get(cursor) : null) ?? current ?? null;
 
   /**
    * The selected model's row: its copy under its own lab (where the Text /
-   * Image / Video / Audio headings are), else wherever else it is listed.
+   * Image / Video / Audio headings are), or under that lab's Past models,
+   * else wherever else it is listed.
    */
   const selectedKey = React.useMemo(() => {
     const id = autoSelected ? AUTO_MODEL_INFO.id : value;
-    const own = rowKeyFor("", id);
-    if (byKey.has(own)) return own;
+    for (const own of [rowKeyFor("", id), rowKeyFor("legacy:", id)]) if (byKey.has(own)) return own;
     return order.find((key) => byKey.get(key)?.id === id) ?? null;
   }, [autoSelected, value, byKey, order]);
+
+  /** The phone's detail sheet: open from a row's ⓘ, back to that row. */
+  const infoModel = infoKey ? (byKey.get(infoKey) ?? null) : null;
+  const openInfo = (key: string) => {
+    setCursorKey(key);
+    setInfoKey(key);
+  };
+  const closeInfo = () => {
+    const key = infoKey;
+    setInfoKey(null);
+    if (key) requestAnimationFrame(() => rowRefs.current.get(key)?.focus({ preventScroll: true }));
+  };
+  React.useEffect(() => {
+    if (infoKey) infoBackRef.current?.focus({ preventScroll: true });
+  }, [infoKey]);
 
   /**
    * Open on the model in use: its row lit (so the panel describes it and the
@@ -678,16 +905,23 @@ export function ModelCatalogue({
       }
       placedRef.current = true;
       setCursorKey(selectedKey);
-      let heading: Element | null = row.previousElementSibling;
-      while (heading && heading.tagName === "BUTTON") heading = heading.previousElementSibling;
+      // Each row sits in a wrapper with its phone star (`data-model-row`):
+      // walk back over the wrappers to the heading above them.
+      let heading: Element | null = (row.closest("[data-model-row]") ?? row).previousElementSibling;
+      while (heading && heading.hasAttribute("data-model-row")) heading = heading.previousElementSibling;
       const top = viewport.getBoundingClientRect().top - viewport.scrollTop;
       const rowTop = row.getBoundingClientRect().top - top;
       const rowBottom = rowTop + row.offsetHeight;
       const headingTop = heading ? heading.getBoundingClientRect().top - top : rowTop;
-      viewport.scrollTop =
+      const target =
         rowBottom - headingTop <= viewport.clientHeight - 8
           ? Math.max(0, headingTop - 4)
           : Math.max(0, rowTop - (viewport.clientHeight - row.offsetHeight) / 2);
+      // A few pixels is the top of the list, not a scroll. Auto has no
+      // heading and sits at the viewport's own 6px inset, so `headingTop - 4`
+      // came out at 2: enough to switch on ScrollFade's top fade, which then
+      // lay over the selected row and drew it faded, as if disabled.
+      viewport.scrollTop = target <= 8 ? 0 : target;
     };
     frame = requestAnimationFrame(place);
     return () => cancelAnimationFrame(frame);
@@ -712,16 +946,129 @@ export function ModelCatalogue({
     // Inert either way: not yet callable, or its route is failing right now.
     const soon = !!m.comingSoon || !!m.unavailableReason;
     const locked = isLocked(m);
-    const cursor = cursorKey === key;
+    const lit = cursor === key;
     const starred = !auto && favorites.has(m.id);
     const caps = [m.vision ? "Vision" : null, m.reasoning ? "Thinking" : null, m.webSearch ? "Search" : null].filter(
       (c): c is string => !!c,
     );
     const price = auto || soon ? "" : priceLabel(m);
+    const retiring = retirementLabel(m);
 
     return (
-      <button
+      // The row and, under `sm`, its ⓘ: siblings, because a button inside
+      // the option (itself a button) is not allowed. The ⓘ opens the detail
+      // panel's facts over the list, where the panel itself is folded away.
+      // The cursor's fill is drawn here, on the pair, so it spans the line.
+      <div
         key={key}
+        data-model-row=""
+        className={cn(
+          "flex items-center rounded-control",
+          // Colour only, so it keeps its timing under reduced motion (fades
+          // are not travel; ICONS_AND_MOTION.md §2.2, rule 10).
+          "transition-colors duration-fast ease-out-soft",
+          lit && "bg-accent",
+        )}
+      >
+        <button
+          ref={(el) => {
+            if (el) rowRefs.current.set(key, el);
+            else rowRefs.current.delete(key);
+          }}
+          id={rowDomId(key)}
+          type="button"
+          role="option"
+          aria-selected={active}
+          // The row shows a name; the label carries what the panel shows, so a
+          // screen reader is not made to travel to a second pane for the facts.
+          aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price}${m.modality === "audio" ? "" : " per million tokens"}` : ""}${locked ? `, needs ${PLANS[modelRequiredPlan(m)].name}` : ""}${retiring ? `, ${retiring}` : ""}`}
+          disabled={soon}
+          onPointerMove={() => {
+            if (pointerActive.current) setCursorKey(key);
+          }}
+          onFocus={() => setCursorKey(key)}
+          onClick={() => select(m)}
+          data-cursor={lit ? "" : undefined}
+          className={cn(
+            // ONE cursor, one fill. `hover:bg-accent` used to survive alongside
+            // it, so a stationary pointer and the arrow keys painted two rows
+            // with the identical fill at once. A minimum, not a height: under
+            // a coarse pointer it grows to the 44px touch target, and Auto's
+            // row (and a retiring model's) carries a second line under `sm`.
+            "flex min-h-9 w-full min-w-0 flex-1 items-center gap-2.5 rounded-control px-2.5 text-left outline-none coarse:min-h-11",
+            (auto || retiring) && "py-1 sm:py-0",
+            "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            // Locked rows are NOT dimmed: somebody comparing plans has to be able
+            // to read the row they cannot use. Only "coming soon" is inert.
+            soon && "cursor-not-allowed opacity-45",
+          )}
+        >
+          {/* Auto's mark at the lab marks' 18px, bare like theirs. */}
+          {auto ? (
+            <JunoMark className="size-[18px] shrink-0" />
+          ) : (
+            <ProviderLogo provider={m.provider} className="size-[18px] shrink-0" />
+          )}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className={cn("truncate text-ui text-foreground", active && "font-medium")}>{m.name}</span>
+            {/* What Auto does, where the panel that says so is folded away. */}
+            {auto && <span className="truncate text-caption text-muted-foreground sm:hidden">{AUTO_SUMMARY}</span>}
+            {/* The one fact a phone row cannot leave to the ⓘ: that the model
+                is going away. Short ("Retires 3 Dec 2026"), so it is never cut. */}
+            {retiring && <span className="text-caption text-warning sm:hidden">{retiring}</span>}
+          </span>
+          {starred && (
+            <span aria-hidden className="inline-flex shrink-0">
+              <Star className="size-3 fill-current text-muted-foreground" />
+            </span>
+          )}
+          <span aria-hidden className="flex w-4 shrink-0 items-center justify-center">
+            {active ? (
+              <StatusIcons.success className="size-4 text-foreground" />
+            ) : locked ? (
+              <Lock className="size-3 text-muted-foreground" />
+            ) : null}
+          </span>
+        </button>
+        {auto ? (
+          // Keeps Auto's check on the same x as the rows' checks below it.
+          <span aria-hidden className="size-9 shrink-0 sm:hidden coarse:size-11" />
+        ) : (
+          // The detail panel's facts, for the width that folds the panel
+          // away: what it is, how capable, fast and costly, what it can do,
+          // and the favourite star. Hidden from assistive tech and out of
+          // the tab order: the option's own name already carries those
+          // facts, and a listbox may only hold options.
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => openInfo(key)}
+            className={cn(
+              // The third ink at rest: a row of these must read quieter than
+              // the names beside them.
+              "pressable grid size-9 shrink-0 place-items-center rounded-control text-ink-tertiary outline-none hover:text-foreground active:text-foreground sm:hidden coarse:size-11",
+              "motion-reduce:active:scale-100",
+            )}
+          >
+            <Info className="size-4" />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  /**
+   * A group's "Past models" switch, drawn as it was (a quiet row with its
+   * count and a chevron) and named for what a press does. An option, so the
+   * listbox holds nothing else; never selected, because it picks nothing.
+   */
+  const renderLegacyToggle = (g: Group) => {
+    const key = legacyToggleKey(g);
+    const open = legacyOpen(g);
+    const lit = cursor === key;
+    return (
+      <button
         ref={(el) => {
           if (el) rowRefs.current.set(key, el);
           else rowRefs.current.delete(key);
@@ -729,48 +1076,31 @@ export function ModelCatalogue({
         id={rowDomId(key)}
         type="button"
         role="option"
-        aria-selected={active}
-        // The row shows a name; the label carries what the panel shows, so a
-        // screen reader is not made to travel to a second pane for the facts.
-        aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price}${m.modality === "audio" ? "" : " per million tokens"}` : ""}${locked ? `, needs ${PLANS[modelRequiredPlan(m)].name}` : ""}`}
-        disabled={soon}
+        aria-selected={false}
+        aria-label={`${open ? "Hide" : "Show"} ${g.legacy.length} past ${g.label} ${g.legacy.length === 1 ? "model" : "models"}`}
         onPointerMove={() => {
           if (pointerActive.current) setCursorKey(key);
         }}
         onFocus={() => setCursorKey(key)}
-        onClick={() => select(m)}
-        data-cursor={cursor ? "" : undefined}
+        onClick={() => toggleLegacy(g)}
+        data-open={open ? "" : undefined}
+        data-cursor={lit ? "" : undefined}
         className={cn(
-          // ONE cursor, one fill. `hover:bg-accent` used to survive alongside
-          // it, so a stationary pointer and the arrow keys painted two rows
-          // with the identical fill at once.
-          "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-left outline-none",
-          // Colour only, so it keeps its timing under reduced motion (fades
-          // are not travel; ICONS_AND_MOTION.md §2.2, rule 10).
-          "transition-colors duration-fast ease-out-soft",
+          "group/legacy flex h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground coarse:h-11",
           "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          cursor && "bg-accent",
-          // Locked rows are NOT dimmed: somebody comparing plans has to be able
-          // to read the row they cannot use. Only "coming soon" is inert.
-          soon && "cursor-not-allowed opacity-45",
+          lit && "bg-accent text-foreground",
         )}
       >
-        {auto ? (
-          <span className="flex size-4 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
-            <JunoMark className="size-2.5" />
-          </span>
-        ) : (
-          <ProviderLogo provider={m.provider} className="size-[18px] shrink-0" />
-        )}
-        <span className={cn("min-w-0 flex-1 truncate text-ui text-foreground", active && "font-medium")}>{m.name}</span>
-        {starred && <Star aria-hidden className="size-3 shrink-0 fill-current text-muted-foreground" />}
-        <span aria-hidden className="flex w-4 shrink-0 items-center justify-center">
-          {active ? (
-            <StatusIcons.success className="size-4 text-foreground" />
-          ) : locked ? (
-            <Lock className="size-3 text-muted-foreground" />
-          ) : null}
-        </span>
+        <span className="shrink-0 text-caption font-medium">Past models</span>
+        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{g.legacy.length}</span>
+        <span className="flex-1" />
+        {/* `ease-in-out` is the curve for an A-to-B move with both endpoints
+            visible; an ease-out makes the chevron look like it arrives from
+            off-screen. */}
+        <ChevronDown
+          aria-hidden
+          className="size-3 shrink-0 transition-transform duration-base ease-in-out group-data-[open]/legacy:rotate-180 motion-reduce:transition-none"
+        />
       </button>
     );
   };
@@ -819,25 +1149,51 @@ export function ModelCatalogue({
         sideOffset={8}
         collisionPadding={16}
         avoidCollisions
-        onKeyDown={onNavKeyDown}
+        onKeyDown={(event) => {
+          // The detail sheet is a step into one row: the list's keys wait.
+          if (infoKey) return;
+          onNavKeyDown(event);
+        }}
+        // Escape in the detail sheet goes back to the list, not out of the
+        // popover.
+        onEscapeKeyDown={(event) => {
+          if (!infoKey) return;
+          event.preventDefault();
+          closeInfo();
+        }}
+        // The search field takes focus only under a fine pointer. On a touch
+        // screen focusing it raises the soft keyboard over the list that just
+        // opened, so focus goes to the popover itself (arrow keys and Enter
+        // still drive the list from there) and the field waits for a tap.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          if (window.matchMedia("(pointer: fine)").matches) searchRef.current?.focus();
+          else (event.currentTarget as HTMLElement | null)?.focus?.({ preventScroll: true });
+        }}
+        onInteractOutside={() => {
+          interactedOutside.current = true;
+        }}
+        onCloseAutoFocus={(event) => catalogueCloseFocus(event, { returnFocusTo, interactedOutside: interactedOutside.current })}
         // 600 wide: a 48px rail, a ~284px names column and a 268px panel.
         // Names at one line each mean a lab's whole current range is visible
         // at once, so the list no longer needs the width it used to.
         //
-        // A HEIGHT RANGE, not a fixed height. Fixed was wrong in both
-        // directions — too short and a lab showed a third of itself, too tall
-        // and a four-model lab left a dead panel under its last row — and free
-        // content-sizing is worse: the box is anchored at its bottom edge, so
-        // it would re-lay the whole list upward under a pointer that has not
-        // moved every time you pick a lab. Both bounds clamp to the viewport.
+        // ONE HEIGHT, clamped to the viewport. The box is anchored at its
+        // bottom edge (it opens above the chip), so any change in its height
+        // moves its TOP edge, and the filters live along the top: the lab
+        // rail's tiles, and on a phone the chip row. A 380–500px range let
+        // the list's length set the height, so picking an empty Favorites
+        // shrank the box and slid every filter 120px down under a pointer or
+        // thumb that had not moved; the next tap landed on the wrong one. A
+        // short lab leaves room under its last row, and that is the cheaper
+        // trade: the panel beside it fills the height either way.
         style={{
           width: "min(640px, calc(100vw - 2rem))",
-          minHeight: "min(380px, var(--radix-popover-content-available-height))",
-          maxHeight: "min(500px, var(--radix-popover-content-available-height))",
+          height: "min(500px, var(--radix-popover-content-available-height))",
         }}
         className="flex max-w-none origin-bottom-right flex-col overflow-hidden rounded-menu p-0"
       >
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           {/* Lab rail — 48px of marks, folds under `sm`. Only labs with
               something in them; a tile can never lead to an empty list. */}
           <div className="hidden w-12 shrink-0 flex-col border-r border-border/60 bg-muted/40 sm:flex">
@@ -899,9 +1255,10 @@ export function ModelCatalogue({
                   one decorative home in this popover. The field had neither:
                   the control the popover autofocuses was the one that looked
                   inert. */}
-              <div className="flex h-10 items-center gap-2.5 rounded-control px-2.5">
+              <div className="flex h-10 items-center gap-2.5 rounded-control px-2.5 coarse:h-11">
                 <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 <input
+                  ref={searchRef}
                   value={query}
                   onChange={(e) => {
                     setQuery(e.target.value);
@@ -914,8 +1271,7 @@ export function ModelCatalogue({
                   role="combobox"
                   aria-expanded
                   aria-controls="model-picker-list"
-                  aria-activedescendant={cursorKey ? rowDomId(cursorKey) : undefined}
-                  autoFocus
+                  aria-activedescendant={cursor ? rowDomId(cursor) : undefined}
                   className="h-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
                 />
                 {q && (
@@ -925,7 +1281,7 @@ export function ModelCatalogue({
                         type="button"
                         aria-label="Clear search"
                         onClick={() => setQuery("")}
-                        className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in"
+                        className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in coarse:-mr-2.5 coarse:size-11"
                       >
                         <X className="size-3" />
                       </button>
@@ -933,6 +1289,56 @@ export function ModelCatalogue({
                     <TooltipContent>Clear search</TooltipContent>
                   </Tooltip>
                 )}
+              </div>
+              {/* The rail, under `sm`, where it folds away: the same filters
+                  as a row of chips that scrolls sideways. Each chip calls what
+                  its rail tile calls. The chips are 32px to the eye; the
+                  row's padding and a hit area past their edges make them
+                  44px to a thumb. Its ends fade (8px in, 24px out) so a chip
+                  at the edge reads as "the row goes on", not as a chip cut
+                  off by accident; the 24px of end padding lets the last chip
+                  scroll fully clear of the fade. */}
+              <div
+                role="group"
+                aria-label="Filter models"
+                className="no-scrollbar -mx-2 flex gap-1.5 overflow-x-auto py-1.5 pl-2 pr-6 [mask-image:linear-gradient(to_right,transparent,#000_8px,#000_calc(100%-24px),transparent)] sm:hidden"
+              >
+                <FilterChip
+                  active={q ? true : filter === "all"}
+                  onClick={() => {
+                    setFilter("all");
+                    setQuery("");
+                  }}
+                >
+                  All
+                </FilterChip>
+                <FilterChip
+                  active={q ? false : filter === "favorites"}
+                  onClick={() => {
+                    setFilter("favorites");
+                    setQuery("");
+                  }}
+                >
+                  <Star
+                    aria-hidden
+                    weight={!q && filter === "favorites" ? "fill" : undefined}
+                    className="size-3.5"
+                  />
+                  Favorites
+                </FilterChip>
+                {railProviders.map((p) => (
+                  <FilterChip
+                    key={p}
+                    active={q ? false : filter === p}
+                    onClick={() => {
+                      setFilter(p);
+                      setQuery("");
+                    }}
+                  >
+                    <ProviderLogo provider={p} className="size-3.5" />
+                    {providerName(p)}
+                  </FilterChip>
+                ))}
               </div>
             </div>
             <ScrollFade className="min-h-0 flex-1" viewportClassName="px-2 pb-3 pt-1.5" viewportRef={listViewportRef}>
@@ -955,10 +1361,17 @@ export function ModelCatalogue({
                 >
                   {visible.length === 0 && !showAutoRow ? (
                     filter === "favorites" && !q ? (
+                      // A way out of the one view that has nothing to star in
+                      // it: the same quiet button the search's empty state uses.
                       <EmptyBlock
                         icon={Star}
                         title="No favorites yet"
-                        body="Press the star in the panel on the right to keep a model here."
+                        body="Star a model to keep it here."
+                        action={
+                          <Button variant="ghost" size="sm" onClick={() => setFilter("all")}>
+                            Browse all models
+                          </Button>
+                        }
                       />
                     ) : (
                       <EmptyBlock
@@ -991,24 +1404,23 @@ export function ModelCatalogue({
                           )}
                           {renderRows(g.models, g.key, g.byModality)}
                           {g.legacy.length > 0 && (
-                            <details key={q ? "open" : "closed"} open={!!q} className="group/legacy">
-                              <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
-                                <span className="shrink-0 text-caption font-medium">Past models</span>
-                                <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">{g.legacy.length}</span>
-                                <span className="flex-1" />
-                                {/* `ease-in-out` is the curve for an A-to-B move
-                                    with both endpoints visible; an ease-out makes
-                                    the chevron look like it arrives from off-screen. */}
-                                <ChevronDown className="size-3 shrink-0 transition-transform duration-base ease-in-out group-open/legacy:rotate-180 motion-reduce:transition-none" />
-                              </summary>
-                              {/* A native <details> hides its body with
-                                  display:none, which restarts a CSS animation
-                                  every time it opens — so the rows rise in on
-                                  each open instead of appearing in one frame. */}
-                              <div className="motion-safe:animate-rise-in">
-                                {renderRows(g.legacy, `${g.key}legacy:`, g.byModality)}
-                              </div>
-                            </details>
+                            // A group of its own, named for what it holds. A
+                            // listbox may hold only options and groups, so the
+                            // switch is not a <summary> (a disclosure button
+                            // inside the listbox, which assistive tech reads
+                            // as a stray control): it is an option row in the
+                            // arrow keys' path that opens or closes the past
+                            // rows under it. While searching every group is
+                            // open, and the switch steps aside.
+                            <div role="group" aria-label={`${g.label}, past models`}>
+                              {!q && renderLegacyToggle(g)}
+                              {legacyOpen(g) && (
+                                // Mounted on open, so the rows rise in each time.
+                                <div className="motion-safe:animate-rise-in">
+                                  {renderRows(g.legacy, `${g.key}legacy:`, g.byModality)}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       ))}
@@ -1048,6 +1460,21 @@ export function ModelCatalogue({
             onUse={() => detailModel && select(detailModel)}
             onToggleStar={() => detailModel && toggleFavorite(detailModel.id)}
           />
+
+          {/* Under `sm`: the same panel over the list, from a row's ⓘ. */}
+          {infoModel && (
+            <div className="sm:hidden">
+              <DetailPanel
+                model={infoModel}
+                selected={isAutoModelId(infoModel.id) ? autoSelected : value === infoModel.id}
+                locked={isLocked(infoModel)}
+                starred={favorites.has(infoModel.id)}
+                onUse={() => select(infoModel)}
+                onToggleStar={() => toggleFavorite(infoModel.id)}
+                sheet={{ onBack: closeInfo, backRef: infoBackRef }}
+              />
+            </div>
+          )}
         </div>
       </PopoverContent>
   );

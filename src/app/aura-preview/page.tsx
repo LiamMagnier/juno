@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { AuraPreview } from "./preview";
 
 /**
@@ -8,5 +9,9 @@ import { AuraPreview } from "./preview";
  */
 export default function AuraPreviewPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <AuraPreview />;
+  return (
+    <PageRoot>
+      <AuraPreview />
+    </PageRoot>
+  );
 }

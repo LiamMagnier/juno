@@ -63,6 +63,30 @@ function langOf(children: React.ReactNode): string {
   return /language-([\w-]+)/.exec(cls)?.[1] ?? "";
 }
 
+/**
+ * A figure's leading sign, set outside the tabular figures. Figure columns
+ * (right or centre aligned) take `tabular-nums` (globals.css), and that made
+ * Inter's hyphen-minus as wide as a digit, so "-25%" read "- 25%". The sign
+ * keeps its proportional width; the text is untouched, so a copied cell is
+ * still "-25%".
+ */
+export function tightLeadingSign(children: React.ReactNode): React.ReactNode {
+  const parts = React.Children.toArray(children);
+  const first = parts[0];
+  if (typeof first !== "string") return children;
+  const match = /^(\s*)([-+\u2212])(?=\s?[\d$€£¥.])/u.exec(first);
+  if (!match) return children;
+  const [lead, space, sign] = match;
+  return [
+    space,
+    <span key="sign" className="[font-variant-numeric:normal]">
+      {sign}
+    </span>,
+    first.slice(lead.length),
+    ...parts.slice(1),
+  ];
+}
+
 function textOf(node: React.ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textOf).join("");
@@ -924,12 +948,17 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
       // Stable across the stream's end: see StreamingContext.
       pre: CodeBlock as Components["pre"],
       // Wide tables scroll inside their own container instead of stretching the
-      // message column past the viewport on phones.
+      // message column past the viewport on phones. Under 640px the label
+      // column (sticky, globals.css) holds about twenty characters before it
+      // wraps, capped at half the screen: the table already scrolls there,
+      // and at 14ch a label stacked three lines tall ("Support bot, /
+      // 40k-token / handbook") beside a single-line row of figures.
       table: ({ node: _node, ...props }) => (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-sm:[&_td:first-child]:min-w-[min(20ch,48vw)]">
           <table {...props} />
         </div>
       ),
+      td: ({ node: _node, children, ...props }) => <td {...props}>{tightLeadingSign(children)}</td>,
       a: ({ children, node: _node, ...props }) => (
         <a {...props} target="_blank" rel="noopener noreferrer">
           {children}
