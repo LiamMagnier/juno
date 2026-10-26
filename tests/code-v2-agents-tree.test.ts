@@ -3,6 +3,7 @@
  * keyboard rules, the browser's control client, and the rendered pane over
  * the dev gallery's fixtures (ARIA tree roles, states in words, controls).
  */
+import "./support/ignore-css";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as React from "react";

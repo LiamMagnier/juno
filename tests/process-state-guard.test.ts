@@ -63,6 +63,7 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/code-v2/generation-models.ts#listeners": "browser",
   "src/lib/chat/context-draft.ts#memory": "browser",
   "src/lib/motion-preference.ts#listeners": "browser",
+  "src/lib/input-modality.ts#listeners": "browser",
   "src/lib/run/store.ts#claims": "browser",
   "src/lib/run/store.ts#phases": "browser",
   "src/lib/run/store.ts#answers": "browser",
@@ -82,6 +83,10 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/llm/compat-loop.ts#NO_STREAM_USAGE": "memo",
   "src/lib/openai-compat.ts#NO_STREAM_USAGE": "memo",
   "src/lib/recall/keys.ts#cache": "memo",
+  // Bounded LRUs (256 texts / 2M chars; 512 reads) and a word table built once from literals.
+  "src/lib/research/claim-analysis.ts#TEXT_FACTS": "memo",
+  "src/lib/research/claim-polarity.ts#READ_CACHE": "memo",
+  "src/lib/research/claim-polarity.ts#MEASURE_GROUP": "memo",
   "src/lib/run/excerpt.ts#segmenters": "memo",
   "src/lib/work/schedule.ts#FORMATTERS": "memo",
   "src/lib/work/deliverables/semantic/workbook/model.ts#formulaCache": "memo",

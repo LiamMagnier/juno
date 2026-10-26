@@ -1,3 +1,4 @@
+import "./support/ignore-css";
 import assert from "node:assert/strict";
 import { teamSummary } from "@/lib/code-v2/team";
 import { test } from "node:test";
@@ -5,6 +6,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { CodeWorkspace } from "@/components/code/v2/workspace";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConnectionsPanel } from "@/components/code/v2/connections";
 import { cycleEffort, cycleRuntimeMode, currentTier, ratesFor, shortLabel } from "@/components/code/v2/model-info";
 import { listWords } from "@/components/code/v2/pickers";
@@ -18,6 +20,11 @@ import { DEVICE, INSTANCES, STATES, makeActions } from "../src/app/dev/code-v2/f
 
 // Some shared brand components use the classic JSX runtime (React in scope); tsx does not inject it.
 (globalThis as unknown as { React: typeof React }).React = React;
+
+// The app renders every screen inside Providers, TooltipProvider among them
+// (the effort panel's reset button carries the product tooltip).
+const renderWorkspace = (props: React.ComponentProps<typeof CodeWorkspace>) =>
+  renderToStaticMarkup(React.createElement(TooltipProvider, null, React.createElement(CodeWorkspace, props)));
 
 const actions = makeActions(() => undefined);
 const fixture = (id: string) => {
@@ -143,7 +150,7 @@ const PILL = /\b(badge|pill|status-dot|rounded-full bg-(green|red|yellow|emerald
 for (const s of STATES) {
   test(`renders the ${s.id} state without pills, with at most two weights`, () => {
     const f = fixture(s.id);
-    const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
+    const html = renderWorkspace({ model: f.model, ui: f.ui });
     if (!f.ui?.settings) assert.ok(html.includes(f.model.thread.title));
     assert.doesNotMatch(html, PILL);
     assert.doesNotMatch(html, /font-weight:\s*[6-9]00/);
@@ -153,7 +160,7 @@ for (const s of STATES) {
 
 test("the needs-you state takes the composer over with the asker and the three decisions", () => {
   const f = fixture("needs-you");
-  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
+  const html = renderWorkspace({ model: f.model, ui: f.ui });
   assert.match(html, /Worker 3 wants to run a command/);
   assert.match(html, /Allow once/);
   assert.match(html, /Allow for this session/);
@@ -165,7 +172,7 @@ test("the needs-you state takes the composer over with the asker and the three d
 
 test("the limited state offers Resume at reset and Switch model, in the composer and not in coral", () => {
   const f = fixture("limited");
-  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
+  const html = renderWorkspace({ model: f.model, ui: f.ui });
   assert.match(html, /Claude plan limit reached, resets/);
   assert.match(html, /Resume at reset/);
   assert.match(html, /Switch model/);
@@ -175,7 +182,7 @@ test("the limited state offers Resume at reset and Switch model, in the composer
 
 test("the streaming state is calm: no glow, a stop button, the queue as one control, the live row with its clock", () => {
   const f = fixture("streaming");
-  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
+  const html = renderWorkspace({ model: f.model, ui: f.ui });
   assert.match(html, /class="cv2-composer" data-state="running"/);
   assert.doesNotMatch(html, /cv2-glow|cv2-composer working|cv2-composer needs/);
   assert.match(html, /data-mode="stop"/);
@@ -186,7 +193,7 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
 
 test("the composer at rest shows +, the model trigger, the Team chip, the mode, the options menu and send; the mic once dictation is known", () => {
   const f = fixture("model-picker");
-  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model }, ui: {} }));
+  const html = renderWorkspace({ model: { ...f.model }, ui: {} });
   const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
   assert.match(foot, /aria-label="Add"/);
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
@@ -199,18 +206,19 @@ test("the composer at rest shows +, the model trigger, the Team chip, the mode, 
   // Team lane: the Team chip is always there; Solo shows nothing extra.
   assert.match(foot, /aria-label="Team"/);
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
-  const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
+  const team = renderWorkspace({ model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} });
   assert.ok(team.includes(`aria-label="Team: ${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the team");
   assert.match(team, /aria-label="Mode: Plan"/);
-  const full = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full" }, ui: {} }));
+  const full = renderWorkspace({ model: { ...f.model, runtimeMode: "full" }, ui: {} });
   assert.match(full, /aria-label="Mode: Full access"/);
 });
 
 test("the sidebar is a list of work: needs you first, then working, project and branch under each title, the rest settled", () => {
   const f = fixture("streaming");
-  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: {} }));
+  const html = renderWorkspace({ model: f.model, ui: {} });
   const side = html.slice(html.indexOf('class="cv2-side"'), html.indexOf("</nav>"));
-  const order = [...side.matchAll(/truncate text-nav[^"]*">([^<]+)</g)].map((m) => m[1]);
+  // Titles fade rather than end on "…" (sidebar-column.css .title-fade).
+  const order = [...side.matchAll(/title-fade min-w-0 flex-1 text-nav[^"]*">([^<]+)</g)].map((m) => m[1]);
   assert.deepEqual(order.slice(0, 2), ["Cart total regression suite", "Move checkout totals to the server"]);
   assert.match(side, /All projects/);
   assert.match(side, /Settled · 3/);
@@ -253,11 +261,12 @@ test("Connections names subscriptions by the owner's rules and lists Antigravity
 
 test("the model chip opens slider-first: the chat's effort panel, the model's name leading to the catalogue; the catalogue on its own keeps context and usage", () => {
   const f = fixture("model-picker");
-  const effort = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: { popover: "model" } }));
+  const effort = renderWorkspace({ model: f.model, ui: { popover: "model" } });
   assert.match(effort, /aria-label="Thinking effort"/);
-  assert.match(effort, /aria-label="Reset to the model&#x27;s default"/);
+  // The reset names the rung it returns to when the model has one.
+  assert.match(effort, /aria-label="Reset to (?:default \([^)"]+\)|the model&#x27;s default)"/);
   assert.doesNotMatch(effort, /aria-label="Search models"/);
-  const catalog = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: { popover: "catalog" } }));
+  const catalog = renderWorkspace({ model: f.model, ui: { popover: "catalog" } });
   assert.match(catalog, /aria-label="Search models"/);
   assert.match(catalog, />Context</);
   assert.doesNotMatch(catalog, /aria-label="Thinking effort"/);
