@@ -9,7 +9,7 @@ import { auditClaims, selectClaimsForAudit, type AuditSource } from "@/lib/resea
 /*
  * The consolidated regression corpus of the deterministic citation audit:
  * every repro the verifiers and the fixer ever wrote against it (the probe
- * scripts of four review rounds), as data under
+ * scripts of five review rounds), as data under
  * tests/fixtures/research-claims/. Hand-written cases are copied as they
  * were; generators ("8 subjects x 6 predicates x 4 contrasts") are kept as
  * grids the test expands. Each case says where it came from.
@@ -62,7 +62,8 @@ interface Grid {
   id: string;
   from: string;
   axes: Row[][];
-  forms: Array<{ name: string; passage: string; cases: Array<{ kind: PairKind; claim: string }> }>;
+  /** `corroborating`: the text of the claim's other cited sources, filled from the row like the passage. */
+  forms: Array<{ name: string; passage: string; corroborating?: string[]; cases: Array<{ kind: PairKind; claim: string }> }>;
 }
 
 /** The cartesian product of the axes, rows merged; a row's `$cross` crosses it with axes of its own. */
@@ -108,7 +109,10 @@ function loadCorpus() {
     grid.forms.forEach((form, fi) =>
       rows.forEach((row, ri) => {
         const passage = fill(form.passage, row);
-        form.cases.forEach((c, ci) => all.push({ id: `${grid.id}/${fi}/${ri}/${ci}`, from: grid.from, kind: c.kind, claim: fill(c.claim, row), passage }));
+        const corroborating = form.corroborating?.map((text) => fill(text, row));
+        form.cases.forEach((c, ci) =>
+          all.push({ id: `${grid.id}/${fi}/${ri}/${ci}`, from: grid.from, kind: c.kind, claim: fill(c.claim, row), passage, ...(corroborating ? { corroborating } : {}) })
+        );
       })
     );
   }
@@ -242,8 +246,9 @@ test("end to end: a disagreeing source is never shown as support, and a supporte
       if (fromThem.some((l) => l.status === "supported") || (claim.status === "supported" && !claim.contested && standsIn)) shownAsSupport.push(desc);
       if (claim.status === "supported" && claim.contested) contested += 1;
       // A disagreeing figure the audit cannot place as another quantity, period or entity leaves the claim
-      // contested. The one supported-and-clean case is a figure the passage gives for a named unit of the
-      // company ("the unit known as Northwind Retail"), which is another entity.
+      // contested — counted whether or not the disagreeing source was ever recorded as a link (a claim another
+      // source supports first need never reach it). The one supported-and-clean case is a figure the passage
+      // gives for a named unit of the company ("the unit known as Northwind Retail"), not the claim's measure.
       if (claim.status === "supported" && !claim.contested) clean.push(desc);
     }
   }
@@ -252,15 +257,60 @@ test("end to end: a disagreeing source is never shown as support, and a supporte
   assert.ok(clean.length <= 1, clean.join("\n"));
 });
 
+/** Findings that tell a reader the passage may say otherwise. */
+const DISAGREEMENT = new Set(["polarity_mismatch", "figure_mismatch", "figure_differs", "negation_unresolved"]);
+
+/**
+ * A claim a real contradiction is shown against: contradicted, contested (supported, beside a source that
+ * disagrees), or not supported with the disagreement among its findings ("Northwind opened 12 stores and closed
+ * three" against "… It did not close any stores": the "three" is absent and the denial is quoted).
+ */
+const readsAsDisagreement = (c: { status: string; contested: boolean; links: ReadonlyArray<{ reasons: ReadonlyArray<{ code: string }> }> }) =>
+  c.status === "contradicted" || c.contested || (c.status !== "supported" && c.links.some((l) => l.reasons.some((r) => DISAGREEMENT.has(r.code))));
+
 test("end to end: a real disagreement still reads as one", async () => {
   const missed: string[] = [];
   const contradictions = corpus.reports.filter((r) => r.kind === "contradiction");
   for (const r of contradictions) {
     const { outcome } = await auditReport(r);
-    if (!outcome.claims.some((c) => c.status === "contradicted" || c.contested)) missed.push(`${r.id} ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}`);
+    if (!outcome.claims.some(readsAsDisagreement)) missed.push(`${r.id} ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}`);
   }
   console.log(`end to end, disagreements caught: ${contradictions.length - missed.length} of ${contradictions.length}`);
   // The one miss is a part-of-year phrase in a clause about something else ("as fourth-quarter sales jumped"),
   // which the period reading takes for the figure's own: the conservative direction, and a regression floor.
   assert.ok(missed.length <= 1, missed.join("\n"));
+});
+
+// ── Round 5: the verifier's fresh repros (probe-research-c1) and the fixer's own (r5), as floors ────────────
+
+const ROUND5 = (from: string) => from.startsWith("probe-research-c1/") || from.startsWith("r5/");
+
+test("round 5: every fresh real contradiction is caught, or its denial or figure shown for review", () => {
+  const real = corpus.pairs.filter((c) => c.kind === "contradiction" && ROUND5(c.from));
+  const audits = real.map((c) => ({ c, audit: auditEvidence({ claim: c.claim, passage: c.passage, corroborating: c.corroborating }) }));
+  const caught = audits.filter((x) => x.audit.contradicted);
+  const unflagged = audits.filter((x) => !x.audit.contradicted && !x.audit.reasons.some((r) => DISAGREEMENT.has(r.code)));
+  const baseCaught = new Set(baseline.contradictionsCaught);
+  console.log(
+    `round 5 contradictions: ${caught.length} of ${real.length} caught by the text, ${real.length - unflagged.length} caught or flagged (base caught ${real.filter((c) => baseCaught.has(keyOf(c))).length}, and contradicted ${corpus.pairs.filter((c) => c.kind === "honest" && ROUND5(c.from) && new Set(baseline.honestContradicted).has(keyOf(c))).length} honest pairs doing it)`
+  );
+  // Never silent: "the carrier did not cut fares", "Neither Northwind nor Contoso raised prices", "Every carrier
+  // except Fabrikam", "and nor did Contoso", "not in 2023 as some outlets reported", "The Food and Drug
+  // Administration did not approve" for the claim's "the agency" — each at least quoted for review.
+  assert.deepEqual(unflagged.map((x) => show(x.c)), []);
+  // A floor on what the text settles alone (122 of 144 when these were added; base caught 134 by guessing, and
+  // paid with 756 false contradictions on the same rounds' honest pairs). The rest are proved only by reading
+  // "the carrier" as the claim's airline or "Neither … nor" as two denials, which is the judge's to do.
+  assert.ok(caught.length >= 122, `caught ${caught.length}`);
+});
+
+test("round 5 end to end: a fresh real contradiction never reads as cleanly supported", async () => {
+  const missed: string[] = [];
+  const reports = corpus.reports.filter((r) => r.kind === "contradiction" && ROUND5(r.from));
+  for (const r of reports) {
+    const { outcome } = await auditReport(r);
+    if (!outcome.claims.some(readsAsDisagreement)) missed.push(`${r.id} [${r.from}] ${r.report.replace(/^# R\n\n/, "")} <= ${r.sources.join(" // ")}`);
+  }
+  console.log(`round 5 end to end, contradictions shown: ${reports.length - missed.length} of ${reports.length}`);
+  assert.deepEqual(missed, []);
 });

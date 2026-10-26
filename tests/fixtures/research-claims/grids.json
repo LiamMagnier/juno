@@ -462,6 +462,101 @@
         {"name":"form2","passage":"{S} {O}. {A} {AT}, while {rs} {RT}.","cases":[{"kind":"honest","claim":"{HONEST}"},{"kind":"contradiction","claim":"{FLIP}"}]},
         {"name":"form3","passage":"{S} {O}, but {a} {AT}. {RS} {RT}.","cases":[{"kind":"honest","claim":"{HONEST}"},{"kind":"contradiction","claim":"{FLIP}"}]}
       ]
+    },
+    {
+      "id": "c1-notjust",
+      "from": "probe-research-c1/scripts/grids.ts (1. not just)",
+      "axes": [
+        [
+          {"S":"Northwind"},
+          {"S":"The city council"},
+          {"S":"Contoso Air"},
+          {"S":"The regulator"},
+          {"S":"Dr. Maria Chen"},
+          {"S":"The union"}
+        ],
+        [
+          {"b":"raise","p":"raised","o":"fees"},
+          {"b":"open","p":"opened","o":"an office in Ohio"},
+          {"b":"cut","p":"cut","o":"its budget"},
+          {"b":"approve","p":"approved","o":"the plan"},
+          {"b":"hire","p":"hired","o":"new staff"}
+        ],
+        [
+          {"neg":"did not just"},
+          {"neg":"didn't just"},
+          {"neg":"did not only"},
+          {"neg":"did not simply"},
+          {"neg":"did not merely"}
+        ],
+        [
+          {"cont":", it also froze hiring."},
+          {"cont":"; it also froze hiring."},
+          {"cont":" — it also froze hiring."},
+          {"cont":" but also froze hiring."}
+        ]
+      ],
+      "forms": [
+        {"name":"not just V, it also W","passage":"{S} {neg} {b} {o} in 2024{cont}","cases":[{"kind":"honest","claim":"{S} {p} {o} in 2024."}]}
+      ]
+    },
+    {
+      "id": "c1-currency",
+      "from": "probe-research-c1/scripts/grids.ts (2. currency)",
+      "axes": [
+        [
+          {"a":"$","b":"€"},
+          {"a":"$","b":"£"},
+          {"a":"€","b":"$"},
+          {"a":"£","b":"$"},
+          {"a":"$","b":"¥"}
+        ],
+        [
+          {"m":"revenue"},
+          {"m":"net profit"},
+          {"m":"budget"},
+          {"m":"operating income"},
+          {"m":"capital spending"}
+        ],
+        [
+          {"O":"Contoso's"},
+          {"O":"Northwind's"},
+          {"O":"The museum's"},
+          {"O":"Fabrikam's"}
+        ]
+      ],
+      "forms": [
+        {"name":"claim converted from the passage's currency; a different figure in the passage's own","passage":"{O} {m} was {b}4.3 billion in 2024.","cases":[{"kind":"honest","claim":"{O} {m} was {a}4.7 billion in 2024."},{"kind":"contradiction","claim":"{O} {m} was {b}3.1 billion in 2024."}]}
+      ]
+    },
+    {
+      "id": "c1-alias",
+      "from": "probe-research-c1/scripts/grids.ts (3. alias owners)",
+      "axes": [
+        [
+          {"name":"General Motors","poss":"GM's","possMid":"GM's","bare":"General Motors"},
+          {"name":"International Business Machines","poss":"IBM's","possMid":"IBM's","bare":"International Business Machines"},
+          {"name":"the Federal Reserve","poss":"The Fed's","possMid":"the Fed's","bare":"Federal Reserve"},
+          {"name":"the United Kingdom","poss":"Britain's","possMid":"Britain's","bare":"United Kingdom"},
+          {"name":"the Netherlands","poss":"Holland's","possMid":"Holland's","bare":"Netherlands"},
+          {"name":"the United States","poss":"America's","possMid":"America's","bare":"United States"},
+          {"name":"Northwind REIT","poss":"The Trust's","possMid":"the Trust's","bare":"Northwind REIT"},
+          {"name":"Contoso Partners LP","poss":"The Partnership's","possMid":"the Partnership's","bare":"Contoso Partners LP"},
+          {"name":"Northwind Water","poss":"The Utility's","possMid":"the Utility's","bare":"Northwind Water"},
+          {"name":"the Wellcome Trust","poss":"The Charity's","possMid":"the Charity's","bare":"Wellcome Trust"},
+          {"name":"Contoso Rail","poss":"The Railway's","possMid":"the Railway's","bare":"Contoso Rail"},
+          {"name":"China","poss":"Beijing's","possMid":"Beijing's","bare":"China"}
+        ],
+        [
+          {"m":"revenue","x":"$4.3 billion","y":"$3.9 billion"},
+          {"m":"spending","x":"$2.1 billion","y":"$1.8 billion"},
+          {"m":"debt","x":"$12.4 billion","y":"$11.0 billion"}
+        ]
+      ],
+      "forms": [
+        {"name":"sentence-initial owner","passage":"{poss} {m} was {y} in 2024.","corroborating":["{bare}: {x} (2024)."],"cases":[{"kind":"disagree","claim":"The {m} of {name} was {x} in 2024."}]},
+        {"name":"mid-sentence owner","passage":"In 2024, {possMid} {m} was {y}.","corroborating":["{bare}: {x} (2024)."],"cases":[{"kind":"disagree","claim":"The {m} of {name} was {x} in 2024."}]}
+      ]
     }
   ]
 }

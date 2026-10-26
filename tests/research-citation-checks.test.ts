@@ -777,24 +777,38 @@ test("corroboration never hides a cited passage that gives a different figure: w
   }
 });
 
-test("corroboration still accepts a figure the passage pins on a subject the claim never names", () => {
-  const claim = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion.";
+test("corroboration accepts a figure the passage pins on another subject the claim names, never on a name the claim never uses", () => {
   const corroborating = ["Southwind earned $2.1 billion in 2024."];
+  // The claim names Contoso for another subject than the $2.1 billion is about: its figure is not the claim's.
+  const three = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion; Contoso trailed both.";
+  for (const passage of [
+    "Northwind earned $4.3 billion in 2024. Contoso's revenue was $1.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso Group earned $1.0 billion.",
+    "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $1.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso earned $1.0 billion.",
+  ]) {
+    const result = auditEvidence({ claim: three, passage, corroborating });
+    assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+  }
+  // A name the claim never uses is unknown, not another entity: for all the text shows it is Southwind by another
+  // name ("GM's" for General Motors, "the Trust's" for Northwind REIT). The passage keeps its figure, and since
+  // another source states the claim's, that is a doubt shown as one — never a stand-in.
+  const two = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion.";
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso's revenue was $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso Group earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while SW earned $3.0 billion.",
   ]) {
-    const result = auditEvidence({ claim, passage, corroborating });
-    assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
-    assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    const result = auditEvidence({ claim: two, passage, corroborating });
+    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
+    assert.ok(result.reasons.some((r) => r.code === "figure_differs"), `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
+    assert.ok(result.ceiling < SUPPORTED_MIN, passage);
   }
-  // One word capitalised mid-sentence, the subject of what earned the figure, and no noun the claim or passage
-  // uses otherwise: a name the claim never refers to, which is evidence enough.
-  const bare = auditEvidence({ claim, passage: "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.", corroborating });
-  assert.ok(bare.reasons.some((r) => r.code === "stated_by_other_citation"), bare.reasons.map((r) => r.code).join(", "));
   // Title case is not: a capitalised measure ("put Top Line at") leaves the figure this passage's, and a doubt.
-  const measure = auditEvidence({ claim, passage: "Northwind earned $4.3 billion in 2024, while Top Line reached $3.0 billion.", corroborating });
+  const measure = auditEvidence({ claim: three, passage: "Northwind earned $4.3 billion in 2024, while Top Line reached $3.0 billion.", corroborating });
   assert.ok(!measure.reasons.some((r) => r.code === "stated_by_other_citation"), measure.reasons.map((r) => r.code).join(", "));
   assert.ok(measure.ceiling < SUPPORTED_MIN);
   // "Northwind Group" is Northwind: its figure is the claim's subject's.

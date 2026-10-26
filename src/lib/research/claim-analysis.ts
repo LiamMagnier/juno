@@ -161,6 +161,20 @@ export interface NumericFact {
   value: number;
   /** What the number measures, coarsely — enough to avoid comparing a % to a headcount. */
   kind: "percent" | "currency" | "plain";
+  /**
+   * For an amount of money, which money: "USD", "EUR", "GBP", "JPY"…, or "$"
+   * for a dollar sign that names no country. "$4.3bn" and "€4.3bn" are not the
+   * same figure, and "$4.6bn" against "€4.3bn" is a conversion, not a rival.
+   */
+  currency?: string;
+  /**
+   * The precision it is stated to, in `value` units: "4.3 billion" → 1e8,
+   * "12%" → 1, "6.8%" → 0.1. A figure the passage gives to more places rounds
+   * to the claim's when it is within half a step of it ("7%" for "6.8%").
+   */
+  step?: number;
+  /** Stated with a decimal point ("$6.0bn", "4.3%"): its last place is meant. */
+  decimals?: boolean;
   raw: string;
   start: number;
   end: number;
@@ -179,7 +193,66 @@ const SCALES: Record<string, number> = {
 };
 
 const NUMBER_RE =
-  /(?<cur>[$€£])?\s?(?<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s?(?<scale>trillion|billion|million|thousand|bn|tn|mn|[kmb]\b)?\s?(?<pct>%|percent|per cent|percentage points?)?/gi;
+  /(?<code>\b(?:USD|EUR|GBP|JPY|CNY|RMB|CHF|CAD|AUD|NZD|HKD|SGD|INR|KRW|SEK|NOK|DKK)\s?)?(?<cur>[$€£¥₹₩])?\s?(?<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s?(?<scale>trillion|billion|million|thousand|bn|tn|mn|[kmb]\b)?\s?(?<pct>%|percent|per cent|percentage points?)?/gi;
+
+/** Letters written against a dollar sign that say whose dollar: "US$", "C$", "HK$". */
+const DOLLAR_PREFIX: Record<string, string> = {
+  us: "USD", "u.s.": "USD", c: "CAD", ca: "CAD", can: "CAD", a: "AUD", au: "AUD", nz: "NZD", hk: "HKD", s: "SGD", sg: "SGD",
+  nt: "TWD", r: "BRL", mx: "MXN",
+};
+const SYMBOL_CURRENCY: Record<string, string> = { "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR", "₩": "KRW" };
+/** Currency names written after a figure ("4.3 billion euros"). "Pounds" alone is as often a weight, so it needs "sterling". */
+const CURRENCY_AFTER =
+  /^\s*(?:(USD|EUR|GBP|JPY|CNY|RMB|CHF|CAD|AUD|NZD|HKD|SGD|INR|KRW|SEK|NOK|DKK)\b|(dollars?|euros?|pounds sterling|sterling|yen|yuan|renminbi|rupees?|swiss francs?|francs?)\b)/i;
+const CURRENCY_WORD: Record<string, string> = {
+  dollar: "$", dollars: "$", euro: "EUR", euros: "EUR", "pounds sterling": "GBP", sterling: "GBP", yen: "JPY", yuan: "CNY", renminbi: "CNY",
+  rupee: "INR", rupees: "INR", "swiss franc": "CHF", "swiss francs": "CHF", franc: "CHF", francs: "CHF",
+};
+const DOLLARS = new Set(["$", "USD", "CAD", "AUD", "NZD", "HKD", "SGD", "TWD"]);
+
+/** Whether two amounts may be in the same money: the same currency, or a bare "$" against any dollar. */
+function sameCurrency(a: NumericFact, b: NumericFact): boolean {
+  if (a.kind !== "currency" || b.kind !== "currency") return a.kind === b.kind;
+  const x = a.currency ?? "$";
+  const y = b.currency ?? "$";
+  return x === y || (x === "$" && DOLLARS.has(y)) || (y === "$" && DOLLARS.has(x));
+}
+
+/** The same kind of quantity, and for money the same money: what may be compared at all. */
+function comparable(a: NumericFact, b: NumericFact): boolean {
+  return a.kind === b.kind && sameCurrency(a, b);
+}
+
+/** Whether `fine` rounds to `coarse` at the precision `coarse` is stated to. */
+function roundsTo(fine: NumericFact, coarse: NumericFact): boolean {
+  const step = coarse.step ?? 0;
+  if (step <= 0) return fine.value === coarse.value;
+  const slack = 1e-9 * Math.max(Math.abs(fine.value), Math.abs(coarse.value), 1);
+  return Math.abs(fine.value - coarse.value) <= step / 2 + slack;
+}
+
+/** How many more decimal places `fine` is stated to than `coarse`: "6.8%" against "7%" is 1, "3.25%" against "3%" is 2. */
+function placesBeyond(fine: NumericFact, coarse: NumericFact): number {
+  if (!fine.step || !coarse.step) return 0;
+  return Math.round(Math.log10(coarse.step / fine.step));
+}
+
+/**
+ * Whether passage figure `p` states claim figure `n`: the same kind of
+ * quantity in the same money, and either `p` rounds to `n` at the precision
+ * the claim states it to, dropping one place ("7%" for "6.8%", "$4.3bn" for
+ * "$4.32bn"), or the two agree within `NUMERIC_TOLERANCE` ("3.4 million" for
+ * 3,412,000) — except when both are stated to the same decimal place, where
+ * "$6.0bn" and "$5.9bn" are two different figures, not one rounded. Dropping
+ * more places than one outside the tolerance ("3%" for "3.25%") is not
+ * agreement; `unambiguousRival` leaves it to the judge.
+ */
+export function figuresAgree(n: NumericFact, p: NumericFact): boolean {
+  if (!comparable(n, p)) return false;
+  if (roundsTo(p, n) && placesBeyond(p, n) <= 1) return true;
+  if (n.decimals && p.decimals && n.step !== undefined && n.step === p.step) return false;
+  return numbersAgree(n.value, p.value);
+}
 
 /*
  * Reported prose spells small numbers out — "Seventy people were injured" —
@@ -250,9 +323,24 @@ export function extractNumbers(text: string, skip: ReadonlyArray<{ start: number
     const base = Number(g.num.replace(/,/g, ""));
     if (!Number.isFinite(base)) continue;
     const scale = g.scale ? SCALES[g.scale.toLowerCase()] ?? 1 : 1;
+    const dot = g.num.indexOf(".");
+    // Whose money: a symbol, a code before the figure, the letters against a dollar sign, or a name after it.
+    let currency: string | undefined;
+    if (g.code) currency = g.code.trim().toUpperCase().replace("RMB", "CNY");
+    else if (g.cur === "$") {
+      const prefix = /(?:^|[^A-Za-z.])((?:[A-Za-z]{1,3})|u\.s\.)$/i.exec(text.slice(Math.max(0, start - 6), start))?.[1]?.toLowerCase();
+      currency = (prefix && DOLLAR_PREFIX[prefix]) || "$";
+    } else if (g.cur) currency = SYMBOL_CURRENCY[g.cur];
+    else if (!g.pct) {
+      const after = CURRENCY_AFTER.exec(text.slice(end, end + 24));
+      if (after) currency = after[1] ? after[1].toUpperCase().replace("RMB", "CNY") : CURRENCY_WORD[after[2]!.toLowerCase()];
+    }
     out.push({
       value: base * scale,
-      kind: g.pct ? "percent" : g.cur ? "currency" : "plain",
+      kind: g.pct ? "percent" : currency ? "currency" : "plain",
+      ...(currency && !g.pct ? { currency } : {}),
+      step: (dot >= 0 ? Math.pow(10, -(g.num.length - dot - 1)) : 1) * scale,
+      decimals: dot >= 0,
       raw: m[0].trim(),
       start,
       end,
@@ -267,7 +355,7 @@ export function extractNumbers(text: string, skip: ReadonlyArray<{ start: number
     if (blocked(start, end) || out.some((n) => start < n.end && end > n.start)) continue;
     const value = evaluateWordNumber(m[0]);
     if (value === null) continue;
-    out.push({ value, kind: "plain", raw: m[0], start, end });
+    out.push({ value, kind: "plain", step: 1, decimals: false, raw: m[0], start, end });
   }
   return out.sort((a, b) => a.start - b.start);
 }
@@ -328,7 +416,7 @@ const PERIOD_UNITS = new Set(["second", "minute", "hour", "day", "week", "month"
  * BOOKED revenue" is a verb, "its LOGISTICS revenue" a qualifier), and the
  * check it feeds can only take a contradiction away, never add one. It is
  * never what lets another cited source stand in for a passage: that gate
- * does not trust these guesses (see `namesOtherSubject`).
+ * does not trust these guesses (see `strictlyAnotherEntity`).
  */
 const FIGURE_SUBJECT_SKIP = new Set(
   (
@@ -841,7 +929,7 @@ function figureApprox(text: string, n: NumericFact): boolean {
 /** Whether passage figure `p` opens or closes a range ("$3.9bn to $4.5bn", "between 3% and 5%") that holds `value`. */
 function rangeHolds(passage: { text: string; numbers: readonly NumericFact[] }, p: NumericFact, value: number): boolean {
   for (const q of passage.numbers) {
-    if (q === p || q.kind !== p.kind) continue;
+    if (q === p || !comparable(q, p)) continue;
     const [lo, hi] = q.start > p.end ? [p, q] : q.end < p.start ? [q, p] : [null, null];
     if (!lo || !hi || !/^\s*(?:to|and|[-–])\s*$/i.test(passage.text.slice(lo.end, hi.start))) continue;
     const min = Math.min(lo.value, hi.value);
@@ -936,8 +1024,10 @@ function figureOwner(text: string, n: NumericFact): { owner: string | null; cert
  * Whether passage figure `p` contradicts claim figure `n` beyond doubt. It
  * must already be a rival (`rivalFigures`: the same kind of quantity, a
  * different value, not the evidence for another of the claim's figures) and
- * also: neither figure approximate, a bound, a range end or hedged; both a
- * level or both a change; the same measured noun and qualifier
+ * also: neither figure approximate, a bound, a range end or hedged; money in
+ * the same currency, written the same way ("$" against "US$" is the judge's);
+ * neither rounding to the other at the coarser one's precision ("3%" against
+ * "3.25%"); both a level or both a change; the same measured noun and qualifier
  * (`figureSubject`), or for a figure that opens its clause the same unit and
  * the word after it ("70 people were injured"); the same owner as written,
  * or none on either side; the same date or none on either side, the same
@@ -990,6 +1080,11 @@ function unambiguousRival(
 ): boolean {
   if (figureApprox(claim.text, n) || figureApprox(passage.text, p)) return false;
   if (figureHedged(claim.text, n) || figureHedged(passage.text, p)) return false;
+  // The same money, named the same way: "$" against "US$" may be one figure, and is the judge's to read.
+  if (n.kind === "currency" && (n.currency ?? "$") !== (p.currency ?? "$")) return false;
+  // One figure rounding to the other at the coarser one's precision ("4.4 billion" for "4 billion", "3%" for
+  // "3.25%") may be the same figure stated to other places: a doubt, not a different figure.
+  if (roundsTo(n, p) || roundsTo(p, n)) return false;
   const cell = tableCellOf(claim.text, n);
   if (cell) {
     const db = figureDate(passage.text, p, passage.dates);
@@ -1128,26 +1223,6 @@ function capitalisedMidSentence(text: string, form: string, except: number): boo
 }
 
 /**
- * Whether the passage provably gives figure `p` for a DIFFERENT named entity
- * than any the claim refers to, on evidence beyond capitals: what lets
- * another cited source's figure stand in for this passage.
- *
- *  - a possessive owner ("Contoso's revenue was $3.9bn"): singular, a name
- *    (not a common noun, and not one word that only opens its sentence
- *    unless the passage writes it capitalised mid-sentence too), and none of
- *    whose words the claim mentions. A plural possessive ("Shareholders'
- *    funds") is never one;
- *  - the subject of a verb that takes the figure ("… earned", "… includes")
- *    that is a name by its suffix ("Contoso Labs", "Northwind Group"), a
- *    single capitalised word mid-sentence that is no common or measured noun
- *    ("Meanwhile Contoso earned"), or a sibling of a name the claim uses
- *    ("Alpha Free" beside the claim's "Alpha Pro": the same first word, a
- *    different other one);
- *
- * and never in a headline-style sentence. "Retail Deposits", "Net Bookings",
- * "Top Line", "Contracts International": title case, never a name.
- */
-/**
  * The name a figure is given for when the figure is the object of what that
  * name does: "Contoso Labs earned $3.0bn", "Alpha Free includes 5 GB", "Beta
  * Basic is free and includes 2 GB". The run of title-case words that is the
@@ -1193,52 +1268,125 @@ function figureEntityRun(text: string, p: NumericFact): ClauseWord[] | null {
   return null;
 }
 
-function strictlyAnotherEntity(claim: string, passage: string, p: NumericFact): boolean {
-  if (inHeadline(passage, p.start)) return false;
+/**
+ * The owner a passage gives figure `p` for, as it writes it: a singular
+ * possessive name ("Contoso's revenue", "the Trust's revenue") or the run of
+ * title-case words that is the subject of the verb taking the figure
+ * (`figureEntityRun`). Its words in `tokenForm`, function words left out.
+ * Null when it names none, or names it with a plural possessive
+ * ("Shareholders' funds"), a lowercase or common noun, or one word that only
+ * opens its sentence and only a headline would capitalise.
+ */
+function passageFigureOwner(passage: string, p: NumericFact): string[] | null {
   const { words, headAt } = figureClause(passage, p);
-  if (headAt < 0) return false;
-  const claimWords = wordForms(claim);
-  const lowerIn = (form: string) => lowercaseForms(passage).has(form) || lowercaseForms(claim).has(form);
-  const common = (form: string) => COMMON_SUBJECT_NOUNS.has(form) || MEASURE_NOUNS.has(form) || lowerIn(form) || STOPWORDS.has(form);
-  const adjacentRunStart = (end: number) => {
-    let start = end;
-    while (start > 0 && isTitleCase(words[start - 1]!.raw) && !/\S/.test(passage.slice(words[start - 1]!.end, words[start]!.start))) start -= 1;
-    return start;
-  };
+  if (headAt < 0) return null;
+  const common = (form: string) =>
+    COMMON_SUBJECT_NOUNS.has(form) || MEASURE_NOUNS.has(form) || lowercaseForms(passage).has(form) || STOPWORDS.has(form);
   for (const at of [headAt - 1, headAt - 2]) {
     const w = words[at];
     if (!w) break;
     if (isPossessive(w.raw)) {
-      if (/s['’]$/i.test(w.raw) || !isTitleCase(w.raw)) return false;
-      const start = adjacentRunStart(at);
+      if (/s['’]$/i.test(w.raw) || !isTitleCase(w.raw)) return null;
+      let start = at;
+      while (start > 0 && isTitleCase(words[start - 1]!.raw) && !/\S/.test(passage.slice(words[start - 1]!.end, words[start]!.start))) start -= 1;
       const run = words.slice(start, at + 1);
       const forms = run.map((x) => tokenForm(x.raw)).filter((f) => !STOPWORDS.has(f));
-      if (forms.length === 0 || common(forms[forms.length - 1]!) || GENERIC_OWNERS.has(forms[forms.length - 1]!)) return false;
-      // One word opening its sentence is a name only when it is no noun the passage or claim otherwise uses.
-      if (run.length === 1 && opensSentence(passage, run[0]!.start) && !capitalisedMidSentence(passage, forms[0]!, run[0]!.start) && HEADLINE_WORDS.has(forms[0]!)) return false;
-      return forms.every((f) => !claimWords.has(f));
+      if (forms.length === 0 || common(forms[forms.length - 1]!) || GENERIC_OWNERS.has(forms[forms.length - 1]!)) return null;
+      if (run.length === 1 && opensSentence(passage, run[0]!.start) && !capitalisedMidSentence(passage, forms[0]!, run[0]!.start) && HEADLINE_WORDS.has(forms[0]!)) return null;
+      return forms;
     }
     if (at === headAt - 1 && !qualifiesHead(passage, words, at)) break;
   }
   const run = figureEntityRun(passage, p);
-  if (!run) return false;
-  const forms = run.map((x) => tokenForm(x.raw));
-  // A company suffix: "Contoso Labs earned $3.0bn".
-  if (forms.length >= 2 && STRICT_NAME_SUFFIXES.has(forms[forms.length - 1]!)) {
-    const name = forms.slice(0, -1);
-    return name.every((f) => !claimWords.has(f) && !common(f));
-  }
-  // One capitalised word mid-sentence: "Meanwhile Contoso earned $3.9bn".
-  if (forms.length === 1) return !opensSentence(passage, run[0]!.start) && !common(forms[0]!) && !claimWords.has(forms[0]!);
-  // A sibling of a name the claim uses: "Alpha Free" beside "Alpha Pro".
+  if (!run) return null;
+  const forms = run.map((x) => tokenForm(x.raw)).filter((f) => !STOPWORDS.has(f));
+  return forms.length > 0 ? forms : null;
+}
+
+/**
+ * Whether the claim itself uses `owner` for a subject OTHER than the one
+ * figure `n` is about: every word of the owner (a legal suffix aside) is a
+ * word the claim writes in title case, none of them is in `n`'s own clause,
+ * and that clause names a subject of its own. "Northwind earned $4.3bn, while
+ * Southwind earned $2.1bn" uses Northwind for another subject than the $2.1bn
+ * is about; "Revenue at General Motors rose to $187bn" never uses GM, so for
+ * all the text shows "GM's revenue" is the claim's own subject by another
+ * name.
+ */
+function claimNamesAnotherSubject(claim: string, n: NumericFact, owner: readonly string[]): boolean {
+  const core = [...owner];
+  while (core.length > 1 && (CORPORATE_SUFFIXES.has(core[core.length - 1]!) || STRICT_NAME_SUFFIXES.has(core[core.length - 1]!))) core.pop();
+  const claimNames = new Set(
+    (claim.match(WORD_RE) ?? []).filter((w) => isTitleCase(w)).map(tokenForm).filter((f) => !STOPWORDS.has(f) && !SENTENCE_STARTERS.has(f))
+  );
+  if (!core.every((f) => claimNames.has(f))) return false;
+  const { clauseStart, clauseEnd } = figureScope(claim, n);
+  const clause = claim.slice(clauseStart, clauseEnd);
+  const clauseWords = [...clause.matchAll(WORD_RE)];
+  if (clauseWords.some((m) => core.includes(tokenForm(m[0])))) return false;
+  // The clause names whose figure it is: a title-case word that is no function word, basis word or common noun.
+  return clauseWords.some((m) => {
+    const form = tokenForm(m[0]);
+    return isTitleCase(m[0]) && !STOPWORDS.has(form) && !SENTENCE_STARTERS.has(form) && !BASIS_WORDS.has(form) && !HEADLINE_WORDS.has(form) && !isCommonNoun(claim, form) && !MEASURE_NOUNS.has(form);
+  });
+}
+
+/**
+ * Whether passage figure `p` is given for a sibling of a name the claim uses:
+ * "Alpha Free" beside the claim's "Alpha Pro" — the same first word, and words
+ * of its own the claim never uses and no text writes in lowercase. A run that
+ * is itself a measure ("Gross Bookings") names no family.
+ */
+function siblingOfClaimName(claim: string, passage: string, owner: readonly string[]): boolean {
+  if (owner.length < 2) return false;
+  const claimWords = wordForms(claim);
+  const lowerIn = (form: string) => lowercaseForms(passage).has(form) || lowercaseForms(claim).has(form);
   for (const claimRun of titleCaseRuns(claim)) {
-    // A run that is itself a measure ("Gross Bookings") names no family.
     if (claimRun.some((f) => MEASURE_NOUNS.has(f) || COMMON_SUBJECT_NOUNS.has(f) || BASIS_WORDS.has(f))) continue;
-    if (claimRun[0] !== forms[0]) continue;
-    const own = forms.slice(1).filter((f) => !claimRun.includes(f));
+    if (claimRun[0] !== owner[0]) continue;
+    const own = owner.slice(1).filter((f) => !claimRun.includes(f));
     if (own.length > 0 && own.every((f) => !lowerIn(f) && !claimWords.has(f) && !MEASURE_NOUNS.has(f) && !COMMON_SUBJECT_NOUNS.has(f))) return true;
   }
   return false;
+}
+
+/**
+ * Whether the passage provably gives figure `p` for a DIFFERENT entity than
+ * the one claim figure `n` is about: what lets another cited source's figure
+ * stand in for this passage, and what keeps a rival figure from reading as a
+ * disagreement. The proof has to come from the claim: the passage's owner is
+ * a name the claim itself uses for another subject (`claimNamesAnotherSubject`)
+ * or a sibling of one (`siblingOfClaimName`).
+ *
+ * An owner the claim never names is unknown, not another entity. "GM's",
+ * "IBM's", "Britain's", "the Fed's", "the Trust's", "Threadneedle Street's",
+ * "the Foundation raised": acronyms, short names, nicknames, metonyms and
+ * capitalised defined terms are how pages name the claim's OWN subject, and
+ * no amount of capitals or company suffixes tells them from a stranger. So
+ * their figure stays this passage's, and the judge and the reader see it.
+ * Never in a headline-style sentence.
+ */
+function strictlyAnotherEntity(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
+  if (inHeadline(passage, p.start)) return false;
+  const owner = passageFigureOwner(passage, p);
+  if (!owner) return false;
+  return claimNamesAnotherSubject(claim, n, owner) || siblingOfClaimName(claim, passage, owner);
+}
+
+/**
+ * Whether passage count `p` provably counts something else than claim figure
+ * `n`: not the same quantity by unit and introducing phrase (`sameQuantity`),
+ * and its unit is a word the claim never uses ("the three largest depots"
+ * against "45,000 members"). A unit the claim names anywhere ("79.2 million
+ * passengers" against "Passenger numbers … reached 83.9 million") may be the
+ * claim's own quantity.
+ */
+function provablyAnotherCount(claim: string, n: NumericFact, passage: string, p: NumericFact): boolean {
+  if (sameQuantity(claim, n, passage, p)) return false;
+  const unit = numberContext(passage, p).unit;
+  if (!unit || /^\d/.test(unit)) return false;
+  const forms = wordForms(claim);
+  return !forms.has(unit) && !forms.has(tokenForm(unit));
 }
 
 /** Where a clause ends, and where a sentence ends, for `figureDate`. */
@@ -1420,8 +1568,8 @@ function rivalFigures(
 ): NumericFact[] {
   return passage.numbers.filter(
     (p) =>
-      p.kind === n.kind &&
-      !numbersAgree(p.value, n.value) &&
+      comparable(n, p) &&
+      !figuresAgree(n, p) &&
       !evidenceForAnotherFigure(claim, n, passage, p, { strict: false }) &&
       measuresSameThing(claim, n, passage, p)
   );
@@ -1443,7 +1591,7 @@ function evidenceForAnotherFigure(
 ): boolean {
   const at = figureDate(passage.text, p, passage.dates);
   return claim.numbers.some((m) => {
-    if (m === n || m.kind !== p.kind || !numbersAgree(m.value, p.value)) return false;
+    if (m === n || !figuresAgree(m, p)) return false;
     const mAt = figureDate(claim.text, m, claim.dates);
     if (mAt && at) return datesAgree(mAt, at);
     return !opts.strict || (!mAt && !at);
@@ -2303,7 +2451,7 @@ export function passageRelevance(claim: string, passage: string): number {
   let bonus = 0;
   if (claimNums.length > 0) {
     const passageNums = extractNumbers(passage, extractDates(passage));
-    const matched = claimNums.filter((c) => passageNums.some((p) => p.kind === c.kind && numbersAgree(c.value, p.value)));
+    const matched = claimNums.filter((c) => passageNums.some((p) => figuresAgree(c, p)));
     bonus += 0.35 * (matched.length / claimNums.length);
   }
   if (claimDates.length > 0) {
@@ -2694,8 +2842,10 @@ export function auditEvidence(opts: {
   const claimFacts = { text: claim, dates: claimDates, numbers: claimNums };
   const passageFacts = { text: passage, dates: passageDates, numbers: passageNums };
   for (const n of claimNums) {
-    const sameKind = passageNums.filter((p) => p.kind === n.kind);
-    if (sameKind.some((p) => numbersAgree(p.value, n.value))) continue;
+    const sameKind = passageNums.filter((p) => comparable(n, p));
+    if (sameKind.some((p) => figuresAgree(n, p))) continue;
+    // An amount in another currency is neither this figure nor a rival to it: a conversion the text cannot check.
+    const foreign = n.kind === "currency" ? passageNums.filter((p) => p.kind === "currency" && !sameCurrency(n, p)) : [];
     if (sameKind.some((p) => rangeHolds(passageFacts, p, n.value))) continue;
     const rival = rivalFigures(claimFacts, n, passageFacts);
     /*
@@ -2717,8 +2867,8 @@ export function auditEvidence(opts: {
       });
       continue;
     }
-    // A rival the passage provably gives for a different named entity ("Contoso's revenue") is not a disagreement.
-    const disputed = rival.filter((p) => !strictlyAnotherEntity(claim, passage, p));
+    // A rival the passage provably gives for another subject the claim names ("…, ahead of Contoso") is not a disagreement.
+    const disputed = rival.filter((p) => !strictlyAnotherEntity(claim, n, passage, p));
     if (disputed.length > 0) {
       cap(CEILING.figureAbsent, {
         code: "figure_differs",
@@ -2732,18 +2882,19 @@ export function auditEvidence(opts: {
      * same quantity — any amount of money or percentage, and a count in the
      * same unit — has to be accounted for: the evidence for another of the
      * claim's figures, or a figure the passage provably gives for a
-     * DIFFERENT named entity (`strictlyAnotherEntity`: a possessive owner,
-     * a company suffix, a name capitalised mid-sentence, a sibling of a name
-     * the claim uses). Title case, a capital that opens a sentence and a
-     * headline never count. A figure left over for the claim's own period is
-     * a doubt, and a doubt is shown as one: `figure_differs`.
+     * DIFFERENT entity (`strictlyAnotherEntity`: an owner the claim itself
+     * names for another subject, or a sibling of one). An owner the claim
+     * never names — an acronym, a nickname, "the Trust" — is unknown, and an
+     * amount in another currency is unchecked. A figure left over for the
+     * claim's own period is a doubt, and a doubt is shown as one:
+     * `figure_differs`.
      */
-    if (elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))) {
+    if (foreign.length === 0 && elsewhere.some((facts) => facts.numbers.some((p) => figuresAgree(n, p)))) {
       const unaccounted = sameKind.filter(
         (p) =>
-          !(p.kind === "plain" && !sameQuantity(claim, n, passage, p)) &&
+          !(p.kind === "plain" && provablyAnotherCount(claim, n, passage, p)) &&
           !evidenceForAnotherFigure(claimFacts, n, passageFacts, p, { strict: true }) &&
-          !strictlyAnotherEntity(claim, passage, p)
+          !strictlyAnotherEntity(claim, n, passage, p)
       );
       if (unaccounted.length === 0) {
         statedElsewhere(n.raw);
@@ -2764,7 +2915,7 @@ export function auditEvidence(opts: {
         measureMayMatch(claim, n, passage, p) &&
         samePeriodOrUnknown(claimFacts, n, passageFacts, p, opts.publishedAt?.getUTCFullYear()) &&
         !evidenceForAnotherFigure(claimFacts, n, passageFacts, p, { strict: true }) &&
-        !strictlyAnotherEntity(claim, passage, p)
+        !strictlyAnotherEntity(claim, n, passage, p)
     );
     if (doubtful.length > 0) {
       cap(CEILING.figureAbsent, {
@@ -2775,7 +2926,10 @@ export function auditEvidence(opts: {
     }
     cap(CEILING.figureAbsent, {
       code: "figure_absent",
-      detail: `The figure ${n.raw} does not appear in the cited passage.`,
+      detail:
+        foreign.length > 0
+          ? `The passage gives ${foreign.map((p) => p.raw).slice(0, 3).join(", ")}, in another currency; the figure ${n.raw} does not appear in it.`
+          : `The figure ${n.raw} does not appear in the cited passage.`,
     });
   }
 
@@ -2926,10 +3080,10 @@ export function differentPeriodForUndatedClaim(claim: string, supporting: string
   const conflictFacts = facts(conflicting);
   let differs = false;
   for (const n of claimFacts.numbers) {
-    if (conflictFacts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value))) continue;
+    if (conflictFacts.numbers.some((p) => figuresAgree(n, p))) continue;
     const rivals = rivalFigures(claimFacts, n, conflictFacts);
     if (rivals.length === 0) continue;
-    const support = supportFacts.numbers.find((p) => p.kind === n.kind && numbersAgree(p.value, n.value));
+    const support = supportFacts.numbers.find((p) => figuresAgree(n, p));
     const supportAt = support ? figureDate(supporting, support, supportFacts.dates) : null;
     const supportRelative = support ? figureRelativePeriod(supporting, support) : null;
     for (const rival of rivals) {

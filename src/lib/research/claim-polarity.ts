@@ -32,7 +32,16 @@
  * is the previous one; hedged, conditional and attribution clauses state
  * nothing. Whatever the reader cannot place with certainty can only make a
  * contradiction LESS likely: an unparsed proposition is never the proof in
- * (1), and always a candidate in (2).
+ * (1), and always a candidate in (2). "not just", "not only", "not merely" +
+ * verb is a focus, not a denial ("did not just raise prices, it also …"
+ * says it raised them), and never certain.
+ *
+ * A denial that cannot be proved is still shown (`findUnresolvedDenial`,
+ * contested, never contradicted) whenever its subject may be the claim's: a
+ * pronoun, a head-noun alias ("the carrier"), a claim-side alias (the claim's
+ * "the agency" for the passage's "Food and Drug Administration"), one subject
+ * of "neither … nor", "except", "but not" or "nor did X", or a "not in Y"
+ * remnant — so a credulous judge never leaves it unseen.
  *
  * Pure and free of the rest of the audit, so it can be read and tested on
  * its own (tests/research-claim-corpus.test.ts runs it over every repro the
@@ -154,9 +163,23 @@ const HAVE = new Set("have has had having".split(" "));
 const DO = new Set("do does did".split(" "));
 const MODALS = new Set("will would shall should can could may might must".split(" "));
 const AUX = new Set([...BE, ...HAVE, ...DO, ...MODALS]);
+/** An auxiliary as written: "May" capitalised mid-sentence is the month ("not in May"), not the modal. */
+function isAux(t: Token | undefined): boolean {
+  return !!t && AUX.has(t.low) && !(t.low === "may" && t.cap && !t.first);
+}
 /** Modals that leave a statement unasserted. "will", "can", "must" and "would" in reported speech assert. */
 const HEDGE_MODALS = new Set("may might could should".split(" "));
 const NEGATORS = new Set("not never".split(" "));
+/**
+ * Focus particles: after "not" they make it a focus, not a denial. "Contoso
+ * did not just raise prices, it also cut its range" says Contoso raised
+ * prices; so does "Not only did Contoso raise prices …".
+ */
+const FOCUS_PARTICLES = new Set("just only merely simply solely purely exclusively".split(" "));
+/** "not just", "not only": `tokens[i]` is "not" and a focus particle follows. */
+function focusNot(tokens: readonly Token[], i: number): boolean {
+  return tokens[i]?.low === "not" && FOCUS_PARTICLES.has(tokens[i + 1]?.low ?? "");
+}
 /** Adverbs that change nothing a polarity comparison reads. */
 const NEUTRAL_ADVERBS = new Set(
   ("also too either still already actually even just really ever yet so then now currently presently today once recently previously " +
@@ -270,6 +293,17 @@ function verbBase(low: string): string | null {
   }
   for (const c of candidates) if (VERB_BASES.has(c) || IRREGULAR_BASES.has(c)) return c;
   return null;
+}
+
+/** An unknown verb at its bare stem, so its past and bare forms compare: "flooded" and "flood", "rallied" and "rally". */
+function unknownVerbStem(low: string): string {
+  let w = low;
+  if (w.length > 4 && w.endsWith("ied")) w = `${w.slice(0, -3)}y`;
+  else if (w.length > 4 && w.endsWith("ed")) {
+    w = w.slice(0, -2);
+    if (/([bcdfgklmnprtvz])\1$/.test(w)) w = w.slice(0, -1);
+  }
+  return stemOf(w);
 }
 
 type VerbForm = "base" | "s" | "past" | "participle" | "ing" | "unknown";
@@ -386,7 +420,7 @@ const SPLIT_PUNCT = new Set([",", ";", ":", "—", "(", ")", '"', "[", "]"]);
 function verbScore(tokens: Token[], i: number, vpOnly: boolean): number {
   const t = tokens[i]!;
   if (t.kind !== "word") return 0;
-  if (AUX.has(t.low)) return 3;
+  if (isAux(t)) return 3;
   const prev = tokens[i - 1];
   const prevLow = prev?.low ?? "";
   if (prev && (DETERMINERS.has(prevLow) || POSSESSIVE_PRONOUNS.has(prevLow) || prev.possessive)) return 0;
@@ -396,7 +430,7 @@ function verbScore(tokens: Token[], i: number, vpOnly: boolean): number {
   const form = verbForm(t.low);
   if (t.cap && !t.first) return 0;
   // A noun right before the auxiliary: "An experimental shot was approved".
-  if (i > 0 && tokens[i + 1] && AUX.has(tokens[i + 1]!.low)) return 0;
+  if (i > 0 && tokens[i + 1] && isAux(tokens[i + 1])) return 0;
   if (!base) {
     // Unknown words: a past tense after a noun is a verb ("The museum reopened").
     if (form === "past" && t.low.length > 4 && i > 0) return 1.5;
@@ -451,7 +485,9 @@ function unitsOf(tokens: Token[], sentence: number, question: boolean): Unit[] {
       continue;
     }
     // "after regulators objected", "because funds ran out", "as planned": an adverbial clause of its own.
-    if (["because", "after", "before", "since", "when", "until", "once", "as"].includes(low) && current.length > 0 && hasVerb(current) && hasVerb(segment) && !hasVerb(segment.slice(0, 1))) {
+    // So is "as some outlets reported" after a verbless "not in 2023": the remnant ends there.
+    const negatedRemnant = current.find((x) => x.kind !== "punct")?.low === "not" && !hasVerb(current);
+    if (["because", "after", "before", "since", "when", "until", "once", "as"].includes(low) && current.length > 0 && (hasVerb(current) || negatedRemnant) && hasVerb(segment) && !hasVerb(segment.slice(0, 1))) {
       flush(low);
       continue;
     }
@@ -587,6 +623,18 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
     tokens = tokens.slice(f);
   }
   if (tokens.length === 0) return null;
+  /*
+   * "not just V", "not only V", "Not only did X V": a focus, never a denial —
+   * the sentence says X did V, and more. Read with the claim's polarity, and
+   * never certain: such a proposition is never the proof of a contradiction,
+   * only a statement that may agree with the claim.
+   */
+  let focus = false;
+  if (focusNot(tokens, 0)) {
+    tokens = tokens.slice(2);
+    focus = true;
+    if (tokens.length === 0) return null;
+  }
   // Inversion after "nor"/"neither": "nor did it signal a cut".
   let inverted: { aux: Token; subjectEnd: number } | null = null;
   if (AUX.has(tokens[0]!.low) && tokens[1] && (SUBJECT_PRONOUNS.has(tokens[1].low) || DETERMINERS.has(tokens[1].low) || tokens[1].cap)) {
@@ -604,7 +652,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
     tokens = [inverted.aux, ...tokens.slice(inverted.subjectEnd)];
     verbIndex = 0;
   } else {
-    const firstAux = tokens.findIndex((t) => AUX.has(t.low));
+    const firstAux = tokens.findIndex((t) => isAux(t));
     // A unit opening with a negator and no clear verb is a remnant ("not on the damages claim").
     const opensNegated = ["not", "never", "neither", "nor"].includes(tokens[0]!.low);
     let best = -1;
@@ -653,6 +701,11 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
   for (; i < tokens.length; i += 1) {
     const t = tokens[i]!;
     const low = t.low;
+    if (focusNot(tokens, i)) {
+      focus = true;
+      i += 1;
+      continue;
+    }
     if (NEGATORS.has(low)) {
       negations += 1;
       continue;
@@ -666,7 +719,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
       if (!NEUTRAL_ADVERBS.has(low)) adverbs.push(t);
       continue;
     }
-    if (MODALS.has(low)) {
+    if (MODALS.has(low) && isAux(t)) {
       modal ??= low;
       if (HEDGE_MODALS.has(low)) asserted = false;
       tense ??= low === "will" || low === "shall" ? "future" : "present";
@@ -735,14 +788,14 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
     }
     // Unknown word after an auxiliary: a verb we do not know ("has finalised", "was cleaned").
     if ((sawHave || sawDo || modal) && /^[a-z]+$/.test(low)) {
-      verb = stemOf(low);
+      verb = unknownVerbStem(low);
       if (sawBe && low.endsWith("ed")) passive = true;
       certain = verbForm(low) === "past" || sawDo || !!modal;
       i += 1;
       break;
     }
     if (verbForm(low) === "past" && /^[a-z]+$/.test(low)) {
-      verb = stemOf(low);
+      verb = unknownVerbStem(low);
       tense ??= "past";
       i += 1;
       break;
@@ -764,7 +817,11 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
   }
   // A reporting verb whose complement is a clause has been split already; one with nothing after it is attribution.
   // Negations after the verb ("found no link", "opened an office not in Italy").
-  for (const t of rest) if (t.low === "no" || t.low === "not" || t.low === "never" || t.low === "none" || t.low === "nothing") negations += 1;
+  rest.forEach((t, k) => {
+    if (focusNot(rest, k)) focus = true;
+    else if ((t.low === "no" || t.low === "not" || t.low === "never" || t.low === "none" || t.low === "nothing") && !(k > 0 && focusNot(rest, k - 1))) negations += 1;
+  });
+  if (focus) rest = rest.filter((t, k) => !focusNot(rest, k) && !(k > 0 && focusNot(rest, k - 1)));
   for (const t of adverbs) rest = [t, ...rest];
   return {
     fronted,
@@ -778,7 +835,7 @@ function parseUnit(raw: Token[], vpContext: boolean): Parsed | null {
     passive,
     elided,
     rest,
-    certain,
+    certain: certain && !focus,
   };
 }
 
@@ -939,6 +996,8 @@ function remnantOf(tokens: Token[]): { negated: boolean; body: Token[]; degree: 
   let i = 0;
   let negated = false;
   while (i < words.length && (CONNECTORS.has(words[i]!.low) || ["also", "too", "only", "even", "just", "especially", "particularly", "mainly", "mostly"].includes(words[i]!.low))) i += 1;
+  // "but not just in Texas": a focus, which neither denies nor restates the phrase — unreadable.
+  if (focusNot(words, i)) return { negated: false, body: words.slice(i + 2), degree: true };
   if (words[i]?.low === "not" || words[i]?.low === "neither" || words[i]?.low === "nor" || words[i]?.low === "never") {
     negated = true;
     i += 1;
@@ -996,6 +1055,72 @@ function emptyProp(base: Partial<Proposition> & Pick<Proposition, "sentence" | "
   };
 }
 
+/**
+ * "…, and nor did Contoso", "Neither has it", "and so did Fabrikam": an
+ * auxiliary and a subject with the predicate left out — the last predicate,
+ * for that subject. `negated` is null when it takes the antecedent's polarity
+ * ("so did"). Null when the words after the auxiliary are more than a short
+ * noun phrase ("nor did it signal a cut" is an inverted clause of its own).
+ */
+function invertedElision(body: Token[], connector: string | null, openers: readonly string[]): { subject: Token[]; negated: boolean | null } | null {
+  let words = body.filter((t) => t.kind !== "punct");
+  let negated: boolean | null | undefined = connector === "nor" || openers.includes("nor") ? true : connector === "so" || openers.includes("so") ? null : undefined;
+  if (words[0]?.low === "neither" || words[0]?.low === "nor") {
+    negated = true;
+    words = words.slice(1);
+  } else if (words[0]?.low === "so") {
+    negated = null;
+    words = words.slice(1);
+  }
+  if (negated === undefined || !words[0] || !AUX.has(words[0].low)) return null;
+  const rest = words.slice(1);
+  if (rest.length === 0 || rest.length > 5) return null;
+  if (rest.some((t) => NEGATORS.has(t.low) || AUX.has(t.low) || t.kind === "num" || (verbBase(t.low) !== null && !t.cap))) return null;
+  return { subject: rest, negated };
+}
+
+/** Words that set a subject apart from the rest of its phrase: "every carrier EXCEPT Fabrikam". */
+const EXCEPT_WORDS = new Set("except excluding besides".split(" "));
+
+/**
+ * The subjects a clause's subject phrase speaks for one by one, each with the
+ * polarity the clause gives it: the conjuncts of "Neither Northwind nor
+ * Contoso", "Northwind and Contoso" (the clause's polarity), and the subject
+ * set apart by "every carrier except Fabrikam" (the opposite one). Empty for
+ * a plain subject.
+ */
+function sideSubjects(subjectWords: readonly Token[], negated: boolean): Array<{ subject: Subject; negated: boolean }> {
+  const out: Array<{ subject: Subject; negated: boolean }> = [];
+  const words = subjectWords.filter((t) => t.kind !== "punct" || t.raw === "&");
+  const exceptAt = words.findIndex((t) => EXCEPT_WORDS.has(t.low) || (t.low === "other" && words[words.indexOf(t) + 1]?.low === "than"));
+  if (exceptAt > 0) {
+    const after = words.slice(exceptAt + (words[exceptAt]!.low === "other" ? 2 : 1));
+    const subject = after.length > 0 && after.length <= 6 ? readSubject(after) : null;
+    if (subject && subject.proper) out.push({ subject, negated: !negated });
+    return out;
+  }
+  const joins = words.filter((t) => t.low === "and" || t.low === "or" || t.low === "nor" || t.low === "&");
+  if (joins.length === 0) return out;
+  // "Procter and Gamble", "Johnson & Johnson": a name joined by "and" is one name unless "neither"/"both"/"either" frames it.
+  const framed = ["neither", "both", "either"].includes(words[0]?.low ?? "") || words.some((t) => t.low === "nor");
+  if (!framed && words.some((t) => t.low === "&")) return out;
+  const parts: Token[][] = [[]];
+  for (const t of words) {
+    if (["neither", "both", "either"].includes(t.low) && parts.length === 1 && parts[0]!.length === 0) continue;
+    if (t.low === "and" || t.low === "or" || t.low === "nor" || t.low === "&") parts.push([]);
+    else parts[parts.length - 1]!.push(t);
+  }
+  if (parts.length < 2 || parts.some((part) => part.length === 0 || part.length > 4)) return out;
+  // Without a frame, only conjuncts that all open with a determiner ("the bank and the insurer") or are all one name
+  // each ("Northwind and Contoso"): "The Food and Drug Administration" is one name.
+  if (!framed && !parts.every((part) => DETERMINERS.has(part[0]!.low)) && !parts.every((part) => part.length === 1 && part[0]!.cap)) return out;
+  for (const part of parts) {
+    const subject = readSubject(part);
+    if (subject) out.push({ subject, negated });
+  }
+  return out;
+}
+
 function readText(text: string): ReadText {
   const props: Proposition[] = [];
   const subjects: Subject[] = [];
@@ -1010,6 +1135,8 @@ function readText(text: string): ReadText {
     const tokens = tokenize(s.text);
     const units = unitsOf(tokens, si, s.question);
     let pendingSubject: Subject | null = null;
+    /** Subjects a remnant set apart before the verb: "Contoso, but not Fabrikam, cut its dividend". */
+    let pendingExcluded: Subject[] = [];
     let pendingFronted: Token[][] = [];
     let sentenceSubject: Subject | null = null;
     let sentenceLast: Proposition | null = null;
@@ -1020,6 +1147,30 @@ function readText(text: string): ReadText {
       const connector = u.connector && u.connector !== "," && u.connector !== ";" ? u.connector : opener;
       const unasserted = s.question || (connector !== null && UNASSERTED_CONNECTORS.has(connector)) || (opener !== null && UNASSERTED_CONNECTORS.has(opener));
       if (body.length === 0) return;
+      // "…, and nor did Contoso": the last predicate, for Contoso, denied. Never certain.
+      const inverted = invertedElision(body, u.connector, u.tokens.slice(0, u.tokens.length - body.length).map((t) => t.low));
+      if (inverted) {
+        const antecedent = sentenceLast && sentenceLast.verb ? sentenceLast : lastPredicate;
+        let subject = readSubject(inverted.subject);
+        if (subject?.pronoun) {
+          const resolved = resolvePronoun(subject.pronoun, subjectHistory, si);
+          if (resolved) subject = { ...resolved, pronoun: subject.pronoun };
+        }
+        if (antecedent?.verb && subject) {
+          props.push({
+            ...antecedent,
+            sentence: si,
+            unit,
+            subject,
+            negated: inverted.negated ?? antecedent.negated,
+            asserted: antecedent.asserted && !unasserted,
+            kind: "elided",
+            certain: false,
+            text: unitText,
+          });
+          return;
+        }
+      }
       const relative = body[0]!.low === "which" || body[0]!.low === "who";
       const vpContext = !relative && (u.connector === "and" || u.connector === "but" || u.connector === "or" || u.connector === "yet" || opener === "and" || opener === "but" || (u.connector === "," && !u.initial));
       const parsed = parseUnit(relative ? body.slice(1) : body, vpContext || relative);
@@ -1049,9 +1200,15 @@ function readText(text: string): ReadText {
           }
           return;
         }
+        // Between a subject and its verb, a remnant sets a subject apart: "Contoso, but not Fabrikam, cut …".
+        const rem = remnantOf(body);
+        if (!sentenceLast && pendingSubject && rem && rem.negated && !rem.degree && rem.body.length > 0 && rem.body.length <= 6 && !PREPOSITIONS.has(rem.body[0]!.low)) {
+          const excluded = readSubject(rem.body);
+          if (excluded) pendingExcluded.push(excluded);
+          return;
+        }
         // A remnant of the previous proposition.
         const antecedent = sentenceLast ?? lastPredicate;
-        const rem = remnantOf(body);
         if (!antecedent || !rem || rem.degree || antecedent.verb === null) {
           // Unreadable: a candidate statement of either polarity, never proof.
           if (antecedent && rem && !rem.degree) props.push(emptyProp({ sentence: si, unit, text: unitText, kind: "remnant", negated: rem.negated, subject: antecedent.subject }));
@@ -1198,6 +1355,21 @@ function readText(text: string): ReadText {
       // Attribution: a verb of saying with nothing after it.
       if (prop.verb && REPORTING.has(prop.verb) && prop.object.length === 0 && prop.kind !== "elided") prop.asserted = false;
       props.push(prop);
+      /*
+       * The subjects the clause speaks for one by one — "Neither Northwind nor
+       * Contoso raised prices", "every carrier except Fabrikam", "Contoso, but
+       * not Fabrikam, cut its dividend" — each a proposition of its own with
+       * the polarity the clause gives it. Never certain: they say what may
+       * deny a claim, for a reader to review, and never prove it.
+       */
+      if (prop.verb && !relative) {
+        const side = sideSubjects(subjectWords, prop.negated);
+        if (subjectWords.length === 0) for (const excluded of pendingExcluded) side.push({ subject: excluded, negated: !prop.negated });
+        for (const { subject: one, negated } of side) {
+          props.push({ ...prop, subject: one, negated, certain: false, kind: "remnant" });
+        }
+      }
+      pendingExcluded = [];
       if (prop.verb || prop.kind === "elided") {
         sentenceLast = prop;
         if (prop.verb && prop.asserted !== false) lastPredicate = prop;
@@ -1413,7 +1585,16 @@ function provablyDifferent(claim: Subject, other: Subject): boolean {
   const oh = stemOf(other.head);
   const cg = MEASURE_GROUP.get(ch);
   const og = MEASURE_GROUP.get(oh);
-  if (cg !== undefined && og !== undefined) return cg !== og;
+  if (cg !== undefined && og !== undefined) {
+    if (cg !== og) return true;
+    // The same measure of two owners named differently: "Contoso's shares" and "Fabrikam's shares".
+    const co = possessorOf(claim);
+    const oo = possessorOf(other);
+    if (!co || !oo) return false;
+    const cn = distinctiveNames(co);
+    const on = distinctiveNames(oo);
+    return cn.length > 0 && on.length > 0 && cn.some((w) => !on.includes(w)) && on.some((w) => !cn.includes(w));
+  }
   // Two names: different when neither holds all of the other's distinctive name words, and neither is the other's acronym.
   const cn = distinctiveNames(claim);
   const on = distinctiveNames(other);
@@ -1634,15 +1815,56 @@ function sameStatement(p: Proposition, raw: Proposition, named: readonly Subject
   return meaningfulTimes(p).every((t) => dt.some((x) => timesAgree(t, x)));
 }
 
+/** A subject with no name of its own: "the carrier", "the toymaker", "the agency". */
+function isDescription(s: Subject): boolean {
+  return !s.pronoun && !s.proper && s.names.length === 0 && !s.ownerPronoun && !s.contrast && !s.indefinite && s.words.length > 0 && s.words.length <= 3;
+}
+
+/**
+ * Whether passage subject `other` may be the claim's subject, for a denial
+ * shown for review — never for proof, which takes `subjectMatches`:
+ *
+ *  - the same subject, or a certain reference to it (`subjectMatches`);
+ *  - a pronoun that does not resolve to a provably different subject, or
+ *    the same pronoun as the claim's ("… and it paid a dividend");
+ *  - a description with no name of its own ("the carrier", "the toymaker")
+ *    in a passage that names the claim's subject and no provably different
+ *    one: a head-noun alias;
+ *  - a name for the claim's own description ("The Food and Drug
+ *    Administration" for the claim's "the agency"), the one name the passage
+ *    gives: a claim-side alias.
+ */
+function mayBeClaimSubject(claimSubject: Subject, other: Subject, named: readonly Subject[]): boolean {
+  if (subjectMatches(claimSubject, other, named, [])) return true;
+  if (other.contrast || other.indefinite) return false;
+  if (other.pronoun) {
+    if (claimSubject.pronoun === other.pronoun) return true;
+    if (other.key === other.pronoun) return true;
+    const antecedent: Subject = { ...other, pronoun: null };
+    const owner = possessorOf(claimSubject);
+    return subjectsEqual(claimSubject, antecedent) || !provablyDifferent(claimSubject, antecedent) || (!!owner && subjectsEqual(owner, antecedent));
+  }
+  const others = (than: Subject) => named.filter((s) => s.proper && !subjectsEqual(s, than) && provablyDifferent(than, s));
+  if (isDescription(other) && claimSubject.proper) {
+    return named.some((s) => subjectsEqual(s, claimSubject)) && others(claimSubject).length === 0;
+  }
+  if (isDescription(claimSubject) && other.proper) return others(other).length === 0;
+  return false;
+}
+
 /**
  * A statement of the passage that may deny the claim but cannot be proved to
- * (the "needs review" half of the rule): one with the claim's own subject and
- * the opposite polarity, about the same occasion (no conflicting time or
- * place), sharing the claim's verb or two of its content words — "The trial
- * was not designed to assess long-term safety" against "The trial showed the
- * drug is safe in the long term". Null when the passage also states the claim
- * as the claim does, or when nothing like that is there. Never a
- * contradiction: the judge decides, and the reader is shown the sentence.
+ * (the "needs review" half of the rule): one with the opposite polarity whose
+ * subject may be the claim's (`mayBeClaimSubject`: the subject itself, a
+ * pronoun, a head-noun alias, a claim-side alias, one subject of "neither …
+ * nor", "except" or "but not", "nor did X"), about the same occasion (no
+ * conflicting time or place), sharing the claim's verb, a verb the claim
+ * names in its predicate ("went on strike" / "did not strike"), or two of its
+ * content words — "The trial was not designed to assess long-term safety"
+ * against "The trial showed the drug is safe in the long term". Null when the
+ * passage also states the claim as the claim does, or when nothing like that
+ * is there. Never a contradiction: the judge decides, and the reader is shown
+ * the sentence.
  */
 export function findUnresolvedDenial(claim: string, passage: string): string | null {
   const claimRead = readPropositions(claim);
@@ -1655,13 +1877,19 @@ export function findUnresolvedDenial(claim: string, passage: string): string | n
     for (const raw of passageRead.props) {
       const n = inClaimVerb(p, raw);
       if (!n.asserted || n.negated === p.negated || !n.subject || !n.verb) continue;
-      if (!subjectMatches(p.subject, n.subject, named, [])) continue;
+      const exact = subjectMatches(p.subject, n.subject, named, []);
+      if (!exact && !mayBeClaimSubject(p.subject, n.subject, named)) continue;
+      // A subject that only may be the claim's needs the claim's object too: "it never cut its workforce" says
+      // nothing about the marketing budget the claim says it cut.
+      if (!exact && p.object.length > 0 && n.object.length > 0 && !p.object.some((w) => n.object.includes(w))) continue;
       const pt = meaningfulTimes(p);
       const nt = meaningfulTimes(n);
       if (pt.some((t) => nt.some((x) => timeKind(x) === timeKind(t)) && !nt.some((x) => timesAgree(t, x)))) continue;
       if (p.pps.some((pp) => n.pps.some((x) => x.prep === pp.prep) && !n.pps.some((x) => x.prep === pp.prep && (subset(pp.stems, x.stems) || subset(x.stems, pp.stems))))) continue;
-      const shared = [...overlapStems(n)].filter((w) => claimStems.has(w)).length;
-      if (n.verb === p.verb || synonyms(n.verb, p.verb) || shared >= 2) return raw.text;
+      const passageStems = overlapStems(n);
+      const shared = [...passageStems].filter((w) => claimStems.has(w)).length;
+      const verbInPredicate = claimStems.has(stemOf(n.verb)) || passageStems.has(stemOf(p.verb));
+      if (n.verb === p.verb || synonyms(n.verb, p.verb) || verbInPredicate || shared >= 2) return raw.text;
     }
   }
   return null;

@@ -188,34 +188,64 @@ test("a run of title-case words ending in a common noun, or opening a sentence u
   }
 });
 
-test("a run of title-case words names a subject only on evidence beyond its capitals", () => {
-  const claim = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion.";
+test("a passage's owner is another entity only when the claim itself names it for another subject", () => {
   const corroborating = ["Southwind earned $2.1 billion in 2024."];
+  // The claim names Contoso, outside the clause of the figure in question: whatever its capitals, its figure is not
+  // the claim's.
+  const claim = "Northwind earned $4.3 billion in 2024, while Southwind earned $2.1 billion; Contoso trailed both.";
   for (const passage of [
-    // An organisation's suffix.
-    "Northwind earned $4.3 billion in 2024. Contoso Labs earned $3.0 billion, a filing by Contoso showed.",
-    "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $3.0 billion.",
-    "Northwind earned $4.3 billion in 2024, while Contoso Group earned $3.0 billion.",
-    // A possessive owner.
-    "Northwind earned $4.3 billion in 2024. Contoso's revenue was $3.0 billion.",
-    // One word capitalised mid-sentence, the subject of what earned the figure, no noun the texts use otherwise.
-    "Northwind earned $4.3 billion in 2024, while Contoso earned $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024. Contoso Labs earned $1.0 billion, a filing by Contoso showed.",
+    "Northwind earned $4.3 billion in 2024, and Contoso Labs earned $1.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso Group earned $1.0 billion.",
+    "Northwind earned $4.3 billion in 2024. Contoso's revenue was $1.0 billion.",
+    "Northwind earned $4.3 billion in 2024, while Contoso earned $1.0 billion.",
   ]) {
     const result = auditEvidence({ claim, passage, corroborating });
     assert.ok(result.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
     assert.equal(result.ceiling, 1, `${passage}: ${result.reasons.map((r) => r.code).join(", ")}`);
   }
-  // A run of title-case words with no suffix, opening a sentence or not, named again or not: no stand-in. The
-  // passage keeps its own figure, and since another source states the claim's, that is a doubt shown as one.
+  // Any other owner — a suffix, a possessive, one capitalised word, a name repeated — is one the claim never uses:
+  // no stand-in. The passage keeps its own figure, and since another source states the claim's, that is a doubt
+  // shown as one.
   for (const passage of [
     "Northwind earned $4.3 billion in 2024. Contoso Robotics earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso Robotics earned $3.0 billion.",
     "Northwind earned $4.3 billion in 2024, while Contoso Robotics earned $3.0 billion. Contoso Robotics is based in Ohio.",
+    "Northwind earned $4.3 billion in 2024, and Robotics Labs earned $3.0 billion.",
+    "Northwind earned $4.3 billion in 2024. Robotics's revenue was $3.0 billion.",
   ]) {
     const unnamed = auditEvidence({ claim, passage, corroborating });
     assert.ok(!unnamed.reasons.some((r) => r.code === "stated_by_other_citation"), passage);
     assert.ok(unnamed.reasons.some((r) => r.code === "figure_differs"), passage);
     assert.ok(unnamed.ceiling < SUPPORTED_MIN, passage);
+  }
+  // A name the claim uses inside the figure's own clause is the figure's subject, never "another" one.
+  const own = auditEvidence({
+    claim: "Southwind, unlike Contoso, earned $2.1 billion in 2024 while Contoso earned less.",
+    passage: "Contoso's revenue was $1.0 billion in 2024.",
+    corroborating,
+  });
+  assert.ok(!own.reasons.some((r) => r.code === "stated_by_other_citation"), own.reasons.map((r) => r.code).join(", "));
+});
+
+test("acronyms, nicknames, metonyms and defined terms for the claim's own subject never stand in (verifier round 5)", () => {
+  const cases: Array<[string, string, string]> = [
+    ["Revenue at General Motors rose to $187 billion in 2024.", "In 2024, GM reported revenue of $172 billion.", "General Motors: $187 billion (2024)."],
+    ["Revenue at International Business Machines rose to $62.8 billion in 2024.", "IBM's revenue rose to $61.0 billion in 2024.", "International Business Machines: $62.8 billion (2024)."],
+    ["Unemployment in the United Kingdom fell to 4.1% in 2024.", "Britain's unemployment rate fell to 4.4% in 2024.", "United Kingdom: 4.1% (2024)."],
+    ["The balance sheet of the Federal Reserve shrank to $7.0 trillion in 2024.", "The Fed's balance sheet shrank to $6.8 trillion in 2024.", "Federal Reserve: $7.0 trillion (2024)."],
+    ["Revenue at Northwind REIT reached $4.3 billion in 2024.", "In 2024, the Trust's revenue reached $3.9 billion.", "Northwind REIT: $4.3 billion (2024)."],
+    ["The Bank of England's main rate was 4.75% at the end of 2024.", "Threadneedle Street's main rate was 5% at the end of 2024.", "The Bank of England's main rate stood at 4.75% at the end of 2024."],
+    ["The Johnsons' charity raised $4.3 million in 2024.", "In 2024, the Foundation raised $3.9 million from donors.", "Alan Price said the charity raised $4.3 million in 2024."],
+    ["The budget deficit of Ontario was $6.0 billion in fiscal 2024.", "In fiscal 2024, the Province's budget deficit was $5.9 billion.", "Ontario: $6.0 billion (fiscal 2024)."],
+    ["Passenger numbers at Heathrow Airport reached 83.9 million in 2024.", "In 2024, Heathrow handled 79.2 million passengers.", "Passenger numbers reached 83.9 million at Heathrow Airport in 2024."],
+  ];
+  for (const [claim, passage, other] of cases) {
+    const result = auditEvidence({ claim, passage, corroborating: [other] });
+    const codes = result.reasons.map((r) => r.code).join(", ");
+    assert.ok(!result.reasons.some((r) => r.code === "stated_by_other_citation"), `${passage}: ${codes}`);
+    assert.ok(result.ceiling < SUPPORTED_MIN, `${passage}: ${codes}`);
+    assert.equal(result.contradicted, false, `${passage}: ${codes}`);
   }
 });
 
