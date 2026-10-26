@@ -350,3 +350,20 @@ test("a release never lands before the renewal already in flight", async () => {
   await settle();
   assert.equal(await base.isLive({ userId: "u1", generationId: "gen-race" }), false, "the finished lease was not resurrected");
 });
+
+test("the schema's note on cancelRequestedAt names the pump that reads it, not the per-turn poll it replaced", async () => {
+  const { readFileSync } = await import("node:fs");
+  const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
+  const model = schema.slice(schema.indexOf("model ChatFirstSubmissionReceipt {"));
+  const note = model.slice(0, model.indexOf("cancelRequestedAt  DateTime?"));
+  const comment = note.slice(note.lastIndexOf("leaseExpiresAt"));
+  assert.ok(comment.includes("POST /api/chat/cancel"), comment);
+  assert.doesNotMatch(comment, /every ~2s|src\/app\/api\/chat\/route\.ts/, "that per-receipt poll is gone");
+  assert.match(comment, /pendingCancels in src\/lib\/chat\/generation-signals-store\.ts/);
+  assert.match(comment, /GENERATION_CANCEL_POLL_MS/);
+  assert.equal(GENERATION_CANCEL_POLL_MS, 1_000, "about once a second, as the note says");
+  // And the store it names really reads the flag.
+  const store = readFileSync(new URL("../src/lib/chat/generation-signals-store.ts", import.meta.url), "utf8");
+  const pending = store.slice(store.indexOf("async pendingCancels("), store.indexOf("async renewLive("));
+  assert.match(pending, /FROM "ChatFirstSubmissionReceipt"[\s\S]*"cancelRequestedAt" IS NOT NULL/);
+});

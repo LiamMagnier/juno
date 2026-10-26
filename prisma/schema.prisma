@@ -1013,8 +1013,11 @@ model ChatFirstSubmissionReceipt {
   completedAt        DateTime?
   leaseExpiresAt     DateTime?
   // Set by POST /api/chat/cancel. The in-memory registry is the fast path; this
-  // is what lets a cancel from another process or tab reach the stream loop,
-  // which polls it every ~2s (src/app/api/chat/route.ts).
+  // is what lets a cancel from another process or tab reach the turn: each
+  // process's generation-signal pump reads it, with the cancel signals of every
+  // generation that process holds, in one query about once a second
+  // (pendingCancels in src/lib/chat/generation-signals-store.ts,
+  // GENERATION_CANCEL_POLL_MS in src/lib/chat/generation-signals.ts).
   cancelRequestedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
