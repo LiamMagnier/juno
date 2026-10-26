@@ -12,7 +12,9 @@
  *
  * Arithmetic is IEEE 754 on `number`, and every result is rounded to 12
  * significant digits, which hides the binary-fraction noise (`0.1 + 0.2`)
- * without changing any figure a person would read.
+ * without changing any figure a person would read. `floor`, `ceil` and
+ * `round` remove that noise from their argument first (`denoise`), because
+ * they jump at whole numbers and the final rounding cannot undo a jump.
  *
  * Errors come back as data (`CalcError`), never as English: the sentence the
  * model reads is written in `specs/calculate.prompt.ts` (INV-29).
@@ -24,6 +26,8 @@ export const CALC_MAX_INPUT_CHARS = 500;
 export const CALC_MAX_DEPTH = 64;
 export const CALC_MAX_LITERAL_CHARS = 64;
 const SIGNIFICANT_DIGITS = 12;
+/** How far from its 12-digit value an argument may be and still count as binary noise: 64 ulps. */
+const NOISE_TOLERANCE = 2 ** -46;
 
 export type CalcError =
   | { kind: "too_long" }
@@ -135,14 +139,14 @@ const FUNCTIONS: Readonly<Record<string, Fn>> = {
     min: 1,
     max: 2,
     apply: ([x, digits], name) => {
-      if (digits === undefined) return Math.round(x);
+      if (digits === undefined) return Math.round(denoise(x));
       if (!Number.isInteger(digits) || digits < -15 || digits > 15) fail({ kind: "bad_arguments", token: name });
       const factor = 10 ** digits;
-      return Math.round(x * factor) / factor;
+      return Math.round(denoise(x * factor)) / factor;
     },
   },
-  floor: { min: 1, max: 1, apply: ([x]) => Math.floor(x) },
-  ceil: { min: 1, max: 1, apply: ([x]) => Math.ceil(x) },
+  floor: { min: 1, max: 1, apply: ([x]) => Math.floor(denoise(x)) },
+  ceil: { min: 1, max: 1, apply: ([x]) => Math.ceil(denoise(x)) },
   min: { min: 1, max: 64, apply: (args) => Math.min(...args) },
   max: { min: 1, max: 64, apply: (args) => Math.max(...args) },
   log: {
@@ -469,6 +473,24 @@ const CONVERSION = /^(.*?)\s*(°?[A-Za-z][A-Za-z0-9/²³_]*)\s+(?:to|in|as|into)
 function round12(value: number): number {
   if (value === 0) return 0; // also turns -0 into 0
   return Number(value.toPrecision(SIGNIFICANT_DIGITS));
+}
+
+/**
+ * The argument `floor`, `ceil` and `round` act on, with binary noise removed.
+ *
+ * Those functions jump at whole numbers (`round` at halves), so noise in the
+ * last bits flips them: `4.35 * 100` is 434.99999999999994 in IEEE 754, and
+ * `floor` of it used to be 434, a wrong figure the final 12-digit rounding
+ * cannot repair. The argument is snapped to 12 significant digits first, as
+ * the result is, but only when it lies within binary noise of that value
+ * (`NOISE_TOLERANCE`). An argument that really carries more digits, which is
+ * any value with up to 13 significant digits (`123456789012.5`), is used
+ * exactly as it was; so is any value already short enough, which snapping
+ * leaves unchanged.
+ */
+function denoise(x: number): number {
+  const snapped = round12(x);
+  return Math.abs(snapped - x) <= Math.abs(x) * NOISE_TOLERANCE ? snapped : x;
 }
 
 function evaluateArithmetic(source: string): { value: number; expression: string } {
