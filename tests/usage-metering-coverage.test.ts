@@ -94,6 +94,7 @@ const METERED: Record<string, string> = {
   // ── operator scripts (never run per user)
   "scripts/check-gemini-live-auth.ts": "OPERATOR: manual diagnostic",
   "scripts/eval-juno.ts": "OPERATOR: manual eval harness, run by the owner",
+  "scripts/workflow-bench.ts": "OPERATOR: workflow benchmark (npm run bench:workflows); streamChat only under --live, with the operator's key, no user",
   "scripts/check-provider-keys.ts": "OPERATOR: manual diagnostic",
   "scripts/check-search-providers.ts": "OPERATOR: manual diagnostic",
   "scripts/probes/wire.ts": "OPERATOR: manual probe",
