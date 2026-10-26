@@ -69,6 +69,9 @@ export function supportLabel(status: ClaimStatus, strength: number | null | unde
 // Text normalisation
 // ---------------------------------------------------------------------------
 
+/** Plain ASCII, which `normalizeText` has nothing to de-accent or flatten in. */
+const ASCII_ONLY = /^[\x00-\x7f]*$/;
+
 /**
  * Lowercase, de-accent, and flatten the punctuation a publisher's typography
  * differs on. Curly quotes and en dashes are the reason a verbatim quotation
@@ -76,6 +79,9 @@ export function supportLabel(status: ClaimStatus, strength: number | null | unde
  * emits “ ” and the scraped page carries " ".
  */
 export function normalizeText(s: string): string {
+  // Plain ASCII has nothing to de-accent or flatten: the same answer, minus
+  // the Unicode passes, for the word-by-word calls the figure checks make.
+  if (ASCII_ONLY.test(s)) return s.toLowerCase().replace(/\s+/g, " ").trim();
   return s
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -130,6 +136,16 @@ export function tokenCoverage(claim: string, passage: string): number {
   const c = contentTokens(claim);
   if (c.size === 0) return 0;
   const p = contentTokens(passage);
+  let hit = 0;
+  for (const t of c) if (p.has(t)) hit++;
+  return hit / c.size;
+}
+
+/** `tokenCoverage` on the per-text caches: what the audit uses, where the same passage is read for many claims. */
+function coverageOf(claim: string, passage: string): number {
+  const c = cachedContentTokens(claim);
+  if (c.size === 0) return 0;
+  const p = cachedContentTokens(passage);
   let hit = 0;
   for (const t of c) if (p.has(t)) hit++;
   return hit / c.size;
@@ -270,6 +286,15 @@ function numberContext(
   text: string,
   n: NumericFact
 ): { unit: string | null; next: string | null; before: Set<string> } {
+  const memo = figureMemo(text, n);
+  memo.context ??= readNumberContext(text, n);
+  return memo.context;
+}
+
+function readNumberContext(
+  text: string,
+  n: NumericFact
+): { unit: string | null; next: string | null; before: Set<string> } {
   /*
    * The unit is the first WORD after the figure, stopwords aside. Read from
    * the raw words rather than `contentTokens`, which drops anything under
@@ -334,7 +359,157 @@ const WORD_RE = /\p{L}+(?:['’]\p{L}+)*['’]?/gu;
 
 /** Every word of a text in `tokenForm`, short ones included ("EU", "UK"). */
 function wordForms(text: string): Set<string> {
-  return new Set((text.match(WORD_RE) ?? []).map(tokenForm));
+  const facts = textFacts(text);
+  facts.words ??= new Set((text.match(WORD_RE) ?? []).map(tokenForm));
+  return facts.words;
+}
+
+/** Where a clause or a sentence ends, as [start, end) offsets in the text, in reading order. */
+type Edges = ReadonlyArray<readonly [number, number]>;
+
+/** A figure's own clause, and where its sentence starts (see `figureScope`). */
+interface FigureScope {
+  clauseStart: number;
+  clauseEnd: number;
+  sentenceStart: number;
+}
+
+/*
+ * What the checks read from one text, worked out once per text. The audit
+ * compares every figure of a claim with every figure of a passage, and the
+ * same passage is audited for several claims (and again by the judge step):
+ * re-deriving a passage's words, dates and clause edges for every pair of
+ * figures — each a scan of the text before the figure — made one audit of a
+ * long page quadratic in its length. Everything here is a pure function of
+ * the text; a figure is keyed by its offset, which names one figure of one
+ * text. Bounded, oldest out: the texts of the claims and passages being
+ * audited, not of a process lifetime.
+ */
+interface TextFacts {
+  dates: DateMention[] | null;
+  numbers: NumericFact[] | null;
+  words: Set<string> | null;
+  tokens: Set<string> | null;
+  clauseEdges: Edges | null;
+  sentenceEdges: Edges | null;
+  /** Per figure, by its offset. */
+  figures: Map<number, FigureMemo> | null;
+  lowercase: Set<string> | null;
+  nameEvidence: { names: Map<string, Array<readonly [number, number]>>; headlines: Edges } | null;
+}
+
+/** What one figure of a text has been read as, filled in as each check asks. */
+interface FigureMemo {
+  scope?: FigureScope;
+  clause?: { words: ClauseWord[]; headAt: number };
+  /** Undefined until read; null when the figure has no date. */
+  date?: DateMention | null;
+  grain?: FigureGrain;
+  context?: { unit: string | null; next: string | null; before: Set<string> };
+  named?: string[];
+}
+
+function figureMemo(text: string, n: NumericFact): FigureMemo {
+  const facts = textFacts(text);
+  facts.figures ??= new Map();
+  let memo = facts.figures.get(n.start);
+  if (!memo) {
+    memo = {};
+    facts.figures.set(n.start, memo);
+  }
+  return memo;
+}
+
+/** At most this many texts, and this many characters of them (a 60k-character page's facts are about a megabyte). */
+const TEXT_FACTS_LIMIT = 256;
+const TEXT_FACTS_CHARS = 2_000_000;
+const TEXT_FACTS = new Map<string, TextFacts>();
+let textFactsChars = 0;
+let lastFacts: { text: string; facts: TextFacts } | null = null;
+
+function textFacts(text: string): TextFacts {
+  if (lastFacts?.text === text) return lastFacts.facts;
+  const hit = TEXT_FACTS.get(text);
+  if (hit) {
+    // Most recently used last, so the oldest is the one dropped.
+    TEXT_FACTS.delete(text);
+    TEXT_FACTS.set(text, hit);
+    lastFacts = { text, facts: hit };
+    return hit;
+  }
+  const facts: TextFacts = {
+    dates: null,
+    numbers: null,
+    words: null,
+    tokens: null,
+    clauseEdges: null,
+    sentenceEdges: null,
+    figures: null,
+    lowercase: null,
+    nameEvidence: null,
+  };
+  while (TEXT_FACTS.size > 0 && (TEXT_FACTS.size >= TEXT_FACTS_LIMIT || textFactsChars + text.length > TEXT_FACTS_CHARS)) {
+    const oldest = TEXT_FACTS.keys().next().value!;
+    TEXT_FACTS.delete(oldest);
+    textFactsChars -= oldest.length;
+  }
+  TEXT_FACTS.set(text, facts);
+  textFactsChars += text.length;
+  lastFacts = { text, facts };
+  return facts;
+}
+
+/** The dates of a text, and its figures with those dates left out: what `auditEvidence` reads on both sides. */
+function figuresOf(text: string): { dates: DateMention[]; numbers: NumericFact[] } {
+  const facts = textFacts(text);
+  facts.dates ??= extractDates(text);
+  facts.numbers ??= extractNumbers(text, facts.dates);
+  return { dates: facts.dates, numbers: facts.numbers };
+}
+
+/** `contentTokens`, once per text. Callers must not change the set. */
+function cachedContentTokens(text: string): Set<string> {
+  const facts = textFacts(text);
+  facts.tokens ??= contentTokens(text);
+  return facts.tokens;
+}
+
+function edgesOf(text: string, edge: RegExp): Edges {
+  return [...text.matchAll(edge)].map((m) => [m.index, m.index + m[0].length] as const);
+}
+
+/** Where the last edge before `at` ends, or 0: the start of the clause (or sentence) holding `at`. */
+function edgeEndBefore(edges: Edges, at: number): number {
+  let lo = 0;
+  let hi = edges.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (edges[mid]![0] < at) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found < 0 ? 0 : Math.min(edges[found]![1], at);
+}
+
+/** Where the first edge at or after `at` starts, or the text's length. */
+function edgeStartFrom(edges: Edges, at: number, length: number): number {
+  let lo = 0;
+  let hi = edges.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (edges[mid]![0] >= at) {
+      found = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return found < 0 ? length : edges[found]![0];
 }
 
 /** Words that never name what a figure measures: days, and the day a thing was said. */
@@ -375,17 +550,18 @@ interface ClauseWord {
  * the clause opens with the figure.
  */
 function figureClause(text: string, n: NumericFact): { words: ClauseWord[]; headAt: number } {
-  const before = text.slice(0, n.start);
-  let clauseStart = 0;
-  for (const m of before.matchAll(/[,;:.!?]\s+|\s[-–—]\s/g)) clauseStart = m.index + m[0].length;
-  const words = [...before.slice(clauseStart).matchAll(WORD_RE)].map((m) => ({
+  const memo = figureMemo(text, n);
+  if (memo.clause) return memo.clause;
+  const { clauseStart } = figureScope(text, n);
+  const words = [...text.slice(clauseStart, n.start).matchAll(WORD_RE)].map((m) => ({
     raw: m[0],
     start: clauseStart + m.index,
     end: clauseStart + m.index + m[0].length,
   }));
   let i = words.length - 1;
   while (i >= 0 && skippedForSubject(words[i]!.raw)) i -= 1;
-  return { words, headAt: i };
+  memo.clause = { words, headAt: i };
+  return memo.clause;
 }
 
 function skippedForSubject(raw: string): boolean {
@@ -460,10 +636,33 @@ function figureSubject(text: string, n: NumericFact): { head: string | null; qua
  *    "Alpha Pro's cloud revenue".
  *
  * A legal or group suffix is dropped ("Northwind Group" is Northwind).
+ *
+ * Title case is weak evidence of a name, and this answer is what lets another
+ * cited source's figure stand in for this passage's (`namesOtherSubject`), so
+ * a run that may be anything else is no name:
+ *
+ *  - a run ending in a common noun ("Global Revenue was", "Company's
+ *    revenue", "Its Revenue"): COMMON_SUBJECT_NOUNS, or a word the passage
+ *    itself uses in lowercase (`isCommonNoun`; the claim is checked by the
+ *    caller);
+ *  - a run of several words opening a sentence, where every word may be title
+ *    case for no reason ("Net Revenue was $3.9bn"), unless one of its words
+ *    is a name elsewhere in the passage (`namedElsewhere`: "Alpha Free
+ *    includes 5 GB" beside "Alpha Pro costs $20"). A possessive owner keeps
+ *    the old reading: "Contoso's revenue" opening a sentence is a name;
+ *  - anything in a headline-style sentence ("Global Revenue Was $3.9 Billion
+ *    In 2024."), where every word is capitalised (`isHeadline`).
  */
 function figureNamedSubject(text: string, n: NumericFact): string[] {
+  const memo = figureMemo(text, n);
+  memo.named ??= readFigureNamedSubject(text, n);
+  return memo.named;
+}
+
+function readFigureNamedSubject(text: string, n: NumericFact): string[] {
   const { words, headAt } = figureClause(text, n);
   if (headAt < 0) return [];
+  if (inHeadline(text, n.start)) return [];
   const nameRun = (end: number, possessive = false): string[] => {
     let start = end;
     while (start > 0) {
@@ -475,12 +674,20 @@ function figureNamedSubject(text: string, n: NumericFact): string[] {
     }
     const run = words.slice(start, end + 1);
     if (run.some((w) => NOT_A_SUBJECT.has(tokenForm(w.raw)))) return [];
+    const opening = opensSentence(text, run[0]!.start);
     // One title-case word opening a sentence may be any noun; as a possessive owner it is a name.
-    if (run.length === 1 && !possessive && opensSentence(text, run[0]!.start)) return [];
+    if (run.length === 1 && !possessive && opening) return [];
+    // Several, the same, unless the passage names one of them elsewhere.
+    if (opening && !possessive) {
+      const runStart = run[0]!.start;
+      const runEnd = run[run.length - 1]!.end;
+      if (!run.some((w) => namedElsewhere(text, tokenForm(w.raw), runStart, runEnd))) return [];
+    }
     const before = words[start - 1]?.raw.toLowerCase();
     if (before && (PREPOSITIONS.has(before) || TELLING_VERBS.has(before) || REPORTING_VERBS.has(before))) return [];
     const forms = run.map((w) => tokenForm(w.raw));
     while (forms.length > 1 && CORPORATE_SUFFIXES.has(forms[forms.length - 1]!)) forms.pop();
+    if (isCommonNoun(text, forms[forms.length - 1]!)) return [];
     return forms;
   };
   const head = words[headAt]!;
@@ -493,6 +700,122 @@ function figureNamedSubject(text: string, n: NumericFact): string[] {
     if (at === headAt - 1 && !qualifiesHead(text, words, at)) break;
   }
   return [];
+}
+
+/*
+ * Nouns a figure is measured on, and the common nouns that open a sentence
+ * or fill a headline in title case: never a name, however they are cased
+ * ("Global Revenue Was $3.9 Billion", "Company's revenue", "Group Sales").
+ * In `tokenForm`: lowercase and crudely singular.
+ */
+const COMMON_SUBJECT_NOUNS = new Set(
+  ("revenue sale income profit earning loss margin turnover ebitda ebit cost expense spending budget price fee value valuation " +
+    "growth output production capacity demand supply share stake population headcount employee staff worker user customer " +
+    "subscriber member visitor download order shipment delivery volume traffic asset debt cash funding investment " +
+    "dividend rate tax wage salary payroll emission export import deficit surplus gdp inflation unemployment result figure " +
+    "total company firm business industry sector market country nation state city region government group division segment unit")
+    .split(" ")
+);
+
+/** Every word a text uses in lowercase somewhere, in `tokenForm`. */
+function lowercaseForms(text: string): Set<string> {
+  const facts = textFacts(text);
+  facts.lowercase ??= new Set((text.match(WORD_RE) ?? []).filter((w) => !/\p{Lu}/u.test(w)).map(tokenForm));
+  return facts.lowercase;
+}
+
+/** Whether a word (in `tokenForm`) is a common noun rather than a name: a known one, or one the text writes in lowercase. */
+function isCommonNoun(text: string, form: string): boolean {
+  return COMMON_SUBJECT_NOUNS.has(form) || lowercaseForms(text).has(form);
+}
+
+/** Title-case function words, scale words and figure verbs: in mid-sentence, only a headline capitalises them. */
+const HEADLINE_WORDS = new Set(
+  [...STOPWORDS].filter((w) => w !== "i").concat(
+    ("thousand million billion trillion percent rose rise rises fell fall falls grew grow grows hit hits reached reach reaches " +
+      "totalled totaled totals topped tops jumped jumps climbed climbs dropped drops declined declines surged surges soared soars " +
+      "slumped slumps plunged plunges increased increases decreased decreases came comes stood stands").split(" ")
+  )
+);
+
+/**
+ * Whether a sentence is written as a headline: two or more mid-sentence
+ * words only a headline capitalises ("Was", "In", "Billion"), or nearly every
+ * word after the first in title case. Its title case says nothing about
+ * names.
+ */
+function isHeadline(sentence: string): boolean {
+  const words = (sentence.match(WORD_RE) ?? []).slice(1);
+  if (words.length === 0) return false;
+  let headlineWords = 0;
+  let titled = 0;
+  for (const word of words) {
+    if (!isTitleCase(word)) continue;
+    titled += 1;
+    if (HEADLINE_WORDS.has(word.toLowerCase())) headlineWords += 1;
+  }
+  return headlineWords >= 2 || (words.length >= 3 && titled / words.length >= 0.75);
+}
+
+/** The sentences of a text as [start, end) spans, by FIGURE_SENTENCE_EDGE. */
+function sentenceSpans(text: string): Edges {
+  const facts = textFacts(text);
+  facts.sentenceEdges ??= edgesOf(text, FIGURE_SENTENCE_EDGE);
+  const spans: Array<readonly [number, number]> = [];
+  let start = 0;
+  for (const [edgeStart, edgeEnd] of facts.sentenceEdges) {
+    spans.push([start, edgeStart + 1]);
+    start = edgeEnd;
+  }
+  if (start < text.length) spans.push([start, text.length]);
+  return spans;
+}
+
+/**
+ * Per text: the headline sentences, and where each word that reads as a name
+ * stands — title case outside a headline, and either mid-sentence or
+ * directly followed by another title-case word ("Alpha Pro costs $20"). A
+ * word opening a sentence on its own is no evidence: any word is title case
+ * there.
+ */
+function nameEvidence(text: string): NonNullable<TextFacts["nameEvidence"]> {
+  const facts = textFacts(text);
+  if (facts.nameEvidence) return facts.nameEvidence;
+  const names = new Map<string, Array<readonly [number, number]>>();
+  const headlines: Array<readonly [number, number]> = [];
+  for (const [start, end] of sentenceSpans(text)) {
+    const sentence = text.slice(start, end);
+    if (isHeadline(sentence)) {
+      headlines.push([start, end]);
+      continue;
+    }
+    const words = [...sentence.matchAll(WORD_RE)];
+    words.forEach((m, i) => {
+      if (!isTitleCase(m[0])) return;
+      const form = tokenForm(m[0]);
+      if (form.length < 2 || STOPWORDS.has(form) || SENTENCE_STARTERS.has(form) || NOT_A_SUBJECT.has(form)) return;
+      if (isCommonNoun(text, form)) return;
+      const at = start + m.index;
+      const next = words[i + 1];
+      const joined = next && isTitleCase(next[0]) && !/\S/.test(sentence.slice(m.index + m[0].length, next.index));
+      if (opensSentence(text, at) && !joined) return;
+      const list = names.get(form) ?? [];
+      list.push([at, at + m[0].length]);
+      names.set(form, list);
+    });
+  }
+  facts.nameEvidence = { names, headlines };
+  return facts.nameEvidence;
+}
+
+/** Whether `form` reads as a name somewhere in the text outside [from, to). */
+function namedElsewhere(text: string, form: string, from: number, to: number): boolean {
+  return (nameEvidence(text).names.get(form) ?? []).some(([start, end]) => end <= from || start >= to);
+}
+
+/** Whether offset `at` lies in a headline-style sentence (`isHeadline`). */
+function inHeadline(text: string, at: number): boolean {
+  return nameEvidence(text).headlines.some(([start, end]) => at >= start && at < end);
 }
 
 /**
@@ -546,6 +869,8 @@ function measuresSameThing(
 function namesOtherSubject(claim: string, passage: string, p: NumericFact): boolean {
   const name = figureNamedSubject(passage, p);
   if (name.length === 0) return false;
+  // A run ending in a word the claim writes in lowercase ends in a common noun ("Cloud Revenue" against "revenue").
+  if (lowercaseForms(claim).has(name[name.length - 1]!)) return false;
   const claimWords = wordForms(claim);
   return name.some((word) => !claimWords.has(word));
 }
@@ -555,18 +880,18 @@ const FIGURE_CLAUSE_EDGE = /[,;:.!?]\s+|\s[-–—]\s/g;
 const FIGURE_SENTENCE_EDGE = /[.!?]\s+/g;
 
 /** The figure's own clause, and where its sentence starts: what `figureDate`, `figureGrain` and `figureRelativePeriod` read. */
-function figureScope(text: string, n: NumericFact): { clauseStart: number; clauseEnd: number; sentenceStart: number } {
-  const lastEdgeBefore = (edge: RegExp) => {
-    let at = 0;
-    for (const m of text.slice(0, n.start).matchAll(edge)) at = m.index + m[0].length;
-    return at;
+function figureScope(text: string, n: NumericFact): FigureScope {
+  const memo = figureMemo(text, n);
+  if (memo.scope) return memo.scope;
+  const facts = textFacts(text);
+  facts.clauseEdges ??= edgesOf(text, FIGURE_CLAUSE_EDGE);
+  facts.sentenceEdges ??= edgesOf(text, FIGURE_SENTENCE_EDGE);
+  memo.scope = {
+    clauseStart: edgeEndBefore(facts.clauseEdges, n.start),
+    clauseEnd: edgeStartFrom(facts.clauseEdges, n.end, text.length),
+    sentenceStart: edgeEndBefore(facts.sentenceEdges, n.start),
   };
-  const afterEdge = [...text.slice(n.end).matchAll(FIGURE_CLAUSE_EDGE)][0];
-  return {
-    clauseStart: lastEdgeBefore(FIGURE_CLAUSE_EDGE),
-    clauseEnd: afterEdge ? n.end + afterEdge.index : text.length,
-    sentenceStart: lastEdgeBefore(FIGURE_SENTENCE_EDGE),
-  };
+  return memo.scope;
 }
 
 /**
@@ -578,6 +903,14 @@ function figureScope(text: string, n: NumericFact): { clauseStart: number; claus
  */
 function figureDate(text: string, n: NumericFact, dates: readonly DateMention[]): DateMention | null {
   if (dates.length === 0) return null;
+  // Memoised only for the text's own dates (`figuresOf`): the answer depends on the list it is given.
+  if (dates !== textFacts(text).dates) return figureDateAmong(text, n, dates);
+  const memo = figureMemo(text, n);
+  if (memo.date === undefined) memo.date = figureDateAmong(text, n, dates);
+  return memo.date;
+}
+
+function figureDateAmong(text: string, n: NumericFact, dates: readonly DateMention[]): DateMention | null {
   const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
   const distance = (d: DateMention) => (d.start >= n.end ? d.start - n.end : n.start - d.end);
   const inClause = dates.filter((d) => d.start >= clauseStart && d.end <= clauseEnd);
@@ -623,6 +956,9 @@ const GRAIN_MARKS: ReadonlyArray<{ re: RegExp; grain: (m: RegExpExecArray) => No
   { re: YEAR_MARK, grain: () => "year" },
 ];
 
+/** GRAIN_MARKS compiled once for `matchAll` (which copies a global pattern, so sharing one is safe). */
+const GRAIN_MARKS_GLOBAL = GRAIN_MARKS.map(({ re, grain }) => ({ re: new RegExp(re.source, "gi"), grain }));
+
 /**
  * The period marker of `text[from, to)` nearest the figure — "Full-year
  * revenue rose to $4.3bn on a strong fourth quarter" is the year's — and
@@ -631,8 +967,8 @@ const GRAIN_MARKS: ReadonlyArray<{ re: RegExp; grain: (m: RegExpExecArray) => No
 function grainIn(text: string, from: number, to: number, n: NumericFact): FigureGrain | "year" {
   const segment = text.slice(from, to);
   let best: { distance: number; grain: NonNullable<FigureGrain> | "year" } | null = null;
-  for (const { re, grain } of GRAIN_MARKS) {
-    for (const m of segment.matchAll(new RegExp(re.source, "gi"))) {
+  for (const { re, grain } of GRAIN_MARKS_GLOBAL) {
+    for (const m of segment.matchAll(re)) {
       const start = from + m.index;
       const end = start + m[0].length;
       const distance = start >= n.end ? start - n.end : end <= n.start ? n.start - end : 0;
@@ -650,6 +986,14 @@ function grainIn(text: string, from: number, to: number, n: NumericFact): Figure
  * the end of June 2026", "as of March 2024"), which stays a year-level date.
  */
 function figureGrain(text: string, n: NumericFact, dates: readonly DateMention[]): FigureGrain {
+  // Memoised only for the text's own dates (`figuresOf`), like `figureDate`.
+  if (dates !== textFacts(text).dates) return readFigureGrain(text, n, dates);
+  const memo = figureMemo(text, n);
+  if (memo.grain === undefined) memo.grain = readFigureGrain(text, n, dates);
+  return memo.grain;
+}
+
+function readFigureGrain(text: string, n: NumericFact, dates: readonly DateMention[]): FigureGrain {
   const { clauseStart, clauseEnd, sentenceStart } = figureScope(text, n);
   const own = grainIn(text, clauseStart, clauseEnd, n);
   if (own === "year") return null;
@@ -911,6 +1255,9 @@ export function extractQuotes(text: string): string[] {
 
 const NEGATORS =
   /\b(?:not|never|no longer|denied|denies|deny|rejected|rejects|refused|declined to|failed to|did not|does not|do not|was not|were not|is not|are not|isn't|wasn't|weren't|doesn't|didn't|cannot|can't|won't|ruled out|found no|without)\b/gi;
+
+/** Whether a (normalised) text holds any negation at all. */
+const ANY_NEGATOR = new RegExp(NEGATORS.source, "i");
 
 /** Parity, not count: two negations in a sentence cancel. */
 export function negationParity(sentence: string): 0 | 1 {
@@ -1776,7 +2123,7 @@ export function bestMatchingClause(claim: string, sentence: string): string {
 }
 
 /**
- * The alignment (`clauseAlignment`) a claim clause needs with a passage clause
+ * The alignment (`fullAlignment`) a claim clause needs with a passage clause
  * before their negations are compared. A clause that matches nothing in the
  * passage ("the trial found") says nothing about the passage's polarity.
  */
@@ -1841,7 +2188,7 @@ function inflectDoSupport(text: string): string {
 /** What a contraction leaves behind once its apostrophe splits it ("didn't" → "didn"): no content. */
 const CONTRACTION_STUBS = new Set("didn doesn don isn wasn weren aren hasn haven hadn won wouldn couldn shouldn mustn needn".split(" "));
 
-/** The content words of a clause as `clauseAlignment` compares them: do-support undone, connectives left out. */
+/** The content words of a clause as `fullAlignment` compares them: do-support undone, connectives left out. */
 function alignmentTokens(text: string): Set<string> {
   const out = new Set<string>();
   for (const token of contentTokens(inflectDoSupport(text))) {
@@ -1857,64 +2204,231 @@ function shareOf(of: Set<string>, within: Set<string>): number {
   return hit / of.size;
 }
 
-/**
- * How well a claim clause and a passage clause line up: the harmonic mean of
- * the share of each one's content words (`alignmentTokens`) the other holds.
- * Both directions, because a negated clause often elides its verb — "…, but
- * its profits did not" holds one word of "its profits rose too" and nothing
- * else — and one direction alone would never pair them; an elided negation
- * whose every word is in the claim clause counts as aligned.
- */
-function clauseAlignment(claimClause: string, passageClause: string): number {
-  const claimTokens = alignmentTokens(claimClause);
-  const passageTokens = alignmentTokens(passageClause);
-  const forward = shareOf(claimTokens, passageTokens);
-  const backward = shareOf(passageTokens, claimTokens);
-  const f1 = forward + backward === 0 ? 0 : (2 * forward * backward) / (forward + backward);
-  return elidedAnswer(claimClause, passageClause) ? Math.max(f1, CLAUSE_MATCH_MIN) : f1;
+/** The harmonic mean of the share of each token set the other holds: how well two clauses line up. */
+function alignmentOf(a: Set<string>, b: Set<string>): number {
+  const forward = shareOf(a, b);
+  const backward = shareOf(b, a);
+  return forward + backward === 0 ? 0 : (2 * forward * backward) / (forward + backward);
 }
 
 /** Two alignment scores this close are a tie: neither clause is the better match. */
 const ALIGNMENT_TIE = 1e-9;
 
+/** Words that open a clause and join it to the one before: never part of its subject. */
+const CLAUSE_OPENERS = new Set("and but while whereas although though which who yet so however meanwhile instead then also".split(" "));
+/** Personal pronouns that stand for the subject of an earlier clause. */
+const SUBJECT_PRONOUNS = new Set("it they he she".split(" "));
+/** Auxiliaries, copulas, modals and negators: the first of them opens the predicate. */
+const AUXILIARIES = new Set(
+  ("is are was were be been am has have had do does did will would shall should can could may might must not never cannot " +
+    "isn't aren't wasn't weren't hasn't haven't hadn't doesn't don't didn't won't wouldn't can't couldn't shouldn't")
+    .split(" ")
+);
+const IRREGULAR_PAST_FORMS = new Set(Object.values(IRREGULAR_PAST));
+
 /**
- * The passage clauses a claim clause lines up with best (`clauseAlignment`),
- * every one of them when several tie; empty when none reaches `min`. A tie
- * is broken by the dates: when the claim clause names one, a tied clause
- * that names only other dates is about another time ("Northwind was
- * profitable in 2023" beside "the company was not profitable in 2024", for a
- * claim about 2024).
+ * A clause split into its subject and its predicate, by where the verb
+ * starts: the first auxiliary or negator ("The European Central Bank | did
+ * not raise rates"), else the first lowercase past tense ("The city council |
+ * approved the plan", "Prices | rose") or present tense in front of an object
+ * ("Acme Robotics | sells its robots"). A lead-in phrase before the subject
+ * ("In 2024 the firm | was …") stays with the predicate. Word heuristics:
+ * the predicate comparison they feed can only take a contradiction away
+ * (`polarityDisagrees`), and the subject only stands in for a later
+ * pronoun (`readClauses`), where a misplaced split costs the pronoun's
+ * clause an extra word or a missing one.
+ *
+ * `predicate` is null when no verb is found; `pronoun` is the subject when
+ * it is one personal pronoun ("It did not raise rates in 2024").
  */
-function bestAlignedClauses(clause: string, passageClauses: readonly string[], min: number): string[] {
-  const best = tiedBestClauses(clause, passageClauses, min);
-  const claimDates = extractDates(clause);
-  if (best.length < 2 || claimDates.length === 0) return best;
-  const sameTime = best.filter((candidate) =>
-    extractDates(candidate).every((d) => claimDates.some((c) => datesAgree(c, d)))
-  );
-  return sameTime.length > 0 ? sameTime : best;
+function clauseParts(clause: string): { subject: string; predicate: string | null; pronoun: string | null } {
+  const words = [...clause.matchAll(WORD_RE)];
+  const lower = (i: number) => words[i]![0].toLowerCase().replace(/’/g, "'");
+  let first = 0;
+  while (first < words.length && CLAUSE_OPENERS.has(lower(first))) first += 1;
+  if (first >= words.length) return { subject: "", predicate: null, pronoun: null };
+  if (SUBJECT_PRONOUNS.has(lower(first)) && first + 1 < words.length) {
+    return { subject: words[first]![0], predicate: clause.slice(words[first + 1]!.index), pronoun: lower(first) };
+  }
+  let verb = -1;
+  for (let j = first; j < words.length && verb < 0; j += 1) {
+    const w = lower(j);
+    if (AUXILIARIES.has(w)) verb = j;
+    else if (j === first || isTitleCase(words[j]![0])) continue;
+    else if (IRREGULAR_PAST_FORMS.has(w)) verb = j;
+    else if (w.length > 4 && w.endsWith("ed") && !DETERMINERS.has(lower(j - 1))) verb = j;
+    else if (w.length > 3 && /[^su'i]s$/.test(w) && !DETERMINERS.has(lower(j - 1)) && !PREPOSITIONS.has(lower(j - 1))) {
+      const next = words[j + 1];
+      const after = clause.slice(words[j]!.index + words[j]![0].length, next?.index ?? clause.length);
+      if (/\d/.test(after) || (next && DETERMINERS.has(next[0].toLowerCase()))) verb = j;
+    }
+  }
+  if (verb < 0) return { subject: "", predicate: null, pronoun: null };
+  let from = first;
+  if (PREPOSITIONS.has(lower(first))) {
+    from = verb;
+    for (let k = verb - 1; k > first; k -= 1) {
+      if (DETERMINERS.has(lower(k))) {
+        from = k;
+        break;
+      }
+    }
+  }
+  const subjectStart = words[from]?.index ?? clause.length;
+  const verbStart = words[verb]!.index;
+  return {
+    subject: clause.slice(subjectStart, verbStart).trim(),
+    predicate: `${clause.slice(0, subjectStart)} ${clause.slice(verbStart)}`.trim(),
+    pronoun: null,
+  };
 }
 
-function tiedBestClauses(clause: string, passageClauses: readonly string[], min: number): string[] {
-  let best: string[] = [];
+/** A clause as the polarity check compares it. */
+interface ReadClause {
+  /** As written: its negations are counted here, never on the resolved text. */
+  text: string;
+  parity: 0 | 1;
+  /** `alignmentTokens`, with a pronoun subject read as the subject it stands for. */
+  tokens: Set<string>;
+  /** `alignmentTokens` of the predicate alone; null when no verb was found. */
+  predicate: Set<string> | null;
+  dates: DateMention[];
+}
+
+/** The context-free half of `ReadClause`, per clause text: a long page repeats the work for every claim otherwise. */
+const CLAUSE_READINGS = new Map<string, { parts: ReturnType<typeof clauseParts>; read: ReadClause }>();
+const CLAUSE_READINGS_LIMIT = 4096;
+
+function readingOf(text: string): { parts: ReturnType<typeof clauseParts>; read: ReadClause } {
+  const known = CLAUSE_READINGS.get(text);
+  if (known) return known;
+  const parts = clauseParts(text);
+  const reading = {
+    parts,
+    read: {
+      text,
+      parity: negationParity(text),
+      tokens: alignmentTokens(text),
+      predicate: parts.predicate === null ? null : alignmentTokens(parts.predicate),
+      dates: extractDates(text),
+    },
+  };
+  if (CLAUSE_READINGS.size >= CLAUSE_READINGS_LIMIT) CLAUSE_READINGS.delete(CLAUSE_READINGS.keys().next().value!);
+  CLAUSE_READINGS.set(text, reading);
+  return reading;
+}
+
+/**
+ * The clauses of a text, read in order, each pronoun subject standing for the
+ * last subject named before it: "The European Central Bank raised rates in
+ * 2023. It did not raise rates in 2024." reads its second clause as "The
+ * European Central Bank did not raise rates in 2024". Without that, a
+ * subject of several words gave the first clause all of them and the second
+ * none, and a claim restating the denial lined up with the clause it denies.
+ * Only a personal pronoun is resolved: "the company", "the regulator" may be
+ * another entity, and are left to the predicate comparison.
+ */
+function readClauses(clauses: readonly string[]): ReadClause[] {
+  let antecedent: string | null = null;
+  return clauses.map((text) => {
+    const { parts, read } = readingOf(text);
+    if (parts.pronoun) {
+      return antecedent && parts.predicate
+        ? { ...read, tokens: alignmentTokens(`${antecedent} ${parts.predicate}`) }
+        : read;
+    }
+    if (parts.subject && contentTokens(parts.subject).size > 0) antecedent = parts.subject;
+    return read;
+  });
+}
+
+/**
+ * The candidates scoring best, every one of them when several tie; empty when
+ * none reaches `min`.
+ */
+function tiedBest(candidates: readonly ReadClause[], score: (c: ReadClause) => number, min: number): ReadClause[] {
+  let best: ReadClause[] = [];
   let bestScore = Number.NEGATIVE_INFINITY;
-  for (const candidate of passageClauses) {
-    const score = clauseAlignment(clause, candidate);
-    if (score < min - ALIGNMENT_TIE) continue;
-    if (score > bestScore + ALIGNMENT_TIE) {
-      bestScore = score;
+  for (const candidate of candidates) {
+    const value = score(candidate);
+    if (value < min - ALIGNMENT_TIE) continue;
+    if (value > bestScore + ALIGNMENT_TIE) {
+      bestScore = value;
       best = [candidate];
-    } else if (score >= bestScore - ALIGNMENT_TIE) {
+    } else if (value >= bestScore - ALIGNMENT_TIE) {
       best.push(candidate);
     }
   }
   return best;
 }
 
+/** Of tied clauses, those naming no date the claim clause does not: the others are about another time. */
+function sameTimeOnly(clause: ReadClause, best: ReadClause[]): ReadClause[] {
+  if (best.length < 2 || clause.dates.length === 0) return best;
+  const sameTime = best.filter((candidate) => candidate.dates.every((d) => clause.dates.some((c) => datesAgree(c, d))));
+  return sameTime.length > 0 ? sameTime : best;
+}
+
 /**
- * Whether the passage sentence states the opposite of the claim, with
- * negation compared clause against clause — the SAME level on both sides,
- * and never across a sentence end on either (`clausesOf`).
+ * The candidates worth lining a claim clause up with: when the claim clause
+ * names a date, a clause naming only other dates is about another time
+ * ("Northwind did not raise prices in 2023" beside a claim about 2024) —
+ * unless every clause is.
+ */
+function sameTimeCandidates(clause: ReadClause, candidates: readonly ReadClause[]): readonly ReadClause[] {
+  if (clause.dates.length === 0) return candidates;
+  const kept = candidates.filter(
+    (candidate) => candidate.dates.length === 0 || candidate.dates.some((d) => clause.dates.some((c) => datesAgree(c, d)))
+  );
+  return kept.length > 0 ? kept : candidates;
+}
+
+/** How well a claim clause lines up with a passage clause, an elided negation whose every word is in the claim clause counting as aligned. */
+function fullAlignment(clause: ReadClause, candidate: ReadClause): number {
+  const f1 = alignmentOf(clause.tokens, candidate.tokens);
+  return elidedAnswer(clause.text, candidate.text) ? Math.max(f1, CLAUSE_MATCH_MIN) : f1;
+}
+
+/**
+ * The passage clauses a claim clause lines up with best on everything it
+ * says (`fullAlignment`), every one when several tie, a tie broken by the
+ * dates (`sameTimeOnly`).
+ */
+function bestAlignedClauses(clause: ReadClause, candidates: readonly ReadClause[], min: number): ReadClause[] {
+  return sameTimeOnly(clause, tiedBest(candidates, (c) => fullAlignment(clause, c), min));
+}
+
+/**
+ * The passage clauses holding the largest share of the claim clause's words,
+ * whatever else they say, among those lined up at `min` at least; a tie
+ * broken by the dates. "Northwind opened a factory in Ohio in 2024. It did
+ * not open a factory in Texas." holds all of "Northwind opened a factory" in
+ * both clauses: the second lines up better only for adding less, and denying
+ * a narrower statement than the claim's is not denying the claim.
+ */
+function bestCoveringClauses(clause: ReadClause, candidates: readonly ReadClause[], min: number): ReadClause[] {
+  const aligned = candidates.filter((c) => fullAlignment(clause, c) >= min - ALIGNMENT_TIE);
+  return sameTimeOnly(clause, tiedBest(aligned, (c) => shareOf(clause.tokens, c.tokens), ALIGNMENT_TIE));
+}
+
+/**
+ * The passage clauses a claim clause lines up with best on its PREDICATE —
+ * subjects left out on both sides — at CLAUSE_MATCH_MIN at least; a tie
+ * broken by the full alignment, then by the dates. Empty when the claim
+ * clause has no predicate to compare.
+ */
+function bestPredicateClauses(clause: ReadClause, candidates: readonly ReadClause[]): ReadClause[] {
+  const own = clause.predicate;
+  if (!own || own.size === 0) return [];
+  const tied = tiedBest(candidates, (c) => alignmentOf(own, c.predicate ?? c.tokens), CLAUSE_MATCH_MIN);
+  if (tied.length < 2) return tied;
+  return sameTimeOnly(clause, tiedBest(tied, (c) => fullAlignment(clause, c), Number.NEGATIVE_INFINITY));
+}
+
+/**
+ * Whether the passage states the opposite of the claim, with negation
+ * compared clause against clause — the SAME level on both sides, and never
+ * across a sentence end on either (`clausesOf`).
  *
  * Whole sentence against whole sentence read "Serious adverse events occurred
  * in 3% …, a difference described as not significant" as denying the 3%: the
@@ -1925,46 +2439,70 @@ function tiedBestClauses(clause: string, passageClauses: readonly string[], min:
  * evidence". So each clause of the claim is compared with the passage clause
  * it lines up with best.
  *
- * "Best" is the alignment both ways (`clauseAlignment`), not the share of the
- * claim's words a clause holds. A passage that names its subject once and
- * then uses a pronoun — "The firm was profitable in 2023. It was not
- * profitable in 2024." — gives both clauses two of the three words of "The
- * firm was not profitable in 2024", and the first one used to win the tie: a
- * faithful restatement read as the passage denying it. The second clause has
- * no word the claim lacks, so it lines up better. A tie between clauses is
- * broken by the claim's date ("Northwind was profitable in 2023. The company
- * was not profitable in 2024.", `bestAlignedClauses`); when nothing breaks it
- * ("… in Asia. The company was not profitable in Europe."), the text cannot
- * say which clause the claim is about: if any of them agrees with the claim,
- * it is no contradiction, and the judge decides.
+ * "Best" is the alignment both ways (`fullAlignment`), not the share of the
+ * claim's words a clause holds, with a pronoun read as the subject it stands
+ * for (`readClauses`): "The European Central Bank raised rates in 2023. It
+ * did not raise rates in 2024." lines "The European Central Bank did not
+ * raise rates in 2024" up with the second clause, not with the first that
+ * holds its subject's words. A clause naming only another date than the
+ * claim clause's is about another time and is passed over
+ * (`sameTimeCandidates`); a tie is broken by the dates too; when nothing
+ * breaks it ("Northwind was profitable in Asia. The company was not
+ * profitable in Europe."), the text cannot say which clause the claim is
+ * about: if any of them agrees with the claim, it is no contradiction, and
+ * the judge decides.
  *
- * A one-clause claim is also compared with any elided negation that answers
- * it: "Profits rose in 2024" against "Sales rose in 2024, but profits did
- * not" shares more words with the sales clause, and the "not" that denies it
- * sits in a clause with no verb of its own. A claim of several clauses keeps
+ * The predicate decides too. "The Federal Reserve cut rates in March. The
+ * central bank did not cut rates in June." — "the central bank" may or may
+ * not be the Federal Reserve, so the subject's words line the claim "The
+ * Federal Reserve did not cut rates in June" up with the first clause, and
+ * its predicate with the second. When the clause the subject picks and the
+ * clause the predicate picks (`bestPredicateClauses`) disagree, the text
+ * settles nothing: a contradiction needs every clause either one picks — and
+ * every clause holding as much of the claim (`bestCoveringClauses`) — to
+ * deny the claim. Those extra picks can only take a contradiction away.
+ *
+ * `sentence` is what the claim is matched to (`focusSentences`); `context`
+ * that plus its neighbours, where a pronoun or a renamed subject carries the
+ * denial on ("…in 2023. It did not…"). A one-clause claim is also compared
+ * with any elided negation in `sentence` that answers it: "Profits rose in
+ * 2024" against "Sales rose in 2024, but profits did not" shares more words
+ * with the sales clause, and the "not" that denies it sits in a clause with
+ * no verb of its own — and one agreeing with it ("Beta did not raise prices"
+ * ← "Alpha raised prices. Beta did not.") is a clause it is about, so the
+ * clause about Alpha no longer settles it. A claim of several clauses keeps
  * to the best match only, because "Revenue rose, but revenue did not" lines
  * each of its clauses up with both of its source's.
  */
-export function polarityDisagrees(claim: string, sentence: string): boolean {
-  const clauses = clausesOf(claim);
-  const passageClauses = clausesOf(sentence);
-  const deniedBy = (clause: string, best: readonly string[]) =>
-    best.length > 0 && best.every((candidate) => negationParity(candidate) !== negationParity(clause));
+export function polarityDisagrees(claim: string, sentence: string, context: string = sentence): boolean {
+  // No negation on either side: every clause has the same parity, and nothing to line up.
+  if (!ANY_NEGATOR.test(normalizeText(claim)) && !ANY_NEGATOR.test(normalizeText(context))) return false;
+  const clauses = readClauses(clausesOf(claim));
+  const candidates = readClauses(clausesOf(context));
+  const deniedBy = (clause: ReadClause, min: number, alsoPicked: readonly ReadClause[] = []) => {
+    const pool = sameTimeCandidates(clause, candidates);
+    const full = bestAlignedClauses(clause, pool, min);
+    if (full.length === 0) return false;
+    const picked = [...full, ...bestCoveringClauses(clause, pool, min), ...bestPredicateClauses(clause, pool), ...alsoPicked];
+    return picked.every((candidate) => candidate.parity !== clause.parity);
+  };
   if (clauses.length <= 1) {
     // The clause, not the whole claim: a hedge tail left out of it ("…, if
     // not more") must not flip it either. No alignment floor: the caller
     // already holds the sentence to a coverage floor against the claim.
     const clause = clauses[0]!;
-    const parity = negationParity(clause);
-    if (deniedBy(clause, bestAlignedClauses(clause, passageClauses, 0))) return true;
-    return passageClauses.some((candidate) => elidedAnswer(clause, candidate) && negationParity(candidate) !== parity);
+    const elided = clausesOf(sentence).filter((candidate) => elidedAnswer(clause.text, candidate));
+    if (elided.some((candidate) => negationParity(candidate) !== clause.parity)) return true;
+    // An elided answer agreeing with the claim ("Beta did not raise prices"
+    // ← "Alpha raised prices. Beta did not.") is the clause it is about.
+    return deniedBy(clause, 0, elided.map((candidate) => readingOf(candidate).read));
   }
-  return clauses.some((clause) => deniedBy(clause, bestAlignedClauses(clause, passageClauses, CLAUSE_MATCH_MIN)));
+  return clauses.some((clause) => deniedBy(clause, CLAUSE_MATCH_MIN));
 }
 
 /** The sentence in the passage the claim is actually about. */
 export function bestMatchingSentence(claim: string, passage: string): string {
-  return bestMatchingSentences(claim, passage)[0] ?? passage;
+  return focusSentences(claim, passage).sentences[0] ?? passage;
 }
 
 /**
@@ -1973,15 +2511,36 @@ export function bestMatchingSentence(claim: string, passage: string): string {
  * approved for adults. It was not approved for children." gives both two of
  * the three words of "The vaccine was not approved for children", and only
  * the clauses can say which one the claim is about.
+ *
+ * `context` is those sentences with the one before each and the two after:
+ * a subject named once and then carried on by a pronoun or another name
+ * ("Acme Robotics sells its robots in Japan. The startup does not sell its
+ * robots in China.") puts the denial in a sentence holding fewer of the
+ * claim's words than the one naming the subject.
  */
-function bestMatchingSentences(claim: string, passage: string): string[] {
-  const sentences = splitSentences(passage.replace(/\n+/g, " "), 0)
-    .map((s) => s.text.trim())
-    .filter((s) => s.length > 20);
-  if (sentences.length === 0) return [passage];
-  const scores = sentences.map((s) => tokenCoverage(claim, s));
+function focusSentences(claim: string, passage: string): { sentences: string[]; context: string } {
+  const all = splitSentences(passage.replace(/\n+/g, " "), 0).map((s) => s.text.trim());
+  const claimTokens = cachedContentTokens(claim);
+  const scores = all.map((s) => {
+    if (s.length <= 20 || claimTokens.size === 0) return Number.NEGATIVE_INFINITY;
+    const tokens = contentTokens(s);
+    let hit = 0;
+    for (const t of claimTokens) if (tokens.has(t)) hit += 1;
+    return hit / claimTokens.size;
+  });
   const top = Math.max(...scores);
-  return sentences.filter((_, i) => scores[i]! >= top - ALIGNMENT_TIE);
+  if (!Number.isFinite(top)) return { sentences: [passage], context: passage };
+  const picked = new Set<number>();
+  const window = new Set<number>();
+  scores.forEach((score, i) => {
+    if (score < top - ALIGNMENT_TIE) return;
+    picked.add(i);
+    for (let k = Math.max(0, i - 1); k <= Math.min(all.length - 1, i + 2); k += 1) window.add(k);
+  });
+  return {
+    sentences: all.filter((_, i) => picked.has(i)),
+    context: all.filter((_, i) => window.has(i)).join(" "),
+  };
 }
 
 /*
@@ -2050,10 +2609,7 @@ function corroboratingFacts(
       const names = namedSubjects(text, { withSentenceStarts: true });
       return missing.some((name) => names.has(name));
     })
-    .map((text) => {
-      const dates = extractDates(text);
-      return { numbers: extractNumbers(text, dates), dates };
-    });
+    .map((text) => figuresOf(text));
 }
 
 /**
@@ -2102,7 +2658,7 @@ export function auditEvidence(opts: {
     reasons.push({ ...reason, ceiling: value });
   };
 
-  const coverage = tokenCoverage(claim, passage);
+  const coverage = coverageOf(claim, passage);
   if (coverage < 0.22) {
     cap(CEILING.offTopic, {
       code: "off_topic",
@@ -2119,8 +2675,9 @@ export function auditEvidence(opts: {
   // A quotation is the one thing a reader can check character by character, so
   // a near-miss is not close enough: fabricated or "tidied" quotes are the most
   // damaging citation failure there is.
-  const normalizedPassage = normalizeText(passage);
+  let normalizedPassage: string | null = null;
   for (const quote of extractQuotes(claim)) {
+    normalizedPassage ??= normalizeText(passage);
     if (!normalizedPassage.includes(normalizeText(quote))) {
       cap(CEILING.quoteAbsent, {
         code: "quote_absent",
@@ -2131,10 +2688,8 @@ export function auditEvidence(opts: {
   }
 
   // ── Figures ──────────────────────────────────────────────────────────────
-  const claimDates = extractDates(claim);
-  const passageDates = extractDates(passage);
-  const claimNums = extractNumbers(claim, claimDates);
-  const passageNums = extractNumbers(passage, passageDates);
+  const { dates: claimDates, numbers: claimNums } = figuresOf(claim);
+  const { dates: passageDates, numbers: passageNums } = figuresOf(passage);
   const elsewhere = corroboratingFacts(claim, passage, opts.corroborating);
   const statedElsewhere = (raw: string) =>
     cap(1, {
@@ -2158,16 +2713,17 @@ export function auditEvidence(opts: {
      * the evidence for another of the claim's figures, for the same date, or
      * pinned on a named subject the claim never mentions.
      */
-    const accountedFor = sameKind.every(
-      (p) =>
-        (p.kind === "plain" && !sameQuantity(claim, n, passage, p)) ||
-        evidenceForAnotherFigure(claimFacts, n, passageFacts, p, { strict: true }) ||
-        namesOtherSubject(claim, passage, p)
-    );
+    const accountedFor = () =>
+      sameKind.every(
+        (p) =>
+          (p.kind === "plain" && !sameQuantity(claim, n, passage, p)) ||
+          evidenceForAnotherFigure(claimFacts, n, passageFacts, p, { strict: true }) ||
+          namesOtherSubject(claim, passage, p)
+      );
     if (
       rival.length === 0 &&
-      accountedFor &&
-      elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value)))
+      elsewhere.some((facts) => facts.numbers.some((p) => p.kind === n.kind && numbersAgree(p.value, n.value))) &&
+      accountedFor()
     ) {
       statedElsewhere(n.raw);
       continue;
@@ -2215,9 +2771,9 @@ export function auditEvidence(opts: {
   // unrelated passage a negation difference says nothing.
   // Every sentence tied for the claim goes to the clause check, which picks
   // between them; the hedge and attribution checks below read the first.
-  const focusSentences = bestMatchingSentences(claim, passage);
-  const focus = focusSentences[0]!;
-  if (tokenCoverage(claim, focus) >= 0.45 && polarityDisagrees(claim, focusSentences.join(" "))) {
+  const focused = focusSentences(claim, passage);
+  const focus = focused.sentences[0]!;
+  if (tokenCoverage(claim, focus) >= 0.45 && polarityDisagrees(claim, focused.sentences.join(" "), focused.context)) {
     contradicted = true;
     cap(0, {
       code: "polarity_mismatch",
@@ -2236,7 +2792,7 @@ export function auditEvidence(opts: {
    */
   const items = claim.split(/,\s+|\s+and\s+/).filter((seg) => contentTokens(seg).size > 0);
   if (items.length >= 3) {
-    const passageTokens = contentTokens(passage);
+    const passageTokens = cachedContentTokens(passage);
     const missing = items.filter((seg) => [...contentTokens(seg)].every((t) => !passageTokens.has(t)));
     if (missing.length > 0) {
       cap(CEILING.unstatedLeap, {
