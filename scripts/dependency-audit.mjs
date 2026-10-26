@@ -12,15 +12,7 @@ import path from "node:path";
 // Shape: { package: "name", advisories: ["GHSA-xxxx-xxxx-xxxx"],
 //          reason: "why it is unreachable or unpatchable", expires: "YYYY-MM-DD" }
 /** @type {{ package: string, advisories: string[], reason: string, expires: string }[]} */
-export const ACCEPTED_ADVISORIES = [
-  {
-    package: "postcss-selector-parser",
-    advisories: ["GHSA-rj75-hqrm-r3gf"],
-    reason:
-      "tailwindcss 3 (with postcss-nested) pins ^6, so the 7.x line the advisory names as fixed (>= 7.1.6) cannot be installed without moving to Tailwind 4. It parses the repository's own CSS at build time; no request or user string reaches the selector parser at runtime, so the quadratic input cannot be supplied by an attacker. Re-assessed 2026-10-26: the lock now resolves 6.1.5 (published 2026-10-19 under the legacy-v6 tag), which backports the linear-time fix from 7.1.6 (its parser.js swaps the per-index indexOf scans for Sets), but the advisory's affected range still reads < 7.1.6, so npm audit keeps reporting it. Remove when the advisory lists 6.1.5 as patched or Tailwind moves to 4.",
-    expires: "2026-11-30",
-  },
-];
+export const ACCEPTED_ADVISORIES = [];
 
 // An exception may not be dated further out than this, so "accepted" always
 // means "looked at this quarter".
