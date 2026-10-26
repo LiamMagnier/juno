@@ -457,7 +457,12 @@ class ComputerBoundary(unittest.TestCase):
     def test_ipv6_has_no_route(self):
         report = self.computer.probe({"tcp": [("2606:4700:4700::1111", 443), ("fd00:ec2::254", 80), ("fe80::1", 80)], "timeout": 3})
         for target, result in report["tcp"].items():
-            self.assertIn(result, NO_IPV6_ROUTE + BLOCKED, target)
+            # A link-local address with no interface named cannot be dialled at
+            # all: Linux's tcp_v6_connect returns EINVAL before a packet leaves
+            # (GitHub's runners do; others answer ENETUNREACH). Only that target
+            # may say so; the routable ones above still must have no route.
+            allowed = NO_IPV6_ROUTE + BLOCKED + (("EINVAL",) if target.startswith("fe80:") else ())
+            self.assertIn(result, allowed, target)
             self.assertNotEqual(result, "open", target)
         self.assertEqual([entry for entry in report["ipv6Addresses"] if entry["scope"] == "00"], [], "a global IPv6 address")
         self.assertEqual(sorted(report["interfaces"]), ["eth0", "lo"])

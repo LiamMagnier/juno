@@ -27,6 +27,10 @@ if (!url) {
     const scheduler = await import("../scripts/work-scheduler");
     const poller = await import("../scripts/work-trigger-poller");
     const { prismaUnguarded: db } = await import("../src/lib/prisma");
+    // A cloud worker is alive, as in production: the scheduler asks that
+    // before it reserves spend, and with none it skips as executor_unavailable.
+    const { recordExecutorHeartbeat } = await import("../src/lib/work/executor-heartbeat");
+    await recordExecutorHeartbeat();
     const userId = `workers_${randomUUID()}`;
     const now = new Date("2026-10-19T08:00:10Z");
     try {

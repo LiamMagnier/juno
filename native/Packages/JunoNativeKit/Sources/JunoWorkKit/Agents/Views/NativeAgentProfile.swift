@@ -642,7 +642,7 @@ public struct NativeAgentProfileView: View {
             )
             // The switch is the person's to press, so this only takes them to it.
             if saved, target == .mac, runsHere, let thisMac, !thisMac.workAllowed {
-                await thisMac.allowWork()
+                thisMac.allowWork()
             }
         }
     }
@@ -668,7 +668,8 @@ public struct NativeAgentProfileView: View {
         act("runs-on") {
             let saved = await model.update(id: agent.id, NativeAgentPatch(preferredHostID: hostID))
             if saved, !thisMac.workAllowed {
-                await thisMac.allowWork()
+                // Main-actor isolated, as this closure is: no hop to await.
+                thisMac.allowWork()
             }
         }
     }
