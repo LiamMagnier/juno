@@ -138,7 +138,7 @@ export async function mcpConnector(ctx: ExecutionContext): Promise<void> {
     return server;
   };
   const http = createServer(async (req, res) => {
-    const origin = `http://localhost:${(http.address() as AddressInfo).port}`;
+    const origin = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
     const url = new URL(req.url ?? "/", origin);
     if (url.pathname === "/.well-known/oauth-protected-resource/mcp") return json(res, 200, { resource: `${origin}/mcp`, authorization_servers: [origin] });
     if (url.pathname === "/.well-known/oauth-authorization-server") {
@@ -184,7 +184,10 @@ export async function mcpConnector(ctx: ExecutionContext): Promise<void> {
     res.end();
   });
   const port = await listen(http);
-  const mcpUrl = `http://localhost:${port}/mcp`;
+  // The address the server listens on, not "localhost": safeMcpFetch pins the
+  // first answer, and where localhost resolves to ::1 first (GitHub's
+  // runners) the IPv4-only server refused it and tools-01 failed there only.
+  const mcpUrl = `http://127.0.0.1:${port}/mcp`;
   const client: Record<string, unknown> = {};
   // A product error is recorded in the trace rather than thrown, so the
   // validators can say which step broke (probe, sign-in, list or call).
