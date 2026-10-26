@@ -14,17 +14,10 @@ import path from "node:path";
 /** @type {{ package: string, advisories: string[], reason: string, expires: string }[]} */
 export const ACCEPTED_ADVISORIES = [
   {
-    package: "braces",
-    advisories: ["GHSA-vfj7-8cjw-p6xm"],
-    reason:
-      "No patched release exists (3.0.3 is the latest and is affected). braces arrives only through tailwindcss (chokidar, micromatch) and runs at build time on the repository's own content globs; no request, upload or user string ever reaches it, so the stack-exhaustion pattern cannot be supplied by an attacker. Re-check for a fixed release by the expiry. Re-assessed 2026-10-18: 3.0.3 is still the latest release, the advisory still lists <= 3.0.3 as affected with no fix, and braces still reaches the app only through tailwindcss at build time; renewed by the owner.",
-    expires: "2026-11-30",
-  },
-  {
     package: "postcss-selector-parser",
     advisories: ["GHSA-rj75-hqrm-r3gf"],
     reason:
-      "Fixed only in 7.1.6, and tailwindcss 3 (with postcss-nested) pins ^6, so the patched line cannot be installed without moving to Tailwind 4. It parses the repository's own CSS at build time; no request or user string reaches the selector parser at runtime, so the quadratic input cannot be supplied by an attacker. Remove when Tailwind moves to 4.",
+      "tailwindcss 3 (with postcss-nested) pins ^6, so the 7.x line the advisory names as fixed (>= 7.1.6) cannot be installed without moving to Tailwind 4. It parses the repository's own CSS at build time; no request or user string reaches the selector parser at runtime, so the quadratic input cannot be supplied by an attacker. Re-assessed 2026-10-26: the lock now resolves 6.1.5 (published 2026-10-19 under the legacy-v6 tag), which backports the linear-time fix from 7.1.6 (its parser.js swaps the per-index indexOf scans for Sets), but the advisory's affected range still reads < 7.1.6, so npm audit keeps reporting it. Remove when the advisory lists 6.1.5 as patched or Tailwind moves to 4.",
     expires: "2026-11-30",
   },
 ];
