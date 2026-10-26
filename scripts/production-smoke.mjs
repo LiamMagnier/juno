@@ -148,11 +148,12 @@ async function main() {
    * A smoke's job is to prove THE RELEASE's chat path works end to end, and for
    * that it needs a working model, not one particular one. A dead key is an ops
    * problem: it deserves a warning on every deploy until somebody fixes it, and
-   * it must not revert code that has nothing to do with it. So a credential
-   * failure moves to the next candidate and shouts; ANY OTHER error frame fails
-   * at once, because that is the release; and all candidates failing on
-   * credentials fails too, because an account that cannot reach a single
-   * provider cannot serve anyone.
+   * it must not revert code that has nothing to do with it, and neither must
+   * an account that ran out of credit. So a provider-account failure (dead key
+   * or exhausted credit) moves to the next candidate and shouts; ANY OTHER
+   * error frame fails at once, because that is the release; and all candidates
+   * failing on their accounts fails too, because an account that cannot reach
+   * a single provider cannot serve anyone.
    */
   const requested = (process.env.JUNO_SMOKE_MODEL || "")
     .split(",")
@@ -167,22 +168,27 @@ async function main() {
   assert(process.env.JUNO_SMOKE_RUN_CHAT === "1", "authenticated smoke must run the provider/replay path");
 
   /**
-   * The exact sentence `provider-error.ts` emits for class `auth`, and for no
-   * other class. Matching the copy rather than a code is not ideal; the frame
-   * carries no machine-readable class, and adding one would change an SSE
-   * contract that native clients read and that this same script pins at
-   * 1.3.0 two checks above — too much blast radius for a smoke discriminator.
+   * The exact sentences `provider-error.ts` emits for class `auth` (a dead key)
+   * and class `billing` (the provider account is out of credit or quota), and
+   * for no other class. Both are the account's state, not the release's: the
+   * second rolled back a healthy release on 2026-10-26 because Qwen's credit
+   * ran out while the next two candidates were fine. Rate limits, capacity and
+   * every other error frame still fail at once. Matching the copy rather than a
+   * code is not ideal; the frame carries no machine-readable class, and adding
+   * one would change an SSE contract that native clients read and that this
+   * same script pins at 1.3.0 two checks above — too much blast radius for a
+   * smoke discriminator (tests/production-smoke.test.ts holds the copy to it).
    *
    * It fails SAFE: if the copy is ever reworded, nothing matches, every failure
    * is treated as the release's, and the deploy rolls back. That is the same
    * behaviour this gate had before the list existed.
    */
-  const CREDENTIAL_FAILURE = /API connection is not configured correctly/i;
+  const PROVIDER_ACCOUNT_FAILURE = /API connection is not configured correctly|API credits or provider quota are exhausted/i;
 
   let selected = null;
   let clientRequestId = null;
   let body = null;
-  const credentialFailures = [];
+  const accountFailures = [];
 
   for (const candidate of candidates) {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -210,12 +216,12 @@ async function main() {
     );
 
     const quoted = quoteErrorFrame(attempt.text);
-    if (quoted && CREDENTIAL_FAILURE.test(quoted)) {
+    if (quoted && PROVIDER_ACCOUNT_FAILURE.test(quoted)) {
       // Not this release's fault, and loud about it: a GitHub Actions warning
       // annotation survives in the run summary where a plain line scrolls away.
       console.log(`::warning::${candidate} is unusable in production — ${quoted}`);
-      console.log(`SKIP ${candidate} (provider credential); trying the next candidate`);
-      credentialFailures.push(`${candidate}: ${quoted}`);
+      console.log(`SKIP ${candidate} (provider account); trying the next candidate`);
+      accountFailures.push(`${candidate}: ${quoted}`);
       continue;
     }
     assert(!quoted, `chat smoke returned an error event on ${candidate}: ${quoted}`);
@@ -228,12 +234,12 @@ async function main() {
 
   assert(
     selected,
-    "every candidate model failed on its provider credential, so this account cannot reach any provider — " +
-      credentialFailures.join(" | "),
+    "every candidate model failed on its provider account (key or credit), so this account cannot reach any provider — " +
+      accountFailures.join(" | "),
   );
   console.log(
     `PASS chat submission reached a terminal response on ${selected}` +
-      (credentialFailures.length ? ` (after ${credentialFailures.length} unusable provider(s))` : ""),
+      (accountFailures.length ? ` (after ${accountFailures.length} unusable provider(s))` : ""),
   );
 
   let receipt = null;

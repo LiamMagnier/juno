@@ -138,7 +138,7 @@ test("deploy smoke passes authentication and public UI checks without an optiona
    * an unfunded provider from reverting good code became a hardcoded name FOR
    * one: three healthy releases were reverted on somebody's billing. It is an
    * ordered list now (see the comment above the assignment, and
-   * CREDENTIAL_FAILURE in production-smoke.mjs).
+   * PROVIDER_ACCOUNT_FAILURE in production-smoke.mjs).
    *
    * What survives of the original intent, asserted rather than assumed:
    *   - a LITERAL, so the list still cannot come from the VM;

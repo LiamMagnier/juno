@@ -1341,7 +1341,7 @@ jobs:
           # nothing to do with the code being deployed. The smoke takes the
           # first candidate that streams, warns loudly about each one it had to
           # skip, and still fails the deploy if none of them work; the argument
-          # is on CREDENTIAL_FAILURE in scripts/production-smoke.mjs.
+          # is on PROVIDER_ACCOUNT_FAILURE in scripts/production-smoke.mjs.
           #
           # Qwen stays first because it is the account default (app-data.ts), so
           # the gate keeps testing what most users actually get. All three are
