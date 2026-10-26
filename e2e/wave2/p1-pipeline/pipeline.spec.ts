@@ -98,7 +98,9 @@ test("the view-transition root has no animation; the app-page group runs 120 out
       for (const rule of Array.from(list)) {
         if (rule instanceof CSSStyleRule) {
           const sel = rule.selectorText;
-          if (/::view-transition-(old|new)\(root\)/.test(sel)) found.root = rule.style.animation || rule.style.animationName;
+          // The longhand first: WebKit serialises the `animation: none`
+          // shorthand as "auto" (its duration), while the name reads "none" everywhere.
+          if (/::view-transition-(old|new)\(root\)/.test(sel)) found.root = rule.style.animationName || rule.style.animation;
           if (/\[data-vt="thread"\]::view-transition-old\(app-page\)/.test(sel) && !found.out) found.out = rule.style.animation;
           if (/\[data-vt="thread"\]::view-transition-new\(app-page\)/.test(sel) && !found.in) found.in = rule.style.animation;
         } else if ("cssRules" in rule && !(rule instanceof CSSMediaRule)) {
