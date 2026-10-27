@@ -25,6 +25,7 @@ import { readVoiceLevel } from "@/lib/voice-level";
 import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { TIMING } from "@/lib/interaction";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
@@ -40,7 +41,9 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
   gemini: `Screen sharing · thinks with ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)}`,
   qwen: "Long calls · sees images and your screen",
   minimax: "Speech pipeline · no vision, no screen",
-  xai: "Grok Voice 3.0 · full duplex · no vision, no screen",
+  // The row's title is already the model ("Grok Voice 3.0"); the line under
+  // it names the provider, as OpenAI's does, rather than saying it twice.
+  xai: "xAI · full duplex · no vision, no screen",
   mock: "Developer stand-in · no provider is called",
 };
 
@@ -56,8 +59,8 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
  * (`voiceCall` on <Composer>); surfaces without a composer of their own still
  * use <RealtimeVoice>, the same parts in one quiet bar.
  *
- * What the call says is still the phase (`src/lib/voice-phase.ts`): the meter
- * reads the real level, Stop exists exactly while there is speech to stop,
+ * What the call says is still the phase (`src/lib/voice-phase.ts`): one word
+ * beside `+` names it, the glow carries the level, Stop exists exactly while there is speech to stop,
  * mute is struck through, and every change is announced, because this is the
  * one mode designed to be used without looking at the screen.
  *
@@ -67,7 +70,7 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
  */
 
 export interface VoiceCallParts {
-  /** Left of the composer: the level meter and the phase, plus the live region. */
+  /** Left of the composer: the call's state in one word, plus the live region. */
   status: React.ReactNode;
   /** Right of the composer: Stop, Mute, Share, call settings. */
   controls: React.ReactNode;
@@ -164,7 +167,7 @@ export function voiceCallParts({
     tone: toneFor(phase),
     status: <VoiceCallStatus voice={voice} speakerName={speakerName} />,
     controls: <VoiceCallControls voice={voice} speakerName={speakerName} />,
-    end: <VoiceCallEnd onClose={onClose} />,
+    end: <VoiceCallEnd onClose={onClose} ended={voice.status === "ended" || voice.status === "error"} />,
   };
 }
 
@@ -173,16 +176,68 @@ function speakerOf(voice: VoiceController, speakerName?: string) {
 }
 
 /**
- * What the call is doing, for assistive technology only. On screen the glow
- * is the state (warm while you talk, cool while Juno talks, a travelling beam
- * while it thinks, still grey when muted); no meter or status line competes
- * with it. A voice mode is used without looking at the screen, so every phase
- * change is still announced, and which provider and model are answering is
- * said once the call is up.
+ * The call's state as one word on screen (INTERACTION_SPEC C16: "every state
+ * is also a word"). The glow says it in light, but light alone left the
+ * states that draw none (connecting, reconnecting, ended) looking exactly like
+ * an idle composer, told you from Juno by hue only, and showed thinking only
+ * while a beam happened to be passing.
+ *
+ * Your own speech reads "Listening", like silence: the hook flips between the
+ * two with every syllable, and a word that flickered at that rate would be
+ * the busiest thing on the screen.
+ */
+const PHASE_WORD: Record<VoicePhase, string> = {
+  idle: "Call ended",
+  connecting: "Connecting…",
+  listening: "Listening",
+  "user-speaking": "Listening",
+  thinking: "Thinking",
+  speaking: "Speaking",
+  muted: "Muted",
+  error: "Call stopped",
+};
+
+/** The words of a call in progress: they wait out `phaseMinHold` before replacing one another. */
+const PACED_WORDS = new Set(["Listening", "Thinking", "Speaking"]);
+
+function stateWordOf(voice: VoiceController, phase: VoicePhase): string {
+  return voice.status === "reconnecting" ? "Reconnecting…" : PHASE_WORD[phase];
+}
+
+/**
+ * The word on screen, paced. Between the phases of a working call (listening,
+ * thinking, speaking) each word holds at least `phaseMinHold`, so a quick
+ * exchange never strobes; everything else (muted, a dropped or ended call)
+ * shows at once, because those are the states a person acts on.
+ */
+function useStateWord(word: string): string {
+  const [shown, setShown] = React.useState(word);
+  const since = React.useRef(0);
+  React.useEffect(() => {
+    if (word === shown) return;
+    const paced = PACED_WORDS.has(word) && PACED_WORDS.has(shown);
+    const wait = paced ? Math.max(0, since.current + TIMING.phaseMinHold - performance.now()) : 0;
+    const timer = window.setTimeout(() => {
+      since.current = performance.now();
+      setShown(word);
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [word, shown]);
+  return shown;
+}
+
+/**
+ * What the call is doing: one quiet word beside `+`, in the muted ink the
+ * composer's own chips use, and the sentence assistive technology hears. A voice mode is
+ * used without looking at the screen, so every phase change is announced
+ * (the word itself is hidden from assistive technology, which would only hear
+ * it twice), and which provider and model are answering is said once the call
+ * is up.
  */
 export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController; speakerName?: string }) {
   const phase: VoicePhase = voicePhaseOf(voice);
   const speaker = speakerOf(voice, speakerName);
+  const word = useStateWord(stateWordOf(voice, phase));
   const [announcement, setAnnouncement] = React.useState("");
   const prevPhase = React.useRef<VoicePhase | null>(null);
   React.useEffect(() => {
@@ -206,10 +261,23 @@ export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController
     : null;
 
   return (
-    <span role="status" aria-live="polite" className="sr-only">
-      {announcement}
-      {detail ? ` ${detail}.` : null}
-    </span>
+    <>
+      {/* Keyed, so a new word fades in on the base rung (opacity only)
+          rather than being swapped in a frame. */}
+      <span
+        aria-hidden="true"
+        data-voice-state={phase}
+        className="voice-call-state flex min-w-0 select-none items-center whitespace-nowrap pl-1 pr-1.5 text-ui text-muted-foreground"
+      >
+        <span key={word} className="motion-safe:animate-fade-in">
+          {word}
+        </span>
+      </span>
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+        {detail ? ` ${detail}.` : null}
+      </span>
+    </>
   );
 }
 
@@ -222,9 +290,20 @@ export function VoiceCallControls({ voice, speakerName }: { voice: VoiceControll
   return (
     <div className="voice-call-controls flex shrink-0 items-center gap-0.5">
       {restartable ? (
-        <CallButton onClick={() => void voice.retry()} label="Try the call again">
-          <ActionIcons.refresh className="size-4" />
-        </CallButton>
+        // The one thing to do next after a call ends or fails, so it says so
+        // in words rather than as a lone glyph beside the red disc. Its name
+        // is its visible text (WCAG 2.5.3).
+        <button
+          type="button"
+          onClick={() => void voice.retry()}
+          className={cn(
+            "pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full pl-2.5 pr-3 text-ui font-medium text-foreground",
+            "hover:bg-accent motion-reduce:active:scale-100 coarse:h-11"
+          )}
+        >
+          <ActionIcons.refresh className="size-4" aria-hidden="true" />
+          Try again
+        </button>
       ) : (
         <>
           {voice.assistantSpeaking && (
@@ -266,15 +345,19 @@ export function VoiceCallControls({ voice, speakerName }: { voice: VoiceControll
 /**
  * End, in the composer's primary slot: the same size and place as Send, so
  * the hand already knows where it is, and the only coloured control in a call.
+ *
+ * `ended`: the call has already ended or failed, and the same button now
+ * leaves voice mode. It keeps its face and place, and stops claiming to end a
+ * call that is no longer there.
  */
-export function VoiceCallEnd({ onClose }: { onClose: () => void }) {
+export function VoiceCallEnd({ onClose, ended = false }: { onClose: () => void; ended?: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
           onClick={onClose}
-          aria-label="End the call"
+          aria-label={ended ? "Close voice" : "End the call"}
           className={cn(
             "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
             "bg-destructive text-destructive-foreground shadow-sm hover:brightness-[1.06]",
@@ -284,7 +367,7 @@ export function VoiceCallEnd({ onClose }: { onClose: () => void }) {
           <CallEnd className="size-5" />
         </button>
       </TooltipTrigger>
-      <TooltipContent>End call</TooltipContent>
+      <TooltipContent>{ended ? "Close voice" : "End call"}</TooltipContent>
     </Tooltip>
   );
 }
@@ -292,21 +375,29 @@ export function VoiceCallEnd({ onClose }: { onClose: () => void }) {
 /**
  * A call's error or notice, as one plain line above the composer: colour and
  * a glyph where it needs acting on, muted where it does not. No pill.
+ *
+ * It wraps rather than truncates. These are sentences whose second half says
+ * what to do ("…Allow the microphone for this site in your browser settings,
+ * then restart voice."), and an ellipsis on a phone cut exactly that half.
+ * Centred and balanced, with the glyph on the first line.
  */
+const NOTICE_LINE = "mx-auto mb-2 flex max-w-xl items-start justify-center gap-1.5 px-3 text-caption motion-safe:animate-fade-in";
+const NOTICE_GLYPH = "mt-0.5 size-3.5 shrink-0";
+
 export function VoiceCallNotices({ voice }: { voice: VoiceController }) {
   if (voice.error) {
     return (
-      <p role="alert" className="mb-2 flex items-center justify-center gap-1.5 px-3 text-caption text-destructive-ink motion-safe:animate-fade-in">
-        <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">{voice.error}</span>
+      <p role="alert" className={cn(NOTICE_LINE, "text-destructive-ink")}>
+        <StatusIcons.warning className={NOTICE_GLYPH} aria-hidden="true" />
+        <span className="min-w-0 text-balance">{voice.error}</span>
       </p>
     );
   }
   if (voice.notice) {
     return (
-      <p role="status" className="mb-2 flex items-center justify-center gap-1.5 px-3 text-caption text-muted-foreground motion-safe:animate-fade-in">
-        <StatusIcons.info className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0">{voice.notice}</span>
+      <p role="status" className={cn(NOTICE_LINE, "text-muted-foreground")}>
+        <StatusIcons.info className={NOTICE_GLYPH} aria-hidden="true" />
+        <span className="min-w-0 text-balance">{voice.notice}</span>
       </p>
     );
   }

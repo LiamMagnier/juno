@@ -434,6 +434,62 @@ test("…and at no moment of a wait or a block, at any size, keeps less than 0.7
   }
 });
 
+test("…and out of the dots into needs you the notch never bites an eye nor shoves the pair: every 240 fps frame, both sides, every body, the tall cut, several seeds", () => {
+  // A head coming home from the dots is still turned ~70° 0.2 s in, its near
+  // eye at the body's edge: a ball popping then bit that eye (the edge holds
+  // the eyes' push at nothing) and, once the eye came clear, the whole push
+  // landed in one frame (1.8 px at 48 px, 4.3 px at 160 px).
+  // 240 fps: at 120 a one-frame shove at 96 px sits within 2.5 times the frames either side of it.
+  const FPS = 240;
+  const bites: string[] = [];
+  const jumps: string[] = [];
+  let changes = 0;
+  let notched = 0;
+  for (const px of [20, 28, 48, 96, 160]) {
+    const pxR = pxPerR(px, sizeClass(px));
+    for (const shape of AGENT_SHAPES) {
+      const s = spec(shape, px, "tall");
+      for (const id of [107, 101]) {
+        for (const [n, seed] of [3, 11, 29].entries()) {
+          const ctx = faceCtx(s, "none", seed, false, id);
+          // In thinking for a beat, a while, or long enough to have settled into its dots.
+          const thinking: Segment = { state: "thinking", at: 1, snap: snapshot({ state: "idle", at: -60, snap: null }, 1, ctx) };
+          const Tc = 1 + [0.9, 1.6, 2.5][n];
+          for (const to of ["waiting", "blocked"] as const) {
+            const seg: Segment = { state: to, at: Tc, snap: snapshot(thinking, Tc, ctx) };
+            const what = `${px}px ${shape}/tall side ${ctx.side} seed ${seed}, thinking→${to}`;
+            changes++;
+            const centres: Array<Array<[number, number] | null>> = [];
+            // Until the ball has popped and settled (0.5 + 0.65 s).
+            for (let i = 0; i <= 1.15 * FPS; i++) {
+              const frame = drawFace(s, poseAt(seg, Tc + i / FPS, ctx), NO_EXTRAS, ids);
+              const gap = notchClearance(frame);
+              if (Number.isFinite(gap)) {
+                notched++;
+                if (gap * pxR < 0.75) bites.push(`${what} +${((1000 * i) / FPS).toFixed(0)} ms: ${(gap * pxR).toFixed(2)} px between an eye and the notch`);
+              }
+              centres.push(screenEyes(frame, px).map((e) => (e ? ([e.x, e.y] as [number, number]) : null)));
+            }
+            for (const k of [0, 1]) {
+              const steps = centres.map((f, i) => (i && f[k] && centres[i - 1][k] ? Math.hypot(f[k]![0] - centres[i - 1][k]![0], f[k]![1] - centres[i - 1][k]![1]) : null));
+              for (let i = 1; i < steps.length; i++) {
+                const v = steps[i];
+                if (v == null || v < Math.max(0.3, px / 300)) continue;
+                const around = [i - 3, i - 2, i - 1, i + 1, i + 2, i + 3].map((j) => steps[j]).filter((x): x is number => x != null);
+                const most = around.length ? Math.max(...around) : 0;
+                if (v > 2.5 * most) jumps.push(`${what}: e${k} moves ${v.toFixed(2)} px in one frame at +${((1000 * i) / FPS).toFixed(0)} ms (${most.toFixed(2)} a frame either side)`);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(changes >= 540 && notched > 40000, `${changes} changes, ${notched} frames with a notch`);
+  assert.equal(bites.length, 0, `${bites.length} frames bite an eye:\n${bites.slice(0, 10).join("\n")}`);
+  assert.equal(jumps.length, 0, `${jumps.length} one-frame shoves of the pair:\n${jumps.slice(0, 10).join("\n")}`);
+});
+
 test("halo's face sits in the broad lower half of its gumdrop, inside the body", () => {
   const halo = bodyOf("halo");
   assert.ok(halo.seat.oy > 0.05, "the eyes sit below the centre, where the gumdrop is wide");

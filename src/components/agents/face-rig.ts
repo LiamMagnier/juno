@@ -681,8 +681,13 @@ const STATES: Record<AgentState, StateDef> = {
         p.badgeKind = ts < 0.16 ? "bar" : "ball";
         p.badgeS = ts < 0.16 ? lerp(snap.badgeS, 0.15, outCubic(ts / 0.16)) : 0.15 + 0.85 * pop((ts - 0.16) / 0.6, 1.14);
       } else {
+        // Out of the dots the ball pops once the face is nearly home (0.5 s):
+        // at 0.2 s a head coming back round is still turned ~70°, its near
+        // eye at the body's edge, where the notch would bite it and then
+        // shove the pair in one frame.
+        const d0 = snap && snap.morph > 0.5 ? 0.5 : 0.2;
         p.badgeKind = "ball";
-        p.badgeS = ts < 0.2 ? 0 : pop((ts - 0.2) / 0.65, 1.14);
+        p.badgeS = ts < d0 ? 0 : pop((ts - d0) / 0.65, 1.14);
       }
       // An orbit leaves as everywhere else; small, its rim ball is gone before the notch opens.
       if (snap && snap.ringO > 0.002) leaveForBadge(p, ts, snap, ctx);
@@ -999,6 +1004,8 @@ export function poseAt(seg: Segment, T: number, ctx: FaceCtx): Pose {
   // Into done, a blink carried on from the change has all but reopened (0.9
   // open, 0.745 of the way through blinkCurve) before the happy capsules
   // form: they form from the reopened eye, never squash it again as it opens.
+  // Their lean waits with them: a worried pair (blocked) letting go of its
+  // tilt while the capsules wait would stand as two upright bars (⏸).
   const carried = seg.state === "done" ? blinkPhase(snap, false) : null;
   const settle = carried === null ? 0 : Math.max(0, 0.745 - carried) * ACK_S;
   // A stalled orbit (blocked) leaving where the state's own table would
@@ -1013,7 +1020,7 @@ export function poseAt(seg: Segment, T: number, ctx: FaceCtx): Pose {
       def.timing?.[f] ??
       FIELD_TIMING[f] ??
       DEFAULT_TIMING;
-    const d = timing[0] + (f === "smile" || f === "eH" || f === "eW" ? settle : 0);
+    const d = timing[0] + (f === "smile" || f === "eH" || f === "eW" || f === "tilt" ? settle : 0);
     let dur = timing[1];
     let ez = timing[2];
     if (f === "yaw") {
