@@ -1332,14 +1332,32 @@ export const MessageItem = React.memo(function MessageItem({
               <span className="min-w-0">{message.content || message.errorMessage || "Something didn't go well."}</span>
             </p>
             {onRegenerate && isLast && !busy && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onRegenerate()}
-                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <ActionIcons.refresh className="size-3.5" /> Try again
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRegenerate()}
+                  className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <ActionIcons.refresh className="size-3.5" /> Try again
+                </Button>
+                {/* The error frame's one alternative (chat wire 1.1): a
+                    different, healthy lab that does not train on prompts.
+                    Clicking it is the reader's explicit choice for this
+                    answer — the same one-shot override as Switch model — so
+                    nothing is ever rerouted without them. */}
+                {message.recovery?.suggestedModelId && !privateMode && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRegenerate({ modelId: message.recovery!.suggestedModelId! })}
+                    className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <SettingsIcons.models className="size-3.5" />
+                    {`Answer with ${message.recovery.suggestedModelName ?? message.recovery.suggestedModelId}`}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ) : (

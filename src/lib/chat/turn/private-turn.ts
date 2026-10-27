@@ -12,6 +12,7 @@ import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationAbortedForShutdown, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
+import { noteLiveProviderFault } from "@/lib/provider-health";
 import { checkBudget, releaseSpend, reserveSpend, modelRatesMicroUsdPerToken, type billingPeriodFor } from "@/lib/spend";
 import { createSseSender, SSE_HEADERS } from "@/lib/chat-stream";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -38,6 +39,7 @@ import type { TurnRequest } from "./admission";
 import { refuse, usageWindowRefusal } from "./admission";
 import type { TurnSettings } from "./account";
 import type { TurnModel } from "./model";
+import { providerErrorRecovery } from "./failure-recovery";
 import type { TurnTokens } from "./context";
 import { skillSettlement } from "./context";
 import { createToolActivity, prepareChatArtifactOutput, privateAssistantMessage } from "./activity";
@@ -463,6 +465,12 @@ export async function runPrivateTurn({
           stalled: stallWatchdog.stalled,
           shutdown: wasGenerationAbortedForShutdown(generationId),
         };
+        // Private turns feed provider health like saved ones: the fault is
+        // the lab's, not the conversation's, and nothing of the conversation
+        // is recorded (provider-health keeps the class and status only).
+        const endedByReaderOrPlatform =
+          cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown;
+        if (!endedByReaderOrPlatform) noteLiveProviderFault(modelInfo.provider, err, "private_chat");
         console.error("[chat] private generation error", {
           generationId,
           provider: modelInfo.provider,
@@ -540,12 +548,18 @@ export async function runPrivateTurn({
               : reason === "user_stopped"
                 ? "Generation stopped before any output."
                 : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
+          // Chat wire 1.1, as on the saved path: only when the message above
+          // is the provider's.
+          const recovery =
+            reason !== "user_stopped" && !endedByReaderOrPlatform
+              ? await providerErrorRecovery(err, { modelInfo, plan, history: privateHistory })
+              : {};
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
             detail: message,
           });
-          send({ type: "error", message, quota, finishReason: reason });
+          send({ type: "error", message, quota, finishReason: reason, ...recovery });
           trace.finish({
             finishReason: reason,
             outcome: reason === "user_stopped" ? "stopped" : "failed",

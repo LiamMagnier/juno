@@ -113,6 +113,10 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/preflight-triage.ts#modelCooldown": "per-process",
   "src/lib/provider-health.ts#health": "per-process",
   "src/lib/provider-health.ts#inFlight": "per-process",
+  // Recent 5xx timestamps per lab from live turns, for the repeated-capacity
+  // rule. A burst counts within one process; a restart starts the count again,
+  // and the boot seed (RoutingOutcome) covers a lab that was failing.
+  "src/lib/provider-health.ts#capacityFaults": "per-process",
   "src/lib/router/provider-pressure.ts#hits": "per-process",
   "src/lib/sync/thread-sync.ts#waiters": "per-process",
 };

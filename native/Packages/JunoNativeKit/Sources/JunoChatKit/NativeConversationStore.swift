@@ -146,6 +146,12 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     /// How many earlier versions the server keeps of this answer (regenerate,
     /// edit and resend). Metadata only; from the thread.
     public var versionCount: Int
+    /// Client-transient: the model a failed turn's `error` frame offered
+    /// instead (chat wire 1.1 `suggestedModelId`), for the error card's
+    /// "Answer with <model>". Never persisted or synced; nil on everything
+    /// that did not fail at its provider.
+    public var suggestedModelID: String?
+    public var suggestedModelName: String?
 
     public init(
         id: String,
@@ -3091,14 +3097,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 completeAssistant(message, conversationID: context.conversationID)
                 retryContexts.removeValue(forKey: context.conversationID)
                 return .terminal
-            case .failed(let message, let reason, _, _):
+            case .failed(let message, let reason, _, _, let recovery):
                 // Whatever the hold was keeping back was answer text.
                 applyTurnFrame(event, conversationID: context.conversationID)
                 endTurnStream(conversationID: context.conversationID)
                 failAssistant(
                     message,
                     reason: reason,
-                    context: context
+                    context: context,
+                    recovery: recovery
                 )
                 return .terminal
             case .work(let start):
@@ -3418,13 +3425,16 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private func failAssistant(
         _ message: String,
         reason: NativeChatFinishReason,
-        context: RetryContext
+        context: RetryContext,
+        recovery: NativeChatFailureRecovery? = nil
     ) {
         updateTransientAssistant(for: context.conversationID) {
             $0.isPending = false
             $0.errorDescription = message
             $0.finishReason = reason
             $0.mediaProgress = nil
+            $0.suggestedModelID = recovery?.suggestedModelID
+            $0.suggestedModelName = recovery?.suggestedModelName
         }
         // A failed regenerate hands the answer it was replacing straight back
         // — the server only overwrites it once the new one has been written.

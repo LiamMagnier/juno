@@ -114,6 +114,9 @@ export interface GoalStepNotStarted {
 /** The goal's line while a step waits on a heartbeat that could not be read. */
 export const GOAL_WAITING_ON_EXECUTOR_CHECK = "Waiting to check that a cloud worker is running";
 
+/** The goal's line while its step waits for the person, attached or parked. */
+export const GOAL_WAITING_FOR_ANSWER = "Waiting for your answer on the current task";
+
 /**
  * What a step that did not start writes on the goal. Pure: the driver applies it.
  *
@@ -174,6 +177,19 @@ export interface GoalTaskView {
   acted: boolean;
   costMicroUsd: number;
   createdAt: Date;
+  /**
+   * The current run is parked (`paused`) and why: `waiting` when the executor
+   * set it aside to wait for an answer or approval, `user` when the person
+   * paused it. Null or absent for anything else.
+   */
+  pauseReason?: string | null;
+  /**
+   * The current run was ended because it waited out the parked-run expiry
+   * (`PARKED_GOAL_STEP_EXPIRED_DETAIL` in src/lib/work/store.ts) rather than
+   * being interrupted mid-work. Retrying it on its own would only stop on the
+   * same question again, so the goal asks the person instead.
+   */
+  waitedOut?: boolean;
 }
 
 export interface GoalView {
@@ -258,11 +274,21 @@ export function planGoalStep(
 
   const live = tasks.find((task) => LIVE.has(task.status));
   if (live) {
-    const waiting = live.status === "waiting_input" || live.status === "waiting_approval";
+    // A step parked by the executor (`paused`, waiting) is waiting on the
+    // person exactly as one still attached is; it is not working.
+    const waiting =
+      live.status === "waiting_input" ||
+      live.status === "waiting_approval" ||
+      (live.status === "paused" && live.pauseReason === "waiting");
+    const pausedByPerson = live.status === "paused" && !waiting;
     return {
       kind: "idle",
       reason: "task_in_flight",
-      nextAction: waiting ? "Waiting for your answer on the current task" : "Working on the current step",
+      nextAction: waiting
+        ? GOAL_WAITING_FOR_ANSWER
+        : pausedByPerson
+          ? "Paused on the current step; resume it to continue"
+          : "Working on the current step",
     };
   }
 
@@ -287,6 +313,21 @@ export function planGoalStep(
       pause: false,
       blocker: { kind: "step_failed", text: `The task for "${step?.title ?? goal.title}" didn't finish. Retry it, change the goal, or drop it.`, at: nowIso },
       nextAction: "Waiting for your decision on the failed step",
+    };
+  }
+  if (last && last.waitedOut && RETRYABLE_INTERRUPT.has(last.status)) {
+    // Stopped after waiting a day for an answer that never came. Not retried
+    // on its own: a fresh attempt would stop on the same question again and
+    // spend a run of the goal's bound doing it. Continue retries it.
+    return {
+      kind: "ask",
+      pause: false,
+      blocker: {
+        kind: "needs_decision",
+        text: `"${step?.title ?? goal.title}" waited 24 hours for your answer and was stopped. Retry it, change the goal, or drop it.`,
+        at: nowIso,
+      },
+      nextAction: "Waiting for you: the step stopped waiting for an answer",
     };
   }
   if (last && RETRYABLE_INTERRUPT.has(last.status)) {

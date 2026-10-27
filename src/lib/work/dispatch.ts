@@ -53,6 +53,7 @@ import {
   type WorkProjectDefaults,
 } from "@/lib/work/projects";
 import { runBudgetForWindow } from "@/lib/work/budget";
+import { maxParkedRunsPerAccount } from "@/lib/work/park-resume";
 import { checkUsageWindows } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
@@ -669,6 +670,28 @@ const WORK_RUN_RATE_LIMIT = 10;
 /** Max simultaneously live runs per user, across every session. */
 const WORK_RUN_CONCURRENCY_CAP = 3;
 
+/**
+ * The live statuses the concurrency cap counts: every live run except a parked
+ * one.
+ *
+ * A `paused` run holds no executor — its lease is released when it parks
+ * (`parkRun`) or when the person pauses it — so counting it against the cap
+ * meant three tasks waiting on late answers refused every new task with 429
+ * until somebody found Resume or Cancel on each. Parked runs are bounded on
+ * their own instead (`maxParkedRunsPerAccount`, `WORK_MAX_PARKED_RUNS_PER_ACCOUNT`),
+ * so they cannot pile up without limit either. The "one live run per session"
+ * check below still counts them: a parked task has an attempt in flight.
+ */
+const WORK_CAPPED_LIVE_STATUSES = WORK_LIVE_STATUSES.filter((status) => status !== "paused");
+
+/** The refusal for an account holding as many parked runs as it may. */
+function parkedCapBody(parked: number): Record<string, unknown> {
+  return {
+    error: "parked_cap_exceeded",
+    message: `You have ${parked} tasks waiting for you. Answer, resume or cancel one of them before starting another.`,
+  };
+}
+
 /*
  * The live runs a `WORK_RUN_CONCURRENCY_CAP` check leaves out, both times it
  * is read in `startWorkRunForUser`: when `deadCloudQueue` says the cloud
@@ -1219,7 +1242,7 @@ export async function startWorkRunForUser(
     // which for somebody with three tasks going is the common case, not a race.
     const live =
       (await prisma.workRun.count({
-        where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+        where: { userId: user.id, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } },
       })) -
       (deadCloudQueue
         ? await prisma.workRun.count({
@@ -1236,6 +1259,8 @@ export async function startWorkRunForUser(
         preflight
       );
     }
+    const parked = await prisma.workRun.count({ where: { userId: user.id, status: "paused" } });
+    if (parked >= maxParkedRunsPerAccount()) return refused(429, parkedCapBody(parked), preflight);
     return { status: 200, body: { preflight }, run: null, preflight };
   }
   if (preflight.requiresConfirmation && !body.confirmExpensive) {
@@ -1370,7 +1395,7 @@ export async function startWorkRunForUser(
 
       const live =
         (await tx.workRun.count({
-          where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+          where: { userId: user.id, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } },
         })) -
         (deadCloudQueue
           ? await tx.workRun.count({
@@ -1379,6 +1404,10 @@ export async function startWorkRunForUser(
           : 0);
       if (live >= WORK_RUN_CONCURRENCY_CAP) {
         throw Object.assign(new Error("run_cap_exceeded"), { liveCount: live });
+      }
+      const parked = await tx.workRun.count({ where: { userId: user.id, status: "paused" } });
+      if (parked >= maxParkedRunsPerAccount()) {
+        throw Object.assign(new Error("parked_cap_exceeded"), { parkedCount: parked });
       }
 
       // One live run per session. A second attempt started while the first is
@@ -1481,6 +1510,10 @@ export async function startWorkRunForUser(
         },
         preflight
       );
+    }
+    if (err instanceof Error && err.message === "parked_cap_exceeded") {
+      const parked = (err as Error & { parkedCount?: number }).parkedCount ?? maxParkedRunsPerAccount();
+      return refused(429, parkedCapBody(parked), preflight);
     }
     if (err instanceof Error && err.message === "session_already_running") {
       return refused(

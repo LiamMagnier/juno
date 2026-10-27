@@ -115,6 +115,77 @@ says so out loud.
 
 ---
 
+## 8. Work tasks waiting on a person: two numbers — **owner to confirm**
+
+A cloud Work run that asks a question or an approval waits with its executor
+attached, then parks (`paused`, lease released). An answer or decision that
+arrives after that now puts the run back in the queue and the restored run is
+handed it, so the person answers once (`src/lib/work/park-resume.ts`). Two
+numbers follow from that, both in env with conservative defaults:
+
+- **`WORK_ATTENDED_WAIT_MS`, default 60000 (1 minute; bounded 1 s to 4 min).**
+  How long the executor stays attached before it parks. It was 4 minutes, which
+  held one of the runner's 3 slots per slow answer for every account. Shorter
+  frees slots sooner; longer saves a person who is watching the cold start of a
+  requeue.
+- **`WORK_MAX_PARKED_RUNS_PER_ACCOUNT`, default 10 (bounded 1 to 100).** Parked
+  runs hold no executor, so they no longer count against the per-account cap of
+  3 live runs; this bounds them separately. An account at the bound is refused
+  new tasks (`parked_cap_exceeded`) until it answers, resumes or cancels one.
+  Note the consequence: answering every parked task at once can put up to
+  3 + 10 runs of one account in the queue, which the runner still works 3 at a
+  time across all accounts.
+
+---
+
+## 9. Provider health from live turns: five numbers, and the fault copy — **owner to confirm**
+
+A real turn (chat, private chat, Work, background job) that fails on a lab's
+account now marks the lab down at once, and repeated server errors on real
+traffic hold it down until the next probe; a restart seeds health from recent
+failed turns in `RoutingOutcome` (`src/lib/provider-health.ts`,
+`src/lib/provider-health-policy.ts`). The probe still owns recovery. Five
+numbers, all in env with conservative defaults and clamps:
+
+- **`PROVIDER_CAPACITY_FAULTS_TO_MARK_DOWN`, default 3 (bounded 2 to 50).**
+  Server errors (5xx) from real turns that mark a lab down. Never fewer than 2,
+  so one 503 can never take a lab out of the picker.
+- **`PROVIDER_CAPACITY_FAULT_WINDOW_SECONDS`, default 120 (10 s to 1 h).** …
+  within this window.
+- **`PROVIDER_LIVE_FAULT_RECHECK_SECONDS`, default 120 (30 s to 30 min).** How
+  soon the probe looks again at a lab a live turn marked down (instead of the
+  30-minute unhealthy TTL). One 1-token probe per lab per recheck while it is
+  down for server errors or unconfirmed.
+- **`PROVIDER_HEALTH_SEED_WINDOW_MINUTES`, default 15 (1 to 120)** and
+  **`PROVIDER_HEALTH_SEED_MIN_FAILURES`, default 3 (1 to 50).** At boot, a lab
+  whose newest turns in the window are at least this many failures with no
+  answer since is held down until its first probe (seconds). The seed never
+  alerts.
+
+Also for the owner:
+
+- **Mail.** The down alert is now **mailed** when the lab serves
+  `DEFAULT_MODEL` or `FREE_DEFAULT_MODEL` (deduplicated per hour per process;
+  `ALERT_MUTED_KINDS=provider_unhealthy:<provider>` mutes it). Other labs stay
+  log-only. With three processes that can each see the fault (web, Work,
+  sweepers), the worst case is one mail per process per hour.
+- **Fault copy.** An account fault on a platform-held key now reads
+  "<model> is temporarily unavailable. Choose another model, or try again
+  later." instead of naming an exhausted credit or a misconfigured key (the
+  discovery's owner decision 3, taken as instructed). The precise class still
+  reaches the operator log, the alert and the error frame's `errorClass`.
+- **Not changed, still the owner's:** substituting an implicit default
+  automatically, making Auto the paid default, restoring the Qwen credit or
+  changing `DEFAULT_MODEL`. A new chat whose default is marked unavailable
+  starts on Auto with a visible notice; an existing conversation and an
+  explicit choice are never substituted.
+- **Known limit:** health is still per process. A fault the Work runner or a
+  sweeper sees lives in that process (it still alerts); the web process learns
+  of it from its own next failed turn or probe. A cross-process verdict needs a
+  durable row.
+
+---
+
 ## Not a decision — a known scaling limit (review item 39)
 
 Recorded here so it is not rediscovered as a bug.

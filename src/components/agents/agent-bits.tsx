@@ -6,11 +6,11 @@ import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 
 /**
- * "today at 9:00 AM", "tomorrow at 9:00 AM", "Mon at 9:00 AM", "12 Oct" (or
- * 09:00 where the reader's clock is 24-hour) — in the reader's own zone. The
- * server says the same sentence in UTC because it does not know the zone; the
- * client does, so it says it again, correctly. The hour is numeric: a 12-hour
- * clock never pads it ("09:00 AM").
+ * "today at 9:00 AM", "tomorrow at 9:00 AM", "Mon at 9:00 AM", "12 Oct" (on a
+ * 24-hour clock 9:00 or 09:00, as the reader's locale writes it) — in the
+ * reader's own zone. The server says the same sentence in UTC because it does
+ * not know the zone; the client does, so it says it again, correctly. The hour
+ * is numeric: a 12-hour clock never pads it ("09:00 AM").
  */
 export function formatLocalWhen(at: Date, now: Date): string {
   const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });

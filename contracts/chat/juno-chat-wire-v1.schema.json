@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://juno.app/contracts/chat/juno-chat-wire-v1.schema.json",
   "title": "Juno chat wire",
+  "x-wire-version": "1.1.0",
+  "x-wire-changes": {
+    "1.0.0": "The wire as generated before the contract carried a version.",
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+  },
   "description": "POST /api/chat: the request body (ChatRequest) and the SSE frames the response streams (StreamEvent, one JSON object per `data:` line; GET /api/chat/stream/{generationId} replays the same frames). Generated from src/lib/chat/request.ts (chatBodySchema) and src/types/chat.ts (StreamChunk), with each field's `x-native` status from contracts/chat/juno-chat-wire-v1.status.json. Do not edit by hand; run `npm run native:wire`.",
   "x-native-legend": {
     "native": "The Swift apps send or read it today.",
@@ -10,9 +15,9 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 217,
+    "native": 222,
     "planned": 276,
-    "web-only": 100,
+    "web-only": 106,
     "unclassified": 0
   },
   "x-native-only": {
@@ -1046,6 +1051,43 @@
               "type": "string",
               "x-native": "web-only",
               "x-native-note": "Durable first-submission failure code, as meta.receiptState."
+            },
+            "errorClass": {
+              "type": "string",
+              "enum": [
+                "auth",
+                "billing",
+                "capacity",
+                "content_filter",
+                "context",
+                "invalid_request",
+                "network",
+                "not_found",
+                "rate_limit",
+                "unknown"
+              ],
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery; set only when the turn failed at its provider."
+            },
+            "retryable": {
+              "type": "boolean",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. Decoded; the cards do not use it yet."
+            },
+            "retryAfterSeconds": {
+              "type": "number",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. Decoded; the cards do not use it yet."
+            },
+            "suggestedModelId": {
+              "type": "string",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model> (Switch Model's one-shot regenerate). The iPhone decodes it and does not show it yet."
+            },
+            "suggestedModelName": {
+              "type": "string",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. The label of the Mac's Answer with <model> button."
             }
           },
           "required": [
@@ -1128,6 +1170,43 @@
         "web_fetch",
         "web_search"
       ]
+    },
+    "ChatErrorRecovery": {
+      "type": "object",
+      "properties": {
+        "errorClass": {
+          "type": "string",
+          "enum": [
+            "auth",
+            "billing",
+            "capacity",
+            "content_filter",
+            "context",
+            "invalid_request",
+            "network",
+            "not_found",
+            "rate_limit",
+            "unknown"
+          ],
+          "x-native": "web-only"
+        },
+        "retryable": {
+          "type": "boolean",
+          "x-native": "web-only"
+        },
+        "retryAfterSeconds": {
+          "type": "number",
+          "x-native": "web-only"
+        },
+        "suggestedModelId": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "suggestedModelName": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      }
     },
     "ClientActionApproval": {
       "type": "object",
@@ -2662,6 +2741,18 @@
           ],
           "x-native": "planned",
           "x-native-note": "Failures arrive as error frames; the stored message's error line is not read from done."
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatErrorRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "web-only",
+          "x-native-note": "Client-transient on the web: use-chat copies the error frame's 1.1 fields onto the failed turn. The server never sends it on a message; native keeps the same fields on NativeChatMessage from the frame itself."
         },
         "progress": {
           "anyOf": [

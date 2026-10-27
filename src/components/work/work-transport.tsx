@@ -665,8 +665,15 @@ export function answerWorkQuestion(
   sessionId: string,
   questionId: string,
   answer: string
-): Promise<WorkResult<null>> {
-  return post(`/api/work/sessions/${sessionId}/answer`, { questionId, text: answer }, () => null);
+): Promise<WorkResult<{ resumed: boolean; explanation: string | null }>> {
+  // `resumed` is false only when the route kept the answer without the run
+  // carrying on (the person paused it, or no cloud worker is running); the
+  // explanation then says what will. An older server says neither: treated as
+  // carrying on, which is what it did with an answer it accepted.
+  return post(`/api/work/sessions/${sessionId}/answer`, { questionId, text: answer }, (data) => ({
+    resumed: data.resumed !== false,
+    explanation: typeof data.explanation === "string" ? data.explanation : null,
+  }));
 }
 
 /** What the route did with an instruction that was not an answer. */

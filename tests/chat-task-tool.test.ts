@@ -499,9 +499,13 @@ test("the tool's preflight includes the concurrency cap, so nobody approves a ru
   const dispatch = read("../src/lib/work/dispatch.ts");
   const branch = dispatch.slice(dispatch.indexOf("if (options.preflightOnly) {"));
   const body = branch.slice(0, branch.indexOf("return { status: 200, body: { preflight }"));
-  assert.match(body, /prisma\.workRun\.count\(\{\s*where: \{ userId: user\.id, status: \{ in: \[\.\.\.WORK_LIVE_STATUSES\] \} \},/);
+  // Live runs that hold an executor, i.e. every live status but a parked one;
+  // parked runs have their own bound (src/lib/work/park-resume-rules.ts).
+  assert.match(body, /prisma\.workRun\.count\(\{\s*where: \{ userId: user\.id, status: \{ in: \[\.\.\.WORK_CAPPED_LIVE_STATUSES\] \} \},/);
+  assert.match(dispatch, /const WORK_CAPPED_LIVE_STATUSES = WORK_LIVE_STATUSES\.filter\(\(status\) => status !== "paused"\);/);
   assert.match(body, /live >= WORK_RUN_CONCURRENCY_CAP/);
   assert.match(body, /error: "run_cap_exceeded"/);
+  assert.match(body, /parked >= maxParkedRunsPerAccount\(\)/);
 });
 
 test("the Work routes stay thin wrappers over the shared dispatch", () => {

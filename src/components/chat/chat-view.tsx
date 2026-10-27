@@ -77,7 +77,7 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
-import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
+import { initialChatModel } from "@/lib/chat/initial-model";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { parseStreamingArtifact, stripMemoryTags } from "@/lib/message-content";
 import type { LiveArtifactSource } from "@/components/canvas/canvas-panel";
@@ -277,20 +277,35 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const createdIdRef = React.useRef<string | null>(null);
   /** The conversation this view created, kept after the URL sync clears `createdIdRef`. */
   const ownedConversationIdRef = React.useRef<string | null>(null);
-  const [model, setModel] = React.useState<ModelId>(
-    () => {
-      // Existing conversations keep their recorded choice and fail honestly if
-      // that provider is unavailable. A brand-new chat must not start on a stale
-      // unconfigured default that the old server path would silently replace.
-      const conversationModel = resolveModel(initialModel)?.id;
-      if (conversationModel) return conversationModel;
-      const defaultModel = resolveModel(settings.defaultModel)?.id;
-      if (defaultModel && (isAutoModelId(defaultModel) || models.some((m) => m.id === defaultModel))) {
-        return defaultModel;
-      }
-      return AUTO_MODEL_ID;
-    }
-  );
+  // Existing conversations keep their recorded choice and fail honestly if
+  // that provider is unavailable. A brand-new chat must not start on a stale
+  // unconfigured default that the old server path would silently replace, nor
+  // on a default the live catalog marks unavailable: that one starts on Auto
+  // with a one-line notice (src/lib/chat/initial-model.ts).
+  const initialChoice = (catalog: typeof models) =>
+    initialChatModel({
+      conversationModelId: resolveModel(initialModel)?.id,
+      defaultModelId: resolveModel(settings.defaultModel)?.id,
+      models: catalog,
+    });
+  const [model, setModelState] = React.useState<ModelId>(() => initialChoice(models).modelId);
+  const [modelNotice, setModelNotice] = React.useState<string | null>(() => initialChoice(models).notice);
+  /** The reader picked a model in this view: from then on nothing here changes it. */
+  const modelChosenRef = React.useRef(false);
+  const setModel = React.useCallback((next: ModelId) => {
+    modelChosenRef.current = true;
+    setModelNotice(null);
+    setModelState(next);
+  }, []);
+  // The bundled catalog at mount carries no availability; the live one does.
+  // Re-decide when it arrives, only for a new chat nobody has touched yet.
+  React.useEffect(() => {
+    if (conversationId || initialModel || createdIdRef.current || modelChosenRef.current) return;
+    const decision = initialChoice(models);
+    setModelState((current) => (current === decision.modelId ? current : decision.modelId));
+    setModelNotice(decision.notice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-decided on the catalog alone; `initialChoice` reads props fixed for this view
+  }, [models]);
   // Deep-link reasoning (project page → /chat?reasoning=…) must win on the first
   // render so the auto-sent prompt uses it. After the user moves the slider we
   // hand control back to sticky composer prefs.
@@ -2061,6 +2076,18 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setVoiceSaveError(null);
   }, [realtimeVoice]);
 
+  // A new chat whose default model is unavailable starts on Auto and says so
+  // here, in one line, until the reader picks a model or sends.
+  const modelNoticeLine = modelNotice ? (
+    <p
+      role="status"
+      aria-live="polite"
+      className="mx-auto mb-2 w-[calc(100%-1rem)] max-w-2xl rounded-field border border-border/70 bg-popover px-3 py-2 text-ui text-muted-foreground shadow-soft sm:w-full"
+    >
+      {modelNotice}
+    </p>
+  ) : null;
+
   const voiceSaveNotice = voiceSaving || voiceSaveError ? (
     <div
       role={voiceSaveError ? "alert" : "status"}
@@ -2767,6 +2794,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} calm={startersShown} /> : null}
                     {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
+                    {modelNoticeLine}
                     {composer}
                   </div>
                   {/* The third track balances the first, so the composer sits

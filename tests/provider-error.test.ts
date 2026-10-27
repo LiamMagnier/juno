@@ -151,12 +151,39 @@ test("the actionable classes stay specific", () => {
   assert.match(normalizeProviderError(modelGone, "Google").userMessage, /isn't available/i);
 });
 
-test("auth and billing explain their distinct root causes", () => {
-  const a = normalizeProviderError(badKey, "Anthropic · Claude").userMessage;
-  const b = normalizeProviderError(anthropicBilling, "Anthropic · Claude").userMessage;
-  assert.notEqual(a, b);
-  assert.match(a, /API connection/i);
-  assert.match(b, /credits|quota/i);
+test("a platform account fault reads as temporarily unavailable and never reveals the funding or key state", () => {
+  // These used to say "its API connection is not configured correctly" and
+  // "its API credits or provider quota are exhausted" — the second announced
+  // the platform's funding state to every paid account on 2026-10-26.
+  for (const err of [badKey, xaiForbidden, anthropicBilling, openaiNoCredits, deepseekBalance]) {
+    const normalized = normalizeProviderError(err, { model: "Claude Opus", provider: "Anthropic · Claude" });
+    assert.equal(normalized.accountFault, true);
+    assert.equal(
+      normalized.userMessage,
+      "Claude Opus is temporarily unavailable. Choose another model, or try again later."
+    );
+    assert.doesNotMatch(normalized.userMessage, /credit|quota|billing|fund|key|API connection|configured/i);
+  }
+});
+
+test("the precise class still reaches the operator and the error frame", () => {
+  const dead = normalizeProviderError(badKey, { model: "Claude Opus", provider: "Anthropic · Claude" });
+  const dry = normalizeProviderError(anthropicBilling, { model: "Claude Opus", provider: "Anthropic · Claude" });
+  assert.equal(dead.class, "auth");
+  assert.equal(dry.class, "billing");
+  assert.match(dead.operatorMessage, /\bauth\b/);
+  assert.match(dry.operatorMessage, /\bbilling\b/);
+});
+
+test("an account fault and a server error stay worded apart", () => {
+  // The release smoke tells them apart by the sentence when a frame has no
+  // errorClass (scripts/production-smoke.mjs, PROVIDER_ACCOUNT_FAILURE).
+  const account = normalizeProviderError(anthropicBilling, "Qwen3.8 Flash").userMessage;
+  const serverError = { status: 503, error: { message: "Service Unavailable" } };
+  assert.equal(normalizeProviderError(serverError).class, "capacity");
+  const capacity = normalizeProviderError(serverError, "Qwen3.8 Flash").userMessage;
+  assert.notEqual(account, capacity);
+  assert.doesNotMatch(capacity, /Choose another model, or try again later\./);
 });
 
 test("network faults are recognised, including a client abort", () => {

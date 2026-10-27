@@ -52,7 +52,36 @@ export async function bootNodeRuntime(): Promise<void> {
     });
   }
 
+  await seedProviderHealth();
+
   scheduleRenewalReminders();
+}
+
+/**
+ * Provider health is per process and in memory, and unknown counts as
+ * healthy, so a restart used to forget a lab that was down until the next
+ * catalog load probed it. The seed (provider-health.ts) holds the labs that
+ * were failing just before this process started and probes them now. Bounded
+ * at two seconds so a slow database cannot hold the first request; it never
+ * throws, and a seed that finishes later still applies.
+ */
+async function seedProviderHealth(): Promise<void> {
+  try {
+    const { seedProviderHealthFromOutcomes } = await import("@/lib/provider-health");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      seedProviderHealthFromOutcomes(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 2_000);
+        timer.unref?.();
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+  } catch (error) {
+    console.error("[boot] provider health seed failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 const RENEWAL_SWEEP_EVERY_MS = 12 * 60 * 60 * 1000;

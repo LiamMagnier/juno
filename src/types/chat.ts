@@ -111,6 +111,12 @@ export interface ClientMessage {
   approvals?: ClientActionApproval[];
   finishReason?: ChatFinishReason | null;
   errorMessage?: string | null;
+  /**
+   * Client-transient: what the error frame said can be done about this failed
+   * turn (`ChatErrorRecovery`), copied on by use-chat. The error card offers
+   * "Answer with <model>" from it. The server never sends it on a message.
+   */
+  recovery?: ChatErrorRecovery | null;
   /** Client-transient: live /api/generate progress (set by use-chat while a generation runs; never persisted). */
   progress?: {
     modality: "image" | "video" | "audio";
@@ -640,6 +646,49 @@ export interface ClientLocalToolCall {
   args: Record<string, string | number | boolean>;
 }
 
+/**
+ * What kind of provider failure ended a turn: `ProviderErrorClass`
+ * (src/lib/provider-error.ts), spelled out here so the wire type does not
+ * import the classifier. `auth` and `billing` are the deployment's own
+ * provider account; the reader is never told which.
+ */
+export type ChatErrorClass =
+  | "auth"
+  | "billing"
+  | "rate_limit"
+  | "context"
+  | "content_filter"
+  | "invalid_request"
+  | "capacity"
+  | "not_found"
+  | "network"
+  | "unknown";
+
+/**
+ * The machine-readable half of an `error` frame (chat wire 1.1, additive):
+ * set only when the turn failed at its provider — never for a Stop, a stall,
+ * a drain, a canvas conflict or an internal error, which carry only
+ * `message`. A client that predates 1.1 ignores all of it.
+ */
+export interface ChatErrorRecovery {
+  /** The provider failure's class. */
+  errorClass?: ChatErrorClass;
+  /** Whether the same request could plausibly work if tried again shortly. */
+  retryable?: boolean;
+  /** How long the provider asked to wait, in whole seconds, when it said. */
+  retryAfterSeconds?: number;
+  /**
+   * One model to offer as "Answer with <model>": the cheapest eligible model
+   * on a different, healthy lab that does not train on prompts
+   * (`suggestAlternativeModel`, src/lib/model-selection.ts). Only an offer —
+   * the server never sends the turn there itself; clicking it is the reader's
+   * explicit choice.
+   */
+  suggestedModelId?: string;
+  /** Its display name, so a client without the catalog can label the button. */
+  suggestedModelName?: string;
+}
+
 export type StreamChunk =
   | {
       type: "meta";
@@ -741,6 +790,16 @@ export type StreamChunk =
       generationId?: string;
       receiptState?: "failed";
       failureCode?: string;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.errorClass`. */
+      errorClass?: ChatErrorClass;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.retryable`. */
+      retryable?: boolean;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.retryAfterSeconds`. */
+      retryAfterSeconds?: number;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.suggestedModelId`. */
+      suggestedModelId?: string;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.suggestedModelName`. */
+      suggestedModelName?: string;
     }
   // Heartbeat: keeps bytes flowing through proxies while a model thinks
   // silently (hidden reasoning) — the client simply ignores it.

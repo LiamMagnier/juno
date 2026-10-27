@@ -6,7 +6,9 @@ import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
 import { loadOpsTarget } from "./semantic";
 import type { TurnModel } from "./model";
 import { classifyProviderError } from "@/lib/provider-error";
+import { noteLiveProviderFault } from "@/lib/provider-health";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
+import { providerErrorRecovery } from "./failure-recovery";
 import {
   completionStateFor,
   endingSaysNothingAboutModel,
@@ -1021,6 +1023,15 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         if (turnOutcome && !turnOutcome.persistedPartial) turnOutcome = { ...turnOutcome, costMicroUsd: consumedUsage.costMicroUsd || null };
       };
       if (classifyProviderError(err).class === "rate_limit") recordProviderRateLimit(modelInfo.provider);
+      // A failure the reader or the platform caused says nothing about the
+      // lab; anything else is fed to provider health at once, so the next
+      // turn and Auto see a dead account in seconds rather than at the next
+      // catalog probe (provider-health.ts, `liveFaultVerdict` for the rules).
+      const endedByReaderOrPlatform =
+        cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown || cancellation.leaseLost;
+      if (!endedByReaderOrPlatform && !deterministicSmokeProviderEnabled) {
+        noteLiveProviderFault(modelInfo.provider, err, "chat");
+      }
       console.error("[chat] generation error", {
         generationId,
         conversationId,
@@ -1177,6 +1188,18 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
                   : wasGenerationAbortedForShutdown(generationId)
                     ? SHUTDOWN_USER_MESSAGE
                     : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
+        // Chat wire 1.1: the machine-readable half of the error frame, only
+        // when the message above is the provider's (the last branch).
+        const providerFailed =
+          reason !== "user_stopped" &&
+          !(err instanceof ArtifactVersionConflictError) &&
+          !(err instanceof ArtifactPatchError) &&
+          !(err instanceof ChatArtifactVerificationError) &&
+          !endedByReaderOrPlatform &&
+          !deterministicSmokeProviderEnabled;
+        const recovery = providerFailed
+          ? await providerErrorRecovery(err, { modelInfo, plan, history: modelHistory })
+          : {};
         sendActivity({
           kind: "warning",
           title: finishReasonTitle(reason),
@@ -1196,6 +1219,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           message,
           quota,
           finishReason: reason,
+          ...recovery,
           ...(durableGenerationId
             ? {
                 conversationId,

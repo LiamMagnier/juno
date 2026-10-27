@@ -431,6 +431,9 @@ export function agentStateSentence(input: {
     case "sleeping":
       return "Paused. Nothing new starts until you resume it.";
     case "waiting":
+      // Answered while parked and back in the queue: still shown with the
+      // asks until an executor picks it up (`requeueParkedRun`).
+      if (input.task?.status === "queued" || input.task?.status === "preparing") return `Resuming ${title}`;
       if (input.task?.status === "waiting_approval") return `Needs your approval on ${title}`;
       if (input.task?.status === "waiting_input") return `Has a question about ${title}`;
       if (input.task?.status === "host_offline") return `Waiting for your Mac to finish ${title}`;

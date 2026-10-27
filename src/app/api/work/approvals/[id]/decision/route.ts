@@ -3,9 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { authenticateNativeBearer } from "@/lib/native-auth";
 import { markRunNotificationsRead } from "@/lib/notifications";
-import { isWorkStatus } from "@/lib/work/domain";
+import { isTerminalStatus, isWorkStatus } from "@/lib/work/domain";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { appendEvents, dispatchRunCommand, setSessionAttention } from "@/lib/work/store";
+import { appendEvents, dispatchRunCommand, requeueParkedRun, setSessionAttention } from "@/lib/work/store";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
 import { approvalCommandKey } from "@/lib/work/relay";
 import { serializeApproval, serializeCommand } from "@/lib/work/serializers";
 import {
@@ -82,6 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           id: true,
           sessionId: true,
           status: true,
+          pauseReason: true,
           permissionPolicy: true,
           hostId: true,
           effectiveTarget: true,
@@ -146,7 +148,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   if (outcome.outcome === "replay") {
-    return NextResponse.json({ approval: stored, replay: true }, { status: 200 });
+    // The decision is recorded already. A retry still puts a parked run back
+    // in the queue, in case the first request was cut off before it did.
+    const resumed = await continueAfterDecision(user.id, approval.run, now);
+    return NextResponse.json({ approval: stored, replay: true, ...resumed }, { status: 200 });
   }
 
   // `decision: "pending"` in the WHERE is what makes this write-once. Two
@@ -286,19 +291,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   });
 
-  // The question has been answered, so the session stops asking. The status
-  // itself belongs to the executor — it moves the run off `waiting_approval`
-  // when it picks the decision up — and a status this build cannot read is left
-  // alone rather than mirrored as a guess.
-  if (isWorkStatus(approval.run.status)) {
-    await setSessionAttention({
-      sessionId: approval.run.sessionId,
-      userId: user.id,
-      status: approval.run.status,
-      needsAttention: false,
-      now,
-    });
-  }
+  const resumed = await continueAfterDecision(user.id, approval.run, now);
 
   const updated = await prisma.workApproval.findFirst({ where: { id: approval.id, userId: user.id } });
   return NextResponse.json({
@@ -307,5 +300,47 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // could not be told. Stated either way rather than omitted, so a client can
     // distinguish "recorded and delivered" from "recorded".
     command: dispatched.status === "queued" ? serializeCommand(dispatched.command) : null,
+    ...resumed,
   });
+}
+
+/**
+ * What happens to the run once its approval is decided.
+ *
+ * A cloud run the executor parked after its attended wait goes back in the
+ * queue (`requeueParkedRun`, a compare-and-set, so a retry, the answer route or
+ * a press of Resume racing this changes nothing twice) and stays in "Needs
+ * you" as resuming until it is picked up. When it resumes, the call it parked
+ * on is given this decision — only for the same action digest, under the same
+ * policy, before this approval's own expiry (src/lib/work/park-resume.ts) —
+ * so the person decides once.
+ *
+ * Otherwise the session simply stops asking: the status belongs to the
+ * executor, which moves the run off `waiting_approval` when it reads the
+ * decision, and a status this build cannot read is left alone rather than
+ * mirrored as a guess. A run the person paused stays paused, and one parked
+ * while no cloud worker is alive keeps its place in "Needs you" so the person
+ * can resume it once one is.
+ */
+async function continueAfterDecision(
+  userId: string,
+  run: { id: string; sessionId: string; status: string; pauseReason: string | null; effectiveTarget: string | null },
+  now: Date
+): Promise<{ resumed: boolean }> {
+  const parked = run.status === "paused" && run.pauseReason === "waiting" && run.effectiveTarget === "cloud";
+  if (parked) {
+    if (!(await cloudWorkAvailable())) return { resumed: false };
+    const requeued = await requeueParkedRun({ runId: run.id, userId, now });
+    return { resumed: requeued.requeued || (requeued.run !== null && requeued.run.status !== "paused" && !isTerminalStatus(requeued.run.status)) };
+  }
+  if (isWorkStatus(run.status)) {
+    await setSessionAttention({
+      sessionId: run.sessionId,
+      userId,
+      status: run.status,
+      needsAttention: false,
+      now,
+    });
+  }
+  return { resumed: run.status === "waiting_approval" };
 }

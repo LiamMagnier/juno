@@ -142,11 +142,13 @@ test("deploy smoke passes authentication and public UI checks without an optiona
    *
    * What survives of the original intent, asserted rather than assumed:
    *   - a LITERAL, so the list still cannot come from the VM;
-   *   - Qwen still first, because it is the account default, and a gate that
-   *     stops exercising what most users get is not testing production.
+   *   - the account default first — the real DEFAULT_MODEL, not a sibling on
+   *     its provider account — because a gate that stops exercising what most
+   *     users get is not testing production (tests/production-smoke.test.ts
+   *     ties this id to src/lib/models.ts).
    */
   assert.match(SMOKE_REMOTE_BLOCK, /^\s*SMOKE_MODEL="[^"$`]+"\s*$/m, "SMOKE_MODEL must be a literal set here, never read from the VM");
-  assert.match(SMOKE_REMOTE_BLOCK, /^\s*SMOKE_MODEL="qwen:qwen3\.6-flash(?:,|")/m, "the account default must stay the first candidate");
+  assert.match(SMOKE_REMOTE_BLOCK, /^\s*SMOKE_MODEL="qwen:qwen3\.8-flash(?:,|")/m, "the account default must stay the first candidate");
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_RUN_CHAT\s*=\s*1\b/);
   // Against the CODE, as the preflight check above already does. Only a shell
   // construct can skip a smoke; prose about one cannot. Run over the raw block

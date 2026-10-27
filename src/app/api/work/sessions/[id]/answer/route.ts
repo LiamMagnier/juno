@@ -10,10 +10,14 @@ import {
 import {
   appendEvents,
   dispatchRunCommand,
+  requeueParkedRun,
   setSessionAttention,
   type DispatchRunCommandResult,
 } from "@/lib/work/store";
 import { runCommandKey } from "@/lib/work/relay";
+import { questionState } from "@/lib/work/park-resume";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE } from "@/lib/work/executor-presence";
 import { answerSchema } from "@/app/api/work/protocol";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -121,7 +125,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const run = await prisma.workRun.findFirst({
     where: { sessionId: session.id, userId: user.id },
     orderBy: { attempt: "desc" },
-    select: { id: true, status: true, hostId: true, effectiveTarget: true },
+    select: { id: true, status: true, pauseReason: true, hostId: true, effectiveTarget: true },
   });
 
   return submission.kind === "answer"
@@ -132,8 +136,34 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 interface Target<T> {
   submission: T;
   userId: string;
-  run: { id: string; status: string; hostId: string | null; effectiveTarget: string | null } | null;
+  run: {
+    id: string;
+    status: string;
+    pauseReason: string | null;
+    hostId: string | null;
+    effectiveTarget: string | null;
+  } | null;
 }
+
+/**
+ * Statuses an answer is taken in, provided the question itself is open.
+ *
+ * `waiting_input` is the executor still attached and polling. `paused` is a run
+ * set aside: by the executor after its attended wait (it is requeued below), or
+ * by the person (the answer is kept for when they resume it). `queued` is a run
+ * that was resumed and not yet claimed; the answer is in the log before the
+ * executor restores it, and it reaches the question it parked on. Anything else
+ * is either finished, or running a newer execution that will ask again if it
+ * still needs to know.
+ */
+const ANSWERABLE_STATUSES: ReadonlySet<string> = new Set(["waiting_input", "paused", "queued"]);
+
+/** What the caller is told about whether the run carries on now. */
+const ANSWER_RESUMING = `${PRODUCT_NAME} picks this task up again with your answer.`;
+const ANSWER_DELIVERED = `${PRODUCT_NAME} has your answer and carries on.`;
+const ANSWER_KEPT_PAUSED =
+  "Your answer is saved. This task is paused, so it continues with your answer when you resume it.";
+const ANSWER_KEPT_NO_EXECUTOR = `Your answer is saved. ${CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE} Resume the task once it is back and it continues with your answer.`;
 
 async function recordAnswer({
   submission,
@@ -148,16 +178,71 @@ async function recordAnswer({
   // Only a run that is actually waiting takes an answer. Appending one to a
   // run that has moved on puts the user's words into a transcript at a point
   // where nothing asked for them, and — worse — reads as an answer to whatever
-  // the run asks next.
-  if (run.status !== "waiting_input") {
+  // the run asks next. "Waiting" includes a run parked after the attended wait:
+  // that is the case a notification sends somebody here for. A run on a Mac is
+  // never parked by that wait (the Mac holds its own), so it keeps the one
+  // status it has always been answerable in, and its questions — which the
+  // Mac does not write to this log the way the cloud runtime does — are not
+  // checked against it.
+  const cloud = run.effectiveTarget === "cloud";
+  if (cloud ? !ANSWERABLE_STATUSES.has(run.status) : run.status !== "waiting_input") {
     return NextResponse.json(
       {
-        error: "run_not_waiting_input",
-        message: "This run is not waiting for an answer.",
+        error: isTerminalStatus(run.status) ? "run_finished" : "run_not_waiting_input",
+        message: isTerminalStatus(run.status)
+          ? "This attempt has finished, so the answer was not recorded. Start it again to carry on."
+          : "This run is not waiting for an answer.",
         status: run.status,
       },
       { status: 409 }
     );
+  }
+
+  // And only the question it is waiting on. One asked by an execution that has
+  // since ended is closed: the run either received its answer or asks again,
+  // under a new id, and an answer recorded against the old one would sit in
+  // the log answering nothing.
+  const question = cloud
+    ? await questionState({ runId: run.id, userId, questionId })
+    : { asked: true, open: true, answer: null };
+  if (question.answer !== null) {
+    // Answered already. The same answer again is a retry and is told so, and
+    // it still nudges a parked run back into the queue in case the first
+    // request was cut off between recording the answer and requeueing. A
+    // different answer is refused rather than silently dropped.
+    if (question.answer !== text) {
+      return NextResponse.json(
+        {
+          error: "question_already_answered",
+          message: "This question has already been answered, so this reply was not recorded.",
+          status: run.status,
+        },
+        { status: 409 }
+      );
+    }
+  } else if (!question.open) {
+    return NextResponse.json(
+      {
+        error: "question_not_open",
+        message: question.asked
+          ? `${PRODUCT_NAME} is no longer waiting on this question, so the answer was not recorded. Answer the one it is asking now.`
+          : "This task never asked that question, so the answer was not recorded.",
+        status: run.status,
+      },
+      { status: 409 }
+    );
+  }
+
+  // A retry of an answer already in the log writes nothing more: the row is
+  // there, and a client that minted a fresh key for the retry would otherwise
+  // put the same answer in the transcript twice.
+  if (question.answer !== null) {
+    const current = await prisma.workRun.findFirst({
+      where: { id: run.id, userId },
+      select: { lastSeq: true },
+    });
+    const outcome = await continueAfterAnswer({ sessionId, userId, run });
+    return NextResponse.json({ lastSeq: current?.lastSeq ?? 0, replay: true, ...outcome });
   }
 
   // The event key defaults to the question rather than to a random value, so a
@@ -193,21 +278,59 @@ async function recordAnswer({
     idempotencyKey: runCommandKey(run.id, "answer", questionId),
   });
 
-  // The status stays `waiting_input` — the executor owns that transition and
-  // moves it when it picks the answer up. What changes here is attention: the
-  // user has done their part, and a session that keeps demanding it after they
-  // have answered is how a "Needs attention" list stops being believed.
-  await setSessionAttention({
-    sessionId,
-    userId,
-    status: "waiting_input",
-    needsAttention: false,
-  });
+  const outcome = await continueAfterAnswer({ sessionId, userId, run });
 
   return NextResponse.json({
     lastSeq: appended.lastSeq,
     replay: appended.duplicates > 0,
+    ...outcome,
   });
+}
+
+/**
+ * What happens to the run now that its question is answered, and the sentence
+ * that says so.
+ *
+ * Attached (`waiting_input`): the executor is polling the log and moves the
+ * status itself when it reads the answer; what changes here is attention — the
+ * user has done their part. Parked by the executor: the run goes back in the
+ * queue (`requeueParkedRun`, compare-and-set, so a retry or a race with Resume
+ * changes nothing twice) and keeps its place in "Needs you" as resuming until
+ * it is picked up. Parked with no cloud worker alive, or paused by the person:
+ * the answer is kept, and Resume carries it in. Already queued: the answer is
+ * in the log before the executor restores the run.
+ */
+async function continueAfterAnswer({
+  sessionId,
+  userId,
+  run,
+}: {
+  sessionId: string;
+  userId: string;
+  run: NonNullable<Target<unknown>["run"]>;
+}): Promise<{ resumed: boolean; explanation: string }> {
+  if (run.status === "waiting_input") {
+    await setSessionAttention({ sessionId, userId, status: "waiting_input", needsAttention: false });
+    return { resumed: true, explanation: ANSWER_DELIVERED };
+  }
+  if (run.status === "queued") return { resumed: true, explanation: ANSWER_RESUMING };
+  if (run.pauseReason !== "waiting" || run.effectiveTarget !== "cloud") {
+    // The person's own pause: theirs to lift. Attention is cleared, because
+    // nothing is being asked of them any more beyond what they chose.
+    await setSessionAttention({ sessionId, userId, status: "paused", needsAttention: false });
+    return { resumed: false, explanation: ANSWER_KEPT_PAUSED };
+  }
+  if (!(await cloudWorkAvailable())) {
+    return { resumed: false, explanation: ANSWER_KEPT_NO_EXECUTOR };
+  }
+  const requeued = await requeueParkedRun({ runId: run.id, userId });
+  if (requeued.requeued) return { resumed: true, explanation: ANSWER_RESUMING };
+  // Somebody else moved it first (Resume, the other route, a retry of this
+  // one). Say what is true of the row as it is now.
+  const current = requeued.run?.status ?? run.status;
+  if (current === "paused") return { resumed: false, explanation: ANSWER_KEPT_PAUSED };
+  if (isTerminalStatus(current)) return { resumed: false, explanation: "This attempt has finished." };
+  return { resumed: true, explanation: ANSWER_RESUMING };
 }
 
 /**

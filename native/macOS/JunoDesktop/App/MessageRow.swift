@@ -649,7 +649,11 @@ struct DesktopMessageRow: View {
                 if let progress = shown.mediaProgress, shown.errorDescription == nil {
                     NativeMediaGenerationView(progress: progress)
                 } else if let error = standaloneError {
-                    DesktopTurnError(message: error, retry: showsRetry ? actions.retry : nil)
+                    DesktopTurnError(
+                        message: error,
+                        retry: showsRetry ? actions.retry : nil,
+                        answerWith: answerWithSuggestion
+                    )
                 } else if !parts.isEmpty || !shown.attachments.isEmpty || !imageGenerations.isEmpty {
                     answerBody
                 }
@@ -855,6 +859,16 @@ struct DesktopMessageRow: View {
     /// Try Again, on the newest reply with nothing running.
     private var showsRetry: Bool {
         isNewest && !isGenerating && actions.retry != nil
+    }
+
+    /// "Answer with <model>", beside Try Again: the model the failed turn's
+    /// error frame offered (chat wire 1.1), asked through Switch Model's
+    /// one-shot regenerate — the reader's explicit choice, never a reroute.
+    private var answerWithSuggestion: (name: String, action: () -> Void)? {
+        guard isNewest, !isGenerating, actions.regenerate != nil,
+            let modelID = shown.suggestedModelID
+        else { return nil }
+        return (shown.suggestedModelName ?? modelID, { requestRegenerate(.model(modelID)) })
     }
 
     /// The note under the answer: a partial answer's failure, or why it ended

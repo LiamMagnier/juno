@@ -186,3 +186,73 @@ test("every mode is covered by a case in the resolver", () => {
     assert.equal(decision.mode, mode);
   }
 });
+
+// ---------------------------------------------------------------------------
+// A lab known to be down (provider-health) narrows the candidates, inside the
+// mode and never across it.
+// ---------------------------------------------------------------------------
+
+const anthropicDown = (provider: string) => provider !== "anthropic";
+
+test("same_provider skips the job when the conversation's lab is down, and never crosses", () => {
+  const decision = resolveBackgroundCandidates({
+    policy: { mode: "same_provider" },
+    conversationProvider: "anthropic",
+    candidates: ALL,
+    isProviderHealthy: anthropicDown,
+  });
+  assert.deepEqual(decision.candidates, []);
+  assert.equal(decision.deniedReason, "no_candidate_for_conversation_provider");
+});
+
+test("same_provider is unchanged while the conversation's lab is answering", () => {
+  const decision = resolveBackgroundCandidates({
+    policy: { mode: "same_provider" },
+    conversationProvider: "openai",
+    candidates: ALL,
+    isProviderHealthy: anthropicDown,
+  });
+  assert.deepEqual(decision.candidates.map((c) => c.id), ["gpt-mini"]);
+});
+
+test("selected_provider skips rather than crossing when its lab is down", () => {
+  const decision = resolveBackgroundCandidates({
+    policy: { mode: "selected_provider", selectedProvider: "anthropic" },
+    candidates: ALL,
+    isProviderHealthy: anthropicDown,
+  });
+  assert.deepEqual(decision.candidates, []);
+  assert.equal(decision.deniedReason, "selected_provider_unavailable");
+});
+
+test("any_allowed_provider walks the answering labs first, and all of them when none answers", () => {
+  const some = resolveBackgroundCandidates({
+    policy: { mode: "any_allowed_provider" },
+    candidates: ALL,
+    isProviderHealthy: anthropicDown,
+  });
+  assert.deepEqual(some.candidates.map((c) => c.provider), ["openai", "deepseek"]);
+
+  const none = resolveBackgroundCandidates({
+    policy: { mode: "any_allowed_provider" },
+    candidates: ALL,
+    isProviderHealthy: () => false,
+  });
+  assert.deepEqual(none.candidates, ALL, "nothing answering is no reason to skip a mode that may cross");
+});
+
+test("health never re-admits what the allowlist excluded, and never filters local models", () => {
+  const allowlisted = resolveBackgroundCandidates({
+    policy: { mode: "any_allowed_provider", allowedProviders: ["anthropic"] },
+    candidates: ALL,
+    isProviderHealthy: anthropicDown,
+  });
+  assert.ok(allowlisted.candidates.every((c) => c.provider === "anthropic"), "the allowlist still bounds the fallback");
+
+  const localOnly = resolveBackgroundCandidates({
+    policy: { mode: "local_only" },
+    candidates: [...ALL, local],
+    isProviderHealthy: () => false,
+  });
+  assert.deepEqual(localOnly.candidates, [local]);
+});

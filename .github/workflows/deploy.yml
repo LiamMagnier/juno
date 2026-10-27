@@ -563,6 +563,7 @@ jobs:
             'juno_reflection_test:ORBIT_TEST_DATABASE_URL:agent-reflection-budget.integration.test.ts' \
             'juno_worker_test:WORKER_TEST_DATABASE_URL:work-workers.integration.test.ts' \
             'juno_coordinator_test:ORBIT_TEST_DATABASE_URL:agent-coordinator-fences.integration.test.ts' \
+            'juno_park_resume_test:ORBIT_TEST_DATABASE_URL:work-park-resume.integration.test.ts' \
             'juno_history_test:HISTORY_TEST_DATABASE_URL:chat-history-paging.integration.test.ts'; do
             IFS=: read -r database fixture_env suite <<< "$fixture"
             psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $database"
@@ -1343,10 +1344,16 @@ jobs:
           # skip, and still fails the deploy if none of them work; the argument
           # is on PROVIDER_ACCOUNT_FAILURE in scripts/production-smoke.mjs.
           #
-          # Qwen stays first because it is the account default (app-data.ts), so
-          # the gate keeps testing what most users actually get. All three are
-          # minPlan FREE, so none of them depends on the smoke account's plan.
-          SMOKE_MODEL="qwen:qwen3.6-flash,google:gemini-3.5-flash-lite,openai:gpt-5.4-mini"
+          # The FIRST candidate is the real DEFAULT_MODEL (src/lib/models.ts), so
+          # the gate tests exactly what every account that never chose a model
+          # gets; tests/production-smoke.test.ts fails if the two drift. It was
+          # qwen3.6-flash, which shares the default's provider account but is not
+          # the default, so "the default works" was inferred, never observed. An
+          # account fault on it is still skipped with a warning (the release is
+          # not at fault), and the app's provider-health alert mails the operator
+          # because the lab serves a default model. All three are minPlan FREE,
+          # so none of them depends on the smoke account's plan.
+          SMOKE_MODEL="qwen:qwen3.8-flash,google:gemini-3.5-flash-lite,openai:gpt-5.4-mini"
           # Run the smoke implementation from the exact immutable release that
           # was just activated. ~/juno is the long-lived checkout and can still
           # contain an older smoke contract after a deploy.

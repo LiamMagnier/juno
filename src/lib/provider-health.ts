@@ -2,16 +2,24 @@ import "server-only";
 import { alertOperator } from "@/lib/alerts";
 import { classifyProviderError } from "@/lib/provider-error";
 import {
+  defaultModelProviders,
   healthTransition,
   isHealthStale,
+  liveFaultTunables,
+  liveFaultVerdict,
   nextHealthState,
+  seedSuspects,
+  seededState,
+  type LiveFault,
+  type OutcomeRow,
   type ProbeOutcome,
   type ProviderHealthState,
 } from "@/lib/provider-health-policy";
-import { MODELS, type ModelInfo } from "@/lib/models";
+import { DEFAULT_MODEL, FREE_DEFAULT_MODEL, MODELS, type ModelInfo } from "@/lib/models";
 import { probeRequestFor } from "@/lib/model-capability-probe";
 import {
   PROVIDERS,
+  PROVIDER_LIST,
   configuredProviders,
   providerApiKey,
   type Provider,
@@ -40,12 +48,20 @@ import {
  *  - **Fail open.** A provider that has never been probed counts as healthy.
  *    Being wrong in that direction shows a model that errors; being wrong the
  *    other way hides a working catalog.
- *  - **Only account faults count.** 429s and 5xx are normal provider weather;
- *    treating them as unhealthy would make the model picker flap during an
- *    ordinary overload. Only auth/billing — the classes an operator must fix —
- *    mark a provider down.
+ *  - **Only account faults count, from a probe.** 429s and 5xx are normal
+ *    provider weather; treating them as unhealthy would make the model picker
+ *    flap during an ordinary overload. Only auth/billing — the classes an
+ *    operator must fix — mark a provider down on a probe.
+ *  - **Real turns are evidence too** (`noteLiveProviderFault`). A chat, private
+ *    chat, Work or background turn that fails on the lab's account marks it
+ *    down at once, and server errors that repeat on real traffic hold it down
+ *    until the next probe. The probe still owns recovery.
  *
- * State is per-process and in memory.
+ * State is per-process and in memory. A restart seeds it from recent failed
+ * turns in RoutingOutcome (`seedProviderHealthFromOutcomes`, called at boot),
+ * so a deploy does not forget a lab that is down. Known limit: a fault seen
+ * by the Work runner or a sweeper lives in that process only; the web process
+ * learns of it from its own next turn or probe.
  *
  * Known limitation: the probe is a chat completion, so a provider with no
  * curated chat model — an image/video-only one such as seedance — cannot be
@@ -150,6 +166,16 @@ async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promis
   }
 }
 
+/** Recent server errors per lab from real turns, for the repeated-capacity rule. */
+const capacityFaults = new Map<Provider, number[]>();
+
+/**
+ * The labs whose fault is an incident: every account that never chose a model
+ * starts on DEFAULT_MODEL (paid) or FREE_DEFAULT_MODEL (Free), so when one of
+ * these labs is down, untouched accounts are failing.
+ */
+const DEFAULT_LABS = defaultModelProviders([DEFAULT_MODEL, FREE_DEFAULT_MODEL]);
+
 function record(provider: Provider, next: ProviderHealth): void {
   const previous = health.get(provider);
   health.set(provider, next);
@@ -158,30 +184,38 @@ function record(provider: Provider, next: ProviderHealth): void {
   if (transition === null) return;
 
   if (transition === "down") {
-    // An account with no credit left is not mailed about, only logged.
+    // Mailed only when the lab serves a default model.
     //
-    // It is a real condition and the catalog does hide the provider, but it is
-    // not an incident: nobody can act on it except by topping the account up,
-    // which the person receiving the mail already knows. It also persists — a
-    // dry account fails every probe for as long as it stays dry — and the mail
-    // dedupe is per-process and in memory, so every deploy resets the window and
-    // sends the same message again. The result was a mailbox full of "this API
-    // has no credit" for a fact the owner learned the first time.
+    // Any other lab out of credit is logged, not mailed: nobody can act on it
+    // except by topping the account up, it persists for as long as the account
+    // stays dry, and the old per-process dedupe mailed the same fact after
+    // every deploy. A default lab is different. On 2026-10-26 the paid
+    // default's lab ran out of credit and nothing told anyone: every account
+    // that never chose a model was failing, and only the deploy smoke noticed.
+    // The mail is still deduplicated (alerts.ts: one per kind:key per hour per
+    // process), and a restart does not repeat it — the boot seed never alerts.
     const isFunding = next.failure === "billing";
+    const servesDefault = DEFAULT_LABS.has(provider);
+    const label = PROVIDERS[provider].label;
     alertOperator({
       kind: "provider_unhealthy",
       key: provider,
-      severity: isFunding ? "warn" : "critical",
-      mail: false,
-      title: isFunding
-        ? `${PROVIDERS[provider].label} has no credit left`
-        : `${PROVIDERS[provider].label} cannot serve requests`,
+      severity: isFunding && !servesDefault ? "warn" : "critical",
+      mail: servesDefault,
+      title: servesDefault
+        ? `${label} is down and serves the default model: accounts that never chose a model are failing`
+        : isFunding
+          ? `${label} has no credit left`
+          : `${label} cannot serve requests`,
       detail: {
         provider,
         failure: next.failure,
         detail: next.detail,
+        source: next.source ?? "probe",
+        defaultModels: servesDefault ? [DEFAULT_MODEL, FREE_DEFAULT_MODEL].filter((id) => id.startsWith(`${provider}:`)) : [],
         docs: PROVIDERS[provider].docsUrl,
-        effect: "Its models are hidden from the catalog until it recovers.",
+        effect:
+          "Its models stay listed but are marked unavailable. Chat's Auto and the background utility jobs (titles, memory, follow-ups) avoid it, a new web chat whose default it serves starts on Auto, and a turn that explicitly chose it fails with a neutral message (the web and Mac error cards offer one other model as a one-click choice). The probe marks it healthy again.",
       },
     });
   } else {
@@ -205,7 +239,103 @@ async function refresh(provider: Provider, signal?: AbortSignal): Promise<void> 
     const { class: klass, status, raw } = classifyProviderError(err);
     outcome = { ok: false, class: klass, status, raw };
   }
-  record(provider, nextHealthState(provider, health.get(provider), outcome, Date.now()));
+  record(provider, nextHealthState(provider, health.get(provider), outcome, Date.now(), liveFaultTunables().recheckMs));
+}
+
+/** Where a live fault was seen, for the log and the alert. */
+export type LiveFaultSource = "chat" | "private_chat" | "work" | "background";
+
+function isKnownProvider(value: string): value is Provider {
+  return (PROVIDER_LIST as string[]).includes(value);
+}
+
+/**
+ * A real turn failed at the provider: fold it into health now.
+ *
+ * Takes the error itself (classified here, with the chat classifier) or an
+ * already-classified fault (the Work runtime classifies on its own, see
+ * `classForWorkFailure`). Never throws and never does I/O beyond the alert it
+ * may raise: it runs inside a turn's error path.
+ *
+ * The rules are `liveFaultVerdict`'s: an account fault with an HTTP status
+ * marks the lab down at once; server errors count only when they repeat;
+ * nothing here marks a lab healthy. The next turn — and Auto — then sees the
+ * lab as down within the same process, instead of after the next catalog
+ * load's probe.
+ */
+export function noteLiveProviderFault(provider: string, fault: unknown, source: LiveFaultSource): void {
+  try {
+    if (!isKnownProvider(provider)) return;
+    const classified: LiveFault =
+      fault && typeof fault === "object" && "class" in fault && typeof (fault as LiveFault).class === "string" && "raw" in fault
+        ? (fault as LiveFault)
+        : classifyProviderError(fault);
+    const now = Date.now();
+    const verdict = liveFaultVerdict({
+      provider,
+      previous: health.get(provider),
+      fault: classified,
+      recentCapacity: capacityFaults.get(provider) ?? [],
+      now,
+      tunables: liveFaultTunables(),
+    });
+    if (verdict.recentCapacity.length > 0) capacityFaults.set(provider, verdict.recentCapacity);
+    else capacityFaults.delete(provider);
+    if (!verdict.next) return;
+    console.warn(
+      `[provider-health] live ${source} fault marks ${provider} down: ${verdict.next.failure ?? "unknown"} ${verdict.next.detail ?? ""}`.slice(0, 500),
+    );
+    record(provider, verdict.next);
+  } catch (err) {
+    // Health bookkeeping must never be the reason a turn's error path fails.
+    console.error("[provider-health] live fault not recorded", {
+      provider,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * At boot: hold down the labs that were failing just before this process
+ * started, and probe them now.
+ *
+ * Reads RoutingOutcome (content-free; written for failed saved-chat turns
+ * too) for the last `PROVIDER_HEALTH_SEED_WINDOW_MINUTES`. A suspect is held
+ * down only until its probe answers, and a seed never alerts, so a deploy
+ * during an outage neither forgets the lab nor mails about it a second time.
+ * Never throws; returns the providers it seeded.
+ */
+export async function seedProviderHealthFromOutcomes(now: number = Date.now()): Promise<Provider[]> {
+  try {
+    const tunables = liveFaultTunables();
+    const { prisma } = await import("@/lib/prisma");
+    const rows: OutcomeRow[] = await prisma.routingOutcome.findMany({
+      where: { createdAt: { gte: new Date(now - tunables.seedWindowMs) } },
+      select: { provider: true, completionState: true, finishReason: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 2_000,
+    });
+    const configured = new Set(configuredProviders());
+    const seeded: Provider[] = [];
+    for (const suspect of seedSuspects(rows, now, tunables)) {
+      const provider = suspect.provider;
+      if (!isKnownProvider(provider) || !configured.has(provider)) continue;
+      // A verdict this process already holds (a probe that beat the seed) wins.
+      if (health.has(provider)) continue;
+      record(provider, seededState(provider, suspect, now));
+      seeded.push(provider);
+      void startRefresh(provider);
+    }
+    if (seeded.length > 0) {
+      console.warn(`[provider-health] seeded from recent failed turns, probing now: ${seeded.join(", ")}`);
+    }
+    return seeded;
+  } catch (err) {
+    console.error("[provider-health] boot seed skipped", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
 }
 
 function startRefresh(provider: Provider, signal?: AbortSignal): Promise<void> {
@@ -286,5 +416,6 @@ export async function probeAllProviders(options: {
 /** Test seam. */
 export function __setProviderHealthForTests(entries: ProviderHealth[]): void {
   health.clear();
+  capacityFaults.clear();
   for (const e of entries) health.set(e.provider, e);
 }

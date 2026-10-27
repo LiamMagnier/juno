@@ -40,8 +40,9 @@ export interface NormalizedProviderError {
   retryable: boolean;
   /**
    * True when the fault is with *Juno's* provider account rather than with the
-   * user's request. They are still shown honestly to the customer, but without
-   * leaking credentials, account identifiers, or a raw provider response.
+   * user's request. The customer reads that the model is temporarily
+   * unavailable — never the account's funding or key state, credentials,
+   * account identifiers, or a raw provider response.
    */
   accountFault: boolean;
   /** Safe to render to a customer. */
@@ -245,11 +246,32 @@ export function normalizeProviderError(err: unknown, subject?: ErrorSubject): No
 
   let userMessage: string;
   switch (klass) {
+    /*
+     * ONE NEUTRAL SENTENCE FOR BOTH ACCOUNT FAULTS.
+     *
+     * These were two precise sentences — "its API connection is not configured
+     * correctly" and "its API credits or provider quota are exhausted". Both
+     * are about the deployment's own provider account, which the reader cannot
+     * fix and should not be told about: the second announced the platform's
+     * funding state to every paid account on 2026-10-26. The reader needs to
+     * know two things, that this model will not answer now and what to do
+     * instead, and the error card now offers the alternative as one click.
+     * The precise class still reaches the operator (`operatorMessage`, the
+     * `[provider] account fault` log line and the health alert) and the
+     * client (`errorClass` on the error frame).
+     *
+     * Every key this module classifies is the platform's: chat never runs on
+     * a person's own key (Code v2's own-key engine reports its failures
+     * itself), so there is no own-key case here to keep precise.
+     *
+     * Distinct from `capacity`'s sentence on purpose: the release smoke
+     * (scripts/production-smoke.mjs, PROVIDER_ACCOUNT_FAILURE) still tells an
+     * account fault from a release fault by the copy when a frame has no
+     * `errorClass`.
+     */
     case "auth":
-      userMessage = `${who} cannot be used right now because its API connection is not configured correctly. Choose another model.`;
-      break;
     case "billing":
-      userMessage = `${who} cannot respond because its API credits or provider quota are exhausted. Choose another model while service is restored.`;
+      userMessage = `${who} is temporarily unavailable. Choose another model, or try again later.`;
       break;
     case "rate_limit":
       /*

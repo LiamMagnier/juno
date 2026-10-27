@@ -24,6 +24,7 @@ import { recordAgentEvent, startAgentTask, type AgentActor } from "@/lib/agents/
 import { agentWorkTarget } from "@/lib/agents/domain";
 import { WORK_TARGETS, type WorkTarget } from "@/lib/work/domain";
 import { isRetryLaterRefusal } from "@/lib/work/executor-presence";
+import { PARKED_GOAL_STEP_EXPIRED_DETAIL } from "@/lib/work/store";
 import {
   GOAL_ACTING_EVENT_KINDS,
   GOAL_ADVANCE_LEASE_MS,
@@ -128,7 +129,10 @@ async function readTasks(userId: string, goalId: string): Promise<{ tasks: GoalT
       goalStepKey: true,
       status: true,
       createdAt: true,
-      runs: { select: { id: true, attempt: true, costMicroUsd: true }, orderBy: { attempt: "desc" } },
+      runs: {
+        select: { id: true, attempt: true, costMicroUsd: true, status: true, pauseReason: true, terminalDetail: true },
+        orderBy: { attempt: "desc" },
+      },
     },
     orderBy: { createdAt: "asc" },
     take: 100,
@@ -154,6 +158,10 @@ async function readTasks(userId: string, goalId: string): Promise<{ tasks: GoalT
       acted: current ? acted.has(current.id) : false,
       costMicroUsd: current?.costMicroUsd ?? 0,
       createdAt: session.createdAt,
+      // Parked or paused, and by whom; and whether the run ended because it
+      // waited out its answer (src/lib/work/store.ts `expireParkedGoalSteps`).
+      pauseReason: current?.status === "paused" ? current.pauseReason : null,
+      waitedOut: current?.status === "interrupted" && current.terminalDetail === PARKED_GOAL_STEP_EXPIRED_DETAIL,
     };
   });
   return { tasks, spent };

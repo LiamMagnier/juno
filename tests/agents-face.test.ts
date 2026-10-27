@@ -2435,6 +2435,30 @@ test("a preview switching between waiting and blocked at any moment never remove
       }
     }
   }
+  // …and a ball still on its way out on a face coming home from a turn (waiting → thinking → waiting within a
+  // quarter second) shrinks away before the ball pops again: grown back at once, the notch bit the near eye.
+  for (const px of [48, 160]) {
+    const pxR = pxPerR(px, sizeClass(px));
+    for (const shape of AGENT_SHAPES) {
+      for (const id of [107, 101]) {
+        const s = spec(shape, px, "tall");
+        const ctx = faceCtx(s, "none", 5, false, id);
+        for (const d of [0.1, 0.2]) {
+          const wait: Segment = { state: "waiting", at: 10, snap: snapshot({ state: "idle", at: -60, snap: null }, 10, ctx) };
+          const think: Segment = { state: "thinking", at: 11, snap: snapshot(wait, 11, ctx) };
+          const back: Segment = { state: "waiting", at: 11 + d, snap: snapshot(think, 11 + d, ctx) };
+          switches++;
+          for (let i = 0; i < 240; i++) {
+            const gap = notchClearance(drawFace(s, poseAt(back, 11 + d + i / 240, ctx), NO_EXTRAS, ids)) * pxR;
+            if (gap < 0.75) {
+              fails.push(`${px}px ${shape}/tall side ${ctx.side}, waiting → thinking → waiting ${(d * 1000).toFixed(0)} ms: ${gap.toFixed(2)} px round the notch at +${((1000 * i) / 240).toFixed(0)} ms`);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
   assert.ok(switches > 600, `${switches} switches`);
   assert.equal(fails.length, 0, `${fails.length} cuts:\n${fails.slice(0, 10).join("\n")}`);
 });

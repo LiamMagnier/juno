@@ -86,6 +86,7 @@ import { sweepAgentComputers } from "@/lib/computer/sweep";
 import { loadAgentRunPersona } from "@/lib/agents/run-context";
 import { recordExecutorHeartbeat } from "@/lib/work/executor-heartbeat";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
+import { attendedWaitMs, loadParkedDecisions, type ParkedDecisions } from "@/lib/work/park-resume";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
@@ -99,6 +100,8 @@ import {
   type Provider,
 } from "@/lib/providers";
 import { workModelOptions } from "@/lib/work/models";
+import { noteLiveProviderFault } from "@/lib/provider-health";
+import { classForWorkFailure } from "@/lib/provider-health-policy";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
 import { workExecDeps } from "@/lib/exec/work";
@@ -183,10 +186,13 @@ const LEASE_RENEW_MS = Math.floor(RUN_LEASE_MS / 3);
  * outstanding before checkpointing and letting the run go.
  *
  * Long enough that a user who is watching answers in place — reattaching costs
- * a cold start and the user sees a stall — and short enough that a question
- * asked at 17:59 does not hold a worker overnight.
+ * a cold start and the user sees a stall — and short enough not to hold one of
+ * this worker's few slots for everybody else. An answer that arrives after the
+ * run lets go puts it back in the queue (`requeueParkedRun`), so the wait no
+ * longer has to cover the person; a minute by default, `WORK_ATTENDED_WAIT_MS`
+ * to tune (src/lib/work/park-resume.ts, owner to confirm).
  */
-const ATTENDED_WAIT_MS = 4 * 60_000;
+const ATTENDED_WAIT_MS = attendedWaitMs();
 /** How often to look for the answer while attached. */
 const ANSWER_POLL_MS = 1_000;
 /**
@@ -515,9 +521,33 @@ function steerable(provider: WorkProvider, steering: Steering, runId: string): W
       if (instructions.length > 0) {
         log("delivered steering", { runId, count: instructions.length });
       }
-      yield* provider.stream(request);
+      try {
+        yield* provider.stream(request);
+      } catch (error) {
+        noteWorkProviderFault(provider.id, error);
+        throw error;
+      }
     },
   };
+}
+
+/**
+ * The Work half of the live provider-fault feed (provider-health.ts,
+ * `noteLiveProviderFault`): a model call that failed on the lab's account, or
+ * kept meeting its server errors, marks the lab down in this process and —
+ * when the lab serves a default model — mails the operator, exactly as a
+ * failed chat turn does. Retries inside `runAgentLoop` each pass through here,
+ * which is what the repeated-capacity rule counts. Only agent-core's own
+ * classified errors are fed (`ProviderCallError`, read by shape because the
+ * runtime is a separate package); anything else says nothing about the lab.
+ */
+function noteWorkProviderFault(provider: string, error: unknown): void {
+  const failure = error as { name?: unknown; kind?: unknown; status?: unknown; message?: unknown } | null;
+  if (!failure || failure.name !== "ProviderCallError" || typeof failure.kind !== "string") return;
+  const status = typeof failure.status === "number" ? failure.status : null;
+  const klass = classForWorkFailure(failure.kind, status);
+  if (!klass) return;
+  noteLiveProviderFault(provider, { class: klass, status, raw: failure.kind }, "work");
 }
 
 // ---------------------------------------------------------------------------
@@ -3136,6 +3166,12 @@ function runModelChoice(canonicalModelId: string): RunModelChoice {
  */
 async function drive(runId: string, userId: string): Promise<void> {
   let seq = 0;
+  // This drive's own part of every event key. `seq` restarts at zero on each
+  // drive, and a run parked and requeued is often driven again by the same
+  // worker, so `runId:executor:seq` alone repeated the first drive's keys and
+  // `appendEvents` dropped the resumed run's opening events as duplicates —
+  // its `run_started`, and as many events after it as the first drive wrote.
+  const driveKey = randomUUID().replace(/-/g, "");
   // Whether the transcript already has a terminal event for this run.
   //
   // The session emits its own `run_finished` — carrying the reason, the
@@ -3182,7 +3218,7 @@ async function drive(runId: string, userId: string): Promise<void> {
   ): Promise<void> => {
     if (kind === "run_finished") emittedRunFinished = true;
     seq += 1;
-    const key = `${runId}:${EXECUTOR_ID}:${seq}`;
+    const key = `${runId}:${EXECUTOR_ID}:${driveKey}:${seq}`;
     const queued = appendTail.then(() =>
       appendEvents({
         runId,
@@ -3765,6 +3801,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     if (!sessionRef.current) throw new Error("The Work session was used before it was created.");
     return sessionRef.current;
   };
+  // What the person said while this run was parked, usable once each; filled
+  // after the session is restored (see `loadParkedDecisions` below).
+  const parked: { decisions: ParkedDecisions | null } = { decisions: null };
+  // Approval events wait for their row: the runtime announces a request before
+  // `requestApproval` creates the `WorkApproval`, and a card without the row's
+  // id and digest is one no browser can answer (the decision route looks the
+  // row up by id and checks the digest it stored). Keyed by the runtime's
+  // request id, which `approval_resolved` carries back as `requestId`.
+  const heldApprovalEvents = new Map<string, { payload: Prisma.InputJsonValue; agentId: string | null }>();
+  const approvalRowByRequest = new Map<string, string>();
   // A model with no catalog price cannot be billed, and a ceiling that cannot
   // be billed against cannot stop anything.
   //
@@ -3901,9 +3947,20 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         // — it is a column every client is already served — so it is lifted
         // out here and the payload goes on carrying it too, harmlessly.
         const agentId = (event as { agentId?: unknown }).agentId;
+        // An approval request is held until `requestApproval` has its row
+        // (see `heldApprovalEvents`); its resolution names that row, so the
+        // card a browser drew from the request is the card it closes.
+        if (event.kind === "approval_requested") {
+          heldApprovalEvents.set(event.request.id, {
+            payload: event as unknown as Prisma.InputJsonValue,
+            agentId: typeof agentId === "string" ? agentId : null,
+          });
+          return;
+        }
+        const approvalId = event.kind === "approval_resolved" ? approvalRowByRequest.get(event.requestId) : undefined;
         void input.emit(
           event.kind,
-          event as unknown as Prisma.InputJsonValue,
+          (approvalId === undefined ? event : { ...event, approvalId }) as unknown as Prisma.InputJsonValue,
           typeof agentId === "string" ? agentId : null
         );
       },
@@ -3950,6 +4007,11 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         });
       },
       askQuestion: async (question) => {
+        // Answered already: the same question id (the plan review is asked
+        // under a fixed one), or the same question the run parked on and the
+        // person answered while it was set aside. The person answers once.
+        const recorded = (await pollAnswer(input.runId, question.id)) ?? parked.decisions?.takeAnswer(question.question) ?? null;
+        if (recorded !== null) return recorded;
         const waiting = await prisma.workRun.updateMany({
           where: {
             id: input.runId,
@@ -3982,10 +4044,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         );
         if (!waited.answered) {
           // Release rather than block. The run is checkpointed by the runtime's
-          // own pause path, and whichever worker is free picks it up once the
-          // answer lands.
+          // own pause path and parked; the answer route puts it back in the
+          // queue when the answer lands (`requeueParkedRun`), whichever worker
+          // is free picks it up, and the restored run is handed the answer
+          // (`loadParkedDecisions`). `WorkRunParked` tells the runtime this is
+          // a park, not a failure.
           activeSession().pause("Waiting for an answer.");
-          throw new Error("paused-waiting-for-answer");
+          throw new runtime.WorkRunParked("paused-waiting-for-answer");
         }
         const resumed = await prisma.workRun.updateMany({
           where: {
@@ -3997,9 +4062,37 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           data: { status: "running" },
         });
         if (resumed.count !== 1) throw new Error("The cloud executor lost this run's lease after the answer arrived.");
+        // Running again, so the session stops counting as "needs you".
+        await setSessionAttention({
+          sessionId: run.sessionId,
+          userId: input.userId,
+          runId: input.runId,
+          executorId: EXECUTOR_ID,
+          status: "running",
+        });
         return waited.value;
       },
       requestApproval: async (request) => {
+        // The person decided this exact call while the run was parked on it.
+        // Used once, and only as `judgeRecordedApproval` allows: the digest
+        // recomputed from the action about to run must equal the stored one,
+        // the policy must be the one it was given under, and the stored expiry
+        // is the expiry. Anything else asks again, below.
+        const recorded = parked.decisions?.takeApproval(request, run.permissionPolicy ?? {}, new Date()) ?? null;
+        if (recorded?.use) {
+          heldApprovalEvents.delete(request.id);
+          approvalRowByRequest.set(request.id, recorded.approvalId);
+          await recordWorkAudit({
+            userId: input.userId,
+            sessionId: run.sessionId,
+            runId: input.runId,
+            kind: "approval_decided",
+            detail: { approvalId: recorded.approvalId, action: request.action, decision: recorded.decision, outcome: "applied_after_park" },
+            actor: "cloud_runner",
+          });
+          return recorded.decision;
+        }
+        if (recorded) log("asking again: the decision given while parked does not cover this call", { runId: input.runId, approvalId: recorded.approvalId, reason: recorded.reason });
         const waiting = await prisma.workRun.updateMany({
           where: {
             id: input.runId,
@@ -4052,6 +4145,25 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
             expiresAt: new Date(request.expiresAt),
           },
         });
+        // The held request, now naming its row and the digest the row stores:
+        // what a browser posts back to the decision route, which looks the row
+        // up by that id and checks that digest.
+        approvalRowByRequest.set(request.id, approval.id);
+        const held = heldApprovalEvents.get(request.id);
+        heldApprovalEvents.delete(request.id);
+        if (held) {
+          const event = held.payload as Record<string, unknown>;
+          const announced = (event.request ?? {}) as Record<string, unknown>;
+          void input.emit(
+            "approval_requested",
+            {
+              ...event,
+              approvalId: approval.id,
+              request: { ...announced, approvalId: approval.id, actionDigest: approval.actionDigest },
+            } as Prisma.InputJsonValue,
+            held.agentId
+          );
+        }
         await setSessionAttention({
           sessionId: run.sessionId,
           userId: input.userId,
@@ -4071,8 +4183,10 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         }, ATTENDED_WAIT_MS);
 
         if (!waited.answered) {
+          // Parked, as for a question: the decision route requeues the run and
+          // the restored run is given the decision (`loadParkedDecisions`).
           activeSession().pause("Waiting for an approval.");
-          throw new Error("paused-waiting-for-approval");
+          throw new runtime.WorkRunParked("paused-waiting-for-approval");
         }
 
         // Recomputed here, not trusted from the row. The approval travelled to
@@ -4099,6 +4213,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           data: { status: "running" },
         });
         if (resumed.count !== 1) throw new Error("The cloud executor lost this run's lease after approval.");
+        await setSessionAttention({
+          sessionId: run.sessionId,
+          userId: input.userId,
+          runId: input.runId,
+          executorId: EXECUTOR_ID,
+          status: "running",
+        });
 
         if (!verdict.ok) {
           await recordWorkAudit({
@@ -4129,6 +4250,31 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     ? runtime.WorkAgentSession.restore(checkpoint, sessionOptions)
     : new runtime.WorkAgentSession(sessionOptions);
   sessionRef.current = session;
+
+  // A run parked on a question or an approval comes back here once the person
+  // has answered (the answer and decision routes requeue it). The call it
+  // parked on is given what they said, so the model reads the answer as that
+  // call's result instead of "Stopped before this finished." and asking again:
+  // the person answers once. An approval is only told it was approved; the
+  // tool call it then repeats passes the gate on the recorded decision only
+  // for the same digest, policy and unexpired decision (`requestApproval`).
+  if (checkpoint) {
+    const parkedCalls = runtime.WorkAgentSession.parkedToolCalls(checkpoint);
+    if (parkedCalls.length > 0) {
+      const loaded = await loadParkedDecisions({
+        runId: input.runId,
+        userId: input.userId,
+        calls: parkedCalls,
+        askToolName: runtime.WORK_ASK_TOOL_NAME,
+        policy: run.permissionPolicy ?? {},
+        now: new Date(),
+      });
+      const settled = session.settleParkedCalls(loaded.resolutions);
+      loaded.decisions.delivered(settled);
+      parked.decisions = loaded.decisions;
+      if (settled.length > 0) log("resumed with what the person said while it was parked", { runId: input.runId, settled: settled.length });
+    }
+  }
 
   // The tools were built before the session, because its constructor takes
   // them; this is where the two are joined so a citation, an artifact or an
@@ -4280,11 +4426,20 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.startsWith("paused-waiting-for")) {
-      // Not a failure. The run is parked and answerable; the next tick that
-      // sees an answer will resume it.
+      // Not a failure. The runtime catches a park inside the session
+      // (`WorkRunParked`) and returns `paused`, so this is only reached by a
+      // park that escaped it. It is parked the same way: answerable, and put
+      // back in the queue by the answer or decision that arrives. This branch
+      // used to return a terminal "interrupted" while saying it would
+      // continue, which it then could not.
+      await checkpointWrite;
+      if (!lastCheckpointWriteSucceeded) {
+        return { reason: "failed", detail: `${PRODUCT_NAME} could not safely save this paused run. Please try again.` };
+      }
       return {
         reason: "interrupted",
         detail: "Released while waiting for you. It will continue once you answer.",
+        paused: true,
       };
     }
     throw error;

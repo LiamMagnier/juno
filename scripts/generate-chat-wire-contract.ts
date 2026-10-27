@@ -56,6 +56,15 @@ interface SwiftEvidence extends SwiftSource {
 }
 
 interface StatusFile {
+  /**
+   * The wire's own semver. Minor moves on an additive change (a field or a
+   * frame an older client can ignore), major only with a new contract file.
+   * Independent of the native API contract version (x-juno-contract-version),
+   * which installed apps compare for equality.
+   */
+  version: string;
+  /** One line per version: what changed. */
+  changes: Record<string, string>;
   fields: Record<string, Status | Entry>;
   nativeOnly: Record<string, { note: string }>;
   swift: {
@@ -68,6 +77,13 @@ interface StatusFile {
 
 const statusFile = JSON.parse(readFileSync(resolve(root, STATUS_FILE), "utf8")) as StatusFile;
 const errors: string[] = [];
+
+// The version: semver, major 1 for this v1 file, and every version noted.
+if (!/^1\.\d+\.\d+$/.test(statusFile.version ?? "")) {
+  errors.push(`${STATUS_FILE}: "version" must be 1.<minor>.<patch> for the v1 wire, not ${JSON.stringify(statusFile.version)}`);
+} else if (!statusFile.changes?.[statusFile.version]) {
+  errors.push(`${STATUS_FILE}: "changes" has no line for ${statusFile.version}; say what changed`);
+}
 
 const entryOf = (path: string): Entry | null => {
   const raw = statusFile.fields[path];
@@ -307,6 +323,8 @@ const contract = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://juno.app/contracts/chat/juno-chat-wire-v1.schema.json",
   title: "Juno chat wire",
+  "x-wire-version": statusFile.version,
+  "x-wire-changes": statusFile.changes ?? {},
   description:
     "POST /api/chat: the request body (ChatRequest) and the SSE frames the response streams (StreamEvent, one JSON object per `data:` line; GET /api/chat/stream/{generationId} replays the same frames). Generated from src/lib/chat/request.ts (chatBodySchema) and src/types/chat.ts (StreamChunk), with each field's `x-native` status from contracts/chat/juno-chat-wire-v1.status.json. Do not edit by hand; run `npm run native:wire`.",
   "x-native-legend": {

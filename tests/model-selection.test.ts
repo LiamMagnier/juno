@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  SUGGEST_ALTERNATIVE_FOR,
   cheapestEligible,
   selectModel,
+  suggestAlternativeModel,
   type SelectableModel,
 } from "@/lib/model-selection";
 
@@ -241,4 +243,64 @@ test("but choosing a training tier on purpose still works", () => {
   assert.equal(selection.model?.id, "training");
   assert.equal(selection.reason, "requested");
   assert.equal(selection.warning, null);
+});
+
+// ---------------------------------------------------------------------------
+// suggestAlternativeModel: the "Answer with <model>" offer on a failed turn
+// ---------------------------------------------------------------------------
+
+const cheapSibling: SelectableModel = {
+  id: "cheap-2", provider: "deepseek", name: "Cheap Two", cost: 0.5, modality: "chat",
+};
+const trainer: SelectableModel = {
+  id: "trainer", provider: "meta", name: "Contributor", cost: 0, modality: "chat", trainsOnPrompts: true,
+};
+
+test("the offer is the cheapest eligible model on a DIFFERENT, healthy lab that does not train on prompts", () => {
+  const suggestion = suggestAlternativeModel({
+    failed: cheap,
+    errorClass: "billing",
+    catalogue: [frontier, mid, cheap, cheapSibling, trainer],
+    isEligible: allEligible,
+    isProviderHealthy: allHealthy,
+  });
+  // Not cheap-2 (same lab as the failure), not the training tier (cheapest of all).
+  assert.equal(suggestion?.id, "mid");
+});
+
+test("the offer skips a lab that is down and anything the reader could not have picked", () => {
+  const suggestion = suggestAlternativeModel({
+    failed: cheap,
+    errorClass: "auth",
+    catalogue: CATALOGUE,
+    isEligible: (m) => m.id !== "frontier",
+    isProviderHealthy: (provider) => provider !== "openai",
+  });
+  assert.equal(suggestion, null, "mid's lab is down, frontier is not in the plan, cheap is the failure");
+});
+
+test("an offer is made only where another lab plausibly answers", () => {
+  for (const errorClass of SUGGEST_ALTERNATIVE_FOR) {
+    const suggestion = suggestAlternativeModel({
+      failed: cheap, errorClass, catalogue: CATALOGUE, isEligible: allEligible, isProviderHealthy: allHealthy,
+    });
+    assert.equal(suggestion?.id, "mid", `${errorClass} gets an offer`);
+  }
+  for (const errorClass of ["content_filter", "context", "invalid_request", "network", "unknown"]) {
+    const suggestion = suggestAlternativeModel({
+      failed: cheap, errorClass, catalogue: CATALOGUE, isEligible: allEligible, isProviderHealthy: allHealthy,
+    });
+    assert.equal(suggestion, null, `${errorClass} gets none: another model is not the fix`);
+  }
+});
+
+test("the offer never changes what an explicit choice routes to", () => {
+  // The suggestion is computed AFTER the turn failed on the chosen model; the
+  // selection for the next turn is untouched by it.
+  const result = selectModel({
+    requestedId: "cheap", requested: cheap, catalogue: CATALOGUE,
+    isEligible: allEligible, isProviderHealthy: (provider) => provider !== "deepseek",
+  });
+  assert.equal(result.model?.id, "cheap");
+  assert.equal(result.reason, "requested");
 });

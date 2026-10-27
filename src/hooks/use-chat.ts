@@ -821,6 +821,17 @@ export function useChat(opts: UseChatOptions) {
                         ...(chunk.preservePartial && (m.content || m.reasoning)
                           ? { errorMessage: chunk.message }
                           : { content: chunk.message, errorMessage: chunk.message }),
+                        // Chat wire 1.1: what can be done about it, for the
+                        // error card's "Answer with <model>" (message-item.tsx).
+                        recovery: chunk.errorClass
+                          ? {
+                              errorClass: chunk.errorClass,
+                              retryable: chunk.retryable,
+                              retryAfterSeconds: chunk.retryAfterSeconds,
+                              suggestedModelId: chunk.suggestedModelId,
+                              suggestedModelName: chunk.suggestedModelName,
+                            }
+                          : null,
                       }
                     : m
                 )

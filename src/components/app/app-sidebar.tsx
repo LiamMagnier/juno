@@ -264,8 +264,18 @@ type AttentionItem = {
   conversationId: string | null;
 };
 
+/**
+ * Whether a row in Needs you is one the person has already answered: the run
+ * was parked, their answer or decision put it back in the queue, and it stays
+ * here, as resuming, until an executor picks it up (`requeueParkedRun`).
+ */
+function isResuming(status: string | undefined): boolean {
+  return status === "queued" || status === "preparing";
+}
+
 /** A run's waiting status, in the words Orbit uses for it. */
 function askWords(status: string | undefined): string {
+  if (isResuming(status)) return "Resuming";
   if (status === "waiting_approval") return "Needs your approval";
   if (status === "host_offline") return "Waiting for your Mac";
   return AGENT_STATE_NAMES.needsAnswer;
@@ -278,6 +288,7 @@ function askWords(status: string | undefined): string {
  * room for two or three words of the task itself.
  */
 function shortAsk(status: string | undefined): string {
+  if (isResuming(status)) return "Resuming";
   if (status === "waiting_approval") return "Approval";
   if (status === "host_offline") return "Mac offline";
   return "Answer";

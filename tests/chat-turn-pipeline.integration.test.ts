@@ -894,6 +894,148 @@ if (!DB_URL) {
     assert.equal((await rowsSince(model, since)).length, 1, "the drained turn wrote no outcome row");
   });
 
+  // ── Provider faults recover (chat wire 1.1, live health) ──────────────────
+
+  test("a provider account fault: neutral copy, its class, one alternative on another healthy lab, and the lab is down for the next turn and Auto", async () => {
+    const health = await import("@/lib/provider-health");
+    const { getModel } = await import("@/lib/models");
+    const { AUTO_MODEL_ID } = await import("@/lib/auto-model");
+    health.__setProviderHealthForTests([]);
+    // Qwen serves the default model, so its down alert is a mail: to no one here.
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    try {
+      await seedUser();
+      const chosen = "qwen:qwen3.8-flash";
+      const seen: string[] = [];
+      script = async function* (opts) {
+        seen.push(String((opts as { model?: { id?: string } }).model?.id));
+        throw Object.assign(new Error("402 Insufficient Balance"), { status: 402, error: { message: "Insufficient Balance" } });
+      };
+      const first = await chat({
+        message: "Hello?",
+        model: chosen,
+        clientRequestId: `req-${randomUUID()}`,
+        clientMessageId: `msg-${randomUUID()}`,
+      });
+      const error = first.frames.at(-1) as Frame & {
+        message: string;
+        errorClass?: string;
+        retryable?: boolean;
+        suggestedModelId?: string;
+        suggestedModelName?: string;
+        receiptState?: string;
+      };
+      assert.equal(error.type, "error", first.text.slice(-400));
+      assert.equal(error.message, "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.");
+      assert.doesNotMatch(error.message, /credit|balance|quota|key/i, "the platform's funding state is not the reader's business");
+      assert.equal(error.errorClass, "billing");
+      assert.equal(error.retryable, false);
+      assert.equal(error.receiptState, "failed", "the durable metadata still rides the frame");
+      assert.ok(error.suggestedModelId, "an alternative is offered");
+      const suggested = getModel(error.suggestedModelId!);
+      assert.ok(suggested);
+      assert.notEqual(suggested.provider, "qwen", "on a different lab");
+      assert.notEqual(suggested.trainsOnPrompts, true, "never on a lab that trains on prompts");
+      assert.equal(error.suggestedModelName, suggested.name);
+      assert.equal(health.providerHealthy("qwen"), false, "the very next turn sees the lab as down");
+
+      // An explicit choice is a routing contract: the next turn still goes to Qwen.
+      const again = await chat({ message: "Still there?", model: chosen });
+      assert.equal(again.frames.at(-1)?.type, "error");
+      assert.deepEqual(seen, [chosen, chosen], "never substituted, even with the lab known down");
+
+      // Auto routes around it.
+      script = (opts) => {
+        seen.push(String((opts as { model?: { id?: string } }).model?.id));
+        return answer("Auto answered.");
+      };
+      const auto = await chat({ message: "Say hi.", model: AUTO_MODEL_ID });
+      assert.equal(auto.frames.at(-1)?.type, "done", auto.text.slice(-400));
+      assert.notEqual(getModel(seen.at(-1)!)?.provider, "qwen", "Auto avoids a lab a live turn marked down");
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+  });
+
+  test("a private turn's account fault feeds health and carries the same 1.1 fields; an internal error carries none", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    scriptPrivateTurn = true;
+    try {
+      await seedUser();
+      script = async function* () {
+        throw Object.assign(new Error("401 Incorrect API key provided"), { status: 401 });
+      };
+      const failed = await chat({
+        privateMode: true,
+        model: "openai:gpt-6-luna",
+        message: "secret question",
+        privateHistory: [{ role: "USER", content: "secret question" }],
+        webSearch: false,
+      });
+      const error = failed.frames.at(-1) as Frame & { errorClass?: string; suggestedModelId?: string; message: string };
+      assert.equal(error.type, "error", failed.text.slice(-400));
+      assert.equal(error.errorClass, "auth");
+      assert.match(error.message, /is temporarily unavailable\. Choose another model, or try again later\./);
+      assert.equal(health.providerHealthy("openai"), false);
+    } finally {
+      scriptPrivateTurn = false;
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+
+    // A failure that is not the provider's carries only its sentence.
+    await seedUser();
+    script = async function* () {
+      throw new Error("internal: something broke before the provider was reached");
+    };
+    const internal = await chat({ message: "Hello again?" });
+    const plain = internal.frames.at(-1) as Frame & { errorClass?: string };
+    assert.equal(plain.type, "error");
+    assert.equal(health.providerHealthy("qwen"), true, "an error with no HTTP status proves nothing about a lab");
+    assert.equal(plain.errorClass, undefined, "not a provider's answer: no class to be wrong about");
+    assert.equal(plain.suggestedModelId, undefined);
+  });
+
+  test("a restart holds down a lab whose recent turns all failed, from RoutingOutcome, without alerting", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    // "Boot" two hours from now, with the rows minutes before it: the window
+    // then holds only this test's rows, not the failed turns earlier cases
+    // wrote (which would make their labs suspects, and probe them).
+    const now = Date.now() + 2 * 60 * 60_000;
+    // A lab no other case here touches, so these rows are this test's.
+    const provider = "longcat";
+    const rows = [1, 2, 3].map((minutes) => ({
+      routerVersion: 1,
+      auto: false,
+      taskClass: "chat",
+      complexity: "simple",
+      modelId: `${provider}:seed-test`,
+      provider,
+      completionState: "failed",
+      finishReason: "error",
+      createdAt: new Date(now - minutes * 60_000),
+    }));
+    await prisma.routingOutcome.createMany({ data: rows });
+    try {
+      const seeded = await health.seedProviderHealthFromOutcomes(now);
+      assert.deepEqual(seeded, [provider]);
+      assert.equal(health.providerHealthy(provider), false, "held down until a probe looks");
+      const snapshot = health.providerHealthSnapshot().find((entry) => entry.provider === provider);
+      assert.ok(snapshot?.source === "seed" || snapshot?.source === "probe", "a seed, or already its probe's verdict");
+    } finally {
+      await prisma.routingOutcome.deleteMany({ where: { modelId: `${provider}:seed-test` } });
+      health.__setProviderHealthForTests([]);
+    }
+  });
+
   test("nothing left the process", () => {
     assert.deepEqual(outbound.filter((url) => !url.startsWith("http://127.0.0.1")), []);
   });
