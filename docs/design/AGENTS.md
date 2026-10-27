@@ -341,20 +341,25 @@ only). `tests/agents-face.test.ts` holds the promises below.
   **Never the pause glyph.** Two upright, parallel, equal bars side by side
   read as ⏸, never as eyes. Grok's eyes lean about 26° because its head rests
   rolled on a sphere; Juno's calmer rest leans 10 to 13° the same way, and
-  every other pose keeps a floor (`EYE_LEAN`: soft 9°, tall 12°, wide 8°;
+  every other pose keeps a floor (`EYE_LEAN`: soft 9°, tall 16°, wide 8°;
   round is not a bar): where a pose would stand a pair of long cuts upright
   (facing you while it waits, looking down at the work, a pointer across the
   face, the pickers), `drawFace` rolls the pair about its middle until it
   leans the agent's way by at least that (`pairRoll`, a soft floor: a pose
   already leaning past it keeps its own lean). The direction is the agent's
   side (`Pose.eyeLean`, blended, so a new look resting the other way turns it
-  over smoothly). Round cuts keep none (they are not bars). A state whose eyes
+  over smoothly). The tall cut keeps 16°: facing you (waiting, listening,
+  looking down at the work) its two eyes are alike and square to the line
+  between them, so the lean is the only cue left, and at 12° the pair read
+  as ⏸ tipped over (from 44 px no frame has the far eye within 5% of the
+  near one's width, no shear and under 14° of lean). Round cuts keep none
+  (they are not bars). A state whose eyes
   are not a pair of open bars lets it go **on the clock**, never on a
   threshold of the pose: `Pose.leanW` is 0 in done (the happy capsules),
   blocked (the worry leans the eyes apart), paused and a small face thinking
   (shut), 1 elsewhere, and it blends like any field (let go over the entry's
   own ease, 0.35 to 0.5 s, once the lids are half down or the expression has
-  formed; back over 0.3 s, at most about 2° a frame, before the eyes are
+  formed; back over 0.3 s, at most about 2.7° a frame, before the eyes are
   bars again). Released by the smile or the lid instead, the steep start of
   their eases dropped the whole roll in 8 to 30 ms: the pair stood upright
   in a frame or two (11° at 160 px) at the end of every run. Between two
@@ -400,7 +405,9 @@ only). `tests/agents-face.test.ts` holds the promises below.
   a slide, never an eviction. Done lifts the lower lids: each eye becomes a
   squashed capsule about half as thick as it is wide, bowed only a little,
   1.3× wider, its outer end 12° lower (mirrored). At 20 and 28 px it is 1.5×
-  wider, set a little further apart, 1.25 dashes thick and bowed by at
+  wider, set a little further apart, 1.25 dashes thick, never shorter than
+  1.6 times its thickness (a stubbier one fills a 3 × 2 pixel square at 1x,
+  a blob) where the pair has the room, and bowed by 0.3 of its width, at
   least 0.9 px, so done reads from a still
   in the sidebar rather than as two smaller dots. Same family as the cuts,
   never a `^ ^` caret, and always thicker than paused's dashes. Blocked's
@@ -460,7 +467,7 @@ hides behind a blink.
 | `idle` | rest pose; a `live` face blinks (~240 ms, random, 15% doubled) and now and then lets its gaze drift somewhere new (0.7 s, never a snap; a long drift opens with a blink); nothing floats in between | rest pose |
 | `thinking` | large faces turn away, round the back, starting at once and easing out (0.6 s; the eyes are carried off, never flicked: no more than 0.17 R a frame), while the body winds into the middle of three flat dots, so there is no blank beat; the middle one is round (each outline point slides onto the circle at its own angle over the first 62% of the wind-down), so every agent thinks with the same ellipsis, never ●◆● or ●■●, and the turn away still starts from the body's own silhouette. Small faces close their eyes instead (a turn at 28 px is a jump). A wave runs across the dots on the chat's 1.4 s rhythm (from 48 px each agent at its own rate, within ±6%; a face arriving on a page holds its painted dots for a beat of its own, up to one period, before its wave starts, so thinking agents mounted together never pulse as one, even at roster sizes where every wave keeps the chat's exact rhythm). Out of working, the most frequent change in an agent loop, the ring reels into its ball while the head turns away and the ball sinks as the body winds (0.44 s, opaque, never a cut). Coming out, the wave runs on while the dots merge, the body re-inflates over 0.5 s and the face turns back the way it went. Below 48 px the dots span the slot, so a thinking agent keeps the weight of the faces beside it | three dots, middle raised |
 | `working` | one action: an acknowledging blink, then the presence ball pops out on the near half of its ring, which passes under every body, at a point of each copy's own between the ring's right end and just past its front (5° to 125° round; 0.25 s), throws Juno's open ring forward round the body in its own direction of travel (0.35 to 0.95 s), the face goes once round the back the same way (0.45 to 1.45 s; not out of thinking, which is already a turn), and it settles looking down at the work, still turned (10°) and rolled its own way, so its eyes keep their lean and its far eye stays the narrower (looking straight down, a tall cut stood as ⏸ inside its spinning ring). Then the orbit turns at 96°/s, each agent at its own pace (±10%, from its identity, so one agent turns alike in the sidebar and the thread header), the eyes follow its ball as it passes in front (from 48 px), and the gaze looks up every few seconds; blinks come less often than at rest (4.5 to 9 s: focus). The ring is a tilted orbit in `--presence`, fitted under each body so its near half passes under it with its cut-paper gap and never across or through it (an arc under the eyes reads as a mouth); the far half goes behind. Its gap is 38°, about a ball's width either side of the ball: the brand's open ring with its ball terminal. As the ring gets short the gap closes, so a ring being thrown leaves the ball itself and a ring reeling in ends inside it (never a stray dash a gap ahead of the ball). Pixel floors: at 48 px a 1.6 px ring and a 2.6 px ball. Below 48 px: no ring, the ball rides just outside the rim and swings over the lower right (24° to 68°), in every frame, and the eyes keep clear of its notch; in the still it is parked at the upper right (−60°), where the logo's ball terminal sits (a ball held still at the lower right is every chat app's online dot, and the upper left is the needs-you notch's), and a live face arriving off that still rolls it down into its swing as its orbit starts (1.2 s, never a jump). Leaving, the ring reels back into its ball at once (an ease-out over 0.32 s) and the ball sinks into nothing as the last of the ring reels in (0.17 to 0.42 s), opaque throughout, as done puts it away: it never hangs beside the body as a lone, fading dot, and no stub of ring is ever left without its ball (whatever is left of a ring that is reeling in fades as the ball goes under half size; a whole ring never does, so a ball dipping to change its paint never ghosts the ring). **Never in lockstep**: every copy is painted with its ball at the same spot, so on a page load each holds it there for a beat of its own (0 to 2 s, skewed short) and then spins up at a rate of its own (time constant 0.63 to 1.17 s). Faces handed one change in one frame (the roster polls every 10 s, so agents that start within one poll window flip together; routines set for the same time do every day) part too: each acknowledges after a beat of its own (up to 0.45 s, and at least 90 ms clear of any other face's entry on the page; never for a state that needs you, a voice turn or a preview a person drives), so no two blink, pop and spin as one, and a fresh orbit pops at a point of its own and spins up at a rate of its own (0.45 to 2 s). Six agents started by one poll: 9% of pairs orbit within 15° of each other at a like speed 2 s later and 14% at 4 s (was 56% and 35%; six balls placed at random would be 8%) | ring with its ball in its gap, in front at the right (small: the ball parked at the upper right) |
-| `waiting` | leans in, eyes open to you; the needs-you ball pops once into a notch at the upper left (never Grok's upper-right corner), in `--status-needs-you` (the owner's needs-you ember, `--signal`, as in the sidebar and Activity; never `--attention`, which is for warnings only); the notch's air separates it from a coral or amber body; from 48 px the notch is a cut a pixel wide, not a ring of page round a sticker. The ball pops at 0.2 s. Below 48 px a working rim ball sinks first, in 0.18 s, so it is gone before the notch opens and the eyes never have two things to keep clear of (a 20 px face once lost both eyes between them). The eyes go to it and back, every 4.2 s at first and then every 16 s (small faces look half as far) | the ball |
+| `waiting` | leans in, eyes open to you; the needs-you ball pops once into a notch at the upper left (never Grok's upper-right corner), in `--status-needs-you` (the owner's needs-you ember, `--signal`, as in the sidebar and Activity; never `--attention`, which is for warnings only); the notch's air separates it from a coral or amber body; from 48 px the notch is a cut a pixel wide, not a ring of page round a sticker. The ball pops at 0.2 s; out of the dots at 0.5 s, once the face is nearly home (at 0.2 s a head coming back round is still turned about 70°, its near eye at the body's edge: the notch bit it and then shoved the pair in one frame, up to 4.3 px at 160 px, on agents that rest to the left). Switched between waiting and blocked before a badge has grown (a preview), the old glyph shrinks away before the new one grows: a badge never goes in a frame, nor the notch, nor the eyes it held clear. Below 48 px a working rim ball sinks first, in 0.18 s, so it is gone before the notch opens and the eyes never have two things to keep clear of (a 20 px face once lost both eyes between them). The eyes go to it and back, every 4.2 s at first and then every 16 s (small faces look half as far). **Never in lockstep**: a state that needs you is never held back or staggered, so faces handed it in one frame each answer a beat of their own late instead (0 to 120 ms, from the copy's own noise; blocked too): the acknowledgement blink (unless it joins a blink already under way), the head and eyes, the glances at the badge. The badge (and blocked's stalled orbit from 48 px) is the signal and comes on at once on every face | the ball |
 | `blocked` | head tilts and sinks, slowly; the eyes go worried (the cut shortened and leaned, tops in, §4.1: no lid cut, so no corner however long the block lasts). From 48 px no sticker: the orbit stalls, its open ring standing still in `--muted-foreground` with its ball, in `--destructive` (the blocked ink), rolled to rest at the lowest point of the ring. Out of working the running orbit is picked up and runs down: the ball coasts on with the speed it had, decaying (never faster, never back), then, slow, settles the shorter way to the lowest point, never faster than 55°/s, so it rocks back at most once, slowly, like a ball finding the bottom (the face stays on the clock until it has); the ring's paint blends grey over 220 ms, in step with the ball; the ball never blends (blue to red passes a magenta in neither palette): it dips to a third of its size in its old paint and grows back in the new one, changing colour at the bottom of the dip (0.14 s), under the acknowledgement blink, and the same back into working; from anything else it enters calmly, working's entrance without the pop: the stalled ball rises at the bottom (0.15 to 0.5 s) and the ring is drawn out of it, in the stalled paint from the first frame (the paint is set while the orbit is hidden, with no transition, so blocked never flashes the running blue). Leaving, the grey ring reels in and the red ball shrinks with it, so the two reach nothing together and the ball never sits alone under the body. Below 48 px a still bar in `--destructive` sits in a stadium notch, 2.5 balls wide, so blocked and waiting differ by shape and not only by hue; it grows in from 0.25 s, after a working rim ball has sunk (0.18 s). No pop, no loop: a block can last hours | the worried eyes, and the stalled orbit (small: the bar) |
 | `done` | from working, the gap closes so the open ring is whole for a moment (0.25 s), then the ring reels into its ball (0.3 to 0.7 s) and the ball sinks into the rim (to 0.83 s): put away, opaque throughout, never faded or thrown outward. The lower lids lift into happy capsules (§4.1) and stay content for as long as the state lasts; after the beat a `live` face lets its gaze drift slowly now and then (no blinks, not even the hover notice, which it answers with its look alone: the capsules hold), so a roster of finished agents is never a row of stickers. The happy capsule forms and lets go as one shape: the thickness it keeps while forming follows the smile continuously and thickens the whole profile about its centre line, so its round ends stay round through every blink and change (it once stepped 3 to 5 px in a frame and drew square-ended bars). Out of thinking it forms once the face is nearly round, and into thinking it lets go before the eyes reach the limb, so it is never seen edge-on | happy capsules, no ring |
 | `sleeping` | eyes close to dashes, head drops, and the body goes dormant: a neutral grey with a 14% trace of its tone (`--agent-dormant`, face-local in agent-face.css), clearing 1.8:1 or more on the page and the card in light (level with the amber body, so a paused face never fades out of a 20 px list), dashes in softened ink (4.8:1 in light, 3.3:1 or more in dark; tests/agents-face.test.ts), so paused never reads as done; it holds still. The paint keys off the state as drawn (`data-drawn`), not as requested, so a held change never greys a face that is still working. Waking, the eyes open with the colour, slowly and then fully (0.6 s) | dashes, dormant |
@@ -485,9 +492,16 @@ blink alone, never by the lid: a face that rests half-lidded (`visor`,
 0.86) is open, and acknowledges like every other (judged on the lid, a
 visor agent once entered working, waiting, listening and blocked with no
 blink at all). Eyes a lid had closed (paused, a small face thinking) need
-no acknowledgement: their opening is it. Into a state that shuts the
-eyes (paused, a small face thinking) the blink never reopens: the lid closes
-over it. Checked at 240 fps over 7,000 changes landing at every phase of a
+no acknowledgement: their opening is it. Into a state that takes the eyes
+away (paused and a small face thinking shut them, a large face thinking
+turns them round the back) the blink never reopens: how open it was is the
+ceiling, and the lid or the turn takes the eyes from there (a large face
+once reopened them to full on the way round, then lost them to the limb).
+The hover notice is a blink like the others, and joins one under way: a
+pointer arriving while the eyes are already blinking, or just before a
+needs-you face's late acknowledgement, starts no blink of its own (two
+curves multiplied closed the eyes twice), and a second arrival never
+restarts one still running. Checked at 240 fps over 7,000 changes landing at every phase of a
 blink, at 28 and 96 px, on three bodies and three marks (`visor` among
 them): no frame opens the eyes by more than a natural blink does (0.1 a
 frame), and no blink restarts; and every mark blinks on every entry that
@@ -496,9 +510,15 @@ events. State motion plays on every face, except a `still` face
 (`<AgentFace still>`): the still pose and nothing else, for pickers and for
 a second copy of a face that is alive elsewhere on the screen, so one agent
 never blinks and glances out of step with itself. The larger copy lives:
-the thread header's 34 px face is drawn still while the empty thread's
+the thread header's 34 px face is held still while the empty thread's
 greeting (88 px) or the profile panel's face (96 px) is up, and lives again
-when they go.
+when they go. A face that has been live is held on its own element, never
+swapped for a still copy (the swap was a new element, a one-frame cut from
+mid-blink to open): its rig eases it into the still frame from where it is
+(0.45 s; a blink under way finishes first, the pointer is let go over the
+look's own ease, an orbit or the thinking wave coasts to a stop), then asks
+for no frames; let go, the state carries on from the still with no entry
+beats (`FaceConfig.still`, `holdPose`).
 
 **A new look under a running state** (a colour, shape or eyes pick in the
 hire flow, a look saved from the studio while the thread is open) never
