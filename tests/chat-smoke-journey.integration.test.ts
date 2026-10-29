@@ -214,7 +214,7 @@ if (!DB_URL) {
       if (buffer.trim()) frames.push(...parseFrames(buffer));
       await drainAfter();
     });
-    assert.deepEqual(cancelAnswer, { ok: true, cancelled: true }, "Stop reached the running generation");
+    assert.deepEqual(cancelAnswer, { ok: true, cancelled: true, delivery: "local" }, "Stop reached the running generation");
     assert.ok(Date.now() - started < 20_000, "the stream ended at Stop, not at the end of its 45 seconds");
     const done = doneOf(frames);
     assert.equal(done.finishReason, "user_stopped");
