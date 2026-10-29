@@ -62,3 +62,49 @@ test("private sessions hold no module-level content and cannot populate a saved 
   assert.equal(nextPrivate.getSnapshot().text, "");
   assert.equal(privateDraft.getSnapshot().text, "Private draft text");
 });
+
+test("an upload finishing after the landing field unmounts updates the docked field", () => {
+  const session = createComposerDraftSession("saved:new");
+  session.uploads.add({ localId: "up-pending", fileName: "next-turn.txt", size: 12, progress: 0, status: "uploading" });
+  let landingEvents = 0;
+  const unmountLanding = session.uploads.subscribe(() => { landingEvents++; });
+  unmountLanding();
+
+  let dockedUploads = session.uploads.getSnapshot();
+  const unmountDock = session.uploads.subscribe(() => { dockedUploads = session.uploads.getSnapshot(); });
+  session.uploads.update("up-pending", {
+    progress: 100,
+    status: "done",
+    attachment: { id: "new-attachment", kind: "FILE", fileName: "next-turn.txt", size: 12, mimeType: "text/plain", url: "/api/files/new-attachment" },
+  });
+  assert.equal(landingEvents, 0, "unmounted field no longer owns the upload");
+  assert.equal(dockedUploads.length, 1);
+  assert.equal(dockedUploads[0]?.status, "done");
+  assert.equal(dockedUploads[0]?.attachment?.id, "new-attachment");
+  unmountDock();
+});
+
+test("a submitted file is removed without clearing files added during preflight", () => {
+  const session = createComposerDraftSession("saved:new");
+  const makeUpload = (localId: string) => ({
+    localId, fileName: localId + ".txt", size: 4, progress: 100, status: "done" as const,
+    attachment: { id: localId, kind: "FILE" as const, fileName: localId + ".txt", size: 4, mimeType: "text/plain", url: "/api/files/" + localId },
+  });
+  session.uploads.add(makeUpload("sent"));
+  const submittedIds = new Set(session.uploads.getSnapshot().map((upload) => upload.attachment!.id));
+  session.uploads.add(makeUpload("new"));
+  for (const upload of session.uploads.getSnapshot()) {
+    if (upload.attachment && submittedIds.has(upload.attachment.id)) session.uploads.remove(upload.localId);
+  }
+  assert.deepEqual(session.uploads.getSnapshot().map((upload) => upload.attachment?.id), ["new"]);
+});
+
+test("uploads remain scoped to their draft session, including incognito", () => {
+  const saved = createComposerDraftSession("saved:new");
+  const privateDraft = createComposerDraftSession("private:new");
+  saved.uploads.add({ localId: "a", fileName: "a.txt", size: 1, progress: 0, status: "uploading" });
+  assert.equal(privateDraft.uploads.getSnapshot().length, 0);
+  saved.uploads.clear();
+  assert.equal(saved.uploads.getSnapshot().length, 0);
+  assert.equal(createComposerDraftSession("saved:new").uploads.getSnapshot().length, 0);
+});

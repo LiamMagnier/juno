@@ -2,6 +2,7 @@ import type { ContextDraft } from "@/lib/chat/context-draft";
 import { tokensForText } from "@/lib/chat/context-draft";
 import type { ContextToken } from "@/lib/chat/context-tokens";
 import { createComposerSubmissionGuard } from "@/lib/chat/composer-submission";
+import { createComposerUploadSession } from "@/lib/chat/composer-upload-session";
 
 export interface ComposerDraftSnapshot extends ContextDraft {
   revision: number;
@@ -31,6 +32,7 @@ export function createComposerDraftSession(scope: string) {
   return {
     scope,
     submissions: createComposerSubmissionGuard(),
+    uploads: createComposerUploadSession(),
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) {
       listeners.add(listener);

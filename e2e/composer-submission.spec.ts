@@ -177,3 +177,37 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await page.getByRole("button", { name: "Stop generating", exact: true }).click();
   });
 }
+
+test("a file added during first-send preflight survives the landing-to-dock swap", async ({ page }) => {
+  await page.route("**/api/upload", async (route) => {
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ attachment: {
+        id: "next-turn-upload", kind: "FILE", fileName: "next-turn.txt",
+        mimeType: "text/plain", size: 17, url: "/api/files/next-turn-upload",
+      } }),
+    });
+  });
+  await installSubmissionFixture(page, { privateMode: false, holdPreflight: true });
+  await composer(page).fill("Please answer my first question.");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __qaSubmission: SubmissionFixture }).__qaSubmission.counts.clarify)).toBe(1);
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "next-turn.txt", mimeType: "text/plain", buffer: Buffer.from("For the next message"),
+  });
+  await expect(page.getByRole("button", { name: "Remove next-turn.txt" })).toHaveCount(1);
+  await page.evaluate(() => (window as unknown as { __qaSubmission: SubmissionFixture }).__qaSubmission.release());
+  await expect(page.locator(".prose-juno").last()).toContainText("One accepted request.");
+  await expect(page.getByRole("button", { name: "Remove next-turn.txt" })).toHaveCount(1);
+  const first = await page.evaluate(() => (window as unknown as { __qaSubmission: SubmissionFixture }).__qaSubmission.turns[0]);
+  expect(JSON.stringify(first)).not.toContain("next-turn-upload");
+
+  await page.getByRole("button", { name: "Stop generating", exact: true }).click();
+  await composer(page).fill("Use the file I attached while you were answering.");
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __qaSubmission: SubmissionFixture }).__qaSubmission.counts.chat)).toBe(2);
+  const second = await page.evaluate(() => (window as unknown as { __qaSubmission: SubmissionFixture }).__qaSubmission.turns[1]);
+  expect(JSON.stringify(second)).toContain("next-turn-upload");
+});

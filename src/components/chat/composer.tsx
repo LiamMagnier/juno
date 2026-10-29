@@ -1004,7 +1004,7 @@ function ComposerImpl({
     clear,
     readyAttachments,
     isUploading,
-  } = useUploads(privateMode ? null : conversationId);
+  } = useUploads(privateMode ? null : conversationId, draftSession.uploads);
   // Memoized: a fresh `[]` every private-mode render would churn every hook
   // that lists sendAttachments as a dependency.
   const sendAttachments = React.useMemo(

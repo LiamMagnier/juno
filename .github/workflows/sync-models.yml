@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+  # Bootstrap the missing model-watch label after this fix reaches main.
+  # Shipping the app must not also trigger the expensive radar operation.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-models.yml"
 
 permissions:
   contents: write
@@ -15,7 +21,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ensure-model-watch-label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ensure model-watch exists before creating radar issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh label list --limit 500 --json name --jq '.[].name' | grep -Fxq 'model-watch'; then
+            echo "model-watch label exists."
+          else
+            gh label create model-watch --color 1F6FEB --description "Model announcements detected by the daily catalog radar"
+          fi
+
   sync:
+    # On pushes, install the label only; no model PRs or radar issues.
+    needs: [ensure-model-watch-label]
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
