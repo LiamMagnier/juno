@@ -1071,9 +1071,10 @@ export function estimateGenerationCostUsd(
   };
 }
 
-/** Recompute ledger cost in micro-USD from stored token counts (repair path).
- *  `at` is when the row was spent: a scheduled price change must not reprice
- *  older rows, and the repair writes any higher figure back to the ledger. */
+/** Historical diagnostic only: a standard-rate estimate from aggregate counts.
+ *  These counters omit cache, batch, served-tier and request-boundary facts,
+ *  so this is not an authoritative charge and must never repair the ledger.
+ *  `at` is when the row was spent; scheduled price changes remain time scoped. */
 export function recomputeCostMicroUsd(
   modelId: string,
   promptTokens: number,

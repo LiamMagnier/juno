@@ -861,6 +861,7 @@ private struct JunoMobileSettingsPreferences: View {
   let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
 
   @State private var instructionsDraft = ""
+  @FocusState private var instructionsFocused: Bool
   /// What the field was last handed by the account record. Compared against the
   /// draft to tell "untouched" from "half-written", so a settings push landing
   /// mid-sentence cannot erase what is being typed.
@@ -1149,6 +1150,8 @@ private struct JunoMobileSettingsPreferences: View {
         axis: .vertical
       )
       .lineLimit(5...14)
+      .focused($instructionsFocused)
+      .junoField(isFocused: instructionsFocused)
       .accessibilityLabel("Custom instructions")
       .accessibilityIdentifier("juno.mobile.settings-instructions")
       HStack(spacing: JunoSpace.regular) {

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { TIMING_TOKENS } from "@/lib/design/tokens.generated";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,12 +15,13 @@ import { cn } from "@/lib/utils";
  * delay on every one is what makes a tooltip row feel sticky. 400ms is long
  * enough to cross a 32px gap between icon buttons at a relaxed hand speed.
  *
- * `delayDuration` stays a short hover-intent pause; the app shell passes its
- * own value, which wins, so this default only governs mounts that do not.
+ * Both defaults come from the shared timing table, so a tooltip in a dialog
+ * and one in the app shell use the same hover intent and scanning window.
+ * A caller can still override either duration for a specific interaction.
  */
 function TooltipProvider({
-  delayDuration = 300,
-  skipDelayDuration = 400,
+  delayDuration = TIMING_TOKENS.delay.tooltip,
+  skipDelayDuration = TIMING_TOKENS.delay.tooltipSkip,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return <TooltipPrimitive.Provider delayDuration={delayDuration} skipDelayDuration={skipDelayDuration} {...props} />;
@@ -30,13 +32,10 @@ const Tooltip = TooltipPrimitive.Root;
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
 /**
- * A small `.surface-float` at `rounded-control` (8) — the same material as
- * the menu it appears beside, opaque so a transient micro-label stays legible
- * over arbitrary content. Not inverted: an inked slab was the single
- * brightest object on the dark theme, flaring on every hover.
- *
- * ~25px tall, so 10px is the rung that still reads as the popper family
- * without becoming a capsule.
+ * A small opaque ink label at `rounded-control`. `.ui-tooltip` provides
+ * the light text and theme-aware dark surface, including the tokens that
+ * nested muted labels and glyphs read. A rich source preview opts into the
+ * popover material with `.cite-card`.
  *
  * MOTION. The quietest member of the floating family (tailwind.config.ts,
  * `tooltip-in` / `tooltip-out`): a 2px drift toward the trigger and a 0.97
@@ -56,13 +55,7 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        // 2026-10: an ink tooltip (ChatGPT, Claude): near-black with white
-        // text in both themes, so a label reads at a glance against any
-        // surface and never looks like another card. `.ui-tooltip` re-points
-        // the ink tokens inside it, so muted lines and glyphs stay legible.
-        // A rich hover card opts back into the popover surface with
-        // `.cite-card`.
-        "ui-tooltip z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control px-2.5 py-1.5 text-caption font-medium data-[state=delayed-open]:animate-tooltip-in data-[state=closed]:animate-tooltip-out",
+        "ui-tooltip z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden break-words rounded-control px-2.5 py-1.5 text-caption font-medium data-[state=delayed-open]:animate-tooltip-in data-[state=closed]:animate-tooltip-out",
         className
       )}
       {...props}

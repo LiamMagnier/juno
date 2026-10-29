@@ -3,46 +3,42 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * A card is `.surface-raised` (docs/design/FLAT_UI.md §2.2): the card fill,
- * the hairline, and the 1px contact shadow the flat material allows in flow.
+ * A card is `.surface-raised`: a quiet tonal fill and a hairline, with no
+ * shadow at rest. Elevation is reserved for a surface above its page.
  *
- *   default      raised
+ *   default      quiet grouped content
  *   elevated     the bigger throw — hero cards, pricing, project tiles
  *   flat         fill + hairline, no shadow — for a card that sits INSIDE
  *                another raised surface, where a second shadow would stack
- *   interactive  raised; on hover the hairline darkens and the fill takes a
+ *   interactive  quiet; on hover the hairline darkens and the fill takes a
  *                faint tonal wash, and it goes a shade deeper while held —
  *                the whole body is the hit target
  *
- * The interactive card used to LIFT on hover (to the large shadow throw). In
- * the flat language nothing in flow casts a shadow and nothing rises under the
- * pointer; state is tonal (ICONS_AND_MOTION.md §2.2, rule 1). A card is also a
- * large surface, so it does not scale under the finger either — the fill step
- * on `:active` is its press.
+ * Interactive cards share the surface link's one-pixel hover lift, only with
+ * a precise pointer and full motion. Pressing settles the card onto the page
+ * and strengthens its fill. Reduced motion keeps the tonal fades; touch gets
+ * the press state without a hover that can remain after the finger leaves.
+ * Large surfaces never scale.
  *
  * The transition is scoped (not transition-all) so panel resizes and layout
  * changes never animate.
  */
 const cardVariants = cva(
-  "rounded-card text-card-foreground transition-[border-color,background-color,box-shadow,transform] duration-base ease-out-expo motion-reduce:transition-none",
+  "rounded-card text-card-foreground transition-[border-color,background-color,box-shadow,transform] duration-base ease-out-expo motion-reduce:transition-[border-color,background-color,box-shadow]",
   {
     variants: {
       variant: {
         default: "surface-raised",
         elevated: "surface-raised-lg",
         flat: "border border-border/60 bg-card shadow-none",
-        // `hover:` and `active:` utilities outrank the components-layer class
-        // (pseudo-class specificity), which is what lets the surface change
-        // depth without a second material. `active:` is here because hover is
-        // not an affordance on touch.
-        //
-        // It lifts again (premium pass, brief rule 3): a 2px rise onto the
-        // `raised-lg` throw, so a card that opens something reads as an
-        // object you can pick up, and one that does not (default) stays on
-        // the page. Transform only, under motion-safe, and it settles back to
-        // the page while held, which is the press.
-        interactive:
-          "surface-raised hover:border-foreground/20 hover:bg-accent/40 hover:shadow-raised-lg motion-safe:hover:-translate-y-0.5 active:translate-y-0 active:bg-selected active:shadow-raised focus-within:border-foreground/25",
+        interactive: [
+          "surface-raised focus-within:border-foreground/25 active:bg-selected active:shadow-raised",
+          "[@media_(hover:hover)_and_(pointer:fine)]:hover:border-foreground/20 [@media_(hover:hover)_and_(pointer:fine)]:hover:bg-accent/40 [@media_(hover:hover)_and_(pointer:fine)]:hover:shadow-raised-lg",
+          // Repeat the press fill in the same media group so it outranks the
+          // hovered state in Tailwind's emitted order.
+          "[@media_(hover:hover)_and_(pointer:fine)]:active:bg-selected [@media_(hover:hover)_and_(pointer:fine)]:active:shadow-raised",
+          "motion-safe:[@media_(hover:hover)_and_(pointer:fine)]:hover:-translate-y-px motion-safe:[@media_(hover:hover)_and_(pointer:fine)]:active:translate-y-0",
+        ],
       },
     },
     defaultVariants: { variant: "default" },

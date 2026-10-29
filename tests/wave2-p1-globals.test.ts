@@ -150,7 +150,9 @@ test("shell, gesture and timing tokens are declared with the spec's values (§3.
     "settle-min": "140ms", "settle-max": "300ms", "snap-zone": "16px", "header-h": "48px",
     "transcript-fade": "32px", "galaxy-max-animating": "3", "stagger-row": "30ms", "stagger-tile": "45ms",
     "stagger-onboarding": "60ms", "stagger-max": "4", "dock-panes-max": "3", "dock-pane-evict": "600000ms",
-    "delay-show": "200ms", "delay-tooltip": "500ms", "delay-tooltip-skip": "300ms", "delay-hairline": "300ms",
+    // 2026-10-29: the shared token now matches the shipped app's 200/400
+    // hover intent instead of a 500/300 table bypassed by provider overrides.
+    "delay-show": "200ms", "delay-tooltip": "200ms", "delay-tooltip-skip": "400ms", "delay-hairline": "300ms",
     "delay-action-row": "180ms", "delay-greeting": "60ms", "delay-insert-flush": "300ms",
     "hold-phase": "600ms", "hold-skeleton": "400ms", "hold-check": "120ms", "hold-reasoning": "1000ms",
     "hold-arm": "500ms", "hold-needs-you-max": "2000ms", "hold-insert-max": "10000ms", "hold-composer-idle": "2000ms",

@@ -85,6 +85,7 @@ import { getUserPlan } from "@/lib/usage";
 import { createUnattributedSpendMeter, unattributedDailyCeilingMicroUsd } from "@/lib/metering/unit-prices";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { isUnconsumedProviderRejection } from "@/lib/utility-attempt";
 
 /*
  * Incremental memory architecture
@@ -450,6 +451,8 @@ export async function runUtilityPrompt<T>(opts: {
     let out = "";
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
+    let receivedProviderEvent = false;
+    let rejectedWithoutConsumption = false;
     // Only a "short" extraction prompt writes or reads the cache; priced at
     // its own rates rather than left out (Anthropic's input excludes it).
     let cacheUsage: CacheUsage = {};
@@ -462,6 +465,7 @@ export async function runUtilityPrompt<T>(opts: {
         signal: ctrl.signal,
         promptCache: opts.promptCache ?? "none",
       })) {
+        receivedProviderEvent = true;
         if (ev.type === "text") out += ev.text;
         // The provider's own counts, which beat the character floor below.
         // Read whether or not the reply ends up being parseable: the tokens
@@ -473,6 +477,10 @@ export async function runUtilityPrompt<T>(opts: {
         }
       }
     } catch (e) {
+      rejectedWithoutConsumption = isUnconsumedProviderRejection(e, {
+        receivedEvent: receivedProviderEvent,
+        aborted: ctrl.signal.aborted,
+      });
       const msg = ctrl.signal.aborted ? `timed out after ${ATTEMPT_TIMEOUT_MS}ms` : e instanceof Error ? e.message : String(e);
       console.error(`[${opts.label}] ${model.id} failed:`, msg);
       // A timeout usually means an overloaded provider — worth one retry.
@@ -484,52 +492,55 @@ export async function runUtilityPrompt<T>(opts: {
        * reply are all counted. Charging only the attempt that SUCCEEDED was the
        * tempting shape and it under-reports exactly the runs that hurt: a walk
        * that burns two overloaded providers before the third answers spent
-       * three calls' worth of tokens, and the provider charged for all three.
+       * three calls' worth of tokens. Explicit HTTP rejections with no stream
+       * events are different: there is no consumption to estimate or charge.
        * Same reasoning, and the same helper, as `utilityCompletion` in
        * src/lib/research/tools.ts.
        */
-      const billed = estimateGenerationCostUsd(model, {
-        promptTokens: inputTokens,
-        completionTokens: outputTokens,
-        ...cacheUsage,
-        promptChars: opts.system.length + opts.userMsg.length,
-        completionChars: out.length,
-      });
-      spentMicroUsd += Math.round(billed.costUsd * 1_000_000);
-      if (!opts.userId) unattributedUtilitySpend.add(Math.round(billed.costUsd * 1_000_000));
-      /*
-       * ONE LEDGER ROW PER ATTEMPT, from the same `billed` figure the walk's
-       * own total is accumulated from — so the number the research engine
-       * reserves against and the number the monthly ceiling enforces cannot
-       * disagree. Two computations of one charge is the drift this avoids.
-       *
-       * Per attempt rather than one summed row at the end, because ApiSpend is
-       * "one row per billable model call" and a walk can call two providers
-       * before a third answers: a single row would have to pick one model id
-       * for tokens spent on three, and the usage page's per-model breakdown
-       * would blame the wrong provider for the overload it routed around.
-       *
-       * Awaited, not fired-and-forgotten. Most of these walks run inside a
-       * route handler or an `after()` hook that ends the moment the caller
-       * gets its answer, and a floating insert there is a charge that lands
-       * only if the process happens to live long enough. `recordSpend` already
-       * swallows its own failures (a ledger outage must never break a title);
-       * the catch is for the finally block itself, where a throw would replace
-       * the model's answer with an error about billing.
-       */
-      if (opts.userId) {
-        await recordSpend({
-          userId: opts.userId,
-          ...(opts.agentId ? { agentId: opts.agentId } : {}),
-          model: model.id,
-          kind: "utility",
-          promptTokens: billed.promptTokens,
-          completionTokens: billed.completionTokens,
+      if (!rejectedWithoutConsumption) {
+        const billed = estimateGenerationCostUsd(model, {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
           ...cacheUsage,
-          costUsd: billed.costUsd || undefined,
           promptChars: opts.system.length + opts.userMsg.length,
           completionChars: out.length,
-        }).catch(() => {});
+        });
+        spentMicroUsd += Math.round(billed.costUsd * 1_000_000);
+        if (!opts.userId) unattributedUtilitySpend.add(Math.round(billed.costUsd * 1_000_000));
+        /*
+         * ONE LEDGER ROW PER ATTEMPT, from the same `billed` figure the walk's
+         * own total is accumulated from — so the number the research engine
+         * reserves against and the number the monthly ceiling enforces cannot
+         * disagree. Two computations of one charge is the drift this avoids.
+         *
+         * Per attempt rather than one summed row at the end, because ApiSpend is
+         * "one row per billable model call" and a walk can call two providers
+         * before a third answers: a single row would have to pick one model id
+         * for tokens spent on three, and the usage page's per-model breakdown
+         * would blame the wrong provider for the overload it routed around.
+         *
+         * Awaited, not fired-and-forgotten. Most of these walks run inside a
+         * route handler or an `after()` hook that ends the moment the caller
+         * gets its answer, and a floating insert there is a charge that lands
+         * only if the process happens to live long enough. `recordSpend` already
+         * swallows its own failures (a ledger outage must never break a title);
+         * the catch is for the finally block itself, where a throw would replace
+         * the model's answer with an error about billing.
+         */
+        if (opts.userId) {
+          await recordSpend({
+            userId: opts.userId,
+            ...(opts.agentId ? { agentId: opts.agentId } : {}),
+            model: model.id,
+            kind: "utility",
+            promptTokens: billed.promptTokens,
+            completionTokens: billed.completionTokens,
+            ...cacheUsage,
+            costUsd: billed.costUsd || undefined,
+            promptChars: opts.system.length + opts.userMsg.length,
+            completionChars: out.length,
+          }).catch(() => {});
+        }
       }
     }
     const parsed = opts.parse(out);
@@ -574,7 +585,7 @@ export async function runUtilityPrompt<T>(opts: {
       }
     }
   }
-  // Every candidate failed, and every one of them still cost something.
+  // Every candidate failed; count consumed attempts, never rejected requests.
   return { result: null, transient: sawTransient, costMicroUsd: spentMicroUsd };
 }
 

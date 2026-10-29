@@ -40,8 +40,8 @@ DialogCloseButton.displayName = "DialogCloseButton";
 /**
  * The scrim. One token (`--scrim`) so a retheme reaches it; the overlay-in/out
  * pair leads on open and trails on close, because a scrim that finishes first
- * leaves a frame of undimmed app behind the panel. The 2px backdrop blur is
- * the depth cue that says "pushed back" where opacity alone reads as a film.
+ * leaves a frame of undimmed app behind the panel. The scrim separates the
+ * opaque panel from the page without filtering the page behind every dialog.
  * No `motion-reduce:animate-none`: overlay-in/out are opacity-only, and Tier A
  * of the reduced-motion policy (globals.css) keeps opacity.
  */
@@ -52,7 +52,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-modal bg-scrim backdrop-blur-[2px] data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out print:hidden",
+      "fixed inset-0 z-modal bg-scrim data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out print:hidden",
       className
     )}
     {...props}

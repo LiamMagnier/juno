@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Loader2 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
+import { controlMotionClass } from "@/components/ui/control-recipe";
 
 /**
  * The action button, on the flat material (docs/design/FLAT_UI.md).
@@ -40,7 +41,7 @@ import { cn } from "@/lib/utils";
  * Not available with `asChild`, whose Slot needs a single child.
  */
 const buttonVariants = cva(
-  "ui-button pressable relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control border text-ui font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  cn(controlMotionClass, "ui-button relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control border text-ui font-medium disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"),
   {
     variants: {
       variant: {

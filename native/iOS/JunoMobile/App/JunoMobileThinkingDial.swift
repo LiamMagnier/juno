@@ -26,8 +26,8 @@ struct JunoMobileThinkingDialButton: View {
     } label: {
       // 19pt at a 1.6pt stroke: the weight of the SF Symbols beside it.
       JunoDialGlyph(fraction: Self.fraction(scale: scale, effort: effort), size: 19, lineWidth: 1.6)
-        .foregroundStyle(Color.primary)
-        .frame(width: 40, height: 44)
+        .foregroundStyle(Color.junoForeground)
+        .frame(width: JunoLayout.touchTarget, height: JunoLayout.touchTarget)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)
@@ -62,9 +62,8 @@ struct JunoMobileThinkingDialButton: View {
 /// The composer's one primary action: voice when there is nothing to send,
 /// send the moment there is, stop while a reply is arriving.
 ///
-/// **One button, three faces.** The glyph swaps with `symbolEffect(.replace)`
-/// and the glass under it re-tints in place, on the send-morph spring — so the
-/// thumb sees the control change, never a control leave and another arrive.
+/// One button, three faces, on the same graphite disc as the web and Mac.
+/// Its target stays still; its glyph changes in place with the shared motion.
 struct JunoMobileComposerPrimaryButton: View {
   enum Face: Equatable {
     case voice
@@ -75,7 +74,7 @@ struct JunoMobileComposerPrimaryButton: View {
   let face: Face
   let action: () -> Void
 
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.junoAccessibility) private var accessibility
 
   /// The web composer's own faces: the waveform, the up arrow, the stop.
   private var icon: JunoIcon {
@@ -96,15 +95,15 @@ struct JunoMobileComposerPrimaryButton: View {
       JunoIconView(icon, size: face == .stop ? 14 : 18, weight: face == .stop ? .fill : .bold)
         .foregroundStyle(enabled ? Color.junoCanvas : Color.junoSecondaryInk)
         .id(icon)
-        .transition(.scale(scale: 0.6).combined(with: .opacity))
+        .transition(.junoControlSwap(reducesTravel: accessibility.reducesTravel))
         .frame(width: 36, height: 36)
-        .modifier(JunoComposerSendBackground(active: enabled, tint: Color.primary))
+        .background(enabled ? Color.junoForeground : Color.junoSecondary, in: Circle())
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.junoPress)
     .disabled(!enabled)
-    .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: reduceMotion, tier: .tint), value: face)
+    .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: accessibility.reduceMotion, tier: .tint), value: face)
     .accessibilityLabel(accessibilityLabel)
     .accessibilityIdentifier(identifier)
   }

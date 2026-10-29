@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";
+import { fieldChoiceClass, fieldFrameClass, fieldHeightClass } from "@/components/ui/field-recipe";
 
 export interface ChoiceOption<T extends string> {
   value: T;
@@ -22,20 +23,16 @@ export interface ChoiceOption<T extends string> {
 
 /**
  * Settings' one dropdown trigger. ChoiceMenu, ModelTrigger and SelectTrigger
- * sit in the same column of rows and have to be one control, so this is
- * SelectTrigger's rest, hover and open state to the alpha: the faint
- * `foreground/[0.14]` hairline over a `0.025` tint (`white/[0.12]` over
- * `0.03` in dark), one step toward ink on hover and while open, the field
- * radius, the touch height.
- *
- * It used to draw the `--input` boundary instead (rgb 134,137,141 on the
- * light page), a mid-grey outline beside the soft Select fields in the same
- * card; a trigger named by its text and a chevron needs no 3:1 edge, which is
- * what Select and Input already rely on. Keyboard focus is Input's: one
- * continuous 2px line in `--ring` at 0.55 (`kbd-focus:`), no halo.
+ * sit in the same column of rows and share the actual field recipe. Keeping
+ * a second copy of its colors/focus states made one setting silently drift
+ * every time the shared fields were refined.
  */
-export const choiceTriggerClass =
-  "group flex h-9 w-full min-w-0 items-center justify-between gap-2 whitespace-nowrap rounded-field border border-foreground/[0.14] bg-foreground/[0.025] px-3.5 text-left text-ui text-foreground transition-[color,border-color,box-shadow,background-color] duration-base ease-out-soft hover:border-foreground/25 data-[state=open]:border-foreground/25 dark:border-white/[0.12] dark:bg-white/[0.03] dark:hover:border-white/25 dark:data-[state=open]:border-white/25 focus-visible:outline-none kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11";
+export const choiceTriggerClass = cn(
+  fieldFrameClass,
+  fieldHeightClass,
+  fieldChoiceClass,
+  "group flex min-w-0 items-center justify-between gap-2 whitespace-nowrap px-3.5 text-left",
+);
 
 /**
  * One choice from a short list whose options need a sentence each to tell
@@ -77,7 +74,7 @@ export function ChoiceMenu<T extends string>({
           <span className="min-w-0 truncate">{current?.label}</span>
           {/* The same A-to-B rotate the Select chevron makes. */}
           <ChevronDown
-            className="size-4 shrink-0 opacity-60 transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"
+            className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>

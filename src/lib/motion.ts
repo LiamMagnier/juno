@@ -34,7 +34,7 @@ import type { CSSProperties } from "react";
 
 import type { Transition, Variants } from "framer-motion";
 
-import { DURATION, EASING } from "@/lib/design/tokens.generated";
+import { DURATION, EASING, SPRING } from "@/lib/design/tokens.generated";
 
 /** framer works in seconds; the tokens are authored in milliseconds. */
 const s = (ms: number) => ms / 1000;
@@ -101,25 +101,36 @@ export const transition = {
 /**
  * Spring transitions, for motion that must survive being interrupted.
  *
- * A duration-based tween restarted mid-flight jumps, because it re-derives its
- * path from wherever it happens to be. A spring carries its velocity through,
- * which is the entire reason to reach for one — not because springs are
- * fashionable, but because interruption is the common case for anything the
- * user is driving.
+ * The gesture-following preset uses physical parameters so it carries the
+ * pointer's velocity. The timed presets coordinate short UI transitions with
+ * the CSS and native equivalents; they share a visual settle and bounce.
  *
- * `duration` + `bounce` rather than stiffness/damping/mass: it is the same
- * parameterisation SwiftUI's `Animation.spring(duration:bounce:)` takes, so
- * these three presets and `JunoMotion`'s three are the same three springs.
+ * `visualDuration` + `bounce` comes from the generated CSS/Swift contract.
+ * Motion's `duration` means total settling time, which is a different
+ * quantity: using it for the web's presets made tabs and composer movement
+ * finish on a different rhythm from their SwiftUI counterparts.
  */
+const generatedSpring = (name: keyof typeof SPRING) => ({
+  type: "spring" as const,
+  visualDuration: SPRING[name].visualDuration,
+  bounce: SPRING[name].bounce,
+});
+
 export const spring = {
+  /** Immediate selection feedback without overshoot. */
+  snap: generatedSpring("snap"),
   /** The default settle. Mirrors `JunoMotion.standard`. */
-  standard: { type: "spring", duration: duration.base, bounce: 0 },
+  standard: generatedSpring("standard"),
   /** More overshoot, for a change that should be noticed. `JunoMotion.emphasized`. */
-  emphasized: { type: "spring", duration: duration.slow, bounce: 0.1 },
+  emphasized: generatedSpring("emphasized"),
   /** For anything tracking a pointer. `JunoMotion.spring` (interactiveSpring). */
   interactive: { type: "spring", stiffness: 320, damping: 30, mass: 0.8 },
   /** Layout changes — an element moving because its neighbours did. */
-  layout: { type: "spring", duration: duration.slow, bounce: 0 },
+  layout: generatedSpring("layout"),
+  /** Reserved for completion and approval feedback. */
+  reward: generatedSpring("reward"),
+  /** Destination glyph articulation; never an idle loop. */
+  articulate: generatedSpring("articulate"),
 } satisfies Record<string, Transition>;
 
 // ---------------------------------------------------------------------------

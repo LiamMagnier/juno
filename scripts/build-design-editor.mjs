@@ -20,7 +20,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import postcss from "postcss";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "native/macOS/JunoDesktop/Resources/DesignEditor");
@@ -58,7 +59,7 @@ function editorSources() {
   // live inside src/components/design: the glyph swap moved to ui/ when its
   // five copies became one, and a change to it has to restamp the bundle the
   // way a change to its old design/ copy did.
-  const found = [...EDITOR_SHARED_SOURCES];
+  const found = [...EDITOR_SHARED_SOURCES, ...EDITOR_BUILD_INPUTS];
   const walk = (relative) => {
     for (const entry of readdirSync(join(root, relative), { withFileTypes: true }).sort((a, b) =>
       a.name.localeCompare(b.name)
@@ -74,7 +75,78 @@ function editorSources() {
 
 /** Files outside the two editor roots whose classes and bytes the bundle
  *  depends on. Scanned by Tailwind and hashed into the version with them. */
-const EDITOR_SHARED_SOURCES = ["src/components/ui/icon-swap.tsx"];
+const EDITOR_SHARED_SOURCES = [
+  "src/components/ui/icon-swap.tsx",
+  "src/components/ui/button.tsx",
+  "src/components/ui/control-recipe.ts",
+  "src/components/ui/tooltip.tsx",
+  "src/components/ui/select.tsx",
+  "src/components/ui/field-recipe.ts",
+  "src/components/ui/menu-recipe.ts",
+];
+const EDITOR_BUILD_INPUTS = [
+  "src/app/globals.css",
+  "src/lib/motion.ts",
+  "tailwind.config.ts",
+  "scripts/build-design-editor.mjs",
+];
+
+/** Project the canonical default theme into a standalone, system-themed host.
+ * Only custom properties are copied; web page rules, imports and component
+ * styles never enter the native editor. Layers do not change a token's scope.
+ * Contrast overrides keep the same cascade as the web's four appearances. */
+export function projectHostTheme(css) {
+  const groups = new Map([
+    [":root|", new Map()],
+    [".dark|", new Map()],
+    [":root|@media (prefers-contrast: more)", new Map()],
+    [".dark|@media (prefers-contrast: more)", new Map()],
+  ]);
+  postcss.parse(css).walkRules((rule) => {
+    const conditions = [];
+    for (let parent = rule.parent; parent; parent = parent.parent) {
+      if (parent.type === "atrule" && parent.name !== "layer") {
+        conditions.unshift(`@${parent.name} ${parent.params}`);
+      }
+    }
+    const target = groups.get(`${rule.selector}|${conditions.join(" ")}`);
+    if (!target) return;
+    for (const node of rule.nodes) {
+      if (node.type === "decl" && node.prop.startsWith("--")) target.set(node.prop, node.value);
+    }
+  });
+  const emit = (key) => [...groups.get(key)].map(([name, value]) => `  ${name}: ${value};`).join("\n");
+  if (!groups.get(":root|").has("--field-surface")) throw new Error("Canonical host field tokens are missing.");
+  return [
+    "/* Generated from globals.css by build-design-editor.mjs. */",
+    `:root {\n${emit(":root|")}\n}`,
+    `@media (prefers-color-scheme: dark) {\n:root {\n${emit(".dark|")}\n}\n}`,
+    `@media (prefers-contrast: more) {\n:root {\n${emit(":root|@media (prefers-contrast: more)")}\n}\n}`,
+    `@media (prefers-color-scheme: dark) and (prefers-contrast: more) {\n:root {\n${emit(".dark|@media (prefers-contrast: more)")}\n}\n}`,
+  ].join("\n");
+}
+
+/** The shared controls need their actual surface rules as well as colors.
+ * Keep this allowlist narrow: the native bundle must not import page layouts,
+ * app navigation or chat styling. Ancestor media/support/layer rules retain
+ * their meaning, and the host's system appearance replaces the web class. */
+export function projectHostChrome(css) {
+  const classes = /\.(?:surface-float|overlay-glass|ui-tooltip|control-primary|control-neu|danger-hover|hit-44)(?![\w-])/;
+  const output = postcss.root();
+  postcss.parse(css).walkRules((rule) => {
+    const selectors = rule.selectors.filter((selector) => classes.test(selector));
+    if (!selectors.length) return;
+    let copy = rule.clone({ selector: selectors.map((selector) => selector.replace(/^\.dark\s+/, "")).join(", ") });
+    if (selectors.every((selector) => selector.startsWith(".dark "))) {
+      copy = postcss.atRule({ name: "media", params: "(prefers-color-scheme: dark)" }).append(copy);
+    }
+    for (let parent = rule.parent; parent; parent = parent.parent) {
+      if (parent.type === "atrule") copy = parent.clone({ nodes: [] }).append(copy);
+    }
+    output.append(copy);
+  });
+  return output.toString();
+}
 
 function editorVersion() {
   const hash = createHash("sha256");
@@ -155,9 +227,10 @@ function build() {
   // and every page's utilities, and none of that belongs in a design canvas.
   const tailwind = join(root, "node_modules/.bin/tailwindcss");
   const cssEntry = join(outDir, ".editor.src.css");
+  const canonicalCss = readFileSync(join(root, "src/app/globals.css"), "utf8");
   writeFileSync(
     cssEntry,
-    `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n${readFileSync(join(root, "src/components/design/host/editor.css"), "utf8")}`
+    `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n${projectHostTheme(canonicalCss)}\n${projectHostChrome(canonicalCss)}\n${readFileSync(join(root, "src/components/design/host/editor.css"), "utf8")}`
   );
   if (existsSync(tailwind)) {
     execFileSync(
@@ -178,7 +251,11 @@ function build() {
     // engine is untouched — so ship the hand-written layer rather than nothing,
     // and say what is missing.
     console.warn("[design-editor] tailwindcss not found; writing base styles only.");
-    writeFileSync(join(outDir, "editor.css"), readFileSync(join(root, "src/components/design/host/editor.css")));
+    writeFileSync(join(outDir, "editor.css"), [
+      projectHostTheme(canonicalCss),
+      projectHostChrome(canonicalCss),
+      readFileSync(join(root, "src/components/design/host/editor.css"), "utf8"),
+    ].join("\n"));
   }
   rmSync(cssEntry, { force: true });
 
@@ -187,19 +264,23 @@ function build() {
   return version;
 }
 
-if (process.argv.includes("--check")) {
-  const indexPath = join(outDir, "index.html");
-  if (!existsSync(indexPath)) {
-    console.error("[design-editor] bundle missing. Run: npm run design:editor");
-    process.exit(1);
+function main() {
+  if (process.argv.includes("--check")) {
+    const indexPath = join(outDir, "index.html");
+    if (!existsSync(indexPath)) {
+      console.error("[design-editor] bundle missing. Run: npm run design:editor");
+      process.exit(1);
+    }
+    const expected = editorVersion();
+    const current = readFileSync(indexPath, "utf8");
+    if (!current.includes(expected)) {
+      console.error(`[design-editor] bundle is stale (expected ${expected}). Run: npm run design:editor`);
+      process.exit(1);
+    }
+    console.log("[design-editor] up to date");
+  } else {
+    build();
   }
-  const expected = editorVersion();
-  const current = readFileSync(indexPath, "utf8");
-  if (!current.includes(expected)) {
-    console.error(`[design-editor] bundle is stale (expected ${expected}). Run: npm run design:editor`);
-    process.exit(1);
-  }
-  console.log("[design-editor] up to date");
-} else {
-  build();
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main();

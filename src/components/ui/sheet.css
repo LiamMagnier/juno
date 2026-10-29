@@ -128,7 +128,7 @@ html[data-sheet-pull="settle"] [data-swipe-scrim][data-sheet-pull-target] {
     width: 100%;
     max-width: none;
     max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 1.5rem);
-    border-radius: 16px 16px 0 0;
+    border-radius: theme("borderRadius.panel") theme("borderRadius.panel") 0 0;
     /* The home indicator's strip, as a transparent edge in the sheet's own
        colour: a call site's padding (often p-0) is left alone, and content
        never scrolls under the indicator. */

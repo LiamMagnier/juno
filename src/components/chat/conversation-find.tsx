@@ -4,10 +4,13 @@ import * as React from "react";
 import { ChevronDown, ChevronUp, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { fieldFrameClass, fieldGroupClass, fieldHeightClass } from "@/components/ui/field-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  findInConversation,
+  searchConversation,
+  selectedMatchIndex,
   stepMatch,
+  type SearchSelection,
   type SearchableMessage,
 } from "@/lib/conversation-search";
 import { focusTranscriptMessage } from "@/lib/chat/transcript-window";
@@ -33,6 +36,8 @@ export function ConversationFind({
   messages,
   onSearch,
   onClose,
+  loadingHistory = false,
+  hasOlderHistory = false,
 }: {
   messages: readonly SearchableMessage[];
   /**
@@ -42,91 +47,134 @@ export function ConversationFind({
    */
   onSearch?: () => void;
   onClose: () => void;
+  loadingHistory?: boolean;
+  hasOlderHistory?: boolean;
 }) {
   const [query, setQuery] = React.useState("");
   React.useEffect(() => {
     onSearch?.();
   }, [onSearch]);
-  const [index, setIndex] = React.useState(0);
+  const [selection, setSelection] = React.useState<SearchSelection | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const helpId = React.useId();
 
   // `messages` gets a new identity on every streamed token — use-chat rebuilds
   // the array per delta — and re-scanning every body at that rate rebuilds
-  // lowercased copies and preview strings for up to 500 matches, tens of times a
+  // preview strings for up to 500 matches, tens of times a
   // second. Deferring lets React drop the intermediate values and run the scan
   // once the burst settles; the search is a read-only overlay, so a frame of lag
   // behind the live transcript costs nothing.
   const deferredMessages = React.useDeferredValue(messages);
-  const matches = React.useMemo(
-    () => findInConversation(deferredMessages, query),
+  const { matches, truncated } = React.useMemo(
+    () => searchConversation(deferredMessages, query),
     [deferredMessages, query]
   );
+  const index = selectedMatchIndex(matches, selection);
+  const current = matches[index];
 
-  React.useEffect(() => setIndex(0), [query]);
-  React.useEffect(() => inputRef.current?.focus(), []);
+  React.useLayoutEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const root = rootRef.current;
+    inputRef.current?.focus();
+    return () => {
+      // Closing an input otherwise drops keyboard focus on <body>. Do not
+      // reclaim it if the reader deliberately moved to another control.
+      const active = document.activeElement;
+      if (opener?.isConnected && (active === document.body || root?.contains(active))) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
+  const currentMessageId = current?.messageId;
+  const currentStart = current?.start;
+  const currentEnd = current?.end;
+  React.useEffect(() => {
+    // The active hit, not its array offset, stays selected when a page of
+    // older messages lands. A deleted hit falls back to a valid nearby hit.
+    setSelection(currentMessageId !== undefined && currentStart !== undefined && currentEnd !== undefined
+      ? { messageId: currentMessageId, start: currentStart, end: currentEnd, index }
+      : null);
+  }, [currentMessageId, currentStart, currentEnd, index, query]);
 
   // Scroll the current match into view. The anchor is the per-message wrapper
   // MessageList renders; jumping to the message rather than the character keeps
   // this independent of how a message is laid out.
   //
-  // Keyed on the message id and the index, NOT on the match object: that object
+  // Keyed on the hit's message id and offsets, NOT on the match object: that object
   // is freshly allocated every time `matches` recomputes, so an object dependency
   // re-fired this effect on every token. A smooth scrollIntoView then ran
   // continuously against MessageList's own layout effect pinning scrollTop to the
   // bottom — two writers fighting over one scroll position, which read as the
   // transcript yanking and made it impossible to scroll anywhere by hand.
-  const currentMessageId = matches[index]?.messageId;
   React.useEffect(() => {
     if (!currentMessageId) return;
     focusTranscriptMessage(currentMessageId);
-  }, [currentMessageId, index]);
+  }, [currentMessageId, currentStart, currentEnd]);
 
-  const go = (direction: 1 | -1) => setIndex((i) => stepMatch(i, matches.length, direction));
+  const go = (direction: 1 | -1) => {
+    const nextIndex = stepMatch(index, matches.length, direction);
+    const next = matches[nextIndex];
+    if (next) setSelection({ messageId: next.messageId, start: next.start, end: next.end, index: nextIndex });
+  };
 
   return (
     <div
+      ref={rootRef}
       role="search"
       aria-label="Find in conversation"
+      onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+        if (e.key !== "Escape") return;
+        // The composer uses unclaimed Escape to stop a generation. Closing
+        // Find must claim it, including when a navigation button has focus.
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }}
       // Settles in over the transcript rather than cutting in above it.
-      className="mx-auto flex w-full transcript-column items-center gap-2 px-4 py-2 motion-safe:animate-fade-in"
+      className="mx-auto w-full transcript-column px-4 py-2 motion-safe:animate-fade-in"
     >
-      {/* No `bg-background` here. Utilities are emitted after the components
-          layer, so it beat `.field-well`'s own fill and the well rendered at the
-          page colour — on dark that is #000 under a black inset shadow, i.e. a
-          field with no fill and no recess at all. `.field-well` already picks
-          the right rung per theme (page ground in light, --secondary in dark). */}
-      {/* Focus darkens the field's own edge, the composer's recipe. The ring
-          and its 2px offset that used to sit outside it painted a page-coloured
-          halo between the two (ICONS_AND_MOTION.md §2.2.3). */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-field border border-input px-3 py-1.5 field-well transition-colors duration-fast ease-out-soft focus-within:border-foreground/70 motion-reduce:transition-none">
+      <div className="flex items-center gap-1 sm:gap-2">
+      {/* The same field edge and keyboard line as settings and account forms;
+          the glyph and count are inside that one boundary. */}
+      <div className={cn(fieldFrameClass, fieldHeightClass, fieldGroupClass, "flex min-w-0 flex-1 items-center gap-2 px-3")}>
         {/* Raw `Search`: find-in-conversation. `AppIcons.search` is the app's
             search destination, and this field never leaves the thread. */}
         <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <input
           ref={inputRef}
+          data-conversation-find-input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSelection(null);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") onClose();
-            if (e.key === "Enter") {
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+            if (e.key === "Enter" && !e.altKey && !e.ctrlKey && !e.metaKey) {
               e.preventDefault();
               go(e.shiftKey ? -1 : 1);
             }
           }}
           placeholder="Find in this conversation"
           aria-label="Find in this conversation"
-          className="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
+          aria-describedby={helpId}
+          aria-keyshortcuts="Enter Shift+Enter Escape"
+          className="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground coarse:text-reading"
         />
         {query.trim() !== "" && (
           <span
             role="status"
             aria-live="polite"
+            aria-atomic="true"
             className={cn(
               "shrink-0 font-mono text-caption tabular-nums",
               matches.length === 0 ? "text-muted-foreground" : "text-foreground"
             )}
           >
-            {matches.length === 0 ? "No matches" : `${index + 1} of ${matches.length}`}
+            {matches.length === 0 ? (loadingHistory ? "Searching…" : "No matches") : `${index + 1} of ${matches.length}${truncated ? "+" : ""}`}
           </span>
         )}
       </div>
@@ -169,6 +217,35 @@ export function ConversationFind({
         </TooltipTrigger>
         <TooltipContent side="bottom">Close find</TooltipContent>
       </Tooltip>
+      </div>
+      {/* A hit in a long answer needs context: advancing three matches in the
+          same message used to move neither the transcript nor any visible
+          text. This preview makes each occurrence distinct without reparsing
+          or mutating the streamed markdown. */}
+      {current && (
+        <p className="mt-2 min-w-0 truncate text-ui text-muted-foreground" data-conversation-find-preview>
+          <span className="mr-2 font-medium text-foreground">{current.role === "USER" ? "You" : "Assistant"}</span>
+          <span data-no-auto-translate>
+            {current.preview.slice(0, current.previewStart)}
+            <mark className="rounded-xs bg-primary/15 px-0.5 text-foreground">{current.preview.slice(current.previewStart, current.previewEnd)}</mark>
+            {current.preview.slice(current.previewEnd)}
+          </span>
+        </p>
+      )}
+      <div id={helpId} className={cn("text-caption text-muted-foreground", (loadingHistory || hasOlderHistory || truncated) ? "mt-1.5" : "sr-only")}>
+        {loadingHistory ? (
+          <span role="status">Searching older messages…</span>
+        ) : hasOlderHistory ? (
+          <span>
+            Results cover loaded messages.
+            {onSearch && <button type="button" className="ml-1 underline underline-offset-2 hover:text-foreground" onClick={onSearch}>Search older messages</button>}
+          </span>
+        ) : truncated ? (
+          <span>Showing the first {matches.length} matches. Refine your search to see more.</span>
+        ) : (
+          "Enter for next match, Shift+Enter for previous, Escape to close."
+        )}
+      </div>
     </div>
   );
 }

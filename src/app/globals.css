@@ -276,6 +276,20 @@
     --border: 220.000 4.918% 88.039%;
     --input: 214.286 2.979% 53.922%;
     --ring: 216.000 9.091% 10.784%;
+
+    /* One field material on web, Mac and iPhone. A settings text field, a
+       multiline field and a select share this state ladder. These semantic
+       roles are projected into Swift, including Increase Contrast, instead
+       of letting each component invent its own opacity and focus halo.
+       The resting edge uses the measured input token (at least 3:1 on the
+       field), then strengthens on hover and focus. Keyboard focus adds the
+       full ring; error fields use the existing destructive role. */
+    --field-surface: var(--muted);
+    --field-surface-active: var(--card);
+    --field-border: var(--input);
+    --field-hover: var(--foreground) / 0.64;
+    --field-focus: var(--ring) / 0.72;
+    --field-ring: var(--ring);
     /* One ring everywhere (§3.9): 2px at a 2px offset, 3px in high contrast. */
     --ring-width: 2px;
     /* The tone-step edge: nothing at standard contrast, a 1px line at
@@ -497,8 +511,8 @@
        name. src/lib/interaction.ts TIMING mirrors the delays and holds, and
        the generator projects every one to TS and Swift. */
     --delay-show: 200ms;          /* TurnStatus, skeletons: only if still waiting */
-    --delay-tooltip: 500ms;
-    --delay-tooltip-skip: 300ms;  /* a peer within this shows at once */
+    --delay-tooltip: 200ms;       /* the shipped app's hover-intent pause */
+    --delay-tooltip-skip: 400ms;  /* a peer within this shows at once */
     --delay-hairline: 300ms;      /* the palette's in-flight hairline */
     --delay-action-row: 180ms;    /* after settle, the "done" cue */
     --delay-greeting: 60ms;
@@ -1267,6 +1281,9 @@
       --destructive: 356 75% 34%;
       --destructive-ink: var(--destructive);
       --ring-width: 3px;
+      --field-border: var(--ring);
+      --field-hover: var(--ring);
+      --field-focus: var(--ring);
       /* Tone-step boundaries (bubble, composer, card, chip, selected row):
          a 1px edge where a fill alone used to carry the step. */
       --tone-edge: var(--foreground) / 0.32;
@@ -1282,6 +1299,9 @@
       --destructive: 356 90% 82%;
       --destructive-ink: var(--destructive);
       --ring-width: 3px;
+      --field-border: var(--ring);
+      --field-hover: var(--ring);
+      --field-focus: var(--ring);
       --tone-edge: var(--foreground) / 0.32;
     }
   }

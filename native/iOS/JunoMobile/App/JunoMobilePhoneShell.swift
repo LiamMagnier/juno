@@ -274,24 +274,10 @@ struct JunoMobileProductSwitch: View {
   }
 }
 
-/// The press every quiet tappable in the redesigned chrome shares: scale 0.97
-/// and 85% opacity over the 120ms press rung; opacity only under Reduce Motion.
+/// Quiet controls share the same press response as content and composer actions.
 struct JunoMobileQuietPressStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
-    Pressed(pressed: configuration.isPressed, label: configuration.label)
-  }
-
-  private struct Pressed: View {
-    let pressed: Bool
-    let label: ButtonStyleConfiguration.Label
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-      label
-        .scaleEffect(pressed && !reduceMotion ? 0.97 : 1)
-        .opacity(pressed ? 0.85 : 1)
-        .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint), value: pressed)
-    }
+    JunoPressButtonStyle().makeBody(configuration: configuration)
   }
 }
 

@@ -1,24 +1,21 @@
 /**
- * The mid-stream budget ceiling.
+ * The estimated mid-stream budget ceiling.
  *
- * The instant the running cost of a generation would push a user past their
- * remaining plan budget, the provider stream is aborted so they cannot be billed
- * a cent beyond it. This ran twice in the chat route — once per streaming path,
- * byte-identical apart from which system prompt and history it measured — which
- * is exactly the kind of duplication that drifts apart on a money path.
+ * Abort when the available usage projection reaches the remaining plan budget.
+ * Usage can arrive late, and a provider may already have accepted work when an
+ * abort arrives, so this is not an invoice-level hard cap. Saved and private
+ * chat use the same arithmetic instead of duplicating money-path logic.
  *
  * Free of `server-only` and of any I/O so the arithmetic and the latch are
  * testable; the caller supplies the token counts it has accumulated so far.
  *
- * Two ways a tool turn stays inside the budget (SPEC §4.7, DECISIONS §4c):
- * the hard halt above, which now also counts Juno's tool fees and provider
- * search fees, and a soft one — after every request the route asks whether one
- * more tool round plus a final answer would cross the ceiling, and if so the
- * loop's next request is the tools-off final one. The soft path makes the halt
- * rare: the turn ends with an answer written from what it found instead of a
- * cut-off stream.
+ * Callers can supply extra tool/search cost and ask whether another tool round
+ * plus a final answer would cross the ceiling. Those estimates only include
+ * the inputs the caller wires here; completed-request receipts are reconciled
+ * separately at settlement.
  */
 import type { UsageAccumulator } from "@/lib/usage-merge";
+import { normalizeUsage } from "@/lib/pricing";
 
 export interface StreamBudgetRates {
   /** micro-USD per input token. */
@@ -30,12 +27,17 @@ export interface StreamBudgetRates {
    *  cached chat over-projects by up to 10x and halts turns the plan could
    *  afford. */
   cacheRead?: number;
+  /** Cache-write prices in the same micro-USD-per-token convention. */
+  cacheWrite?: number;
+  cacheWrite5m?: number;
+  cacheWrite1h?: number;
 }
 
 export interface StreamBudgetGuardOptions {
   /** Remaining plan budget in micro-USD; null means unlimited (owner). */
   ceilingMicroUsd: number | null;
-  rates: StreamBudgetRates;
+  /** Read the served tier again when a provider falls back from a premium tier. */
+  rates: StreamBudgetRates | (() => StreamBudgetRates);
   /** Characters of system + history, the floor when the provider has not yet
    *  reported a prompt token count. */
   inputChars: number;
@@ -45,10 +47,13 @@ export interface StreamBudgetGuardOptions {
     completionTokens?: number;
     /** Prompt tokens served from the provider's cache — billed at `rates.cacheRead`. */
     cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    cacheWrite5mTokens?: number;
+    cacheWrite1hTokens?: number;
     /**
-     * Whether `promptTokens` already counts the cached reads. OpenAI-style
-     * providers report `prompt_tokens` INCLUSIVE of `cached_tokens`; Anthropic
-     * reports `input_tokens` EXCLUSIVE of `cache_read_input_tokens`. Getting
+     * Whether `promptTokens` already counts cached reads AND writes. OpenAI-style
+     * providers report an INCLUSIVE prompt count; Anthropic reports
+     * `input_tokens` EXCLUSIVE of both cache buckets. Getting
      * this wrong in either direction is a 10x error on a long chat, so it is
      * stated rather than guessed. Default: inclusive.
      */
@@ -151,40 +156,57 @@ export function lastRequestFigures(
   options: { promptTokensIncludeCacheRead: boolean }
 ): { lastRequestInputTokens: number; cachedShare: number } {
   const last = usageDelta(previous, current);
-  const writeSplit = (last.cacheWrite5m ?? 0) + (last.cacheWrite1h ?? 0);
-  const write = writeSplit > 0 ? writeSplit : (last.cacheWrite ?? 0);
-  const cacheRead = last.cacheRead ?? 0;
-  const input = options.promptTokensIncludeCacheRead
-    ? (last.input ?? 0) + write
-    : (last.input ?? 0) + cacheRead + write;
+  // Use the ledger's convention here too. OpenAI includes writes in input;
+  // adding them again inflated the estimate of every remaining tool round,
+  // forcing an early final answer while the user's budget could still pay.
+  const normalized = normalizeUsage(options.promptTokensIncludeCacheRead ? "openai" : "anthropic", last);
+  const input = normalized.totalInput;
+  const cacheRead = normalized.cacheRead;
   const cachedShare = input > 0 ? Math.min(1, Math.max(0, cacheRead / input)) : 0;
   return { lastRequestInputTokens: input, cachedShare };
 }
 
 export function createStreamBudgetGuard(opts: StreamBudgetGuardOptions): StreamBudgetGuard {
   let halted = false;
+  const ratesNow = () => typeof opts.rates === "function" ? opts.rates() : opts.rates;
 
-  const projected = (): number => {
+  const projected = (rates = ratesNow()): number => {
     const {
       promptTokens,
       completionTokens,
       cacheReadTokens,
+      cacheWriteTokens,
+      cacheWrite5mTokens,
+      cacheWrite1hTokens,
       promptTokensIncludeCacheRead = true,
       outputChars,
       reasoningChars,
     } = opts.usage();
-    const reported = promptTokens ?? Math.ceil(opts.inputChars / CHARS_PER_TOKEN);
-    const outTok = completionTokens ?? Math.ceil((outputChars + reasoningChars) / CHARS_PER_TOKEN);
-    // Cached reads are priced at the cache rate, not the full input rate.
-    // Whether they sit inside the reported prompt count is provider-specific
-    // (see `promptTokensIncludeCacheRead`); either way the fresh share is
-    // never allowed below zero, so the guard stays an upper bound.
-    const cachedRaw = Math.max(0, cacheReadTokens ?? 0);
-    const cached = promptTokensIncludeCacheRead ? Math.min(cachedRaw, reported) : cachedRaw;
-    const fresh = promptTokensIncludeCacheRead ? reported - cached : reported;
-    const cacheRate = opts.rates.cacheRead ?? opts.rates.input;
+    // Older Anthropic usage events omit a zero fresh-input count. Positive
+    // cache buckets already account for that input; estimating the whole
+    // prompt again would charge it once fresh and once cached.
+    const cacheOnly = !promptTokensIncludeCacheRead &&
+      [cacheReadTokens, cacheWriteTokens, cacheWrite5mTokens, cacheWrite1hTokens].some((n) => (n ?? 0) > 0);
+    const reported = promptTokens ?? (cacheOnly ? 0 : Math.ceil(opts.inputChars / CHARS_PER_TOKEN));
+    // A tool loop has the previous request's count while the next one is
+    // streaming. That older count cannot disable the character floor and let
+    // the next response run past the ceiling until its final usage arrives.
+    const outTok = Math.max(0, completionTokens ?? 0, Math.ceil((outputChars + reasoningChars) / CHARS_PER_TOKEN));
+    const normalized = normalizeUsage(promptTokensIncludeCacheRead ? "openai" : "anthropic", {
+      input: reported,
+      cacheRead: cacheReadTokens,
+      cacheWrite: cacheWriteTokens,
+      cacheWrite5m: cacheWrite5mTokens,
+      cacheWrite1h: cacheWrite1hTokens,
+    });
+    const cacheRate = rates.cacheRead ?? rates.input;
+    const writeRate = rates.cacheWrite ?? rates.input;
+    const splitWrite = normalized.cacheWrite5m + normalized.cacheWrite1h;
+    const writeCost = splitWrite > 0
+      ? normalized.cacheWrite5m * (rates.cacheWrite5m ?? writeRate) + normalized.cacheWrite1h * (rates.cacheWrite1h ?? writeRate)
+      : normalized.cacheWrite * writeRate;
     const extra = Math.max(0, opts.extraCostMicroUsd?.() ?? 0);
-    return fresh * opts.rates.input + cached * cacheRate + outTok * opts.rates.output + extra;
+    return normalized.freshInput * rates.input + normalized.cacheRead * cacheRate + writeCost + outTok * rates.output + extra;
   };
 
   return {
@@ -203,13 +225,14 @@ export function createStreamBudgetGuard(opts: StreamBudgetGuardOptions): StreamB
     projectedMicroUsd: projected,
     wouldExceedNextRound(next) {
       if (opts.ceilingMicroUsd == null) return false;
+      const rates = ratesNow();
       const input = Math.max(0, next.lastRequestInputTokens);
       const share = Math.min(1, Math.max(0, next.cachedShare));
-      const cacheRate = opts.rates.cacheRead ?? opts.rates.input;
-      const promptCost = input * ((1 - share) * opts.rates.input + share * cacheRate);
-      const nextRound = promptCost + NEXT_ROUND_OUTPUT_TOKENS * opts.rates.output + Math.max(0, next.toolFeeEstimateMicroUsd);
-      const finalAnswer = promptCost + FINAL_ANSWER_OUTPUT_TOKENS * opts.rates.output;
-      return projected() + nextRound + finalAnswer >= opts.ceilingMicroUsd;
+      const cacheRate = rates.cacheRead ?? rates.input;
+      const promptCost = input * ((1 - share) * rates.input + share * cacheRate);
+      const nextRound = promptCost + NEXT_ROUND_OUTPUT_TOKENS * rates.output + Math.max(0, next.toolFeeEstimateMicroUsd);
+      const finalAnswer = promptCost + FINAL_ANSWER_OUTPUT_TOKENS * rates.output;
+      return projected(rates) + nextRound + finalAnswer >= opts.ceilingMicroUsd;
     },
   };
 }

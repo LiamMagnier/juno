@@ -714,6 +714,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 window.dispatchEvent(new CustomEvent("juno:new-chat"));
               }}
               aria-label="New chat"
+              data-new-chat-trigger=""
             >
               <MessageSquarePlus className="size-5" />
             </Button>

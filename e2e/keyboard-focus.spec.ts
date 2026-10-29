@@ -35,6 +35,19 @@ test.describe("dialogs give focus back to what opened them", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expectFocused(search);
+
+    // The explicit New chat action still asks for the caret. A pending
+    // arrival must then yield if the person moves to Search before its frame.
+    await page.getByRole("button", { name: /^New chat(?:\s|$)/ }).focus();
+    await page.keyboard.press("Enter");
+    await expectFocused(composer(page));
+    await search.evaluate((button) => {
+      if (!(button instanceof HTMLButtonElement)) throw new Error("Search must remain a button");
+      window.dispatchEvent(new CustomEvent("juno:composer-focus"));
+      button.focus();
+      return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    await expectFocused(search);
   });
 
   test("command menu opened with the chord from the composer", async ({ page }) => {
@@ -66,7 +79,7 @@ test.describe("dialogs give focus back to what opened them", () => {
   test("confirm dialog opened from a conversation's menu", async ({ page }) => {
     await openChat(page);
     const row = page.locator("[data-conversation-row]").first();
-    test.skip((await row.count()) === 0, "Needs a conversation in the sidebar (scripts/seed-e2e-user.ts seeds one)");
+    await expect(row).toBeVisible({ timeout: 30_000 });
     const options = row.getByRole("button", { name: /(Conversation|Session) options/ });
     await options.focus();
     await page.keyboard.press("Enter");
@@ -86,7 +99,7 @@ test.describe("dialogs give focus back to what opened them", () => {
 test("inline rename returns focus to the renamed row", async ({ page }) => {
   await openChat(page);
   const row = page.locator("[data-conversation-row]").first();
-  test.skip((await row.count()) === 0, "Needs a conversation in the sidebar (scripts/seed-e2e-user.ts seeds one)");
+  await expect(row).toBeVisible({ timeout: 30_000 });
   const id = await row.getAttribute("data-conversation-row");
   const link = page.locator(`[data-conversation-row="${id}"] a[href="/chat/${id}"]`);
 
@@ -106,7 +119,7 @@ test("inline rename returns focus to the renamed row", async ({ page }) => {
 test("inline rename saved with the mouse leaves no keyboard focus ring on the row", async ({ page }) => {
   await openChat(page);
   const row = page.locator("[data-conversation-row]").first();
-  test.skip((await row.count()) === 0, "Needs a conversation in the sidebar (scripts/seed-e2e-user.ts seeds one)");
+  await expect(row).toBeVisible({ timeout: 30_000 });
   const id = await row.getAttribute("data-conversation-row");
   const link = page.locator(`[data-conversation-row="${id}"] a[href="/chat/${id}"]`);
   await row.hover();

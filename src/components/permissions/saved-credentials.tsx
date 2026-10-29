@@ -4,6 +4,8 @@ import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { fieldFrameClass, fieldHeightClass } from "@/components/ui/field-recipe";
+import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { PERMISSION_GRANT_LABEL } from "@/lib/permissions/taxonomy";
 import { SECRET_REFUSAL_TEXT, type SecretRedemptionRefusal } from "@/lib/secrets/policy";
@@ -371,7 +373,7 @@ function CredentialRow({
             id={`grant-task-${credential.id}`}
             value={task}
             onChange={(event) => setTask(event.target.value)}
-            className="h-9 min-w-0 flex-1 rounded-field border border-foreground/[0.14] bg-foreground/[0.025] px-3 text-ui text-foreground dark:border-white/[0.12] dark:bg-white/[0.03]"
+            className={cn(fieldFrameClass, fieldHeightClass, "min-w-0 flex-1 px-3")}
           >
             <option value="">Choose a task…</option>
             {tasks.map((option) => (

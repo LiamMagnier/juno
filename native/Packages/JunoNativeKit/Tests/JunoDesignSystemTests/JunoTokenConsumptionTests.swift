@@ -292,7 +292,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
         let phone = "iOS keeps the value its screens were composed on until the iOS pass (JunoColors.swift, JunoSurfaces.swift)."
         let ramp = "The shipped status ramp, read as text by Code, Work and the phone; migrates to the generated inks per surface."
         let code = "Juno Code's developer surfaces; the web has no terminal or diff-row token."
-        let system = "iOS round-2 redesign: the phone and iPad sit on the system's own grounds (white/black, neutral one- and two-step greys); the Mac keeps the generated values (JunoColors.swift)."
         let illustration = "Illustrative external shop screenshot in Code's preview fixture, not Alevr product chrome. Real sessions receive bridge screenshots."
         return [
             "CodeV2FixtureFrames.swift:attributes": illustration,
@@ -303,16 +302,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "CodeV2FixtureFrames.swift:window": illustration,
             "CodeV2FixtureFrames.swift:y": illustration,
             "CodeV2Gallery.swift:model": illustration,
-            "JunoColors.swift:canvasDark": system,
-            "JunoColors.swift:canvasLight": system,
-            "JunoColors.swift:surfaceLight": system,
-            "JunoColors.swift:surfaceDark": system,
-            "JunoColors.swift:mutedLight": system,
-            "JunoColors.swift:mutedDark": system,
-            "JunoColors.swift:secondaryLight": system,
-            "JunoColors.swift:secondaryDark": system,
-            "JunoColors.swift:borderLight": phone,
-            "JunoColors.swift:borderDark": phone,
             "JunoSurfaces.swift:rowHoverLight": phone,
             "JunoSurfaces.swift:rowHoverDark": phone,
             "JunoSurfaces.swift:rowSelectedLight": phone,

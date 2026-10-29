@@ -2,8 +2,8 @@
  * Base styles for the hosted design editor.
  *
  * The Mac window has no `globals.css`, so the design tokens the editor's
- * components reference are declared here — the same names and the same values
- * the website's theme uses, so a document looks identical on both. Light and
+ * components reference are projected from globals.css by the bundle builder,
+ * including field roles and increased contrast. Light and
  * dark follow the system, because the host web view inherits the Mac's
  * appearance and an editor that ignored it would be the only light panel in a
  * dark window.
@@ -11,28 +11,6 @@
 
 :root {
   color-scheme: light dark;
-
-  --background: 0 0% 100%;
-  --foreground: 240 10% 4%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 4%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 4%;
-  --primary: 231 82% 63%;
-  --primary-foreground: 0 0% 100%;
-  --muted: 240 5% 96%;
-  --muted-foreground: 240 4% 46%;
-  --accent: 240 5% 96%;
-  --accent-foreground: 240 6% 10%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 6% 90%;
-  --input: 240 6% 90%;
-  --ring: 231 82% 63%;
-  --success: 142 71% 45%;
-  --warning: 38 92% 50%;
-  --warning-foreground: 38 40% 20%;
-  --radius: 0.75rem;
 
   /* The motion ladder, mirrored from src/app/globals.css — that file is the
      source of truth; change a value there first and copy it here.
@@ -44,8 +22,8 @@
      shorthand was invalid at computed-value time, `animation-name` fell back
      to `none`, and every entrance in the Mac editor — the adjustments panel,
      the editor frame, the Ask Juno bar — hard-cut while the same components
-     eased in on the website. The colour tokens above kept the two looking
-     identical; the missing motion tokens kept them from MOVING identically,
+     eased in on the website. The colour tokens kept the two looking
+     similar; the missing motion tokens kept them from MOVING identically,
      and nothing reported it, because an invalid animation is not an error. */
   --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
   --ease-out-strong: cubic-bezier(0.32, 0.72, 0, 1);
@@ -62,26 +40,6 @@
   --dur-base: 220ms;
   --dur-slow: 360ms;
   --dur-emphasis: 560ms;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 240 10% 6%;
-    --foreground: 0 0% 96%;
-    --card: 240 8% 9%;
-    --card-foreground: 0 0% 96%;
-    --popover: 240 8% 11%;
-    --popover-foreground: 0 0% 96%;
-    --primary: 231 82% 68%;
-    --primary-foreground: 240 10% 6%;
-    --muted: 240 5% 16%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 240 5% 18%;
-    --accent-foreground: 0 0% 96%;
-    --destructive: 0 72% 58%;
-    --border: 240 5% 20%;
-    --input: 240 5% 20%;
-  }
 }
 
 /* The website's tiered reduced-motion policy (globals.css), which the host
@@ -147,7 +105,7 @@ body,
 }
 @media (prefers-reduced-motion: reduce) {
   .pressable {
-    transition: none;
+    transition-property: color, background-color, border-color, opacity, box-shadow, filter;
   }
   .pressable:active {
     transform: none;

@@ -1,5 +1,6 @@
-import type { FastMode } from "@/lib/pricing";
-import { estimateGenerationCostUsd, normalizeUsage } from "@/lib/pricing";
+import type { FastMode, GenerationCostOpts } from "@/lib/pricing";
+import { normalizeUsage } from "@/lib/pricing";
+import { estimateTurnCostUsd } from "@/lib/turn-pricing";
 import { formatUsd } from "@/lib/utils";
 import type { ModelInfo } from "@/lib/models";
 
@@ -14,6 +15,8 @@ import type { ModelInfo } from "@/lib/models";
  */
 
 export interface RawGenerationUsage {
+  /** Internal provider-request receipts; never supplied by a chat client. */
+  requestUsages?: readonly GenerationCostOpts[];
   input?: number;
   output?: number;
   reasoning?: number;
@@ -109,7 +112,7 @@ export function buildUsage(
   raw: RawGenerationUsage,
   fastMode: FastMode = false
 ): GenerationUsage {
-  const billed = estimateGenerationCostUsd(model, {
+  const billed = estimateTurnCostUsd(model, {
     // For Anthropic, raw.input is FRESH only; cache is separate. The estimator
     // bills each bucket at the right rate.
     promptTokens: raw.input,
@@ -126,7 +129,7 @@ export function buildUsage(
     promptChars: raw.promptChars,
     completionChars: raw.completionChars,
     reasoningChars: raw.reasoningChars,
-  });
+  }, raw.requestUsages);
   const cacheRead = Math.max(0, raw.cacheRead ?? 0);
   const cacheWrite5m = Math.max(0, raw.cacheWrite5m ?? 0);
   const cacheWrite1h = Math.max(0, raw.cacheWrite1h ?? 0);

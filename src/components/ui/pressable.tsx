@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { controlMotionClass } from "@/components/ui/control-recipe";
 
 /**
  * The four interactive roles that are NOT the action button.
@@ -56,11 +57,7 @@ const pressableVariants = cva(
   // properties, not `duration-fast` / `ease-out-soft`: tailwindcss-animate
   // reads those utilities as ANIMATION timing too, and would retime an
   // entrance on the same element.
-  "pressable relative select-none disabled:pointer-events-none disabled:opacity-50 " +
-    "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] " +
-    "motion-reduce:[transition-duration:var(--dur-fast)] motion-reduce:[transition-timing-function:var(--ease-out-soft)] " +
-    "motion-reduce:active:scale-100 " +
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0",
+  cn(controlMotionClass, "relative select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"),
   {
     variants: {
       /**

@@ -334,9 +334,7 @@ final class JunoDesignTokensTests: XCTestCase {
     /// (10%) < card (14.1%) < popover (16.1%), in HSL lightness, the unit the
     /// web writes the ramp in (§8.1; V3's layered charcoal).
     ///
-    /// Measured on the ground the Mac paints. The phone keeps its 4% ground
-    /// for now (see `JunoColorToken.canvasDark`), which satisfies the same
-    /// order with more room.
+    /// Both native platforms read this complete generated elevation ramp.
     func testDarkCanvasIsDarkerThanEverySurfaceAboveIt() {
         func lightness(_ token: JunoColorToken) -> Double {
             (max(token.red, token.green, token.blue) + min(token.red, token.green, token.blue)) / 2
@@ -351,13 +349,10 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(popover, 0.161, accuracy: 0.001)
     }
 
-    /// The Mac canvas is `--background` itself: #FAF9F6 / #1F1D1C. The old
-    /// hand-kept `warmBlack` (4%) is gone from the Mac.
-    func testTheMacCanvasIsTheGeneratedBackground() {
+    /// Every native canvas is the generated background, including the phone.
+    func testTheNativeCanvasIsTheGeneratedBackground() {
         XCTAssertEqual(JunoColorToken.canvasLight, JunoGeneratedColors.background.light)
-        #if os(macOS)
         XCTAssertEqual(JunoColorToken.canvasDark, JunoGeneratedColors.background.dark)
-        #endif
     }
 
     /// The surviving scales are ordered.

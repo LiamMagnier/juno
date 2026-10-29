@@ -19,6 +19,7 @@ import { focusTranscriptMessage } from "@/lib/chat/transcript-window";
 import { MessageList } from "@/components/chat/message-list";
 import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
+import { createComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { HomeStarters } from "@/components/chat/home-starters";
@@ -396,6 +397,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     });
   }, []);
   const [privateMode, setPrivateMode] = React.useState(false);
+  // One in-memory draft through the landing → dock handoff. A new route or
+  // privacy mode creates a separate session; incognito never uses storage.
+  const composerDraftSession = React.useMemo(
+    () => createComposerDraftSession(`${privateMode ? "private" : "saved"}:${conversationId ?? "new"}`),
+    [conversationId, privateMode],
+  );
   /*
    * The control that switches incognito leaves with the mode it switched: the
    * header toggle unmounts with the title row, and the incognito band's close
@@ -906,7 +913,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setFullscreen(false);
     document.documentElement.removeAttribute("data-private-mode");
     router.push("/chat");
-    window.dispatchEvent(new CustomEvent("juno:new-chat"));
+    // This reset restores focus to the privacy control. The home must not
+    // interpret it as a New chat press and take focus back on the next frame.
+    window.dispatchEvent(new CustomEvent("juno:new-chat", { detail: { focusComposer: false } }));
   }, [chat, router, setActiveConversationId]);
 
   const togglePrivateMode = React.useCallback(() => {
@@ -1828,6 +1837,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       if (document.querySelector('[role="dialog"][data-state="open"]')) return;
       e.preventDefault();
       setFindOpen(true);
+      // Repeating the shortcut returns to the existing query as well as
+      // opening Find. This also lets the reader replace it in one keystroke.
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>("[data-conversation-find-input]")?.select());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2155,6 +2167,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const composer = (
     <Composer
       conversationId={conversationId}
+      draftSession={composerDraftSession}
       // Armed only when there is NO prompt to auto-send. `?q=…&research=1`
       // goes out through chat.send with `deepResearch` set (the effect below),
       // never through the composer's own submit — so the composer's
@@ -2578,7 +2591,14 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
               {findOpen && (
-                <ConversationFind messages={displayMessages} onSearch={loadWholeTranscript} onClose={() => setFindOpen(false)} />
+                <ConversationFind
+                  key={conversationId ?? "new"}
+                  messages={displayMessages}
+                  onSearch={loadWholeTranscript}
+                  onClose={() => setFindOpen(false)}
+                  loadingHistory={chat.loadingOlder}
+                  hasOlderHistory={chatHistory.hasOlder}
+                />
               )}
               <AgentThreadContext.Provider value={agentThreadIdentity}>
               <LiveUIHostProvider value={liveUIHost}>

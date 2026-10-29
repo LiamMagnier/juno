@@ -15,9 +15,8 @@ public enum JunoComposerMetrics {
     /// The transcript's reading measure. The composer and the transcript are one
     /// column, so they read one number for it.
     public static let maxWidth: CGFloat = JunoReadingMeasure.reading
-    /// The shell's radius: 24, the iPhone composer's and ChatGPT's — one card
-    /// shape across the apps (native redesign, Oct 2026).
-    public static let cornerRadius: CGFloat = 24
+    /// One composer shape across the website and both native apps.
+    public static let cornerRadius: CGFloat = JunoRadius.composer
     /// How close two glass shapes in the cluster may come before the container
     /// starts blending them.
     public static let containerSpacing: CGFloat = JunoSpace.snug

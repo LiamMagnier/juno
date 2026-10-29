@@ -238,11 +238,13 @@ test("the screenshot matrix is light, dark and high contrast × motion on and of
   assert.deepEqual(variants.map((v) => v.key), ["light-full", "light-reduced", "dark-full", "dark-reduced", "high-contrast-full", "high-contrast-reduced"]);
   assert.deepEqual(variantUse({ theme: "high-contrast", motion: "reduced" }), {
     colorScheme: "light",
-    reducedMotion: "reduce",
-    contrast: "more",
-    forcedColors: "none",
+    contextOptions: {
+      reducedMotion: "reduce",
+      contrast: "more",
+      forcedColors: "none",
+    },
   });
-  assert.equal(variantUse({ theme: "forced-colors", motion: "full" }).forcedColors, "active");
+  assert.equal(variantUse({ theme: "forced-colors", motion: "full" }).contextOptions.forcedColors, "active");
   assert.equal(variantUse({ theme: "high-contrast-dark", motion: "full" }).colorScheme, "dark");
   assert.equal(matrixVariants({ themes: ["light", "dark"], motions: ["full"] }).length, 2);
 });

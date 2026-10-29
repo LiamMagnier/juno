@@ -1,0 +1,67 @@
+{
+  "evidence": "synthetic local CPU and deterministic call counts; not production latency or monthly savings",
+  "node": "v24.22.1",
+  "measurements": [
+    {
+      "name": "previous aggregate estimator, six-request totals",
+      "iterationsPerSample": 10000,
+      "samples": 9,
+      "unit": "microseconds per operation",
+      "median": 0.207,
+      "slowestSample": 0.889
+    },
+    {
+      "name": "reconciled per-request estimator, six requests",
+      "iterationsPerSample": 10000,
+      "samples": 9,
+      "unit": "microseconds per operation",
+      "median": 5.447,
+      "slowestSample": 8.106
+    },
+    {
+      "name": "stream budget projection including canonical rate lookup",
+      "iterationsPerSample": 20000,
+      "samples": 9,
+      "unit": "microseconds per operation",
+      "median": 0.13,
+      "slowestSample": 0.354
+    },
+    {
+      "name": "literal search, 1,000 messages, no match",
+      "iterationsPerSample": 100,
+      "samples": 9,
+      "unit": "microseconds per operation",
+      "median": 666.722,
+      "slowestSample": 799.881
+    },
+    {
+      "name": "literal search, 1,000 messages, 500-result cap",
+      "iterationsPerSample": 100,
+      "samples": 9,
+      "unit": "microseconds per operation",
+      "median": 319.675,
+      "slowestSample": 517.356
+    }
+  ],
+  "duplicatedFollowUps": {
+    "callers": 20,
+    "generatedCalls": 1,
+    "avoidedCalls": 19
+  },
+  "contextTierReproduction": {
+    "model": "xai:grok-4.7",
+    "requests": [
+      {
+        "promptTokens": 150000,
+        "completionTokens": 1000
+      },
+      {
+        "promptTokens": 150000,
+        "completionTokens": 1000
+      }
+    ],
+    "previousAggregateEstimateUsd": 1.224,
+    "correctedRequestEstimateUsd": 0.612
+  },
+  "arithmeticConsumed": true
+}

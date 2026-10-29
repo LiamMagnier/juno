@@ -12,6 +12,8 @@
 #   artifacts        e2e/journey/artifact.spec.ts (card, canvas, stored row)
 #   MCP add          e2e/journey/mcp-add.spec.ts (real /connections dialog and
 #                    POST /api/mcp/servers; an unreachable server refused)
+#   chat controls    composer ownership, clarification, Find and focus recovery
+#   shared design    real settings, menus and dialogs across motion/touch themes
 #
 # Everything goes through the QA runner (scripts/qa/run-prod-e2e.sh): a
 # production build (next build + next start, never next dev), a disposable
@@ -68,7 +70,7 @@ jobs:
     name: E2E journey (production build)
     runs-on: ubuntu-latest
     # The build is most of it (#99's production build + 204 tests took 13.7
-    # minutes); the journey is 10 tests on one browser.
+    # minutes); the journey and focused control regressions share one browser.
     timeout-minutes: 45
     services:
       postgres:
@@ -117,6 +119,8 @@ jobs:
           bash scripts/qa/run-prod-e2e.sh --package journey --report-dir test-results/journey
           --
           e2e/journey e2e/chat.spec.ts e2e/regenerate.spec.ts
+          e2e/composer-submission.spec.ts e2e/conversation-find.spec.ts
+          e2e/design-primitives-audit.spec.ts e2e/keyboard-focus.spec.ts
           --project=chromium
 
       - name: Publish the Playwright report and traces

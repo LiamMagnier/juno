@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 6febf0ce467b380d
+// tokens-digest: 91e861b0073c3c49
 //
 
 /** The accent ids, in the order the web lists them (src/lib/accents.ts). */
@@ -59,8 +59,8 @@ export const TIMING_TOKENS = {
     hairline: 300,
     insertFlush: 300,
     show: 200,
-    tooltip: 500,
-    tooltipSkip: 300,
+    tooltip: 200,
+    tooltipSkip: 400,
   },
   hold: {
     arm: 500,

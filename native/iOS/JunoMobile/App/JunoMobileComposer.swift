@@ -585,9 +585,9 @@ struct JunoMobileComposer: View {
           .accessibilityHint(voiceBargeInHint)
           // Native Liquid Glass, as the owner requires for floating chrome:
           // the system material, not a rebuilt one. One rounded card, radius
-          // 24 — no border, no shadow, nothing inside it wearing its own glass.
+          // from the shared composer token — no extra border or shadow.
           .junoGlass(
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+            in: RoundedRectangle(cornerRadius: JunoComposerMetrics.cornerRadius, style: .continuous)
           )
           // In a call the card's own edge carries the voice light: on the
           // edge and outside it, never over the field.
@@ -602,7 +602,7 @@ struct JunoMobileComposer: View {
               JunoVoiceGlow(
                 mode: dictation.isListening ? .you : .off,
                 you: { [dictation] in dictation.level },
-                cornerRadius: 24
+                cornerRadius: JunoComposerMetrics.cornerRadius
               )
               .transition(.opacity)
             }

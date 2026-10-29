@@ -531,19 +531,21 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       outcome,
     });
 
-    // Hard mid-stream budget ceiling (see the private path for rationale):
-    // abort the provider stream the instant this generation's running cost
-    // would take the user past their remaining plan budget.
+    // Stop when the available usage projection reaches the remaining budget.
+    // Late usage and already accepted provider work are settled separately.
     const synthesisPromptChars = () => promptChars(synthesisSystem, turnHistory);
     let budgetHalted = false;
     const budgetGuard = createStreamBudgetGuard({
       ceilingMicroUsd: budget.remainingMicroUsd,
-      rates: modelRatesMicroUsdPerToken(modelId),
+      rates: () => modelRatesMicroUsdPerToken(modelId, acc.servedFast),
       inputChars: synthesisPromptChars(),
       usage: () => ({
         promptTokens: acc.tokens.promptTokens,
         completionTokens: acc.tokens.completionTokens,
         cacheReadTokens: acc.tokens.cacheReadTokens,
+        cacheWriteTokens: acc.tokens.cacheWriteTokens,
+        cacheWrite5mTokens: acc.tokens.cacheWrite5mTokens,
+        cacheWrite1hTokens: acc.tokens.cacheWrite1hTokens,
         promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
         outputChars: acc.text.length,
         reasoningChars: acc.reasoning.length,
@@ -640,6 +642,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           )
         : streamChat({
         model: modelInfo,
+        onRequestUsage: (usage) => acc.recordRequestUsage(usage),
         system: synthesisSystem,
         systemStablePrefix: baseSystemSections.stable,
         history: turnHistory,

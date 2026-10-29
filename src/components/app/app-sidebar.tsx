@@ -1277,6 +1277,7 @@ export function AppSidebar({
              made the one row people press most read as the chunkiest. */
           icon={<SidebarMotionIcon kind={isCode ? "new-session" : "new"} />}
           label={isCode ? "New session" : FEATURE_NAMES.newChat.label}
+          newChatTrigger={!isCode}
           moves
           trailing={isCode ? undefined : <Kbd>{chordLabel(`${mod}⇧O`, mod)}</Kbd>}
           layoutId="nav-new"
@@ -2388,6 +2389,7 @@ function NavRow({
   transition: t,
   reveal = false,
   moves = false,
+  newChatTrigger = false,
 }: {
   href?: string;
   onClick?: () => void;
@@ -2400,6 +2402,8 @@ function NavRow({
    * menus and message actions do.
    */
   moves?: boolean;
+  /** Lets the new chat's arrival focus yield from this specific control. */
+  newChatTrigger?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
   trailing?: React.ReactNode;
   /**
@@ -2522,6 +2526,7 @@ function NavRow({
     <button
       type="button"
       onClick={onClick}
+      data-new-chat-trigger={newChatTrigger ? "" : undefined}
       data-active={activeAttr}
       data-jicon-articulate={articulate}
       aria-label={collapsed || detail ? name : undefined}

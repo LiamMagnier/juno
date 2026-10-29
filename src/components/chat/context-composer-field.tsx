@@ -66,6 +66,8 @@ type Props = Omit<React.ComponentPropsWithoutRef<"textarea">, "value"> & {
   value: string;
   conversationId: string | null;
   onTokensChange: (tokens: ContextToken[]) => void;
+  /** Tokens already held by the view when a layout handoff remounts the field. */
+  initialTokens?: ContextToken[];
   privateMode?: boolean;
   /** No @ lookup at all (a live voice call, an image model). */
   mentionsDisabled?: boolean;
@@ -132,6 +134,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     value,
     conversationId,
     onTokensChange,
+    initialTokens,
     privateMode,
     mentionsDisabled,
     anchorRef,
@@ -160,7 +163,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
   const enterKeyHint = useEnterKeyHint();
   const composing = React.useRef(false);
   const lastReported = React.useRef<string | null>(null);
-  const tokensRef = React.useRef<ContextToken[]>([]);
+  const tokensRef = React.useRef<ContextToken[]>(initialTokens ?? []);
   const selectedToken = React.useRef<HTMLElement | null>(null);
   const paletteId = React.useId().replace(/:/g, "");
   const lookupEnabled = !privateMode && !mentionsDisabled;
