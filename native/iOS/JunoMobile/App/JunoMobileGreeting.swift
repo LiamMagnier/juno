@@ -3,38 +3,11 @@ import JunoDesignSystem
 import Observation
 import SwiftUI
 
-/// The web's `active:scale-[0.97]` on `duration-fast ease-out-soft`, for the
-/// composer's chips.
-///
-/// A `.plain` button gives no press feedback at all, and these chips sit on
-/// Liquid Glass, which already flexes — so the scale is small on purpose: enough
-/// to confirm the tap landed, not enough to fight the material underneath.
+/// Starter chips use the same press cadence and accessibility policy as the
+/// other custom controls; the app spelling remains for existing callers.
 struct JunoMobileChipPressStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
-    // The environment is read in a nested `View`, not on the style itself: a
-    // `ButtonStyle` is not a dynamic-property container, so an `@Environment`
-    // declared here would silently keep its default and Reduce Motion would
-    // never be honoured.
-    Press(pressed: configuration.isPressed, label: configuration.label)
-  }
-
-  private struct Press: View {
-    let pressed: Bool
-    let label: ButtonStyleConfiguration.Label
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-      label
-        .scaleEffect(pressed && !reduceMotion ? 0.97 : 1)
-        .animation(
-          JunoMotion.reduced(
-            JunoMotion.outSoft(JunoMotion.Duration.fast),
-            when: reduceMotion
-          ),
-          value: pressed
-        )
-    }
+    JunoPressButtonStyle().makeBody(configuration: configuration)
   }
 }
 

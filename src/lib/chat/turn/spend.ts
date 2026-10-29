@@ -49,5 +49,6 @@ export function recordTurnSpend(input: {
     completionChars: input.completionChars,
     reasoningChars: acc.reasoning.length,
     fastMode: acc.servedFast,
+    requestUsages: acc.requestUsages,
   });
 }

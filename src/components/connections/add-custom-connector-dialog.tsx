@@ -172,7 +172,7 @@ function AddCustomConnectorFlow({ onSaved }: { onSaved: () => void }) {
               autoCapitalize="off"
               autoCorrect="off"
               disabled={checking}
-              className="h-10 flex-1 font-mono text-ui"
+              className="h-10 font-mono text-ui sm:flex-1"
             />
             <Button type="submit" className="h-10 sm:w-28" disabled={!address.trim() || (authMode === "token" && !name.trim())} loading={checking}>
               {authMode === "token" ? "Save server" : "Check"}

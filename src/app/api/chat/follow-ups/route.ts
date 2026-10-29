@@ -8,6 +8,7 @@ import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { accountBackgroundProvider, loadBackgroundProviderPolicy, runUtilityPrompt } from "@/lib/memory";
 import { getModel } from "@/lib/models";
 import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { createFollowUpCache, followUpCacheKey } from "@/lib/chat/follow-up-cache";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -22,6 +23,7 @@ const MAX_SUGGESTION_CHARS = 80;
 /** Below this, a line is an interjection ("Sure!"), not a real follow-up ask. */
 const MIN_SUGGESTION_CHARS = 12;
 const CONTEXT_MESSAGES = 6;
+const suggestionsCache = createFollowUpCache();
 
 function compact(text: string): string {
   return text.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim();
@@ -104,16 +106,24 @@ export async function POST(req: Request) {
       where: { conversationId: conversation.id, role: { in: ["USER", "ASSISTANT"] }, ...ON_ACTIVE_PATH },
       orderBy: { createdAt: "desc" },
       take: CONTEXT_MESSAGES,
-      select: { role: true, content: true },
+      select: { id: true, role: true, content: true },
     });
 
-    const messages = recent
+    // A new user turn has no answer to follow up on yet. Generating from an
+    // older assistant row both spends tokens and offers questions about the
+    // wrong exchange while the current response is still being written.
+    if (recent[0]?.role !== "ASSISTANT") return NextResponse.json({ suggestions: [] });
+
+    const latestAssistantId = recent[0].id;
+    const messages = [...recent]
       .reverse()
-      .map((m) => ({ role: m.role, content: compact(decryptMessageTextSafe(m.content)) }))
+      .map((m) => ({ id: m.id, role: m.role, content: compact(decryptMessageTextSafe(m.content)) }))
       .filter((m) => m.content);
 
     // Nothing to follow up on until the assistant has actually said something.
-    if (!messages.some((m) => m.role === "ASSISTANT")) return NextResponse.json({ suggestions: [] });
+    if (messages.at(-1)?.role !== "ASSISTANT" || messages.at(-1)?.id !== latestAssistantId) {
+      return NextResponse.json({ suggestions: [] });
+    }
 
     const transcript = messages
       .map((m) => `${m.role === "USER" ? "User" : "Assistant"}: ${m.content.slice(0, m.role === "USER" ? 1200 : 2000)}`)
@@ -138,21 +148,33 @@ export async function POST(req: Request) {
       chatProvider ?? accountBackgroundProvider(user.id),
     ]);
 
-    const { result } = await runUtilityPrompt({
-      system: SYSTEM,
-      userMsg: `Conversation so far:\n${transcript}\n\nThree follow-up questions the user might send next:`,
-      maxTokens: 160,
-      label: "follow-ups",
-      parse: parseSuggestions,
-      // Decoration the user did not ask for, on a model call they pay for:
-      // billed to the account as `kind: "utility"` so the pills show up in the
-      // month's spend instead of being free to the budget and unexplained.
+    if (req.signal.aborted) return NextResponse.json({ suggestions: [] });
+    const key = followUpCacheKey({
       userId: user.id,
-      policy,
+      conversationId: conversation.id,
+      model: conversation.model,
       conversationProvider,
+      policy,
+      system: SYSTEM,
+      messages,
+    });
+    const suggestions = await suggestionsCache.getOrCreate(key, async () => {
+      const { result } = await runUtilityPrompt({
+        system: SYSTEM,
+        userMsg: `Conversation so far:\n${transcript}\n\nThree follow-up questions the user might send next:`,
+        maxTokens: 160,
+        label: "follow-ups",
+        parse: parseSuggestions,
+        // Only the cache fill starts a paid walk. Readers of the same answer
+        // share its result; one disconnected reader must not abort the other.
+        userId: user.id,
+        policy,
+        conversationProvider,
+      });
+      return result;
     });
 
-    return NextResponse.json({ suggestions: result ?? [] });
+    return NextResponse.json({ suggestions });
   } catch (err) {
     console.error("[follow-ups] generation failed", { conversationId: conversation.id, err });
     return NextResponse.json({ suggestions: [] });

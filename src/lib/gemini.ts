@@ -322,7 +322,7 @@ export async function* streamGemini(
         }
         metered?.end(
           state.sawUsage
-            ? { input: state.usage.input, output: state.usage.output, cacheRead: state.usage.cached, reasoning: state.usage.thoughts }
+            ? { input: state.usage.input, output: state.usage.output, cacheRead: state.usage.cached, reasoning: state.usage.thoughts, total: state.usage.total }
             : null
         );
         metered = undefined;

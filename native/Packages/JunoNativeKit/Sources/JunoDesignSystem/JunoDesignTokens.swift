@@ -34,18 +34,11 @@ public struct JunoColorToken: Hashable, Sendable {
     // projection of `src/app/globals.css` (`Generated/JunoGeneratedTokens.swift`)
     // rather than holding a hand-converted triple.
     //
-    // `warmWhite` and `warmBlack` used to sit here as the canvas, and they were
-    // the reason this comment exists. They were the one ground the generator
-    // did not feed, so they went stale twice: `48 7% 9%` after the web moved to
-    // a 4% ground, and then 4% after the web moved back up to the 11.5% warm
-    // charcoal it ships today — which left the Mac painting a near-black the
-    // website no longer has. The canvas is now `JunoGeneratedColors.background`
-    // like every other surface (see `JunoColorToken.canvasLight`). The one
-    // hand-kept ground left is the phone's dark canvas, held at its shipped 4%
-    // on purpose and documented where it is declared.
+    // The canvas, cards and wells read the same generated graphite palette on
+    // the Mac and the phone. Platform materials remain native; a second set of
+    // manually kept neutral colours no longer changes the product's identity.
 
-    /// `--primary` on light: V3's ultramarine, `229.231 63.415% 48.235%`
-    /// (#2D49C9). The name is the default accent's stored setting ("coral"),
+    /// `--primary` on light. The name is the default accent's stored setting ("coral"),
     /// kept stable so saved preferences still resolve; the colour is not
     /// coral any more. White on it clears the 4.5:1 the primary CTA's label
     /// needs. This is the *brand* primary, not the account's accent: anything
@@ -655,7 +648,11 @@ public enum JunoReadingMeasure {
 /// It reads Reduce Motion itself. A scale change is spatial travel, so under the
 /// preference the dip is dropped and the opacity carries the press alone.
 public struct JunoPressButtonStyle: ButtonStyle {
-    public init() {}
+    private let pressedScale: CGFloat
+
+    public init(pressedScale: CGFloat = 0.97) {
+        self.pressedScale = pressedScale
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         // The body is a real `View` rather than modifiers applied straight to
@@ -665,23 +662,45 @@ public struct JunoPressButtonStyle: ButtonStyle {
         // the obvious way would answer whatever the preference was when the
         // style value was created, which for a preference the user toggles mid
         // session is the same as not reading it.
-        PressBody(configuration: configuration)
+        PressBody(configuration: configuration, pressedScale: pressedScale)
     }
 
     private struct PressBody: View {
         let configuration: ButtonStyleConfiguration
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        let pressedScale: CGFloat
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.junoAccessibility) private var accessibility
 
         var body: some View {
+            let feedback = JunoPressFeedback(
+                pressed: configuration.isPressed,
+                enabled: isEnabled,
+                reducesTravel: accessibility.reducesTravel,
+                pressedScale: pressedScale
+            )
             configuration.label
                 .junoIconHoverSource()
-                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
-                .opacity(configuration.isPressed ? 0.72 : 1)
+                .scaleEffect(feedback.scale)
+                .opacity(feedback.opacity)
                 .animation(
-                    JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint),
+                    JunoMotion.reduced(JunoMotion.press, when: accessibility.reduceMotion, tier: .tint),
                     value: configuration.isPressed
                 )
         }
+    }
+}
+
+/// One press response for custom controls on both platforms. A disabled button
+/// cannot advertise a press; Reduce Motion and Prefer Cross-Fade remove scale
+/// while retaining immediate tonal feedback.
+public struct JunoPressFeedback: Equatable, Sendable {
+    public let scale: CGFloat
+    public let opacity: Double
+
+    public init(pressed: Bool, enabled: Bool, reducesTravel: Bool, pressedScale: CGFloat = 0.97) {
+        let active = pressed && enabled
+        scale = active && !reducesTravel ? min(1, max(0.9, pressedScale)) : 1
+        opacity = !enabled ? 0.5 : active ? 0.85 : 1
     }
 }
 
@@ -699,6 +718,12 @@ public extension ButtonStyle where Self == JunoPressButtonStyle {
 /// accelerate curve in use anywhere, which is why every dismissal in the product
 /// read as the UI being reluctant to let go.
 public extension AnyTransition {
+    /// Send, voice and stop change face in one fixed control. Under either
+    /// travel-reduction preference, changing the face is only a cross-fade.
+    static func junoControlSwap(reducesTravel: Bool) -> AnyTransition {
+        reducesTravel ? .opacity : .opacity.combined(with: .scale(scale: 0.8))
+    }
+
     /// Something arriving over the content: a popover's inner content, a toast,
     /// an inspector card, an inline confirmation.
     static var junoOverlay: AnyTransition {

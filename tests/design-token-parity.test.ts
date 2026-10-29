@@ -38,7 +38,8 @@ test("every generated colour has light, dark and both high-contrast values", () 
     }
   }
   for (const role of ["statusRunning", "statusNeedsYou", "statusNeedsYouInk", "statusReady", "statusBlocked",
-    "mutedForegroundOnFill", "inkTertiary", "userBubbleHover", "presenceWash", "signalWash", "cmpInk2", "cmpWell", "cmpWell2", "cmpWell3", "input", "hairline", "selected", "userBubble"]) {
+    "mutedForegroundOnFill", "inkTertiary", "userBubbleHover", "presenceWash", "signalWash", "cmpInk2", "cmpWell", "cmpWell2", "cmpWell3", "input", "hairline", "selected", "userBubble",
+    "fieldSurface", "fieldSurfaceActive", "fieldBorder", "fieldHover", "fieldFocus", "fieldRing"]) {
     assert.match(swift, new RegExp(`public static let ${role} = JunoGeneratedPair`), `${role} is not projected`);
   }
   // The struct keeps its two-argument initialiser for existing callers.

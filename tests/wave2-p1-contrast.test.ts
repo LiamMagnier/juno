@@ -69,6 +69,22 @@ test("--input, the control boundary, clears 3.26 in both themes", () => {
   }
 });
 
+test("shared field states keep a visible edge and readable labels in all four appearances", () => {
+  for (const a of ["light", "dark", "hcLight", "hcDark"] as const) {
+    for (const ground of ["field-surface", "field-surface-active"]) {
+      for (const edge of ["field-border", "field-hover", "field-focus", "field-ring"]) {
+        assert.ok(ratio(edge, ground, a) >= 3,
+          `${a}: ${edge} on ${ground} must identify the control (3:1)`);
+      }
+      const minimum = a.startsWith("hc") ? 7 : 4.5;
+      for (const ink of ["foreground", "muted-foreground"]) {
+        assert.ok(ratio(ink, ground, a) >= minimum,
+          `${a}: ${ink} on ${ground} must keep labels and placeholders readable`);
+      }
+    }
+  }
+});
+
 test("the muted-on-selected 4.32 pair is recorded as a misuse, and still fails", () => {
   const entry = KNOWN_MISUSES.find((k) => k.ink === "muted-foreground" && k.ground === "selected");
   assert.ok(entry, "the known-bad pair is not recorded");

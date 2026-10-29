@@ -107,6 +107,19 @@ jobs:
           GATES_UNIT_TESTS_SHARDED: "1"
         run: bash scripts/local-gates.sh
 
+      # These isolated route/ledger tests require module mocks. The general
+      # unit shards deliberately run without that opt-in and would skip them.
+      # No database, provider key or paid generation is used by this step.
+      - name: Request pricing, ledger and utility accounting
+        run: >-
+          node --conditions=react-server --import tsx --test
+          --experimental-test-module-mocks
+          tests/chat-request-pricing.test.ts tests/chat-turn-spend.test.ts
+          tests/prompt-cache-wire.test.ts tests/profile-stats-ledger.test.ts
+          tests/chat-budget-guard.test.ts tests/follow-up-cache.test.ts
+          tests/follow-ups-route.test.ts tests/utility-attempt.test.ts
+          tests/utility-rejection-billing.test.ts
+
       # Both halves of the capability manifest are generated from one JSON
       # file, so they cannot disagree — but only if the checked-in Swift is
       # actually regenerated. A stale enum is silent on the surface it matters

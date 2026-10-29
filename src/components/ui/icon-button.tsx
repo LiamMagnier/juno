@@ -2,6 +2,7 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
+import { controlMotionClass } from "@/components/ui/control-recipe";
 
 /**
  * A glyph you can press, as a key: `.control-neu` at `rounded-control` (8) —
@@ -24,7 +25,7 @@ import { cn } from "@/lib/utils";
  * be a Radix trigger (`asChild`) for a menu or popover.
  */
 const iconButtonVariants = cva(
-  "ui-button pressable inline-flex shrink-0 items-center justify-center rounded-control border disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  cn(controlMotionClass, "ui-button inline-flex shrink-0 items-center justify-center rounded-control border disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"),
   {
     variants: {
       variant: {

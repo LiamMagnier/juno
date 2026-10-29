@@ -14,6 +14,14 @@ documents the versioned `/api/v1` backend contract that the separate native apps
 consume, because that contract is part of this repo's backend; it does **not**
 document the native clients themselves.
 
+**29 October 2026 audit:** [chatbot, cost, and quality findings](audit-2026-10-29/AUDIT.md),
+[cross-platform control and motion alignment](audit-2026-10-29/DESIGN.md),
+[current competitor research](audit-2026-10-29/COMPETITORS.md), and
+[executed validation](audit-2026-10-29/VALIDATION.md). Chat settlement now reconciles
+internal per-request usage before applying context/tier prices; profile stats
+report settled costs without repricing historical rows. Shared field colors and
+web spring presets follow the generated native design-token contract.
+
 > **Stack:** Next.js 15 (App Router) · TypeScript · Tailwind CSS v3.4 · shadcn/ui ·
 > Prisma 6 + PostgreSQL · NextAuth v5 (Auth.js) · Anthropic SDK + 13
 > OpenAI-compatible providers · Stripe · AWS SDK v3 (S3-compatible storage) · a

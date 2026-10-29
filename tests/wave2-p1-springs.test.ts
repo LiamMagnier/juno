@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { SPRING } from "../src/lib/design/tokens.generated";
+import { spring as webSpring } from "../src/lib/motion";
 import { SPRING_REST_DELTA, parseBlocks, declsFor, project, springPosition, springTwin, withSpringTwins } from "../scripts/generate-design-tokens";
 
 /**
@@ -37,6 +38,14 @@ test("each spring is declared once with the spec's { visualDuration, bounce }", 
   for (const [name, [vd, bounce]] of Object.entries(SPEC)) {
     assert.equal(root.get(`spring-${name}-params`), `${vd} ${bounce}`, name);
     assert.deepEqual([SPRING[name as keyof typeof SPRING].visualDuration, SPRING[name as keyof typeof SPRING].bounce], [vd, bounce]);
+  }
+});
+
+test("the actual web presets consume the generated CSS and Swift spring parameters", () => {
+  for (const name of Object.keys(SPRING) as Array<keyof typeof SPRING>) {
+    assert.deepEqual(webSpring[name], {
+      type: "spring", visualDuration: SPRING[name].visualDuration, bounce: SPRING[name].bounce,
+    }, `${name} must not substitute total duration for visual duration`);
   }
 });
 

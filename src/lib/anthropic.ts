@@ -404,6 +404,9 @@ export async function* streamAnthropic(
         // `fast` flag is computed from, so downgrading it here is what stops a
         // provider that never reports `speed` from being billed the premium rate.
         servedFast = false;
+        // Tell the budget guard before standard-speed tokens start arriving;
+        // retaining the requested premium rate can stop an affordable answer.
+        yield { type: "usage", fast: false };
         try {
           stream = await openStream(false, params);
         } catch (retryErr) {
@@ -453,9 +456,10 @@ export async function* streamAnthropic(
      *
      * Safe to emit repeatedly because these are cumulative and monotonic, and
      * the accumulator merges usage with `preferHigher` (src/lib/usage-merge.ts).
-     * `fast` is deliberately withheld until the final event: it is a billing
-     * rate, not a counter, and asserting it early would let a turn that later
-     * degrades to standard speed be priced at the premium one.
+     * The final event carries the served speed. A rejected premium attempt
+     * also emits `fast: false` before its standard retry so the live budget
+     * estimate immediately follows the downgrade. Settlement uses each
+     * completed request's own metered tier when its receipts reconcile.
      */
     yield {
       type: "usage",

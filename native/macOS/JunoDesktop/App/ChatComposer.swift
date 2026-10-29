@@ -635,22 +635,10 @@ struct ComposerControlStyle: ButtonStyle {
     }
 }
 
-/// The primary disc's press: scale 0.97 and a touch darker, over 70ms (§5.3).
+/// The primary disc shares the phone's press cadence and accessibility policy.
 struct ComposerDiscStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Disc(configuration: configuration)
-    }
-
-    private struct Disc: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            configuration.label
-                .scaleEffect(configuration.isPressed ? JunoMotion.scaleFrom(0.97, reduceMotion: reduceMotion) : 1)
-                .brightness(configuration.isPressed ? -0.06 : 0)
-                .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion), value: configuration.isPressed)
-        }
+        JunoPressButtonStyle().makeBody(configuration: configuration)
     }
 }
 
@@ -673,7 +661,7 @@ struct ComposerPrimaryDisc: View {
     var identifier: String? = nil
     let action: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.junoAccessibility) private var accessibility
 
     var body: some View {
         Button(action: action) {
@@ -688,7 +676,7 @@ struct ComposerPrimaryDisc: View {
             }
             .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
             .contentShape(Circle())
-            .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: reduceMotion, tier: .tint), value: face.kind)
+            .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: accessibility.reduceMotion, tier: .tint), value: face.kind)
         }
         .buttonStyle(ComposerDiscStyle())
         .disabled(!face.isEnabled)
@@ -723,7 +711,7 @@ struct ComposerPrimaryDisc: View {
             JunoIconView(symbol, size: face.kind == ChatComposerFace.stop.kind ? 12 : 16, weight: .bold)
                 .foregroundStyle(Color.junoCanvas)
                 .id(symbol)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                .transition(.junoControlSwap(reducesTravel: accessibility.reducesTravel))
         case .busy:
             ProgressView()
                 .controlSize(.small)

@@ -48,6 +48,17 @@ const config: Config = {
         border: "hsl(var(--border) / <alpha-value>)",
         input: "hsl(var(--input) / <alpha-value>)",
         ring: "hsl(var(--ring) / <alpha-value>)",
+        // Shared form material, also generated as JunoGeneratedColors.field*.
+        // Hover/focus roles already carry alpha; a second opacity would erase
+        // the measured boundary contrast.
+        field: {
+          DEFAULT: "hsl(var(--field-surface))",
+          active: "hsl(var(--field-surface-active))",
+          border: "hsl(var(--field-border))",
+          hover: "hsl(var(--field-hover))",
+          focus: "hsl(var(--field-focus))",
+          ring: "hsl(var(--field-ring))",
+        },
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         primary: {

@@ -8,7 +8,7 @@ adaptive
 
 ## Users
 
-People using Juno on the web and macOS to delegate personal and professional work to persistent AI agents. These platforms were explicitly confirmed by the user.
+People using Juno on the web, macOS, and iOS to chat and delegate personal and professional work to persistent AI agents. All three platforms are explicitly in scope in the owner's 2026-10-29 request.
 
 ## Product Purpose
 
@@ -21,6 +21,8 @@ The web application is Next.js/React; native clients use SwiftUI. Agents share t
 ## Capabilities and Constraints
 
 The user requires Agents to begin and configure themselves through conversation without a hiring questionnaire. Rebuild the entire Agents interface, identity shapes, customization, and motion for web and Mac. Preserve task execution, approvals, costs, cancellation, ownership, and durable history. Production readiness requires meaningful regression and integration evidence, not preview screenshots alone.
+
+The 2026-10-29 audit extends that work to the whole chatbot and its shared controls: one visual identity and motion vocabulary across the website, Mac, and iPhone; stronger interaction quality; and more usable allowance through accurate billing and avoided redundant calls. Preserve model choice and answer quality while optimizing cost. Canonical web tokens generate the native palette and motion parameters; platform adaptations retain native navigation, touch targets, and accessibility behavior.
 
 ## Brand Commitments
 

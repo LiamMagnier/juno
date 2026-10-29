@@ -21,7 +21,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { test, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { test, type BrowserContextOptions, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { decodePng, diffBitmaps, type PixelDiff } from "./png";
 
 export type Theme = "light" | "dark" | "high-contrast" | "high-contrast-dark" | "forced-colors";
@@ -64,20 +64,23 @@ export function matrixVariants(options: { themes?: readonly Theme[]; motions?: r
 
 export interface VariantUse {
   colorScheme: "light" | "dark";
-  reducedMotion: "reduce" | "no-preference";
-  contrast: "more" | "no-preference";
-  forcedColors: "active" | "none";
+  contextOptions: Required<Pick<BrowserContextOptions, "reducedMotion" | "contrast" | "forcedColors">>;
 }
 
-/** The Playwright context options for a variant (pass to `test.use`). */
+/**
+ * Options for `test.use`. These media preferences are browser context options,
+ * not top-level Playwright fixtures; top-level values were silently ignored.
+ */
 export function variantUse(variant: Pick<MatrixVariant, "theme" | "motion">): VariantUse {
   const dark = variant.theme === "dark" || variant.theme === "high-contrast-dark";
   const more = variant.theme === "high-contrast" || variant.theme === "high-contrast-dark";
   return {
     colorScheme: dark ? "dark" : "light",
-    reducedMotion: variant.motion === "reduced" ? "reduce" : "no-preference",
-    contrast: more ? "more" : "no-preference",
-    forcedColors: variant.theme === "forced-colors" ? "active" : "none",
+    contextOptions: {
+      reducedMotion: variant.motion === "reduced" ? "reduce" : "no-preference",
+      contrast: more ? "more" : "no-preference",
+      forcedColors: variant.theme === "forced-colors" ? "active" : "none",
+    },
   };
 }
 

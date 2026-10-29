@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 6febf0ce467b380d
+// tokens-digest: 91e861b0073c3c49
 //
 
 import CoreGraphics
@@ -327,6 +327,54 @@ public enum JunoGeneratedColors {
         dark: JunoColorToken(unchecked: 0.5843, 0.5922, 0.6118),
         highContrastLight: JunoColorToken(unchecked: 0.4078, 0.4196, 0.4392),
         highContrastDark: JunoColorToken(unchecked: 0.5843, 0.5922, 0.6118)
+    )
+
+    /// `--field-border`  // no .dark override; light value applies to both
+    public static let fieldBorder = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.5255, 0.5373, 0.5529),
+        dark: JunoColorToken(unchecked: 0.4392, 0.4471, 0.4627),
+        highContrastLight: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176),
+        highContrastDark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
+    )
+
+    /// `--field-focus`  // no .dark override; light value applies to both
+    public static let fieldFocus = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176, 0.72),
+        dark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216, 0.72),
+        highContrastLight: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176),
+        highContrastDark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
+    )
+
+    /// `--field-hover`  // no .dark override; light value applies to both
+    public static let fieldHover = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176, 0.64),
+        dark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216, 0.64),
+        highContrastLight: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176),
+        highContrastDark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
+    )
+
+    /// `--field-ring`  // no .dark override; light value applies to both
+    public static let fieldRing = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176),
+        dark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216),
+        highContrastLight: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176),
+        highContrastDark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
+    )
+
+    /// `--field-surface`  // no .dark override; light value applies to both
+    public static let fieldSurface = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.9608, 0.9647, 0.9686),
+        dark: JunoColorToken(unchecked: 0.1216, 0.1255, 0.1373),
+        highContrastLight: JunoColorToken(unchecked: 0.9608, 0.9647, 0.9686),
+        highContrastDark: JunoColorToken(unchecked: 0.1216, 0.1255, 0.1373)
+    )
+
+    /// `--field-surface-active`  // no .dark override; light value applies to both
+    public static let fieldSurfaceActive = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
+        dark: JunoColorToken(unchecked: 0.1333, 0.1373, 0.149),
+        highContrastLight: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
+        highContrastDark: JunoColorToken(unchecked: 0.1333, 0.1373, 0.149)
     )
 
     /// `--foreground`
@@ -879,10 +927,10 @@ public enum JunoGeneratedTiming {
     public static let delayInsertFlush: TimeInterval = 0.3
     /// `--delay-show`: 200ms
     public static let delayShow: TimeInterval = 0.2
-    /// `--delay-tooltip`: 500ms
-    public static let delayTooltip: TimeInterval = 0.5
-    /// `--delay-tooltip-skip`: 300ms
-    public static let delayTooltipSkip: TimeInterval = 0.3
+    /// `--delay-tooltip`: 200ms
+    public static let delayTooltip: TimeInterval = 0.2
+    /// `--delay-tooltip-skip`: 400ms
+    public static let delayTooltipSkip: TimeInterval = 0.4
     /// `--hold-arm`: 500ms
     public static let holdArm: TimeInterval = 0.5
     /// `--hold-check`: 120ms

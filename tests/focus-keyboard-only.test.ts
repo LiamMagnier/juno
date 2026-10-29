@@ -96,8 +96,21 @@ test("no fixed text field draws a ring or a primary halo on every focus", () => 
   // The shared fields are whole files; elsewhere, the line that carries the
   // field's keyboard ring (buttons in the same file keep their own rings).
   const wholeFile = new Set(["src/components/ui/input.tsx", "src/components/ui/textarea.tsx"]);
+  // Consolidated fields inherit their keyboard line from the shared recipe.
+  // Check the consumer wiring AND that recipe; requiring a private copy of
+  // the class in each file would reintroduce the design drift this fixes.
+  const sharedConsumers = new Map([
+    ["src/components/ui/input.tsx", /fieldFrameClass/],
+    ["src/components/ui/textarea.tsx", /fieldFrameClass/],
+    ["src/components/settings/sections/account-username.tsx", /<Input\b/],
+  ]);
   for (const file of fields) {
-    const source = code(file);
+    let source = code(file);
+    const shared = sharedConsumers.get(file);
+    if (shared) {
+      assert.match(source, shared, `${file} must consume the shared field`);
+      source += "\n" + code("src/components/ui/field-recipe.ts");
+    }
     const lines = source.split("\n").filter((line) => /kbd-focus(?:-within)?:/.test(line));
     assert.ok(lines.length > 0, `${file} has no keyboard ring`);
     const checked = wholeFile.has(file) ? [source] : lines;

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   findInConversation,
   matchedMessageIds,
+  searchConversation,
+  selectedMatchIndex,
   stepMatch,
   type SearchableMessage,
 } from "@/lib/conversation-search";
@@ -98,4 +100,59 @@ test("messages with no content are skipped safely", () => {
     { id: "b", role: "USER", content: "found" },
   ];
   assert.deepEqual(findInConversation(messages, "found").map((m) => m.messageId), ["b"]);
+});
+
+test("a Unicode case expansion before a hit cannot move its source offsets", () => {
+  const content = "İstanbul: the NEEDLE is here. 😀 Another needle.";
+  const matches = findInConversation([{ id: "a", role: "USER", content }], "needle");
+  assert.equal(matches.length, 2);
+  for (const match of matches) {
+    assert.equal(content.slice(match.start, match.end).toLowerCase(), "needle");
+    assert.equal(match.preview.slice(match.previewStart, match.previewEnd), content.slice(match.start, match.end));
+  }
+});
+
+test("literal search preserves Unicode characters and every regex metacharacter", () => {
+  const content = "Find [a-z]+? ^x$ (a|b) {2} path\\file. Café CAFÉ 😀.";
+  for (const query of ["[a-z]+?", "^x$", "(a|b)", "{2}", "path\\file", "café", "😀"]) {
+    const matches = findInConversation([{ id: "a", role: "USER", content }], query);
+    assert.equal(matches.length, query === "café" ? 2 : 1);
+    assert.equal(content.slice(matches[0].start, matches[0].end).toLowerCase(), query.toLowerCase());
+  }
+});
+
+test("an exact cap is distinguished from additional results", () => {
+  const messages = [{ id: "a", role: "USER", content: "needle ".repeat(500) }];
+  const exact = searchConversation(messages, "needle");
+  assert.equal(exact.matches.length, 500);
+  assert.equal(exact.truncated, false);
+  const extra = searchConversation([...messages, { id: "b", role: "ASSISTANT", content: "one more needle" }], "needle");
+  assert.equal(extra.matches.length, 500);
+  assert.equal(extra.truncated, true);
+});
+
+test("invalid or empty result budgets cannot produce an unbounded scan", () => {
+  const messages = [{ id: "a", role: "USER", content: "needle ".repeat(600) }];
+  for (const limit of [0, -1]) assert.deepEqual(searchConversation(messages, "needle", { limit }), { matches: [], truncated: false });
+  assert.equal(searchConversation(messages, "needle", { limit: Infinity }).matches.length, 500);
+  assert.equal(searchConversation(messages, "needle", { limit: 2.9 }).matches.length, 2);
+});
+
+test("selection follows the same occurrence when older history is prepended", () => {
+  const matches = findInConversation(thread, "guard");
+  const selection = { ...matches[2], index: 2 };
+  const expanded = findInConversation([{ id: "older", role: "USER", content: "An earlier guard" }, ...thread], "guard");
+  const index = selectedMatchIndex(expanded, selection);
+  assert.equal(index, 3);
+  assert.equal(expanded[index].messageId, selection.messageId);
+  assert.equal(expanded[index].start, selection.start, "two occurrences in one message remain distinct");
+});
+
+test("selection stays in bounds after a branch or edit removes matches", () => {
+  const matches = findInConversation(thread, "guard");
+  const selection = { ...matches[2], index: 2 };
+  assert.equal(selectedMatchIndex(matches.slice(0, 1), selection), 0);
+  assert.equal(selectedMatchIndex([], selection), 0);
+  assert.equal(selectedMatchIndex(matches, null), 0);
+  assert.equal(stepMatch(499, 2, -1), 0, "navigation clamps the previous index before stepping");
 });

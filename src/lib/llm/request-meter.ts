@@ -25,7 +25,7 @@
  * wires the structured logger in.
  */
 import type { ModelInfo } from "@/lib/models";
-import { estimateGenerationCostUsd, longContextPricing, normalizeUsage, type FastMode } from "@/lib/pricing";
+import { estimateGenerationCostUsd, longContextPricing, normalizeUsage, type FastMode, type GenerationCostOpts } from "@/lib/pricing";
 import {
   createPrefixTracker,
   hashCacheKey,
@@ -40,6 +40,7 @@ export interface RequestUsage {
   input?: number;
   output?: number;
   reasoning?: number;
+  total?: number;
   cacheRead?: number;
   cacheWrite?: number;
   cacheWrite5m?: number;
@@ -135,7 +136,13 @@ const PROCESS_TRACKER = createPrefixTracker();
 
 export function createRequestMeter(
   context: RequestMeterContext,
-  deps: { sink: (record: ProviderRequestRecord) => void; tracker?: PrefixTracker; now?: () => number }
+  deps: {
+    sink: (record: ProviderRequestRecord) => void;
+    /** Server-side billing receives the same request boundaries as telemetry. */
+    onUsage?: (usage: GenerationCostOpts) => void;
+    tracker?: PrefixTracker;
+    now?: () => number;
+  }
 ): RequestMeter {
   const tracker = deps.tracker ?? PROCESS_TRACKER;
   const now = deps.now ?? Date.now;
@@ -159,20 +166,29 @@ export function createRequestMeter(
           const u = usage ?? {};
           const n = normalizeUsage(model.provider, u);
           const fastMode = outcome.fastMode ?? context.fastMode ?? false;
+          const billableUsage: GenerationCostOpts = {
+            promptTokens: u.input ?? 0,
+            completionTokens: u.output ?? 0,
+            reasoningTokens: u.reasoning ?? null,
+            totalTokens: u.total ?? null,
+            cacheRead: u.cacheRead ?? null,
+            cacheWrite: u.cacheWrite ?? null,
+            cacheWrite5m: u.cacheWrite5m ?? null,
+            cacheWrite1h: u.cacheWrite1h ?? null,
+            webSearchRequests: u.webSearchRequests ?? null,
+            xSearchRequests: u.xSearchRequests ?? null,
+            fastMode,
+          };
           const cost = reported
-            ? estimateGenerationCostUsd(model, {
-                promptTokens: u.input ?? 0,
-                completionTokens: u.output ?? 0,
-                reasoningTokens: u.reasoning ?? null,
-                cacheRead: u.cacheRead ?? null,
-                cacheWrite: u.cacheWrite ?? null,
-                cacheWrite5m: u.cacheWrite5m ?? null,
-                cacheWrite1h: u.cacheWrite1h ?? null,
-                webSearchRequests: u.webSearchRequests ?? null,
-                xSearchRequests: u.xSearchRequests ?? null,
-                fastMode,
-              })
+            ? estimateGenerationCostUsd(model, billableUsage)
             : { costUsd: 0, toolFeesUsd: 0 };
+          if (reported) {
+            try {
+              deps.onUsage?.(billableUsage);
+            } catch {
+              // Incomplete receipts fall back to cumulative usage at settlement.
+            }
+          }
           const lc = longContextPricing(model);
           const long = !!lc && (lc.inclusive ? n.totalInput >= lc.threshold : n.totalInput > lc.threshold);
           const end = now();

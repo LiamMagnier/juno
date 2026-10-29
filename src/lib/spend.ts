@@ -6,8 +6,8 @@ import { Prisma } from "@prisma/client";
 import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveModel } from "@/lib/models";
-import { getModelMetrics } from "@/lib/model-metrics";
-import { estimateGenerationCostUsd, estimateTokensFromChars, tokenRate } from "@/lib/pricing";
+import { estimateTokensFromChars, tokenRate, type GenerationCostOpts } from "@/lib/pricing";
+import { estimateTurnCostUsd } from "@/lib/turn-pricing";
 import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
 import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
@@ -106,16 +106,22 @@ export function modelRequestCost({
  * to the $/MTok rates — the 10^6 (dollars→micro) and 10^6 (per-MTok→per-token)
  * cancel. Used for real-time, mid-stream budget enforcement in the chat route.
  */
-export function modelRatesMicroUsdPerToken(modelId: string): { input: number; output: number; cacheRead: number } {
+export function modelRatesMicroUsdPerToken(modelId: string, fastMode: FastMode = false): {
+  input: number; output: number; cacheRead: number;
+  cacheWrite: number; cacheWrite5m: number; cacheWrite1h: number;
+} {
   const model = resolveModel(modelId);
-  const metrics = model ? getModelMetrics(model) : null;
-  const input = metrics?.inputUsdPerMTok ?? 2;
-  // The cache-read discount comes from the billing table, applied to the
-  // display rate so the two stay on one scale (they are the same number for
-  // every curated model; the fallback for an unknown one is "no discount").
-  const rate = model ? tokenRate(model) : null;
-  const cacheRead = rate && rate.input > 0 ? input * (rate.cacheRead / rate.input) : input;
-  return { input, output: metrics?.outputUsdPerMTok ?? 10, cacheRead };
+  // The streaming guard and final settlement use the same canonical rates,
+  // including the served premium tier and both cache-write lifetimes.
+  const rate = model ? tokenRate(model, fastMode) : null;
+  return {
+    input: rate?.input ?? 2,
+    output: rate?.output ?? 10,
+    cacheRead: rate?.cacheRead ?? 2,
+    cacheWrite: rate?.cacheWrite ?? 2,
+    cacheWrite5m: rate?.cacheWrite5m ?? 2,
+    cacheWrite1h: rate?.cacheWrite1h ?? 2,
+  };
 }
 
 /**
@@ -178,6 +184,8 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
 }
 
 export interface RecordSpendInput {
+  /** Adapter receipts only: price tool rounds individually when fully reconciled. */
+  requestUsages?: readonly GenerationCostOpts[];
   userId: string;
   agentId?: string;
   model: string;
@@ -245,7 +253,9 @@ export interface RecordSpendInput {
  *
  * Chat/code/task turns always recompute cost from tokens (and char floors)
  * using the shared pricing table, then take the MAX of that and any caller
- * estimate — so missing usage, ignored reasoning tokens, or a stale rate
+ * estimate. Reconciled request receipts keep each request's own context and
+ * speed tier; cumulative tool-turn tokens must not trigger one giant-request
+ * surcharge. Missing usage, ignored reasoning tokens, or a stale rate
  * never under-report spend against the plan budget.
  */
 export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
@@ -264,7 +274,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
     } else {
       const model = resolveModel(input.model);
       if (model) {
-        const billed = estimateGenerationCostUsd(model, {
+        const billed = estimateTurnCostUsd(model, {
           promptTokens: input.promptTokens,
           completionTokens: input.completionTokens,
           reasoningTokens: input.reasoningTokens,
@@ -280,7 +290,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
           completionChars: input.completionChars,
           reasoningChars: input.reasoningChars,
           batch: input.batch,
-        });
+        }, input.requestUsages);
         promptTokens = billed.promptTokens;
         completionTokens = billed.completionTokens;
         const fromTokens = Math.round(billed.costUsd * 1_000_000);

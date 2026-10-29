@@ -53,7 +53,7 @@ export function Providers({
     // both are the usual sources of Auth.js "ClientFetchError: Load failed".
     <SessionProvider session={session} refetchOnWindowFocus={false}>
       <ThemeProvider attribute="class" defaultTheme={defaultTheme} enableSystem disableTransitionOnChange nonce={nonce}>
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider>
           <MotionPreference>{children}</MotionPreference>
           <AutoTranslate locale={locale} autoDetect={autoDetect} />
           {/*

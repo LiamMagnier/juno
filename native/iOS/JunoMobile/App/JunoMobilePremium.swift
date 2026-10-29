@@ -17,26 +17,12 @@ import UIKit
 // 120ms press, each wrapped in `JunoMotion.reduced(_, when:)`. The native
 // motion gate (scripts/check-native-motion.mjs) holds every call site to it.
 
-/// The brief's press: scale 0.97 over 120ms, and nothing under Reduce Motion.
+/// Kept as an app spelling; the shared style owns the actual press response.
 struct JunoMobilePressStyle: ButtonStyle {
   var scale: CGFloat = 0.97
 
   func makeBody(configuration: Configuration) -> some View {
-    Pressed(pressed: configuration.isPressed, scale: scale, label: configuration.label)
-  }
-
-  private struct Pressed: View {
-    let pressed: Bool
-    let scale: CGFloat
-    let label: ButtonStyleConfiguration.Label
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-      label
-        .scaleEffect(pressed && !reduceMotion ? scale : 1)
-        .opacity(pressed ? 0.88 : 1)
-        .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint), value: pressed)
-    }
+    JunoPressButtonStyle(pressedScale: scale).makeBody(configuration: configuration)
   }
 }
 

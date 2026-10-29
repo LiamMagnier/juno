@@ -1,5 +1,5 @@
 import "server-only";
-import type { FastMode } from "@/lib/pricing";
+import type { FastMode, GenerationCostOpts } from "@/lib/pricing";
 import { streamAnthropic } from "@/lib/anthropic";
 import { streamGemini } from "@/lib/gemini";
 import { streamOpenAICompat } from "@/lib/openai-compat";
@@ -81,6 +81,8 @@ export async function* streamChat(opts: {
   role?: RequestRole;
   /** The caller's attempt number for this generation (1 = first); > 1 marks the records as retries. */
   attempt?: number;
+  /** Internal billing receipts, one per provider request including tool rounds. */
+  onRequestUsage?: (usage: GenerationCostOpts) => void;
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: FastMode;
@@ -205,7 +207,7 @@ export async function* streamChat(opts: {
       requestId: opts.requestContext?.requestId ?? null,
       generationId: opts.requestContext?.generationId ?? null,
     },
-    { sink: (record) => logSync("info", "llm.request", { ...record }) }
+    { sink: (record) => logSync("info", "llm.request", { ...record }), onUsage: opts.onRequestUsage }
   );
   try {
     // `webSearch` picks Meta's transport: its search exists only on Responses.

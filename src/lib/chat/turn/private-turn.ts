@@ -327,17 +327,20 @@ export async function runPrivateTurn({
           modelInfo,
         });
 
-        // Hard mid-stream budget ceiling: the instant the running cost of THIS
-        // generation would push the user past their remaining plan budget, abort
-        // the provider stream so they cannot be billed a cent beyond it.
+        // Stop when this generation's available usage projection reaches the
+        // remaining budget. Late usage and already accepted provider work are
+        // reconciled at settlement; cancellation is not an invoice-level cap.
         const budgetGuard = createStreamBudgetGuard({
           ceilingMicroUsd: budget.remainingMicroUsd,
-          rates: modelRatesMicroUsdPerToken(modelId),
+          rates: () => modelRatesMicroUsdPerToken(modelId, acc.servedFast),
           inputChars: privatePromptChars(),
           usage: () => ({
             promptTokens: acc.tokens.promptTokens,
             completionTokens: acc.tokens.completionTokens,
             cacheReadTokens: acc.tokens.cacheReadTokens,
+            cacheWriteTokens: acc.tokens.cacheWriteTokens,
+            cacheWrite5mTokens: acc.tokens.cacheWrite5mTokens,
+            cacheWrite1hTokens: acc.tokens.cacheWrite1hTokens,
             // Anthropic's input_tokens exclude cache reads; every other adapter
             // reports a prompt count that includes them (pricing.ts, normalizeUsage).
             promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
@@ -355,6 +358,7 @@ export async function runPrivateTurn({
         await pumpTurnStream(
           streamChat({
             model: modelInfo,
+            onRequestUsage: (usage) => acc.recordRequestUsage(usage),
             system,
             systemStablePrefix: baseSystemSections.stable,
             history: privateHistory,

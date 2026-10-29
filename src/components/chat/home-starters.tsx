@@ -53,8 +53,8 @@ const CHIP_GLYPH: Record<StarterId, React.ComponentType<{ className?: string; "a
 /** After the tray's own arrival (composer.css `chat-home-tray`, 260 ms in). */
 const CHIPS_ENTER_AFTER_MS = 420;
 
-/** Where a "New chat" press leaves focus: the sidebar column, a nav, the phone header. */
-const ARRIVED_FROM = ".app-sidebar-frame, nav, header";
+/** Only the control that requested a new chat may yield its focus on arrival. */
+const NEW_CHAT_TRIGGER = "[data-new-chat-trigger]";
 
 /** A desktop with a mouse or trackpad: the one place the caret may wait unasked (no phone keyboard pops up). */
 function finePointer(): boolean {
@@ -124,13 +124,24 @@ export function HomeStarters({
   React.useEffect(() => {
     if (!finePointer()) return;
     let frame = 0;
-    const active = document.activeElement;
-    if (!hidden && (!active || active === document.body || active.closest(ARRIVED_FROM))) {
-      frame = requestAnimationFrame(focusComposer);
-    }
-    const again = () => {
+    const scheduleFocus = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(focusComposer);
+      const from = document.activeElement;
+      frame = requestAnimationFrame(() => {
+        // A later interaction owns focus, even if it is another sidebar row.
+        // In particular, Search may be waiting for its lazy dialog to load.
+        const current = document.activeElement;
+        if (!current || current === document.body || current === from) focusComposer();
+      });
+    };
+    const active = document.activeElement;
+    if (!hidden && (!active || active === document.body || active.closest(NEW_CHAT_TRIGGER))) scheduleFocus();
+    const again = (event: Event) => {
+      cancelAnimationFrame(frame);
+      // Leaving incognito also resets the thread, but its focus belongs to
+      // the privacy toggle. Only a New chat action asks for the caret.
+      if (event instanceof CustomEvent && event.detail?.focusComposer === false) return;
+      scheduleFocus();
     };
     window.addEventListener("juno:new-chat", again);
     return () => {
