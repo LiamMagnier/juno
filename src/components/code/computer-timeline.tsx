@@ -154,7 +154,7 @@ export function ComputerTimeline({
         <div className="px-3.5 pb-3.5">
           <figure className="m-0">
             <div
-              className="relative overflow-hidden rounded-lg border border-border/60 bg-muted/40"
+              className="relative overflow-hidden rounded-card border border-border/60 bg-muted/40"
               style={{ aspectRatio: aspect }}
             >
               <StageImage
@@ -230,7 +230,7 @@ export function ComputerTimeline({
                   title={f.caption}
                   onClick={() => select(f.index)}
                   className={cn(
-                    "group/thumb flex w-[76px] shrink-0 flex-col gap-1 rounded-md p-1 text-left",
+                    "group/thumb flex w-[76px] shrink-0 flex-col gap-1 rounded-control p-1 text-left",
                     "transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none",
                     isSelected && "bg-accent/70",
                   )}

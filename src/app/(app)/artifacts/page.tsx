@@ -847,7 +847,7 @@ function ArtifactsHome() {
                   // tile is `rounded-card` (16) with `p-2` (8), so 16 − 8 = 8.
                   // The radius belongs at the call site, beside the padding it
                   // is derived from — inside the component it can only guess.
-                  className="aspect-[4/3] w-full rounded-md"
+                  className="aspect-[4/3] w-full rounded-control"
                 />
 
                 <div className="flex min-w-0 items-start gap-1 px-1 pb-0.5 pt-2">
