@@ -4,7 +4,8 @@ Agent computers (each agent's own Linux desktop with Chromium, a shell and files
 a machine of their own: the **computer host**. This directory is everything that runs on
 it, and this file is the owner's guide. The plan it implements is
 `docs/design/agents-v2/COMPUTERS_2026-10.md` (stage S3); day-to-day operations are in
-`docs/design/agents-v2/OPERATIONS.md` §8.
+`docs/design/agents-v2/OPERATIONS.md` §8. The step-by-step runbook for turning computers on
+in production, and rolling back, is `docs/design/agents-v2/ENABLE_COMPUTERS.md`.
 
 **Status: built and tested on a development machine, never run in production.** Computers
 are off in production until the owner does everything below and sets
