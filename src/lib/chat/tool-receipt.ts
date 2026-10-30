@@ -451,12 +451,34 @@ export function fenceMatchesWrittenFile(
   return false;
 }
 
+/** How a call that was never allowed to run ended: a decision, not a failure. */
+export type ReceiptRefusal = "denied" | "expired" | "cancelled";
+
+/** The neutral status word for each, in the panel's own approval words. */
+export const RECEIPT_REFUSAL_TEXT: Readonly<Record<ReceiptRefusal, string>> = {
+  denied: "Declined",
+  expired: "Approval expired",
+  cancelled: "Cancelled",
+};
+
+/**
+ * The refusal behind a call's end, from its typed outcome. A declined, expired
+ * or cancelled call still rides `status: "failed"` for older readers, so the
+ * outcome is the only place the difference shows. Null for a call that ran,
+ * whether it succeeded or really failed.
+ */
+export function receiptRefusalOf(tool: Pick<ClientToolDetail, "outcome"> | undefined): ReceiptRefusal | null {
+  const outcome = tool?.outcome;
+  return outcome === "denied" || outcome === "expired" || outcome === "cancelled" ? outcome : null;
+}
+
 /**
  * A failure's reason line. One sentence, no em-dash. Null when the call
- * simply finished, so the receipt stays one row.
+ * simply finished, so the receipt stays one row, and null for a refusal,
+ * whose status word already says how it ended.
  */
 export function receiptFailureReason(tool: ClientToolDetail | undefined): string | null {
-  if (!tool || tool.status !== "failed") return null;
+  if (!tool || tool.status !== "failed" || receiptRefusalOf(tool)) return null;
   if (tool.resultNote === "unfinished") return "The run ended before this call returned.";
   if (tool.resultNote === "empty") return "The call returned nothing.";
   if (tool.result?.trim()) {

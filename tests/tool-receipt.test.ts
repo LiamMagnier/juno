@@ -8,9 +8,12 @@ import {
   receiptIconKindForCall,
   receiptLabel,
   receiptLabelForCall,
+  receiptRefusalOf,
+  RECEIPT_REFUSAL_TEXT,
   writtenPaths,
 } from "../src/lib/chat/tool-receipt";
-import { buildRun } from "../src/components/chat/thought-process-model";
+import { buildRun, stepCanAskToRunAgain } from "../src/components/chat/thought-process-model";
+import { toStepMarkdown } from "../src/lib/run-receipt";
 import type { ClientActivityEvent } from "../src/types/chat";
 
 const swift = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -107,4 +110,48 @@ test("the Thought process tool step speaks the receipt vocabulary", () => {
   assert.equal(step?.detail, "Team not found");
   assert.equal(step?.icon, "connectors");
   assert.equal(step?.failed, true);
+});
+
+test("a declined, expired or cancelled call reads as a decision in the Thought process panel, not a failure", () => {
+  const stepFor = (tool: NonNullable<ClientActivityEvent["tool"]>) =>
+    buildRun([{ id: "t", kind: "tool", title: "Using Linear", detail: tool.name, tool } as ClientActivityEvent], null).steps.find(
+      (s) => s.kind === "tool",
+    );
+  const base = {
+    server: "Linear",
+    name: "linear__search_issues",
+    status: "failed" as const,
+    args: '{"query":"bug"}',
+    result: "Action not permitted: declined",
+  };
+
+  for (const [outcome, word] of [
+    ["denied", "Declined"],
+    ["expired", "Approval expired"],
+    ["cancelled", "Cancelled"],
+  ] as const) {
+    const step = stepFor({ ...base, outcome });
+    assert.ok(step);
+    assert.equal(step.failed, false, `${outcome} is not drawn in the failure ink`);
+    assert.equal(step.refusal, outcome);
+    assert.equal(RECEIPT_REFUSAL_TEXT[outcome], word);
+    assert.equal(step.detail, null, `${outcome} carries no failure reason`);
+    assert.equal(stepCanAskToRunAgain(step), false, `${outcome} offers no retry`);
+    assert.match(toStepMarkdown(step), new RegExp(`\\n${word}(\\n|$)`));
+    assert.doesNotMatch(toStepMarkdown(step), /Failed/);
+  }
+
+  // A real failure keeps today's row: the failure ink, its reason and the retry.
+  const failed = stepFor({ ...base, outcome: "failed", result: "Team not found" });
+  assert.ok(failed);
+  assert.equal(failed.failed, true);
+  assert.equal(failed.refusal, undefined);
+  assert.equal(failed.detail, "Team not found");
+  assert.equal(stepCanAskToRunAgain(failed), true);
+  // A row stored before `outcome` existed reads as a plain failure, as before.
+  const legacy = stepFor({ ...base, result: "Team not found" });
+  assert.ok(legacy);
+  assert.equal(legacy.failed, true);
+  assert.equal(stepCanAskToRunAgain(legacy), true);
+  assert.equal(receiptRefusalOf({ outcome: "outcome_unknown" }), null);
 });
