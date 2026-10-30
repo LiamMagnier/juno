@@ -1,148 +1,279 @@
 # Agent Computers — Operations Guide
 
-This runbook covers enabling, tuning, monitoring, and shutting down **Agents v2** cloud computers (`juno-computer:1` Docker desktop containers on the owner's server).
+This runbook covers enabling, tuning, monitoring and shutting down **Agents v2** cloud
+computers (`juno-computer:1` Docker containers, image label `juno.security=pipe-v4`).
+
+**Status (October 2026): off in production.** `COMPUTER_PROVIDER` (or
+`AGENT_COMPUTER_PROVIDER`) is empty by default, which means no computer can be created,
+woken, viewed or used, and no run gets computer tools. Nothing in this guide has been
+run on the production VM; every statement about a real host below was checked on a
+disposable Linux machine (`tests/test_computer_boundary.py`), not in production. The
+plan that changes this is `COMPUTERS_2026-10.md`; until its remote computer host (S3)
+lands, the only provider is same-host Docker, which must not run on the web VM next to
+the database URL and provider keys (`COMPUTERS_2026-10.md` fact 19).
 
 ---
 
 ## 1. Turning agent computers on
 
-By default, `COMPUTER_PROVIDER` is unset (`off`). When `off`, every computer route returns `computer: null` (`computerConfigured: false`), the UI hides the **Computer** tab in the agent panel and header, and Work runs use the temporary stateless browser as before.
-
-To enable agent computers after deploying `main`:
-
-1. **One-time host provisioning (~10 minutes)** — installs Docker if missing, creates the isolated `juno-computers` bridge network (`172.30.0.0/24`), installs the `DOCKER-USER` iptables rules blocking RFC1918/link-local/metadata traffic and inter-container communication (`--icc=false`), and builds the `juno-computer:1` image:
+1. **One-time host provisioning**, as root on the machine that will run the computers:
    ```bash
-   ssh -i ~/Developer/KEY/chatliamsdev.pem liammgnr@20.91.138.96 \
-     'sudo bash ~/juno/current/deploy/agent-computers/setup-vm.sh'
+   sudo bash ~/juno/current/deploy/agent-computers/setup-vm.sh
    ```
+   It installs, idempotently:
+   - the narrow Docker broker `/usr/local/sbin/juno-computer-docker-broker` and its
+     sudoers line (the app never holds the Docker socket and is removed from the
+     `docker` group), and the policy `/etc/juno/computer-broker.json`;
+   - the `juno-computers` bridge network (`172.30.0.0/24`, bridge `br-juno`, no
+     container-to-container traffic);
+   - the address-map helper `/usr/local/sbin/juno-computers-egress-map` and its watcher
+     unit `juno-computers-egress-map.service`;
+   - the egress proxy unit `juno-computers-egress.service` (its log and budget, §4),
+     and `/etc/logrotate.d/juno-computers-egress`;
+   - the firewall unit `juno-computers-firewall.service` (`firewall.sh`);
+   - the image (`docker build --pull`), then the Chromium-sandbox probe (§6.2), which
+     writes `browserSandbox` into the broker's policy.
+
+   Owner-tunable on the command line (each is listed in `docs/OPEN_DECISIONS.md`):
+   `JUNO_EGRESS_MAX_MB_PER_HOUR` (default 1024), `JUNO_EGRESS_LOG_DAYS` (default 14),
+   `JUNO_COMPUTER_BROWSER_SANDBOX` (`auto`, the default, or `off`).
 
 2. **Enable the provider in `.env` and reload**:
    ```bash
-   ssh -i ~/Developer/KEY/chatliamsdev.pem liammgnr@20.91.138.96
    cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload
    # Enter: docker
    ```
+   `available()` refuses an image whose label is not `pipe-v4`, so a server with an
+   older image stays off.
 
 ---
 
 ## 2. Resource caps & host protection
 
-All limits are read from `~/juno/.env` via `src/lib/env.ts` and can be adjusted without code changes:
+App side, read from `~/juno/.env` through `src/lib/env.ts` (defaults as the code has them):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COMPUTER_PROVIDER` | `off` | `docker` in production; `fake` allowed only when `NODE_ENV !== "production"` |
-| `COMPUTER_DOCKER_IMAGE` | `juno-computer:1` | Container image built by `deploy/agent-computers/setup-vm.sh` |
-| `COMPUTER_DOCKER_NETWORK` | `juno-computers` | Isolated Docker bridge network (`172.30.0.0/24`) |
-| `COMPUTER_MAX_RUNNING_PER_USER` | `2` | Max awake computers per user account (also read as `AGENT_COMPUTER_MAX_AWAKE_USER`) |
-| `COMPUTER_MAX_RUNNING_TOTAL` | `6` | Max awake computers across the server (also read as `AGENT_COMPUTER_MAX_AWAKE_HOST`) |
-| `COMPUTER_MEMORY_MB` | `2048` | RAM limit per container (`--memory` and `--memory-swap` equal, so zero swap) |
-| `COMPUTER_CPUS` | `1.5` | CPU core quota per container (`--cpus`) |
-| `COMPUTER_DISK_LIMIT_MB` | `4096` | `/home/agent` size limit. Enforced by Juno, not the filesystem: a computer over it is not attached to tasks (they use the temporary browser and say why), and an idle one is put to sleep with a sentence in `lastError`. The person can still open it and delete files. |
-| `COMPUTER_MIN_FREE_MEMORY_MB` | `4096` | Host free + available RAM floor required before creating or waking a computer |
-| `COMPUTER_MIN_FREE_DISK_GB` | `10` | Host free disk floor required before creating or waking a computer |
-| `RELAY_COMPUTER_CIDR` | `172.30.0.0/24` | CIDR allowlist enforced by the WebSocket VNC relay (`relay/src/computer-view.ts`) |
+| `COMPUTER_PROVIDER` / `AGENT_COMPUTER_PROVIDER` | empty (off) | `docker`; `fake` only when `NODE_ENV !== "production"` |
+| `COMPUTER_DOCKER_IMAGE` / `AGENT_COMPUTER_IMAGE` | `juno-computer:1` | The tag `setup-vm.sh` builds |
+| `AGENT_COMPUTER_NETWORK` / `COMPUTER_DOCKER_NETWORK` | `juno-computers` | The bridge network (`172.30.0.0/24`) |
+| `COMPUTER_MAX_RUNNING_PER_USER` | `2` | Awake computers per account (also `AGENT_COMPUTER_MAX_AWAKE_USER`) |
+| `COMPUTER_MAX_RUNNING_TOTAL` | `6` | Awake computers on the host (also `AGENT_COMPUTER_MAX_AWAKE_HOST`) |
+| `COMPUTER_MEMORY_MB` | `2048` | RAM per container (`--memory` = `--memory-swap`, no swap; the broker caps it at 2048) |
+| `COMPUTER_CPUS` | `2` | CPU quota per container (the broker caps it at 2) |
+| `COMPUTER_DISK_LIMIT_MB` | `10240` | `/home/agent` size limit, measured by Juno, not enforced by the filesystem: a computer over it is not attached to tasks and an idle one is put to sleep with a sentence in `lastError` |
+| `COMPUTER_MIN_FREE_MEMORY_MB` | `1024` | Host free-memory floor before creating or starting a computer |
+| `COMPUTER_MIN_FREE_DISK_GB` | `10` | Host free-disk floor (also `AGENT_COMPUTER_MIN_FREE_DISK_MB`, 10240) |
+| `COMPUTER_IDLE_PAUSE_SECONDS` | `180` | Idle time before an awake computer rests (`docker pause`) |
+| `COMPUTER_IDLE_STOP_MINUTES` | `30` | Idle time before a computer sleeps (`docker stop`) |
+| `COMPUTER_COST_MICRO_USD_PER_SECOND` | `0` | Price of awake time (§5) |
+| `AGENT_COMPUTER_RETENTION_ENFORCE`, `AGENT_COMPUTER_RETENTION_DAYS` | empty (off) | Retention (§3.4). `COMPUTER_RETENTION_DAYS` is ignored |
+| `RELAY_COMPUTER_CIDR` | `172.30.0.0/24` | Addresses the live-view relay may dial (port 5900 only) |
 
-If an agent starts a run when the user or server cap is full, or if the host preflight check fails, the run does not fail—it degrades cleanly to the temporary per-run browser and notes the reason.
+Host side (systemd `Environment=` lines written by `setup-vm.sh`; not app env):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `JUNO_EGRESS_MAX_MB_PER_HOUR` | `1024` | Bytes through the proxy per computer (container name) per rolling hour, both directions |
+| `JUNO_EGRESS_LOG_DAYS` | `14` | Days of the egress log logrotate keeps |
+| `JUNO_EGRESS_MAP` | `/run/juno-computers/egress-map.json` | Address → computer map (§4) |
+
+If a run cannot attach the computer (caps full, preflight refused, over the disk quota),
+it does not fail: it uses the temporary per-run browser and says why.
 
 ---
 
 ## 3. Lifecycle & background sweeper
 
-Each `work-runner` tick runs `sweepComputers()` (`src/lib/computer/sweep.ts`) at most once every 30 seconds:
+The Work runner's tick runs `sweepAgentComputers()` (`src/lib/computer/sweep.ts`) at most
+once every 60 seconds. Each computer is checked on its own: one whose state cannot be
+read (a daemon or broker failure) is skipped for that pass, logged once per outage, and
+never treated as missing or recreated; the computers after it are still checked.
 
-1. **Awake → Resting (`docker pause`)**:
-   - After `COMPUTER_IDLE_PAUSE_SECONDS` (default `180` seconds = 3 minutes) with no active run lease (`leasedRunId IS NULL` or expired `leaseUntil`) and no active viewer (`viewerUntil` expired), the sweeper captures a JPEG poster (`640×400`), stops `x11vnc` (`streamOn = false`), and pauses the container (`docker pause`).
-   - A resting container resumes in ~20 ms via `docker unpause`.
+1. **Awake → Resting (`docker pause`)** after `COMPUTER_IDLE_PAUSE_SECONDS` (3 minutes)
+   with no live run lease and no viewer. A poster frame (1280×800 JPEG) is kept for the
+   panel. A resting computer resumes with `docker unpause`.
+2. **Resting → Asleep (`docker stop`)** after `COMPUTER_IDLE_STOP_MINUTES` (30 minutes)
+   idle. The CDP gate closes Chromium over its private pipe and waits for it to exit
+   (up to 15 s of Docker's 20 s stop timeout) so cookies and the profile are written;
+   files and sign-ins stay on the two volumes, `juno-agent-<agentId>` (`/home/agent`)
+   and `juno-agent-<agentId>-browser` (`/home/browser`).
+3. **Disk, leases, streams, reboots and orphans.** A computer over
+   `COMPUTER_DISK_LIMIT_MB` is put to sleep with a sentence in `lastError`; expired
+   leases are cleared; a live view nobody watched for 60 s is stopped; a row marked
+   awake or resting whose container stopped (a host reboot) is reconciled to asleep;
+   a container (label `app=juno`, name `juno-agent-*`) or volume with no computer row
+   for 10 minutes is removed.
+4. **Retention: off.** Computers are never deleted for age unless the owner turns
+   retention on. Turning it on needs both `AGENT_COMPUTER_RETENTION_ENFORCE=1` and
+   `AGENT_COMPUTER_RETENTION_DAYS` (at least 7); then a computer asleep that many days
+   is deleted with its files and its sign-ins. The old `COMPUTER_RETENTION_DAYS` is
+   ignored, even if set. Until then every computer stays until its person deletes or
+   resets it, deletes the agent or deletes the account. Turning retention on is an
+   owner decision that needs a notice to users first.
 
-2. **Resting → Asleep (`docker stop`)**:
-   - After `COMPUTER_IDLE_STOP_MINUTES` (default `30` minutes) in `resting`, the sweeper unpauses and stops the container (`docker stop -t 20`). The entrypoint closes Chromium cleanly over loopback CDP so cookies and `/home/agent/work` files are flushed to the persistent volume `juno-comp-<agentId>`.
-
-3. **Asleep → Destroyed (`docker rm -f` + `docker volume rm`)**:
-   - After `COMPUTER_RETENTION_DAYS` (default `30` days) asleep, the container and its volume are destroyed and `enabled` is reset to `false`.
-
-4. **Disk enforcement & reboot reconciliation**:
-   - If `/home/agent` exceeds `COMPUTER_DISK_LIMIT_MB`, the computer is stopped with an error explaining that `/home/agent/work` exceeded its 10 GB allowance.
-   - Any Docker container labelled `juno.computer=1` with no matching `AgentComputer` row (or belonging to a retired agent) is destroyed automatically.
-   - Any `AgentComputer` row marked `awake` or `resting` whose container was stopped by a host reboot is reconciled to `asleep`.
+   (When it is on: a computer that is asleep, with no lease, no live view and nobody in
+   control, whose last use and last view are both older than N days, is claimed as
+   still idle and deleted through the same path as Delete. If
+   `COMPUTER_RETENTION_DAYS` is set, the sweep logs once: "COMPUTER_RETENTION_DAYS is
+   ignored. Deleting computers needs AGENT_COMPUTER_RETENTION_ENFORCE=1 and
+   AGENT_COMPUTER_RETENTION_DAYS; see OPERATIONS.md.")
 
 ---
 
-## 4. Cost & usage accounting
+## 4. Egress: the proxy, its log and the budget
 
-- `COMPUTER_COST_MICRO_USD_PER_SECOND` defaults to `0` (since computers run on the owner's server).
-- If set above `0`, awake seconds (`lastResumedAt` → sleep or run end) are added to `AgentComputer.activeSeconds` and billed against the user's 5-hour and weekly Work usage windows via `recordWorkSpend`.
+Computers have no direct Internet access and no DNS. `firewall.sh` drops everything a
+computer sends except replies, rejects port 53 (so a lookup fails at once), and lets
+computers open one connection to the host: the egress proxy on `172.30.0.1:3128`. The
+proxy resolves names on the host, connects only to global addresses on ports 80 and 443
+(never cloud metadata, private, loopback or link-local ranges), and pins the address it
+checked.
+
+What follows from "no DNS": tools that honour `HTTP(S)_PROXY` work (curl, pip, npm, git
+over https, Python's urllib, Chromium); tools that resolve names themselves (ssh, raw
+sockets, Node's built-in `fetch` on the image's Node) cannot reach the Internet.
+
+**Which computer.** The broker updates the address map
+(`/run/juno-computers/egress-map.json`) before and after it starts a computer and before
+and after it stops or removes one; `juno-computers-egress-map.service` (a `docker events`
+watcher, no timer) repairs it for a computer that stopped on its own. The proxy names
+every connection after the computer that holds its source address, and refuses an
+address the map does not know (after re-checking for 2 s) instead of guessing.
+
+**The log.** One JSON line per connection, written when it ends, to
+`/var/log/juno-computers-egress/egress.jsonl` (not journald, whose rate limit can drop
+lines): `start`, `end`, `computer` (the container name), `src`, `host`, `port`, `up`
+and `down` bytes, and `verdict` (`ok`, `refused`, `over_budget`, `unmapped`, `error`).
+Never a path, a query, a header or a body. logrotate keeps `JUNO_EGRESS_LOG_DAYS` (14)
+days. The log names the hosts each computer reached, so it is personal data about what
+an agent did.
+
+**The budget.** `JUNO_EGRESS_MAX_MB_PER_HOUR` (1024 MB) per computer, by container name,
+over a rolling hour, both directions. Over it, a new request gets 403 and an open tunnel
+is closed at its next chunk (`over_budget` in the log). A new computer on a reused
+address starts with its own, empty budget. The counts are saved to
+`/var/lib/juno-computers-egress/budget.json` every 10 s and at stop, and loaded at
+start, so a restart of the proxy never resets a budget.
 
 ---
 
-## 5. Emergency shutoff (kill switch)
+## 5. Cost & usage accounting
 
-To immediately disable all agent computers without redeploying:
+- `COMPUTER_COST_MICRO_USD_PER_SECOND` defaults to `0` (computers run on the owner's server).
+- Above `0`, awake seconds are billed through `recordSpend` with `model: "agent-computer"`
+  against the account's 5-hour and weekly usage windows.
+- The weekly allowance of awake minutes per plan, which binds even at price 0, is
+  `COMPUTERS_2026-10.md` S1 (see `docs/OPEN_DECISIONS.md` for its numbers).
 
-1. **Turn off the provider**:
+---
+
+## 6. Emergency shutoff (kill switch)
+
+To disable every agent computer at once without redeploying:
+
+1. **Turn off the provider** (and, once S1's rollout control has landed, the rollout):
    ```bash
    cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload
-   # Enter: off
+   # Enter an empty value (or: ./scripts/set-env-key.sh AGENT_COMPUTER_ROLLOUT --reload, value: off)
    ```
-2. **Stop and remove all running agent containers (optional)**:
+2. **Remove every computer container**, as root on the computers host:
    ```bash
-   docker ps -aq --filter label=juno.computer=1 | xargs -r docker rm -f
+   docker ps -aq --filter label=app=juno --filter name=juno-agent- | xargs -r docker rm -f
    ```
-   When `COMPUTER_PROVIDER` is re-enabled later, any computer whose container was removed will automatically recreate its container on next wake while keeping its `juno-comp-<agentId>` volume (or start fresh if volumes were also removed).
+   Volumes are kept (`docker volume ls -q --filter name=juno-agent-` lists them). When
+   computers are switched back on, a computer whose container was removed is recreated
+   on its volumes at its next wake, with its files and sign-ins. Remove the volumes too
+   only on the owner's decision: that deletes every person's files and sign-ins.
 
 ---
 
-## 6. Security model and what still needs the image rebuilt (refoundation, 2026-09-30)
+## 7. Security model
 
-Computers stay OFF unless `COMPUTER_PROVIDER` is set, and the UI and the
-model's tool list say nothing about them while it is off. What the code now
-guarantees, whatever the image:
+### 7.1 What pipe-v3 already did (September–October 2026)
 
-- **Shell and typing always ask.** `computer_shell`, `computer_type` and any
-  `computer_key` that produces text (or pastes, or opens a terminal) are graded
-  `sensitive`: they ask under every approval mode, Skip included, and "Always
-  allow" can never cover them. `computer_files` writes only under
-  `/home/agent/work`, never into a dotfile or dot-folder (no `~/.bashrc`, no
-  autostart entries).
-- **Takeover is exclusive.** While the person has control
-  (`AgentComputer.takeoverUntil`), every computer tool and the browser tool on
-  the same Chromium refuse, screenshots included, and a result that finished as
-  control began is thrown away. Control heartbeats (web viewer and the apps,
-  every 20 s) hold it; Hand back releases it; a window nobody extends lapses
-  after 60 s.
-- **App links are single use.** `/computer-view?c=` codes are random, stored as
-  hashes, spent on first open, bound to the device session that asked (a
-  revoked device cannot use one), refused for a browser signed in to another
-  account, and live 60 s. The page never renders a credential: the viewer trades
-  a one-time ticket for the relay token and VNC password over
-  `POST /api/computer-view/session`, which also records `takeover_started`.
-- **Relay tokens are single use** (a one-time id the relay remembers until the
-  token expires) and travel in the WebSocket subprotocol, not the URL, so they
-  are not in the access log.
-- **The CDP token is not in the container's env.** It is written to tmpfs over
-  `docker exec -i` after every start; the gate reads it, deletes the file and
-  marks itself non-dumpable. The VNC password file lives in tmpfs and x11vnc
-  deletes it on read.
+- **Uid split.** The agent's shell is uid 1000; Chromium, the CDP gate, Xvfb, xfwm4
+  and x11vnc are uid 1001. `/home/browser` and `/run/juno` (the CDP token and VNC
+  password handover) are 0700 uid 1001. No desktop session, panel, terminal, file
+  manager or editor runs as uid 1001 on the display.
+- **No DevTools port.** Chromium speaks CDP over a private pipe to `cdp-gate.py`, which
+  serves one token-checked WebSocket on `:9222`. The token is never in the container's
+  environment; it is written to tmpfs after every start and deleted on read.
+- **Container.** `--cap-drop ALL`, `no-new-privileges`, read-only root, tmpfs `/tmp`,
+  `/run`, `/var/tmp`, memory equal to swap, at most 2 CPUs and 2048 pids, `--restart no`.
+- **Broker.** Only exact argv shapes; `exec` only as uid 1000 or 1001; `--workdir` only
+  under `/home/agent`; names `juno-agent-*` with label `app=juno` only.
+- **Network.** ICC off, the firewall, no IPv6, the pinned proxy (§4).
+- **Approvals.** `computer_shell`, `computer_type` and a text-producing `computer_key`
+  are `sensitive`: they ask every time and "Always allow" never covers them. Take over
+  is exclusive (every tool refuses while the person has control; an epoch fence
+  discards results that overlapped it); relay tokens and app links are single use.
 
-What the image rebuild must still do (security audit C1, not closable from the
-app alone):
+### 7.2 What pipe-v4 adds (October 2026, `COMPUTERS_2026-10.md` S2)
 
-1. **Split the uids.** Run Chromium and `cdp-gate.py` as a second user (for
-   example uid 1001, `browser`) with its own profile directory that uid 1000
-   cannot read, and keep `docker exec --user 1000` for the agent's shell. This
-   needs `--cap-add SETUID --cap-add SETGID` for the entrypoint only (it drops
-   to each uid with `setpriv`), alongside `no-new-privileges`.
-2. **Take DevTools off TCP.** Launch Chromium with `--remote-debugging-pipe`
-   from the gate (fds 3 and 4) and have the gate bridge its token-checked
-   WebSocket on `:9222` to the pipe, so nothing listens on `127.0.0.1:9223` for
-   the agent's shell to reach. `remote-browser.ts` then connects to a fixed
-   path instead of asking `/json/version` over `docker exec`.
-3. **Egress.** Default-deny container egress through an allowlisting proxy
-   driven by the skill's `egressDomains`, so a shell command the person approved
-   cannot reach beyond it.
+Each item is checked on a real container by `tests/test_computer_boundary.py` (passed three
+times in a row on a disposable Linux host on 2026-10-28, with a local build of the image on
+an Ubuntu 24.04 base and Chrome for Testing, because that host could not reach a Debian
+mirror; the CI job `computer-boundary` builds the Debian image itself; nothing here ran in
+production):
 
-After rebuilding, containers created by an older build still carry
-`JUNO_CDP_TOKEN` in their env: use **Reset** on each computer (or
-`docker rm -f` them; the volume is kept) so they are recreated with the new
-arguments.
+- **No DNS.** The create argv pins `--dns 192.0.2.53` (RFC 5737, a documentation address
+  no resolver serves) and the firewall rejects port 53 to every address, so no lookup
+  leaves a computer whatever that address routes to; the 1.1.1.1 / 9.9.9.9 exception is gone.
+- **Egress log and budget**, keyed by computer through the broker's address map (§4).
+- **The exec launcher.** Every agent command starts through `/opt/juno/agent-exec`
+  (`run` for model-driven work, `helper` for the provider's own reads and a person's
+  upload, `freeze`, `thaw`); the broker refuses any other uid-1000 exec. The launcher
+  stacks a seccomp filter that denies user, mount, network and every other namespace
+  to the agent's processes (`unshare`, `setns`, `clone` with `CLONE_NEW*`: EPERM;
+  `clone3`: ENOSYS), and replaces the environment: `HOME=/home/agent`, a fixed `PATH`
+  with `~/.local/bin` last, the proxy variables, nothing passed through. The shell
+  runs `bash --noprofile --norc -c`, so no login or rc file, `BASH_ENV` or planted
+  `~/.local/bin/ls` runs before or instead of an approved command.
+- **Chromium's own sandbox, where the host allows it.** `setup-vm.sh` probes, in a
+  throwaway container, whether the browser uid may create a user namespace under
+  `seccomp-chromium.json` (Docker's default profile plus `clone`, `unshare` and
+  `chroot`) and whether the launcher's ban still holds for the agent under it. Only
+  then does the broker's policy set `browserSandbox: true` and computers get that
+  profile; otherwise Docker's default profile, exactly as pipe-v3. The gate records
+  `on`, `off:kernel` or `off:chromium` in `/run/juno-state/browser-sandbox`, and the
+  provider re-checks the ban from the agent's side at every wake. On Ubuntu 24.04,
+  AppArmor restricts unprivileged user namespaces by default, so expect `off` there
+  unless the owner relaxes that restriction on the host.
+- **Freeze at take over, thaw at hand back.** The provider writes a frozen marker
+  (`/run/juno-state`, readable by the agent, writable only by uid 1001) so no new agent
+  command starts, stops every uid-1000 process until a scan finds none running (fork
+  loops and commands racing the freeze included), disconnects every X client that
+  belongs to the agent through the X server (by PID, never by name), and releases every
+  key and mouse button the X server reports down (a typer stopped between a key's press
+  and release would otherwise leave autorepeat typing for the person). A typer resumed
+  at hand back finds its display
+  connection gone and cannot type. (The store's wiring of these is S1's.)
+- **VNC** accepts connections from the host side of the network only (`-allow
+  172.30.0.1`); the agent cannot reach it on its own loopback.
+- **pip and venv** in the image; `pip install --user`, `python3 -m venv` and npm work
+  in `/home/agent`.
+- **Outdated containers.** A container made from another image ID than the current tag
+  is detected (`isOutdated`) and recreated on its volumes at its next wake; the image
+  build time is reported (`imageInfo`).
+- **Missing means missing.** `state()` reports `missing` only when Docker says the
+  container does not exist (the broker's exit 3); any other failure is "unreachable",
+  so a daemon hiccup never recreates a computer.
 
+### 7.3 What stays open
+
+See `COMPUTERS_2026-10.md` section 7: the CDP gate passes every method through; a CDP
+flood or a message over 64 MB stops the gate; `AllowFileSelectionDialogs` is undecided;
+image rebuilds are by hand; a script the agent wrote, or configuration a named tool
+reads from the agent's home (`.npmrc`, `.gitconfig`, a `.pth` file), still runs with a
+command the person approved; the egress proxy allows any public host on 80 and 443; the
+disk quota is measured, not enforced by the filesystem.
+
+Found while proving pipe-v4 (not closed): the freeze is SIGSTOP, and the kernel sends
+SIGHUP then SIGCONT to a stopped process group that becomes orphaned when one of its
+members exits. A process that ignores SIGHUP (some started through `docker exec` did on
+the test host, and the agent can set it for its own) survives the SIGHUP, so if a frozen
+agent process were killed during a take over (by the OOM killer, say), a stopped
+process in an orphaned group could resume. Its old display connection is cut, but it
+could open a new one. A watchdog that re-stops the agent's processes while the marker
+exists, or the cgroup freezer on a cgroup of the agent's own, would close it.

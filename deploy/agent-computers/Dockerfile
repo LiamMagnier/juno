@@ -5,8 +5,20 @@
 # local smoke test (arm64).
 #
 # The container is the sandbox: agent uid 1000, browser uid 1001, every capability dropped,
-# no-new-privileges, read-only root filesystem, firewalled network (firewall.sh).
-# Chromium therefore runs with --no-sandbox.
+# no-new-privileges, read-only root filesystem, firewalled network (firewall.sh), no DNS.
+# Chromium runs with its own sandbox only where the host allows it (cdp-gate.py
+# probes at start and records on, off:kernel or off:chromium in
+# /run/juno-state/browser-sandbox); everywhere else it runs with --no-sandbox, which
+# is exactly the pipe-v3 configuration.
+#
+# pipe-v4 (October 2026, docs/design/agents-v2/COMPUTERS_2026-10.md S2): every agent
+# command starts through /opt/juno/agent-exec (agent-exec.py), which bans user, mount,
+# network and other namespaces for the agent's processes with a stacked seccomp
+# filter, replaces the environment (HOME=/home/agent, a fixed PATH with ~/.local/bin
+# last), refuses new commands while a person has control (the frozen marker in
+# /run/juno-state), and freezes and thaws the agent's processes at take over.
+# x-clients.py cuts the agent's X connections at take over. pip and venv are here;
+# nothing reads a login or rc file (the shell runs bash --noprofile --norc).
 #
 # What the uid split does and does not do. The agent's shell (1000) cannot read the
 # browser's profile or the CDP token: /home/browser and /run/juno are 0700 uid 1001.
@@ -30,7 +42,8 @@ RUN apt-get update \
       xvfb x11vnc xdotool scrot x11-utils dbus-x11 \
       xfwm4 \
       chromium ca-certificates tini \
-      python3 python3-websockets curl git jq unzip zip procps less nano \
+      python3 python3-websockets python3-seccomp python3-xlib python3-pip python3-venv \
+      curl git jq unzip zip procps less nano \
       nodejs npm \
       fonts-liberation fonts-noto-core fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/* \
@@ -52,11 +65,15 @@ ENV HTTP_PROXY=http://172.30.0.1:3128 \
 # secrets during a takeover, and they must not land in a store the agent's shell
 # could read.
 COPY chrome-policies.json /etc/chromium/policies/managed/juno.json
-COPY cdp-gate.py entrypoint.sh /opt/juno/
-RUN chmod 0644 /etc/chromium/policies/managed/juno.json /opt/juno/cdp-gate.py \
- && chmod 0755 /opt/juno/entrypoint.sh
+COPY cdp-gate.py entrypoint.sh x-clients.py /opt/juno/
+# The launcher is the one path into the computer for the agent's uid: the broker
+# refuses any `docker exec --user 1000` that does not start with it.
+COPY agent-exec.py /opt/juno/agent-exec
+RUN chmod 0644 /etc/chromium/policies/managed/juno.json /opt/juno/cdp-gate.py /opt/juno/x-clients.py \
+ && chmod 0755 /opt/juno/entrypoint.sh /opt/juno/agent-exec \
+ && chown -R root:root /opt/juno
 
-LABEL juno.security="pipe-v3"
+LABEL juno.security="pipe-v4"
 USER 1001
 WORKDIR /home/browser
 EXPOSE 5900 9222

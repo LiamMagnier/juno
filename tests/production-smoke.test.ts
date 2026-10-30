@@ -61,15 +61,18 @@ test("the smoke skips a provider only for a dead key or exhausted credit, in pro
   }
 });
 
-test("the smoke's machine-readable account faults are exactly the health policy's", async () => {
+test("the smoke's machine-readable account faults are exactly the health policy's, as the wire spells them", async () => {
   const { isAccountFault } = await import("../src/lib/provider-health-policy");
+  const { wireErrorClass } = await import("../src/lib/provider-error");
   const literal = readFileSync(SCRIPT, "utf8").match(/const ACCOUNT_FAULT_CLASSES = new Set\((\[[^\]]*\])\);/);
   assert.ok(literal, "the class list is a literal");
   const listed = new Set(JSON.parse(literal[1]) as string[]);
   const classes = ["auth", "billing", "rate_limit", "context", "content_filter", "invalid_request", "capacity", "not_found", "network", "unknown"] as const;
   for (const klass of classes) {
-    assert.equal(listed.has(klass), isAccountFault(klass), `${klass}: the smoke and provider health must agree`);
+    assert.equal(listed.has(wireErrorClass(klass)), isAccountFault(klass), `${klass}: the smoke and provider health must agree`);
   }
+  // The frame never says which account fault it was, so the smoke lists the one wire class.
+  assert.deepEqual([...listed], ["account"]);
 });
 
 test("the deploy smoke tries the real DEFAULT_MODEL first", async () => {
@@ -162,11 +165,11 @@ const SMOKE_ENV = { JUNO_SMOKE_REQUIRE_AUTH: "1", JUNO_SMOKE_TOKEN: "test-token"
 
 test("an account fault named by errorClass is skipped with a warning, and the next candidate carries the release", async () => {
   await withFakeProduction(
-    { errors: { "lab:default": { message: "Default is temporarily unavailable. Choose another model, or try again later.", errorClass: "billing" } } },
+    { errors: { "lab:default": { message: "Default is temporarily unavailable. Choose another model, or try again later.", errorClass: "account" } } },
     async (baseUrl) => {
       const result = await runSmokeAsync({ ...SMOKE_ENV, JUNO_SMOKE_BASE_URL: baseUrl, JUNO_SMOKE_MODEL: "lab:default,lab:next" });
       assert.equal(result.status, 0, result.stderr || result.stdout);
-      assert.match(result.stdout, /::warning::lab:default \(the account default\) is unusable in production \(billing\)/);
+      assert.match(result.stdout, /::warning::lab:default \(the account default\) is unusable in production \(account\)/);
       assert.match(result.stdout, /PASS chat submission reached a terminal response on lab:next \(after 1 unusable provider\(s\)\)/);
     },
   );

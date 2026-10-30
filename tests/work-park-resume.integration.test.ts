@@ -110,7 +110,7 @@ if (!url) {
       const action = "work.cloud_file.write";
       const detail = { action, tool: "cloud_files", input };
       const approval = await db.workApproval.create({ data: {
-        runId, userId: owner, action, risk: "edit", summary: "Write the cloud file notes.txt", detail,
+        runId, userId: owner, action, risk: "edit", summary: "Write the cloud file notes.txt", detail: detail as never,
         actionDigest: actionDigest(action, detail), policyDigest: policyDigest(POLICY), expiresAt,
       } });
       await store.appendEvents({ runId, userId: owner, events: [
@@ -151,10 +151,15 @@ if (!url) {
       const other = await answer(q.sessionId, { questionId: q.questionId, text: "The 2023 one" });
       assert.equal(other.status, 409);
       assert.equal(other.body.error, "question_already_answered");
-      // Picked up: out of Needs you; and the restored run is handed the answer.
+      // Picked up: out of Needs you; and the restored run is handed the answer
+      // (written before this execution's start, so it is read).
       assert.equal((await store.claimRun({ runId: q.runId, userId: owner, executorId: "test-executor-2" })).claimed, true);
       session = await sessionOf(q.sessionId);
       assert.equal(session.needsAttention, false);
+      await store.appendEvents({ runId: q.runId, userId: owner, events: [{ kind: "run_started", payload: { executor: "cloud" } }] });
+      const firstAnswer = (await events(q.runId, "question_answered"))[0]!;
+      assert.equal(firstAnswer.eventKey, `answer:${q.questionId}`);
+      assert.equal(await park.answerArrivedAfterRestart({ runId: q.runId, userId: owner, questionId: q.questionId, answerSeq: firstAnswer.seq }), false);
       const loaded = await park.loadParkedDecisions({
         runId: q.runId, userId: owner, askToolName: "ask_user", policy: POLICY, now: new Date(),
         calls: [{ id: q.questionId, name: "ask_user", input: { question: "Which Invoices folder?", why: "Two." } }],
@@ -230,17 +235,28 @@ if (!url) {
       assert.deepEqual(plannedD.decisions.takeApproval(renamed, POLICY, new Date()), { approvalId: d.approval.id, use: false, reason: "digest_mismatch" });
 
       // --- 6. An expired approval asks again; its stored expiry is never extended. ---
+      // Decided after its expiry: refused as expired, nothing recorded, and the
+      // run it parked on goes back in the queue to ask again under a new request.
       const e = await parkedOnApproval("Expired approval", input, new Date(Date.now() - 1_000));
       const late = await decide(e.approval.id, { decision: "allowed", actionDigest: e.approval.actionDigest });
       assert.equal(late.status, 409);
       assert.equal(late.body.error, "expired");
-      assert.equal((await runOf(e.runId)).status, "paused");
+      assert.equal(late.body.resumed, true);
+      assert.match(String(late.body.message), /will ask again/);
+      assert.equal((await db.workApproval.findUniqueOrThrow({ where: { id: e.approval.id } })).decision, "pending", "a refused decision records nothing");
+      assert.equal((await runOf(e.runId)).status, "queued");
+      // The restored run closes the lapsed request and its call is told so.
+      const closedE = await park.closeAbandonedApprovals({ runId: e.runId, userId: owner, now: new Date() });
+      assert.deepEqual(closedE, [{ approvalId: e.approval.id, decision: "expired" }]);
+      const plannedE = await park.loadParkedDecisions({ runId: e.runId, userId: owner, askToolName: "ask_user", policy: POLICY, now: new Date(), calls: [e.call] });
+      assert.deepEqual(plannedE.resolutions.get("call_1"), { content: park.EXPIRED_WHILE_PARKED, isError: true });
+      assert.equal(plannedE.decisions.takeApproval(request, POLICY, new Date()), null, "nothing is authorised by it");
       // Decided in time, used after its expiry: asks again.
       const f = await parkedOnApproval("Decided then expired", input, new Date(Date.now() + 60_000));
       assert.equal((await decide(f.approval.id, { decision: "allowed", actionDigest: f.approval.actionDigest })).status, 200);
       const afterExpiry = new Date(Date.now() + 120_000);
       const plannedF = await park.loadParkedDecisions({ runId: f.runId, userId: owner, askToolName: "ask_user", policy: POLICY, now: afterExpiry, calls: [f.call] });
-      assert.equal(plannedF.resolutions.size, 0);
+      assert.deepEqual(plannedF.resolutions.get("call_1"), { content: park.EXPIRED_WHILE_PARKED, isError: true }, "told it lapsed, never that it was approved");
       assert.equal(plannedF.decisions.takeApproval(request, POLICY, afterExpiry), null);
       assert.equal(
         (await db.workApproval.findUniqueOrThrow({ where: { id: f.approval.id } })).expiresAt.getTime(),
@@ -248,10 +264,205 @@ if (!url) {
         "the expiry is the one stored when the person was asked"
       );
 
+      // --- 6b. The edges: an answer racing the park, a request an ended execution
+      // left behind, and a decision on a request the run is not waiting on. ---
+      // The answer lands while the executor is still attached (so the route
+      // leaves the requeue to it), and its wait runs out a moment later.
+      const racing = await parkedOnQuestion("Answer racing the park");
+      await db.workRun.update({ where: { id: racing.runId }, data: { status: "waiting_input", pauseReason: null, claimedBy: "test-executor", claimedAt: new Date(), leaseExpiresAt: new Date(Date.now() + 60_000) } });
+      const attached = await answer(racing.sessionId, { questionId: racing.questionId, text: "2024" });
+      assert.equal(attached.status, 200);
+      assert.equal((await runOf(racing.runId)).status, "waiting_input", "attached: the executor reads it itself");
+      assert.equal(await store.parkRun({ runId: racing.runId, userId: owner, executorId: "test-executor" }), true);
+      assert.equal(await park.parkedWaitAnswered({ runId: racing.runId, userId: owner, wait: { kind: "question", questionId: racing.questionId } }), true);
+      assert.equal((await store.requeueParkedRun({ runId: racing.runId, userId: owner })).requeued, true, "the executor's check after the park requeues it");
+      assert.equal(await park.parkedWaitAnswered({ runId: q.runId, userId: owner, wait: { kind: "question", questionId: "toolu_nobody_answered" } }), false);
+
+      // Parked on an approval, resumed by hand without deciding it: the next
+      // execution closes the request, and a decision on it afterwards is refused
+      // as no longer waited on rather than recorded into nothing.
+      const left = await parkedOnApproval("Resumed without deciding", input);
+      await db.workRun.update({ where: { id: left.runId }, data: { status: "queued", pauseReason: null } });
+      assert.equal((await store.claimRun({ runId: left.runId, userId: owner, executorId: "test-executor" })).claimed, true);
+      const closed = await park.closeAbandonedApprovals({ runId: left.runId, userId: owner, now: new Date() });
+      assert.deepEqual(closed, [{ approvalId: left.approval.id, decision: "superseded" }]);
+      assert.deepEqual(await park.closeAbandonedApprovals({ runId: left.runId, userId: owner, now: new Date() }), [], "once");
+      await store.appendEvents({ runId: left.runId, userId: owner, events: [{ kind: "run_started", payload: { executor: "cloud" } }] });
+      const stray = await decide(left.approval.id, { decision: "allowed", actionDigest: left.approval.actionDigest });
+      assert.equal(stray.status, 409);
+      assert.equal(stray.body.error, "already_decided");
+      assert.match(String(stray.body.message), /no longer waiting on this request/);
+      assert.equal((await db.workApproval.findUniqueOrThrow({ where: { id: left.approval.id } })).decision, "superseded");
+      assert.equal((await runOf(left.runId)).status, "preparing", "a refused decision moves nothing");
+
+      // A run that decided an approval in its attended wait and then parked on a
+      // question: a late repeat of that decision neither requeues it nor takes it
+      // out of Needs you, because the run is waiting on the question.
+      const moved = await parkedOnApproval("Decided, then parked on a question", input);
+      await db.workApproval.update({ where: { id: moved.approval.id }, data: { decision: "allowed", decidedAt: new Date(), decidedVia: "web" } });
+      await db.workRun.update({ where: { id: moved.runId }, data: { status: "waiting_input", pauseReason: null, claimedBy: "test-executor", claimedAt: new Date(), leaseExpiresAt: new Date(Date.now() + 60_000) } });
+      await store.appendEvents({ runId: moved.runId, userId: owner, events: [
+        { kind: "question_asked", payload: { kind: "question_asked", question: { id: "toolu_after_approval", question: "Which month?", why: "Two are open." } } },
+      ] });
+      assert.equal(await store.parkRun({ runId: moved.runId, userId: owner, executorId: "test-executor" }), true);
+      assert.deepEqual(await park.openWait({ runId: moved.runId, userId: owner }), { kind: "question", questionId: "toolu_after_approval" });
+      const repeat = await decide(moved.approval.id, { decision: "allowed", actionDigest: moved.approval.actionDigest });
+      assert.equal(repeat.status, 200);
+      assert.equal(repeat.body.replay, true);
+      assert.equal(repeat.body.resumed, false);
+      assert.equal((await runOf(moved.runId)).status, "paused", "still waiting on the question");
+      assert.equal((await sessionOf(moved.sessionId)).needsAttention, true, "and still in Needs you");
+
+      // --- 6c. A person's pause is theirs; replays, races and decisions that wait. ---
+      // The person pressed Pause on a running cloud task and the executor
+      // unwound and parked it. Nothing is asked of them and no answer carries
+      // it on, so it is not in Needs you: it reads "Paused".
+      {
+        const s = await store.createWorkSession({ userId: owner, title: "Paused by hand", goal: "Paused by hand", requestedTarget: "cloud" });
+        const r = await store.createRun({ sessionId: s.id, userId: owner, requestedTarget: "cloud", effectiveTarget: "cloud", effectiveModel: MODEL, spendReservation: false, idempotencyKey: `pause:${randomUUID()}` });
+        assert.equal((await store.claimRun({ runId: r.run.id, userId: owner, executorId: "test-executor" })).claimed, true);
+        await db.workRun.update({ where: { id: r.run.id }, data: { status: "running" } });
+        await store.setSessionAttention({ sessionId: s.id, userId: owner, status: "running" });
+        // The control route's pause, then the executor's park as it unwinds.
+        assert.equal((await db.workRun.updateMany({ where: { id: r.run.id, status: "running" }, data: { status: "paused", pauseReason: "user" } })).count, 1);
+        await store.setSessionAttention({ sessionId: s.id, userId: owner, status: "paused" });
+        assert.equal(await store.parkRun({ runId: r.run.id, userId: owner, executorId: "test-executor" }), true);
+        const pausedSession = await sessionOf(s.id);
+        assert.equal(pausedSession.status, "paused");
+        assert.equal(pausedSession.needsAttention, false, "a person's pause is not 'needs you'");
+        assert.equal((await runOf(r.run.id)).pauseReason, "user");
+        const { deriveAgentState } = await import("../src/lib/agents/domain");
+        assert.equal(
+          deriveAgentState({ status: "active", now: new Date(), task: { sessionId: s.id, title: "Paused by hand", status: pausedSession.status, needsAttention: pausedSession.needsAttention, lastActivityAt: new Date() } }),
+          "idle",
+          "and the agent glance does not say it is waiting for the person"
+        );
+      }
+
+      // A retried answer to a question the run already handled, while the run
+      // is parked on a newer approval: recorded already, and nothing moves —
+      // the newer request stays open and the task stays in Needs you.
+      {
+        const r = await parkedOnQuestion("Replay after moving on");
+        assert.equal((await answer(r.sessionId, { questionId: r.questionId, text: "2024" })).status, 200);
+        assert.equal((await store.claimRun({ runId: r.runId, userId: owner, executorId: "test-executor" })).claimed, true);
+        const action = "work.cloud_file.write";
+        const detail = { action, tool: "cloud_files", input };
+        const newer = await db.workApproval.create({ data: {
+          runId: r.runId, userId: owner, action, risk: "edit", summary: "Write the cloud file notes.txt", detail: detail as never,
+          actionDigest: actionDigest(action, detail), policyDigest: policyDigest(POLICY), expiresAt: new Date(Date.now() + 15 * 60_000),
+        } });
+        await store.appendEvents({ runId: r.runId, userId: owner, events: [
+          { kind: "run_started", payload: { executor: "cloud" } },
+          { kind: "approval_requested", payload: { kind: "approval_requested", approvalId: newer.id, request: { id: `${r.runId}:call_9`, approvalId: newer.id, action, actionDigest: newer.actionDigest } } },
+        ] });
+        await db.workRun.update({ where: { id: r.runId }, data: { status: "waiting_approval" } });
+        assert.equal(await store.parkRun({ runId: r.runId, userId: owner, executorId: "test-executor" }), true);
+        const retried = await answer(r.sessionId, { questionId: r.questionId, text: "2024" });
+        assert.equal(retried.status, 200, JSON.stringify(retried.body));
+        assert.equal(retried.body.replay, true);
+        assert.equal(retried.body.resumed, false);
+        assert.match(String(retried.body.explanation), /waiting on something newer/);
+        assert.equal((await runOf(r.runId)).status, "paused", "still parked on the newer approval");
+        assert.equal((await db.workApproval.findUniqueOrThrow({ where: { id: newer.id } })).decision, "pending");
+        assert.equal((await sessionOf(r.sessionId)).needsAttention, true);
+      }
+
+      // Two different answers sent at once, under two clients' own keys: one
+      // is recorded and is the one every reader reads; the other is told it
+      // was not recorded.
+      {
+        const r = await parkedOnQuestion("Two answers at once");
+        const [one, two] = await Promise.all([
+          answer(r.sessionId, { questionId: r.questionId, text: "The 2024 one", idempotencyKey: `phone-${randomUUID()}` }),
+          answer(r.sessionId, { questionId: r.questionId, text: "The 2023 one", idempotencyKey: `mac-${randomUUID()}` }),
+        ]);
+        assert.deepEqual([one.status, two.status].sort(), [200, 409], JSON.stringify([one.body, two.body]));
+        const loser = one.status === 409 ? one : two;
+        assert.equal(loser.body.error, "question_already_answered");
+        const winner = one.status === 200 ? "The 2024 one" : "The 2023 one";
+        const rows = await events(r.runId, "question_answered");
+        assert.equal(rows.length, 1, "one answer row, whatever keys the clients sent");
+        assert.equal(rows[0]!.eventKey, `answer:${r.questionId}`);
+        assert.equal((rows[0]!.payload as { text?: string }).text, winner);
+        assert.equal((await park.questionState({ runId: r.runId, userId: owner, questionId: r.questionId })).answer, winner);
+        assert.equal((await store.claimRun({ runId: r.runId, userId: owner, executorId: "test-executor" })).claimed, true);
+        await store.appendEvents({ runId: r.runId, userId: owner, events: [{ kind: "run_started", payload: { executor: "cloud" } }] });
+        const plannedTwo = await park.loadParkedDecisions({
+          runId: r.runId, userId: owner, askToolName: "ask_user", policy: POLICY, now: new Date(),
+          calls: [{ id: r.questionId, name: "ask_user", input: { question: "Which Invoices folder?", why: "Two." } }],
+        });
+        assert.equal(plannedTwo.resolutions.get(r.questionId)?.content, winner);
+      }
+
+      // An answer that lands after the resumed run's new execution has started
+      // (the route saw it queued; the executor claimed and started first): the
+      // new execution never reads it, and the route says it will ask again.
+      {
+        const r = await parkedOnQuestion("Answer after the restart");
+        await db.workRun.update({ where: { id: r.runId }, data: { status: "queued", pauseReason: null } });
+        assert.equal((await store.claimRun({ runId: r.runId, userId: owner, executorId: "test-executor" })).claimed, true);
+        await store.appendEvents({ runId: r.runId, userId: owner, events: [{ kind: "run_started", payload: { executor: "cloud" } }] });
+        const lateAnswer = await store.appendEvents({ runId: r.runId, userId: owner, events: [
+          { kind: "question_answered", payload: { questionId: r.questionId, text: "2024", answeredVia: "web" }, key: `answer:${r.questionId}` },
+        ] });
+        assert.equal(await park.answerArrivedAfterRestart({ runId: r.runId, userId: owner, questionId: r.questionId, answerSeq: lateAnswer.lastSeq }), true);
+        const plannedLate = await park.loadParkedDecisions({
+          runId: r.runId, userId: owner, askToolName: "ask_user", policy: POLICY, now: new Date(),
+          calls: [{ id: r.questionId, name: "ask_user", input: { question: "Which Invoices folder?", why: "Two." } }],
+        });
+        assert.equal(plannedLate.resolutions.size, 0, "read by neither side, so the route's 'it will ask again' is true");
+      }
+
+      // A decision on a parked run while no cloud worker is running: saved,
+      // kept in Needs you, and the person is told what carries it on.
+      {
+        const n = await parkedOnApproval("No worker running", input);
+        process.env.WORK_CLOUD_AVAILABLE = "0";
+        let kept: Awaited<ReturnType<typeof decide>>;
+        try {
+          kept = await decide(n.approval.id, { decision: "allowed", actionDigest: n.approval.actionDigest });
+        } finally {
+          process.env.WORK_CLOUD_AVAILABLE = "1";
+        }
+        assert.equal(kept.status, 200, JSON.stringify(kept.body));
+        assert.equal(kept.body.resumed, false);
+        assert.match(String(kept.body.explanation), /No cloud worker is running/);
+        assert.match(String(kept.body.explanation), /Resume the task once it is back/);
+        assert.equal((await runOf(n.runId)).status, "paused");
+        assert.equal((await sessionOf(n.sessionId)).needsAttention, true);
+      }
+
+      // A decision on a run the person paused while it waited: kept for Resume.
+      {
+        const h = await parkedOnApproval("Paused on an approval", input);
+        await db.workRun.update({ where: { id: h.runId }, data: { pauseReason: "user" } });
+        const keptPaused = await decide(h.approval.id, { decision: "allowed", actionDigest: h.approval.actionDigest });
+        assert.equal(keptPaused.status, 200, JSON.stringify(keptPaused.body));
+        assert.equal(keptPaused.body.resumed, false);
+        assert.match(String(keptPaused.body.explanation), /paused, so it continues with your decision when you resume it/);
+        assert.equal((await runOf(h.runId)).status, "paused");
+        assert.equal((await sessionOf(h.sessionId)).needsAttention, false);
+      }
+
+      // Deny on a lapsed request: refused as expired, as ever, and the run is
+      // not brought back to ask again — the person said no.
+      {
+        const x = await parkedOnApproval("Deny a lapsed request", input, new Date(Date.now() - 1_000));
+        const denied = await decide(x.approval.id, { decision: "denied", actionDigest: x.approval.actionDigest });
+        assert.equal(denied.status, 409);
+        assert.equal(denied.body.error, "expired");
+        assert.equal(denied.body.resumed, undefined);
+        assert.match(String(denied.body.message), /stays paused on it/);
+        assert.equal((await runOf(x.runId)).status, "paused", "a deny does not requeue the run");
+        assert.equal((await db.workApproval.findUniqueOrThrow({ where: { id: x.approval.id } })).decision, "pending", "nothing recorded");
+      }
+
       // --- 7. Parked runs leave the live cap and have a bound of their own. ---
-      // Three parked at least (the person's pause, the expired approval, and one more):
-      // under the old rule, exactly enough to refuse every new task.
+      // Three parked at least (the person's pause, and two more): under the old
+      // rule, exactly enough to refuse every new task.
       await parkedOnQuestion("One more parked");
+      await parkedOnQuestion("And another");
       const parkedCount = await db.workRun.count({ where: { userId: owner, status: "paused" } });
       assert.ok(parkedCount >= 3, `${parkedCount} parked runs`);
       // Everything still queued above is not executing: put it away so the live count is ours to set.
@@ -450,7 +661,9 @@ if (!url) {
           ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
           WORK_ATTENDED_WAIT_MS: "1500",
           HOSTNAME: "park-e2e",
-        },
+          // A minimal environment on purpose (no NODE_ENV, nothing inherited):
+          // the cast is only because the types require NODE_ENV.
+        } as unknown as NodeJS.ProcessEnv,
         stdio: ["ignore", out, out],
       });
 

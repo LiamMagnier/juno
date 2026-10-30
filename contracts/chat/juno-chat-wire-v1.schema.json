@@ -5,7 +5,7 @@
   "x-wire-version": "1.1.0",
   "x-wire-changes": {
     "1.0.0": "The wire as generated before the contract carried a version.",
-    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
   },
   "description": "POST /api/chat: the request body (ChatRequest) and the SSE frames the response streams (StreamEvent, one JSON object per `data:` line; GET /api/chat/stream/{generationId} replays the same frames). Generated from src/lib/chat/request.ts (chatBodySchema) and src/types/chat.ts (StreamChunk), with each field's `x-native` status from contracts/chat/juno-chat-wire-v1.status.json. Do not edit by hand; run `npm run native:wire`.",
   "x-native-legend": {
@@ -1055,8 +1055,7 @@
             "errorClass": {
               "type": "string",
               "enum": [
-                "auth",
-                "billing",
+                "account",
                 "capacity",
                 "content_filter",
                 "context",
@@ -1067,7 +1066,7 @@
                 "unknown"
               ],
               "x-native": "native",
-              "x-native-note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery; set only when the turn failed at its provider."
+              "x-native-note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery as a string; set only when the turn failed at its provider. A provider-account fault arrives as account, never as auth or billing."
             },
             "retryable": {
               "type": "boolean",
@@ -1082,7 +1081,7 @@
             "suggestedModelId": {
               "type": "string",
               "x-native": "native",
-              "x-native-note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model> (Switch Model's one-shot regenerate). The iPhone decodes it and does not show it yet."
+              "x-native-note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model>, sent as Switch Model sends a model. The iPhone decodes it and does not show it yet."
             },
             "suggestedModelName": {
               "type": "string",
@@ -1177,8 +1176,7 @@
         "errorClass": {
           "type": "string",
           "enum": [
-            "auth",
-            "billing",
+            "account",
             "capacity",
             "content_filter",
             "context",

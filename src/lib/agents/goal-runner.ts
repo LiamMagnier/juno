@@ -25,10 +25,15 @@ import { agentWorkTarget } from "@/lib/agents/domain";
 import { WORK_TARGETS, type WorkTarget } from "@/lib/work/domain";
 import { isRetryLaterRefusal } from "@/lib/work/executor-presence";
 import { PARKED_GOAL_STEP_EXPIRED_DETAIL } from "@/lib/work/store";
+import { latestGoalCriteriaCheck, notifyGoalOutcome } from "@/lib/agents/goal-criteria";
 import {
   GOAL_ACTING_EVENT_KINDS,
   GOAL_ADVANCE_LEASE_MS,
+  GOAL_UNVERIFIED,
   goalProgress,
+  lastFinishedMilestone,
+  planGoalCompletion,
+  type GoalCriteriaCheck,
   markMilestoneDone,
   parseBlockers,
   parseCriteria,
@@ -54,6 +59,13 @@ export interface GoalRunnerDeps {
   startStep(input: { user: AgentActor; agent: Agent; title: string; prompt: string; idempotencyKey: string }): Promise<StartStepResult>;
   /** A new attempt of an interrupted step's task; idempotent on `idempotencyKey`. */
   retryStep(input: { user: AgentActor; sessionId: string; idempotencyKey: string }): Promise<{ ok: true } | ({ ok: false } & GoalStepNotStarted)>;
+  /**
+   * The criteria verdict the final step's run recorded. Defaults to the
+   * agent's log (`latestGoalCriteriaCheck`); null means none was recorded.
+   */
+  readCriteriaCheck?(input: { userId: string; agentId: string; goalId: string; sessionId: string }): Promise<GoalCriteriaCheck | null>;
+  /** Tells the person the goal finished. Defaults to `notifyGoalOutcome`. */
+  notifyOutcome?(input: Parameters<typeof notifyGoalOutcome>[0]): Promise<void>;
 }
 
 /** `retryLater` when dispatch said "try again later" (`isRetryLaterRefusal`), not "no". */
@@ -214,6 +226,8 @@ export async function advanceGoal(input: {
     return exists ? { kind: "busy" } : { kind: "missing" };
   }
   const applied: GoalStep["kind"][] = [];
+  const readCriteriaCheck = deps.readCriteriaCheck ?? latestGoalCriteriaCheck;
+  const notifyOutcome = deps.notifyOutcome ?? notifyGoalOutcome;
   try {
     for (let i = 0; i < MAX_STEPS_PER_ADVANCE; i++) {
       const goal = await prisma.agentGoal.findFirst({ where: { id: input.goalId, userId } });
@@ -233,6 +247,7 @@ export async function advanceGoal(input: {
       applied.push(step.kind);
       const data: Prisma.AgentGoalUpdateManyMutationInput = { spentMicroUsd: spent, lastAdvancedAt: now, nextAction: step.nextAction };
       let again = false;
+      let completed: { status: "achieved" | typeof GOAL_UNVERIFIED; nextAction: string } | null = null;
 
       switch (step.kind) {
         case "idle":
@@ -247,12 +262,30 @@ export async function advanceGoal(input: {
           again = true;
           break;
         }
-        case "achieved":
-          data.status = "achieved";
+        case "achieved": {
+          // Every milestone ran. Met only if the final step's run checked the
+          // success criteria and the check passed (src/lib/agents/goal-criteria.ts);
+          // anything else is `unverified` for the person, never a silent pass.
+          const last = lastFinishedMilestone(parseMilestones(goal.milestones));
+          const check = last?.sessionId
+            ? await readCriteriaCheck({ userId, agentId: agent.id, goalId: goal.id, sessionId: last.sessionId })
+            : null;
+          const completion = planGoalCompletion({ title: goal.title, check });
+          data.status = completion.status;
           data.progress = 100;
           data.blockers = [];
-          await recordAgentEvent({ userId, agentId: agent.id, kind: "goal_achieved", title: `Met the goal: ${goal.title}`, detail: { goalId: goal.id } });
+          data.nextAction = completion.nextAction;
+          await recordAgentEvent({
+            userId,
+            agentId: agent.id,
+            kind: completion.event.kind,
+            title: completion.event.title,
+            sessionId: last?.sessionId ?? null,
+            detail: { goalId: goal.id, verdict: check?.verdict ?? "unchecked" },
+          });
+          completed = { status: completion.status, nextAction: completion.nextAction };
           break;
+        }
         case "ask": {
           const known = parseBlockers(goal.blockers).some((b) => b.kind === step.blocker.kind && b.text === step.blocker.text);
           data.blockers = withBlocker(goal.blockers, step.blocker) as unknown as Prisma.InputJsonValue;
@@ -312,6 +345,11 @@ export async function advanceGoal(input: {
       }
       const wrote = await prisma.agentGoal.updateMany({ where: { id: goal.id, userId, advanceLeaseUntil: lease }, data });
       if (wrote.count !== 1) return { kind: "busy" };
+      if (completed) {
+        // After the write, so the person is told only what the goal now says.
+        // A notification that cannot be sent never undoes the outcome.
+        await notifyOutcome({ userId, agent, goal: { id: goal.id, title: goal.title }, ...completed }).catch(() => undefined);
+      }
       if (!again) break;
     }
   } finally {

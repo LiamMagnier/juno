@@ -260,7 +260,7 @@ export function ProjectSourcesList({
             <section aria-label="Files">
               <p className="pj-annot mb-1 flex items-center gap-2 px-3">
                 Files
-                <span className="text-muted-foreground/70">{filteredFiles.length}</span>
+                <span>{filteredFiles.length}</span>
               </p>
               <ul className="space-y-px">
                 {filteredFiles.map((file, i) => {
@@ -282,7 +282,7 @@ export function ProjectSourcesList({
                         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
                       >
                         <span className="truncate text-ui font-medium text-foreground">{file.fileName}</span>
-                        <span className="pj-annot flex items-center gap-2">
+                        <span className="pj-annot flex items-center gap-2 group-hover:text-muted-on-fill">
                           <span>{formatBytes(file.size)}</span>
                           {/* The state in words, no coloured pip (no status dots). */}
                           {status && <span className={status.tone || undefined}>· {status.label}</span>}
@@ -319,7 +319,7 @@ export function ProjectSourcesList({
             <section aria-label="Artifacts">
               <p className="pj-annot mb-1 flex items-center gap-2 px-3">
                 Artifacts
-                <span className="text-muted-foreground/70">{filteredArtifacts.length}</span>
+                <span>{filteredArtifacts.length}</span>
               </p>
               <ul className="space-y-px">
                 {filteredArtifacts.map((art, i) => (

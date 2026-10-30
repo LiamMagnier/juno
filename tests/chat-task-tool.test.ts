@@ -502,7 +502,11 @@ test("the tool's preflight includes the concurrency cap, so nobody approves a ru
   // Live runs that hold an executor, i.e. every live status but a parked one;
   // parked runs have their own bound (src/lib/work/park-resume-rules.ts).
   assert.match(body, /prisma\.workRun\.count\(\{\s*where: \{ userId: user\.id, status: \{ in: \[\.\.\.WORK_CAPPED_LIVE_STATUSES\] \} \},/);
-  assert.match(dispatch, /const WORK_CAPPED_LIVE_STATUSES = WORK_LIVE_STATUSES\.filter\(\(status\) => status !== "paused"\);/);
+  assert.match(dispatch, /import \{ WORK_CAPPED_LIVE_STATUSES \} from "@\/lib\/work\/park-resume-rules";/);
+  assert.match(
+    read("../src/lib/work/park-resume-rules.ts"),
+    /export const WORK_CAPPED_LIVE_STATUSES: readonly WorkLiveStatus\[\] = WORK_LIVE_STATUSES\.filter\(\s*\(status\) => status !== "paused"\s*\);/
+  );
   assert.match(body, /live >= WORK_RUN_CONCURRENCY_CAP/);
   assert.match(body, /error: "run_cap_exceeded"/);
   assert.match(body, /parked >= maxParkedRunsPerAccount\(\)/);

@@ -21,7 +21,7 @@ import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
 import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
 import { createCrossConversationTools } from "@/lib/chat/cross-conversation-tools";
 import type { CrossTurn } from "./cross";
-import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { computerAccessFor } from "@/lib/computer/access";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
 import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
@@ -326,8 +326,12 @@ export async function buildNativeTools({
               agentChange: change,
             });
           },
-          // Off, no declaration mentions a computer (PRODUCT_REFOUNDATION §7).
-          computerConfigured: await isAgentComputerConfigured().catch(() => false),
+          // Off, or not open to this account (rollout, plan, host), no
+          // declaration mentions a computer (PRODUCT_REFOUNDATION §7,
+          // docs/design/agents-v2/COMPUTERS_2026-10.md §S1.4).
+          ...(await computerAccessFor(user.id)
+            .then((access) => ({ computerConfigured: access.ok, computerAccessMessage: access.ok ? null : access.message }))
+            .catch(() => ({ computerConfigured: false, computerAccessMessage: null }))),
         })
       : [];
   // Setup by conversation (src/lib/chat/setup-change-tool.ts): only in a

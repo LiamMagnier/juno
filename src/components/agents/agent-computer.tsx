@@ -47,6 +47,7 @@ import {
   type TakeoverPin,
 } from "@/lib/agents/computer-handback";
 import type { ClientAgent } from "@/lib/agents/types";
+import { freezeFailedLine, takeoverInfoLine } from "@/lib/computer/access-copy";
 import { cn } from "@/lib/utils";
 
 const ComputerViewer = nextDynamic(
@@ -119,6 +120,9 @@ export function AgentComputerOverlay({
   const [controlInWindow, setControlInWindow] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
+  // Whether the agent's processes were paused for this take over (the view
+  // route says so for a new one). Only "ok" earns the line that says so.
+  const [freeze, setFreeze] = React.useState<"ok" | "failed" | "unavailable" | null>(null);
 
   const [filesOpen, setFilesOpen] = React.useState(false);
   const [folder, setFolder] = React.useState<ClientAgentComputerFolder | null>(null);
@@ -204,6 +208,7 @@ export function AgentComputerOverlay({
   const takeControl = () => {
     takeover.current = pinTakeover(work.questions);
     setNotice(null);
+    setFreeze(null);
     setControlConnected(false);
     setMode("control");
   };
@@ -405,6 +410,10 @@ export function AgentComputerOverlay({
                   setNotice(message);
                   announce(message);
                 }}
+                onFreeze={(next) => {
+                  setFreeze(next);
+                  if (next === "failed") announce(freezeFailedLine(agent.name));
+                }}
               />
             ) : (
               <Poster agent={agent} computer={computer} status={status} />
@@ -413,10 +422,19 @@ export function AgentComputerOverlay({
 
           <div className="mt-4 flex min-h-10 flex-wrap items-center justify-between gap-3">
             {mode === "control" ? (
-              <p className="flex items-center gap-2 text-ui font-medium text-primary">
-                <Hand className="size-4 shrink-0" aria-hidden="true" />
-                {controlConnected ? controlSentence(agent.name) : "Taking control…"}
-              </p>
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-ui font-medium text-primary">
+                  <Hand className="size-4 shrink-0" aria-hidden="true" />
+                  {controlConnected ? controlSentence(agent.name) : "Taking control…"}
+                </p>
+                {/* Said only when it is true: the pause worked, or it did not. */}
+                {controlConnected && freeze === "ok" ? (
+                  <p className="mt-1 text-ui text-muted-foreground">{takeoverInfoLine(agent.name)}</p>
+                ) : null}
+                {freeze === "failed" ? (
+                  <p className="mt-1 text-ui text-destructive-ink">{freezeFailedLine(agent.name)}</p>
+                ) : null}
+              </div>
             ) : controlInWindow ? (
               <p className="flex items-center gap-2 text-ui font-medium text-primary">
                 <Hand className="size-4 shrink-0" aria-hidden="true" />

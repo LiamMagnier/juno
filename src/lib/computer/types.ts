@@ -86,7 +86,18 @@ export interface ComputerProvider {
   ): Promise<ExecResult>;
   listFiles(handle: ComputerHandle, dir?: string): Promise<ComputerFileEntry[]>;
   readFile(handle: ComputerHandle, path: string, opts?: { maxBytes?: number }): Promise<Buffer>;
-  writeFile(handle: ComputerHandle, path: string, content: Buffer | string): Promise<void>;
+  /**
+   * `by` says whose write it is: the agent's (the default; refused while the
+   * agent is frozen for a take over) or the person's (an upload into the inbox,
+   * which works while they have control). S2 maps them to the exec launcher's
+   * `run` and `helper` modes.
+   */
+  writeFile(
+    handle: ComputerHandle,
+    path: string,
+    content: Buffer | string,
+    opts?: { by?: "agent" | "person" }
+  ): Promise<void>;
   diskUsageMb(handle: ComputerHandle): Promise<number>;
   /** `{ type, size }` of one path under /home/agent, or null when it does not exist. */
   fileInfo(handle: ComputerHandle, path: string): Promise<{ type: "file" | "dir" | "other"; size: number; path: string } | null>;
@@ -108,4 +119,25 @@ export interface ComputerProvider {
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void>;
   stopVnc(handle: ComputerHandle): Promise<void>;
+
+  /*
+   * The take-over and image primitives (docs/design/agents-v2/COMPUTERS_2026-10.md
+   * §3.2). Optional until every provider implements them (S3 makes them
+   * required); the store calls them with `?.` and audits `freeze_unavailable`
+   * when a provider has no `freezeAgent`.
+   */
+
+  /** D3: frozen marker, SIGSTOP every uid-1000 task until none runs, cut uid-1000 X clients,
+   *  release modifiers and buttons. Throws ComputerError if a task still runs. Idempotent. */
+  freezeAgent?(handle: ComputerHandle): Promise<void>;
+  /** Remove the frozen marker, then SIGCONT every uid-1000 task. Idempotent. */
+  thawAgent?(handle: ComputerHandle): Promise<void>;
+  /** "on" only when Chromium runs with its own sandbox AND the agent cannot create a user
+   *  namespace (D13); "unknown" when Chromium is not running. Throws ComputerError when the
+   *  agent CAN create one; the store then refuses the wake. */
+  browserSandbox?(handle: ComputerHandle): Promise<"on" | "off" | "unknown">;
+  /** Whether the container was created from another image than the current tag's (D16). */
+  isOutdated?(handle: ComputerHandle): Promise<boolean>;
+  /** The current image: its id, security label and build time (health, audit, age check). */
+  imageInfo?(): Promise<{ id: string; label: string; createdAt: string }>;
 }

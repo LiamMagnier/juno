@@ -273,9 +273,23 @@ function isResuming(status: string | undefined): boolean {
   return status === "queued" || status === "preparing";
 }
 
+/**
+ * A row in Needs you whose run is `paused`: the executor set it aside after
+ * waiting a while for an answer or an approval. A run the person paused is
+ * asking nothing and is never in Needs you: `parkRun` sets the session's
+ * `needsAttention` only for the executor's own wait (`pauseReason: "waiting"`),
+ * so callers check `needsAttention` before using these words. The session
+ * does not say which of the two it parked on, so its words fit both, and never
+ * "You stopped this".
+ */
+function isParked(status: string | undefined): boolean {
+  return status === "paused";
+}
+
 /** A run's waiting status, in the words Orbit uses for it. */
 function askWords(status: string | undefined): string {
   if (isResuming(status)) return "Resuming";
+  if (isParked(status)) return "Waiting for you";
   if (status === "waiting_approval") return "Needs your approval";
   if (status === "host_offline") return "Waiting for your Mac";
   return AGENT_STATE_NAMES.needsAnswer;
@@ -289,6 +303,7 @@ function askWords(status: string | undefined): string {
  */
 function shortAsk(status: string | undefined): string {
   if (isResuming(status)) return "Resuming";
+  if (isParked(status)) return "Waiting";
   if (status === "waiting_approval") return "Approval";
   if (status === "host_offline") return "Mac offline";
   return "Answer";
@@ -919,10 +934,15 @@ export function AppSidebar({
     const signals = new Map<string, RowSignal>();
     for (const [conversationId, session] of workRuns.byConversation) {
       if (!workRunIsOpen(session.status, session.needsAttention)) continue;
+      // Parked waiting for the person (the executor's pause, so it is in
+      // Needs you): "Paused · You stopped this" would be untrue.
+      const parked = session.needsAttention && isParked(session.status);
       signals.set(conversationId, {
-        tone: statusTone(session.status),
-        label: statusLabel(session.status),
-        meaning: statusSentence(session.status),
+        tone: parked ? "attention" : statusTone(session.status),
+        label: parked ? "Needs you" : statusLabel(session.status),
+        meaning: parked
+          ? "Waiting for your answer or approval. It carries on once you reply."
+          : statusSentence(session.status),
       });
     }
     return signals;

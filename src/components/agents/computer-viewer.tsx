@@ -55,6 +55,11 @@ export interface ComputerViewerProps {
   onComputer?: (computer: ClientAgentComputerLive | null) => void;
   /** Control ended without this viewer handing back: taken back, reset, or held by another client. */
   onControlLost?: (message: string) => void;
+  /**
+   * A new take over: whether the agent's processes were paused (`ok`), could
+   * not be (`failed`), or cannot be on this computer (`unavailable`).
+   */
+  onFreeze?: (freeze: "ok" | "failed" | "unavailable") => void;
 }
 
 /**
@@ -273,6 +278,7 @@ export function ComputerViewer({
   onConnected,
   onComputer,
   onControlLost,
+  onFreeze,
 }: ComputerViewerProps) {
   const ticketRef = useRef<string | null>(handoffTicket ?? null);
   const handoff = Boolean(handoffTicket);
@@ -321,8 +327,8 @@ export function ComputerViewer({
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
 
-  const callbacks = useRef({ onModeChange, onDisconnected, onConnected, onComputer, onControlLost });
-  callbacks.current = { onModeChange, onDisconnected, onConnected, onComputer, onControlLost };
+  const callbacks = useRef({ onModeChange, onDisconnected, onConnected, onComputer, onControlLost, onFreeze });
+  callbacks.current = { onModeChange, onDisconnected, onConnected, onComputer, onControlLost, onFreeze };
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
@@ -385,6 +391,37 @@ export function ComputerViewer({
     callbacks.current.onControlLost?.(message);
   }, []);
 
+  /**
+   * The server refused a heartbeat (403): the account may no longer use this
+   * computer. It has already ended the view (and released control, rotating
+   * the passwords), so the session ends here too, in the server's sentence:
+   * nothing beats or reconnects again until the viewer is opened afresh.
+   */
+  const endedRef = useRef(false);
+  const endSession = useCallback(
+    (message: string) => {
+      if (endedRef.current) return;
+      endedRef.current = true;
+      generationRef.current += 1;
+      clearReconnect();
+      holdFrame();
+      disconnectRfb();
+      const wasControl = connectedModeRef.current === "control" || modeRef.current === "control";
+      connectedModeRef.current = null;
+      setBeatWarning(false);
+      setSwitching(false);
+      setStatus("ended");
+      setErrorMessage(message);
+      callbacks.current.onDisconnected?.();
+      if (wasControl) {
+        if (!controlledRef.current) setLocalMode("watch");
+        callbacks.current.onModeChange?.("watch");
+        callbacks.current.onControlLost?.(message);
+      }
+    },
+    [clearReconnect, disconnectRfb, holdFrame]
+  );
+
   const fetchCredentials = useCallback(
     async (targetMode: ViewerMode) => {
       if (handoff && ticketRef.current) {
@@ -427,6 +464,7 @@ export function ComputerViewer({
         relayUrl?: string;
         token?: string;
         password?: string;
+        freeze?: "ok" | "failed" | "unavailable";
       };
       if (res.status === 409 && body.error === "held_elsewhere") {
         throw new ControlRefusedError(body.message || "Another device has control of this computer.");
@@ -434,6 +472,7 @@ export function ComputerViewer({
       if (!res.ok || !body.relayUrl || !body.token || !body.password) {
         throw new Error(body.message || "Couldn’t connect to the computer.");
       }
+      if (body.freeze) callbacks.current.onFreeze?.(body.freeze);
       return { relayUrl: body.relayUrl, token: body.token, password: body.password, mode: body.mode ?? targetMode };
     },
     [agentId, handoff, sessionless]
@@ -443,6 +482,10 @@ export function ComputerViewer({
     async (targetMode: ViewerMode, reason: "open" | "switch" | "reconnect") => {
       const container = containerRef.current;
       if (!container) return;
+      // Ended by the server (lost access): only a fresh open reconnects, never
+      // a mode switch or a reconnect.
+      if (endedRef.current && reason !== "open") return;
+      endedRef.current = false;
       const generation = ++generationRef.current;
       clearReconnect();
       holdFrame();
@@ -548,6 +591,7 @@ export function ComputerViewer({
    */
   const scheduleReconnectRef = useRef<() => void>(() => {});
   scheduleReconnectRef.current = () => {
+    if (endedRef.current) return;
     if (sessionless) {
       // The app reopens the link; its sheet knows whether it handed back.
       postToApp({ type: "disconnected", mode: modeRef.current });
@@ -568,6 +612,10 @@ export function ComputerViewer({
       void (async () => {
         if (modeRef.current === "control") {
           const beat = await computerHeartbeat(agentId, "control");
+          if (beat.kind === "failed" && beat.status === 403) {
+            endSession(beat.message);
+            return;
+          }
           if (beat.kind === "failed" && beat.status === 409) {
             loseControl(beat.message);
             return;
@@ -611,13 +659,20 @@ export function ComputerViewer({
     let cancelled = false;
     let retry: number | null = null;
     const beat = async () => {
+      if (endedRef.current) return;
       const current = modeRef.current;
       if (current === "watch" && document.visibilityState !== "visible") return;
       // Control is only this viewer's once its control stream is up; until
       // then the view route holds it.
       if (current === "control" && connectedModeRef.current !== "control") return;
       const outcome = await computerHeartbeat(agentId, current);
-      if (cancelled || modeRef.current !== current) return;
+      if (cancelled || modeRef.current !== current || endedRef.current) return;
+      // Refused for access (watch or control): the session is over, said in
+      // the server's words.
+      if (outcome.kind === "failed" && outcome.status === 403) {
+        endSession(outcome.message);
+        return;
+      }
       if (outcome.kind === "ok") {
         callbacks.current.onComputer?.(outcome.value);
         if (current === "control") {
@@ -655,7 +710,7 @@ export function ComputerViewer({
       releaseLock();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [agentId, agentName, beats, loseControl, mode]);
+  }, [agentId, agentName, beats, endSession, loseControl, mode]);
 
   // A page that goes away in control hands back on its way out, so the agent
   // is not left waiting out the takeover window.

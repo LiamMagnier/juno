@@ -99,6 +99,9 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/alerts.ts#lastMailedAt": "per-process",
   "src/lib/computer/store.ts#posterCache": "per-process",
   "src/lib/computer/sweep.ts#orphanSince": "per-process",
+  // Which env misconfigurations this process has already logged (log once).
+  // A restart logs them again; nothing is decided from it.
+  "src/lib/computer/access.ts#warned": "per-process",
   "src/lib/code-v2/env-link-store-pg.ts#wakeups": "per-process",
   "src/lib/download-feed.ts#signedLinks": "per-process",
   "src/lib/download-feed.ts#pendingLinks": "per-process",
@@ -117,6 +120,10 @@ const ALLOWED: Record<string, Category> = {
   // rule. A burst counts within one process; a restart starts the count again,
   // and the boot seed (RoutingOutcome) covers a lab that was failing.
   "src/lib/provider-health.ts#capacityFaults": "per-process",
+  // What the web process last mailed the operator about each default lab, so
+  // a flapping lab's last mail stays true. A restart forgets it; the boot seed
+  // keeps a deploy from mailing the same outage again.
+  "src/lib/provider-health.ts#mailedOutage": "per-process",
   "src/lib/router/provider-pressure.ts#hits": "per-process",
   "src/lib/sync/thread-sync.ts#waiters": "per-process",
 };

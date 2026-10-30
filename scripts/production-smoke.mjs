@@ -181,7 +181,9 @@ async function main() {
    * Two signals, the first preferred:
    *  - `errorClass` on the error frame (chat wire 1.1, additive — the native
    *    API contract this script pins at 1.3.0 above does not move for it):
-   *    `auth` or `billing`, exactly `isAccountFault` in provider-health-policy.
+   *    `account`, the one wire class for both of `isAccountFault`'s classes
+   *    in provider-health-policy (`wireErrorClass` folds `auth` and `billing`
+   *    together so the stream never says which).
    *  - the sentence `provider-error.ts` emits for those two classes and no
    *    other, for a frame without a class. The sentence no longer names the
    *    platform's funding state ("temporarily unavailable"), and is worded
@@ -193,7 +195,7 @@ async function main() {
    * back. That is the same behaviour this gate had before the list existed.
    */
   const PROVIDER_ACCOUNT_FAILURE = /is temporarily unavailable\. Choose another model, or try again later\./i;
-  const ACCOUNT_FAULT_CLASSES = new Set(["auth", "billing"]);
+  const ACCOUNT_FAULT_CLASSES = new Set(["account"]);
 
   let selected = null;
   let clientRequestId = null;

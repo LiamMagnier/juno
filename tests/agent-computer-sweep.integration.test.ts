@@ -16,6 +16,9 @@ test("Postgres creation claim: concurrent enables share credentials and stale cr
   process.env.DATABASE_URL = url;
   process.env.AUTH_SECRET ??= "computer-creation-integration-test-key";
   process.env.AGENT_COMPUTER_PROVIDER = "fake";
+  // Computers for every plan that includes them (src/lib/computer/access.ts);
+  // the account below is an owner's (OWNER_EMAILS), so its plan includes one.
+  process.env.AGENT_COMPUTER_ROLLOUT = "plans";
   const { prismaUnguarded: db } = await import("../src/lib/prisma");
   const computer = await import("../src/lib/computer/store");
   const { resetComputerProviderCache } = await import("../src/lib/computer/provider");
@@ -23,6 +26,8 @@ test("Postgres creation claim: concurrent enables share credentials and stale cr
   resetComputerProviderCache();
   fakeComputerProvider.reset();
   const userId = `creation_${randomUUID()}`;
+  const savedOwners = process.env.OWNER_EMAILS;
+  process.env.OWNER_EMAILS = `${userId}@example.invalid`;
   try {
     await db.user.create({ data: { id: userId, email: `${userId}@example.invalid` } });
     const agent = await db.agent.create({ data: { userId, name: "Creation", role: "Tester", instructions: "Tests creation." } });
@@ -41,6 +46,8 @@ test("Postgres creation claim: concurrent enables share credentials and stale cr
     assert.equal((await db.agentComputer.findUniqueOrThrow({ where: { agentId: agent.id } })).secrets, results[0].secrets);
   } finally {
     delete process.env.AGENT_COMPUTER_PROVIDER;
+    if (savedOwners === undefined) delete process.env.OWNER_EMAILS;
+    else process.env.OWNER_EMAILS = savedOwners;
     resetComputerProviderCache();
     await db.user.delete({ where: { id: userId } }).catch(() => undefined);
     await db.$disconnect();

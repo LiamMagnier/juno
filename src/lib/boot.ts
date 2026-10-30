@@ -67,7 +67,10 @@ export async function bootNodeRuntime(): Promise<void> {
  */
 async function seedProviderHealth(): Promise<void> {
   try {
-    const { seedProviderHealthFromOutcomes } = await import("@/lib/provider-health");
+    const { mailProviderOutagesFromThisProcess, seedProviderHealthFromOutcomes } = await import("@/lib/provider-health");
+    // The web process is the one that mails a default lab's outage; the Work
+    // runner and the sweepers only log it.
+    mailProviderOutagesFromThisProcess();
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       seedProviderHealthFromOutcomes(),

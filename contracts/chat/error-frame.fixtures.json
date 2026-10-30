@@ -1,5 +1,5 @@
 {
-  "$comment": "Error frames of both chat wire versions, checked against contracts/chat/juno-chat-wire-v1.schema.json by tests/chat-error-frame-contract.test.ts. The Swift decoder test (NativeChatAPIClientTests, error-frame cases) decodes the same frames. A 1.0 frame carries only the sentence; a 1.1 frame adds the provider failure's class and the one model offered instead.",
+  "$comment": "Error frames of both chat wire versions, checked against contracts/chat/juno-chat-wire-v1.schema.json by tests/chat-error-frame-contract.test.ts. The Swift decoder test (NativeChatAPIClientTests, error-frame cases) decodes the same frames. A 1.0 frame carries only the sentence; a 1.1 frame adds the provider failure's class (a provider-account fault is `account`, never which) and the one model offered instead.",
   "frames": {
     "v1.0-provider": {
       "type": "error",
@@ -20,7 +20,7 @@
       "type": "error",
       "message": "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.",
       "finishReason": "error",
-      "errorClass": "billing",
+      "errorClass": "account",
       "retryable": false,
       "suggestedModelId": "google:gemini-3.5-flash-lite",
       "suggestedModelName": "Gemini 3.5 Flash-Lite",

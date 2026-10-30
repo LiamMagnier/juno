@@ -649,12 +649,14 @@ export interface ClientLocalToolCall {
 /**
  * What kind of provider failure ended a turn: `ProviderErrorClass`
  * (src/lib/provider-error.ts), spelled out here so the wire type does not
- * import the classifier. `auth` and `billing` are the deployment's own
- * provider account; the reader is never told which.
+ * import the classifier, except that its `auth` and `billing` arrive as one
+ * class, `account` (`wireErrorClass`). Both are the deployment's own provider
+ * account, and neither the reader nor anyone reading the stream is told which
+ * (or that the platform ran out of credit); the operator's log and alert keep
+ * the precise class.
  */
 export type ChatErrorClass =
-  | "auth"
-  | "billing"
+  | "account"
   | "rate_limit"
   | "context"
   | "content_filter"
@@ -679,10 +681,13 @@ export interface ChatErrorRecovery {
   retryAfterSeconds?: number;
   /**
    * One model to offer as "Answer with <model>": the cheapest eligible model
-   * on a different, healthy lab that does not train on prompts
-   * (`suggestAlternativeModel`, src/lib/model-selection.ts). Only an offer —
-   * the server never sends the turn there itself; clicking it is the reader's
-   * explicit choice.
+   * on a different, healthy lab whose training terms the platform's data-use
+   * record clears — neither the model row nor its provider's API terms allow
+   * training, the terms are verified, and a tier-dependent lab's paid tier is
+   * attested — and, after an Auto turn, inside the account's Auto data
+   * boundary (src/lib/chat/turn/failure-recovery.ts,
+   * `suggestAlternativeModel`). Only an offer — the server never sends the
+   * turn there itself; clicking it is the reader's explicit choice.
    */
   suggestedModelId?: string;
   /** Its display name, so a client without the catalog can label the button. */

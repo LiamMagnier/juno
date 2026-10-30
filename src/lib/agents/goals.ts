@@ -19,7 +19,12 @@
  *     `maxAttemptsPerStep`. One interrupted after it started acting is not:
  *     it may already have changed something, so the goal waits for the person.
  *   - A failed step waits for the person. The goal never loops on failure.
- *   - All milestones done: the goal is achieved.
+ *   - All milestones done is not "met". The final step's run checks the
+ *     success criteria against what the steps produced (the Work judge, with
+ *     the agent's model: src/lib/agents/goal-criteria.ts). Only a check that
+ *     passed makes the goal `achieved`; anything else leaves it `unverified`,
+ *     "Every step ran. Check the result.", for the person to mark met or keep
+ *     going (`planGoalCompletion`).
  *
  * Pure and client-safe.
  */
@@ -224,7 +229,7 @@ export type GoalStep =
   | { kind: "retry"; sessionId: string; stepKey: string; attempt: number; nextAction: string }
   /** A step's task completed: mark it, then the next advance starts the next step. */
   | { kind: "complete_step"; sessionId: string; stepKey: string; nextAction: string }
-  /** Every milestone is done. */
+  /** Every milestone ran. Met or unverified is the criteria check's to say (`planGoalCompletion`). */
   | { kind: "achieved"; nextAction: string }
   /** Stop and ask the person. The goal pauses for a bound, or waits for a decision. */
   | { kind: "ask"; blocker: GoalBlocker; pause: boolean; nextAction: string };
@@ -395,6 +400,134 @@ export function planGoalStep(
     idempotencyKey: `goal:${goal.id}:${stepKey}:${goal.runsUsed + 1}`,
     nextAction: attempt > 1 ? `Starting "${stepTitle}" again` : `Starting "${stepTitle}"`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Met, or only run: the success criteria
+// ---------------------------------------------------------------------------
+
+/**
+ * The status a goal takes when every milestone ran but its success criteria
+ * were not shown to be met. Only the driver sets it; the person then marks it
+ * met or keeps it going.
+ */
+export const GOAL_UNVERIFIED = "unverified";
+
+/** What the final step's run concluded about the goal's criteria (src/lib/agents/goal-criteria.ts). */
+export type GoalCriteriaVerdict = "met" | "not_met" | "unchecked";
+
+export interface GoalCriteriaCheck {
+  verdict: GoalCriteriaVerdict;
+  /** One line from the check: why it passed, or the first criterion not shown. Null when it did not run. */
+  why: string | null;
+}
+
+/** A stored check read back (an AgentEvent's detail); anything unreadable is null, never "met". */
+export function readGoalCriteriaCheck(detail: unknown): GoalCriteriaCheck | null {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const row = detail as Record<string, unknown>;
+  const verdict = row.verdict === "met" || row.verdict === "not_met" || row.verdict === "unchecked" ? row.verdict : null;
+  if (!verdict) return null;
+  return { verdict, why: typeof row.why === "string" && row.why.trim() ? oneLine(row.why, 300) : null };
+}
+
+/** The line a goal shows when every step ran and the check did not pass, or could not run. */
+export const GOAL_UNVERIFIED_LINE = "Every step ran. Check the result.";
+
+/**
+ * Every milestone ran: is the goal met? Only when its success criteria were
+ * checked and the check passed. Anything else (a NOT MET, a check that could
+ * not run, a step that ran where no check could be made, such as a Mac) is
+ * `unverified`, said in words, for the person to decide. Never fails open:
+ * no check is never read as a pass. Pure: the driver applies it.
+ */
+export function planGoalCompletion(input: { title: string; check: GoalCriteriaCheck | null }): {
+  status: "achieved" | typeof GOAL_UNVERIFIED;
+  nextAction: string;
+  event: { kind: "goal_achieved" | "goal_unverified"; title: string };
+} {
+  const { check } = input;
+  if (check?.verdict === "met") {
+    return {
+      status: "achieved",
+      nextAction: check.why ? `Met: every step ran and its criteria were checked. ${check.why}` : "Met: every step ran and its criteria were checked",
+      event: { kind: "goal_achieved", title: `Met the goal: ${input.title}` },
+    };
+  }
+  const nextAction =
+    check?.verdict === "not_met"
+      ? `${GOAL_UNVERIFIED_LINE} A check against its criteria found a gap${check.why ? `: ${check.why}` : "."}`
+      : `${GOAL_UNVERIFIED_LINE} Its criteria could not be checked, so nothing says it is met yet.`;
+  return {
+    status: GOAL_UNVERIFIED,
+    nextAction,
+    event: { kind: "goal_unverified", title: `Every step of "${input.title}" ran. Check the result.` },
+  };
+}
+
+/**
+ * "Keep working" on an unverified goal: one more milestone, aimed at what the
+ * check found missing (or at the criteria in general when it could not run),
+ * so the driver has a concrete step rather than re-reading "every milestone
+ * is done". Refused when the goal already has the most milestones it may.
+ */
+export function reopenUnverifiedGoal(
+  milestones: readonly GoalMilestone[],
+  gap: string | null
+): { ok: true; milestones: GoalMilestone[] } | { ok: false; message: string } {
+  if (milestones.length >= MAX_GOAL_MILESTONES) {
+    return {
+      ok: false,
+      message: `This goal already has ${MAX_GOAL_MILESTONES} milestones. Tell the agent what is missing in its thread, or mark the goal met.`,
+    };
+  }
+  const ids = new Set(milestones.map((m) => m.id));
+  let n = 1;
+  while (ids.has(`follow_up_${n}`)) n += 1;
+  const title = gap ? oneLine(`Close the gap the check found: ${gap}`, 160) : "Show that every success criterion is met";
+  return { ok: true, milestones: [...milestones, { id: `follow_up_${n}`, title, done: false, sessionId: null, doneAt: null }] };
+}
+
+/** Whether the step a run is working on is the goal's last one left: the run that may check its criteria. */
+export function isFinalGoalStep(milestones: readonly GoalMilestone[], stepKey: string | null | undefined): boolean {
+  if (!stepKey || stepKey === GOAL_NEXT_STEP_KEY || milestones.length === 0) return false;
+  const left = milestones.filter((m) => !m.done);
+  return left.length === 1 && left[0]!.id === stepKey;
+}
+
+/** The milestone that finished last: its run is the one that checked the criteria. */
+export function lastFinishedMilestone(milestones: readonly GoalMilestone[]): GoalMilestone | null {
+  let latest: GoalMilestone | null = null;
+  for (const m of milestones) {
+    if (!m.done || !m.sessionId) continue;
+    if (!latest || (m.doneAt ?? "") >= (latest.doneAt ?? "")) latest = m;
+  }
+  return latest;
+}
+
+/** One step's result as the criteria check reads it. */
+export interface GoalStepResult {
+  title: string;
+  /** The run's final answer, or null when none was written. */
+  answer: string | null;
+  /** Titles of the files it produced. */
+  artifacts: readonly string[];
+}
+
+/** Per step, and in all: the check reads what was produced, not every word of it. */
+export const GOAL_CHECK_STEP_CHARS = 1_500;
+export const GOAL_CHECK_TOTAL_CHARS = 8_000;
+
+/** What the goal's steps produced, bounded, for the criteria check. */
+export function composeGoalDeliverables(steps: readonly GoalStepResult[]): string {
+  const blocks = steps.map((step) => {
+    const answer = step.answer?.trim() ? step.answer.trim() : "(no written answer)";
+    const clipped = answer.length > GOAL_CHECK_STEP_CHARS ? `${answer.slice(0, GOAL_CHECK_STEP_CHARS - 1)}…` : answer;
+    const files = step.artifacts.length ? `\nFiles: ${step.artifacts.slice(0, 10).join(", ")}` : "";
+    return `## ${step.title}\n${clipped}${files}`;
+  });
+  const text = blocks.join("\n\n");
+  return text.length > GOAL_CHECK_TOTAL_CHARS ? `${text.slice(0, GOAL_CHECK_TOTAL_CHARS - 1)}…` : text;
 }
 
 /** Milestones after a step's task completed. */

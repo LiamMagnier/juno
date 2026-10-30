@@ -41,7 +41,12 @@ export const WORK_LIVE_STATUSES = [
   "waiting_input",
   /** Blocked on an approval decision. */
   "waiting_approval",
-  /** Stopped by the user, resumable. */
+  /**
+   * Stopped and resumable, holding no executor: paused by the user
+   * (`pauseReason: "user"`), or set aside by the cloud executor after its
+   * attended wait for an answer or approval (`pauseReason: "waiting"`), which
+   * the answer or decision puts back in the queue (`requeueParkedRun`).
+   */
   "paused",
 ] as const;
 
@@ -821,9 +826,14 @@ export function approvalRuling(input: {
     return {
       ask: true,
       reason: "sensitive",
-      explanation: input.action.startsWith("work.computer.")
-        ? "This runs a command or types on the computer, which can do anything a program can, so it asks every time. No setting turns this off."
-        : "This reaches beyond what the task was given, or removes something from where you left it.",
+      explanation:
+        // Starting an agent's computer under its "ask first" policy
+        // (src/lib/computer/access-copy.ts, COMPUTER_START_EXPLANATION).
+        input.action === "work.computer.start"
+          ? "Starting the agent's computer uses this week's computer time. This agent is set to ask first, so starting asks every time. It approves nothing the computer does afterwards."
+          : input.action.startsWith("work.computer.")
+            ? "This runs a command or types on the computer, which can do anything a program can, so it asks every time. No setting turns this off."
+            : "This reaches beyond what the task was given, or removes something from where you left it.",
     };
   }
 

@@ -9,14 +9,22 @@ import {
   healthTransition,
   isAccountFault,
   isHealthStale,
+  liveFaultOrigin,
   liveFaultTunables,
   liveFaultVerdict,
+  MAX_INCONCLUSIVE_LIVE_PROBES,
   nextHealthState,
+  outageMailDue,
+  scrubHealthDetail,
   seedSuspects,
   seededState,
+  toldAfterMail,
+  type CapacityFault,
   type LiveFaultTunables,
+  type ProbeOutcome,
   type ProviderHealthState,
 } from "@/lib/provider-health-policy";
+import { classifyProviderError } from "@/lib/provider-error";
 
 const NOW = 1_800_000_000_000;
 
@@ -135,6 +143,35 @@ test("detail is bounded so a chatty provider cannot flood the log", () => {
   assert.ok((next.detail ?? "").length <= 300);
 });
 
+test("a credential a provider echoes never reaches a verdict's detail", () => {
+  const raw = "Incorrect API key provided: sk-proj-abc1****************wxyz. You can find your API key at platform.example.";
+  const probed = nextHealthState("openai", undefined, { ok: false, class: "auth", status: 401, raw }, NOW);
+  assert.doesNotMatch(probed.detail ?? "", /sk-proj|wxyz/);
+  assert.match(probed.detail ?? "", /401 Incorrect API key provided: \[redacted key\]/);
+  assert.equal(scrubHealthDetail("key=AIzaSyA-1234567890abcdef rejected"), "key=[redacted key] rejected");
+  assert.equal(scrubHealthDetail("Authorization: Bearer abc.def.ghi-123 was refused"), "Authorization: Bearer [redacted] was refused");
+  // Ordinary words with the same letters survive.
+  assert.equal(scrubHealthDetail("a risk-free task-runner retry"), "a risk-free task-runner retry");
+
+  let recent: CapacityFault[] = [];
+  let held: ProviderHealthState | null = null;
+  for (let i = 0; i < DEFAULT_LIVE_FAULT_TUNABLES.capacityFaults; i += 1) {
+    const verdict = liveFaultVerdict({
+      provider: "openai",
+      previous: undefined,
+      fault: { class: "capacity", status: 502, raw: "upstream refused Bearer sk-live-abcdef123456" },
+      origin: liveFaultOrigin(`user-${i}`, "openai:gpt-6-luna"),
+      recentCapacity: recent,
+      now: NOW + i,
+      tunables: DEFAULT_LIVE_FAULT_TUNABLES,
+    });
+    recent = verdict.recentCapacity;
+    held = verdict.next ?? held;
+  }
+  assert.ok(held);
+  assert.doesNotMatch(held.detail ?? "", /abcdef123456/);
+});
+
 // ---------------------------------------------------------------------------
 // Live faults: real turns feed health (liveFaultVerdict)
 // ---------------------------------------------------------------------------
@@ -157,9 +194,40 @@ test("a live account fault marks a healthy lab down at once, unconfirmed and soo
   assert.equal(verdict.next.recheckAt, NOW + T.recheckMs);
   // Down for the next turn, and the probe looks again after the short recheck,
   // not after the 30-minute unhealthy TTL.
-  assert.equal(healthTransition(state({ provider: "qwen" }), verdict.next), "down");
   assert.equal(isHealthStale(verdict.next, NOW + T.recheckMs - 1), false);
   assert.equal(isHealthStale(verdict.next, NOW + T.recheckMs), true);
+  // Not news yet: one turn's error, which may not have been the lab's.
+  assert.equal(healthTransition(state({ provider: "qwen" }), verdict.next), null, "a live verdict alone never alerts");
+  assert.equal(healthTransition(undefined, verdict.next), null);
+});
+
+test("the probe that confirms a live verdict is the alert; the probe that clears it means it never was", () => {
+  const live = liveFaultVerdict({
+    provider: "qwen",
+    previous: undefined,
+    fault: { class: "billing", status: 402, raw: "Insufficient Balance" },
+    recentCapacity: [],
+    now: NOW,
+    tunables: T,
+  }).next!;
+  const confirmed = nextHealthState("qwen", live, { ok: false, class: "billing", status: 402, raw: "Insufficient Balance" }, NOW + 900, T.recheckMs);
+  assert.equal(confirmed.source, "probe");
+  assert.equal(healthTransition(live, confirmed), "down", "confirmed: now it is news, and mailed for a default lab");
+  // Once confirmed, the lab staying down is not news again.
+  assert.equal(healthTransition(confirmed, nextHealthState("qwen", confirmed, { ok: false, class: "billing", status: 402, raw: "x" }, NOW + UNHEALTHY_TTL_MS + 1000)), null);
+
+  // A tool's 401 that reached the turn's catch: the probe finds the lab fine.
+  const misattributed = liveFaultVerdict({
+    provider: "openai",
+    previous: state({ provider: "openai" }),
+    fault: { class: "auth", status: 401, raw: "Unauthorized: connector token expired" },
+    recentCapacity: [],
+    now: NOW,
+    tunables: T,
+  }).next!;
+  const cleared = nextHealthState("openai", misattributed, { ok: true }, NOW + 500, T.recheckMs);
+  assert.equal(cleared.healthy, true);
+  assert.equal(healthTransition(misattributed, cleared), null, "never confirmed, so no down mail and no recovered line");
 });
 
 test("a live fault with no HTTP status proves nothing about the lab's account", () => {
@@ -187,14 +255,15 @@ test("a lab already down for the same reason is not re-recorded", () => {
   assert.equal(verdict.next, null, "a confirmed verdict must not be pushed back to unconfirmed");
 });
 
-test("one server error is weather; repeated ones on real traffic mark the lab down until the probe", () => {
-  let recent: number[] = [];
+test("one server error is weather; repeated ones from several sources mark the lab down until the probe", () => {
+  let recent: CapacityFault[] = [];
   let previous: ProviderHealthState | undefined = state({ provider: "google", healthy: true });
   for (let i = 0; i < T.capacityFaults - 1; i += 1) {
     const verdict = liveFaultVerdict({
       provider: "google",
       previous,
       fault: { class: "capacity", status: 503, raw: "overloaded" },
+      origin: liveFaultOrigin(`user-${i}`, "google:gemini-3.5-flash"),
       recentCapacity: recent,
       now: NOW + i * 1000,
       tunables: T,
@@ -206,6 +275,7 @@ test("one server error is weather; repeated ones on real traffic mark the lab do
     provider: "google",
     previous,
     fault: { class: "capacity", status: 503, raw: "overloaded" },
+    origin: liveFaultOrigin("user-last", "google:gemini-3.5-flash"),
     recentCapacity: recent,
     now: NOW + 5000,
     tunables: T,
@@ -222,18 +292,23 @@ test("one server error is weather; repeated ones on real traffic mark the lab do
   const stillBad = nextHealthState("google", previous, { ok: false, class: "capacity", status: 503, raw: "x" }, NOW + 200_000, T.recheckMs);
   assert.equal(stillBad.healthy, false);
   assert.equal(stillBad.recheckAt, NOW + 200_000 + T.recheckMs);
+  assert.equal(healthTransition(previous, stillBad), "down", "the probe meeting the same trouble confirms the hold");
   const cleared = nextHealthState("google", previous, { ok: true }, NOW + 200_000, T.recheckMs);
   assert.equal(cleared.healthy, true);
-  assert.equal(healthTransition(previous, cleared), "recovered");
+  assert.equal(healthTransition(previous, cleared), null, "an unconfirmed hold the probe cleared was never news");
+  // A confirmed hold that clears later is a recovery.
+  const later = nextHealthState("google", stillBad, { ok: true }, NOW + 400_000, T.recheckMs);
+  assert.equal(healthTransition(stillBad, later), "recovered");
 });
 
 test("server errors spread wider than the window never add up", () => {
-  let recent: number[] = [];
+  let recent: CapacityFault[] = [];
   for (let i = 0; i < 6; i += 1) {
     const verdict = liveFaultVerdict({
       provider: "google",
       previous: undefined,
       fault: { class: "capacity", status: 500, raw: "x" },
+      origin: liveFaultOrigin(`user-${i}`, "google:gemini-3.5-flash"),
       recentCapacity: recent,
       now: NOW + i * (T.capacityWindowMs / 2 + 1),
       tunables: T,
@@ -241,6 +316,159 @@ test("server errors spread wider than the window never add up", () => {
     assert.equal(verdict.next, null);
     recent = verdict.recentCapacity;
   }
+});
+
+test("one source meeting the same server error again and again never holds the lab down", () => {
+  // One person pressing Try again on one model whose 500 is specific to
+  // their input, or one Work run's retries and later steps.
+  let recent: CapacityFault[] = [];
+  const origin = liveFaultOrigin("user-1", "openai:gpt-6-luna");
+  for (let i = 0; i < 10; i += 1) {
+    const verdict = liveFaultVerdict({
+      provider: "openai",
+      previous: undefined,
+      fault: { class: "capacity", status: 500, raw: "The server had an error processing your request." },
+      origin,
+      recentCapacity: recent,
+      now: NOW + i * 1000,
+      tunables: T,
+    });
+    assert.equal(verdict.next, null, `repeat ${i + 1} from one source`);
+    recent = verdict.recentCapacity;
+  }
+  // The same person on other models of the lab is evidence about the lab.
+  let tripped: ProviderHealthState | null = null;
+  for (const model of ["openai:gpt-6", "openai:gpt-6-mini"]) {
+    const verdict = liveFaultVerdict({
+      provider: "openai",
+      previous: undefined,
+      fault: { class: "capacity", status: 500, raw: "x" },
+      origin: liveFaultOrigin("user-1", model),
+      recentCapacity: recent,
+      now: NOW + 11_000,
+      tunables: T,
+    });
+    recent = verdict.recentCapacity;
+    tripped = verdict.next ?? tripped;
+  }
+  assert.equal(tripped?.healthy, false, "three distinct sources: the lab is held");
+  assert.match(tripped?.detail ?? "", /from 3 live sources/);
+  // An unattributed fault is one shared source, never one per call.
+  let anonymous: CapacityFault[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    const verdict = liveFaultVerdict({
+      provider: "google",
+      previous: undefined,
+      fault: { class: "capacity", status: 503, raw: "x" },
+      recentCapacity: anonymous,
+      now: NOW + i,
+      tunables: T,
+    });
+    assert.equal(verdict.next, null);
+    anonymous = verdict.recentCapacity;
+  }
+});
+
+test("a confirmed hold for server errors is released at the second probe in a row that gets no answer", () => {
+  const held: ProviderHealthState = { ...state({ provider: "openai", healthy: false, failure: "capacity" }), source: "live", recheckAt: NOW + 1 };
+  const confirmed = nextHealthState("openai", held, { ok: false, class: "capacity", status: 500, raw: "internal" }, NOW + 10, T.recheckMs);
+  assert.equal(confirmed.source, "probe");
+  const timeout: ProbeOutcome = { ok: false, class: "network", status: null, raw: "The operation was aborted" };
+  const first = nextHealthState("openai", confirmed, timeout, NOW + 200_000, T.recheckMs);
+  assert.equal(first.healthy, false, "held through one timeout");
+  assert.equal(first.inconclusiveProbes, 1);
+  const second = nextHealthState("openai", first, timeout, NOW + 400_000, T.recheckMs);
+  assert.equal(second.healthy, true, "released at the second: unknown stays healthy");
+  assert.equal(healthTransition(first, second), "recovered");
+  // A server error in between confirms it again and restarts the count.
+  const again = nextHealthState("openai", first, { ok: false, class: "capacity", status: 503, raw: "x" }, NOW + 400_000, T.recheckMs);
+  assert.equal(again.healthy, false);
+  assert.equal(again.inconclusiveProbes, 0);
+  assert.equal(nextHealthState("openai", again, timeout, NOW + 600_000, T.recheckMs).healthy, false, "one timeout after a fresh confirmation is held");
+});
+
+// ---------------------------------------------------------------------------
+// Operator mail for a default lab (outageMailDue / toldAfterMail)
+// ---------------------------------------------------------------------------
+
+test("a default lab's mail follows what the operator was last told, so the last mail stays true while it flaps", () => {
+  const up = state({ provider: "qwen", healthy: true, source: "probe" });
+  const live = { ...state({ provider: "qwen", healthy: false, failure: "capacity" as const }), source: "live" as const };
+  const confirmed = { ...live, source: "probe" as const };
+  const recovered = nextHealthState("qwen", confirmed, { ok: true }, NOW + 1);
+
+  // Live and seeded verdicts are never mailed.
+  assert.deepEqual(outageMailDue(undefined, up, live), { mail: null });
+  assert.deepEqual(outageMailDue(undefined, undefined, seededState("qwen", { failures: 3, since: NOW - 60_000 }, NOW)), { mail: null });
+  // The first confirmed outage is mailed under the hourly dedupe.
+  assert.deepEqual(outageMailDue(undefined, live, confirmed), { mail: "down", bypassDedupe: false });
+  // Told down: staying down, or a live verdict of another class laid over it, is not news.
+  assert.deepEqual(outageMailDue("down", confirmed, confirmed), { mail: null });
+  const billingLive = { ...confirmed, failure: "billing" as const, source: "live" as const };
+  assert.deepEqual(outageMailDue("down", confirmed, billingLive), { mail: null });
+  // ...and the probe that clears that live verdict owes the all-clear,
+  // which `healthTransition` (live -> healthy) cannot see.
+  assert.equal(healthTransition(billingLive, recovered), null);
+  assert.deepEqual(outageMailDue("down", billingLive, recovered), { mail: "recovered" });
+  // Told recovered: the next outage must reach the operator even inside the
+  // hour, or "recovered" stays their last word while the lab is down.
+  assert.deepEqual(outageMailDue("recovered", live, confirmed), { mail: "down", bypassDedupe: true });
+  // Never told down: an all-clear is not news.
+  assert.deepEqual(outageMailDue(undefined, confirmed, recovered), { mail: null });
+  assert.deepEqual(outageMailDue("recovered", confirmed, recovered), { mail: null });
+  // A probe that confirms a boot seed: the process before this one mailed it.
+  const seeded = seededState("qwen", { failures: 3, since: NOW - 60_000 }, NOW);
+  const seedConfirmed = nextHealthState("qwen", seeded, { ok: false, class: "billing", status: 402, raw: "x" }, NOW + 1);
+  assert.deepEqual(outageMailDue(undefined, seeded, seedConfirmed), { mail: null, adopt: "down" });
+});
+
+test("what the operator was told after each mail attempt", () => {
+  for (const outcome of ["queued", "deduped", "muted", undefined] as const) {
+    assert.equal(toldAfterMail("down", outcome, undefined), "down", `down ${outcome}`);
+  }
+  assert.equal(toldAfterMail("recovered", "queued", "down"), "recovered");
+  assert.equal(toldAfterMail("recovered", undefined, "down"), "recovered", "a stub that returns nothing reads as queued");
+  assert.equal(toldAfterMail("recovered", "deduped", "down"), "down", "a dropped all-clear stays owed");
+  assert.equal(toldAfterMail("recovered", "muted", "down"), undefined, "a muted all-clear owes nothing, and the next outage keeps the dedupe");
+});
+
+test("a flapping default lab mails at most one all-clear and two outages an hour, and the last mail is true", () => {
+  // Drive the two pure rules with an hourly dedupe like alerts.ts's.
+  const lastMailed = new Map<string, number>();
+  const mailbox: string[] = [];
+  const send = (kind: "down" | "recovered", at: number, bypass: boolean): "queued" | "deduped" => {
+    const key = kind;
+    const previous = lastMailed.get(key);
+    if (!bypass && previous !== undefined && at - previous < 60 * 60_000) return "deduped";
+    lastMailed.set(key, at);
+    mailbox.push(kind);
+    return "queued";
+  };
+  let told: "down" | "recovered" | undefined;
+  let state_: ProviderHealthState = state({ provider: "qwen", healthy: true, source: "probe" });
+  const step = (next: ProviderHealthState, at: number) => {
+    const due = outageMailDue(told, state_, next);
+    if (due.mail === "down") told = toldAfterMail("down", send("down", at, due.bypassDedupe), told);
+    else if (due.mail === "recovered") told = toldAfterMail("recovered", send("recovered", at, false), told);
+    state_ = next;
+  };
+  const down = (at: number): ProviderHealthState => ({ ...state({ provider: "qwen", healthy: false, failure: "capacity" }), source: "probe", checkedAt: at });
+  const up = (at: number): ProviderHealthState => state({ provider: "qwen", healthy: true, source: "probe", checkedAt: at });
+  // Six down/up cycles four minutes apart, ending down.
+  let at = NOW;
+  for (let cycle = 0; cycle < 6; cycle += 1) {
+    step(down(at), at);
+    at += 2 * 60_000;
+    step(up(at), at);
+    at += 2 * 60_000;
+  }
+  step(down(at), at);
+  assert.deepEqual(mailbox, ["down", "recovered", "down"], "the lab flaps; the operator hears down, up, and down again");
+  assert.equal(mailbox.at(-1), "down", "and the last mail is true: it is down");
+  // An hour on, it settles: the owed all-clear goes out on the next healthy probe.
+  at += 60 * 60_000;
+  step(up(at), at);
+  assert.equal(mailbox.at(-1), "recovered");
 });
 
 test("rate limits and request-level failures leave health alone", () => {
@@ -264,7 +492,10 @@ test("nothing a live turn reports ever marks a lab healthy", () => {
       provider: "qwen",
       previous: down,
       fault: { class: klass, status: 503, raw: "x" },
-      recentCapacity: [NOW - 1, NOW - 2],
+      recentCapacity: [
+        { at: NOW - 1, origin: "a|m" },
+        { at: NOW - 2, origin: "b|m" },
+      ],
       now: NOW,
       tunables: T,
     });
@@ -281,7 +512,98 @@ test("a live fault the probe cannot confirm either way stays unconfirmed with a 
   const confirmed = nextHealthState("qwen", live, { ok: false, class: "billing", status: 402, raw: "x" }, NOW + 10, T.recheckMs);
   assert.equal(confirmed.source, "probe");
   assert.equal(confirmed.recheckAt, null, "a confirmed account fault waits out the unhealthy TTL");
-  assert.equal(healthTransition(live, confirmed), null, "confirmation is not a second alert");
+  assert.equal(healthTransition(live, timedOut), null, "still unconfirmed: not news");
+  assert.equal(healthTransition(live, confirmed), "down", "the confirmation is the one alert");
+});
+
+test("an unconfirmed live verdict is released after one inconclusive recheck, not held for as long as probes stay inconclusive", () => {
+  assert.equal(MAX_INCONCLUSIVE_LIVE_PROBES, 1);
+  for (const failure of ["auth", "billing", "capacity"] as const) {
+    const live: ProviderHealthState = { ...state({ provider: "qwen", healthy: false, failure }), source: "live", recheckAt: NOW + 1 };
+    // Each inconclusive kind of probe: a timeout, a rate limit, and (for an
+    // account fault) a server error, which says nothing about the account.
+    const inconclusive: ProbeOutcome[] = [
+      { ok: false, class: "network", status: null, raw: "The operation was aborted" },
+      { ok: false, class: "rate_limit", status: 429, raw: "Too Many Requests" },
+      ...(failure === "capacity" ? [] : [{ ok: false as const, class: "capacity" as const, status: 503, raw: "unavailable" }]),
+    ];
+    for (const outcome of inconclusive) {
+      const first = nextHealthState("qwen", live, outcome, NOW + 10, T.recheckMs);
+      assert.equal(first.healthy, false, `${failure}/${outcome.ok ? "ok" : outcome.class}: held through the first`);
+      assert.equal(first.source, "live");
+      assert.equal(first.inconclusiveProbes, 1);
+      assert.equal(first.recheckAt, NOW + 10 + T.recheckMs);
+      assert.equal(healthTransition(live, first), null, "no alert");
+
+      const second = nextHealthState("qwen", first, outcome, NOW + 10 + T.recheckMs, T.recheckMs);
+      assert.equal(second.healthy, true, `${failure}/${outcome.ok ? "ok" : outcome.class}: released at the second (unknown stays healthy)`);
+      assert.equal(second.source, "probe");
+      assert.equal(healthTransition(first, second), null, "never confirmed: no recovered line either");
+    }
+  }
+});
+
+test("a live hold for server errors is confirmed only by a probe that meets a server error itself", () => {
+  const held: ProviderHealthState = { ...state({ provider: "qwen", healthy: false, failure: "capacity" }), source: "live", recheckAt: NOW + 1 };
+  for (const outcome of [
+    { ok: false, class: "network", status: null, raw: "The operation was aborted" },
+    { ok: false, class: "rate_limit", status: 429, raw: "Too Many Requests" },
+  ] as const) {
+    const next = nextHealthState("qwen", held, outcome, NOW + 10, T.recheckMs);
+    assert.equal(next.source, "live", `${outcome.class} is inconclusive`);
+    assert.equal(healthTransition(held, next), null, `${outcome.class}: no down alert, and no critical mail for a default lab`);
+  }
+  const confirmed = nextHealthState("qwen", held, { ok: false, class: "capacity", status: 502, raw: "Bad Gateway" }, NOW + 10, T.recheckMs);
+  assert.equal(confirmed.source, "probe");
+  assert.equal(confirmed.healthy, false);
+  assert.equal(healthTransition(held, confirmed), "down");
+
+  // Once confirmed, it stays held while the lab still errors or does not
+  // answer, and clears when the lab answers at all, even with a rate limit.
+  const stillErroring = nextHealthState("qwen", confirmed, { ok: false, class: "capacity", status: 503, raw: "x" }, NOW + 200_000, T.recheckMs);
+  assert.equal(stillErroring.healthy, false);
+  const silent = nextHealthState("qwen", confirmed, { ok: false, class: "network", status: null, raw: "timeout" }, NOW + 200_000, T.recheckMs);
+  assert.equal(silent.healthy, false);
+  assert.equal(silent.recheckAt, NOW + 200_000 + T.recheckMs);
+  const answering = nextHealthState("qwen", confirmed, { ok: false, class: "rate_limit", status: 429, raw: "slow down" }, NOW + 200_000, T.recheckMs);
+  assert.equal(answering.healthy, true);
+  assert.equal(healthTransition(confirmed, answering), "recovered");
+});
+
+test("a bare 403 from a live turn asks the probe and changes nothing by itself; an account-shaped one still marks the lab down", () => {
+  // Shapes of a 403 that can concern one model rather than the account
+  // (OpenAI organisation verification, DashScope's unpurchased-model code,
+  // Google's gRPC status), and a 403 with no words at all.
+  const oneModel = [
+    { status: 403, error: { message: "Your organization must be verified to use the model `o3`. Please go to: https://platform.openai.com/settings/organization/general and click on Verify Organization." } },
+    { status: 403, error: { message: "Access denied.", code: "AccessDenied.Unpurchased" } },
+    { status: 403, error: { message: "The caller does not have permission", status: "PERMISSION_DENIED" } },
+    Object.assign(new Error("403 Forbidden"), { status: 403 }),
+  ];
+  for (const err of oneModel) {
+    const fault = classifyProviderError(err);
+    assert.equal(fault.class, "auth", "the chat classifier still calls every 403 auth (its copy is unchanged)");
+    const verdict = liveFaultVerdict({ provider: "openai", previous: state({ provider: "openai" }), fault, recentCapacity: [], now: NOW, tunables: T });
+    assert.equal(verdict.next, null, `${fault.raw.slice(0, 40)}: not marked down on one turn's 403`);
+    assert.equal(verdict.probe, true, "the probe asks the lab's cheapest model and decides");
+  }
+  // Already down: nothing to ask.
+  const down = state({ provider: "openai", healthy: false, failure: "billing", source: "probe" });
+  assert.equal(
+    liveFaultVerdict({ provider: "openai", previous: down, fault: classifyProviderError(oneModel[3]), recentCapacity: [], now: NOW, tunables: T }).probe,
+    false,
+  );
+
+  // A 403 whose words name the key or the funding is the account.
+  for (const err of [
+    { status: 403, error: { message: "The team does not have any credits or licenses" } },
+    { status: 403, error: { message: "Invalid API key provided" } },
+  ]) {
+    const fault = classifyProviderError(err);
+    const verdict = liveFaultVerdict({ provider: "xai", previous: state({ provider: "xai" }), fault, recentCapacity: [], now: NOW, tunables: T });
+    assert.equal(verdict.next?.healthy, false, `${fault.raw}: marked down at once`);
+    assert.equal(verdict.next?.source, "live");
+  }
 });
 
 test("Work's failure kinds map onto the classes conservatively", () => {

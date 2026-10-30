@@ -147,16 +147,27 @@ test("a durable goal advances, recovers from a dead executor, stays single-fligh
     await runner.advanceGoal({ user, goalId: goal.id, now, deps });
     assert.equal(await db.agentEvent.count({ where: { userId: owner, kind: "goal_blocked" } }), 1);
 
-    // 7. The person retries it by hand and it completes: the goal is met.
+    // 7. The person retries it by hand and it completes. Every step ran, but no
+    //    run checked the success criteria (this manual run had no criteria
+    //    check), so the goal is NOT met: it is unverified, says so, and the
+    //    person is told (tests/orbit-truth.integration.test.ts covers the pass).
     const manual = await store.createRun({ sessionId: tasks[1]!.id, userId: owner, origin: "retry", requestedTarget: "cloud", spendReservation: false });
     await store.claimRun({ runId: manual.run.id, userId: owner, executorId: "executor-D", now });
     await store.finishRun({ runId: manual.run.id, userId: owner, reason: "completed", executorId: "executor-D", now });
     const done = await runner.advanceGoal({ user, goalId: goal.id, now, deps });
     assert.deepEqual(done.kind === "advanced" && done.steps, ["complete_step", "achieved"]);
-    const achieved = await db.agentGoal.findFirstOrThrow({ where: { id: goal.id } });
-    assert.equal(achieved.status, "achieved");
-    assert.equal(achieved.progress, 100);
-    assert.equal(achieved.advanceLeaseUntil, null, "the driver's lease is always released");
+    const finished = await db.agentGoal.findFirstOrThrow({ where: { id: goal.id } });
+    assert.equal(finished.status, "unverified");
+    assert.match(String(finished.nextAction), /^Every step ran\. Check the result\./);
+    assert.equal(finished.progress, 100);
+    assert.equal(finished.advanceLeaseUntil, null, "the driver's lease is always released");
+    assert.equal(await db.agentEvent.count({ where: { userId: owner, kind: "goal_achieved" } }), 0, "never met without a check");
+    assert.equal(await db.notification.count({ where: { userId: owner, type: "agent_goal" } }), 1, "the person is asked to check it");
+    // The person checks the result and marks it met.
+    const agentsStore = await import("../src/lib/agents/store");
+    const marked = await agentsStore.updateAgentGoal(user, agent, goal.id, { status: "achieved" });
+    assert.equal(marked.status, 200);
+    assert.equal((await db.agentGoal.findFirstOrThrow({ where: { id: goal.id } })).status, "achieved");
 
     // 8. Bounded: a goal with a one-run limit pauses instead of looping.
     const bounded = await db.agentGoal.create({ data: { userId: owner, agentId: agent.id, title: "Keep an eye on pricing", cadence: "daily", maxRuns: 1 } });

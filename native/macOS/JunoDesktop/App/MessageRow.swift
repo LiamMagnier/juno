@@ -862,8 +862,8 @@ struct DesktopMessageRow: View {
     }
 
     /// "Answer with <model>", beside Try Again: the model the failed turn's
-    /// error frame offered (chat wire 1.1), asked through Switch Model's
-    /// one-shot regenerate — the reader's explicit choice, never a reroute.
+    /// error frame offered (chat wire 1.1), asked the way Switch Model asks
+    /// (`.model`) — the reader's explicit choice, never a reroute.
     private var answerWithSuggestion: (name: String, action: () -> Void)? {
         guard isNewest, !isGenerating, actions.regenerate != nil,
             let modelID = shown.suggestedModelID

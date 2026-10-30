@@ -100,10 +100,14 @@ all three come from one fact: a Work run outlives the process that started it.
   every client.
 - **It waits for a person without being held hostage.** A question or an
   approval suspends the run. If the answer arrives within `ATTENDED_WAIT_MS`
-  (four minutes) the run continues in place; otherwise it is checkpointed,
-  released, and picked up later by whichever worker is free. Blocking
-  indefinitely would mean one unanswered question costs a worker until somebody
-  comes back from lunch.
+  (a minute by default, `WORK_ATTENDED_WAIT_MS`) the run continues in place;
+  otherwise it is checkpointed and parked (`paused`, `pauseReason: "waiting"`),
+  and its worker is released. The answer or decision that arrives later puts it
+  back in the queue (`requeueParkedRun`), whichever worker is free picks it up,
+  and the call it parked on is handed what the person said, so they answer once
+  (`src/lib/work/park-resume.ts`; an approval only for the same action digest,
+  policy and unexpired decision). Blocking indefinitely would mean one
+  unanswered question costs a worker until somebody comes back from lunch.
 - **It never restarts a run on its own.** `interrupted` is a terminal state with
   a retry the user chooses, for the reason given at the top of this document.
 

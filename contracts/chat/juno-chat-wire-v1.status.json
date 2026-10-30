@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "changes": {
     "1.0.0": "The wire as generated before the contract carried a version.",
-    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
   },
   "fields": {
     "request.conversationId": "native",
@@ -212,7 +212,7 @@
     },
     "stream.error.errorClass": {
       "status": "native",
-      "note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery; set only when the turn failed at its provider."
+      "note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery as a string; set only when the turn failed at its provider. A provider-account fault arrives as account, never as auth or billing."
     },
     "stream.error.retryable": {
       "status": "native",
@@ -224,7 +224,7 @@
     },
     "stream.error.suggestedModelId": {
       "status": "native",
-      "note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model> (Switch Model's one-shot regenerate). The iPhone decodes it and does not show it yet."
+      "note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model>, sent as Switch Model sends a model. The iPhone decodes it and does not show it yet."
     },
     "stream.error.suggestedModelName": {
       "status": "native",

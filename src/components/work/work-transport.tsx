@@ -1731,11 +1731,17 @@ export function decideWorkApproval(
   actionDigest: string,
   decision: WorkApprovalDecisionInput,
   reason?: string
-): Promise<WorkResult<null>> {
+): Promise<WorkResult<{ resumed: boolean; explanation: string | null }>> {
+  // As for an answer: `explanation` is present when the decision is recorded
+  // but the task does not carry on yet (no cloud worker is running, or the
+  // person paused it), and says what will. An older server says neither.
   return post(
     `/api/work/approvals/${approvalId}/decision`,
     { decision, actionDigest, ...(reason === undefined ? {} : { reason }) },
-    () => null
+    (data) => ({
+      resumed: data.resumed !== false,
+      explanation: typeof data.explanation === "string" ? data.explanation : null,
+    })
   );
 }
 

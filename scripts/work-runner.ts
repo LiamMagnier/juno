@@ -32,6 +32,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
+import { readFileSync } from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
 
@@ -46,6 +47,7 @@ import {
   finishRun,
   parkRun,
   reclaimStalledRuns,
+  requeueParkedRun,
   saveRunCheckpoint,
   setSessionAttention,
   type WorkRunUsage,
@@ -74,19 +76,37 @@ import { createCredentialFill } from "@/lib/secrets/browser-fill";
 import { workTaskKey } from "@/lib/secrets/policy";
 import { redeemSecretGrant, secretRefsForTask } from "@/lib/secrets/store";
 import {
-  BUSY_COMPUTER_FALLBACK_NOTE,
   computerPromptSection,
   computerBlockedReason,
   computerTakeoverFence,
-  resolveRunComputerSession,
+  prepareRunComputer,
   setCachedPoster,
-  type RunComputerAttachment,
+  settleLapsedTakeovers,
 } from "@/lib/computer/store";
+import {
+  computerToolNamesFor,
+  createLazyRunComputer,
+  createRunBrowserSwitch,
+  readRunStartApproval,
+  runComputerShell,
+  withBrowserNotice,
+  type LazyRunComputer,
+} from "@/lib/computer/run-tools";
 import { sweepAgentComputers } from "@/lib/computer/sweep";
+import { SCRIPTED_MODEL_EXPLANATION, scriptedWorkModelFor, scriptedWorkModelSwitchedOn } from "@/lib/dev/scripted-work-model";
 import { loadAgentRunPersona } from "@/lib/agents/run-context";
+import { runAgentNoteDeps } from "@/lib/agents/run-notes";
+import { goalCriteriaCheckFor } from "@/lib/agents/goal-criteria";
 import { recordExecutorHeartbeat } from "@/lib/work/executor-heartbeat";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
-import { attendedWaitMs, loadParkedDecisions, type ParkedDecisions } from "@/lib/work/park-resume";
+import {
+  attendedWaitMs,
+  closeAbandonedApprovals,
+  loadParkedDecisions,
+  parkedWaitAnswered,
+  type ParkedDecisions,
+  type ParkedWait,
+} from "@/lib/work/park-resume";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
@@ -100,7 +120,7 @@ import {
   type Provider,
 } from "@/lib/providers";
 import { workModelOptions } from "@/lib/work/models";
-import { noteLiveProviderFault } from "@/lib/provider-health";
+import { noteLiveProviderFault, type LiveFaultOrigin } from "@/lib/provider-health";
 import { classForWorkFailure } from "@/lib/provider-health-policy";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
@@ -377,9 +397,12 @@ async function withDeadline<T>(work: Promise<T>, ms: number, whenLate: string): 
  * gate the run can never leave.
  */
 async function pollAnswer(runId: string, questionId: string): Promise<string | null> {
+  // The first answer, the one the answer route defends (it refuses a different
+  // second one) and `deriveQuestionState` and `loadParkedDecisions` read: one
+  // row, whichever reader asks.
   const event = await prismaUnguarded.workEvent.findFirst({
     where: answeredQuestionWhere(runId, questionId),
-    orderBy: { seq: "desc" },
+    orderBy: { seq: "asc" },
   });
   if (!event) return null;
   return answerTextFromPayload(event.payload, questionId);
@@ -524,7 +547,7 @@ function steerable(provider: WorkProvider, steering: Steering, runId: string): W
       try {
         yield* provider.stream(request);
       } catch (error) {
-        noteWorkProviderFault(provider.id, error);
+        noteWorkProviderFault(provider.id, error, { requester: runId, modelId: request.model });
         throw error;
       }
     },
@@ -535,19 +558,27 @@ function steerable(provider: WorkProvider, steering: Steering, runId: string): W
  * The Work half of the live provider-fault feed (provider-health.ts,
  * `noteLiveProviderFault`): a model call that failed on the lab's account, or
  * kept meeting its server errors, marks the lab down in this process and —
- * when the lab serves a default model — mails the operator, exactly as a
- * failed chat turn does. Retries inside `runAgentLoop` each pass through here,
- * which is what the repeated-capacity rule counts. Only agent-core's own
- * classified errors are fed (`ProviderCallError`, read by shape because the
- * runtime is a separate package); anything else says nothing about the lab.
+ * once a probe confirms it, when the lab serves a default model — mails the
+ * operator, exactly as a failed chat turn does. The run and its model are the
+ * fault's source: `runAgentLoop` retries one step up to four times and each
+ * attempt passes through here, and the repeated-capacity rule counts distinct
+ * sources, so one run's retries (or its later steps) cannot meet it alone.
+ * Only agent-core's own classified errors are fed (`ProviderCallError`, read
+ * by shape because the runtime is a separate package); anything else says
+ * nothing about the lab. Returns the class it fed, or null.
  */
-function noteWorkProviderFault(provider: string, error: unknown): void {
+function noteWorkProviderFault(
+  provider: string,
+  error: unknown,
+  origin: LiveFaultOrigin,
+): ReturnType<typeof classForWorkFailure> {
   const failure = error as { name?: unknown; kind?: unknown; status?: unknown; message?: unknown } | null;
-  if (!failure || failure.name !== "ProviderCallError" || typeof failure.kind !== "string") return;
+  if (!failure || failure.name !== "ProviderCallError" || typeof failure.kind !== "string") return null;
   const status = typeof failure.status === "number" ? failure.status : null;
   const klass = classForWorkFailure(failure.kind, status);
-  if (!klass) return;
-  noteLiveProviderFault(provider, { class: klass, status, raw: failure.kind }, "work");
+  if (!klass) return null;
+  noteLiveProviderFault(provider, { class: klass, status, raw: failure.kind }, "work", origin);
+  return klass;
 }
 
 // ---------------------------------------------------------------------------
@@ -971,6 +1002,8 @@ async function openingContext(input: {
   /** Whether a person started the run (false for a schedule or a trigger). */
   computerAttended?: boolean;
   computerNote?: string | null;
+  /** The computer section for a run that may start its computer (by attendance, vision and policy). */
+  computerSection?: string | null;
 }): Promise<string> {
   const identityLines: string[] = [];
   const sources: UntrustedSource[] = [];
@@ -985,7 +1018,9 @@ async function openingContext(input: {
     }
   }
 
-  if (input.computerAttached) {
+  if (input.computerSection) {
+    identityLines.push(`## Your computer\n${input.computerSection}`);
+  } else if (input.computerAttached) {
     // Nobody to take over the computer in a scheduled or triggered run.
     identityLines.push(`## Your computer\n${computerPromptSection({ attended: input.computerAttended !== false })}`);
   } else if (input.computerNote) {
@@ -1761,10 +1796,14 @@ function buildTools(input: {
   sink: SessionSink;
   connectors: ConnectorSurface;
   egressDomains: { current: readonly string[] | null };
-  remoteComputer?: {
-    attachment: Extract<RunComputerAttachment, { attached: true }>;
-    browser: WorkBrowser;
-  } | null;
+  /**
+   * The agent's computer, started on the first computer tool call (asking
+   * first under `ask`), or null when the run has none
+   * (src/lib/computer/run-tools.ts).
+   */
+  lazyComputer?: LazyRunComputer<WorkBrowser> | null;
+  /** Whether the model sees images: pixel tools are offered only then. */
+  vision: boolean;
   /**
    * Teardown the run owes whatever it started. A browser left open is several
    * hundred megabytes of Chromium on a worker that runs three runs at once.
@@ -1776,6 +1815,12 @@ function buildTools(input: {
    * the programs run on the separate execution host with no network.
    */
   exec: { deps: NonNullable<ReturnType<typeof workExecDeps>>; manifestLine: string | null } | null;
+  /**
+   * `remember`: a note for the agent the run works as (src/lib/agents/run-notes.ts),
+   * kept or held for the person's review by its memory setting. Null when the
+   * run is not an agent's.
+   */
+  agentNote?: Awaited<ReturnType<typeof runAgentNoteDeps>>;
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -1853,9 +1898,7 @@ function buildTools(input: {
     }),
   ];
 
-  const browser = input.remoteComputer
-    ? input.remoteComputer.browser
-    : createWorkBrowser({
+  const temporaryBrowser = (): WorkBrowser => createWorkBrowser({
         ...(process.env.WORK_BROWSER_EXECUTABLE
           ? { executablePath: process.env.WORK_BROWSER_EXECUTABLE }
           : {}),
@@ -1899,12 +1942,16 @@ function buildTools(input: {
           }
         },
       });
+  // With a computer, the `browser` tool switches between the temporary browser
+  // and the computer's own (D15): see `createRunBrowserSwitch`.
+  const lazyComputer = input.lazyComputer ?? null;
+  const browserSwitch = lazyComputer ? createRunBrowserSwitch({ lazy: lazyComputer, temporary: temporaryBrowser }) : null;
+  const browser = browserSwitch ? browserSwitch.browser : temporaryBrowser();
 
-  if (input.remoteComputer) {
-    const remote = input.remoteComputer;
+  if (lazyComputer && browserSwitch) {
     input.disposers.push(async () => {
-      await remote.browser.close().catch(() => {});
-      await remote.attachment.release();
+      await browserSwitch.close().catch(() => {});
+      await lazyComputer.dispose();
     });
   } else {
     input.disposers.push(() => browser.close());
@@ -1931,7 +1978,7 @@ function buildTools(input: {
   });
   const scrubbed = credentialFill.scrub;
 
-  const browserTool = runtime.browserTool({
+  const baseBrowserTool = runtime.browserTool({
     available: () => browser.available(),
     open: async (url) => {
       const outcome = scrubbed(await browser.open(url));
@@ -1968,9 +2015,21 @@ function buildTools(input: {
     onCitation: (citation) => input.sink.session?.recordCitation(citation),
     screenEpoch: getEpoch,
   });
+  // The first result after a switch says which browser it is now (D15).
+  const browserTool = browserSwitch
+    ? withBrowserNotice(baseBrowserTool, () => browserSwitch.takeNotice())
+    : baseBrowserTool;
+
+  // Every computer tool reaches the computer through this, and only after the
+  // start gate (`withComputerStart`) let the call through, so it is attached.
+  const attached = () => {
+    const attachment = lazyComputer?.attachment();
+    if (!attachment) throw new Error("The computer is not started.");
+    return attachment;
+  };
 
   const takeShot = async () => {
-    const remote = input.remoteComputer!;
+    const remote = { attachment: attached() };
     const shot = await remote.attachment.provider.screenshot(remote.attachment.handle);
     setCachedPoster(remote.attachment.agentId, shot);
     return {
@@ -1987,35 +2046,38 @@ function buildTools(input: {
   // (src/lib/computer/frames.ts). The tools hand a frame over only after the
   // takeover fence has passed it, so nothing captured while the person held
   // control is ever stored.
-  const stepFrames = input.remoteComputer
+  const stepFrames = lazyComputer
     ? createRunFrameRecorder({ userId: input.userId, runId: input.runId })
     : null;
-  // The element under a click, in words, when Chromium is the window in front.
-  const pointDescriber =
-    input.remoteComputer && canDescribePoints(input.remoteComputer.browser) ? input.remoteComputer.browser : null;
+  // The element under a click, in words, when Chromium is the window in front
+  // (the computer's browser, once the computer is started).
+  const pointDescriber = () => {
+    const computerBrowser = lazyComputer?.browser();
+    return computerBrowser && canDescribePoints(computerBrowser) ? computerBrowser : null;
+  };
 
-  const remoteComputerTools = input.remoteComputer
+  const remoteComputerTools = lazyComputer
     ? runtime.computerTools({
         isHealthy: () => true,
         // While the person has control, every computer tool (screenshots
         // included) refuses before and after acting (D-011, audit C3).
         // ...and once this run no longer holds the computer's lease (put to sleep, reset, taken over by another task).
         blockedReason: () =>
-          computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId, new Date(), input.runId),
+          computerBlockedReason(input.userId, lazyComputer.agentId, new Date(), input.runId),
         takeoverEpoch: async () =>
-          (await computerTakeoverFence(input.userId, input.remoteComputer!.attachment.agentId)).epoch,
+          (await computerTakeoverFence(input.userId, lazyComputer.agentId)).epoch,
         pageTakesPayment: () => browser.pageTakesPayment(),
         currentUrl: () => browser.currentUrl(),
         screenEpoch: getEpoch,
         screenshot: takeShot,
         async click(opts) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.click(remote.attachment.handle, opts);
           bumpEpoch();
           return takeShot();
         },
         async type(text) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           // In chunks, with the takeover and lease fence read between them.
           const stopped = await typeInChunks(
             text,
@@ -2027,13 +2089,13 @@ function buildTools(input: {
           return takeShot();
         },
         async key(keys) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.key(remote.attachment.handle, keys);
           bumpEpoch();
           return takeShot();
         },
         async scroll(opts) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.scroll(remote.attachment.handle, {
             x: opts.x,
             y: opts.y,
@@ -2043,13 +2105,13 @@ function buildTools(input: {
           return takeShot();
         },
         async drag(opts) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.drag(remote.attachment.handle, opts);
           bumpEpoch();
           return takeShot();
         },
         async zoom(region) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           const shot = await remote.attachment.provider.screenshot(remote.attachment.handle);
           setCachedPoster(remote.attachment.agentId, shot);
           const zoomed = await zoomFrame(shot.jpeg, region, shot);
@@ -2062,31 +2124,22 @@ function buildTools(input: {
         },
         storeFrame: (ref, shot) =>
           stepFrames!.store(ref, { jpeg: Buffer.from(shot.data, "base64"), width: shot.width, height: shot.height }),
-        ...(pointDescriber
-          ? {
-              describePoint: (x: number, y: number) => pointDescriber.describePoint(x, y),
-              describeFocus: () => pointDescriber.describeFocus(),
-            }
-          : {}),
+        describePoint: async (x: number, y: number) => (await pointDescriber()?.describePoint(x, y)) ?? null,
+        describeFocus: async () => (await pointDescriber()?.describeFocus()) ?? null,
         async exec(command, opts) {
-          const remote = input.remoteComputer!;
-          const effectiveCommand = opts.cwd
-            ? `cd ${JSON.stringify(opts.cwd)} && (${command})`
-            : command;
-          const res = await remote.attachment.provider.exec(
-            remote.attachment.handle,
-            effectiveCommand,
-            { timeoutSeconds: opts.timeoutSeconds }
-          );
+          const remote = { attachment: attached() };
+          // The working directory goes to the provider, validated, as
+          // `--workdir`; the command is passed unchanged (never `cd "<cwd>"`).
+          const res = await runComputerShell(remote.attachment.provider, remote.attachment.handle, command, opts);
           bumpEpoch();
           return res;
         },
         listFiles(dir) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           return remote.attachment.provider.listFiles(remote.attachment.handle, dir);
         },
         async readFile(path, maxBytes) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           const bytes = await remote.attachment.provider.readFile(
             remote.attachment.handle,
             path,
@@ -2095,7 +2148,7 @@ function buildTools(input: {
           return bytes.toString("utf8");
         },
         async writeFile(path, content) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.writeFile(
             remote.attachment.handle,
             path,
@@ -2104,6 +2157,10 @@ function buildTools(input: {
           bumpEpoch();
         },
       })
+        // Pixel tools only for a model that can see the screen.
+        .filter((tool) => computerToolNamesFor({ vision: input.vision }).includes(tool.spec.name))
+        // The first use starts the computer, asking first under `ask` (§S1.5).
+        .map((tool) => runtime.withComputerStart(tool, lazyComputer.gate))
     : [];
 
   const deliverables = runtime.deliverableTool({
@@ -2232,6 +2289,7 @@ function buildTools(input: {
     ...remoteComputerTools,
     deliverables,
     cloudFiles,
+    ...(input.agentNote ? [runtime.agentNoteTool(input.agentNote)] : []),
     // A sandbox on the execution host, not this worker: `withoutHostWorkspaceTools`
     // keeps these (they are not workspace tools) and strips the host ones below.
     ...(input.exec ? runtime.execTools({ ...input.exec.deps, manifestLine: input.exec.manifestLine }) : []),
@@ -2861,6 +2919,15 @@ async function applySkill(input: {
  * tripping a guard whose entire job is to notice a query that forgot its
  * userId. Ordered oldest-first: a run that has been queued longest is the one a
  * user is most likely to have given up on.
+ *
+ * "Queued longest" is measured from when the run was last written, which for
+ * a queued run is when it entered the queue (`updatedAt`: it holds no lease,
+ * so nothing renews it while it waits; an instruction added meanwhile moves it
+ * back a little; the queued-run expiry reads the same column), not from when
+ * it was created. A parked run put back in the queue by an answer
+ * (`requeueParkedRun`) keeps its old `createdAt`; ordered by that, one account
+ * answering a stack of parked runs would put all of them ahead of every other
+ * account's newer work on the runner's few slots.
  */
 async function findQueuedRuns(limit: number) {
   return prismaUnguarded.workRun.findMany({
@@ -2872,7 +2939,7 @@ async function findQueuedRuns(limit: number) {
       // run here like any other, and `advanceTeams` below drives the lead.
       session: { OR: [{ teamRole: null }, { teamRole: { not: "lead" } }] },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ updatedAt: "asc" }, { createdAt: "asc" }],
     take: limit,
     select: { id: true, userId: true, sessionId: true },
   });
@@ -2893,6 +2960,11 @@ async function tick(): Promise<boolean> {
       log("computer sweep failed", { error: String(error) });
     });
   }
+  // A take over nobody handed back and whose window ran out: the person's VNC
+  // session is ended and the agent's processes thawed (src/lib/computer/store.ts).
+  await settleLapsedTakeovers().catch((error: unknown) => {
+    log("lapsed take over settlement failed", { error: String(error) });
+  });
 
   // Other workers' casualties first. A run whose executor died is invisible to
   // every surface as anything other than "still going", so clearing it is more
@@ -2923,6 +2995,10 @@ async function tick(): Promise<boolean> {
   let claimedThisTick = 0;
   for (const candidate of await findQueuedRuns(slots * 3)) {
     if (claimedThisTick >= slots) break;
+    // Back in the queue while this worker's own drive of it is still
+    // unwinding (a parked run answered at once is requeued before that
+    // drive's `finally` has run). Taken on a later tick, once its slot is free.
+    if (active.has(candidate.id)) continue;
     busy = true;
     if (stopping) return true;
     const claim = await claimRun({
@@ -2934,13 +3010,16 @@ async function tick(): Promise<boolean> {
     claimedThisTick += 1;
 
     const renew = startLeaseRenewal(candidate.id, candidate.userId);
-    active.set(candidate.id, { renew });
+    const entry = { renew };
+    active.set(candidate.id, entry);
     // Deliberately not awaited: the tick loop keeps sweeping and claiming while
     // runs are in flight. Failures are handled inside drive(), which always
     // reaches finishRun.
     void drive(candidate.id, candidate.userId).finally(() => {
       clearInterval(renew);
-      active.delete(candidate.id);
+      // Only this drive's own entry: never one a later claim of the same run
+      // put there, or the worker would under-count what it is running.
+      if (active.get(candidate.id) === entry) active.delete(candidate.id);
     });
   }
 
@@ -3265,8 +3344,15 @@ async function drive(runId: string, userId: string): Promise<void> {
       // written the latest checkpoint; this conditional park releases its
       // lease only if this worker still owns it, so a fast Resume cannot be
       // overwritten by a late pause completion.
-      await parkRun({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
+      const parkedNow = await parkRun({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
       await billRunUsage(runId, userId, outcome.usage);
+      // An answer that landed between the last poll and the park found the
+      // run still attached, so the route left the requeue to this worker.
+      // Compare-and-set like the route's, so the two cannot both move it.
+      if (parkedNow && outcome.parkedOn && (await parkedWaitAnswered({ runId, userId, wait: outcome.parkedOn }))) {
+        const requeued = await requeueParkedRun({ runId, userId });
+        if (requeued.requeued) log("answered while parking; back in the queue", { runId });
+      }
       return;
     }
 
@@ -3405,6 +3491,8 @@ interface ExecuteOutcome {
   usage?: WorkRunUsage;
   /** The session stopped at a resumable checkpoint rather than terminating. */
   paused?: boolean;
+  /** What it parked on, when it stopped to wait for a person. */
+  parkedOn?: ParkedWait;
 }
 
 /**
@@ -3487,7 +3575,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // so within a second of the claim, which is the whole of requirement C: a run
   // that cannot start must say so in words, not sit at zero tokens.
   const choice = runModelChoice(run.effectiveModel ?? run.requestedModel ?? "");
-  const spec = providerSpecFor(choice.provider, runtime);
+  // Tests and local demos only (src/lib/dev/scripted-work-model.ts): never in
+  // production, never selectable, and the run says so in its own transcript.
+  const scripted = scriptedWorkModelSwitchedOn()
+    ? scriptedWorkModelFor({
+        id: input.userId,
+        email: (await prisma.user.findUnique({ where: { id: input.userId }, select: { email: true } }))?.email ?? null,
+      })
+    : null;
+  const spec = scripted ? null : providerSpecFor(choice.provider, runtime);
+  const modelVision = scripted ? scripted.vision : choice.info?.vision ?? false;
   const reasoning = reasoningEffortFor(choice, run.session.reasoningEffort, runtime);
 
   // Wrapped before the session ever sees it, so every turn this run takes — the
@@ -3495,10 +3592,15 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // it sat queued has that instruction in the log before it starts, and the
   // first turn is where it belongs.
   const provider = steerable(
-    runtime.createProviderFromSpec(spec),
+    scripted
+      ? runtime.createScriptedWorkProvider(runtime.parseScriptedWorkScript(JSON.parse(readFileSync(scripted.scriptPath, "utf8"))))
+      : runtime.createProviderFromSpec(spec!),
     openSteering(input.runId, input.userId),
     input.runId
   );
+  if (scripted) {
+    await input.emit("degraded", { kind: "model_substituted", subject: "scripted", explanation: SCRIPTED_MODEL_EXPLANATION });
+  }
 
   // The connectors go first because everything after them depends on knowing
   // which ones answered: the toolset includes their tools, and the skill
@@ -3543,45 +3645,48 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   });
 
   const egressDomains = { current: null as readonly string[] | null };
-  let remoteComputer: {
-    attachment: Extract<RunComputerAttachment, { attached: true }>;
-    browser: WorkBrowser;
-  } | null = null;
   let computerNote: string | null = null;
-
-  const computerAttachment = await resolveRunComputerSession({
+  // Nothing is woken here: the computer starts on the first computer tool call,
+  // asking first when the agent's policy is `ask` (src/lib/computer/run-tools.ts).
+  const computerPlan = await prepareRunComputer({
     userId: input.userId,
     agentId: run.session.agentId,
     runId: input.runId,
+    attended: isAttendedOrigin(run.origin),
+    vision: modelVision,
   });
-  if (computerAttachment.attached) {
-    try {
-      // The browser tool drives the same Chromium the person uses during a
-      // takeover, so it stops with the computer tools (src/lib/computer/takeover.ts).
-      const takeoverAgentId = computerAttachment.agentId;
-      const remoteBrowser = guardBrowserForTakeover(
-        connectAgentBrowser(computerAttachment.handle, computerAttachment.secrets, {
-          provider: computerAttachment.provider,
-          // The same site policy the browser tool applies to `open`, now also
-          // to every navigation the agent's clicks and submits cause.
-          navigationRefusal: (url) => {
-            const blocked = runtime.blockedFetchTarget(url);
-            if (blocked) return `${PRODUCT_NAME} will not open that: ${blocked}`;
-            const allowedDomains = egressDomains.current;
-            if (allowedDomains === null) return null;
-            const egress = runtime.evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
-            return egress.allowed ? null : `${PRODUCT_NAME} will not open that for this skill: ${egress.reason}.`;
-          },
-        }),
-        () => computerTakeoverFence(input.userId, takeoverAgentId, new Date(), input.runId)
-      );
-      remoteComputer = { attachment: computerAttachment, browser: remoteBrowser };
-    } catch {
-      await computerAttachment.release();
-      computerNote = BUSY_COMPUTER_FALLBACK_NOTE;
-    }
-  } else if (computerAttachment.note) {
-    computerNote = computerAttachment.note;
+  let lazyComputer: LazyRunComputer<WorkBrowser> | null = null;
+  if (computerPlan.kind === "lazy") {
+    lazyComputer = createLazyRunComputer<WorkBrowser>({
+      plan: computerPlan,
+      userId: input.userId,
+      runId: input.runId,
+      readStartApproval: () => readRunStartApproval(input.userId, input.runId),
+      connectBrowser: (attachment) => {
+        // The browser tool drives the same Chromium the person uses during a
+        // takeover, so it stops with the computer tools (src/lib/computer/takeover.ts).
+        const takeoverAgentId = attachment.agentId;
+        return guardBrowserForTakeover(
+          connectAgentBrowser(attachment.handle, attachment.secrets, {
+            provider: attachment.provider,
+            // The same site policy the browser tool applies to `open`, now also
+            // to every navigation the agent's clicks and submits cause.
+            navigationRefusal: (url) => {
+              const blocked = runtime.blockedFetchTarget(url);
+              if (blocked) return `${PRODUCT_NAME} will not open that: ${blocked}`;
+              const allowedDomains = egressDomains.current;
+              if (allowedDomains === null) return null;
+              const egress = runtime.evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
+              return egress.allowed ? null : `${PRODUCT_NAME} will not open that for this skill: ${egress.reason}.`;
+            },
+          }),
+          () => computerTakeoverFence(input.userId, takeoverAgentId, new Date(), input.runId)
+        );
+      },
+    });
+    await lazyComputer.refresh();
+  } else if (computerPlan.note) {
+    computerNote = computerPlan.note;
   }
 
   /**
@@ -3609,9 +3714,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     sink,
     connectors,
     egressDomains,
-    remoteComputer,
+    lazyComputer,
+    vision: modelVision,
     disposers,
     exec: execDeps ? { deps: execDeps, manifestLine: await runtimeManifestSummary().catch(() => null) } : null,
+    agentNote: run.session.agentId
+      ? await runAgentNoteDeps({ userId: input.userId, agentId: run.session.agentId, runId: input.runId, sessionId: run.sessionId })
+      : null,
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
@@ -3755,9 +3864,9 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     skillResources: skill?.resources ?? [],
     runtime,
     provider: choice.provider,
-    computerAttached: remoteComputer !== null,
     computerAttended: isAttendedOrigin(run.origin),
     computerNote,
+    computerSection: computerPlan.kind === "lazy" ? computerPlan.promptSection : null,
   });
 
   // Checkpoints are provider-neutral and safe to move between executors. Writes
@@ -3802,8 +3911,9 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     return sessionRef.current;
   };
   // What the person said while this run was parked, usable once each; filled
-  // after the session is restored (see `loadParkedDecisions` below).
-  const parked: { decisions: ParkedDecisions | null } = { decisions: null };
+  // after the session is restored (see `loadParkedDecisions` below). And what
+  // this execution parks on, if it does, for `drive`'s check after the park.
+  const parked: { decisions: ParkedDecisions | null; wait: ParkedWait | null } = { decisions: null, wait: null };
   // Approval events wait for their row: the runtime announces a request before
   // `requestApproval` creates the `WorkApproval`, and a card without the row's
   // id and digest is one no browser can answer (the decision route looks the
@@ -3897,7 +4007,17 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // It is built to be hard to fail and it fails open: see the note on
     // `goalValidator`. The run's own provider and model, so this adds no
     // credential and no second catalog.
-    validate: runtime.goalValidator({ provider, model: choice.providerModel }),
+    //
+    // A goal's last step also checks the goal's success criteria against what
+    // every step produced, with the same provider and model, and records the
+    // verdict for the goal driver (src/lib/agents/goal-criteria.ts). The
+    // step's own result is unchanged by it.
+    validate: goalCriteriaCheckFor(runtime.goalValidator({ provider, model: choice.providerModel }), {
+      userId: input.userId,
+      runId: input.runId,
+      session: run.session,
+      check: (criteria) => runtime.checkGoalCriteria({ provider, model: choice.providerModel, ...criteria }),
+    }),
     // A headless run should not wait as long as a person would.
     //
     // Unset, this falls through to `DEFAULT_STREAM_SILENCE_MS`, which is the
@@ -4049,6 +4169,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           // is free picks it up, and the restored run is handed the answer
           // (`loadParkedDecisions`). `WorkRunParked` tells the runtime this is
           // a park, not a failure.
+          parked.wait = { kind: "question", questionId: question.id };
           activeSession().pause("Waiting for an answer.");
           throw new runtime.WorkRunParked("paused-waiting-for-answer");
         }
@@ -4185,6 +4306,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         if (!waited.answered) {
           // Parked, as for a question: the decision route requeues the run and
           // the restored run is given the decision (`loadParkedDecisions`).
+          parked.wait = { kind: "approval", approvalId: approval.id };
           activeSession().pause("Waiting for an approval.");
           throw new runtime.WorkRunParked("paused-waiting-for-approval");
         }
@@ -4258,6 +4380,15 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // the person answers once. An approval is only told it was approved; the
   // tool call it then repeats passes the gate on the recorded decision only
   // for the same digest, policy and unexpired decision (`requestApproval`).
+  //
+  // First, whatever the ended execution left pending is closed: nobody waits
+  // on it now, and its card must stop offering buttons (`closeAbandonedApprovals`).
+  // Before the decisions are read, so a decision racing this either is read
+  // below or is refused as already resolved — never taken and then ignored.
+  const abandoned = await closeAbandonedApprovals({ runId: input.runId, userId: input.userId, now: new Date() });
+  for (const closed of abandoned) {
+    void input.emit("approval_resolved", { approvalId: closed.approvalId, decision: closed.decision });
+  }
   if (checkpoint) {
     const parkedCalls = runtime.WorkAgentSession.parkedToolCalls(checkpoint);
     if (parkedCalls.length > 0) {
@@ -4420,6 +4551,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         detail: "Paused while waiting for the user.",
         usage,
         paused: true,
+        ...(parked.wait ? { parkedOn: parked.wait } : {}),
       };
     }
     return { reason: result.terminalReason, detail: result.detail, usage };
@@ -4440,6 +4572,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         reason: "interrupted",
         detail: "Released while waiting for you. It will continue once you answer.",
         paused: true,
+        ...(parked.wait ? { parkedOn: parked.wait } : {}),
       };
     }
     throw error;

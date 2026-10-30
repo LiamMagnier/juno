@@ -479,7 +479,7 @@ export async function runUtilityPrompt<T>(opts: {
       const msg = ctrl.signal.aborted ? `timed out after ${ATTEMPT_TIMEOUT_MS}ms` : e instanceof Error ? e.message : String(e);
       console.error(`[${opts.label}] ${model.id} failed:`, msg);
       // Background jobs feed provider health like chat turns (provider-health.ts).
-      if (!ctrl.signal.aborted) noteLiveProviderFault(model.provider, e, "background");
+      if (!ctrl.signal.aborted) noteLiveProviderFault(model.provider, e, "background", { requester: opts.userId, modelId: model.id });
       // A timeout usually means an overloaded provider — worth one retry.
       return { result: null, transient: ctrl.signal.aborted || isTransientProviderError(msg) };
     } finally {

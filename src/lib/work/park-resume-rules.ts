@@ -1,6 +1,6 @@
 import { answerTextFromPayload } from "@/lib/work/answer-lookup";
 import { actionDigest, canonicalize, verifyApproval } from "@/lib/work/digests";
-import type { WorkApprovalDecision } from "@/lib/work/domain";
+import { WORK_LIVE_STATUSES, type WorkApprovalDecision, type WorkLiveStatus } from "@/lib/work/domain";
 
 /*
  * The rules of "needs you" after a run has been set aside, free of the
@@ -50,6 +50,24 @@ export function maxParkedRunsPerAccount(
 ): number {
   return boundedInteger(raw, DEFAULT_MAX_PARKED_RUNS_PER_ACCOUNT, 1, 100);
 }
+
+/**
+ * The live statuses an account's live-run cap counts: every live run except a
+ * parked one.
+ *
+ * A `paused` run holds no executor (its lease is released when it parks,
+ * `parkRun`, or when the person pauses it), so counting it against the cap
+ * meant three tasks waiting on late answers refused every new task until
+ * somebody found Resume or Cancel on each. Parked runs are bounded on their own
+ * instead (`maxParkedRunsPerAccount` above). Dispatch
+ * (src/lib/work/dispatch.ts) and a team's member starts
+ * (src/lib/agents/team-store.ts) both count this set, so the two caps agree.
+ * Kept here rather than in domain.ts, whose exported lists are the Work
+ * contract's vocabularies: this is a server policy, not a word clients decode.
+ */
+export const WORK_CAPPED_LIVE_STATUSES: readonly WorkLiveStatus[] = WORK_LIVE_STATUSES.filter(
+  (status) => status !== "paused"
+);
 
 function boundedInteger(raw: string | undefined, fallback: number, min: number, max: number): number {
   const value = raw === undefined || raw.trim() === "" ? Number.NaN : Number(raw.trim());
@@ -125,6 +143,37 @@ export function deriveQuestionState(events: readonly QuestionEventRow[], questio
   return { asked, open: asked && answer === null && (lastAsk ?? 0) > latestStart, answer };
 }
 
+/**
+ * Whether an answer written at `answerSeq` reached the run too late to count:
+ * a newer cloud execution started after the question was last asked and before
+ * the answer was written.
+ *
+ * That is the narrow race the answer route can lose: it sees the question open
+ * on a resumed, still queued run, and the executor claims the run and starts
+ * (`run_started`) before the answer is written. The new execution reads only
+ * answers written before its own start (`loadParkedDecisions`), so this one is
+ * in the log and nothing reads it; the run asks again if it still needs to
+ * know, and the route says so rather than "carries on".
+ */
+export function answerMissedByRestart(
+  events: readonly QuestionEventRow[],
+  questionId: string,
+  answerSeq: number
+): boolean {
+  let lastAsk: number | null = null;
+  for (const event of events) {
+    if (event.seq >= answerSeq) continue;
+    if (event.kind === "question_asked" && askedQuestionId(event.payload) === questionId) {
+      lastAsk = Math.max(lastAsk ?? 0, event.seq);
+    }
+  }
+  if (lastAsk === null) return false;
+  const asked = lastAsk;
+  return events.some(
+    (event) => isCloudExecutionStart(event.kind, event.payload) && event.seq > asked && event.seq < answerSeq
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Giving a resumed run what the person said
 // ---------------------------------------------------------------------------
@@ -155,6 +204,15 @@ export const APPROVED_WHILE_PARKED =
 
 /** The runtime's own sentence for a denial, so a denial reads the same either way. */
 export const DECLINED_WHILE_PARKED = "The user declined this action.";
+
+/**
+ * The result a parked call gets when its approval request expired before the
+ * person decided it, or was decided and has expired since. Nothing is
+ * authorised by it: the model is told the request lapsed, and a repeated call
+ * asks the person again under a new request with its own expiry.
+ */
+export const EXPIRED_WHILE_PARKED =
+  "The approval request expired before it was answered, so nothing was done. If this is still needed, call the same tool again to ask the person again.";
 
 /** One stored approval, as much as reusing its decision needs. */
 export interface RecordedApproval {
@@ -188,7 +246,11 @@ export function judgeRecordedApproval(input: {
 }): RecordedApprovalVerdict {
   const { row } = input;
   if (row.decision !== "allowed" && row.decision !== "allowed_always" && row.decision !== "denied") {
-    return { use: false, reason: row.decision === "expired" ? "expired" : "undecided" };
+    // Undecided (pending, or replaced by a later request): nothing to apply.
+    // Past its expiry it is expired, whatever the column says yet, so the
+    // call is told the request lapsed rather than left looking interrupted.
+    const lapsed = row.decision === "expired" || input.now.getTime() >= row.expiresAt.getTime();
+    return { use: false, reason: lapsed ? "expired" : "undecided" };
   }
   if (actionDigest(input.action, input.detail) !== row.actionDigest) return { use: false, reason: "digest_mismatch" };
   if (row.decision === "denied") return { use: true, decision: "denied" };
@@ -311,17 +373,45 @@ export class ParkedDecisions {
 }
 
 /**
+ * The id the runtime gives the approval request for one tool call
+ * (`gateApproval` in runner/agent-core/src/work/session.ts), which the cloud
+ * runner's `approval_requested` event carries as `request.id` beside the
+ * `approvalId` of the row it wrote for it.
+ */
+export function approvalRequestIdFor(runId: string, callId: string): string {
+  return `${runId}:${callId}`;
+}
+
+/** The approval row an `approval_requested` event names, or null when it names none. */
+export function approvalIdOfRequestEvent(payload: unknown): string | null {
+  const flat = record(payload);
+  const request = record(flat.request);
+  for (const candidate of [flat.approvalId, request.approvalId]) {
+    if (typeof candidate === "string" && candidate.length > 0) return candidate;
+  }
+  return null;
+}
+
+/**
  * Pure half of `loadParkedDecisions`: the resolutions and the per-execution
  * ledger, from the parked calls, the answers found for the questions among
- * them, and the run's approval rows (newest first).
+ * them, and the approval row requested for each parked call.
+ *
+ * An approval is matched to the call it was requested for by the call's own
+ * id (the runtime's request id is `<runId>:<callId>`), never by looking for a
+ * row about the same tool and input: an older row for an identical action is
+ * one the person decided for an earlier call, already used or abandoned, and
+ * carrying it over would replay it. The row must also be for the call as it
+ * stands (same tool, same input), and is then judged on its stored digest,
+ * policy and expiry like any other decision.
  */
 export function planParkedDecisions(input: {
   calls: readonly ParkedCallRef[];
   askToolName: string;
   /** Recorded answers, by the parked question call's id. */
   answers: ReadonlyMap<string, string>;
-  /** The run's approval rows, newest first. */
-  approvals: readonly RecordedApproval[];
+  /** The approval row requested for a parked call, by that call's id. */
+  approvals: ReadonlyMap<string, RecordedApproval>;
   policy: unknown;
   now: Date;
 }): { resolutions: Map<string, ParkedResolution>; decisions: ParkedDecisions } {
@@ -337,14 +427,18 @@ export function planParkedDecisions(input: {
       if (asked !== null) answers.set(call.id, { question: asked, answer: text });
       continue;
     }
-    const key = parkedCallKey(call.name, call.input);
-    // Newest first: the approval the run parked on is the newest one asked for
-    // this exact call. An older row for the same call was answered and used,
-    // or abandoned, before it.
-    const row = input.approvals.find((candidate) => approvalCallKey(candidate) === key);
+    const row = input.approvals.get(call.id);
     if (!row) continue;
+    const key = parkedCallKey(call.name, call.input);
+    if (approvalCallKey(row) !== key) continue;
     const verdict = judgeRecordedApproval({ row, action: row.action, detail: row.detail, policy: input.policy, now: input.now });
-    if (!verdict.use) continue;
+    if (!verdict.use) {
+      // Lapsed: say so, so the model asks again rather than reading a stopped
+      // call as an interruption. Anything else (undecided, re-scoped) keeps
+      // the stopped result, and a repeated call asks again.
+      if (verdict.reason === "expired") resolutions.set(call.id, { content: EXPIRED_WHILE_PARKED, isError: true });
+      continue;
+    }
     approvals.set(key, row);
     resolutions.set(
       call.id,
@@ -354,4 +448,19 @@ export function planParkedDecisions(input: {
     );
   }
   return { resolutions, decisions: new ParkedDecisions(answers, approvals) };
+}
+
+// ---------------------------------------------------------------------------
+// Requests an execution left behind
+// ---------------------------------------------------------------------------
+
+/**
+ * What a still-pending approval becomes when a new cloud execution of its run
+ * starts: the execution that asked it has ended, so nobody is waiting on it any
+ * more. `expired` once its own expiry has passed, `superseded` before: the
+ * restored run either asks again under a new request or no longer needs it.
+ * Either way the decision route refuses it from then on, and the card says so.
+ */
+export function abandonedApprovalDecision(expiresAt: Date, now: Date): "expired" | "superseded" {
+  return now.getTime() >= expiresAt.getTime() ? "expired" : "superseded";
 }

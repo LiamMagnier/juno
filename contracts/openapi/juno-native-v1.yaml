@@ -5451,7 +5451,8 @@ components:
         agentId: { type: string }
         title: { type: string }
         detail: { type: string }
-        status: { type: string, enum: [active, paused, achieved, dropped] }
+        # unverified: every step ran but its success criteria were not shown to be met (server-set only).
+        status: { type: string, enum: [active, paused, achieved, dropped, unverified] }
         cadence: { type: string, enum: [none, daily, weekly] }
         lastCheckInAt: { type: [string, 'null'], format: date-time }
         lastCheckInNote: { type: [string, 'null'] }
@@ -5513,6 +5514,8 @@ components:
         goals: { type: array, items: { $ref: '#/components/schemas/AgentGoal' } }
         ideas: { type: array, items: { $ref: '#/components/schemas/AgentIdea' } }
         notes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
+        # Notes a task saved that wait for the person to keep or forget. Never in `notes`.
+        pendingNotes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
         routines: { type: array, items: { $ref: '#/components/schemas/AgentRoutine' } }
         tasks: { type: array, items: { $ref: '#/components/schemas/AgentTaskGlance' } }
     AgentTaskStarted:

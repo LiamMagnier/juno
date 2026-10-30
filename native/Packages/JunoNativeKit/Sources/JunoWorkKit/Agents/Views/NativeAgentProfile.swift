@@ -179,7 +179,7 @@ public struct NativeAgentProfileView: View {
                 attention(agent)
                 if let detail {
                     ideas(agent, detail.ideas)
-                    goals(agent, detail.goals.filter { $0.status == .active })
+                    goals(agent, detail.goals.filter { $0.status == .active || $0.status == .unverified })
                     routines(agent, detail.routines)
                     notes(agent, detail.notes)
                     uses(agent, detail)

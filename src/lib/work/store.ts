@@ -960,8 +960,27 @@ export interface AppendEventsInput {
  * All of it in one transaction, because the increment and the inserts are the
  * same fact: a reader that saw the new `lastSeq` and then queried the events
  * would otherwise find the run claiming events it cannot yet see.
+ *
+ * Two appends carrying the same key at the same moment (two devices answering
+ * one question) both pass the dedupe read, which runs before the run's row
+ * lock, and the unique index stops the second insert. Its transaction rolls
+ * back whole, `lastSeq` included, so no hole is left; it is then tried again,
+ * and the read now sees the first one's committed row and drops the duplicate
+ * exactly as a sequential retry would — rather than failing the request.
  */
 export async function appendEvents(input: AppendEventsInput): Promise<AppendEventsResult> {
+  const keyed = input.events.some((event) => typeof event.key === "string" && event.key.length > 0);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await appendEventsOnce(input);
+    } catch (error) {
+      const conflict = uniqueConflict(error);
+      if (!keyed || attempt >= 3 || !conflict?.some((field) => field.includes("eventKey"))) throw error;
+    }
+  }
+}
+
+async function appendEventsOnce(input: AppendEventsInput): Promise<AppendEventsResult> {
   return prisma.$transaction(async (tx) => {
     const keyed = input.events.filter(
       (event): event is WorkEventInput & { key: string } =>
@@ -1233,13 +1252,19 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
 
     const run = await tx.workRun.findFirst({
       where: { id: input.runId, userId: input.userId },
-      select: { sessionId: true },
+      select: { sessionId: true, pauseReason: true },
     });
     if (run) {
       // Keep the denormalised session row in the same transaction as the
       // lease release. The status predicate matters: if Resume wins the race
       // after the run update, it changes the session to queued and this update
       // must not put it back into paused attention.
+      //
+      // Only the executor's own wait asks the person for something, so only
+      // it puts the task in Needs you. A run the person paused
+      // (`pauseReason: "user"`) is asking nothing and no answer continues
+      // it: it stays out of Needs you and reads "Paused", as the control
+      // route left it (`statusNeedsAttention("paused")` is false).
       await tx.workSession.updateMany({
         where: {
           id: run.sessionId,
@@ -1248,7 +1273,7 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
         },
         data: {
           status: "paused",
-          needsAttention: true,
+          needsAttention: run.pauseReason === "waiting",
           lastActivityAt: new Date(),
         },
       });

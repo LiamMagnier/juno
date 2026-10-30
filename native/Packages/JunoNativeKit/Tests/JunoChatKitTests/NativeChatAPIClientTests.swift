@@ -163,7 +163,7 @@ final class NativeChatAPIClientTests: XCTestCase {
     /// its sentence.
     func testAnErrorFrameOfEitherWireVersionFailsTheTurnWithItsSentence() async throws {
         let body = """
-        data: {"type":"error","message":"Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.","finishReason":"error","errorClass":"billing","retryable":false,"suggestedModelId":"google:gemini-3.5-flash-lite","suggestedModelName":"Gemini 3.5 Flash-Lite","userMessageId":"m_1","generationId":"g_1"}
+        data: {"type":"error","message":"Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.","finishReason":"error","errorClass":"account","retryable":false,"suggestedModelId":"google:gemini-3.5-flash-lite","suggestedModelName":"Gemini 3.5 Flash-Lite","userMessageId":"m_1","generationId":"g_1"}
 
         """
         let legacy = """
@@ -197,7 +197,7 @@ final class NativeChatAPIClientTests: XCTestCase {
         }
         XCTAssertEqual(message, "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.")
         XCTAssertEqual(reason, .error)
-        XCTAssertEqual(recovery?.errorClass, "billing")
+        XCTAssertEqual(recovery?.errorClass, "account")
         XCTAssertEqual(recovery?.retryable, false)
         XCTAssertEqual(recovery?.suggestedModelID, "google:gemini-3.5-flash-lite")
         XCTAssertEqual(recovery?.suggestedModelName, "Gemini 3.5 Flash-Lite")

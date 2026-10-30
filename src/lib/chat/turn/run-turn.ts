@@ -1030,7 +1030,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       const endedByReaderOrPlatform =
         cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown || cancellation.leaseLost;
       if (!endedByReaderOrPlatform && !deterministicSmokeProviderEnabled) {
-        noteLiveProviderFault(modelInfo.provider, err, "chat");
+        noteLiveProviderFault(modelInfo.provider, err, "chat", { requester: user.id, modelId: modelInfo.id });
       }
       console.error("[chat] generation error", {
         generationId,
@@ -1198,7 +1198,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           !endedByReaderOrPlatform &&
           !deterministicSmokeProviderEnabled;
         const recovery = providerFailed
-          ? await providerErrorRecovery(err, { modelInfo, plan, history: modelHistory })
+          ? await providerErrorRecovery(err, { modelInfo, plan, history: modelHistory, requestedId, userId: user.id })
           : {};
         sendActivity({
           kind: "warning",

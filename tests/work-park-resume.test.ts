@@ -17,6 +17,11 @@ import {
   DECLINED_WHILE_PARKED,
   DEFAULT_ATTENDED_WAIT_MS,
   DEFAULT_MAX_PARKED_RUNS_PER_ACCOUNT,
+  EXPIRED_WHILE_PARKED,
+  abandonedApprovalDecision,
+  answerMissedByRestart,
+  approvalIdOfRequestEvent,
+  approvalRequestIdFor,
   attendedWaitMs,
   deriveQuestionState,
   judgeRecordedApproval,
@@ -189,7 +194,7 @@ test("an answer given while parked reaches the restored run as the question's re
     calls: parked,
     askToolName: WORK_ASK_TOOL_NAME,
     answers: new Map([[parked[0].id, "The 2024 one"]]),
-    approvals: [],
+    approvals: new Map(),
     policy: POLICY,
     now: new Date(),
   });
@@ -216,7 +221,7 @@ test("an answer given while parked reaches the restored run as the question's re
 test("with no answer recorded the restored run keeps the stopped result and asks again", async () => {
   const { checkpoint } = await parkOnQuestion();
   const parked = WorkAgentSession.parkedToolCalls(checkpoint);
-  const planned = planParkedDecisions({ calls: parked, askToolName: WORK_ASK_TOOL_NAME, answers: new Map(), approvals: [], policy: POLICY, now: new Date() });
+  const planned = planParkedDecisions({ calls: parked, askToolName: WORK_ASK_TOOL_NAME, answers: new Map(), approvals: new Map(), policy: POLICY, now: new Date() });
   assert.equal(planned.resolutions.size, 0);
 
   const events: WorkEmittedEvent[] = [];
@@ -272,9 +277,12 @@ async function parkOnApproval() {
 }
 
 async function resumeWith(row: RecordedApproval, script: Turn[], now = new Date()) {
-  const { checkpoint } = await parkOnApproval();
+  const { checkpoint, request } = await parkOnApproval();
   const parked = WorkAgentSession.parkedToolCalls(checkpoint);
-  const planned = planParkedDecisions({ calls: parked, askToolName: WORK_ASK_TOOL_NAME, answers: new Map(), approvals: [row], policy: POLICY, now });
+  // The row the runner wrote for the parked call: linked by the call's own id,
+  // which the runtime's request id carries (`<runId>:<callId>`).
+  assert.equal(request.id, approvalRequestIdFor("run-park", parked[0].id));
+  const planned = planParkedDecisions({ calls: parked, askToolName: WORK_ASK_TOOL_NAME, answers: new Map(), approvals: new Map([[parked[0].id, row]]), policy: POLICY, now });
   const events: WorkEmittedEvent[] = [];
   const sent: string[] = [];
   const askedAgain: WorkApprovalRequest[] = [];
@@ -335,11 +343,49 @@ test("an expired approval asks again; its expiry is the stored one, never extend
   const { sent, askedAgain, provider, parked } = await resumeWith(expired, [{ call: SAME }, { text: "Done." }]);
   assert.deepEqual(sent, []);
   assert.equal(askedAgain.length, 1);
-  assert.equal(toolResults(provider.requests[0]).find((r) => r.id === parked[0].id)?.content, "Stopped before this finished.", "an expired decision is not announced as an approval");
+  assert.deepEqual(
+    toolResults(provider.requests[0]).find((r) => r.id === parked[0].id),
+    { id: parked[0].id, content: EXPIRED_WHILE_PARKED, isError: true },
+    "an expired decision is not announced as an approval: the call is told the request lapsed"
+  );
   assert.deepEqual(
     judgeRecordedApproval({ row: expired, action: expired.action, detail: expired.detail, policy: POLICY, now: new Date() }),
     { use: false, reason: "expired" }
   );
+  // Never decided and past its expiry: expired as well, whatever the column says yet.
+  const lapsed = rowFor(request, "pending", new Date(Date.now() - 1_000));
+  assert.deepEqual(judgeRecordedApproval({ row: lapsed, action: lapsed.action, detail: lapsed.detail, policy: POLICY, now: new Date() }), { use: false, reason: "expired" });
+});
+
+test("an older decision on an identical action is never carried to a parked call it was not asked for", async () => {
+  const { checkpoint, request } = await parkOnApproval();
+  const parked = WorkAgentSession.parkedToolCalls(checkpoint);
+  // An approval for the very same tool and input, decided for an earlier call
+  // and already used: it is not the row requested for this call, so it is not
+  // linked to it, and nothing is resolved.
+  const planned = planParkedDecisions({
+    calls: parked,
+    askToolName: WORK_ASK_TOOL_NAME,
+    answers: new Map(),
+    approvals: new Map([["an-earlier-call", rowFor(request, "allowed")]]),
+    policy: POLICY,
+    now: new Date(),
+  });
+  assert.equal(planned.resolutions.size, 0);
+  assert.equal(planned.decisions.takeApproval(request, POLICY, new Date()), null, "and the re-asked call asks again");
+  // A row linked to the call but for a different input is not applied either.
+  const other = rowFor({ ...request, digestInput: request.digestInput.replace("ana@example.com", "bo@example.com") }, "allowed");
+  const mismatched = planParkedDecisions({ calls: parked, askToolName: WORK_ASK_TOOL_NAME, answers: new Map(), approvals: new Map([[parked[0].id, other]]), policy: POLICY, now: new Date() });
+  assert.equal(mismatched.resolutions.size, 0);
+});
+
+test("the request event names its row, and an abandoned request is closed honestly", () => {
+  assert.equal(approvalIdOfRequestEvent({ kind: "approval_requested", approvalId: "ap_1", request: { id: "r:c", approvalId: "ap_1" } }), "ap_1");
+  assert.equal(approvalIdOfRequestEvent({ request: { id: "r:c", approvalId: "ap_2" } }), "ap_2");
+  assert.equal(approvalIdOfRequestEvent({ kind: "approval_requested", request: { id: "r:c" } }), null, "an event written before rows were named names none");
+  const at = new Date("2026-10-27T12:00:00Z");
+  assert.equal(abandonedApprovalDecision(new Date(at.getTime() + 60_000), at), "superseded");
+  assert.equal(abandonedApprovalDecision(at, at), "expired");
 });
 
 test("a narrowed policy asks again; a denial is applied as a denial", async () => {
@@ -380,6 +426,24 @@ test("a question is open only in the execution that asked it, until it is answer
   assert.equal(deriveQuestionState([started(1), asked(5, "plan"), started(9), asked(11, "plan")], "plan").open, true);
   // A Mac run writes no cloud marker, and the session's own run_started is not one.
   assert.equal(deriveQuestionState([{ seq: 1, kind: "run_started", payload: { goal: "x" } }, asked(3, "q1")], "q1").open, true);
+});
+
+test("the first answer is the answer, and one written after a newer execution started is missed", () => {
+  // Two rows for one question (an older client's distinct keys): the first wins, as every reader reads it.
+  assert.equal(deriveQuestionState([started(1), asked(5, "q1"), answered(7, "q1", "A"), answered(8, "q1", "B")], "q1").answer, "A");
+  // Written while the run was parked, before the next execution started: read.
+  const inTime = [started(1), asked(5, "q1"), answered(7, "q1", "A"), started(9)];
+  assert.equal(answerMissedByRestart(inTime, "q1", 7), false);
+  // Written after the next execution started (the route saw it queued and lost the race): missed.
+  const late = [started(1), asked(5, "q1"), started(9), answered(10, "q1", "A")];
+  assert.equal(answerMissedByRestart(late, "q1", 10), true);
+  // An answer to a question asked in the execution that is running now is never "missed".
+  assert.equal(answerMissedByRestart([started(1), started(9), asked(11, "q2"), answered(12, "q2", "A")], "q2", 12), false);
+  // The fixed plan-review id asked again after a restart: its answer belongs to the new ask.
+  assert.equal(answerMissedByRestart([started(1), asked(5, "plan"), started(9), asked(11, "plan"), answered(12, "plan", "Go ahead")], "plan", 12), false);
+  // Never asked, or a Mac run (no cloud marker): nothing to miss.
+  assert.equal(answerMissedByRestart([started(1)], "nope", 5), false);
+  assert.equal(answerMissedByRestart([{ seq: 1, kind: "run_started", payload: { goal: "x" } }, asked(3, "q1"), { seq: 4, kind: "run_started", payload: {} }], "q1", 6), false);
 });
 
 test("the web card closes a question the next cloud execution left behind", () => {

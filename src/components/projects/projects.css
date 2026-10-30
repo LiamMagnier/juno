@@ -13,7 +13,9 @@
   --pj-line: hsl(var(--foreground) / 0.11);
   --pj-hair: hsl(var(--foreground) / 0.07);
   --pj-presence-soft: hsl(var(--presence) / 0.07);
-  --pj-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Kept as a name for anything that still reads it; the curve is the
+     ladder's own out-expo now, not a hand-typed copy of it. */
+  --pj-ease: var(--ease-out-expo);
 }
 .dark .pj {
   --pj-line: hsl(var(--foreground) / 0.13);
@@ -36,37 +38,43 @@
   line-height: 1.2;
   letter-spacing: -0.01em;
 }
+/* Metadata: counts, times, sizes, section heads. The spec's `label` rung
+   (§3.5: JetBrains Mono 500, 0.75rem/1.4, 0.01em, tabular), in rem so it
+   follows the reader's text size, at the full muted ink. It was 11px at 400,
+   under the 12px web floor, and it was also set on breadcrumbs, the header's
+   lede and field labels, which are navigation, prose and controls: those are
+   Inter now (law 1), and mono is left to what it annotates. */
 .pj-annot {
   font-family: var(--font-mono), "JetBrains Mono", monospace;
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: 0.02em;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
 
 /* The tile: a quiet card with a 4px frame round its cover plate. At rest the
-   hairline is barely there; hover lifts it on a tinted shadow and a firmer
-   line (no travel), and the cover's drawing drifts. A drag over it turns the
-   line presence blue (it will take the drop). */
+   hairline is barely there; hover is tonal, as every row and card in the
+   product is (FLAT_UI §2: nothing in the reading column casts a shadow): a
+   firmer line and one step of fill, no throw, no travel, and the drawing
+   holds still. A drag over it turns the line presence blue (it will take
+   the drop). */
 .pj-tile {
   border: 1px solid var(--pj-hair);
   background: hsl(var(--card));
   box-shadow: 0 1px 2px -1px hsl(var(--foreground) / 0.06);
   transition:
-    border-color 220ms var(--pj-ease),
-    background-color 220ms var(--pj-ease),
-    box-shadow 420ms var(--pj-ease);
+    border-color var(--dur-fast) var(--ease-out-soft),
+    background-color var(--dur-fast) var(--ease-out-soft);
 }
-.pj-tile:hover {
-  border-color: var(--pj-line);
-  box-shadow: 0 1px 2px -1px hsl(var(--foreground) / 0.08), 0 22px 44px -28px hsl(var(--foreground) / 0.34);
+@media (hover: hover) {
+  .pj-tile:hover {
+    border-color: var(--pj-line);
+    background: color-mix(in srgb, hsl(var(--card)) 97%, hsl(var(--foreground)));
+  }
 }
 .dark .pj-tile { box-shadow: none; }
-.dark .pj-tile:hover {
-  background: color-mix(in srgb, hsl(var(--card)) 96%, hsl(var(--foreground)));
-  box-shadow: 0 22px 44px -26px rgb(0 0 0 / 0.7);
-}
 .pj-tile:focus-within { border-color: hsl(var(--foreground) / 0.22); }
 .pj-tile[data-drop="over"] {
   border-color: hsl(var(--presence));
@@ -89,46 +97,62 @@
 /* A folder's plate is half the height of a project's, so its dots are finer. */
 .pj-cover-art-sm .pj-cover-dots { --dots-pitch: 2.6px; }
 
-/* Pin and menu: a small glass capsule over the cover's corner, surfaced on
-   hover or focus, always there on touch. A pinned tile shows the filled pin
-   alone at rest, in the same spot, and hands it over to the capsule. */
+/* Pin and menu: a small capsule over the cover's corner, surfaced on hover or
+   focus, always there on touch. Opaque card fill and a hairline (D15: no
+   frosted glass in product chrome). A pinned tile shows the filled pin alone
+   at rest, in the same spot, and hands it over to the capsule. */
 .pj-actions {
-  background: hsl(var(--background) / 0.82);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
-  backdrop-filter: blur(10px) saturate(1.4);
-  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.07), 0 4px 14px -6px hsl(var(--foreground) / 0.25);
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1px var(--pj-line);
   opacity: 0;
-  transform: translateY(-2px) scale(0.97);
-  transition: opacity 200ms var(--pj-ease), transform 320ms var(--pj-ease);
+  transform: scale(0.97);
+  transition:
+    opacity var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-fast) var(--ease-out-soft);
 }
 .pj-tile:hover .pj-actions,
 .pj-tile:focus-within .pj-actions,
 .pj-actions:has([data-state="open"]) { opacity: 1; transform: none; }
-.pj-pinned { transition: opacity 160ms var(--pj-ease); }
+.pj-pinned { transition: opacity var(--dur-fast) var(--ease-out-soft); }
 .pj-tile:hover .pj-pinned,
 .pj-tile:focus-within .pj-pinned { opacity: 0; }
 @media (pointer: coarse) {
   .pj-actions { opacity: 1; transform: none; }
 }
-@media (prefers-reduced-transparency: reduce) {
-  .pj-actions { background: hsl(var(--background)); -webkit-backdrop-filter: none; backdrop-filter: none; }
-}
 
 @media (prefers-reduced-motion: no-preference) {
-  .pj-cover-art { transition: transform 1200ms var(--pj-ease); }
-  .pj-tile:hover .pj-cover-art { transform: scale(1.05) rotate(-1.2deg); }
-  /* The grid arrives in reading order, 30ms apart, starting on the first
-     frame. It used to wait 120ms and then 50ms per tile over 720ms, which held
-     tiles that were already in the DOM at opacity 0 for ~200ms after every
-     navigation (measured: the first tile was mounted at 47ms and first
-     visible at 247ms). An entrance may describe the arrival; it must not
-     delay it. */
-  .pj-grid > li > .pj-tile { animation: pj-arrive 420ms var(--pj-ease) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
+  /* The grid arrives in reading order on the tile stagger, starting on the
+     first frame and capped at the shared maximum, so the ninth tile is not
+     held back any longer than the fifth. An entrance may describe the
+     arrival; it must not delay it. */
+  .pj-grid > li > .pj-tile {
+    animation: pj-arrive var(--dur-slow) var(--ease-out-expo) backwards;
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max)) * var(--stagger-tile));
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .pj-actions, .pj-pinned { transition: none; }
 }
 @keyframes pj-arrive { from { opacity: 0; transform: translateY(10px); } }
+
+/* A folder inside a project: one compact card, not a second cover plate. The
+   card is 12 with a 6px frame, so the glyph's well takes 6 (12 - 6). */
+.pj-well {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  transition: color var(--dur-fast) var(--ease-out-soft);
+}
+.pj-tile:hover .pj-well,
+.pj-tile:focus-within .pj-well { color: hsl(var(--foreground)); }
+
+/* The project page's H1 beside its actions. A long name wraps rather than
+   being cut mid-word, and from a 40rem column it keeps the actions on its
+   own row (as a short name does) by taking the space left of them instead of
+   its whole width. AppPageHeader's row is flex-wrap, so without this a long
+   heading claimed a line of its own and pushed the actions under it. */
+@container page (min-width: 40rem) {
+  .pj-head h1 { flex: 1 1 0%; }
+}
 
 /* A still surface in the same material (the Overview rail, settings groups). */
 .pj-card {
@@ -144,7 +168,7 @@
 
 /* The Folders section's empty state arrives on the grid's own beat. */
 @media (prefers-reduced-motion: no-preference) {
-  .pj-empty { animation: pj-arrive 420ms var(--pj-ease) backwards; }
+  .pj-empty { animation: pj-arrive var(--dur-slow) var(--ease-out-expo) backwards; }
 }
 
 /* The instructions sheet: a writing field inside a 6px frame. No ring on
@@ -152,7 +176,9 @@
 .pj-sheet {
   border: 1px solid var(--pj-hair);
   background: hsl(var(--foreground) / 0.018);
-  transition: border-color 200ms var(--pj-ease), background-color 200ms var(--pj-ease);
+  transition:
+    border-color var(--dur-fast) var(--ease-out-soft),
+    background-color var(--dur-fast) var(--ease-out-soft);
 }
 .dark .pj-sheet { background: hsl(var(--foreground) / 0.03); }
 .pj-sheet:focus-within {
@@ -160,7 +186,7 @@
   background: hsl(var(--background));
 }
 .pj-sheet textarea { outline: none; box-shadow: none; }
-.pj-sheet textarea::placeholder { color: hsl(var(--muted-foreground) / 0.8); }
+.pj-sheet textarea::placeholder { color: hsl(var(--muted-foreground)); }
 
 /* The picker's tree: a guide line per level, drawn as a hairline. */
 .pj-guide { border-left: 1px solid var(--pj-hair); }
@@ -168,7 +194,7 @@
 /* The folders map (projects-orbit.tsx). */
 .pj-dots { --dots-pitch: 3.6px; --dots-strength: 0.7; }
 .dark .pj-dots { --dots-strength: 0.8; }
-.pj-node { fill: hsl(var(--foreground)); transition: transform 320ms var(--pj-ease); transform-box: fill-box; transform-origin: center; }
+.pj-node { fill: hsl(var(--foreground)); transition: transform var(--dur-base) var(--ease-out-soft); transform-box: fill-box; transform-origin: center; }
 .pj-node-live { fill: hsl(var(--presence)); }
 .pj-node-ring { fill: none; stroke: hsl(var(--presence)); stroke-width: 1; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; }
 .pj-node-hit { fill: transparent; cursor: pointer; }
@@ -182,7 +208,7 @@
   stroke: hsl(var(--background));
   stroke-width: 7px;
   stroke-linejoin: round;
-  transition: fill 200ms;
+  transition: fill var(--dur-fast) var(--ease-out-soft);
 }
 /* A name shown only while its point is hovered sits above the others. */
 .pj-label-peek { fill: hsl(var(--foreground)); }
@@ -194,11 +220,17 @@
 .pj-star:focus-visible .pj-node-hit { stroke: hsl(var(--foreground)); stroke-width: 1; }
 .pj-center { fill: hsl(var(--foreground)); }
 
+/* The map's one-shot entrances, on the ladder. The live ring is still: it
+   marks the most recently touched project, which is not live state, and law
+   4 keeps loops for live state only. */
+.pj-breathe { opacity: 0.4; }
 @media (prefers-reduced-motion: no-preference) {
-  .pj-pop { opacity: 0; animation: pj-pop 700ms var(--pj-ease) forwards; animation-delay: calc(var(--i, 0) * 60ms + 500ms); }
-  .pj-breathe { animation: pj-breathe 3200ms ease-in-out infinite; }
-  .pj-unfold { animation: pj-unfold 420ms var(--pj-ease) both; }
+  .pj-pop {
+    opacity: 0;
+    animation: pj-pop var(--dur-emphasis) var(--ease-out-expo) forwards;
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max)) * var(--stagger-tile) + var(--delay-show));
+  }
+  .pj-unfold { animation: pj-unfold var(--dur-slow) var(--ease-out-expo) both; }
 }
-@keyframes pj-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
-@keyframes pj-breathe { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.12; transform: scale(1.7); } }
+@keyframes pj-pop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
 @keyframes pj-unfold { from { opacity: 0; transform: translateY(-4px); } }

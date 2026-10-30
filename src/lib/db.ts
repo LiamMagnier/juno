@@ -243,6 +243,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // first, spending a code by its hash, uses prismaUnguarded on purpose
   // (src/lib/computer/handoff.ts): the code is the authorization.
   ["AgentComputerHandoff", "userId"],
+  // A computer's metered awake time and its operator audit
+  // (src/lib/computer/store.ts, audit.ts). Every read is one account's week or log.
+  ["AgentComputerUsageInterval", "userId"],
+  ["AgentComputerAudit", "userId"],
   // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
   // per-message plan of who answers. A room's membership is a statement about
   // one person's agents, so it is guarded like the agents themselves.

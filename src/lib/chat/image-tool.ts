@@ -345,7 +345,8 @@ async function defaultDeps(): Promise<ImageToolDeps> {
       const row = await prisma.prisma.attachment.findFirst({ where, orderBy: { createdAt: "desc" }, select: { id: true } });
       return row?.id ?? null;
     },
-    providerHealthy: (provider) => health.providerHealthy(provider as never),
+    // The account's verdict, not chat's: a hold for chat server errors says nothing about the image endpoint.
+    providerHealthy: (provider) => health.providerAccountUsable(provider as never),
     providerConfigured: (provider) => providers.isProviderConfigured(provider as never),
     imageCost: (modelId) => spend.mediaRequestCost(modelId, "image"),
     failureSentence: (err, model) => pipeline.mediaFailureSentence(err, model as never),

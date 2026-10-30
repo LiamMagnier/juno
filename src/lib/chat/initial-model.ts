@@ -54,6 +54,34 @@ export function initialChatModel(input: {
   return { modelId: defaultId, notice: null };
 }
 
+/**
+ * Whether the live catalog may still change the model a chat view starts on.
+ *
+ * Only for a new chat in which nothing has happened: no conversation in the
+ * URL or created by this view (the URL sync clears `createdConversationId`
+ * after the first reply without a remount, so the owned id is checked too),
+ * no message on screen (a private chat has messages and no id), and no model
+ * picked by the reader. Once a turn has been sent, the model it was sent with
+ * is the conversation's recorded model, and a late catalog must not move it.
+ */
+export function mayRedecideInitialModel(view: {
+  conversationId: string | null | undefined;
+  initialModel: string | null | undefined;
+  createdConversationId: string | null;
+  ownedConversationId: string | null;
+  messageCount: number;
+  chosen: boolean;
+}): boolean {
+  return (
+    !view.conversationId &&
+    !view.initialModel &&
+    !view.createdConversationId &&
+    !view.ownedConversationId &&
+    view.messageCount === 0 &&
+    !view.chosen
+  );
+}
+
 /** The one line a new chat shows when its default is unavailable. */
 export function unavailableDefaultNotice(modelName: string): string {
   return `${modelName} is unavailable right now, so this chat starts on Auto. You can still pick a model.`;

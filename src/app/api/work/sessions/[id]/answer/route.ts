@@ -15,7 +15,7 @@ import {
   type DispatchRunCommandResult,
 } from "@/lib/work/store";
 import { runCommandKey } from "@/lib/work/relay";
-import { questionState } from "@/lib/work/park-resume";
+import { answerArrivedAfterRestart, currentRunState, openWait, questionState } from "@/lib/work/park-resume";
 import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
 import { CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE } from "@/lib/work/executor-presence";
 import { answerSchema } from "@/app/api/work/protocol";
@@ -164,6 +164,26 @@ const ANSWER_DELIVERED = `${PRODUCT_NAME} has your answer and carries on.`;
 const ANSWER_KEPT_PAUSED =
   "Your answer is saved. This task is paused, so it continues with your answer when you resume it.";
 const ANSWER_KEPT_NO_EXECUTOR = `Your answer is saved. ${CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE} Resume the task once it is back and it continues with your answer.`;
+const ANSWER_TOO_LATE = "Your answer is saved, but this attempt has already finished.";
+const ANSWER_SAVED = "Your answer is saved.";
+const ANSWER_MOVED_ON =
+  `Your answer is saved, but ${PRODUCT_NAME} had already started again before it arrived, so it did not see it. ` +
+  "It will ask again if it still needs to know.";
+const ANSWER_ALREADY_RECORDED = "Your answer to this question was already recorded.";
+const ANSWER_ALREADY_RECORDED_WAITING =
+  `Your answer to this question was already recorded. ${PRODUCT_NAME} is now waiting on something newer in this task.`;
+
+/** The 409 for a reply to a question that already has a different answer. */
+function alreadyAnswered(status: string) {
+  return NextResponse.json(
+    {
+      error: "question_already_answered",
+      message: "This question has already been answered, so this reply was not recorded.",
+      status,
+    },
+    { status: 409 }
+  );
+}
 
 async function recordAnswer({
   submission,
@@ -210,16 +230,7 @@ async function recordAnswer({
     // it still nudges a parked run back into the queue in case the first
     // request was cut off between recording the answer and requeueing. A
     // different answer is refused rather than silently dropped.
-    if (question.answer !== text) {
-      return NextResponse.json(
-        {
-          error: "question_already_answered",
-          message: "This question has already been answered, so this reply was not recorded.",
-          status: run.status,
-        },
-        { status: 409 }
-      );
-    }
+    if (question.answer !== text) return alreadyAnswered(run.status);
   } else if (!question.open) {
     return NextResponse.json(
       {
@@ -236,19 +247,16 @@ async function recordAnswer({
   // A retry of an answer already in the log writes nothing more: the row is
   // there, and a client that minted a fresh key for the retry would otherwise
   // put the same answer in the transcript twice.
-  if (question.answer !== null) {
-    const current = await prisma.workRun.findFirst({
-      where: { id: run.id, userId },
-      select: { lastSeq: true },
-    });
-    const outcome = await continueAfterAnswer({ sessionId, userId, run });
-    return NextResponse.json({ lastSeq: current?.lastSeq ?? 0, replay: true, ...outcome });
-  }
+  if (question.answer !== null) return replayAnswer({ sessionId, userId, run, questionId });
 
   // The event key defaults to the question rather than to a random value, so a
   // client that retries without minting a key still answers once. `appendEvents`
   // drops the duplicate before allocating a seq, so a retry leaves no hole in
-  // the sequence the stream cursor reads.
+  // the sequence the stream cursor reads. A cloud question takes one answer,
+  // so its key is always the question's, whatever key the client sent: two
+  // different answers sent at once (two devices, or two keys) cannot both be
+  // written, and the one that loses is told so below rather than "has your
+  // answer" for words nothing will read.
   const appended = await appendEvents({
     runId: run.id,
     userId,
@@ -256,10 +264,26 @@ async function recordAnswer({
       {
         kind: "question_answered",
         payload: { questionId, text, answeredVia: "web" },
-        key: idempotencyKey ?? `answer:${questionId}`,
+        key: cloud ? `answer:${questionId}` : (idempotencyKey ?? `answer:${questionId}`),
       },
     ],
   });
+
+  if (cloud && appended.duplicates > 0) {
+    // Another request answered this question between the check above and this
+    // write. The same words are a retry; different ones were not recorded.
+    const stored = await questionState({ runId: run.id, userId, questionId });
+    if (stored.answer !== text) return alreadyAnswered(run.status);
+    return replayAnswer({ sessionId, userId, run, questionId });
+  }
+
+  if (cloud && (await answerArrivedAfterRestart({ runId: run.id, userId, questionId, answerSeq: appended.lastSeq }))) {
+    // The run was queued when this request looked, and an executor picked it
+    // up and started before the answer was written: the new execution reads
+    // only answers written before it started, so this one is in the log and
+    // nothing reads it. The question's card closes with that start.
+    return NextResponse.json({ lastSeq: appended.lastSeq, replay: false, resumed: false, explanation: ANSWER_MOVED_ON });
+  }
 
   // Tell the Mac, if a Mac is the one waiting. The cloud runner finds the
   // answer by polling the log, but a local run is blocked inside the host
@@ -288,6 +312,52 @@ async function recordAnswer({
 }
 
 /**
+ * A retried answer that is already in the log.
+ *
+ * It moves the run only when the run is still parked on this very question
+ * (`openWait`): then the first request may have been cut off between writing
+ * the answer and requeueing, and this finishes the job. A run that has moved
+ * on to a newer question or approval is left exactly where it is, attention
+ * included: requeueing it would close the newer request unanswered, and
+ * clearing "Needs you" would hide it.
+ */
+async function replayAnswer({
+  sessionId,
+  userId,
+  run,
+  questionId,
+}: {
+  sessionId: string;
+  userId: string;
+  run: NonNullable<Target<unknown>["run"]>;
+  questionId: string;
+}) {
+  const current = await prisma.workRun.findFirst({
+    where: { id: run.id, userId },
+    select: { lastSeq: true },
+  });
+  const lastSeq = current?.lastSeq ?? 0;
+  if (run.effectiveTarget === "cloud") {
+    const wait = await openWait({ runId: run.id, userId });
+    if (wait?.kind !== "question" || wait.questionId !== questionId) {
+      const now = (await currentRunState({ runId: run.id, userId })) ?? run;
+      if (isTerminalStatus(now.status)) {
+        return NextResponse.json({ lastSeq, replay: true, resumed: false, explanation: ANSWER_TOO_LATE });
+      }
+      const waiting = wait !== null && (now.status === "paused" || now.status === "waiting_input" || now.status === "waiting_approval");
+      return NextResponse.json({
+        lastSeq,
+        replay: true,
+        resumed: !waiting && now.status !== "paused",
+        explanation: waiting ? ANSWER_ALREADY_RECORDED_WAITING : ANSWER_ALREADY_RECORDED,
+      });
+    }
+  }
+  const outcome = await continueAfterAnswer({ sessionId, userId, run });
+  return NextResponse.json({ lastSeq, replay: true, ...outcome });
+}
+
+/**
  * What happens to the run now that its question is answered, and the sentence
  * that says so.
  *
@@ -303,17 +373,34 @@ async function recordAnswer({
 async function continueAfterAnswer({
   sessionId,
   userId,
-  run,
+  run: before,
 }: {
   sessionId: string;
   userId: string;
   run: NonNullable<Target<unknown>["run"]>;
 }): Promise<{ resumed: boolean; explanation: string }> {
+  // Read again now that the answer is written, never from the row read before
+  // it: the executor may have parked in between (its wait ran out a moment
+  // before the answer landed), and acting on the older status would leave a
+  // parked run unqueued, or mirror "waiting_input" over a session it parked.
+  // The executor checks once more after it parks, so whichever of the two
+  // writes second sees the other's.
+  const run = (await currentRunState({ runId: before.id, userId })) ?? before;
   if (run.status === "waiting_input") {
     await setSessionAttention({ sessionId, userId, status: "waiting_input", needsAttention: false });
     return { resumed: true, explanation: ANSWER_DELIVERED };
   }
-  if (run.status === "queued") return { resumed: true, explanation: ANSWER_RESUMING };
+  // Already carrying on: the attached executor read it and moved on, or the
+  // run is back in the queue (Resume, or a retry of this request) and is
+  // handed the answer when it is picked up.
+  if (run.status === "running" || run.status === "waiting_approval") {
+    return { resumed: true, explanation: ANSWER_DELIVERED };
+  }
+  if (run.status === "queued" || run.status === "preparing") {
+    return { resumed: true, explanation: ANSWER_RESUMING };
+  }
+  if (isTerminalStatus(run.status)) return { resumed: false, explanation: ANSWER_TOO_LATE };
+  if (run.status !== "paused") return { resumed: false, explanation: ANSWER_SAVED };
   if (run.pauseReason !== "waiting" || run.effectiveTarget !== "cloud") {
     // The person's own pause: theirs to lift. Attention is cleared, because
     // nothing is being asked of them any more beyond what they chose.
@@ -329,7 +416,7 @@ async function continueAfterAnswer({
   // one). Say what is true of the row as it is now.
   const current = requeued.run?.status ?? run.status;
   if (current === "paused") return { resumed: false, explanation: ANSWER_KEPT_PAUSED };
-  if (isTerminalStatus(current)) return { resumed: false, explanation: "This attempt has finished." };
+  if (isTerminalStatus(current)) return { resumed: false, explanation: ANSWER_TOO_LATE };
   return { resumed: true, explanation: ANSWER_RESUMING };
 }
 

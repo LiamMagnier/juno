@@ -77,7 +77,7 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
-import { initialChatModel } from "@/lib/chat/initial-model";
+import { initialChatModel, mayRedecideInitialModel } from "@/lib/chat/initial-model";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { parseStreamingArtifact, stripMemoryTags } from "@/lib/message-content";
 import type { LiveArtifactSource } from "@/components/canvas/canvas-panel";
@@ -298,13 +298,23 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setModelState(next);
   }, []);
   // The bundled catalog at mount carries no availability; the live one does.
-  // Re-decide when it arrives, only for a new chat nobody has touched yet.
+  // Re-decide when it arrives, only for a new chat nobody has touched yet:
+  // once a turn is sent, its model is the conversation's (`chat` is read when
+  // the effect runs, after render).
   React.useEffect(() => {
-    if (conversationId || initialModel || createdIdRef.current || modelChosenRef.current) return;
+    const untouched = mayRedecideInitialModel({
+      conversationId,
+      initialModel,
+      createdConversationId: createdIdRef.current,
+      ownedConversationId: ownedConversationIdRef.current,
+      messageCount: chat.messages.length,
+      chosen: modelChosenRef.current,
+    });
+    if (!untouched) return;
     const decision = initialChoice(models);
     setModelState((current) => (current === decision.modelId ? current : decision.modelId));
     setModelNotice(decision.notice);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-decided on the catalog alone; `initialChoice` reads props fixed for this view
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-decided on the catalog alone; `initialChoice` reads props fixed for this view, and the message count only gates it
   }, [models]);
   // Deep-link reasoning (project page → /chat?reasoning=…) must win on the first
   // render so the auto-sent prompt uses it. After the user moves the slider we

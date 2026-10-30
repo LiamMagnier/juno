@@ -451,11 +451,12 @@ test("…and out of the dots into needs you the notch never bites an eye nor sho
     for (const shape of AGENT_SHAPES) {
       const s = spec(shape, px, "tall");
       for (const id of [107, 101]) {
-        for (const [n, seed] of [3, 11, 29].entries()) {
+        for (const [n, seed] of [3, 11, 29, 47].entries()) {
           const ctx = faceCtx(s, "none", seed, false, id);
-          // In thinking for a beat, a while, or long enough to have settled into its dots.
+          // In thinking for a beat (turned partway, the dots not yet formed: the head comes home on this
+          // copy's own beat, needsYouLag), just into the dots, a while, or long settled in them.
           const thinking: Segment = { state: "thinking", at: 1, snap: snapshot({ state: "idle", at: -60, snap: null }, 1, ctx) };
-          const Tc = 1 + [0.9, 1.6, 2.5][n];
+          const Tc = 1 + [0.2, 0.45, 1.0, 2.5][n];
           for (const to of ["waiting", "blocked"] as const) {
             const seg: Segment = { state: to, at: Tc, snap: snapshot(thinking, Tc, ctx) };
             const what = `${px}px ${shape}/tall side ${ctx.side} seed ${seed}, thinking→${to}`;
@@ -486,7 +487,7 @@ test("…and out of the dots into needs you the notch never bites an eye nor sho
       }
     }
   }
-  assert.ok(changes >= 540 && notched > 40000, `${changes} changes, ${notched} frames with a notch`);
+  assert.ok(changes >= 720 && notched > 50000, `${changes} changes, ${notched} frames with a notch`);
   assert.equal(bites.length, 0, `${bites.length} frames bite an eye:\n${bites.slice(0, 10).join("\n")}`);
   assert.equal(jumps.length, 0, `${jumps.length} one-frame shoves of the pair:\n${jumps.slice(0, 10).join("\n")}`);
 });
@@ -1775,7 +1776,26 @@ test("no pair of eyes is ever the pause glyph (⏸): every long cut leans, at ev
       }
     }
   }
-  assert.ok(frames > 20000 && tall > 5000, `${frames} frames checked, ${tall} of the tall cut from 44 px`);
+  // The tall cut from 44 px on every body, live in every state from rest, both sides, 6 s at 10 fps
+  // (blinks aside): where a pose faces you, the rolled ⏸ check above sees it on each body's own seat.
+  for (const state of AGENT_STATES) {
+    for (const shape of AGENT_SHAPES) {
+      for (const px of [44, 64, 88, 128]) {
+        for (const id of SIDES) {
+          const s = spec(shape, px, "tall");
+          const ctx = faceCtx(s, "none", id + 5, true, id);
+          const seg: Segment = { state, at: 1, snap: snapshot({ state: "idle", at: -60, snap: null }, 1, ctx) };
+          for (let i = 0; i < 60; i++) {
+            const t = 1 + i / 10;
+            const P = poseAt(seg, t, ctx);
+            if (restExtras(ctx, seg, t, P).blink < 0.999) continue;
+            check(`${state} live ${shape}/tall ${px}px id ${id} +${(t - 1).toFixed(1)} s`, s, P);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(frames > 50000 && tall > 30000, `${frames} frames checked, ${tall} of the tall cut from 44 px`);
   assert.equal(seen.length, 0, `${seen.length} of ${frames} frames draw ⏸:\n${seen.slice(0, 10).join("\n")}`);
 });
 
@@ -2165,7 +2185,7 @@ test("no change of state snaps the pair of eyes or passes through ⏸: each eye'
   // frame with the rest blinks drawn. Blocked → done in a blink once stood the worried pair upright for
   // 67 ms: the capsules waited for the blink to reopen, and the worry's lean did not.
   let live = 0;
-  for (const px of [20, 96, 160]) {
+  for (const px of [20, 48, 96, 160]) {
     for (const eyes of ["soft", "tall"] as const) {
       for (const id of [107, 101]) {
         const s = spec("capsule", px, eyes);
@@ -2508,8 +2528,6 @@ test("a face held still (a second copy while a larger one lives) eases into its 
       const s = spec("pebble", px, "tall");
       const live = faceCtx(s, "none", id + 2, true, id);
       const held = { ...live, live: false };
-      const still = drawFace(s, stillPose("idle", faceCtx(s, "none", 0, false, id)), NO_EXTRAS, ids);
-      void still;
       for (const state of AGENT_STATES) {
         const seg: Segment = state === "idle" ? rest : { state, at: 1, snap: snapshot(rest, 1, live) };
         // A moment with a scheduled blink under way when the state blinks at rest, else one well settled.

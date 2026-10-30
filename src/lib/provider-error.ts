@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { ChatErrorClass } from "@/types/chat";
 
 /**
  * One place that decides what a provider failure *means*.
@@ -171,6 +172,72 @@ export function classifyProviderError(err: unknown): {
   }
   if (status === 400 || status === 422) return { class: "invalid_request", status, raw };
   return { class: "unknown", status, raw };
+}
+
+/**
+ * A 403 whose wording names no account fault.
+ *
+ * `classifyProviderError` calls every 403 `auth`. That is right for the health
+ * probe, which asks the lab's cheapest model with the platform key, so a
+ * refusal there is the account's. It is wrong for a live turn: a 403 on one
+ * model can concern that model alone (OpenAI's organisation verification for a
+ * single model, DashScope's `AccessDenied.Unpurchased`, Google's
+ * `PERMISSION_DENIED` on a preview id). The Work runtime keeps its `forbidden`
+ * out of health for the same reason (`classForWorkFailure`), and the live
+ * chat feed asks the probe instead of marking the lab down
+ * (provider-health-policy.ts, `liveFaultVerdict`).
+ *
+ * Wording that names the key or the funding still counts as the account: an
+ * unfunded xAI team answers 403 with a sentence BILLING already classes as
+ * `billing`, and a rejected key says so in words AUTH matches.
+ */
+export function isBareForbidden(fault: { class: ProviderErrorClass; status: number | null; raw: string }): boolean {
+  return fault.class === "auth" && fault.status === 403 && !AUTH.test(fault.raw) && !BILLING.test(fault.raw);
+}
+
+/**
+ * Marks an error as thrown by a model call itself.
+ *
+ * A turn's catch also receives errors that never came from the lab: the
+ * research leg, an artifact step, anything else the turn awaited. Some carry
+ * an HTTP status and words the classifier reads as `auth` or `billing` (a
+ * search API's 401, a sentence that says "insufficient"), and provider health
+ * must not take a lab down for them. `streamChat` (src/lib/llm.ts) marks what
+ * its provider adapters throw, the one place every chat, private chat and
+ * background model call passes through, and the live feed
+ * (provider-health.ts, `noteLiveProviderFault`) reads only marked errors.
+ * Tool failures do not reach that catch: the tool loop answers them as tool
+ * results (src/lib/tools/dispatch.ts).
+ *
+ * A registered symbol, so a second copy of this module (Next's separate
+ * module graphs) reads the same mark. A primitive or frozen error cannot be
+ * marked, and is then not fed: the safe direction.
+ */
+const MODEL_CALL_ERROR = Symbol.for("juno.provider-error.model-call");
+
+export function markModelCallError(err: unknown): void {
+  if (!err || typeof err !== "object") return;
+  try {
+    Object.defineProperty(err, MODEL_CALL_ERROR, { value: true, enumerable: false, configurable: true });
+  } catch {
+    // Frozen or exotic: left unmarked, so it says nothing about the lab.
+  }
+}
+
+export function isModelCallError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as Record<symbol, unknown>)[MODEL_CALL_ERROR] === true;
+}
+
+/**
+ * The class an error frame carries (chat wire 1.1, `ChatErrorClass`): this
+ * module's class, except that `auth` and `billing` are one, `account`. Both
+ * are the platform's own provider account, and the sentence already hides
+ * which (`normalizeProviderError`); a precise class on the frame would tell
+ * anyone reading the stream that the platform ran out of credit. The precise
+ * class stays in the operator's log, the health verdict and the alert.
+ */
+export function wireErrorClass(klass: ProviderErrorClass): ChatErrorClass {
+  return klass === "auth" || klass === "billing" ? "account" : klass;
 }
 
 const RETRYABLE: Record<ProviderErrorClass, boolean> = {

@@ -175,13 +175,21 @@ export default function ProjectsPage() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Couldn’t create project.");
       window.dispatchEvent(new CustomEvent("projects:sync"));
+      // Busy until the new page replaces this one. `busy` used to drop in a
+      // `finally` the moment the push was queued, while the route was still
+      // changing, so the dialog sat there with an enabled "Create project"
+      // and a second click made a second project.
       router.push(`/projects/${d.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
       setNameBusy(false);
     }
   };
+
+  // Rename settles here (the create path navigates away while still busy).
+  React.useEffect(() => {
+    if (nameDialog === null) setNameBusy(false);
+  }, [nameDialog]);
 
   const moveProject = async (id: string, parentId: string | null) => {
     const before = items;
@@ -310,7 +318,9 @@ export default function ProjectsPage() {
       />
 
       {/* Folded on a phone (G54): the filter's All count already says how
-          many projects there are, and this line pushed the first one down. */}
+          many projects there are, and this line pushed the first one down.
+          The grid skeleton draws the same line at the same widths, so the
+          toolbar does not drop when the data lands. */}
       {!loading && !empty && !error && (
         <p className="mb-4 hidden text-ui tabular-nums text-muted-foreground @[40rem]/page:block" aria-label="Project totals">
           {topCount} projects · {folderCount} folders · {chatCount} chats
@@ -340,8 +350,12 @@ export default function ProjectsPage() {
               onChange={setFilter}
               ariaLabel="Filter projects"
               className="flex-1 @[40rem]/page:flex-none"
+              // All counts what All shows: the top level. It counted folders
+              // too, so it said 12 over a grid of 8 tiles, and on a phone it
+              // is the only count on screen. Pinned lists every level, so it
+              // counts every level.
               options={[
-                { value: "all", label: "All", count: all.length },
+                { value: "all", label: "All", count: topCount },
                 { value: "pinned", label: "Pinned", count: pinnedCount },
               ]}
             />

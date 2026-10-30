@@ -1243,3 +1243,178 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     filesTool,
   ].map(guarded);
 }
+
+// ---------------------------------------------------------------------------
+// Starting the computer from a run (docs/design/agents-v2/COMPUTERS_2026-10.md §S1.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a run stands with its agent's computer.
+ *
+ * - `ready`: started in this run; every call is the tool's own.
+ * - `needs_start` (policy `allowed`, or a start the person already approved):
+ *   the first call starts it, then does what it asked.
+ * - `needs_approval` (policy `ask`, no start card in this run): the call is
+ *   put to the person as "Start {name}'s computer", and only starts it.
+ * - `start_pending`: a start card of this run is still waiting.
+ * - `declined`: this run's start card was denied or expired.
+ * - `refused`: the policy is off, or access, the allowance or the cap said no.
+ */
+export type StartState = 'ready' | 'needs_start' | 'needs_approval' | 'start_pending' | 'declined' | 'refused';
+
+export interface ComputerStartGate {
+  /** Re-read the policy and the run's start approval. Awaited by the wrapper's preview. */
+  refresh(): Promise<void>;
+  state(): StartState;
+  agentName: string;
+  /** null when started, else the sentence. Re-checks the policy itself. */
+  start(how: { approvedStart: boolean }): Promise<string | null>;
+  /**
+   * A start card this run raised ended without being approved: the session
+   * never ran the call (denied, expired). Lets the next call answer
+   * `declined` without a database read, so it is never asked twice.
+   */
+  noteStartUnanswered?(): void;
+  /** Told when a start card is about to be put to the person (the audit's `start_requested`). */
+  onStartRequested?(): void;
+}
+
+/** The approval card's summary for a start. Mirrors startApprovalSummary in src/lib/computer/access-copy.ts. */
+export function computerStartSummary(agentName: string): string {
+  return `Start ${agentName}’s computer`;
+}
+
+/** The start card's detail line. Mirrors startApprovalDetail in src/lib/computer/access-copy.ts. */
+export function computerStartDetailLine(callSummary: string): string {
+  return `What it wants to do next (asked separately): ${callSummary}`;
+}
+
+/** Mirrors the tool results in src/lib/computer/access-copy.ts. */
+export function computerStartedText(toolName: string): string {
+  return `Started your computer. Nothing else was done: call ${toolName} again to do what you asked.`;
+}
+export const COMPUTER_START_PENDING_TEXT =
+  'Waiting for the person to start your computer. This call did not run; call it again once the computer has started.';
+export const COMPUTER_START_DECLINED_TEXT =
+  'The person did not start your computer for this task. Carry on without it, or ask them with ask_user.';
+
+/** The action a start card is recorded under. Sensitive: asks under every mode, never standing. */
+export const COMPUTER_START_ACTION = 'work.computer.start';
+
+/** Per gate, across every tool it wraps: the last start card raised and whether its call ran. */
+const startCards = new WeakMap<ComputerStartGate, { callId: string | null; ran: boolean; decided: Map<string, StartState> }>();
+
+function cardsFor(gate: ComputerStartGate) {
+  let cards = startCards.get(gate);
+  if (!cards) {
+    cards = { callId: null, ran: true, decided: new Map() };
+    startCards.set(gate, cards);
+  }
+  return cards;
+}
+
+/**
+ * Wraps one computer tool so its first use in a run starts the computer, asking
+ * first under `ask` (D4: the approved call only starts it; the model repeats
+ * the action, which then goes through its own approval as usual).
+ *
+ * The session consults `actionFor` and `riskFor` before `preview`
+ * (session.ts, `executeToolCall`), so the state they read is the one the last
+ * refresh left; `preview` refreshes for `execute`, and `execute` re-checks
+ * through `start()`. A policy changed between two calls is therefore seen by
+ * the second call's `execute` (which says so) and by the third call's card.
+ * Every output of a start, a wait or a refusal is the platform's own text, so
+ * those calls carry trusted provenance; a call that reaches the tool keeps the
+ * tool's own.
+ */
+export function withComputerStart(definition: WorkToolDefinition, gate: ComputerStartGate): WorkToolDefinition {
+  const cards = cardsFor(gate);
+  /** The state a call is decided on: a start card that ended without running its call is a decline. */
+  const current = (): StartState => {
+    if (cards.callId && !cards.ran) {
+      cards.callId = null;
+      cards.ran = true;
+      gate.noteStartUnanswered?.();
+    }
+    return gate.state();
+  };
+  const platform = (state: StartState) =>
+    state === 'needs_approval' || state === 'start_pending' || state === 'declined' || state === 'refused';
+  const name = definition.spec.name;
+
+  return {
+    ...definition,
+    // A start card, or the platform's own answer: a call that will only wait,
+    // decline or refuse runs nothing the tool does, so it never raises the
+    // tool's own card (and a start it might make is one the policy allows).
+    actionFor: (input) => (platform(current()) ? COMPUTER_START_ACTION : definition.actionFor(input)),
+    riskFor: (input) => {
+      const state = current();
+      if (state === 'needs_approval') return ARBITRARY_CODE_RISK;
+      return platform(state) ? 'safe' : definition.riskFor(input);
+    },
+    provenanceFor: (input) =>
+      platform(current())
+        ? { source: "the agent's computer", sourceKind: 'local_app', action: COMPUTER_START_ACTION, trust: 'trusted' }
+        : definition.provenanceFor(input),
+    summarize: (input) =>
+      current() === 'needs_approval' ? computerStartSummary(gate.agentName) : definition.summarize(input),
+    async preview(input, ctx): Promise<WorkToolPreview | null> {
+      // The state this call's action and risk were taken from, before the refresh.
+      const decided = current();
+      cards.decided.set(ctx.callId, decided);
+      await gate.refresh().catch(() => undefined);
+      if (decided === 'needs_approval') {
+        if (ctx.forApproval) {
+          cards.callId = ctx.callId;
+          cards.ran = false;
+          gate.onStartRequested?.();
+        }
+        return {
+          summary: computerStartSummary(gate.agentName),
+          detail: { start: true, next: computerStartDetailLine(definition.summarize(input)) },
+        };
+      }
+      if (platform(decided)) return null;
+      return definition.preview ? definition.preview(input, ctx) : null;
+    },
+    async execute(input, ctx): Promise<WorkToolResult> {
+      const decided = (ctx.callId ? cards.decided.get(ctx.callId) : undefined) ?? current();
+      if (ctx.callId) {
+        cards.decided.delete(ctx.callId);
+        if (cards.callId === ctx.callId) cards.ran = true;
+      }
+      switch (decided) {
+        case 'needs_approval': {
+          // Approved (the session runs nothing it was refused): start, and nothing else.
+          const refusal = await gate.start({ approvedStart: true });
+          return refusal ? { output: refusal, isError: true } : { output: computerStartedText(name) };
+        }
+        case 'start_pending':
+          return { output: COMPUTER_START_PENDING_TEXT, isError: true };
+        case 'declined':
+          return { output: COMPUTER_START_DECLINED_TEXT, isError: true };
+        case 'refused': {
+          // The refusal's own sentence. Never the tool's output: this call was
+          // decided as platform text (trusted provenance), so even if the
+          // computer starts now, the action waits for the next call.
+          const refusal = await gate.start({ approvedStart: false });
+          return refusal ? { output: refusal, isError: true } : { output: computerStartedText(name) };
+        }
+        case 'needs_start': {
+          const refusal = await gate.start({ approvedStart: false });
+          if (refusal) return { output: refusal, isError: true };
+          return definition.execute(input, ctx);
+        }
+        case 'ready': {
+          // Consent withdrawn since the call was decided: nothing runs.
+          if (gate.state() === 'refused') {
+            const refusal = await gate.start({ approvedStart: false });
+            if (refusal) return { output: refusal, isError: true };
+          }
+          return definition.execute(input, ctx);
+        }
+      }
+    },
+  };
+}

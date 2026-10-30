@@ -12,7 +12,7 @@ import { createToolLoop, type ToolLoop } from "@/lib/tools/loop";
 import { withNativeChatTools, type NativeChatTool } from "@/lib/tools/toolset";
 import type { ChatToolset, ToolSpec } from "@/lib/tools/types";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
-import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
+import { markModelCallError, normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
 import { noteModelNotServed } from "@/lib/model-capability";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { clampMaxTokens } from "@/lib/provider-limits";
@@ -271,6 +271,9 @@ export async function* streamChat(opts: {
         }
       }
     } catch (err) {
+      // What the adapter threw is the model call's: provider health reads
+      // only marked errors (provider-error.ts, `markModelCallError`).
+      markModelCallError(err);
       bench(err);
       throw err;
     }

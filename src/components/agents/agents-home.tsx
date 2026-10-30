@@ -10,8 +10,11 @@ import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { useApp, useOptionalApp } from "@/components/app/app-provider";
 import { ComposerShell, ComposerPrimaryAction, composerFieldClass } from "@/components/ui/composer-shell";
+import type { Plan } from "@prisma/client";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
+import { agentHiringGate, type AgentHiringGate } from "@/lib/agents/plan-gate";
 import {
   AGENT_JOB_EXAMPLES as EXAMPLES,
   agentNeedsYou as needsYou,
@@ -67,11 +70,28 @@ function agentHref(agent: ClientAgent): string {
   return agent.conversationId ? `/chat/${encodeURIComponent(agent.conversationId)}` : `/agents/${encodeURIComponent(agent.id)}`;
 }
 
-export function AgentsHome({ initialAgents, focusComposer = false }: { initialAgents?: ClientAgent[]; focusComposer?: boolean } = {}) {
+export function AgentsHome({
+  initialAgents,
+  focusComposer = false,
+  plan,
+}: {
+  initialAgents?: ClientAgent[];
+  focusComposer?: boolean;
+  /**
+   * The account's plan, when the page read it on the server. Otherwise the
+   * app's own quota; with neither (a design gallery) hiring is shown, and the
+   * server still refuses a plan without agents (src/lib/agents/plan-gate.ts).
+   */
+  plan?: Plan;
+} = {}) {
   const { agents: fetched, error, settled, refresh } = useAgents({ enabled: initialAgents === undefined });
   const agents = initialAgents ?? fetched;
   const ready = initialAgents !== undefined || settled;
   const ordered = React.useMemo(() => (agents ? sortRosterAgents(agents) : null), [agents]);
+  const appPlan = useOptionalApp()?.quota.plan;
+  const knownPlan = plan ?? appPlan ?? null;
+  const hiring = knownPlan ? agentHiringGate(knownPlan) : null;
+  const canHire = hiring?.allowed !== false;
 
   if (error && !agents) {
     return (
@@ -81,7 +101,7 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
     );
   }
   if (!ready || ordered === null) return <AgentsHomeSkeleton />;
-  if (ordered.length === 0) return <FirstAgent />;
+  if (ordered.length === 0) return canHire || !hiring ? <FirstAgent /> : <AgentsUpgrade gate={hiring} />;
 
   const attention = ordered.filter(needsYou);
   const asked = new Set(attention.map((agent) => agent.id));
@@ -124,7 +144,7 @@ export function AgentsHome({ initialAgents, focusComposer = false }: { initialAg
       </section>
 
       <section aria-label={`New ${AGENT_NOUN.singular}`} className={cn("mt-8 max-w-3xl pb-16", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
-        <DescribeAgent team={ordered} autoFocus={focusComposer} />
+        {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} /> : <AgentsUpgrade gate={hiring} kept />}
       </section>
     </AppPage>
   );
@@ -185,6 +205,39 @@ export function Attention({ agent }: { agent: ClientAgent }) {
         <ArrowRight className="size-3.5" aria-hidden="true" />
       </span>
     </Link>
+  );
+}
+
+/**
+ * A plan without agents (Free, Lite): one calm card where the hire field
+ * would be, never a field whose agent would then have every task refused
+ * (src/lib/agents/plan-gate.ts). With agents already kept, hired before a
+ * downgrade, it says they stay: they are listed above and readable.
+ */
+export function AgentsUpgrade({ gate, kept = false }: { gate: AgentHiringGate; kept?: boolean }) {
+  const action = (
+    <Button asChild>
+      <Link href="/upgrade">See plans</Link>
+    </Button>
+  );
+  if (kept) {
+    return (
+      <EmptyState
+        size="panel"
+        title={`New ${AGENT_NOUN.plural} are included from ${gate.neededPlanName}`}
+        description={`You’re on ${gate.planName}. Your ${AGENT_NOUN.plural} are kept with everything they did, and starting new work needs ${gate.neededPlanName}.`}
+        action={action}
+      />
+    );
+  }
+  return (
+    <AppPage measure="reading">
+      <EmptyState
+        title={`${AGENT_NOUN.pluralLabel} are included from ${gate.neededPlanName}`}
+        description={`You’re on ${gate.planName}. An ${AGENT_NOUN.singular} carries one kind of work forward: it remembers what it learned, works on a schedule if you want, and asks before sending, paying or deleting anything.`}
+        action={action}
+      />
+    </AppPage>
   );
 }
 

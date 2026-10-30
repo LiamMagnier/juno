@@ -45,6 +45,12 @@ test("1.0 and 1.1 error frames are both valid on the wire", () => {
 test("an unknown error class or a mistyped hint is rejected", () => {
   const base = fixtures["v1.1-account-fault"];
   assert.ok(schemaErrors({ ...base, errorClass: "out_of_money" }, streamEvent, schema).length > 0);
+  // The two account faults are one class on the wire: the stream never says
+  // whether the platform's key was refused or its credit ran out.
+  assert.equal(base.errorClass, "account");
+  for (const precise of ["auth", "billing"]) {
+    assert.ok(schemaErrors({ ...base, errorClass: precise }, streamEvent, schema).length > 0, `${precise} is not a wire class`);
+  }
   assert.ok(schemaErrors({ ...base, retryAfterSeconds: "soon" }, streamEvent, schema).length > 0);
   assert.ok(schemaErrors({ ...base, retryable: "no" }, streamEvent, schema).length > 0);
 });

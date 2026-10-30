@@ -80,6 +80,8 @@ describe("agent-computer provider and lifecycle", () => {
     process.env.AUTH_SECRET =
       process.env.AUTH_SECRET || "test-auth-secret-32-bytes-minimum-length!!";
     process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    // Open to every plan that includes computers (src/lib/computer/access.ts); an account the in-memory store does not know reads as the owner's.
+    process.env.AGENT_COMPUTER_ROLLOUT = "plans";
     delete process.env.AGENT_COMPUTER_MAX_AWAKE_USER;
     delete process.env.AGENT_COMPUTER_MAX_AWAKE_HOST;
     resetComputerProviderCache();
@@ -111,7 +113,7 @@ describe("agent-computer provider and lifecycle", () => {
     assert.equal(await isAgentComputerConfigured(), false);
     await assert.rejects(
       () => enableComputer("u1", "a1"),
-      /Agent computers are not configured/
+      /Computers aren’t available on this server\./
     );
   });
 
@@ -367,7 +369,14 @@ describe("agent-computer provider and lifecycle", () => {
     };
   }
 
-  it("sweeper never rests or sleeps a computer a run leased after the sweep read it", async () => {
+  it("sweeper never rests or sleeps a computer a run leased after the sweep read it", async (t) => {
+    // The rows below claim to have been awake since a fixed date in the past;
+    // the weekly allowance (src/lib/computer/store.ts) would rightly refuse
+    // the final wake, which this test is not about.
+    process.env.AGENT_COMPUTER_WEEKLY_MINUTES_OWNER = "100000000";
+    t.after(() => {
+      delete process.env.AGENT_COMPUTER_WEEKLY_MINUTES_OWNER;
+    });
     const t0 = new Date("2026-09-26T00:00:00Z");
     for (const agentId of ["agent_rest_race", "agent_sleep_race"]) {
       await ensureAwake("user_1", agentId, { autoEnable: true });
@@ -519,9 +528,7 @@ describe("agent-computer provider and lifecycle", () => {
       "--network",
       "juno-computers",
       "--dns",
-      "1.1.1.1",
-      "--dns",
-      "9.9.9.9",
+      "192.0.2.53",
       "--memory",
       "2048m",
       "--memory-swap",
@@ -543,6 +550,8 @@ describe("agent-computer provider and lifecycle", () => {
       "/run:rw,nosuid,nodev,size=64m",
       "--tmpfs",
       "/run/juno:rw,nosuid,nodev,noexec,size=1m,uid=1001,gid=1001,mode=0700",
+      "--tmpfs",
+      "/run/juno-state:rw,nosuid,nodev,noexec,size=64k,uid=1001,gid=1001,mode=0755",
       "--tmpfs",
       "/var/tmp:rw,nosuid,nodev,size=256m",
       "--mount",

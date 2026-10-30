@@ -263,9 +263,28 @@ test("the offer is the cheapest eligible model on a DIFFERENT, healthy lab that 
     catalogue: [frontier, mid, cheap, cheapSibling, trainer],
     isEligible: allEligible,
     isProviderHealthy: allHealthy,
+    clearsTrainingTerms: () => true,
   });
   // Not cheap-2 (same lab as the failure), not the training tier (cheapest of all).
   assert.equal(suggestion?.id, "mid");
+});
+
+test("the offer is held to the provider's training terms, not only the model row's flag", () => {
+  // `cheaper` is on a lab whose API terms allow training: its row carries no
+  // `trainsOnPrompts`, so only the provider-level check keeps it out.
+  const cheaper: SelectableModel = { id: "cheaper", provider: "trains-by-terms", name: "Cheaper", cost: 0.1, modality: "chat" };
+  const offer = (clearsTrainingTerms: (model: SelectableModel) => boolean) =>
+    suggestAlternativeModel({
+      failed: cheap,
+      errorClass: "billing",
+      catalogue: [frontier, mid, cheap, cheaper],
+      isEligible: allEligible,
+      isProviderHealthy: allHealthy,
+      clearsTrainingTerms,
+    });
+  assert.equal(offer(() => true)?.id, "cheaper", "the cheapest wins when the terms allow it");
+  assert.equal(offer((model) => model.provider !== "trains-by-terms")?.id, "mid", "a lab whose terms allow training is never offered");
+  assert.equal(offer(() => false), null, "no lab clears: no offer");
 });
 
 test("the offer skips a lab that is down and anything the reader could not have picked", () => {
@@ -275,6 +294,7 @@ test("the offer skips a lab that is down and anything the reader could not have 
     catalogue: CATALOGUE,
     isEligible: (m) => m.id !== "frontier",
     isProviderHealthy: (provider) => provider !== "openai",
+    clearsTrainingTerms: () => true,
   });
   assert.equal(suggestion, null, "mid's lab is down, frontier is not in the plan, cheap is the failure");
 });
@@ -282,13 +302,13 @@ test("the offer skips a lab that is down and anything the reader could not have 
 test("an offer is made only where another lab plausibly answers", () => {
   for (const errorClass of SUGGEST_ALTERNATIVE_FOR) {
     const suggestion = suggestAlternativeModel({
-      failed: cheap, errorClass, catalogue: CATALOGUE, isEligible: allEligible, isProviderHealthy: allHealthy,
+      failed: cheap, errorClass, catalogue: CATALOGUE, isEligible: allEligible, isProviderHealthy: allHealthy, clearsTrainingTerms: () => true,
     });
     assert.equal(suggestion?.id, "mid", `${errorClass} gets an offer`);
   }
   for (const errorClass of ["content_filter", "context", "invalid_request", "network", "unknown"]) {
     const suggestion = suggestAlternativeModel({
-      failed: cheap, errorClass, catalogue: CATALOGUE, isEligible: allEligible, isProviderHealthy: allHealthy,
+      failed: cheap, errorClass, catalogue: CATALOGUE, isEligible: allEligible, isProviderHealthy: allHealthy, clearsTrainingTerms: () => true,
     });
     assert.equal(suggestion, null, `${errorClass} gets none: another model is not the fix`);
   }

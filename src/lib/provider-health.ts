@@ -1,16 +1,23 @@
 import "server-only";
 import { alertOperator } from "@/lib/alerts";
-import { classifyProviderError } from "@/lib/provider-error";
+import { classifyProviderError, isModelCallError } from "@/lib/provider-error";
 import {
   defaultModelProviders,
   healthTransition,
+  isAccountFault,
   isHealthStale,
+  liveFaultOrigin,
   liveFaultTunables,
   liveFaultVerdict,
   nextHealthState,
+  outageMailDue,
   seedSuspects,
   seededState,
+  toldAfterMail,
+  type CapacityFault,
   type LiveFault,
+  type OutageMailDecision,
+  type OutageMailTold,
   type OutcomeRow,
   type ProbeOutcome,
   type ProviderHealthState,
@@ -53,15 +60,21 @@ import {
  *    flap during an ordinary overload. Only auth/billing — the classes an
  *    operator must fix — mark a provider down on a probe.
  *  - **Real turns are evidence too** (`noteLiveProviderFault`). A chat, private
- *    chat, Work or background turn that fails on the lab's account marks it
- *    down at once, and server errors that repeat on real traffic hold it down
- *    until the next probe. The probe still owns recovery.
+ *    chat, Work or background model call that fails on the lab's account
+ *    marks it down at once, and server errors that several sources meet on
+ *    real traffic hold it down until the next probe. A bare 403, which can be
+ *    one model rather than the account, only asks the probe. The probe still
+ *    owns recovery, confirms a live verdict before anyone is alerted
+ *    (`healthTransition`), and releases one it cannot confirm after one
+ *    inconclusive recheck.
  *
- * State is per-process and in memory. A restart seeds it from recent failed
- * turns in RoutingOutcome (`seedProviderHealthFromOutcomes`, called at boot),
- * so a deploy does not forget a lab that is down. Known limit: a fault seen
- * by the Work runner or a sweeper lives in that process only; the web process
- * learns of it from its own next turn or probe.
+ * State is per-process and in memory. The web process seeds it at boot from
+ * recent failed turns in RoutingOutcome (`seedProviderHealthFromOutcomes`),
+ * so a deploy does not forget a lab that is down. Known limits: a fault seen
+ * by the Work runner or a sweeper lives in that process only (the web process
+ * learns of it from its own next turn or probe), and those processes never
+ * load the catalog, so a down verdict is re-probed when it is read after its
+ * recheck time (`providerHealthy`) rather than on a catalog load.
  *
  * Known limitation: the probe is a chat completion, so a provider with no
  * curated chat model — an image/video-only one such as seedance — cannot be
@@ -167,7 +180,14 @@ async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promis
 }
 
 /** Recent server errors per lab from real turns, for the repeated-capacity rule. */
-const capacityFaults = new Map<Provider, number[]>();
+const capacityFaults = new Map<Provider, CapacityFault[]>();
+
+/**
+ * What this process last mailed the operator about each default lab
+ * (`outageMailDue`): the mail follows what they were told, not the previous
+ * verdict, so the last mail they read stays true while a lab flaps.
+ */
+const mailedOutage = new Map<Provider, OutageMailTold>();
 
 /**
  * The labs whose fault is an incident: every account that never chose a model
@@ -176,14 +196,37 @@ const capacityFaults = new Map<Provider, number[]>();
  */
 const DEFAULT_LABS = defaultModelProviders([DEFAULT_MODEL, FREE_DEFAULT_MODEL]);
 
+/**
+ * Whether this process mails default-lab outages. Only the web process does
+ * (src/lib/boot.ts calls `mailProviderOutagesFromThisProcess`); the Work
+ * runner and the sweepers log the same alert without mail. Health and the
+ * mail dedupe are per process, so without this one outage could mail once
+ * from each of them, and again after every deploy (pm2 reloads every app and
+ * the workers are not seeded). The web process serves the chat traffic that
+ * meets a default lab first, and probes every lab on each catalog load.
+ */
+let outageMailer = false;
+
+/** Make this process the one that mails default-lab outages and recoveries. Called once, at web boot. */
+export function mailProviderOutagesFromThisProcess(): void {
+  outageMailer = true;
+}
+
 function record(provider: Provider, next: ProviderHealth): void {
   const previous = health.get(provider);
   health.set(provider, next);
 
+  // The alert line follows the verdict (`healthTransition`); a default lab's
+  // mail follows what the operator was last told (`outageMailDue`).
   const transition = healthTransition(previous, next);
-  if (transition === null) return;
+  const told = mailedOutage.get(provider);
+  const due: OutageMailDecision =
+    outageMailer && DEFAULT_LABS.has(provider) ? outageMailDue(told, previous, next) : { mail: null };
+  if (due.mail === null && due.adopt) mailedOutage.set(provider, due.adopt);
+  const notice = due.mail ?? transition;
+  if (notice === null) return;
 
-  if (transition === "down") {
+  if (notice === "down") {
     // Mailed only when the lab serves a default model.
     //
     // Any other lab out of credit is logged, not mailed: nobody can act on it
@@ -192,16 +235,23 @@ function record(provider: Provider, next: ProviderHealth): void {
     // every deploy. A default lab is different. On 2026-10-26 the paid
     // default's lab ran out of credit and nothing told anyone: every account
     // that never chose a model was failing, and only the deploy smoke noticed.
-    // The mail is still deduplicated (alerts.ts: one per kind:key per hour per
-    // process), and a restart does not repeat it — the boot seed never alerts.
+    //
+    // Only a verdict a probe made or confirmed gets here, so one
+    // misattributed error cannot mail. Only the web process mails
+    // (`outageMailer`); the Work runner and the sweepers log. A down mail goes
+    // out only when the operator's last mail did not already say so
+    // (`outageMailDue`), and a seeded lab never alerts. That does not cover
+    // every restart: a web process whose seed found too few recent failures
+    // can mail the same outage again once.
     const isFunding = next.failure === "billing";
     const servesDefault = DEFAULT_LABS.has(provider);
     const label = PROVIDERS[provider].label;
-    alertOperator({
+    const outcome = alertOperator({
       kind: "provider_unhealthy",
       key: provider,
       severity: isFunding && !servesDefault ? "warn" : "critical",
-      mail: servesDefault,
+      mail: due.mail === "down",
+      ...(due.mail === "down" && due.bypassDedupe ? { dedupe: false } : {}),
       title: servesDefault
         ? `${label} is down and serves the default model: accounts that never chose a model are failing`
         : isFunding
@@ -215,19 +265,31 @@ function record(provider: Provider, next: ProviderHealth): void {
         defaultModels: servesDefault ? [DEFAULT_MODEL, FREE_DEFAULT_MODEL].filter((id) => id.startsWith(`${provider}:`)) : [],
         docs: PROVIDERS[provider].docsUrl,
         effect:
-          "Its models stay listed but are marked unavailable. Chat's Auto and the background utility jobs (titles, memory, follow-ups) avoid it, a new web chat whose default it serves starts on Auto, and a turn that explicitly chose it fails with a neutral message (the web and Mac error cards offer one other model as a one-click choice). The probe marks it healthy again.",
+          "Its models stay listed but are marked unavailable. Chat's Auto and the background utility jobs (titles, memory, follow-ups) avoid it, a new web chat whose default it serves starts on Auto, and a turn that explicitly chose it fails with a neutral message (the web and Mac error cards offer one other model as a one-click choice). Image and video generation on it, and the native apps' model lists, treat it as unavailable only for an account fault. The probe marks it healthy again.",
       },
     });
+    if (due.mail === "down") setTold(provider, toldAfterMail("down", outcome, told));
   } else {
-    alertOperator({
+    // A default lab's all-clear is mailed by the process that mails its
+    // outage, whenever the operator's last mail said it was down — including
+    // a probe that clears a live verdict laid over a mailed outage. One the
+    // hourly dedupe drops stays owed, and the next probe that finds the lab
+    // serving asks again (`toldAfterMail`).
+    const outcome = alertOperator({
       kind: "provider_recovered",
       key: provider,
       severity: "warn",
-      mail: false,
+      mail: due.mail === "recovered",
       title: `${PROVIDERS[provider].label} is serving requests again`,
       detail: { provider },
     });
+    if (due.mail === "recovered") setTold(provider, toldAfterMail("recovered", outcome, told));
   }
+}
+
+function setTold(provider: Provider, told: OutageMailTold | undefined): void {
+  if (told === undefined) mailedOutage.delete(provider);
+  else mailedOutage.set(provider, told);
 }
 
 async function refresh(provider: Provider, signal?: AbortSignal): Promise<void> {
@@ -249,43 +311,98 @@ function isKnownProvider(value: string): value is Provider {
   return (PROVIDER_LIST as string[]).includes(value);
 }
 
+/** Who met a live fault, on which model: repeats from one source count once (`liveFaultOrigin`). */
+export interface LiveFaultOrigin {
+  /** The person, or the Work run. Kept in memory for the window only; never logged. */
+  requester: string | null | undefined;
+  modelId: string;
+}
+
+function isClassifiedFault(fault: unknown): fault is LiveFault {
+  return (
+    !!fault &&
+    typeof fault === "object" &&
+    "class" in fault &&
+    typeof (fault as LiveFault).class === "string" &&
+    "raw" in fault
+  );
+}
+
 /**
  * A real turn failed at the provider: fold it into health now.
  *
  * Takes the error itself (classified here, with the chat classifier) or an
  * already-classified fault (the Work runtime classifies on its own, see
- * `classForWorkFailure`). Never throws and never does I/O beyond the alert it
- * may raise: it runs inside a turn's error path.
+ * `classForWorkFailure`). An error itself is read only when the model call
+ * threw it (`isModelCallError`, marked by `streamChat`): a turn's catch also
+ * receives errors from its research leg, its artifact steps and the rest,
+ * and one of those with a 401 or the word "insufficient" must not take a lab
+ * down. Never throws and never awaits I/O (a probe it starts runs in the
+ * background): it runs inside a turn's error path.
  *
  * The rules are `liveFaultVerdict`'s: an account fault with an HTTP status
- * marks the lab down at once; server errors count only when they repeat;
- * nothing here marks a lab healthy. The next turn — and Auto — then sees the
- * lab as down within the same process, instead of after the next catalog
- * load's probe.
+ * marks the lab down at once; server errors count only when several sources
+ * (`origin`) meet them; nothing here marks a lab healthy. The next turn — and
+ * Auto — then sees the lab as down within the same process, instead of after
+ * the next catalog load's probe.
+ *
+ * A private chat's fault keeps its class and status only: the verdict's
+ * detail, which is logged, alerted and served by the owner diagnostic, never
+ * carries the provider's text for it.
+ *
+ * An account fault also starts a probe now, in the background: it confirms
+ * the verdict (and only then may the operator be alerted) or clears it within
+ * seconds when the error was not the lab's account after all. A bare 403
+ * (`isBareForbidden`) changes nothing by itself and only asks the probe, at
+ * most once per recheck period per lab: it can be one model this key may not
+ * use. A lab held down for server errors is not probed at once — a lucky
+ * 1-token probe in the middle of an overload would clear it — but at its
+ * recheck time.
  */
-export function noteLiveProviderFault(provider: string, fault: unknown, source: LiveFaultSource): void {
+export function noteLiveProviderFault(
+  provider: string,
+  fault: unknown,
+  source: LiveFaultSource,
+  origin: LiveFaultOrigin,
+): void {
   try {
     if (!isKnownProvider(provider)) return;
-    const classified: LiveFault =
-      fault && typeof fault === "object" && "class" in fault && typeof (fault as LiveFault).class === "string" && "raw" in fault
-        ? (fault as LiveFault)
-        : classifyProviderError(fault);
+    let classified: LiveFault;
+    if (isClassifiedFault(fault)) classified = fault;
+    else if (isModelCallError(fault)) classified = classifyProviderError(fault);
+    else return;
     const now = Date.now();
+    const tunables = liveFaultTunables();
+    const previous = health.get(provider);
     const verdict = liveFaultVerdict({
       provider,
-      previous: health.get(provider),
+      previous,
       fault: classified,
+      origin: liveFaultOrigin(origin.requester, origin.modelId),
       recentCapacity: capacityFaults.get(provider) ?? [],
       now,
-      tunables: liveFaultTunables(),
+      tunables,
     });
     if (verdict.recentCapacity.length > 0) capacityFaults.set(provider, verdict.recentCapacity);
     else capacityFaults.delete(provider);
+    if (verdict.probe) {
+      const lastProbe = previous?.checkedAt ?? null;
+      if (lastProbe === null || now - lastProbe >= tunables.recheckMs) void startRefresh(provider);
+      return;
+    }
     if (!verdict.next) return;
+    const next: ProviderHealth =
+      source === "private_chat"
+        ? {
+            ...verdict.next,
+            detail: `${classified.status ?? "no status"} ${classified.class} from a private chat; the provider's text is not kept`,
+          }
+        : verdict.next;
     console.warn(
-      `[provider-health] live ${source} fault marks ${provider} down: ${verdict.next.failure ?? "unknown"} ${verdict.next.detail ?? ""}`.slice(0, 500),
+      `[provider-health] live ${source} fault marks ${provider} down: ${next.failure ?? "unknown"} ${next.detail ?? ""}`.slice(0, 500),
     );
-    record(provider, verdict.next);
+    record(provider, next);
+    if (next.failure !== null && isAccountFault(next.failure)) void startRefresh(provider);
   } catch (err) {
     // Health bookkeeping must never be the reason a turn's error path fails.
     console.error("[provider-health] live fault not recorded", {
@@ -371,9 +488,41 @@ export function ensureProviderHealthFresh(): void {
  *
  * Unknown counts as healthy, so the catalog is never emptied by a probe that
  * has not run yet.
+ *
+ * A down verdict past its recheck time (or the unhealthy TTL) starts a
+ * background probe when it is read, and this read still answers from the
+ * cache. The web process also probes on every catalog load; the Work runner
+ * and the sweepers never load the catalog, so without this a lab that a live
+ * fault marked down there would stay down until the process restarted, even
+ * after its account was topped up. Healthy and never-seen labs are left to
+ * the catalog's probe, as before.
  */
 export function providerHealthy(provider: Provider): boolean {
-  return health.get(provider)?.healthy ?? true;
+  const entry = health.get(provider);
+  if (!entry) return true;
+  if (!entry.healthy && isHealthStale(entry, Date.now())) void startRefresh(provider);
+  return entry.healthy;
+}
+
+/**
+ * Can this provider's ACCOUNT serve traffic? Cached; never performs I/O.
+ *
+ * False only for an account fault (auth, billing), live or confirmed. Media
+ * generation reads this rather than `providerHealthy`: it calls a different
+ * endpoint from chat, so a burst of chat server errors (a `capacity` hold) or
+ * a boot seed says nothing about it, while a dead key or an empty account
+ * fails every endpoint alike. The native model manifests (/api/v1/models and
+ * /api/v1/bootstrap) read it too: the apps load the catalog once per start
+ * and will not send to a model it marks unavailable, so a hold of a few
+ * minutes there would make a lab unsendable on that device until its next
+ * start. A down verdict past its recheck is re-probed on read, as in
+ * `providerHealthy`.
+ */
+export function providerAccountUsable(provider: Provider): boolean {
+  const entry = health.get(provider);
+  if (!entry || entry.healthy) return true;
+  if (isHealthStale(entry, Date.now())) void startRefresh(provider);
+  return entry.failure === null || !isAccountFault(entry.failure);
 }
 
 /** Every configured provider's current verdict, for the owner diagnostic path. */
@@ -413,9 +562,21 @@ export async function probeAllProviders(options: {
   }
 }
 
-/** Test seam. */
-export function __setProviderHealthForTests(entries: ProviderHealth[]): void {
+/**
+ * Test seam. `outageMailer` sets whether this process mails
+ * (`mailProviderOutagesFromThisProcess`); default false, as in a worker.
+ * `told` sets what the operator was last mailed about a lab.
+ */
+export function __setProviderHealthForTests(
+  entries: ProviderHealth[],
+  options: { outageMailer?: boolean; told?: Partial<Record<Provider, OutageMailTold>> } = {},
+): void {
   health.clear();
   capacityFaults.clear();
+  mailedOutage.clear();
+  outageMailer = options.outageMailer ?? false;
   for (const e of entries) health.set(e.provider, e);
+  for (const [provider, told] of Object.entries(options.told ?? {})) {
+    if (told) mailedOutage.set(provider as Provider, told);
+  }
 }

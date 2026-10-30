@@ -466,11 +466,14 @@ export async function runPrivateTurn({
           shutdown: wasGenerationAbortedForShutdown(generationId),
         };
         // Private turns feed provider health like saved ones: the fault is
-        // the lab's, not the conversation's, and nothing of the conversation
-        // is recorded (provider-health keeps the class and status only).
+        // the lab's, not the conversation's. Nothing of the conversation is
+        // recorded: for a private chat the verdict keeps the class and status
+        // only, never the provider's text (`noteLiveProviderFault`).
         const endedByReaderOrPlatform =
           cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown;
-        if (!endedByReaderOrPlatform) noteLiveProviderFault(modelInfo.provider, err, "private_chat");
+        if (!endedByReaderOrPlatform) {
+          noteLiveProviderFault(modelInfo.provider, err, "private_chat", { requester: user.id, modelId: modelInfo.id });
+        }
         console.error("[chat] private generation error", {
           generationId,
           provider: modelInfo.provider,
@@ -552,7 +555,7 @@ export async function runPrivateTurn({
           // is the provider's.
           const recovery =
             reason !== "user_stopped" && !endedByReaderOrPlatform
-              ? await providerErrorRecovery(err, { modelInfo, plan, history: privateHistory })
+              ? await providerErrorRecovery(err, { modelInfo, plan, history: privateHistory, requestedId, userId: user.id })
               : {};
           sendActivity({
             kind: "warning",

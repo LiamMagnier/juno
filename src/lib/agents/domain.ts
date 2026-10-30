@@ -89,8 +89,17 @@ export const AGENT_STATE_LABEL: Record<AgentState, string> = {
   listening: "Listening",
 };
 
+/** The statuses a person (or their chat) may set on a goal. */
 export const AGENT_GOAL_STATUSES = ["active", "paused", "achieved", "dropped"] as const;
-export type AgentGoalStatus = (typeof AGENT_GOAL_STATUSES)[number];
+export type AgentGoalSettableStatus = (typeof AGENT_GOAL_STATUSES)[number];
+/**
+ * Every status a goal can be in. `unverified` is set only by the goal driver:
+ * every milestone ran, but a check of its success criteria did not pass or
+ * could not run (src/lib/agents/goals.ts `planGoalCompletion`). The person
+ * then marks it met (`achieved`) or keeps it going (`active`).
+ */
+export const AGENT_GOAL_ALL_STATUSES = [...AGENT_GOAL_STATUSES, "unverified"] as const;
+export type AgentGoalStatus = (typeof AGENT_GOAL_ALL_STATUSES)[number];
 
 export const AGENT_GOAL_CADENCES = ["none", "daily", "weekly"] as const;
 export type AgentGoalCadence = (typeof AGENT_GOAL_CADENCES)[number];
@@ -180,6 +189,16 @@ export function agentRoutineHost(input: {
 export const AGENT_NOTIFY_LEVELS = ["needs_you", "results", "all"] as const;
 export type AgentNotifyLevel = (typeof AGENT_NOTIFY_LEVELS)[number];
 
+/**
+ * Each notify level in words: `label` is the sentence (the profile's line, a
+ * setup change's before and after), `short` the control's segment.
+ */
+export const AGENT_NOTIFY_META: Record<AgentNotifyLevel, { label: string; short: string }> = {
+  needs_you: { label: "Only when it needs you", short: "Needs you" },
+  results: { label: "When a task finishes or needs you", short: "Results" },
+  all: { label: "Everything, ideas included", short: "Everything" },
+};
+
 export function agentNotifyLevel(value: string | null | undefined): AgentNotifyLevel {
   if (value === "needs_you" || value === "results" || value === "all") {
     return value;
@@ -249,6 +268,11 @@ export const AGENT_EVENT_KINDS = [
   "goal_step",
   "goal_blocked",
   "goal_achieved",
+  // Its success criteria checked against what its steps produced, by the
+  // final step's run (src/lib/agents/goal-criteria.ts): `detail.verdict` is
+  // met, not_met or unchecked. And every step ran without that check passing.
+  "goal_checked",
+  "goal_unverified",
   // Teams (src/lib/agents/team.ts): a temporary specialist team ran a request.
   "team_run",
   // Work it started on its own (a routine or a goal step) was refused, e.g.
@@ -434,6 +458,9 @@ export function agentStateSentence(input: {
       // Answered while parked and back in the queue: still shown with the
       // asks until an executor picks it up (`requeueParkedRun`).
       if (input.task?.status === "queued" || input.task?.status === "preparing") return `Resuming ${title}`;
+      // Parked by the executor after its attended wait, on a question or an
+      // approval: the task row does not say which, so the words fit both.
+      if (input.task?.status === "paused") return `Waiting for you on ${title}`;
       if (input.task?.status === "waiting_approval") return `Needs your approval on ${title}`;
       if (input.task?.status === "waiting_input") return `Has a question about ${title}`;
       if (input.task?.status === "host_offline") return `Waiting for your Mac to finish ${title}`;
@@ -677,6 +704,9 @@ export const createNoteSchema = z.object({
 export const patchNoteSchema = z.object({
   content: z.string().trim().min(1).max(MAX_AGENT_NOTE_CHARS),
 });
+
+/** Keeps a note a task saved for review (src/lib/agents/note-review.ts). The person's press only. */
+export const keepNoteSchema = z.object({ action: z.literal("keep") }).strict();
 
 export const patchIdeaSchema = z.object({
   action: z.enum(["start", "dismiss"]),

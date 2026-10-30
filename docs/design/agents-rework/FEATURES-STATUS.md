@@ -225,3 +225,68 @@ Still to do:
 
 Gates run: `prisma validate`, `prisma generate`, and the drift check against a
 throwaway Postgres 16 ("No difference detected").
+
+## 5. Orbit truth and controls (package O2)
+
+2026-10-28. On the working branch `claude/premium-design-pass`; not deployed.
+Closes gaps 10, 11 and 15 of the 2026-10-27 Orbit discovery and the doc drift
+of gap 17 (outside the computers section of `docs/design/AGENTS.md`).
+
+Done:
+- **A goal is met only when it is checked.** The run that finishes a goal's
+  last milestone checks the goal's success criteria against every step's
+  result (`checkGoalCriteria` in `runner/agent-core/src/work/judge.ts`, built
+  to be hard to pass: a criterion the results do not show is NOT MET), with
+  the run's own provider and model, and records the verdict on the agent's log
+  (`goal_checked`; `src/lib/agents/goal-criteria.ts`, wired in
+  `scripts/work-runner.ts` around the run's own validator, whose result it
+  never changes). The driver (`goal-runner.ts`) makes the goal `achieved` only
+  on a recorded pass; a NOT MET, a check that could not run, or no check at all
+  (a last step that ran on a Mac) leaves it `unverified`: "Every step ran.
+  Check the result.", with each step's task linked on the profile, *Mark it
+  met* and *Keep working* (which adds one milestone aimed at the gap and drives
+  it). The person is notified (`agent_goal`: needs-you when unverified, an
+  update when met unless the agent only notifies when it needs them). The chat
+  tool's `achieve` is described as the person's call only.
+- New goal status `unverified`, handled by the API (never settable by a
+  person or a chat), the web profile, notifications, the OpenAPI contract
+  (`AgentGoal.status`) and the native decoder (`NativeAgentGoalStatus`, label
+  "Check the result", listed on the native profile).
+- **Hiring needs a plan with agents.** `createAgentForUser` and
+  `duplicateAgentForUser` refuse Free and Lite with `402 plan_locked` and
+  `upgradePlan`, before anything is created (`src/lib/agents/plan-gate.ts`);
+  so do the chat's `create_agent` and Move to crew, which go through it.
+  `/agents` and `/agents/new` show one upgrade card instead of the hire field
+  (and `?form=1` falls back to it). Agents kept from before a downgrade stay
+  listed and readable; nothing is deleted.
+- **Agents keep what they learn in a task.** The Work tool `remember`
+  (`agentNoteTool`, runner/agent-core/src/work/tools.ts) saves one short note
+  for the agent, at most three per run, through `src/lib/agents/run-notes.ts`.
+  Under the default memory grant the note is `pending` (`AgentNote.status`,
+  migration `20261028120000_agent_note_review`, expand-only) until the person
+  keeps it on the profile (*Keep* / *Forget*); only an agent granted all of
+  the person's memory keeps it at once, and a sensitive topic always waits.
+  No reader sees a pending note: the chat prompt, the run persona (cloud and
+  Mac), reflection and `GET …/notes` read `status: "kept"`. Every note,
+  whoever writes it, is screened: a value beside a password, PIN, code or key
+  label is refused, and keys and tokens are masked with the redaction shared
+  transcripts use (`scanAndRedact`; `src/lib/agents/note-review.ts`).
+- **Profile controls** for the two settings that were chat-only: *When it
+  tells you* (needs you / results / everything) and *What it thinks with*
+  (the Settings model picker, with thinking effort), both through the same
+  agent patch and plan check as the thread's setup changes.
+
+Tests: `tests/orbit-truth.test.ts`, `tests/orbit-truth.integration.test.ts`,
+`runner/agent-core/src/test/work-judge.test.ts` (criteria cases) and
+`work-agent-note-tool.test.ts`; `tests/orbit-goals.integration.test.ts` now
+expects `unverified` when no check ran.
+
+Not done or not verified:
+- No real model has run the criteria check or `remember` (no provider keys
+  here; the tests use fakes). How often a real model calls `remember`, and how
+  well a real model's MET/NOT MET matches a person's judgement, is unmeasured.
+- Native: the Swift edits are uncompiled here, and the native profile has no
+  *Keep* / *Forget* for pending notes (they never reach native's `notes`) and
+  no *Mark it met* / *Keep working* beyond the existing tap to mark achieved.
+- A Mac run has no `remember` and no criteria check; a goal whose last step ran
+  on a Mac ends `unverified` by design.

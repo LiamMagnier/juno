@@ -823,13 +823,18 @@ export function useChat(opts: UseChatOptions) {
                           : { content: chunk.message, errorMessage: chunk.message }),
                         // Chat wire 1.1: what can be done about it, for the
                         // error card's "Answer with <model>" (message-item.tsx).
+                        // The offer is kept only where `regenerate` can send
+                        // it as the one-shot model: a saved conversation. With
+                        // no id (a private chat) regenerate re-sends with the
+                        // composer's model, so the button would mislabel.
                         recovery: chunk.errorClass
                           ? {
                               errorClass: chunk.errorClass,
                               retryable: chunk.retryable,
                               retryAfterSeconds: chunk.retryAfterSeconds,
-                              suggestedModelId: chunk.suggestedModelId,
-                              suggestedModelName: chunk.suggestedModelName,
+                              ...(convoIdRef.current && !opts.privateMode
+                                ? { suggestedModelId: chunk.suggestedModelId, suggestedModelName: chunk.suggestedModelName }
+                                : {}),
                             }
                           : null,
                       }

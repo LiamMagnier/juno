@@ -61,6 +61,13 @@ if (!DB_URL) {
   let fallbackChecks = 0;
   /** Lets one test script the PRIVATE turn's model (it passes no requestContext). */
   let scriptPrivateTurn = false;
+  /**
+   * The real `streamChat` marks what its provider adapters throw as the model
+   * call's (provider-error.ts, `markModelCallError`), and provider health
+   * reads only marked errors. The stand-in does the same, unless a test is
+   * showing what an error from elsewhere does.
+   */
+  let unmarkedErrors = false;
   const logLines: string[] = [];
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -134,6 +141,15 @@ if (!DB_URL) {
       },
     });
     const llm = await import("@/lib/llm");
+    const { markModelCallError } = await import("@/lib/provider-error");
+    async function* asModelCall(stream: AsyncGenerator<Record<string, unknown>>) {
+      try {
+        yield* stream;
+      } catch (error) {
+        if (!unmarkedErrors) markModelCallError(error);
+        throw error;
+      }
+    }
     mock.module("@/lib/llm", {
       namedExports: {
         ...llm,
@@ -144,7 +160,7 @@ if (!DB_URL) {
           const privateTurn = scriptPrivateTurn && String(opts.cacheKey ?? "").startsWith("private-");
           if (!opts.requestContext && !privateTurn) return (async function* () { yield { type: "finish", reason: "stop" }; })();
           streamCalls += 1;
-          return script(opts);
+          return asModelCall(script(opts));
         },
       },
     });
@@ -929,7 +945,7 @@ if (!DB_URL) {
       assert.equal(error.type, "error", first.text.slice(-400));
       assert.equal(error.message, "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.");
       assert.doesNotMatch(error.message, /credit|balance|quota|key/i, "the platform's funding state is not the reader's business");
-      assert.equal(error.errorClass, "billing");
+      assert.equal(error.errorClass, "account", "the stream never says which account fault, or that credit ran out");
       assert.equal(error.retryable, false);
       assert.equal(error.receiptState, "failed", "the durable metadata still rides the frame");
       assert.ok(error.suggestedModelId, "an alternative is offered");
@@ -937,6 +953,13 @@ if (!DB_URL) {
       assert.ok(suggested);
       assert.notEqual(suggested.provider, "qwen", "on a different lab");
       assert.notEqual(suggested.trainsOnPrompts, true, "never on a lab that trains on prompts");
+      const { autoDataUseVerdict } = await import("@/lib/router/data-policy");
+      const { autoPaidTierProviders } = await import("@/lib/router/chat-inputs");
+      assert.equal(
+        autoDataUseVerdict(suggested, { paidTier: autoPaidTierProviders(), boundary: "verified_no_training" }).eligible,
+        true,
+        "nor on one whose provider's terms allow training or are unverified",
+      );
       assert.equal(error.suggestedModelName, suggested.name);
       assert.equal(health.providerHealthy("qwen"), false, "the very next turn sees the lab as down");
 
@@ -980,7 +1003,7 @@ if (!DB_URL) {
       });
       const error = failed.frames.at(-1) as Frame & { errorClass?: string; suggestedModelId?: string; message: string };
       assert.equal(error.type, "error", failed.text.slice(-400));
-      assert.equal(error.errorClass, "auth");
+      assert.equal(error.errorClass, "account");
       assert.match(error.message, /is temporarily unavailable\. Choose another model, or try again later\./);
       assert.equal(health.providerHealthy("openai"), false);
     } finally {
@@ -1001,6 +1024,152 @@ if (!DB_URL) {
     assert.equal(health.providerHealthy("qwen"), true, "an error with no HTTP status proves nothing about a lab");
     assert.equal(plain.errorClass, undefined, "not a provider's answer: no class to be wrong about");
     assert.equal(plain.suggestedModelId, undefined);
+  });
+
+  test("an Auto turn's offer stays inside the account's Auto data boundary; an explicit choice's offer is held to the training terms only", async () => {
+    const health = await import("@/lib/provider-health");
+    const { getModel } = await import("@/lib/models");
+    const { AUTO_MODEL_ID } = await import("@/lib/auto-model");
+    const { autoDataUseVerdict } = await import("@/lib/router/data-policy");
+    const { autoPaidTierProviders } = await import("@/lib/router/chat-inputs");
+    health.__setProviderHealthForTests([]);
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    try {
+      const user = await seedUser();
+      await prisma.settings.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, autoDataBoundary: "eu_us_only" },
+        update: { autoDataBoundary: "eu_us_only" },
+      });
+      const seen: string[] = [];
+      script = async function* (opts) {
+        seen.push(String((opts as { model?: { id?: string } }).model?.id));
+        throw Object.assign(new Error("402 Insufficient Balance"), { status: 402, error: { message: "Insufficient Balance" } });
+      };
+      const terms = { paidTier: autoPaidTierProviders(), boundary: "eu_us_only" as const };
+      // The cheapest labs inside the boundary are confirmed down, so the
+      // cheapest offer overall falls outside it: only the boundary can keep
+      // the Auto offer in.
+      const confirmedDown = (provider: "anthropic" | "openai") => ({
+        provider,
+        healthy: false,
+        checkedAt: Date.now(),
+        failure: "billing" as const,
+        detail: "402",
+        source: "probe" as const,
+        recheckAt: null,
+      });
+      const downLabs = [confirmedDown("anthropic"), confirmedDown("openai")];
+      health.__setProviderHealthForTests(downLabs);
+
+      const onAuto = await chat({ message: "Hello?", model: AUTO_MODEL_ID });
+      const autoError = onAuto.frames.at(-1) as Frame & { errorClass?: string; suggestedModelId?: string };
+      assert.equal(autoError.type, "error", onAuto.text.slice(-400));
+      assert.equal(autoError.errorClass, "account");
+      assert.ok(autoError.suggestedModelId, "an alternative inside the boundary is offered");
+      const autoOffer = getModel(autoError.suggestedModelId!);
+      assert.ok(autoOffer);
+      assert.equal(autoDataUseVerdict(autoOffer, terms).eligible, true, `${autoOffer.id} clears the reader's Auto boundary`);
+      assert.notEqual(autoOffer.provider, getModel(seen.at(-1)!)?.provider, "on a different lab from the one that failed");
+
+      // The same account choosing that model explicitly: its offer is held
+      // to the platform's training terms (the model row and the provider's
+      // API terms) but not to the reader's Auto boundary, which governs only
+      // what Auto picks, so here it is the cheaper model outside it.
+      health.__setProviderHealthForTests(downLabs);
+      const explicit = await chat({ message: "Hello again?", model: seen.at(-1)! });
+      const explicitError = explicit.frames.at(-1) as Frame & { suggestedModelId?: string };
+      assert.equal(explicitError.type, "error", explicit.text.slice(-400));
+      const explicitOffer = explicitError.suggestedModelId ? getModel(explicitError.suggestedModelId) : undefined;
+      assert.ok(explicitOffer);
+      assert.notEqual(explicitOffer.trainsOnPrompts, true);
+      assert.equal(
+        autoDataUseVerdict(explicitOffer, { paidTier: autoPaidTierProviders(), boundary: "verified_no_training" }).eligible,
+        true,
+        `${explicitOffer.id}: its provider's training terms clear`,
+      );
+      assert.equal(autoDataUseVerdict(explicitOffer, terms).eligible, false, `${explicitOffer.id}: the boundary is what kept it out of the Auto offer`);
+      assert.ok(explicitOffer.cost <= autoOffer.cost);
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+  });
+
+  test("an explicit choice's offer skips labs whose provider terms allow training, are unverified, or are tier-dependent and unattested", async () => {
+    const health = await import("@/lib/provider-health");
+    const { getModel, FREE_DEFAULT_MODEL } = await import("@/lib/models");
+    const { PROVIDER_DATA_POLICIES } = await import("@/lib/router/data-policy");
+    const owners = process.env.OWNER_EMAILS;
+    const attested = process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS;
+    delete process.env.OWNER_EMAILS;
+    delete process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS;
+    const down = (provider: "anthropic" | "google" | "zhipu") => ({
+      provider,
+      healthy: false,
+      checkedAt: Date.now(),
+      failure: "billing" as const,
+      detail: "402",
+      source: "probe" as const,
+      recheckAt: null,
+    });
+    try {
+      await seedUser("FREE");
+      script = async function* () {
+        throw Object.assign(new Error("You exceeded your current quota | insufficient_quota"), { status: 429 });
+      };
+      const offerWith = async (labsDown: Array<"anthropic" | "google" | "zhipu">) => {
+        health.__setProviderHealthForTests(labsDown.map(down));
+        const failed = await chat({ message: "Hello?", model: FREE_DEFAULT_MODEL });
+        const frame = failed.frames.at(-1) as Frame & { errorClass?: string; suggestedModelId?: string };
+        assert.equal(frame.type, "error", failed.text.slice(-400));
+        assert.equal(frame.errorClass, "account");
+        assert.ok(frame.suggestedModelId, "an offer is still made");
+        return getModel(frame.suggestedModelId!)!;
+      };
+      const training = (provider: string) => (PROVIDER_DATA_POLICIES as Record<string, { training: string }>)[provider].training;
+
+      // Google's cheapest model is next in line, but its unpaid tier trains
+      // and no paid tier is attested.
+      const pastGoogle = await offerWith(["anthropic"]);
+      assert.notEqual(pastGoogle.provider, "google");
+      assert.equal(training(pastGoogle.provider), "no", `${pastGoogle.id}`);
+
+      // With every lab before it down, DeepSeek's would be the cheapest: its
+      // API terms allow training. Zhipu's are unverified.
+      const pastDeepSeek = await offerWith(["anthropic", "google", "zhipu"]);
+      assert.ok(!["deepseek", "zhipu", "google", "mistral", "minimax", "moonshot", "mimo", "longcat"].includes(pastDeepSeek.provider), pastDeepSeek.id);
+      assert.equal(training(pastDeepSeek.provider), "no", `${pastDeepSeek.id}`);
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+      if (attested === undefined) delete process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS;
+      else process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS = attested;
+    }
+  });
+
+  test("an account-shaped error that did not come out of the model call leaves the lab up", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    unmarkedErrors = true;
+    try {
+      await seedUser();
+      script = async function* () {
+        // A search API's 401 that reached the same catch, say.
+        throw Object.assign(new Error("401 Unauthorized"), { status: 401 });
+      };
+      for (let i = 0; i < 3; i += 1) {
+        const failed = await chat({ message: `Hello ${i}?`, model: "qwen:qwen3.8-flash" });
+        assert.equal(failed.frames.at(-1)?.type, "error", failed.text.slice(-400));
+        assert.equal(health.providerHealthy("qwen"), true, `turn ${i + 1}: the lab is not marked down`);
+      }
+    } finally {
+      unmarkedErrors = false;
+      health.__setProviderHealthForTests([]);
+    }
   });
 
   test("a restart holds down a lab whose recent turns all failed, from RoutingOutcome, without alerting", async () => {

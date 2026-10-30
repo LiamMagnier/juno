@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
-import { ComputerError } from "./errors";
+import { COMPUTER_PATH_REFUSED, ComputerError } from "./errors";
 import type {
   ComputerFileEntry,
   ComputerHandle,
@@ -23,6 +23,8 @@ interface FakeContainerState {
   vncViewPassword?: string;
   /** The token the fake gate holds, set only by provisionCdpToken. */
   gateToken?: string;
+  /** Set by freezeAgent, cleared by thawAgent. */
+  frozen?: boolean;
 }
 
 let cachedGreyShotPromise: Promise<Shot> | null = null;
@@ -51,10 +53,14 @@ function normalizeAgentPath(rawPath: string): string {
   const base = rawPath.startsWith("/") ? rawPath : path.posix.join("/home/agent/work", rawPath);
   const resolved = path.posix.normalize(base);
   if (resolved !== "/home/agent" && !resolved.startsWith("/home/agent/")) {
-    throw new Error("Path must stay inside /home/agent");
+    // As the Docker provider: a refused path is a sentence for the person.
+    throw new ComputerError(COMPUTER_PATH_REFUSED);
   }
   return resolved;
 }
+
+/** The fake's calls a test can hold mid-flight (`holdNext`). */
+type HeldMethod = "freezeAgent" | "thawAgent" | "startVnc" | "provisionCdpToken";
 
 export class FakeProvider implements ComputerProvider {
   readonly name = "fake" as const;
@@ -82,8 +88,34 @@ export class FakeProvider implements ComputerProvider {
     this.calls.push({ method, args });
   }
 
+  /** Calls a test is holding (see `holdNext`), by method. */
+  private holds = new Map<HeldMethod, { gate: Promise<void>; started: () => void }>();
+
+  /**
+   * Holds the next call of `method` before it acts, until `release` is called:
+   * a slow `docker exec`, so a test can run something else meanwhile. The call
+   * is recorded when it acts. `started` resolves once the held call is waiting.
+   */
+  holdNext(method: HeldMethod): { started: Promise<void>; release: () => void } {
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const waiting = new Promise<void>((resolve) => (started = resolve));
+    this.holds.set(method, { gate, started });
+    return { started: waiting, release };
+  }
+
+  private async waitIfHeld(method: HeldMethod): Promise<void> {
+    const hold = this.holds.get(method);
+    if (!hold) return;
+    this.holds.delete(method);
+    hold.started();
+    await hold.gate;
+  }
+
   reset(): void {
     this.calls = [];
+    this.holds.clear();
     this.containers.clear();
     this.volumes.clear();
     this.diskUsageByVolume.clear();
@@ -94,6 +126,95 @@ export class FakeProvider implements ComputerProvider {
     this.screenshotHandler = undefined;
     this.captures = 0;
     this.destroyError = undefined;
+    this.freezeError = undefined;
+    this.thawError = undefined;
+    this.startVncError = undefined;
+    this.stopVncError = undefined;
+    this.stopError = undefined;
+    this.sandboxAnswer = "off";
+    this.sandboxError = undefined;
+    this.outdated = false;
+    this.image = { id: "sha256:fake-image", label: "pipe-v4", createdAt: new Date().toISOString() };
+    for (const method of FakeProvider.OPTIONAL_METHODS) this.disabled.delete(method);
+  }
+
+  /*
+   * The take-over and image primitives (types.ts). Each records its call so a
+   * test can read the order (freeze, rotate, thaw), and each can be made to
+   * fail. `withoutMethods` removes them, to stand in for a provider that has
+   * none (the store then audits `freeze_unavailable`).
+   */
+  static readonly OPTIONAL_METHODS = ["freezeAgent", "thawAgent", "browserSandbox", "isOutdated", "imageInfo"] as const;
+  private disabled = new Set<string>();
+  public freezeError?: Error;
+  public thawError?: Error;
+  public startVncError?: Error;
+  public stopVncError?: Error;
+  public stopError?: Error;
+  public sandboxAnswer: "on" | "off" | "unknown" = "off";
+  public sandboxError?: Error;
+  public outdated = false;
+  public image: { id: string; label: string; createdAt: string } = {
+    id: "sha256:fake-image",
+    label: "pipe-v4",
+    createdAt: new Date().toISOString(),
+  };
+
+  /** Hides the named optional methods (as `undefined`), as an older provider would. */
+  withoutMethods(...names: Array<(typeof FakeProvider.OPTIONAL_METHODS)[number]>): void {
+    for (const name of names) this.disabled.add(name);
+  }
+
+  get freezeAgent(): ((handle: ComputerHandle) => Promise<void>) | undefined {
+    if (this.disabled.has("freezeAgent")) return undefined;
+    return async (handle: ComputerHandle) => {
+      await this.waitIfHeld("freezeAgent");
+      this.record("freezeAgent", handle);
+      if (this.freezeError) throw this.freezeError;
+      const c = this.containers.get(handle.name);
+      if (c) c.frozen = true;
+    };
+  }
+
+  get thawAgent(): ((handle: ComputerHandle) => Promise<void>) | undefined {
+    if (this.disabled.has("thawAgent")) return undefined;
+    return async (handle: ComputerHandle) => {
+      await this.waitIfHeld("thawAgent");
+      this.record("thawAgent", handle);
+      if (this.thawError) throw this.thawError;
+      const c = this.containers.get(handle.name);
+      if (c) c.frozen = false;
+    };
+  }
+
+  get browserSandbox(): ((handle: ComputerHandle) => Promise<"on" | "off" | "unknown">) | undefined {
+    if (this.disabled.has("browserSandbox")) return undefined;
+    return async (handle: ComputerHandle) => {
+      this.record("browserSandbox", handle);
+      if (this.sandboxError) throw this.sandboxError;
+      return this.sandboxAnswer;
+    };
+  }
+
+  get isOutdated(): ((handle: ComputerHandle) => Promise<boolean>) | undefined {
+    if (this.disabled.has("isOutdated")) return undefined;
+    return async (handle: ComputerHandle) => {
+      this.record("isOutdated", handle);
+      return this.outdated;
+    };
+  }
+
+  get imageInfo(): (() => Promise<{ id: string; label: string; createdAt: string }>) | undefined {
+    if (this.disabled.has("imageInfo")) return undefined;
+    return async () => {
+      this.record("imageInfo");
+      return { ...this.image };
+    };
+  }
+
+  /** Whether the fake's agent processes are frozen (a take over is holding them). */
+  isFrozen(handle: ComputerHandle): boolean {
+    return this.containers.get(handle.name)?.frozen === true;
   }
 
   async available(): Promise<{ ok: boolean; reason?: string }> {
@@ -171,6 +292,7 @@ export class FakeProvider implements ComputerProvider {
 
   async stop(handle: ComputerHandle): Promise<void> {
     this.record("stop", handle);
+    if (this.stopError) throw this.stopError;
     const c = this.containers.get(handle.name);
     if (!c) {
       return;
@@ -322,9 +444,10 @@ export class FakeProvider implements ComputerProvider {
   async writeFile(
     handle: ComputerHandle,
     filePath: string,
-    content: Buffer | string
+    content: Buffer | string,
+    opts?: { by?: "agent" | "person" }
   ): Promise<void> {
-    this.record("writeFile", handle, filePath);
+    this.record("writeFile", handle, filePath, { by: opts?.by ?? "agent" });
     const resolved = normalizeAgentPath(filePath);
     let fsMap = this.volumes.get(handle.volume);
     if (!fsMap) {
@@ -344,7 +467,9 @@ export class FakeProvider implements ComputerProvider {
     handle: ComputerHandle,
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void> {
+    await this.waitIfHeld("startVnc");
     this.record("startVnc", handle);
+    if (this.startVncError) throw this.startVncError;
     const c = this.containers.get(handle.name);
     if (!c) {
       throw new Error(`Fake container missing: ${handle.name}`);
@@ -396,6 +521,7 @@ export class FakeProvider implements ComputerProvider {
 
   async stopVnc(handle: ComputerHandle): Promise<void> {
     this.record("stopVnc", handle);
+    if (this.stopVncError) throw this.stopVncError;
     const c = this.containers.get(handle.name);
     if (c) {
       c.vncRunning = false;
@@ -404,6 +530,7 @@ export class FakeProvider implements ComputerProvider {
 
   /** The gate's token, as the Docker provider hands it over: never as env. */
   async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
+    await this.waitIfHeld("provisionCdpToken");
     // Recorded without the token itself: the call log is read by tests.
     this.record("provisionCdpToken", handle);
     const c = this.containers.get(handle.name);

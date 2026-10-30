@@ -16,7 +16,7 @@
 import type { AgentAvatar } from "@/lib/agents/avatar";
 import type {
   AgentGoalCadence,
-  AgentGoalStatus,
+  AgentGoalSettableStatus,
   AgentNotifyLevel,
   AgentRoutineCadence,
   AgentStatus,
@@ -196,6 +196,18 @@ export function computerAction(
   return call(`${base(id)}/computer`, { method: "POST", body: { action } }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
 }
 
+/** Whether an agent's tasks may use its computer: off, ask first, or on its own. The person's setting only. */
+export type ComputerPolicySetting = "off" | "ask" | "allowed";
+
+export function setComputerPolicy(
+  id: string,
+  policy: ComputerPolicySetting
+): Promise<AgentOutcome<ComputerPolicySetting>> {
+  return call(`${base(id)}/computer`, { method: "POST", body: { action: "policy", policy } }, (d) =>
+    d.policy === "off" || d.policy === "ask" || d.policy === "allowed" ? d.policy : policy
+  );
+}
+
 /** Who holds an agent's computer right now (`takeover` on the computer payload). */
 export interface ClientComputerTakeover {
   active: boolean;
@@ -335,7 +347,7 @@ export function createGoal(
 export function updateGoal(
   id: string,
   goalId: string,
-  patch: { title?: string; detail?: string; cadence?: AgentGoalCadence; status?: AgentGoalStatus }
+  patch: { title?: string; detail?: string; cadence?: AgentGoalCadence; status?: AgentGoalSettableStatus }
 ): Promise<AgentOutcome<ClientAgentGoal>> {
   return call(`${base(id)}/goals/${encodeURIComponent(goalId)}`, { method: "PATCH", body: patch }, (d) => d.goal as ClientAgentGoal);
 }
@@ -363,6 +375,11 @@ export function updateNote(id: string, noteId: string, content: string): Promise
 
 export function deleteNote(id: string, noteId: string): Promise<AgentOutcome<true>> {
   return call(`${base(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }, () => true as const);
+}
+
+/** Keeps a note the agent saved in a task and that waited for review. Forgetting it is `deleteNote`. */
+export function keepNote(id: string, noteId: string): Promise<AgentOutcome<ClientAgentNote>> {
+  return call(`${base(id)}/notes/${encodeURIComponent(noteId)}`, { method: "PATCH", body: { action: "keep" } }, (d) => d.note as ClientAgentNote);
 }
 
 export function decideIdea(

@@ -53,7 +53,9 @@ import {
   type WorkProjectDefaults,
 } from "@/lib/work/projects";
 import { runBudgetForWindow } from "@/lib/work/budget";
+import { scriptedWorkModelFor } from "@/lib/dev/scripted-work-model";
 import { maxParkedRunsPerAccount } from "@/lib/work/park-resume";
+import { WORK_CAPPED_LIVE_STATUSES } from "@/lib/work/park-resume-rules";
 import { checkUsageWindows } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
@@ -670,19 +672,14 @@ const WORK_RUN_RATE_LIMIT = 10;
 /** Max simultaneously live runs per user, across every session. */
 const WORK_RUN_CONCURRENCY_CAP = 3;
 
-/**
- * The live statuses the concurrency cap counts: every live run except a parked
- * one.
- *
- * A `paused` run holds no executor — its lease is released when it parks
- * (`parkRun`) or when the person pauses it — so counting it against the cap
- * meant three tasks waiting on late answers refused every new task with 429
- * until somebody found Resume or Cancel on each. Parked runs are bounded on
- * their own instead (`maxParkedRunsPerAccount`, `WORK_MAX_PARKED_RUNS_PER_ACCOUNT`),
- * so they cannot pile up without limit either. The "one live run per session"
- * check below still counts them: a parked task has an attempt in flight.
+/*
+ * The concurrency cap counts `WORK_CAPPED_LIVE_STATUSES` (park-resume-rules.ts): every
+ * live run except a parked one, which holds no executor. Parked runs are
+ * bounded on their own instead (`maxParkedRunsPerAccount`,
+ * `WORK_MAX_PARKED_RUNS_PER_ACCOUNT`), so they cannot pile up without limit
+ * either. The "one live run per session" check below still counts them: a
+ * parked task has an attempt in flight.
  */
-const WORK_CAPPED_LIVE_STATUSES = WORK_LIVE_STATUSES.filter((status) => status !== "paused");
 
 /** The refusal for an account holding as many parked runs as it may. */
 function parkedCapBody(parked: number): Record<string, unknown> {
@@ -857,6 +854,14 @@ class NoReachableModelError extends Error {}
  * account's plan admits no model that could run a Work task at all — a 403, and
  * a different sentence.
  */
+/** The catalog model a scripted development run is recorded under: the one asked for, else the first drivable one. */
+function scriptedRunModel(requested: string): RunModel {
+  const asked = resolveModel(requested);
+  const model = asked && workModelOptions([asked]).length > 0 ? asked : workModelOptions(MODEL_LIST, { providers: null })[0];
+  if (!model) throw new NoReachableModelError();
+  return { requested, effective: model.id, degradation: [] };
+}
+
 function resolveRunModel(input: {
   requested: string;
   goal: string;
@@ -1207,12 +1212,18 @@ export async function startWorkRunForUser(
 
   let model: RunModel;
   try {
-    model = resolveRunModel({
-      requested: requestedModel,
-      goal: session.goal,
-      plan,
-      spentModels,
-    });
+    // D9 (docs/design/agents-v2/COMPUTERS_2026-10.md): a development run driven
+    // by the scripted Work model needs no provider key. Inert in production and
+    // unless the account is listed (src/lib/dev/scripted-work-model.ts); the
+    // runner's own event says no model was called.
+    model = scriptedWorkModelFor(user)
+      ? scriptedRunModel(requestedModel)
+      : resolveRunModel({
+          requested: requestedModel,
+          goal: session.goal,
+          plan,
+          spentModels,
+        });
   } catch (err) {
     if (err instanceof NoEntitledModelError) {
       return refused(403, {

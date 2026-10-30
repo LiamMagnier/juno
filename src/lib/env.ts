@@ -288,9 +288,24 @@ export const env = {
       }
       return positiveNumber(process.env.AGENT_COMPUTER_SLEEP_HOURS, 0.5);
     },
-    /** Days asleep before a computer, its sign-ins and its files are destroyed. */
-    get retentionDays(): number {
-      return positiveNumber(process.env.COMPUTER_RETENTION_DAYS, 30);
+    // No retention getter here: deleting computers by age is an owner decision
+    // behind a switch of its own, parsed only in src/lib/computer/retention.ts
+    // (COMPUTERS_2026-10.md D14). `COMPUTER_RETENTION_DAYS` is never honoured.
+    /**
+     * Who gets a computer once a provider is set: `allowlist` (the default:
+     * only AGENT_COMPUTER_ALLOWLIST), `plans` (every plan that includes one) or
+     * `off`. Parsed, with its fallback, in src/lib/computer/access.ts.
+     */
+    get rollout(): string {
+      return (process.env.AGENT_COMPUTER_ROLLOUT ?? "").trim();
+    },
+    /** Comma-separated user ids or verified emails (AGENT_COMPUTER_ALLOWLIST). Empty exposes nobody. */
+    get allowlist(): string {
+      return (process.env.AGENT_COMPUTER_ALLOWLIST ?? "").trim();
+    },
+    /** Past this age the image is reported stale at every wake (audit `image_stale`); nothing is refused. */
+    get maxImageAgeDays(): number {
+      return positiveNumber(process.env.AGENT_COMPUTER_MAX_IMAGE_AGE_DAYS, 14);
     },
     get costUsdPerMin(): number {
       if (process.env.COMPUTER_COST_MICRO_USD_PER_SECOND) {

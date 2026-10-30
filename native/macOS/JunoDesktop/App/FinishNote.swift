@@ -91,7 +91,7 @@ struct DesktopTurnError: View {
     var retry: (() -> Void)? = nil
     /// "Answer with <model>": the one alternative a failed turn's error frame
     /// offered (chat wire 1.1). Clicking it is the reader's explicit choice,
-    /// sent as Switch Model's one-shot regenerate; nothing is rerouted
+    /// sent as Switch Model sends it (`retryLastMessage(modelID:)`); nothing is rerouted
     /// without it.
     var answerWith: (name: String, action: () -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme

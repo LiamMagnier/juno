@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyProviderError, normalizeProviderError, retryAfterFrom } from "@/lib/provider-error";
+import {
+  classifyProviderError,
+  isBareForbidden,
+  isModelCallError,
+  markModelCallError,
+  normalizeProviderError,
+  retryAfterFrom,
+  wireErrorClass,
+} from "@/lib/provider-error";
 
 /*
  * Fixtures shaped like what each SDK actually throws. The four billing cases
@@ -324,4 +332,42 @@ test("operatorMessage is one greppable line carrying provider, model and status"
     operatorMessage.includes("model not enabled for this account"),
     "and the provider's own words, which are what actually say why",
   );
+});
+
+test("a bare 403 is told apart from a 403 whose words name the key or the funding", () => {
+  // "model not enabled for this account" is one model, not the account: the
+  // live health feed asks the probe instead of marking the lab down.
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "model not enabled for this account" } })), true);
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "The caller does not have permission", status: "PERMISSION_DENIED" } })), true);
+  assert.equal(isBareForbidden(classifyProviderError(Object.assign(new Error("403"), { status: 403 }))), true);
+  // Account-shaped: a rejected key, an unfunded team (xAI answers 403).
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "Incorrect API key provided" } })), false);
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "The team does not have any credits" } })), false);
+  // Not a 403 at all.
+  assert.equal(isBareForbidden(classifyProviderError({ status: 401, error: { message: "Unauthorized" } })), false);
+  assert.equal(isBareForbidden(classifyProviderError({ status: 402, error: { message: "Payment required" } })), false);
+});
+
+test("only an error marked as the model call's says anything to provider health", () => {
+  const thrown = Object.assign(new Error("401 Unauthorized"), { status: 401 });
+  assert.equal(isModelCallError(thrown), false, "a status alone proves nothing");
+  markModelCallError(thrown);
+  assert.equal(isModelCallError(thrown), true);
+  assert.equal(Object.keys(thrown).includes("status"), true);
+  assert.equal(JSON.stringify(Object.keys(thrown)).includes("model-call"), false, "the mark is not enumerable");
+  // Things that cannot carry the mark stay unmarked: the safe direction.
+  const frozen = Object.freeze({ status: 402 });
+  markModelCallError(frozen);
+  assert.equal(isModelCallError(frozen), false);
+  markModelCallError("402 Payment Required");
+  assert.equal(isModelCallError("402 Payment Required"), false);
+  assert.equal(isModelCallError(null), false);
+});
+
+test("the wire folds both account faults into one class and keeps every other", () => {
+  assert.equal(wireErrorClass("auth"), "account");
+  assert.equal(wireErrorClass("billing"), "account");
+  for (const klass of ["rate_limit", "context", "content_filter", "invalid_request", "capacity", "not_found", "network", "unknown"] as const) {
+    assert.equal(wireErrorClass(klass), klass);
+  }
 });

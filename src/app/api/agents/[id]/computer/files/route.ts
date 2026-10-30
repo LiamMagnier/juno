@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/code-remote";
 import { findAgent } from "@/lib/agents/store";
-import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { rateLimit } from "@/lib/rate-limit";
+import { computerProvider } from "@/lib/computer/provider";
+import { COMPUTER_ACCESS_COPY } from "@/lib/computer/access-copy";
+import { ComputerAccessError, computerErrorBody } from "@/lib/computer/errors";
 import {
   AsleepComputerError,
   listOrDownloadComputerFiles,
@@ -13,10 +16,32 @@ type Params = { params: Promise<{ id: string }> };
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
+/** Folder listings and downloads per person and agent per minute: brisk browsing, never a loop. */
+const FILE_REQUESTS_PER_MINUTE = 120;
+
 export async function GET(req: Request, { params }: Params) {
   const { user, error } = await requireUser();
   if (!user) return error;
   const { id } = await params;
+
+  // No computers on this server: answered here, before the store, so a
+  // request writes nothing (the store audits the refusals it decides).
+  if (!computerProvider()) {
+    const { status, body } = computerErrorBody(new ComputerAccessError("server_off", COMPUTER_ACCESS_COPY.serverOff));
+    return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
+  }
+
+  const limit = await rateLimit({
+    key: `agents:computer-files:${user.id}:${id}`,
+    limit: FILE_REQUESTS_PER_MINUTE,
+    windowSec: 60,
+  });
+  if (!limit.success) {
+    return NextResponse.json(
+      { error: "rate_limited", message: "Too many file requests. Try again in a minute." },
+      { status: 429, headers: NO_STORE_HEADERS }
+    );
+  }
 
   const agent = await findAgent(user.id, id);
   if (!agent) {
@@ -26,19 +51,14 @@ export async function GET(req: Request, { params }: Params) {
     );
   }
 
-  if (!(await isAgentComputerConfigured())) {
-    return NextResponse.json(
-      { error: "not_enabled", message: "Agent computers are not configured on this server." },
-      { status: 404, headers: NO_STORE_HEADERS }
-    );
-  }
-
+  // Access (rollout, plan, host) is checked by the store, first, and answered
+  // below with its own status and sentence.
   const url = new URL(req.url);
   const pathParam = url.searchParams.get("path") ?? "/home/agent/work";
   const download = url.searchParams.get("download") === "1";
 
   try {
-    const result = await listOrDownloadComputerFiles(user.id, id, pathParam, download);
+    const result = await listOrDownloadComputerFiles(user.id, id, pathParam, download, { agentName: agent.name });
     if (result.kind === "file") {
       const safeName = result.name.replace(/["\\\r\n]/g, "_");
       return new NextResponse(new Uint8Array(result.bytes), {
@@ -65,10 +85,9 @@ export async function GET(req: Request, { params }: Params) {
         { status: 409, headers: NO_STORE_HEADERS }
       );
     }
-    const message = err instanceof Error ? err.message : "Unable to read files.";
-    return NextResponse.json(
-      { error: "file_error", message },
-      { status: 400, headers: NO_STORE_HEADERS }
-    );
+    // A sentence, never a raw error message: a non-computer error can carry a
+    // path, a daemon's words or a database detail.
+    const { status, body } = computerErrorBody(err, { fallbackError: "file_error", fallbackStatus: 400 });
+    return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
   }
 }

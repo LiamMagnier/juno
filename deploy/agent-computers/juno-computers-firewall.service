@@ -1,0 +1,13 @@
+# Installed by setup-vm.sh as /etc/systemd/system/juno-computers-firewall.service.
+[Unit]
+Description=Firewall for Juno agent computers
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/juno-computers-firewall
+
+[Install]
+WantedBy=multi-user.target docker.service
