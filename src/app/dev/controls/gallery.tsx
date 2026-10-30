@@ -148,7 +148,7 @@ function MenuRow({
       </span>
       {detail && <span className="shrink-0 font-mono text-caption text-muted-foreground">{detail}</span>}
       {ticked && !indent && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
-      {chevron && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60" />}
+      {chevron && <ChevronRight className="size-3.5 shrink-0 text-ink-tertiary" />}
     </div>
   );
 }

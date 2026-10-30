@@ -278,7 +278,7 @@ export function SessionOutputs({
                  this is the only one of the three carrying a number — the
                  chip's border is what says so, and it should not also be
                  saying "shorter". */
-              className={cn("h-9 gap-1.5 text-foreground/75 coarse:h-11", className)}
+              className={cn("h-9 gap-1.5 text-muted-foreground coarse:h-11", className)}
             >
               <CodeIcons.file className="size-4" />
               {/* It rolls because it CHANGES WHILE YOU WATCH: an artifact

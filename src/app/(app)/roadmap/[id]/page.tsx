@@ -184,7 +184,7 @@ export default function RoadmapDetailPage() {
           </div>
         </div>
 
-        <p className="mt-5 whitespace-pre-wrap text-body leading-relaxed text-foreground/90">{r.description}</p>
+        <p className="mt-5 whitespace-pre-wrap text-body leading-relaxed text-foreground">{r.description}</p>
 
         {r.status === "DECLINED" && r.declineReason && (
           <div className="mt-4 rounded-field border border-destructive/30 bg-destructive/10 p-3 text-ui text-destructive">
@@ -273,7 +273,7 @@ export default function RoadmapDetailPage() {
               >
                 <div className="mb-1.5 flex items-center gap-2 text-caption text-muted-foreground">
                   <DotIdenticon seed={c.author.id} className="size-4 shrink-0" />
-                  <span className="font-medium text-foreground/90">{c.author.name ?? "Someone"}</span>
+                  <span className="font-medium text-foreground">{c.author.name ?? "Someone"}</span>
                   {c.official && (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
                       <StatusIcons.verified className="size-3 shrink-0" />{` ${PRODUCT_NAME} team`}
@@ -281,7 +281,7 @@ export default function RoadmapDetailPage() {
                   )}
                   <span>· {timeAgo(c.createdAt)}</span>
                 </div>
-                <p className="whitespace-pre-wrap text-ui text-foreground/90">{c.body}</p>
+                <p className="whitespace-pre-wrap text-ui text-foreground">{c.body}</p>
               </li>
             ))}
             {comments.length === 0 && (

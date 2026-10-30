@@ -59,7 +59,7 @@ export function WorkSection({
               <span
                 className={cn(
                   "font-mono text-caption tabular-nums",
-                  attention ? "text-warning-foreground/80" : "text-muted-foreground"
+                  attention ? "text-warning-foreground" : "text-muted-foreground"
                 )}
               >
                 {meta}

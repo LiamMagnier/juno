@@ -254,7 +254,7 @@ export function ComposerClarificationPopover({
                 <span aria-hidden className="text-border">
                   ·
                 </span>
-                <span className="truncate text-ui font-medium tracking-[-0.01em] text-foreground/85">
+                <span className="truncate text-ui font-medium tracking-[-0.01em] text-foreground">
                   {pending.result.title}
                 </span>
               </>
@@ -414,7 +414,7 @@ export function ComposerClarificationPopover({
                     <span
                       className={cn(
                         "min-w-0 flex-1 text-body leading-snug tracking-[-0.01em] transition-colors duration-fast ease-out-soft",
-                        selected ? "font-medium text-foreground" : "text-foreground/90"
+                        selected ? "font-medium text-foreground" : "text-foreground"
                       )}
                     >
                       {option}

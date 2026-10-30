@@ -438,7 +438,7 @@ function Rating({ value }: { value: number }) {
     <span className="inline-flex items-center gap-1 text-caption tabular-nums text-muted-foreground" aria-label={`Rated ${value} out of 5`}>
       <span className="inline-flex" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (
-          <Star key={i} weight={value >= i + 0.75 ? "fill" : undefined} className={cn("size-3", value >= i + 0.75 ? "text-[hsl(var(--warning))]" : "text-muted-foreground/50")} />
+          <Star key={i} weight={value >= i + 0.75 ? "fill" : undefined} className={cn("size-3", value >= i + 0.75 ? "text-[hsl(var(--warning))]" : "text-ink-tertiary")} />
         ))}
       </span>
       {value.toFixed(1)}

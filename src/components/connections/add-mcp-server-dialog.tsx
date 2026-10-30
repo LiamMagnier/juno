@@ -273,7 +273,7 @@ export function AddMcpServerDialog({
                           {testTools.slice(0, 24).map((tool) => (
                             <li
                               key={tool}
-                              className="rounded-control bg-muted px-2 py-0.5 font-mono text-micro text-foreground/80"
+                              className="rounded-control bg-muted px-2 py-0.5 font-mono text-micro text-muted-foreground"
                             >
                               {tool}
                             </li>

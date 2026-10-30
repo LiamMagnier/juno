@@ -1421,7 +1421,7 @@ const FIELD_ROW =
  *  row draws those, and a bordered input inside a bordered row reads as a field
  *  that has been dropped into another field. */
 const FIELD_CONTROL =
-  "min-w-0 flex-1 border-0 bg-transparent p-0 text-caption tabular-nums outline-none placeholder:text-muted-foreground/70";
+  "min-w-0 flex-1 border-0 bg-transparent p-0 text-caption tabular-nums outline-none placeholder:text-muted-foreground";
 
 function FieldLabel({ children }: { children: string }) {
   return (

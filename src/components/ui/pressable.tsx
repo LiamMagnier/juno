@@ -76,7 +76,7 @@ const pressableVariants = cva(
         // `active:scale-100` cancels `.pressable`'s dip (a row never scales)
         // and `active:bg-selected` is its press: a tonal step past the hover
         // fill, on the same fast cross-fade.
-        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
+        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
         chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.

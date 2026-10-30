@@ -3045,7 +3045,7 @@ function ComposerImpl({
                   type="button"
                   onClick={() => pickProject(null)}
                   aria-label="Remove from project"
-                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:size-8"
+                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-ink-tertiary hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:size-8"
                 >
                   <ActionIcons.dismiss aria-hidden="true" className="size-3" />
                 </button>
@@ -3194,7 +3194,7 @@ function ComposerImpl({
                       aria-label="Remove quoted selection"
                       // No transition-* beside `.pressable`: it would replace
                       // the class's list and leave the dip untimed.
-                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:p-2"
+                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-ink-tertiary hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:p-2"
                     >
                       <ActionIcons.dismiss aria-hidden="true" className="size-3.5" />
                     </button>
@@ -3226,7 +3226,7 @@ function ComposerImpl({
                       {text.length.toLocaleString()} characters · full text is
                       kept and will be sent · Enter to send
                     </p>
-                    <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words font-sans text-label font-normal text-muted-foreground/90">
+                    <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words font-sans text-label font-normal text-muted-foreground">
                       {text.slice(0, 280)}
                       {text.length > 280 ? "…" : ""}
                     </p>

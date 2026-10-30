@@ -163,7 +163,7 @@ export function DictationControls({
               // circle in the same place, so the hand already knows it. 44px
               // under a coarse pointer; `.pressable` owns the dip.
               "pressable grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
-              "hover:bg-primary/90 disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
+              "hover:bg-primary/90 disabled:pointer-events-none disabled:bg-secondary disabled:text-ink-tertiary",
               "motion-reduce:active:scale-100 coarse:size-11"
             )}
           >

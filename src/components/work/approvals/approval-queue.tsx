@@ -89,7 +89,7 @@ export function ApprovalQueue({
         // One quiet line and the batch verb, in the decision family: no
         // tinted banner, the words say it.
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="min-w-0 flex-1 text-ui leading-relaxed text-foreground/75">
+          <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
             {batchable.length === live.length
               ? `${batchable.length} decisions are waiting, and they are all the same kind.`
               : `${batchable.length} of these ${live.length} can be answered together. The rest ask on their own.`}

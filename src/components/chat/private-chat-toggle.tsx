@@ -68,7 +68,7 @@ export function PrivateChatToggle({
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-colors motion-reduce:active:scale-100",
             active
               ? "bg-foreground pl-3 pr-3.5 text-background hover:bg-foreground/90"
-              : "w-9 text-foreground/75 hover:bg-accent hover:text-foreground coarse:w-11"
+              : "w-9 text-muted-foreground hover:bg-accent hover:text-foreground coarse:w-11"
           )}
         >
           <IncognitoGlyph className="size-5" strokeWidth={1.5} look={look} />

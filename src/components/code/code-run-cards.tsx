@@ -820,7 +820,7 @@ function ChangedFilesCard({
             would read as "this file changed by nothing"; on a run that
             sends none it would be fifty tags saying the same thing. */}
         {node.file && !patch && anyPatch && (
-          <span className="shrink-0 font-mono text-caption text-muted-foreground/70">no diff</span>
+          <span className="shrink-0 font-mono text-caption text-muted-foreground">no diff</span>
         )}
         {node.file?.churn ? (
           <span className="shrink-0 font-mono tabular-nums text-muted-foreground">

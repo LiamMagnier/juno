@@ -155,7 +155,7 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                     on ? "bg-[hsl(var(--live)/0.08)] shadow-[inset_2px_0_0_hsl(var(--live))]" : "hover:bg-accent",
                   )}
                 >
-                  <span className={cn("text-ui", on ? "font-medium text-foreground" : "text-foreground/85")}>{p.label}</span>
+                  <span className={cn("text-ui", on ? "font-medium text-foreground" : "text-foreground")}>{p.label}</span>
                   {p.summary ? <span className="line-clamp-1 text-caption text-muted-foreground">{p.summary}</span> : null}
                 </button>
               );
@@ -175,7 +175,7 @@ function PartDetail({ id, part, framed }: { id: string; part: LiveExplorerPart; 
         {part.label}
       </p>
       {part.summary && part.summary !== part.detail ? <p className="text-ui text-muted-foreground">{part.summary}</p> : null}
-      {part.detail ? <p className="text-ui leading-relaxed text-foreground/90">{part.detail}</p> : null}
+      {part.detail ? <p className="text-ui leading-relaxed text-foreground">{part.detail}</p> : null}
       {part.facts.length ? (
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-ui">
           {part.facts.map((f, i) => (

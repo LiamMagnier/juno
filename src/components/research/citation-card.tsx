@@ -57,7 +57,7 @@ export function CitationCard({ n, source, passages, language }: CitationCardProp
       </div>
 
       {passage ? (
-        <blockquote lang={lang} className="line-clamp-6 border-s-2 border-border ps-3 text-caption leading-relaxed text-foreground/90">
+        <blockquote lang={lang} className="line-clamp-6 border-s-2 border-border ps-3 text-caption leading-relaxed text-foreground">
           {passage.quote}
         </blockquote>
       ) : (

@@ -678,12 +678,12 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
             ? // Empty, the disc is the quiet voice entry: a tone step and the
               // second ink, so the field (the thing to do) leads and the disc
               // is never the strongest object of an empty composer.
-              "bg-secondary text-foreground/75 hover:bg-selected hover:text-foreground active:bg-selected"
+              "bg-secondary text-muted-foreground hover:bg-selected hover:text-foreground active:bg-selected"
             : // With words, send: the ink disc, the one strong spot on the
               // composer (V3: graphite is the active control, ultramarine only
               // a small live presence). Stop and busy wear the same disc.
               "bg-foreground text-background hover:bg-foreground/90 dark:hover:bg-white active:bg-foreground/80",
-          "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
+          "disabled:pointer-events-none disabled:bg-secondary disabled:text-ink-tertiary",
           // 44px under a coarse pointer, the touch minimum; 36px on a mouse.
           "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
           className

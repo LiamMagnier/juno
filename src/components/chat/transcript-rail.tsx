@@ -121,7 +121,7 @@ export function TranscriptRail({
                 tapRef.current = false;
                 select(item.id);
               }}
-              className="group/tick flex w-7 items-center justify-end rounded-xs text-muted-foreground/45 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/tick flex w-7 items-center justify-end rounded-xs text-ink-tertiary outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span
                 aria-hidden

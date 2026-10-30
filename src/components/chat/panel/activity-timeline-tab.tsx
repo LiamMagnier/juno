@@ -157,7 +157,7 @@ const ReasoningRow = React.memo(
               {headline}
             </h3>
           ) : null}
-          <div className="prose-juno space-y-3 text-reading text-foreground/85" dir="auto">
+          <div className="prose-juno space-y-3 text-reading text-foreground" dir="auto">
             {paragraphs.map((paragraph, i) => (
               // `auto`: an off-screen paragraph keeps the height it last
               // rendered at, so the scroll height does not jump while reading.

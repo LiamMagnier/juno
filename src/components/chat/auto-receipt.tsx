@@ -30,10 +30,10 @@ export function AutoReceipt({
   const summary = receiptSummary(receipt);
   const line = (
     <>
-      <span className="text-muted-foreground/80">Auto</span>
-      <span aria-hidden className="text-muted-foreground/50">·</span>
+      <span className="text-muted-foreground">Auto</span>
+      <span aria-hidden className="text-ink-tertiary">·</span>
       <span className="min-w-0 truncate">{modelName}</span>
-      <span aria-hidden className="text-muted-foreground/50">·</span>
+      <span aria-hidden className="text-ink-tertiary">·</span>
       <span className="shrink-0">{effortLabel(receipt.effort)}</span>
     </>
   );

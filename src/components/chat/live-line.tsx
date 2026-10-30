@@ -144,7 +144,7 @@ export function LiveLine({
         "live-line flex min-w-0 items-center gap-2 text-nav",
         size === 20 ? "min-h-6" : "min-h-5 gap-1.5",
         // The second ink (`foreground` at 75% is the V3 ink-2 on both grounds).
-        "text-foreground/75 transition-opacity duration-fast ease-out-soft",
+        "text-muted-foreground transition-opacity duration-fast ease-out-soft",
         shown ? "opacity-100" : "opacity-0",
         className,
       )}
