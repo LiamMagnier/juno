@@ -9,6 +9,7 @@ import {
   spawnDockerWithStdin as spawnDockerWithStdinNow,
 } from "@/lib/docker-cli";
 import { env } from "@/lib/env";
+import { afterFreeze, holdingLaunches } from "./freeze-gate";
 import {
   COMPUTER_NOT_RESPONDING,
   COMPUTER_PATH_REFUSED,
@@ -233,19 +234,6 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
   return argv;
 }
 
-/**
- * Containers this process is freezing for a take over, and when each freeze
- * settles. A freeze stops every agent-uid task and rescans until none runs
- * (agent-exec freeze); a launch that lands during that scan is one more task
- * to stop, and a steady stream of them kept the scan from ever coming up
- * empty, so the take over told the person the agent could not be paused. So
- * any agent-uid `docker exec` asked for meanwhile waits for the freeze to
- * settle, then runs: the launcher finds the frozen marker and refuses it (75).
- * Per process, like the calls it orders: another process's launch still only
- * ever delays the scan by its own short life.
- */
-const freezing = new Map<string, Promise<void>>();
-
 /** The container of an agent-uid `docker exec` through the launcher, other than its own freeze and thaw. */
 export function agentLaunchContainer(argv: readonly string[]): string | null {
   if (argv[0] !== "exec") return null;
@@ -258,39 +246,20 @@ export function agentLaunchContainer(argv: readonly string[]): string | null {
   return argv[launcher - 1] ?? null;
 }
 
-async function afterFreeze(argv: readonly string[]): Promise<void> {
-  const name = agentLaunchContainer(argv);
-  const pending = name ? freezing.get(name) : undefined;
-  if (pending) await pending;
-}
-
-/** Runs a freeze with this process's agent-uid launches into that container held until it settles. */
-async function holdingLaunches<T>(name: string, freeze: () => Promise<T>): Promise<T> {
-  let settle: () => void = () => undefined;
-  const settled = new Promise<void>((resolve) => (settle = resolve));
-  const previous = freezing.get(name);
-  freezing.set(name, settled);
-  try {
-    if (previous) await previous;
-    return await freeze();
-  } finally {
-    if (freezing.get(name) === settled) freezing.delete(name);
-    settle();
-  }
-}
-
+// Every docker call goes through these: an agent-uid launch waits for a freeze
+// of its container in flight in this process (freeze-gate.ts).
 const runDockerBuffer: typeof runDockerBufferNow = async (argv, options) => {
-  await afterFreeze(argv);
+  await afterFreeze(agentLaunchContainer(argv));
   return runDockerBufferNow(argv, options);
 };
 
 const spawnDockerStreaming: typeof spawnDockerStreamingNow = async (argv, onChunk, options) => {
-  await afterFreeze(argv);
+  await afterFreeze(agentLaunchContainer(argv));
   return spawnDockerStreamingNow(argv, onChunk, options);
 };
 
 const spawnDockerWithStdin: typeof spawnDockerWithStdinNow = async (argv, input, timeoutMs) => {
-  await afterFreeze(argv);
+  await afterFreeze(agentLaunchContainer(argv));
   return spawnDockerWithStdinNow(argv, input, timeoutMs);
 };
 

@@ -21,6 +21,7 @@ import type {
   ExecResult,
   Shot,
 } from "./types";
+import { afterFreeze, holdingLaunches } from "./freeze-gate";
 
 /*
  * Agent computers on a separate computer host (COMPUTERS_2026-10.md S3,
@@ -91,6 +92,17 @@ export function remoteHostConfig(input: { url: string; token: string; nodeEnv?: 
 /** What the host's owner label holds instead of a user id: never the id itself. */
 export function hostUserRef(userId: string): string {
   return `u_${createHash("sha256").update(userId).digest("hex").slice(0, 32)}`;
+}
+
+/**
+ * The computer a host call acts on, when it is one a freeze of that computer
+ * holds (freeze-gate.ts): every per-computer call but the freeze and thaw.
+ */
+export function heldComputer(path: string): string | null {
+  const match = /^\/v1\/computers\/([^/]+)(?:\/([^/?]+))?/.exec(path);
+  if (!match) return null;
+  if (match[2] === "freeze" || match[2] === "thaw") return null;
+  return decodeURIComponent(match[1]!);
 }
 
 /** The host's tunnel URL for an origin: wss for https, ws for (loopback) http. */
@@ -225,6 +237,7 @@ export class RemoteComputerProvider implements ComputerProvider {
     path: string,
     opts: { query?: Record<string, string>; json?: unknown; body?: Buffer; timeoutMs?: number; maxBytes?: number } = {}
   ): Promise<HostAnswer> {
+    await afterFreeze(heldComputer(path));
     const url = new URL(path, this.origin);
     for (const [key, value] of Object.entries(opts.query ?? {})) url.searchParams.set(key, value);
     const headers: Record<string, string> = { Authorization: `Bearer ${this.token}` };
@@ -516,6 +529,7 @@ export class RemoteComputerProvider implements ComputerProvider {
         // Watching a command never fails it.
       }
     };
+    await afterFreeze(handle.name);
     let res: Response;
     try {
       res = await this.fetchImpl(new URL(this.computer(handle, "exec"), this.origin), {
@@ -744,6 +758,10 @@ export class RemoteComputerProvider implements ComputerProvider {
   }
 
   async freezeAgent(handle: ComputerHandle): Promise<void> {
+    return holdingLaunches(handle.name, () => this.freezeNow(handle));
+  }
+
+  private async freezeNow(handle: ComputerHandle): Promise<void> {
     const answer = await this.request("POST", this.computer(handle, "freeze"), { timeoutMs: Math.max(this.timeoutMs, 90_000) });
     if (answer.status !== 200) throw this.failure(answer, "freeze", answer.status >= 500 && answer.code !== "freeze_failed" ? COMPUTER_UNREACHABLE : COMPUTER_NOT_RESPONDING);
   }

@@ -15,7 +15,8 @@ import { after, before, test } from "node:test";
  * refuses it on the frozen marker.
  *
  * Drives the real DockerProvider against a stand-in `docker` that records when
- * each call starts and ends, with a slow `agent-exec freeze`.
+ * each call starts and ends, with a slow `agent-exec freeze`, and the real
+ * RemoteProvider against a stand-in computer host with a slow freeze.
  */
 
 const loader = Module as unknown as { _load: (request: string, parent: unknown, isMain: boolean) => unknown };
@@ -26,6 +27,7 @@ loader._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 const req = createRequire(import.meta.url);
 const docker = req("../src/lib/computer/docker") as typeof import("@/lib/computer/docker");
+const remote = req("../src/lib/computer/remote") as typeof import("@/lib/computer/remote");
 
 const env = process.env as Record<string, string | undefined>;
 const saved = { PATH: env.PATH, NODE_ENV: env.NODE_ENV };
@@ -94,4 +96,40 @@ test("a launch asked for during a freeze runs only after the freeze returns; ano
   assert.ok(heldLaunch.start >= freezeStep.end, "the held launch started after the stop step ended");
   assert.ok(heldLaunch.start <= frozenAt + 1, "and soon after the freeze returned");
   assert.ok(otherLaunch.start < freezeStep.end, "another computer's launch was not held");
+});
+
+test("a host call is held only when it acts on that computer, and never the freeze or thaw", () => {
+  assert.equal(remote.heldComputer("/v1/computers/juno-agent-a/exec"), "juno-agent-a");
+  assert.equal(remote.heldComputer("/v1/computers/juno-agent-a/files-content"), "juno-agent-a");
+  assert.equal(remote.heldComputer("/v1/computers/juno-agent-a"), "juno-agent-a");
+  assert.equal(remote.heldComputer("/v1/computers/juno-agent-a/freeze"), null);
+  assert.equal(remote.heldComputer("/v1/computers/juno-agent-a/thaw"), null);
+  assert.equal(remote.heldComputer("/v1/available"), null);
+});
+
+test("on a computer host, an exec asked for during a freeze is sent only after the freeze answers", async () => {
+  const sent: Array<{ action: string; at: number }> = [];
+  let freezeAnsweredAt = 0;
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const action = url.pathname.split("/").pop() ?? "";
+    sent.push({ action, at: Date.now() });
+    if (action === "freeze") {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      freezeAnsweredAt = Date.now();
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ stdout: "", stderr: "frozen\n", exitCode: 75, timedOut: false }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  const provider = new remote.RemoteComputerProvider({ origin: "http://127.0.0.1:1", token: "t", fetchImpl });
+  const handle = { name: "juno-agent-held", volume: "v" };
+  const freezing = provider.freezeAgent(handle);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await Promise.all([freezing, provider.exec(handle, "true")]);
+  const exec = sent.find((call) => call.action === "exec")!;
+  assert.ok(exec, "the exec was sent");
+  assert.ok(exec.at >= freezeAnsweredAt, "the exec went out after the freeze answered");
 });
