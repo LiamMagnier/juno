@@ -99,7 +99,7 @@ export function AnswerMemory({
         )}
       >
         <div className={cn("min-h-0", settled ? "overflow-visible" : "overflow-hidden")} inert={!open}>
-          <div className="mt-2 max-w-xl rounded-xl border border-border/60 bg-card/60 px-3.5 pb-1.5 pt-3">
+          <div className="mt-2 max-w-xl rounded-card border border-border/60 bg-card/60 px-3.5 pb-1.5 pt-3">
             {memory.used.length > 0 && (
               <section aria-label="Used in this answer">
                 <h4 className="text-caption font-medium text-muted-foreground">Used in this answer</h4>

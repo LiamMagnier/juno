@@ -297,7 +297,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
           </Button>
         )}
         {rich ? (
-          <Button variant="secondary" size="sm" asChild className="h-7 shrink-0 gap-1.5">
+          <Button variant="secondary" size="xs" asChild className="shrink-0">
             <a
               href={workArtifactDownloadUrl(artifact.id)}
               // No `download` attribute: the route sets Content-Disposition

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { EyeOff, Folder, FolderLock, MessageSquare, MessagesSquare, ShieldAlert } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -233,7 +234,7 @@ function RowEditor({
         void save();
       }}
     >
-      <textarea
+      <Textarea
         ref={fieldRef}
         value={draft}
         rows={1}
@@ -254,7 +255,7 @@ function RowEditor({
         // The field's text sits exactly where the sentence did: the negative
         // margin cancels the padding that gives the field its edge, out to the
         // row's own edges (the list bleeds the rows 12px past the column).
-        className="-mx-3 block w-[calc(100%+1.5rem)] resize-none overflow-hidden rounded-control border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft focus-visible:border-foreground/60"
+        className="-mx-3 block min-h-0 w-[calc(100%+1.5rem)] resize-none overflow-hidden px-3 py-2"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-caption text-muted-foreground">Enter to save, Esc to cancel</p>

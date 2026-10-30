@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/icons";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { formatSpan } from "@/lib/run-receipt";
@@ -381,7 +382,7 @@ export function ToolReceiptRow({
           <div
             className={cn(
               "flex flex-wrap items-center gap-x-3 gap-y-1.5 motion-safe:animate-fade-in",
-              explains && "rounded-lg border px-3 py-2",
+              explains && "rounded-card border px-3 py-2",
               explains && (stopped ? "border-border/60 bg-secondary/60" : "border-warning/20 bg-warning/[0.06]"),
             )}
           >
@@ -391,21 +392,21 @@ export function ToolReceiptRow({
               </p>
             ) : null}
             {offersRetry ? (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="xs"
                 onClick={onRetry}
                 disabled={retrying}
-                className={cn(
-                  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5 text-caption font-medium text-foreground",
-                  "transition-colors duration-fast ease-out-soft hover:bg-accent disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none coarse:h-9",
-                )}
+                // The page ground, not the tinted note it sits on.
+                className="shrink-0 bg-background text-caption disabled:opacity-60"
               >
                 <RotateCcw
                   aria-hidden="true"
                   className={cn("size-3.5 text-muted-foreground", retrying && "motion-safe:animate-spin")}
                 />
                 {retrying ? "Trying again…" : (retryLabel ?? "Try again")}
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
@@ -445,14 +446,14 @@ export function ToolReceiptList({
     <ul
       role="list"
       aria-label={label ?? `What ${PRODUCT_NAME} did`}
-      className={cn(!summary && "mt-2 overflow-hidden rounded-xl border border-border/60 bg-card/60", !summary && className)}
+      className={cn(!summary && "mt-2 overflow-hidden rounded-card border border-border/60 bg-card/60", !summary && className)}
     >
       {children}
     </ul>
   );
   if (!summary) return list;
   return (
-    <div className={cn("mt-2 overflow-hidden rounded-xl border border-border/60 bg-card/60", className)}>
+    <div className={cn("mt-2 overflow-hidden rounded-card border border-border/60 bg-card/60", className)}>
       <div className="flex min-h-9 items-center gap-2 border-b border-border/60 px-3 font-mono text-caption tabular-nums text-muted-foreground">
         {summary}
       </div>

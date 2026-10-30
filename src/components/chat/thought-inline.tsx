@@ -92,7 +92,7 @@ export function ThoughtInline({
         aria-expanded={fullOpen}
         aria-controls={fullOpen ? fullControls : undefined}
         className={cn(
-          "-ml-2 mt-2 inline-flex h-7 items-center gap-1 rounded-md px-2 text-caption text-muted-foreground",
+          "-ml-2 mt-2 inline-flex h-7 items-center gap-1 rounded-control px-2 text-caption text-muted-foreground",
           "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-11",
           fullOpen && "bg-accent text-foreground",
         )}

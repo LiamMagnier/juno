@@ -140,7 +140,7 @@ export function ArtifactReadView({
         {chatHref && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button asChild variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
+              <Button asChild variant="ghost" size="xs" className="shrink-0 px-2 text-caption text-muted-foreground hover:text-foreground">
                 <Link href={chatHref} aria-label="Open in chat">
                   <MessagesSquare className="size-3.5" aria-hidden />
                   <span className="hidden @[36rem]/window:inline">Open in chat</span>

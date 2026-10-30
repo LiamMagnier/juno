@@ -104,7 +104,7 @@ export function FaceStatePicker({ value, onChange, className }: { value: AgentSt
       ariaLabel="Preview a state"
       size="sm"
       columns="content"
-      optionClassName="whitespace-nowrap px-[5px] text-caption"
+      optionClassName="whitespace-nowrap px-1 text-caption"
       className={cn("gap-0.5", className)}
     />
   );

@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
  * The grouped card a SettingsGroup draws its rows in. Exported so a skeleton
  * (settings/loading.tsx) stands its placeholder rows in the same card.
  */
-export const SETTINGS_CARD_CLASS = "border border-border/60 divide-y divide-border/60 rounded-2xl px-4";
+export const SETTINGS_CARD_CLASS = "border border-border/60 divide-y divide-border/60 rounded-panel px-4";
 
 export function SettingsGroup({
   title,

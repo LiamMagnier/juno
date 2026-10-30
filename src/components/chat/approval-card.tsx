@@ -930,7 +930,7 @@ export function ApprovalCard({
       aria-expanded={detailOpen}
       aria-controls={detailOpen ? detailId : undefined}
       className={cn(
-        "inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
+        "inline-flex min-h-8 items-center gap-1 rounded-control px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
         "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none",
         className
       )}
