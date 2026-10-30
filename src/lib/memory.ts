@@ -42,7 +42,12 @@ import {
   type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
 import { readerMayUse, readerMayUseSummary, type AgentMemoryAccess, type MemoryReader } from "@/lib/memory-scope";
-import { readMemorySummaryChanges, summaryInvalidations } from "@/lib/memory-summary-changes";
+import {
+  readMemorySummaryChanges,
+  summaryInvalidations,
+  summarySourcesStillHold,
+  type SummarySourceSnapshot,
+} from "@/lib/memory-summary-changes";
 import {
   SENSITIVE_TOPICS,
   SENSITIVE_TOPIC_META,
@@ -65,6 +70,7 @@ import {
   budgetProjectFacts,
   projectConsolidationPrompt,
   projectSummaryIsEmpty,
+  type ProjectSummarySources,
 } from "@/lib/memory-project-summary";
 import { checkProjectAccess } from "@/lib/project-collaboration";
 import {
@@ -617,14 +623,20 @@ export async function getSuppressions(userId: string): Promise<string[]> {
  * Read on every chat turn that has a summary, so it is one indexed lookup —
  * `@@index([userId, kind])` narrows to the account's suppressions, which are a
  * handful of rows, and only the newest timestamp is selected.
+ *
+ * `updatedAt`, not `createdAt`: a block-list row can be reworded (the memory
+ * page's pencil, a device's `memory.update`), and "forget my old job" turned
+ * into "forget where I live" is a forget of where they live — made when it
+ * was reworded. By creation time, the summary written in between still said
+ * it and stayed in every chat.
  */
 export async function newestSuppressionAt(userId: string): Promise<Date | null> {
   const row = await prisma.memoryEntry.findFirst({
     where: { userId, kind: "SUPPRESSION" },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
+    orderBy: { updatedAt: "desc" },
+    select: { updatedAt: true },
   });
-  return row?.createdAt ?? null;
+  return row?.updatedAt ?? null;
 }
 
 /**
@@ -635,10 +647,11 @@ export async function newestSuppressionAt(userId: string): Promise<Date | null> 
 export async function getSuppressionState(userId: string): Promise<{ statements: string[]; newestAt: Date | null }> {
   const rows = await prisma.memoryEntry.findMany({
     where: { userId, kind: "SUPPRESSION" },
-    select: { content: true, createdAt: true },
+    select: { content: true, updatedAt: true },
   });
+  // Last changed, as in newestSuppressionAt: a reworded entry is a new forget.
   let newestAt: Date | null = null;
-  for (const row of rows) if (!newestAt || row.createdAt > newestAt) newestAt = row.createdAt;
+  for (const row of rows) if (!newestAt || row.updatedAt > newestAt) newestAt = row.updatedAt;
   return { statements: rows.map((row) => row.content), newestAt };
 }
 
@@ -2250,7 +2263,11 @@ async function gatherGithubContext(userId: string): Promise<string[]> {
   }
 }
 
-export async function gatherMemorySources(userId: string): Promise<MemorySources> {
+export async function gatherMemorySources(
+  userId: string,
+  /** `github: false` skips the GitHub call: a re-read before writing compares stored sources only. */
+  opts: { github?: boolean } = {}
+): Promise<MemorySources> {
   const [entries, digestRows, projectRows, githubLines, allowedSensitiveTopics] = await Promise.all([
     prisma.memoryEntry.findMany({
       where: { userId },
@@ -2282,7 +2299,7 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
       orderBy: { updatedAt: "desc" },
       select: { name: true, instructions: true },
     }),
-    gatherGithubContext(userId),
+    opts.github === false ? Promise.resolve([]) : gatherGithubContext(userId),
     loadAllowedSensitiveTopics(userId),
   ]);
   const suppressions = entries.filter((e) => e.kind === "SUPPRESSION").map((e) => e.content);
@@ -2446,6 +2463,15 @@ Rules:
   // better than none, and the next run replaces it.
   if (!result) return { status: "failed", transient };
 
+  // Read again before writing: a reset, delete or forget that landed while
+  // the model was writing must not be undone by this summary of the memory
+  // it erased (summarySourcesStillHold). Nothing is stored; the next rebuild
+  // starts from what is there now.
+  const current = await gatherMemorySources(opts.userId, { github: false });
+  if (!summarySourcesStillHold(summarySnapshot(sources), summarySnapshot(current))) {
+    return { status: "failed", transient: false };
+  }
+
   // Checked, not trusted: a sentence the block-list covers is cut before the
   // summary is stored, whatever the model made of the instruction.
   const content = scrubSummaryForSuppressions(result, sources.suppressions);
@@ -2468,6 +2494,15 @@ Rules:
   // The outcome reports the CLEARTEXT: callers render it or feed it to a
   // prompt, and none of them hold a key.
   return { status: "updated", content };
+}
+
+/** The parts of the account's sources a change can take away (summarySourcesStillHold). */
+function summarySnapshot(sources: MemorySources): SummarySourceSnapshot {
+  return {
+    facts: sources.facts,
+    suppressions: sources.suppressions,
+    lines: [...sources.digests, ...sources.projectLines],
+  };
 }
 
 /** Anything at all to distill — facts, chat history, or projects. */
@@ -2611,57 +2646,66 @@ export async function consolidateProjectMemory(opts: {
     return { status: "empty" };
   }
 
-  const now = new Date();
-  const [project, factRows, suppressions, digestRows] = await Promise.all([
-    // Unguarded, one line after `checkProjectAccess` allowed this reader: a
-    // member reads a project they do not own, and the guard would refuse the
-    // owner-scoped query they cannot make. The same choice listProjectMembers
-    // documents.
-    prismaUnguarded.project.findUnique({ where: { id: projectId }, select: { name: true, instructions: true } }),
-    prisma.memoryEntry.findMany({
-      where: {
-        userId,
-        projectId,
-        kind: "FACT",
-        status: "active",
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-      orderBy: { createdAt: "asc" },
-      select: { content: true, createdAt: true, observedAt: true, source: true },
-    }),
-    getSuppressions(userId),
-    prisma.conversationMemory.findMany({
-      where: { userId, digest: { not: null }, conversation: { projectId } },
-      orderBy: { updatedAt: "desc" },
-      take: 40,
-      select: { digest: true },
-    }),
-  ]);
-  const allowedSensitiveTopics = await loadAllowedSensitiveTopics(userId);
-  if (!project) {
-    await removeSummary();
-    return { status: "empty" };
-  }
-  const blockList = compileBlockList(suppressions);
-
-  const sources = {
-    projectName: project.name,
-    instructions: project.instructions,
-    // The account's read gates, and dates by when each fact was said — as for
-    // the account summary (gatherMemorySources).
-    facts: budgetProjectFacts(
-      factRows
-        .filter((row) => consolidationMayUse(row, blockList, allowedSensitiveTopics))
-        .map((row) => ({ content: row.content, createdAt: observedAtOf(row) }))
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    ),
-    digests: digestRows
-      .map((row) => row.digest!)
-      .filter(Boolean)
-      .filter((digest) => !proseCoveredBySuppression(digest, blockList)),
-    suppressions,
+  // Read twice: once to write the prompt, and again before storing what the
+  // model wrote, so a forget, delete or clear that landed in between is not
+  // undone by the summary of what it removed (summarySourcesStillHold).
+  // `null` means the project is gone.
+  const readSources = async (): Promise<ProjectSummarySources | null> => {
+    const now = new Date();
+    const [project, factRows, suppressions, digestRows] = await Promise.all([
+      // Unguarded, one line after `checkProjectAccess` allowed this reader: a
+      // member reads a project they do not own, and the guard would refuse the
+      // owner-scoped query they cannot make. The same choice listProjectMembers
+      // documents.
+      prismaUnguarded.project.findUnique({ where: { id: projectId }, select: { name: true, instructions: true } }),
+      prisma.memoryEntry.findMany({
+        where: {
+          userId,
+          projectId,
+          kind: "FACT",
+          status: "active",
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        orderBy: { createdAt: "asc" },
+        select: { content: true, createdAt: true, observedAt: true, source: true },
+      }),
+      getSuppressions(userId),
+      prisma.conversationMemory.findMany({
+        where: { userId, digest: { not: null }, conversation: { projectId } },
+        orderBy: { updatedAt: "desc" },
+        take: 40,
+        select: { digest: true },
+      }),
+    ]);
+    const allowedSensitiveTopics = await loadAllowedSensitiveTopics(userId);
+    if (!project) return null;
+    const blockList = compileBlockList(suppressions);
+    return {
+      projectName: project.name,
+      instructions: project.instructions,
+      // The account's read gates, and dates by when each fact was said — as for
+      // the account summary (gatherMemorySources).
+      facts: budgetProjectFacts(
+        factRows
+          .filter((row) => consolidationMayUse(row, blockList, allowedSensitiveTopics))
+          .map((row) => ({ content: row.content, createdAt: observedAtOf(row) }))
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      ),
+      digests: digestRows
+        .map((row) => row.digest!)
+        .filter(Boolean)
+        .filter((digest) => !proseCoveredBySuppression(digest, blockList)),
+      suppressions,
+    };
   };
-  if (projectSummaryIsEmpty(sources)) {
+  const snapshot = (read: ProjectSummarySources): SummarySourceSnapshot => ({
+    facts: read.facts,
+    suppressions: read.suppressions,
+    lines: [...read.digests, read.projectName, read.instructions],
+  });
+
+  const sources = await readSources();
+  if (!sources || projectSummaryIsEmpty(sources)) {
     await removeSummary();
     return { status: "empty" };
   }
@@ -2688,7 +2732,16 @@ export async function consolidateProjectMemory(opts: {
   // As for the account: a failure leaves the previous summary in place.
   if (!result) return { status: "failed", transient };
 
-  const content = scrubSummaryForSuppressions(result, suppressions);
+  // As for the account: what was cleared while the model wrote stays cleared.
+  // Access is asked again too — someone removed meanwhile gets no summary.
+  const current = (await checkProjectAccess(userId, projectId, "VIEWER")).allowed ? await readSources() : null;
+  if (!current) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+  if (!summarySourcesStillHold(snapshot(sources), snapshot(current))) return { status: "failed", transient: false };
+
+  const content = scrubSummaryForSuppressions(result, sources.suppressions);
   if (!content.trim()) {
     await removeSummary();
     return { status: "empty" };

@@ -115,3 +115,36 @@ export async function invalidateSummariesForDeletedConversations(
   await Promise.all(summaryInvalidations(db, userId, scopes));
   return scopes.length;
 }
+
+/** What a summary is written from, as text — the parts a change can take away. */
+export interface SummarySourceSnapshot {
+  facts: readonly { content: string }[];
+  suppressions: readonly string[];
+  /** Chat digests, project lines: anything else quoted to the summariser. */
+  lines: readonly string[];
+}
+
+/**
+ * Whether a summary written from `used` may still be stored, now that the
+ * sources read `current`.
+ *
+ * Consolidation reads its sources, then waits up to 45 seconds on a model,
+ * then writes. Everything that clears memory in that window — a reset, a
+ * delete, a forget, a rewrite, a project cleared — finished first, and the
+ * write landed after it: the summary of what was just erased, stamped newer
+ * than the erasure, so neither `summaryPredatesForget` nor the deleted rows
+ * (which leave no marker) could bench it. A reset was undone by the
+ * consolidation the previous chat turn had started.
+ *
+ * Only a REMOVAL makes it stale: a fact, digest or line it was written from
+ * that is no longer a source, or a new statement on the block-list. Something
+ * learned meanwhile is merely missing from it, which the next rebuild covers.
+ */
+export function summarySourcesStillHold(used: SummarySourceSnapshot, current: SummarySourceSnapshot): boolean {
+  const facts = new Set(current.facts.map((fact) => fact.content));
+  if (used.facts.some((fact) => !facts.has(fact.content))) return false;
+  const lines = new Set(current.lines);
+  if (used.lines.some((line) => !lines.has(line))) return false;
+  const known = new Set(used.suppressions);
+  return current.suppressions.every((statement) => known.has(statement));
+}

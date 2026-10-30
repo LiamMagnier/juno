@@ -52,7 +52,9 @@ export const TURN_CONTEXT_HEADING = "# Context for this message";
 /** "" when there is nothing to add, so a plain turn sends exactly the user's words. */
 export function buildTurnContextTail(input: TurnContextTailInput): string {
   const sections: string[] = [];
-  const notes = input.memoryNotes.map((note) => note.trim()).filter(Boolean);
+  // One note, one line: a stored fact can hold newlines, and a note rendered
+  // across several would close its own bullet and open a heading of its own.
+  const notes = input.memoryNotes.map((note) => note.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (notes.length > 0) {
     const project = input.memoryScope === "project";
     const heading = input.hasMemorySummary
