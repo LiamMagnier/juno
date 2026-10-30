@@ -88,7 +88,9 @@ export function selectCodingMemories(
  * profile is never a task on its own.
  */
 export function foldMemoryIntoPrompt(prompt: string, facts: readonly string[]): string {
-  const lines = facts.map((fact) => fact.trim()).filter(Boolean);
+  // One line each, as in a chat's notes (turn-context-tail.ts): a fact
+  // holding a newline must not open a section of the agent's prompt.
+  const lines = facts.map((fact) => fact.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (!prompt.trim() || lines.length === 0) return prompt;
   return `${prompt}\n\n---\nBackground from what ${PRODUCT_NAME} remembers about how this user works. It is context, not part of the task — where it and the task disagree, the task wins:\n${lines
     .map((line) => `- ${line}`)
