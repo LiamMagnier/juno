@@ -40,7 +40,9 @@
 #                 [--tunnel-port N] [--access-log <f>] [--error-log <f>]
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
-COMPUTERS="$(cd "$HERE/../agent-computers" && pwd -P)"
+# The repo's deploy/agent-computers, or (the installed copy the weekly rebuild
+# runs) the image context setup copied beside it.
+if [ -d "$HERE/../agent-computers" ]; then COMPUTERS="$(cd "$HERE/../agent-computers" && pwd -P)"; else COMPUTERS="$HERE/image-context"; fi
 
 WEB_IP="" DOMAIN="" TLS=private CERTBOT_EMAIL="" CERT="" KEY="" NAMESPACE=prod SSH_FROM="" MAX_RUNNING=6
 ACTION=setup TOKEN_ID="" TIMER="" LISTEN="" API_PORT=8750 TUNNEL_PORT=8751
