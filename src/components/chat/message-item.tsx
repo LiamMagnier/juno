@@ -4,8 +4,8 @@ import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, Download, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, Volume2 } from "@/components/ui/icons";
-import { ChatExportItems, requestChatExport } from "@/components/chat/conversation-export-menu";
+import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, Volume2 } from "@/components/ui/icons";
+import { ExportChatMenuSection } from "@/components/chat/conversation-export-menu";
 import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -1650,16 +1650,7 @@ export const MessageItem = React.memo(function MessageItem({
                         <ActionIcons.share className="size-4" /> Share chat
                       </DropdownMenuItem>
                     )}
-                    {canExport && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <Download className="size-4" /> Export chat
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className={MENU_W}>
-                          <ChatExportItems onSelect={requestChatExport} />
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
+                    {canExport && <ExportChatMenuSection />}
                     {(hasTextContent || canCopyLink) && (canBranchSaved || canForkPrivate || canShare || canExport) && (
                       <DropdownMenuSeparator />
                     )}

@@ -253,8 +253,10 @@ production):
   unless the owner relaxes that restriction on the host.
 - **Freeze at take over, thaw at hand back.** The provider writes a frozen marker
   (`/run/juno-state`, readable by the agent, writable only by uid 1001) so no new agent
-  command starts, stops every uid-1000 process until a scan finds none running (fork
-  loops and commands racing the freeze included), disconnects every X client that
+  command starts, stops every uid-1000 process (fork loops and commands racing the
+  freeze included: the signal and a scan repeat every 50 ms, for up to 3 s, until every
+  agent task is stopped; only at that deadline does a task in an uninterruptible call
+  with the stop pending count as stopped, see 7.3), disconnects every X client that
   belongs to the agent through the X server (by PID, never by name), and releases every
   key and mouse button the X server reports down (a typer stopped between a key's press
   and release would otherwise leave autorepeat typing for the person). A typer resumed
@@ -288,6 +290,11 @@ agent process were killed during a take over (by the OOM killer, say), a stopped
 process in an orphaned group could resume. Its old display connection is cut, but it
 could open a new one. A watchdog that re-stops the agent's processes while the marker
 exists, or the cgroup freezer on a cgroup of the agent's own, would close it.
+
+Also found (not closed): a task blocked in an uninterruptible call (state D, a slow disk
+write, say) cannot stop until the call returns. The freeze waits up to 3 s for it, then
+counts it as stopped if SIGSTOP is pending, so that call may still complete after the
+person has control. No more of the agent's code runs: the task stops as the call returns.
 
 ---
 

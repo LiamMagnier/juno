@@ -42,15 +42,15 @@
     {"name": "sign-up", "path": "/sign-up", "auth": false},
     {"name": "download", "path": "/download", "auth": false},
     {"name": "legal · cgu", "path": "/legal/cgu", "auth": false},
-    {"path": "/dev/controls", "auth": false, "allowError": true},
-    {"path": "/dev/shell", "auth": false, "allowError": true},
-    {"path": "/dev/model-picker", "auth": false, "allowError": true, "open": [{"click": "[data-testid=chip-host] button"}, {"waitFor": "[data-radix-popper-content-wrapper], [role=dialog], [role=listbox], [role=menu]"}]},
-    {"path": "/dev/thread", "auth": false, "allowError": true},
-    {"path": "/dev/transcript", "auth": false, "allowError": true},
-    {"path": "/dev/settings", "auth": false, "allowError": true},
-    {"path": "/dev/composer-chip", "auth": false, "allowError": true},
-    {"path": "/dev/sources", "auth": false, "allowError": true},
-    {"path": "/dev/memory", "auth": false, "allowError": true},
-    {"path": "/dev/permissions", "auth": false, "allowError": true}
+    {"path": "/dev/controls", "auth": false, "allowError": "panels"},
+    {"path": "/dev/shell", "auth": false, "allowError": "panels"},
+    {"path": "/dev/model-picker", "auth": false, "allowError": "panels", "open": [{"click": "[data-testid=chip-host] button"}, {"waitFor": "[data-radix-popper-content-wrapper], [role=dialog], [role=listbox], [role=menu]"}]},
+    {"path": "/dev/thread", "auth": false, "allowError": "panels"},
+    {"path": "/dev/transcript", "auth": false, "allowError": "panels"},
+    {"path": "/dev/settings", "auth": false, "allowError": "panels"},
+    {"path": "/dev/composer-chip", "auth": false, "allowError": "panels"},
+    {"path": "/dev/sources", "auth": false, "allowError": "panels"},
+    {"path": "/dev/memory", "auth": false, "allowError": "panels"},
+    {"path": "/dev/permissions", "auth": false, "allowError": "panels"}
   ]
 }

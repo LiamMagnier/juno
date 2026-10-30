@@ -220,12 +220,22 @@ export function collectGeometry(opts) {
   const meta = new Map(); // record index -> element
   const viewportClip = full ? { l: -window.scrollX, t: -window.scrollY, r: doc.scrollWidth - window.scrollX, b: doc.scrollHeight - window.scrollY } : { l: 0, t: 0, r: vw, b: vh };
 
-  const visit = (el, parentIndex, clip, depth) => {
+  // A transform that scales (a document thumbnail drawn at 0.35) puts the
+  // CSS values below it at another size than they show: such subtrees are
+  // marked and the checks skip them, as they skip loading placeholders.
+  const scales = (t) => {
+    const m = /^matrix\(([^)]+)\)$/.exec(t || "");
+    if (!m) return /^matrix3d\(/.test(t || "");
+    const [a, b, c, d] = m[1].split(",").map(Number);
+    return Math.abs(Math.hypot(a, b) - 1) > 0.01 || Math.abs(Math.hypot(c, d) - 1) > 0.01;
+  };
+  const visit = (el, parentIndex, clip, depth, scaledAbove = false) => {
     if (records.length >= maxRecords) return;
     const tag = el.tagName;
     if (SKIP.has(tag)) return;
     const cs = getComputedStyle(el);
     if (cs.display === "none") return;
+    const scaled = scaledAbove || scales(cs.transform);
     if (parseFloat(cs.opacity) === 0) return;
     if (cs.clip && cs.clip !== "auto" && /rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)/.test(cs.clip)) return;
     if (cs.clipPath && /inset\(\s*50%/.test(cs.clipPath)) return;
@@ -364,6 +374,7 @@ export function collectGeometry(opts) {
           /* an invalid selector marks nothing */
         }
       }
+      if (scaled) rec.scaled = true;
       const selAttr = el.getAttribute("aria-pressed") ?? el.getAttribute("aria-selected") ?? el.getAttribute("aria-checked");
       if (selAttr !== null) rec.sel = selAttr === "true";
       if (txt) {
@@ -392,7 +403,7 @@ export function collectGeometry(opts) {
       };
       if (childClip.r - childClip.l <= 0 || childClip.b - childClip.t <= 0) return;
     }
-    for (const child of el.children) visit(child, index, childClip, depth + 1);
+    for (const child of el.children) visit(child, index, childClip, depth + 1, scaled);
   };
 
   // Scope: a selector, or "new" = only the layers an open script added to

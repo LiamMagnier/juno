@@ -390,6 +390,9 @@ def host_get(url):
         return response.status, response.read()
 
 
+# As the browser uid: the gate's Chromium and its renderers (shared with the e2e suite).
+BROWSER_PROCESSES = (ROOT / "tests/helpers/browser_processes.py").read_text()
+
 # Probes run as the agent through the launcher (python3 -c). Each prints JSON.
 NAMESPACE_PROBE = r"""
 import ctypes, errno, json, subprocess
@@ -923,28 +926,28 @@ class SandboxAndLauncher(unittest.TestCase):
     def tearDownClass(cls):
         cls.computer.destroy()
 
-    def renderer_and_gate_namespaces(self, computer):
-        # The gate runs in the container's own user namespace, as this exec does
-        # (it is non-dumpable, so its /proc links are not readable).
-        script = ("import os,subprocess\n"
-                  "def ns(p):\n    try:\n        return os.readlink('/proc/%s/ns/user' % p)\n    except OSError:\n        return None\n"
-                  "rend=subprocess.run(['pgrep','-u','1001','-f','chrome.*--type=renderer'],capture_output=True,text=True).stdout.split()\n"
-                  "seen={ns(p) for p in rend if p!=str(os.getpid())}-{None}\n"
-                  "print(ns('self'), ' '.join(sorted(seen)))")
+    def browser_processes(self, computer):
+        """tests/helpers/browser_processes.py inside the computer, after a page has loaded:
+        the gate's Chromium (by its binary, whatever the image names it) and its renderers."""
         computer.cdp("open", "data:text/html,<p>renderer</p>")
-        out = computer.run_as_browser(["python3", "-c", script]).stdout.split()
-        return out[0], out[1:]
+        return json.loads(computer.run_as_browser(["python3", "-c", BROWSER_PROCESSES]).stdout)
 
     def test_browser_sandbox_state_matches_what_the_kernel_allows(self):
         state = self.computer.run_as_browser(["cat", "/run/juno-state/browser-sandbox"]).stdout.strip()
         self.assertEqual(state, "on" if HOST.sandbox else "off:kernel", HOST.sandbox_reason)
-        gate, renderers = self.renderer_and_gate_namespaces(self.computer)
-        self.assertTrue(renderers, "a renderer is running")
+        found = self.browser_processes(self.computer)
+        self.assertEqual(found["gates"], 1, found)
+        self.assertEqual(len(found["browser"]), 1, "the gate runs one Chromium: %s" % found)
+        launched = found["browser"][0]
+        self.assertGreater(found["renderers"], 0, "a renderer is running: %s" % found)
+        renderers, gate = found["rendererNamespaces"], found["self"]
         if HOST.sandbox:
+            # The browser process itself, not a pattern over every command line.
+            self.assertNotIn("--no-sandbox", launched, "with the sandbox on, the gate starts Chromium without --no-sandbox")
+            self.assertTrue(renderers, "the renderers' namespaces are readable: %s" % found)
             self.assertNotIn(gate, renderers, "with the sandbox on, renderers run in their own user namespace")
-            launched = self.computer.run_as_browser(["pgrep", "-a", "-u", "1001", "-f", "--no-sandbox"], check=False).stdout
-            self.assertNotIn("chrome --no-sandbox", launched.replace("chrome-for-testing/", ""), launched)
         else:
+            self.assertIn("--no-sandbox", launched, "with the sandbox off, the gate starts Chromium with --no-sandbox (pipe-v3)")
             self.assertEqual(renderers, [gate], "with the sandbox off, renderers share the gate's namespace (pipe-v3)")
         # And a computer under Docker's default profile reports off:kernel, whatever this host allows.
         if HOST.sandbox:
@@ -953,6 +956,9 @@ class SandboxAndLauncher(unittest.TestCase):
                 self.computer.stop()
                 plain.create()
                 self.assertEqual(plain.run_as_browser(["cat", "/run/juno-state/browser-sandbox"]).stdout.strip(), "off:kernel")
+                fallback = self.browser_processes(plain)
+                self.assertEqual(len(fallback["browser"]), 1, fallback)
+                self.assertIn("--no-sandbox", fallback["browser"][0], "off:kernel starts Chromium with --no-sandbox")
                 report = json.loads(plain.run(["python3", "-c", NAMESPACE_PROBE]).stdout)
                 for call, result in report.items():
                     self.assertIn(result, ("EPERM", "ENOSYS"), "default profile, %s: %s" % (call, result))

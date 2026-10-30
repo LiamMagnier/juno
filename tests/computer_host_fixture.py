@@ -36,9 +36,16 @@ image, temporary directories, written before each is created). It stops the hold
 (containers and volumes named juno-agent-e2e* or juno-agent-boundary-*, their image
 tags and directories, and the computer host's nginx container when host-up started
 it), then lists the network, containers, volumes, iptables rules, lo addresses, hosts
-lines, nginx containers, suite images and suite directories again and exits 1 if
-anything the fixture or a suite added is still there. A container on the fixture's
-network that no suite named (a demo's computer, say) is listed, not removed.
+lines, nginx containers, suite images, suite directories and fixture processes again
+and exits 1 if anything the fixture or a suite added is still there. A container on
+the fixture's network that no suite named (a demo's computer, say) is listed, not
+removed. A holder killed with SIGKILL leaves its egress proxy and map watcher running
+(the proxy keeps the gateway's port): `down` stops them, found by their map file in
+the holder's directory, and `up` refuses to start while any such process runs.
+
+Every pid the fixture signals (the holder, the host service, run-local.sh, a proxy or
+watcher) is checked in /proc first: it is signalled only while it still runs the
+same script, since a pid read from a state file may belong to another process by now.
 
 With no state file, `down` removes NOTHING: it lists what looks like a fixture or a
 computer host (a production single-box install has the same network, firewall rules
@@ -391,9 +398,21 @@ class Host:
                        "JUNO_EGRESS_STATE_DIR": self.state_dir}
         if max_mb is not None:
             environment["JUNO_EGRESS_MAX_MB_PER_HOUR"] = str(max_mb)
+        # Nothing may answer there yet: a proxy left by a holder killed with SIGKILL
+        # keeps listening on the gateway address after its network is gone, and this
+        # proxy would then exit on EADDRINUSE while the port check below passed.
+        try:
+            socket.create_connection((GATEWAY, PROXY_PORT), timeout=1).close()
+        except OSError:
+            pass
+        else:
+            raise AssertionError("something already listens on %s:%d (%s): an earlier fixture's egress proxy? "
+                                 "run `computer_host_fixture.py down`" % (GATEWAY, PROXY_PORT, fixture_processes() or "not a fixture's"))
         self.proxy = subprocess.Popen([sys.executable, "-I", str(DEPLOY / "egress-proxy.py")], env=environment,
                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         self._wait_for_port(GATEWAY, PROXY_PORT)
+        if self.proxy.poll() is not None:
+            raise AssertionError("the egress proxy exited (%s): %s" % (self.proxy.returncode, self.proxy.stderr.read()[-800:]))
 
     def stop_proxy(self):
         if self.proxy and self.proxy.poll() is None:
@@ -515,12 +534,78 @@ def read_state(path):
         return None
 
 
-def alive(pid):
+def process_argv(pid):
+    """A process's arguments; [] when it is gone, a zombie, or not readable."""
     try:
-        os.kill(int(pid), 0)
-        return True
+        with open("/proc/%d/cmdline" % int(pid), "rb") as file:
+            return [part.decode("utf-8", "replace") for part in file.read().split(b"\0") if part]
     except (OSError, ValueError, TypeError):
+        return []
+
+
+def runs(pid, script, *arguments):
+    """Whether `pid` is still a process running `script` (by file name) with these
+    arguments. A pid read from a state file may name another process by now (pid_max
+    is 32768 on some machines): nothing is signalled unless this says it is ours."""
+    argv = process_argv(pid)
+    return any(os.path.basename(part) == script for part in argv) and all(argument in argv for argument in arguments)
+
+
+# What each of the fixture's long-running processes runs (signalled only after `runs` agrees).
+HOLDER = ("computer_host_fixture.py", "serve")
+HOST_SERVICE = ("juno-computer-host.py",)
+HOST_LAUNCHER = ("run-local.sh",)
+EGRESS_PROCESSES = {"egress-proxy.py": ("egress-proxy.py",), "egress-map.py": ("egress-map.py", "watch")}
+
+
+def egress_map_of(pid):
+    try:
+        with open("/proc/%d/environ" % int(pid), "rb") as file:
+            for part in file.read().split(b"\0"):
+                if part.startswith(b"JUNO_EGRESS_MAP="):
+                    return part.split(b"=", 1)[1].decode("utf-8", "replace")
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def is_holder_directory(path):
+    """A fixture holder's own directory: juno-boundary-*, directly in a temporary root."""
+    if not isinstance(path, str) or not os.path.isabs(path):
         return False
+    real = os.path.realpath(path)
+    return (os.path.dirname(real) in [os.path.realpath(root) for root in temporary_roots()]
+            and os.path.basename(real).startswith(HOLDER_DIRECTORY_PREFIX))
+
+
+def fixture_processes(directory=None):
+    """The egress proxies and map watchers a fixture started that are still running,
+    as (pid, signature, directory): those whose JUNO_EGRESS_MAP lies in `directory`,
+    or with no directory, in any fixture holder's directory. They outlive a holder
+    killed with SIGKILL. A computer host's own (its units read a map elsewhere) is
+    never one of them."""
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        signature = next((value for value in EGRESS_PROCESSES.values() if runs(entry, *value)), None)
+        egress_map = egress_map_of(entry) if signature else None
+        if not egress_map:
+            continue
+        home = os.path.dirname(os.path.dirname(egress_map))  # <directory>/run/egress-map.json
+        if (os.path.realpath(home) == os.path.realpath(directory)) if directory else is_holder_directory(home):
+            found.append((int(entry), signature, home))
+    return sorted(found)
+
+
+def stop_fixture_processes(directory=None):
+    """Stops what fixture_processes finds (SIGTERM, which a proxy answers by saving its
+    budget, then SIGKILL), each only while it still runs what it ran."""
+    found = fixture_processes(directory)
+    for pid, signature, _ in found:
+        print("computer_host_fixture: stopping a fixture's %s (pid %d), left running" % (signature[0], pid))
+        stop_pid(pid, signature, seconds=10)
+    return found
 
 
 def inventory():
@@ -542,6 +627,7 @@ def inventory():
     images = [tag for tag in lines(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}"])
               if tag in SUITE_IMAGE_TAGS or tag.split(":", 1)[0] in SUITE_IMAGE_REPOSITORIES]
     return {
+        "fixtureProcesses": sorted("%s pid %d (%s)" % (signature[0], pid, home) for pid, signature, home in fixture_processes()),
         "networks": sorted(name for name in lines(["docker", "network", "ls", "--format", "{{.Name}}"]) if name == NETWORK),
         "containers": sorted(lines(["docker", "ps", "-a", "--filter", "label=app=juno", "--format", "{{.Names}}"])),
         "volumes": sorted(name for name in lines(["docker", "volume", "ls", "--format", "{{.Name}}"]) if name.startswith("juno-agent-")),
@@ -675,6 +761,10 @@ def serve(args):
             "sandboxReason": host.sandbox_reason,
             "seccompProfile": SECCOMP_PROFILE if host.sandbox else None,
             "demoPage": {"url": "http://%s/" % DEMO_NAME, "address": DEMO_ADDRESS} if host.demo_page else None,
+            # Outlive this holder if it is killed with SIGKILL; `down` stops them (by
+            # their map, in this directory, and only while they still run the script).
+            "proxyPid": host.proxy.pid,
+            "watcherPid": host.watcher.pid,
             "before": before,
             "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
@@ -710,13 +800,19 @@ def up(args):
         return 2
     path = state_path(args.state)
     existing = read_state(path)
-    if existing and alive(existing.get("pid")):
+    if existing and runs(existing.get("pid"), *HOLDER):
         print("computer_host_fixture: already up (pid %s, %s)" % (existing["pid"], path), file=sys.stderr)
         return 1
     if existing or path.exists():
         # A holder that ends cleanly removes its state, so this one ended half-way.
         print("computer_host_fixture: an earlier fixture's state is at %s and its holder is not running; "
               "run `down` first" % path, file=sys.stderr)
+        return 1
+    strays = fixture_processes()
+    if strays:
+        print("computer_host_fixture: an earlier fixture's egress processes still run (%s); stop them, or run `down` "
+              "(with no state left, `down` only lists them)" % ", ".join("%s pid %d" % (signature[0], pid) for pid, signature, _ in strays),
+              file=sys.stderr)
         return 1
     path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(path.parent, 0o755)
@@ -784,17 +880,20 @@ def down(args):
     before = state.get("before") or {}
     pid = state.get("pid")
     entries = ledger_entries(path)
-    if pid and alive(pid):
-        os.kill(int(pid), signal.SIGTERM)
-        deadline = time.monotonic() + 90
-        while alive(pid) and time.monotonic() < deadline:
-            time.sleep(0.25)
-        if alive(pid):
-            print("computer_host_fixture: the holder did not stop; killing it", file=sys.stderr)
-            os.kill(int(pid), signal.SIGKILL)
+    # Only while the pid still runs the holder: a dead holder's pid may be another
+    # process's by now.
+    if pid and runs(pid, *HOLDER):
+        stop_pid(pid, HOLDER, seconds=90)
     directory = state.get("directory")
-    if isinstance(directory, str) and os.path.basename(directory).startswith(HOLDER_DIRECTORY_PREFIX) and not alive(pid):
-        shutil.rmtree(directory, ignore_errors=True)
+    holder_directory = directory if is_holder_directory(directory) else None
+    # A holder killed with SIGKILL leaves its egress proxy and map watcher running (the
+    # proxy keeps the gateway's port): stopped by their map in its directory (any
+    # fixture's on a disposable host), before that directory goes, since the proxy
+    # writes its budget there as it stops.
+    if holder_directory or disposable:
+        stop_fixture_processes(holder_directory)
+    if holder_directory and not runs(pid, *HOLDER):
+        shutil.rmtree(holder_directory, ignore_errors=True)
     # The suites' containers (by their names only, unless the host is disposable),
     # then their volumes, images and directories.
     on_network = docker("ps", "-a", "--filter", "network=" + NETWORK, "--format", "{{.Names}}", check=False).stdout.split()
@@ -888,7 +987,7 @@ def status(args):
     if not state:
         print("computer_host_fixture: not up (no state at %s)" % path)
         return 1
-    up_now = alive(state.get("pid"))
+    up_now = runs(state.get("pid"), *HOLDER)
     print(json.dumps({**{key: value for key, value in state.items() if key != "before"}, "alive": up_now}, indent=1))
     host = read_state(host_state_path(path))
     if host:
@@ -962,15 +1061,24 @@ def find_host_process(config):
     return None
 
 
-def stop_pid(pid, seconds=20):
-    if not alive(pid):
+def stop_pid(pid, signature, seconds=20):
+    """SIGTERM, then SIGKILL after `seconds`, each only while `pid` still runs
+    `signature` (see runs): a pid from a state file is never trusted on its own."""
+    def signal_if_ours(number):
+        if not runs(pid, *signature):
+            return False
+        try:
+            os.kill(int(pid), number)
+        except ProcessLookupError:
+            return False
+        return True
+    if not signal_if_ours(signal.SIGTERM):
         return
-    os.kill(int(pid), signal.SIGTERM)
     deadline = time.monotonic() + seconds
-    while alive(pid) and time.monotonic() < deadline:
+    while runs(pid, *signature) and time.monotonic() < deadline:
         time.sleep(0.2)
-    if alive(pid):
-        os.kill(int(pid), signal.SIGKILL)
+    if signal_if_ours(signal.SIGKILL):
+        print("computer_host_fixture: %s (pid %s) did not stop on SIGTERM; killed" % (signature[0], pid), file=sys.stderr)
 
 
 def host_up(args):
@@ -979,12 +1087,12 @@ def host_up(args):
         return 2
     path = state_path(args.state)
     state = read_state(path)
-    if not state or not alive(state.get("pid")):
+    if not state or not runs(state.get("pid"), *HOLDER):
         print("computer_host_fixture: the fixture is not up (run `up` first)", file=sys.stderr)
         return 1
     hpath = host_state_path(path)
     existing = read_state(hpath)
-    if existing and alive(existing.get("pythonPid")):
+    if existing and runs(existing.get("pythonPid"), *HOST_SERVICE):
         print("computer_host_fixture: the host is already up (pid %s)" % existing["pythonPid"], file=sys.stderr)
         return 1
     if docker("ps", "-aq", "--filter", "name=^/%s$" % NGINX_CONTAINER, check=False).stdout.strip():
@@ -1017,7 +1125,7 @@ def host_up(args):
     found = find_host_process(data / "config.json") if ready else None
     if not ready or not found:
         if child.poll() is None:
-            stop_pid(child.pid)
+            stop_pid(child.pid, HOST_LAUNCHER)
         docker("rm", "-f", NGINX_CONTAINER, check=False)
         shutil.rmtree(data, ignore_errors=True)
         print("computer_host_fixture: the host did not come up; its log:\n" + log.read_text()[-4000:], file=sys.stderr)
@@ -1043,15 +1151,15 @@ def host_service(args):
         print("computer_host_fixture: no host (run host-up first)", file=sys.stderr)
         return 1
     if args.action == "stop":
-        if alive(host.get("bashPid")):
+        if runs(host.get("bashPid"), *HOST_LAUNCHER):
             # Detach run-local.sh first: its EXIT trap would remove nginx.
             os.kill(int(host["bashPid"]), signal.SIGKILL)
-        stop_pid(host.get("pythonPid"), seconds=15)
+        stop_pid(host.get("pythonPid"), HOST_SERVICE, seconds=15)
         host.update(bashPid=None, pythonPid=None)
         write_json(path, host)
         print("computer_host_fixture: host service stopped (nginx left running)")
         return 0
-    if alive(host.get("pythonPid")):
+    if runs(host.get("pythonPid"), *HOST_SERVICE):
         print("computer_host_fixture: the host service is already running")
         return 0
     with open(host["log"], "a") as output:
@@ -1066,7 +1174,7 @@ def host_service(args):
             print("computer_host_fixture: host service started (pid %d)" % child.pid)
             return 0
         time.sleep(0.2)
-    stop_pid(child.pid)
+    stop_pid(child.pid, HOST_SERVICE)
     print("computer_host_fixture: the host service did not start; see %s" % host["log"], file=sys.stderr)
     return 1
 
@@ -1077,12 +1185,12 @@ def host_down(args):
     if not host:
         print("computer_host_fixture: no host to stop")
         return 0
-    stop_pid(host.get("pythonPid"))
+    stop_pid(host.get("pythonPid"), HOST_SERVICE)
     # run-local.sh ends when its service does, and its EXIT trap removes nginx.
     deadline = time.monotonic() + 30
-    while alive(host.get("bashPid")) and time.monotonic() < deadline:
+    while runs(host.get("bashPid"), *HOST_LAUNCHER) and time.monotonic() < deadline:
         time.sleep(0.2)
-    stop_pid(host.get("bashPid"))
+    stop_pid(host.get("bashPid"), HOST_LAUNCHER)
     docker("rm", "-f", NGINX_CONTAINER, check=False)
     shutil.rmtree(host["dataDir"], ignore_errors=True)  # the token and the TLS key
     for leftover in (path, path.with_name("host.env")):

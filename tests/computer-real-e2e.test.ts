@@ -401,9 +401,15 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     // Refuses to run without the fixture: the network, the firewall and the proxy are the arrangement under test.
     if (!existsSync(FIXTURE_STATE)) throw new Error(`no fixture: run \`sudo -E python3 tests/computer_host_fixture.py up\` first (${FIXTURE_STATE})`);
     fixture = JSON.parse(readFileSync(FIXTURE_STATE, "utf8")) as FixtureState;
-    try {
-      process.kill(fixture.pid, 0);
-    } catch {
+    // The holder by what it runs, not by its pid alone (a dead holder's pid may be reused).
+    const holder = (() => {
+      try {
+        return readFileSync(`/proc/${fixture.pid}/cmdline`, "utf8").split("\0");
+      } catch {
+        return [];
+      }
+    })();
+    if (!holder.some((arg) => path.basename(arg) === "computer_host_fixture.py") || !holder.includes("serve")) {
       throw new Error(`the fixture's holder (pid ${fixture.pid}) is not running; bring it up again`);
     }
     docker("network", "inspect", fixture.network);
@@ -797,7 +803,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     assert.equal(outcome.echoed, size);
   });
 
-  it("12. take over holds against a fork loop and a racing command, releases a held modifier, and a resumed typer cannot type", { timeout: 300_000 * SLACK }, async () => {
+  it("12. take over holds against a fork loop and commands racing the freeze, releases a held modifier, and a resumed typer cannot type", { timeout: 300_000 * SLACK }, async () => {
     // (a) A fork loop: after the take over no agent task runs, for 2 s.
     let awake = await fresh();
     await awake.provider.exec(awake.handle, "setsid nohup sh -c 'while true; do (sleep 0.05 &) ; done' >/dev/null 2>&1 &", { timeoutSeconds: 20 });
@@ -810,72 +816,161 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     await handBack();
     held.person.ws.close();
 
-    // (b) Commands racing the take over. Each writes a timestamp to its own file every
-    // 100 ms for as long as it runs, so one that is not frozen shows in its file at
-    // once. Two start well before the take over and one right as it begins (frozen
-    // with the rest, or refused with 75 if it reaches the launcher after the marker);
-    // a command after the take over is refused. While the person has control no file
-    // grows; after hand back the early ones write again (they were stopped, not ended).
+    // (b) Commands racing the store's freeze. Each racer writes a timestamp to its own
+    // file every 100 ms for as long as it runs, so one that is not frozen shows in its
+    // file at once. The burst starts inside openComputerViewSession, when the store
+    // calls the provider's freezeAgent (wrapped here): two racers are launched
+    // RACE_HEAD_START_MS apart before the provider's own freeze is let through, so they
+    // reach the launcher around the moment the frozen marker lands; from the moment the
+    // freeze starts until it returns, another is launched every RACE_EVERY_MS while a
+    // slot is free, so at least one launch is always inside the freeze. Each racer
+    // reaches the launcher before the marker (it runs, and the freeze's scan must stop
+    // it: frozen) or after it (refused with 75, never runs); which, depends on the
+    // machine's timing, and the record says. A racer that runs holds its slot until hand
+    // back. At most three are in flight on the remote host, which runs at most 4
+    // commands per computer (maxCommandsPerComputer; the late command below takes the
+    // fourth), and eight on one box. While the person has control no file grows and no
+    // timestamp is later than the freeze's return; after hand back every racer that ran
+    // writes again (it was stopped, not ended).
     awake = await fresh();
     const RACE = "/home/agent/work/e2e/race";
+    const RACE_HEAD_START_MS = 60;
+    const RACE_EVERY_MS = 40;
+    const RACERS_IN_FLIGHT = PROVIDER === "remote" ? 3 : 8;
     await awake.provider.exec(awake.handle, `rm -rf ${RACE} && mkdir -p ${RACE}`, { timeoutSeconds: 20 });
     const writer = (name: string) => `while true; do date +%s%N >> ${RACE}/${name}; sleep 0.1; done`;
     const exec = (command: string) =>
       awake.provider.exec(awake.handle, command, { timeoutSeconds: 120 }).then(
-        (res) => ({ code: res.exitCode }),
+        (res) => ({ code: res.exitCode, error: "" }),
         (error: unknown) => ({ code: -1, error: String(error) }),
       );
-    /** Each writer's lines: how many, and the newest timestamp (ms, the same kernel clock as Date.now()). */
+    const nsToMs = (value: string | undefined) => (value && /^\d+$/.test(value) ? Math.floor(Number(BigInt(value) / 1_000_000n)) : 0);
+    /** Each writer's lines: how many, the first and the newest timestamp (ms, the same kernel clock as Date.now()). */
     const raceFiles = () =>
       Object.fromEntries(
-        observe(["sh", "-c", `cd ${RACE} && for f in *; do [ -f "$f" ] && printf '%s %s %s\\n' "$f" "$(wc -l < "$f")" "$(tail -n 1 "$f")"; done; true`])
+        observe(["sh", "-c", `cd ${RACE} && for f in *; do [ -f "$f" ] && printf '%s %s %s %s\\n' "$f" "$(wc -l < "$f")" "$(head -n 1 "$f")" "$(tail -n 1 "$f")"; done; true`])
           .split("\n")
           .map((line) => line.trim().split(/\s+/))
           .filter((parts) => parts.length >= 2 && /^\d+$/.test(parts[1]!))
-          .map(([name, lines, last]) => [
-            name!,
-            { lines: Number(lines), lastMs: last && /^\d+$/.test(last) ? Math.floor(Number(BigInt(last) / 1_000_000n)) : 0 },
-          ]),
-      ) as Record<string, { lines: number; lastMs: number }>;
-    const early = [exec(writer("early-1")), exec(writer("early-2"))];
-    await waitFor("the early writers to write", 10, async () => {
-      const files = raceFiles();
-      return (files["early-1"]?.lines ?? 0) >= 3 && (files["early-2"]?.lines ?? 0) >= 3;
-    });
-    const racer: { code: number | null } = { code: null };
-    const racing = exec(writer("racing")).then((res) => ((racer.code = res.code), res));
-    held = await takeOver();
+          .map(([name, lines, first, last]) => [name!, { lines: Number(lines), firstMs: nsToMs(first), lastMs: nsToMs(last) }]),
+      ) as Record<string, { lines: number; firstMs: number; lastMs: number }>;
+    type Racer = { name: string; issuedAt: number; code: number | null; error: string; answeredAt: number | null; done: Promise<void> };
+    const racers: Racer[] = [];
+    const launchRacer = () => {
+      const racer: Racer = { name: `racer-${racers.length + 1}`, issuedAt: Date.now(), code: null, error: "", answeredAt: null, done: Promise.resolve() };
+      racer.done = exec(writer(racer.name)).then((res) => {
+        Object.assign(racer, { code: res.code, error: res.error, answeredAt: Date.now() });
+      });
+      racers.push(racer);
+    };
+    const inFlight = () => racers.filter((racer) => racer.answeredAt === null).length;
+    const freezeWindow = { start: 0, end: 0 };
+    const burst = async (headStartDone: () => void) => {
+      for (let i = 0; i < 2; i++) {
+        launchRacer();
+        await sleep(RACE_HEAD_START_MS);
+      }
+      headStartDone(); // the next racer is launched now, as the freeze starts (a slot is always free)
+      while (!freezeWindow.end && racers.length < 24) {
+        if (inFlight() < RACERS_IN_FLIGHT) launchRacer();
+        await sleep(RACE_EVERY_MS);
+      }
+    };
+    const provider = lib.providerModule.computerProvider()!;
+    assert.equal(provider, awake.provider, "the store freezes through this provider");
+    const ownFreeze = Object.prototype.hasOwnProperty.call(provider, "freezeAgent");
+    const originalFreeze = provider.freezeAgent;
+    let bursting: Promise<void> = Promise.resolve();
+    provider.freezeAgent = async (handle) => {
+      let headStartDone: () => void = () => undefined;
+      const headStart = new Promise<void>((resolve) => (headStartDone = resolve));
+      bursting = burst(headStartDone).finally(headStartDone);
+      await headStart; // the provider's own freeze goes once the head start's racers are launched
+      freezeWindow.start = Date.now();
+      try {
+        return await originalFreeze.call(provider, handle);
+      } finally {
+        freezeWindow.end = Date.now();
+      }
+    };
+    try {
+      held = await takeOver();
+    } finally {
+      if (ownFreeze) provider.freezeAgent = originalFreeze;
+      else delete (provider as Partial<Provider>).freezeAgent;
+    }
+    await bursting;
     const tookAt = Date.now();
+    assert.ok(freezeWindow.end >= freezeWindow.start && freezeWindow.start > 0, "the store froze the agent through the provider");
+    // Every racer is answered, or has written, or is a stopped process, before the
+    // person's window is judged (one still in its launcher on its way to 75 is neither).
+    const names = (racer: Racer) => `${RACE}/${racer.name};`;
+    await waitFor("every racer to be answered or stopped", 15, async () => {
+      const files = raceFiles();
+      const stopped = agentProcesses().filter(frozen);
+      return racers.every((racer) => racer.answeredAt !== null || (files[racer.name]?.lines ?? 0) > 0 || stopped.some((p) => p.args.includes(names(racer))));
+    });
+    const markerMs = nsToMs(observe(["python3", "-I", "-c", "import os; print(os.stat('/run/juno-state/frozen').st_mtime_ns)"]).trim());
     const atTakeOver = raceFiles();
     const late = await exec(`touch ${RACE}/late`);
-    assert.equal(late.code, 75, "a command after the take over is refused");
-    assert.deepEqual(runningAgentProcesses(), [], "a command that raced the take over runs unfrozen");
+    assert.equal(late.code, 75, `a command after the take over is refused ${late.error}`);
+    assert.deepEqual(runningAgentProcesses(), [], "a command that raced the freeze runs unfrozen");
     await sleep(2000 * SLACK);
     const beforeHandBack = raceFiles();
     const handBackAt = Date.now();
-    assert.deepEqual(beforeHandBack, atTakeOver, `a writer wrote while the person had control (${JSON.stringify({ atTakeOver, beforeHandBack })})`);
+    assert.deepEqual(beforeHandBack, atTakeOver, `a racer wrote while the person had control (${JSON.stringify({ atTakeOver, beforeHandBack })})`);
     for (const [name, file] of Object.entries(beforeHandBack)) {
-      assert.ok(file.lastMs <= tookAt, `${name} wrote at ${file.lastMs}, after the take over had frozen the agent (${tookAt})`);
+      assert.ok(file.lastMs <= freezeWindow.end, `${name} wrote at ${file.lastMs}, after the freeze had returned (${freezeWindow.end})`);
     }
     assert.ok(!("late" in beforeHandBack), "the refused command wrote nothing");
+    const answeredDuringTakeOver = racers.map((racer) => ({ name: racer.name, code: racer.code, error: racer.error }));
+    for (const racer of answeredDuringTakeOver) {
+      assert.ok(racer.code === null || racer.code === 75, `${racer.name} ended with ${racer.code} ${racer.error} (a racer is refused with 75 or frozen)`);
+      if (racer.code === 75) assert.ok(!(racer.name in beforeHandBack), `${racer.name} was refused yet wrote`);
+    }
     await handBack();
     held.person.ws.close();
-    // The racer reached the launcher either before the marker (frozen with the rest:
-    // it writes again now) or after it (refused with 75, never ran).
+    // A racer that was not refused was frozen: it writes again now (one stopped in
+    // its launcher before the marker check starts now, the marker gone).
     const grew = (files: Record<string, { lines: number }>, name: string) => (files[name]?.lines ?? 0) > (beforeHandBack[name]?.lines ?? 0);
-    await waitFor("the writers to write again after hand back", 10, async () => {
+    await waitFor("every frozen racer to write again after hand back", 10, async () => {
       const files = raceFiles();
-      return grew(files, "early-1") && grew(files, "early-2") && (racer.code === 75 || grew(files, "racing"));
+      return racers.every((racer) => racer.code === 75 || grew(files, racer.name));
     });
-    const racingOutcome = racer.code === 75 ? "refused" : "frozen";
-    assert.ok(racer.code === null || racer.code === 75, `the racer ended on its own with ${racer.code}`);
+    for (const racer of racers) {
+      assert.ok(racer.code === null || racer.code === 75, `${racer.name} ended on its own with ${racer.code} ${racer.error}`);
+    }
     await awake.provider.exec(awake.handle, "pkill -u agent -f 'date \\+%s%N >>'; pkill -u agent -x sleep; true", { timeoutSeconds: 20 });
-    await Promise.all([...early, racing]);
-    const resumed = raceFiles();
-    const firstAfter = Object.fromEntries(
-      ["early-1", "early-2"].map((name) => [name, (resumed[name]?.lines ?? 0) - (beforeHandBack[name]?.lines ?? 0)]),
-    );
-    note("12b", { racingOutcome, linesAtTakeOver: atTakeOver, linesWrittenAfterHandBack: firstAfter, windowMs: handBackAt - tookAt });
+    await Promise.all(racers.map((racer) => racer.done));
+    // A launch overlaps the freeze when it was issued before the freeze returned and
+    // landed (its first write, its refusal; a racer stopped before writing landed
+    // inside the freeze) after the freeze began.
+    const outcomes = racers.map((racer) => {
+      const file = beforeHandBack[racer.name];
+      const landedAt = racer.code === 75 ? racer.answeredAt! : file ? file.firstMs : freezeWindow.end;
+      return {
+        name: racer.name,
+        outcome: racer.code === 75 ? "refused" : "frozen",
+        issuedMs: racer.issuedAt - freezeWindow.start,
+        landedMs: landedAt - freezeWindow.start,
+        // Frozen before its first write: stopped by the freeze while it was still starting.
+        stoppedBeforeWriting: racer.code !== 75 && !file,
+        ranAfterTheMarker: racer.code !== 75 && !!file && markerMs > 0 && file.firstMs > markerMs,
+        overlapped: racer.issuedAt <= freezeWindow.end && landedAt >= freezeWindow.start,
+      };
+    });
+    assert.ok(outcomes.some((o) => o.overlapped), `no racer's launch overlapped the freeze (${JSON.stringify(outcomes)})`);
+    note("12b", {
+      freezeMs: freezeWindow.end - freezeWindow.start,
+      markerMs: markerMs ? markerMs - freezeWindow.start : null,
+      refused: outcomes.filter((o) => o.outcome === "refused").length,
+      frozen: outcomes.filter((o) => o.outcome === "frozen").length,
+      overlapped: outcomes.filter((o) => o.overlapped).length,
+      stoppedBeforeWriting: outcomes.filter((o) => o.stoppedBeforeWriting).length,
+      ranAfterTheMarker: outcomes.filter((o) => o.ranAfterTheMarker).length,
+      racers: outcomes,
+      windowMs: handBackAt - tookAt,
+    });
 
     // (c) A held modifier and button are released for the person.
     awake = await fresh();
@@ -931,15 +1026,22 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     assert.equal(report.clone3, "ENOSYS");
     const sandbox = await awake.provider.browserSandbox(awake.handle);
     assert.equal(sandbox, fixture.sandbox ? "on" : "off", `the sandbox state is what the fixture decided (${fixture.sandboxReason})`);
-    let namespaces: { gate: string; renderers: string[] } | null = null;
+    // The gate's Chromium and its renderers, found by the browser's binary whatever the
+    // image names it (Debian's chromium or Chrome for Testing's chrome).
+    await withAgentPage(awake, (page) => page.setContent("<p>renderer</p>"));
+    const found = JSON.parse(observe(["python3", "-c", BROWSER_PROCESSES])) as BrowserProcesses;
+    assert.equal(found.browser.length, 1, `the gate runs one Chromium: ${JSON.stringify(found)}`);
+    const launched = found.browser[0]!;
+    assert.ok(found.renderers > 0, `a renderer is running: ${JSON.stringify(found)}`);
     if (sandbox === "on") {
-      await withAgentPage(awake, (page) => page.setContent("<p>renderer</p>"));
-      const [gate, ...renderers] = observe(["python3", "-c", RENDERER_NAMESPACES]).trim().split(/\s+/);
-      namespaces = { gate: gate!, renderers };
-      assert.ok(renderers.length > 0, "a renderer is running");
-      assert.ok(!renderers.includes(gate!), "with the sandbox on, renderers run in their own user namespace");
+      assert.ok(!launched.includes("--no-sandbox"), "with the sandbox on, the gate starts Chromium without --no-sandbox");
+      assert.ok(found.rendererNamespaces.length > 0, `the renderers' namespaces are readable: ${JSON.stringify(found)}`);
+      assert.ok(!found.rendererNamespaces.includes(found.self), "with the sandbox on, renderers run in their own user namespace");
+    } else {
+      assert.ok(launched.includes("--no-sandbox"), "with the sandbox off, the gate starts Chromium with --no-sandbox (pipe-v3)");
+      assert.deepEqual(found.rendererNamespaces, [found.self], "with the sandbox off, renderers share the gate's namespace (pipe-v3)");
     }
-    note("13", { sandbox, namespaces });
+    note("13", { sandbox, browser: path.basename(launched[0] ?? ""), renderers: found.renderers, namespaces: { gate: found.self, renderers: found.rendererNamespaces } });
   });
 
   // ── 9: a Work run ───────────────────────────────────────────────────────────────
@@ -1058,10 +1160,17 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
           assert.equal(row?.lastResumedAt ?? null, null, "nothing accrues during the outage");
           assert.equal(row?.status, "awake", "never marked as an error or asleep");
           assert.equal(row?.containerRef, containerRef, "not recreated");
+          // The interval was settled at the last contact before the stop, so the week's
+          // usage is no higher than just before it, 15 s and more into the outage.
+          outage.usageDuring = await lib.store.computerWeekUsageSeconds(USER);
+          assert.ok((outage.usageDuring as number) <= (outage.usageBefore as number),
+            `the outage was metered: ${String(outage.usageBefore)} s before it, ${String(outage.usageDuring)} s during it`);
         }
         if (shellCards === 3) {
           fixtureCommand("host-service", "start");
           lib.access.resetComputerAvailabilityCacheForTest();
+          // Metering resumes at this sweep's contact, not before it.
+          outage.backSweepAt = Date.now();
           const back = await lib.sweep.sweepAgentComputers();
           outage.back = back;
           outage.backAt = Date.now();
@@ -1076,11 +1185,15 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     const minutes = mem.audits.filter((a) => a.agentId === AGENT && a.kind === "host_reachable");
     assert.equal(mem.audits.filter((a) => a.agentId === AGENT && a.kind === "host_unreachable").length, 1);
     assert.equal(minutes.length, 1);
+    const usageAfterAt = Date.now();
     const usageAfter = await lib.store.computerWeekUsageSeconds(USER);
     const outageSeconds = ((outage.backAt as number) - (outage.stoppedAt as number)) / 1000;
     const metered = usageAfter - (outage.usageBefore as number);
-    assert.ok(metered < outageSeconds / 2, `the outage (${outageSeconds.toFixed(1)} s) was not metered: ${metered} s`);
-    note("14", { outageSeconds, meteredSecondsAcrossIt: metered });
+    // Everything metered across the outage accrued after the host answered again: at
+    // most the whole seconds since that sweep began (+1 for the two intervals' rounding).
+    const sinceBack = Math.ceil((usageAfterAt - (outage.backSweepAt as number)) / 1000) + 1;
+    assert.ok(metered <= sinceBack, `the outage (${outageSeconds.toFixed(1)} s) was metered: ${metered} s across it, ${sinceBack} s since the host answered again`);
+    note("14", { outageSeconds, meteredSecondsAcrossIt: metered, secondsSinceTheHostAnsweredAgain: sinceBack, usageDuringMinusBefore: (outage.usageDuring as number) - (outage.usageBefore as number) });
   });
 
   // ── 10: an image rebuild (last: it changes the image) ──────────────────────────
@@ -1388,18 +1501,18 @@ print(json.dumps({
 }))
 `;
 
-/** As the browser uid: this exec's user namespace (the gate's), then every renderer's. */
-const RENDERER_NAMESPACES = String.raw`
-import os, subprocess
-def ns(p):
-    try:
-        return os.readlink("/proc/%s/ns/user" % p)
-    except OSError:
-        return None
-rend = subprocess.run(["pgrep", "-u", "1001", "-f", "chrome.*--type=renderer"], capture_output=True, text=True).stdout.split()
-seen = {ns(p) for p in rend if p != str(os.getpid())} - {None}
-print(ns("self"), " ".join(sorted(seen)))
-`;
+/** As the browser uid: the gate's Chromium and its renderers (shared with the boundary suite). */
+const BROWSER_PROCESSES = readFileSync(path.join(ROOT, "tests/helpers/browser_processes.py"), "utf8");
+
+interface BrowserProcesses {
+  /** This exec's user namespace, which is the gate's. */
+  self: string;
+  gates: number;
+  /** The arguments of each Chromium process the gate started. */
+  browser: string[][];
+  renderers: number;
+  rendererNamespaces: string[];
+}
 
 /** As the browser uid: every uid-1000 process as "pid<TAB>state<TAB>args" (see agentProcesses). */
 const AGENT_PROCESSES_PROBE = String.raw`

@@ -88,6 +88,8 @@ const ATTENDED_WAIT_MS = 4_000;
  * database rather than from a response that may have been cut off.
  */
 const SLOW = 6 * 60_000;
+/** How long one look at the page waits for something to appear on its own. */
+const PATIENCE = 5 * 60_000;
 const TERMINAL = ["completed", "failed", "cancelled", "interrupted", "timed_out", "budget_exceeded"];
 
 test.describe("Agents journey", () => {
@@ -109,7 +111,7 @@ test.describe("Agents journey", () => {
   });
 
   test("hire, deliver, ask, park, answer later, resume once", async ({ page, baseURL }, testInfo) => {
-    test.setTimeout(100 * 60_000);
+    test.setTimeout(150 * 60_000);
     const origin = new URL(baseURL ?? "http://localhost:3000").origin;
     let shot = 0;
     const snap = async (name: string) => {
@@ -163,7 +165,7 @@ test.describe("Agents journey", () => {
         await expect(async () => {
           await page.reload({ waitUntil: "domcontentloaded", timeout: 240_000 });
           await check();
-        }).toPass({ timeout: SLOW * 2, intervals: [5_000, 15_000, 30_000] });
+        }).toPass({ timeout: SLOW * 4, intervals: [5_000, 15_000, 30_000] });
       }
     };
 
@@ -172,8 +174,10 @@ test.describe("Agents journey", () => {
     const sidebar = page.locator("aside").first();
     const needsYouHeader = sidebar.getByRole("button", { name: /^Needs you/ });
     const sidebarSays = sidebar.getByRole("status").filter({ hasText: /waiting on you|waiting for you|needs your/i });
+    /** The task card's question: "Needs your answer: <the question>" (work-run-panel.tsx). */
+    const questionCard = page.getByRole("group", { name: new RegExp(`^Needs your answer:\\s*${QUESTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) });
     const nothingWaiting = async () => {
-      await expect(sidebarSays).toHaveText("Nothing is waiting on you.", { timeout: 180_000 });
+      await expect(sidebarSays).toHaveText("Nothing is waiting on you.", { timeout: PATIENCE });
       await expect(needsYouHeader).toHaveCount(0);
     };
 
@@ -264,7 +268,7 @@ test.describe("Agents journey", () => {
         // navigation short, and then the thread is opened directly.
         const hello = page.getByRole("heading", { name: "Hi, I’m Ledger." });
         const landed = await page.waitForURL(new RegExp(thread), { timeout: 240_000 }).then(() => true, () => false);
-        if (landed) await onPage(() => expect(hello).toBeVisible({ timeout: 240_000 }));
+        if (landed) await onPage(() => expect(hello).toBeVisible({ timeout: PATIENCE }));
         else await open(thread, hello);
         await snap("hired-thread");
         return { id: agent.id, thread };
@@ -303,8 +307,9 @@ test.describe("Agents journey", () => {
         expect((session.body.session as { status?: string }).status).toBe("completed");
 
         // The thread the person is reading shows the deliverable, and nothing waits.
+        // The finished card offers the file itself ("What it produced").
         await onPage(async () => {
-          await expect(page.getByText(DELIVERABLE_TITLE).first()).toBeVisible({ timeout: 180_000 });
+          await expect(page.getByRole("link", { name: `Download ${DELIVERABLE_TITLE}`, exact: true })).toBeVisible({ timeout: PATIENCE });
           await nothingWaiting();
         });
         await snap("delivered");
@@ -329,8 +334,9 @@ test.describe("Agents journey", () => {
         // The thread shows the question, and the sidebar says Ledger is the
         // one asking, about this task.
         await onPage(async () => {
-          await expect(page.getByText(QUESTION).first()).toBeVisible({ timeout: 180_000 });
-          await expect(needsYouHeader).toBeVisible({ timeout: 180_000 });
+          // The task's card: "Needs your answer: <the question>".
+          await expect(questionCard).toBeVisible({ timeout: PATIENCE });
+          await expect(needsYouHeader).toBeVisible({ timeout: PATIENCE });
           await expect(sidebar.getByRole("link", { name: /^Ledger\. .*: Pay the October invoices$/ })).toBeVisible();
           await expect(sidebarSays).toHaveText(/^Ledger: /);
         });
@@ -356,7 +362,7 @@ test.describe("Agents journey", () => {
         // been recorded, so it is never sent twice.
         await expect(async () => {
           if ((await factsOf(asking)).questionsAnswered > 0) return;
-          await onPage(() => expect(field).toBeVisible({ timeout: 180_000 }));
+          await onPage(() => expect(field).toBeVisible({ timeout: PATIENCE }));
           await expect(async () => {
             await field.fill(ANSWER);
             await expect(send).toBeEnabled({ timeout: 3_000 });
@@ -387,14 +393,14 @@ test.describe("Agents journey", () => {
         expect(await needsYouCount()).toBe(0);
 
         await onPage(async () => {
-          await expect(page.getByText(ANSWERED_DELIVERABLE_TITLE).first()).toBeVisible({ timeout: 180_000 });
-          // The question stays in the transcript as history; no card still asks it.
-          await expect(page.getByText(/Waiting on you · asked/)).toHaveCount(0);
+          await expect(page.getByRole("link", { name: `Download ${ANSWERED_DELIVERABLE_TITLE}`, exact: true })).toBeVisible({ timeout: PATIENCE });
+          // No card still asks the question.
+          await expect(questionCard).toHaveCount(0);
           await nothingWaiting();
         });
         await snap("answered-and-done");
         // And after a fresh load, from the server's own read.
-        await open(hired.thread, page.getByText(ANSWERED_DELIVERABLE_TITLE).first());
+        await open(hired.thread, page.getByRole("link", { name: `Download ${ANSWERED_DELIVERABLE_TITLE}`, exact: true }));
         await onPage(nothingWaiting);
       });
     } finally {

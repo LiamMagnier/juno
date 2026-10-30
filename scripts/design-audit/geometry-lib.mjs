@@ -1426,13 +1426,14 @@ export function scoreFrom({ scaleTotal, scaleOn, checked, flagged }) {
 }
 
 /**
- * A loading placeholder (collectGeometry's busy flag) stays in the tree as a
- * plain unpainted box: it is not a control, a text, an icon or a member of a
- * family, so it can neither be flagged nor set the norm for its neighbours.
+ * A loading placeholder (collectGeometry's busy flag) or a box inside a scaled
+ * subtree (its scaled flag: a document thumbnail) stays in the tree as a plain
+ * unpainted box: it is not a control, a text, an icon or a member of a family,
+ * so it can neither be flagged nor set the norm for its neighbours.
  */
 function inertPlaceholder(r) {
-  if (!r.busy) return r;
-  const next = { ...r, paint: "", rad: [0, 0, 0, 0] };
+  if (!r.busy && !r.scaled) return r;
+  const next = { ...r, busy: true, paint: "", rad: [0, 0, 0, 0] };
   for (const k of ["kind", "inter", "txt", "icon", "sel", "role", "comp", "comps", "label", "text", "inline"]) delete next[k];
   return next;
 }

@@ -280,7 +280,10 @@ test("export lives in the conversation's menu and in an answer's More menu, and 
   // The whole conversation, not only the loaded page of it.
   assert.match(view, /const transcript = chatHistory\.hasOlder \? await loadOlderMessages\(\{ all: true \}\) : chat\.messages;\s+if \(!transcript\) \{\s+toast\.error\("Couldn’t export/);
   const item = read("../src/components/chat/message-item.tsx");
-  assert.match(item, /<ChatExportItems onSelect=\{requestChatExport\} \/>/);
+  assert.match(item, /\{canExport && <ExportChatMenuSection \/>\}/);
+  // On a phone the rows sit in the menu itself: a submenu opened off the screen's edge.
+  const menu = read("../src/components/chat/conversation-export-menu.tsx");
+  assert.match(menu, /if \(phone\) \{\s+return \(\s+<>\s+<DropdownMenuLabel>\{CHAT_EXPORT_COPY\.chatHeading\}<\/DropdownMenuLabel>\s+<ChatExportItems onSelect=\{requestChatExport\} \/>/);
 
   const print = read("../src/components/chat/conversation-print.tsx");
   assert.match(print, /data-print-document=""/);

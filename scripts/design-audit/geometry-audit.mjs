@@ -39,7 +39,8 @@
  *   --error-text <regex>         an h1/h2 matching this marks an error screen (the route fails, is retried once
  *                                the server answers, and is never scored); routes may set "allowError": true.
  *                                The default also catches the product's own error boundaries and not-found
- *                                screens ("… couldn’t load", "… couldn’t start", "… isn’t here")
+ *                                screens ("… couldn’t load", "… couldn’t start", "… isn’t here"), and panels
+ *                                (role=status or alert) titled so; "allowError": "panels" accepts those panels only
  *
  * A route is a path, or an object:
  *   { "name": "chat · model menu", "path": "/chat", "auth": true,
@@ -677,20 +678,27 @@ async function measureRoute(browserCtx, route, args, ctxBase, outDir, session = 
       const re = new RegExp(pattern, "i");
       // Headings, and the titles of status and alert panels: a menu or panel
       // that failed to load ("Couldn’t load notifications") is an error state too.
-      const heads = [...document.querySelectorAll("h1, h2"), ...[...document.querySelectorAll("[role=status], [role=alert]")].map((e) => e.querySelector("h1, h2, h3, p, strong") || e)]
-        .filter((h) => {
-          const r = h.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
-        })
-        .map((h) => (h.textContent || "").trim().replace(/\s+/g, " "))
-        .filter(Boolean);
-      const hit = heads.find((t) => re.test(t));
+      const shown = (h) => {
+        const r = h.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
+      const textOf = (h) => (h.textContent || "").trim().replace(/\s+/g, " ");
+      const page = [...document.querySelectorAll("h1, h2")].filter(shown).map(textOf).find((t) => re.test(t));
+      if (page) return { kind: "page", message: `rendered an error page: "${page}"` };
       const portal = document.querySelector("nextjs-portal");
       const overlay = portal && portal.shadowRoot && portal.shadowRoot.querySelector("[data-nextjs-dialog], [data-nextjs-dialog-overlay]");
-      if (hit) return `rendered an error page: "${hit}"`;
-      return overlay ? "rendered the Next.js error overlay" : null;
+      if (overlay) return { kind: "page", message: "rendered the Next.js error overlay" };
+      const panel = [...document.querySelectorAll("[role=status], [role=alert]")]
+        .map((e) => e.querySelector("h1, h2, h3, p, strong") || e)
+        .filter(shown)
+        .map(textOf)
+        .find((t) => re.test(t));
+      return panel ? { kind: "panel", message: `rendered an error page: "${panel}"` } : null;
     }, args["error-text"]);
-    if (errorShown && !route.allowError) throw new Error(`${errorShown}${state.errors.length ? ` after: ${state.errors[0]}` : ""}`);
+    // "allowError": true accepts any error state; "panels" (the /dev galleries,
+    // which show error panels on purpose) still fails on a page-level error.
+    const accepted = route.allowError === true || (route.allowError === "panels" && errorShown?.kind === "panel");
+    if (errorShown && !accepted) throw new Error(`${errorShown.message}${state.errors.length ? ` after: ${state.errors[0]}` : ""}`);
 
     result.viewport = `${vp.width}x${vp.height}`;
     const ctx = makeContext({ scales: ctxBase.scales, tolerances: ctxBase.tolerances, viewport: vp });

@@ -6,8 +6,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PHONE_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { Copy, Download, Printer } from "@/components/ui/icons";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -41,6 +45,7 @@ export const CHAT_EXPORT_COPY = {
   menuLabel: "More options for this chat",
   more: "More",
   heading: "Export",
+  chatHeading: "Export chat",
   copy: "Copy as Markdown",
   download: "Download Markdown",
   print: "Print or save as PDF",
@@ -60,6 +65,35 @@ export function ChatExportItems({ onSelect }: { onSelect: (kind: ChatExportKind)
         <Printer aria-hidden="true" className="size-4" /> {CHAT_EXPORT_COPY.print}
       </DropdownMenuItem>
     </>
+  );
+}
+
+/**
+ * Export inside an answer's More menu. A submenu where there is room beside
+ * the menu for it; on a phone the three rows sit in the menu itself under a
+ * heading, because a submenu there opened off the edge of the screen (the
+ * menu sits at the answer's left, and its submenu had nowhere to go).
+ * Mounted only while the menu is open, so the width is read only then.
+ */
+export function ExportChatMenuSection() {
+  const phone = useMediaQuery(PHONE_QUERY);
+  if (phone) {
+    return (
+      <>
+        <DropdownMenuLabel>{CHAT_EXPORT_COPY.chatHeading}</DropdownMenuLabel>
+        <ChatExportItems onSelect={requestChatExport} />
+      </>
+    );
+  }
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Download aria-hidden="true" className="size-4" /> {CHAT_EXPORT_COPY.chatHeading}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className={MENU_W}>
+        <ChatExportItems onSelect={requestChatExport} />
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 

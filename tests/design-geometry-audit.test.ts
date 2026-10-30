@@ -685,6 +685,18 @@ test("loading placeholders (busy records) are left out of the values and the che
   assert.ok(a.offScale.every((o: Rec) => o.value !== 7));
 });
 
+test("boxes inside a scaled subtree (a document thumbnail) are left out like placeholders", () => {
+  const records = [
+    rec(0, -1, { w: 160, h: 120, rad: [12, 12, 12, 12], paint: "b", bg: "grey", clip: true }),
+    rec(1, 0, { w: 160, h: 120, pad: [44, 44, 44, 44], scaled: true }),
+    rec(2, 1, { tag: "p", w: 100, h: 20, mar: [27, 27, 27, 27], pad: [13, 13, 13, 13], rad: [7, 7, 7, 7], paint: "b", bg: "white", scaled: true, txt: true, fs: 7, lh: 9 }),
+  ];
+  const a = analyzeRoute(records, ctx);
+  assert.equal(a.counts.violations, 0);
+  assert.deepEqual(a.offScale, []);
+  assert.ok(!(a.histograms.padding || []).some(([v]: [number]) => v === 44 || v === 13));
+});
+
 test("off-scale values are reported with their nearest rung and examples", () => {
   const records = [rec(0, -1, { pad: [14, 14, 14, 14], paint: "b", rad: [5, 5, 5, 5] })];
   const a = analyzeRoute(records, ctx);
