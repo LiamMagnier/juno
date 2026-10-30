@@ -5,7 +5,7 @@ import { Check, Copy, RotateCcw, ArrowUpRight, SlidersHorizontal } from "@/compo
 import { Skeleton } from "@/components/ui/skeleton";
 import { LiveScope, interpolate, valueToString, type LiveValue } from "@/lib/live-ui/expr";
 import { LIVE_NULL_TEXT, platformFormatter, type LiveFormatter } from "@/lib/live-ui/format";
-import { parseLiveUI, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
+import { parseLiveUI, settleLiveSpec, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
@@ -50,7 +50,7 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
   if (parsed.spec) lastGood.current = parsed.spec;
   const spec = parsed.spec ?? (streaming ? lastGood.current : null);
   // A fence the stream finished is final even if its JSON never closed.
-  const view = React.useMemo(() => (spec && !streaming && spec.streaming ? { ...spec, streaming: false } : spec), [spec, streaming]);
+  const view = React.useMemo(() => (spec && !streaming ? settleLiveSpec(spec) : spec), [spec, streaming]);
 
   const state = useLiveState(view, source, host.messageId);
   const locale = useLocale();
@@ -188,15 +188,16 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       const max = scope.evaluate(c.max).value;
       const ratio = typeof v === "number" && typeof max === "number" && max > 0 ? Math.min(1, Math.max(0, v / max)) : 0;
       const shown = typeof v === "number" ? formatter.number(v, c.format ?? "number", { currency: spec.currency }) : LIVE_NULL_TEXT;
+      const label = interpolate(c.label, scope);
       return (
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-ui text-muted-foreground">{interpolate(c.label, scope)}</span>
+            <span className="text-ui text-muted-foreground">{label}</span>
             <span className="text-ui font-medium tabular-nums">{shown}</span>
           </div>
           <div
             role="meter"
-            aria-label={c.label}
+            aria-label={label}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(ratio * 100)}
