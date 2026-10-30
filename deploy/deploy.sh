@@ -891,11 +891,14 @@ main() {
     say "${YELLOW}💎 Generating Prisma client...${NC}"
     run_in_release "$STAGING_DIR" npx prisma generate
 
+    # The relay's install comes first: `next build` typechecks tests/*.ts, and
+    # one reads the relay's verifier (relay/src/computer-view.ts imports `ws`).
+    run_in_release "$STAGING_DIR/relay" npm ci
+
     say "${YELLOW}🏗️ Building the candidate application...${NC}"
     run_in_release "$STAGING_DIR" npm run build
 
     say "${YELLOW}🎙️ Building the candidate voice relay...${NC}"
-    run_in_release "$STAGING_DIR/relay" npm ci
     run_in_release "$STAGING_DIR/relay" npm run build
 
     say "${YELLOW}🧠 Building the vendored runner core...${NC}"

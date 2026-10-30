@@ -1038,12 +1038,18 @@ jobs:
           npm run build --prefix runner/agent-core
           npm ci --prefix runner/env-server
 
+      # Before the app build: `next build` typechecks tests/*.ts, and
+      # tests/computer-view-token.test.ts reads the relay's verifier
+      # (relay/src/computer-view.ts, which imports `ws`). Installed after it,
+      # the build failed on "Cannot find module 'ws'" though every gate passed.
+      - name: Install voice relay dependencies
+        run: npm ci --prefix relay
+
       - name: Build app
         run: npm run build
 
       - name: Build voice relay
         run: |
-          npm ci --prefix relay
           npm test --prefix relay
           npm run build --prefix relay
 
