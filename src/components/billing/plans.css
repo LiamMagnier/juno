@@ -165,7 +165,7 @@
 .plans-chip:active { transform: scale(0.98); }
 
 /* The price changing: the old figure leaves upward, the new one rises in. */
-@keyframes plans-roll-in { from { opacity: 0; transform: translateY(0.35em); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes plans-roll-in { from { opacity: 0; transform: translateY(0.35em); } to { opacity: 1; transform: none; } }
 .plans-roll { display: inline-block; animation: plans-roll-in 520ms var(--alv-ease) both; }
 
 @media (prefers-reduced-motion: reduce) {

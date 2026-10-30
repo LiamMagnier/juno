@@ -108,8 +108,8 @@ div:has(> .live-slider:active) > div > .live-value {
   .live-stepper-value { animation: live-roll var(--dur-base) var(--ease-spring); }
 }
 @keyframes live-roll {
-  from { opacity: 0; transform: translateY(35%); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(35%); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Metrics: the hero figure gets a tinted tile so the answer to the question
