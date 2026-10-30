@@ -16,6 +16,11 @@ set -euo pipefail
 DOMAIN="${1:-}"
 OUT="${2:-}"
 [ -n "$DOMAIN" ] && [ -n "$OUT" ] || { echo "usage: private-tls.sh <domain> <output directory>" >&2; exit 2; }
+# The certificate names the host as DNS:<domain>, and a client checks an https://<IP>
+# origin against IP entries only, so a certificate for an address is never trusted.
+if [[ "$DOMAIN" =~ ^[0-9.]+$ || "$DOMAIN" == *:* ]]; then
+  echo "private-tls.sh: the host needs a DNS name, not an IP address ($DOMAIN): a private DNS record or an /etc/hosts line on the web VM will do" >&2; exit 2
+fi
 [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || { echo "private-tls.sh: not a host name: $DOMAIN" >&2; exit 2; }
 command -v openssl >/dev/null || { echo "private-tls.sh: openssl is required" >&2; exit 2; }
 install -d -m 0755 "$OUT"
