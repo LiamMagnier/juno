@@ -82,7 +82,21 @@ if (!DB_URL) {
     yield { type: "finish", reason: "stop" };
   }
 
+  /** The model and the attempt a scripted call was made for (streamChat's own options). */
+  const modelOf = (opts: unknown) => String((opts as { model?: { id?: string } }).model?.id);
+  const attemptOf = (opts: unknown) => (opts as { attempt?: number }).attempt ?? 1;
+  /** A provider that rejects the request before streaming anything. */
+  const rejects = (message: string, extra: Record<string, unknown>) =>
+    (async function* (): AsyncGenerator<Record<string, unknown>> {
+      throw Object.assign(new Error(message), extra);
+    })();
+
   test("stand in for the session, the model and after()", async () => {
+    // The one retry before the first byte waits a jittered 0.4–1.2 s; here at
+    // most 40 ms, so the cases that retry stay fast. The cases about the
+    // bound itself set their own.
+    process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "40";
+    delete process.env.CHAT_PRESTREAM_RETRY;
     globalThis.fetch = async (input: string | URL | Request) => {
       const url = input instanceof Request ? input.url : String(input);
       outbound.push(url);
@@ -653,10 +667,19 @@ if (!DB_URL) {
     assert.ok(replayed.some((frame) => frame.type === "done"), "the resumed stream ends on done");
   });
 
-  test("a provider 429 is reported once, refunded, never retried, and fails the durable receipt", async () => {
+  // ── The one retry before the first byte (chat/turn/pre-stream-retry.ts) ──
+
+  const retryRows = (frames: Frame[]) =>
+    frames.filter((frame) => frame.type === "activity" && (frame.event as { title?: string }).title === "Retrying…");
+
+  test("a provider 429 before the first byte is asked once more on the same model; the second is reported once, refunded, and fails the durable receipt", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
     const user = await seedUser();
-    script = async function* () {
-      throw Object.assign(new Error("429 Too Many Requests: rate limit exceeded"), { status: 429 });
+    const asked: Array<{ model: string; attempt: number }> = [];
+    script = (opts) => {
+      asked.push({ model: modelOf(opts), attempt: attemptOf(opts) });
+      return rejects("429 Too Many Requests: rate limit exceeded", { status: 429 });
     };
     const calls = streamCalls;
     const { status, frames } = await chat({
@@ -665,17 +688,282 @@ if (!DB_URL) {
       clientMessageId: `msg-${randomUUID()}`,
     });
     assert.equal(status, 200, "the failure arrives on the stream, after acceptance");
-    assert.equal(streamCalls - calls, 1, "the provider call is not retried behind the accounting boundary");
+    assert.equal(streamCalls - calls, 2, "one retry, and only one: the second rejection is the turn's");
+    assert.equal(asked[1].model, asked[0].model, "an explicit choice is asked again, never moved");
+    assert.deepEqual(asked.map((call) => call.attempt), [1, 2], "the request meter records the second as attempt 2");
+    assert.equal(retryRows(frames).length, 1, "the wait was visible");
     const error = frames.at(-1) as Frame & { message: string; receiptState?: string; failureCode?: string };
     assert.equal(error.type, "error");
     assert.equal(error.receiptState, "failed");
     assert.ok(error.failureCode);
     assert.doesNotMatch(error.message, /429 Too Many Requests: rate limit exceeded/, "raw provider text is not echoed");
+    assert.equal(frames.filter((frame) => frame.type === "error").length, 1, "reported once");
     const usage = await prisma.usage.findFirst({ where: { userId: user.id } });
     assert.equal(usage?.messageCount, 0, "the consumed message was refunded");
-    assert.equal(await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }), 0, "the hold was released");
+    const generationId = frames[0].generationId as string;
+    const holds = await prisma.spendReservation.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+    assert.deepEqual(
+      holds.map((hold) => [hold.ref, hold.state]),
+      [
+        [generationId, "released"],
+        [`${generationId}:attempt-2`, "released"],
+      ],
+      "each attempt held its own estimate, and both were released: nothing was served",
+    );
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id } }), 0, "nothing is charged for two refusals");
     const receipt = await prisma.chatFirstSubmissionReceipt.findFirst({ where: { userId: user.id } });
     assert.equal(receipt?.state, "failed");
+    health.__setProviderHealthForTests([]);
+  });
+
+  test("a 503 before the first byte, then an answer: charged once on attempt 2's own hold, attempt 1's released, the retry visible and counted", async () => {
+    const health = await import("@/lib/provider-health");
+    const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+    health.__setProviderHealthForTests([]);
+    const user = await seedUser();
+    const asked: Array<{ model: string; attempt: number }> = [];
+    script = (opts) => {
+      asked.push({ model: modelOf(opts), attempt: attemptOf(opts) });
+      return asked.length === 1 ? rejects("503 Service Unavailable", { status: 503 }) : answer("Here after one retry.");
+    };
+    const { frames } = await chat({ message: "Are you there?" });
+    const done = frames.at(-1) as Frame & { message: { id: string; content: string; model?: string } };
+    assert.equal(done.type, "done", JSON.stringify(frames.slice(-3)));
+    assert.equal(done.message.content, "Here after one retry.", "the answer, written once");
+    assert.equal(frames.filter((frame) => frame.type === "delta").map((frame) => frame.text).join(""), "Here after one retry.");
+    assert.deepEqual(asked.map((call) => call.attempt), [1, 2]);
+    assert.equal(asked[1].model, asked[0].model);
+
+    const titles = frames.filter((frame) => frame.type === "activity").map((frame) => (frame.event as { title: string }).title);
+    assert.ok(titles.indexOf("Retrying…") >= 0 && titles.indexOf("Retrying…") < titles.indexOf("Writing the answer"), titles.join(" | "));
+    const row = retryRows(frames)[0].event as { kind: string; detail: string };
+    assert.equal(row.kind, "model", "a row every client already renders");
+    assert.match(row.detail, /had a temporary server problem\. Asking it again/);
+
+    const generationId = frames[0].generationId as string;
+    const first = await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: generationId } });
+    const second = await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: `${generationId}:attempt-2` } });
+    assert.equal(first?.state, "released", "attempt 1 spent nothing");
+    assert.equal(second?.state, "settled", "the charge settles attempt 2's own hold");
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id } }), 1, "one charge for one answer");
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, completionTokens: 12 } }), 1);
+    assert.equal((await prisma.usage.findFirst({ where: { userId: user.id } }))?.messageCount, 1, "one message counted");
+    assert.equal(await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }), 0);
+
+    const trace = recentTurnTraces().find((entry) => entry.runId === generationId);
+    assert.equal(trace?.attempts, 2, "the trace counts the route-level attempt");
+    assert.equal(trace?.outcome, "completed");
+    let outcome = null as Awaited<ReturnType<typeof prisma.routingOutcome.findFirst>>;
+    for (let i = 0; i < 40 && !outcome; i += 1) {
+      outcome = await prisma.routingOutcome.findFirst({ where: { messageId: done.message.id } });
+      if (!outcome) await sleep(25);
+    }
+    assert.equal(outcome?.retryCount, 1, "Auto's evidence row records the retry");
+    assert.equal(outcome?.completionState, "completed");
+    health.__setProviderHealthForTests([]);
+  });
+
+  test("never asked again once anything arrived: text, reasoning or a usage report before the rejection is the turn's own failure", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    await seedUser();
+    for (const first of [
+      { type: "text", text: "Partly" },
+      { type: "reasoning", text: "Thinking it over" },
+      { type: "usage", input: 30, output: 0 },
+    ]) {
+      script = async function* () {
+        yield first;
+        throw Object.assign(new Error("503 Service Unavailable"), { status: 503 });
+      };
+      const calls = streamCalls;
+      const { frames } = await chat({ message: "Go." });
+      assert.equal(streamCalls - calls, 1, `${first.type} first: no second request, no second bill`);
+      assert.equal(retryRows(frames).length, 0, `${first.type} first: no retry row`);
+      assert.ok(["done", "error"].includes(String(frames.at(-1)?.type)));
+      if (first.type === "text") {
+        assert.equal(frames.filter((frame) => frame.type === "delta").map((frame) => frame.text).join(""), "Partly", "the text is never written twice");
+      }
+    }
+    health.__setProviderHealthForTests([]);
+  });
+
+  test("never asked again: an account fault on an explicit choice, a safety refusal, a malformed request, a timeout, an error from outside the model call, or with the switch off", async () => {
+    const health = await import("@/lib/provider-health");
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    const cases: Array<[string, () => AsyncGenerator<Record<string, unknown>>, (() => void)?, (() => void)?]> = [
+      ["402 on an explicit choice", () => rejects("402 Insufficient Balance", { status: 402, error: { message: "Insufficient Balance" } })],
+      ["a safety refusal", () => rejects("400 Output blocked by content filtering policy", { status: 400 })],
+      ["a malformed request", () => rejects("400 Invalid value for 'tool_choice'", { status: 400 })],
+      ["a timeout", () => rejects("Request timed out.", {})],
+      [
+        "an error from outside the model call",
+        () => rejects("503 Service Unavailable", { status: 503 }),
+        () => {
+          unmarkedErrors = true;
+        },
+        () => {
+          unmarkedErrors = false;
+        },
+      ],
+      [
+        "CHAT_PRESTREAM_RETRY=off",
+        () => rejects("503 Service Unavailable", { status: 503 }),
+        () => {
+          process.env.CHAT_PRESTREAM_RETRY = "off";
+        },
+        () => {
+          delete process.env.CHAT_PRESTREAM_RETRY;
+        },
+      ],
+    ];
+    try {
+      for (const [name, fails, before, after] of cases) {
+        health.__setProviderHealthForTests([]);
+        const user = await seedUser();
+        script = () => fails();
+        before?.();
+        try {
+          const calls = streamCalls;
+          const { frames } = await chat({ message: "Hello?" });
+          assert.equal(streamCalls - calls, 1, `${name}: one request`);
+          assert.equal(retryRows(frames).length, 0, `${name}: no retry row`);
+          assert.equal(frames.at(-1)?.type, "error", name);
+          assert.equal(await prisma.spendReservation.count({ where: { userId: user.id } }), 1, `${name}: one hold, no second`);
+        } finally {
+          after?.();
+        }
+      }
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+  });
+
+  test("a provider that asks the same model to wait longer than the bound is not retried: the error card carries its wait", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "8000";
+    try {
+      await seedUser();
+      script = () => rejects("429 Too Many Requests. Please retry in 30s.", { status: 429 });
+      const calls = streamCalls;
+      const started = Date.now();
+      const { frames } = await chat({ message: "Hello?" });
+      assert.equal(streamCalls - calls, 1, "30 s is past the 8 s bound: not asked again");
+      assert.ok(Date.now() - started < 5_000, "and not waited for either");
+      assert.equal(retryRows(frames).length, 0);
+      const error = frames.at(-1) as Frame & { retryAfterSeconds?: number; retryable?: boolean };
+      assert.equal(error.type, "error");
+      assert.equal(error.retryAfterSeconds, 30, "the reader is told the wait instead");
+      assert.equal(error.retryable, true);
+    } finally {
+      process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "40";
+      health.__setProviderHealthForTests([]);
+    }
+  });
+
+  test("a Stop during the wait ends the turn as a Stop: no second request, and attempt 2's hold released", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "8000";
+    try {
+      const user = await seedUser();
+      const generationId = `gen-${randomUUID()}`;
+      script = (opts) => {
+        void opts;
+        // The reader presses Stop 100 ms into a 5 s wait the provider asked for.
+        setTimeout(() => {
+          void import("@/lib/generation-cancel").then(({ cancelGeneration }) => cancelGeneration(generationId, user.id));
+        }, 100);
+        return rejects("429 Too Many Requests", { status: 429, headers: { "retry-after": "5" } });
+      };
+      const calls = streamCalls;
+      const started = Date.now();
+      const { frames } = await chat({ message: "Go.", generationId });
+      assert.equal(streamCalls - calls, 1, "stopped before attempt 2 was sent");
+      assert.ok(Date.now() - started < 4_000, "the Stop did not sit out the wait");
+      assert.equal(retryRows(frames).length, 1, "the wait had been announced");
+      const last = frames.at(-1) as Frame & { finishReason?: string };
+      assert.equal(last.type, "error");
+      assert.equal(last.finishReason, "user_stopped", "a Stop, not a provider failure");
+      assert.equal(await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }), 0, "no hold left open");
+      assert.equal(await prisma.apiSpend.count({ where: { userId: user.id } }), 0);
+    } finally {
+      process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "40";
+      health.__setProviderHealthForTests([]);
+    }
+  });
+
+  test("Auto: a pick whose lab rejects the request before the first byte is answered by the decision's next candidate on another lab, with a receipt that says so", async () => {
+    const health = await import("@/lib/provider-health");
+    const { getModel } = await import("@/lib/models");
+    const { AUTO_MODEL_ID } = await import("@/lib/auto-model");
+    const { autoDataUseVerdict } = await import("@/lib/router/data-policy");
+    const { autoPaidTierProviders } = await import("@/lib/router/chat-inputs");
+    const { parseRoutingReceipt } = await import("@/lib/router/receipt");
+    const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+    health.__setProviderHealthForTests([]);
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    try {
+      const user = await seedUser();
+      const asked: Array<{ model: string; attempt: number }> = [];
+      script = (opts) => {
+        asked.push({ model: modelOf(opts), attempt: attemptOf(opts) });
+        return asked.length === 1
+          ? rejects("402 Insufficient Balance", { status: 402, error: { message: "Insufficient Balance" } })
+          : answer("Answered by Auto's next choice.");
+      };
+      const { frames } = await chat({ message: "Say hi.", model: AUTO_MODEL_ID });
+      const done = frames.at(-1) as Frame & { message: { id: string } };
+      assert.equal(done.type, "done", JSON.stringify(frames.slice(-3)));
+      assert.equal(asked.length, 2);
+      assert.deepEqual(asked.map((call) => call.attempt), [1, 2]);
+      const failed = getModel(asked[0].model)!;
+      const next = getModel(asked[1].model)!;
+      assert.notEqual(next.provider, failed.provider, "an account fault fails the whole lab: the next choice is on another");
+      assert.equal(autoDataUseVerdict(next, { paidTier: autoPaidTierProviders() }).eligible, true, "inside Auto's data-use terms");
+      assert.equal(health.providerHealthy(failed.provider), false, "the first rejection still reached provider health");
+
+      const assistant = await prisma.message.findUnique({ where: { id: done.message.id } });
+      assert.equal(assistant?.model, next.id, "the answer is saved under the model that wrote it");
+      const receipt = parseRoutingReceipt(assistant?.routing);
+      assert.ok(receipt);
+      assert.equal(receipt.rerouted, failed.id, "the receipt names the router's pick");
+      assert.equal(receipt.rerouteReason, "unreachable");
+
+      const modelRows = frames
+        .filter((frame) => frame.type === "activity" && (frame.event as { kind: string }).kind === "model")
+        .map((frame) => frame.event as { title: string; detail: string });
+      assert.deepEqual(modelRows.map((row) => row.title), ["Selected model", "Retrying…", "Selected model"]);
+      assert.match(modelRows[2].detail, new RegExp(next.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      for (const row of modelRows) assert.doesNotMatch(row.detail, /credit|balance|quota|billing/i);
+
+      const generationId = frames[0].generationId as string;
+      const spend = await prisma.apiSpend.findMany({ where: { userId: user.id } });
+      assert.deepEqual(spend.map((row) => row.model), [next.id], "one charge, at the answering model's rates");
+      assert.equal((await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: `${generationId}:attempt-2` } }))?.state, "settled");
+      assert.equal((await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: generationId } }))?.state, "released");
+
+      const trace = recentTurnTraces().find((entry) => entry.runId === generationId);
+      assert.equal(trace?.attempts, 2);
+      assert.equal(trace?.model, next.id);
+      assert.equal(trace?.rerouted, true);
+      let outcome = null as Awaited<ReturnType<typeof prisma.routingOutcome.findFirst>>;
+      for (let i = 0; i < 40 && !outcome; i += 1) {
+        outcome = await prisma.routingOutcome.findFirst({ where: { messageId: done.message.id } });
+        if (!outcome) await sleep(25);
+      }
+      assert.equal(outcome?.modelId, next.id, "Auto's evidence is about the model that answered");
+      assert.equal(outcome?.retryCount, 1);
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
   });
 
   test("a turn that fails after the provider billed a round records that spend, and still refunds the message", async () => {
@@ -685,9 +973,11 @@ if (!DB_URL) {
       yield { type: "usage", input: 300, output: 50 };
       throw Object.assign(new Error("500 Internal Server Error"), { status: 500 });
     };
+    const calls = streamCalls;
     const { frames } = await chat({ message: "Look this up for me." });
     const generationId = frames[0].generationId as string;
     assert.equal(frames.at(-1)?.type, "error");
+    assert.equal(streamCalls - calls, 1, "a provider that billed a round is never asked again");
     assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, completionTokens: 50 } }), 1, "the billed round is recorded");
     const reservation = await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: generationId } });
     assert.equal(reservation?.state, "settled", "the hold is settled by that spend, not released");
