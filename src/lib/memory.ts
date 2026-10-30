@@ -623,14 +623,20 @@ export async function getSuppressions(userId: string): Promise<string[]> {
  * Read on every chat turn that has a summary, so it is one indexed lookup —
  * `@@index([userId, kind])` narrows to the account's suppressions, which are a
  * handful of rows, and only the newest timestamp is selected.
+ *
+ * `updatedAt`, not `createdAt`: a block-list row can be reworded (the memory
+ * page's pencil, a device's `memory.update`), and "forget my old job" turned
+ * into "forget where I live" is a forget of where they live — made when it
+ * was reworded. By creation time, the summary written in between still said
+ * it and stayed in every chat.
  */
 export async function newestSuppressionAt(userId: string): Promise<Date | null> {
   const row = await prisma.memoryEntry.findFirst({
     where: { userId, kind: "SUPPRESSION" },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
+    orderBy: { updatedAt: "desc" },
+    select: { updatedAt: true },
   });
-  return row?.createdAt ?? null;
+  return row?.updatedAt ?? null;
 }
 
 /**
@@ -641,10 +647,11 @@ export async function newestSuppressionAt(userId: string): Promise<Date | null> 
 export async function getSuppressionState(userId: string): Promise<{ statements: string[]; newestAt: Date | null }> {
   const rows = await prisma.memoryEntry.findMany({
     where: { userId, kind: "SUPPRESSION" },
-    select: { content: true, createdAt: true },
+    select: { content: true, updatedAt: true },
   });
+  // Last changed, as in newestSuppressionAt: a reworded entry is a new forget.
   let newestAt: Date | null = null;
-  for (const row of rows) if (!newestAt || row.createdAt > newestAt) newestAt = row.createdAt;
+  for (const row of rows) if (!newestAt || row.updatedAt > newestAt) newestAt = row.updatedAt;
   return { statements: rows.map((row) => row.content), newestAt };
 }
 
