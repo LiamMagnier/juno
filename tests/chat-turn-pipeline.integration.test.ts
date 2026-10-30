@@ -710,7 +710,7 @@ if (!DB_URL) {
       ],
       "each attempt held its own estimate, and both were released: nothing was served",
     );
-    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id } }), 0, "nothing is charged for two refusals");
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, kind: "chat" } }), 0, "nothing is charged for two refusals");
     const receipt = await prisma.chatFirstSubmissionReceipt.findFirst({ where: { userId: user.id } });
     assert.equal(receipt?.state, "failed");
     health.__setProviderHealthForTests([]);
@@ -745,8 +745,8 @@ if (!DB_URL) {
     const second = await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: `${generationId}:attempt-2` } });
     assert.equal(first?.state, "released", "attempt 1 spent nothing");
     assert.equal(second?.state, "settled", "the charge settles attempt 2's own hold");
-    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id } }), 1, "one charge for one answer");
-    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, completionTokens: 12 } }), 1);
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, kind: "chat" } }), 1, "one charge for one answer");
+    assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, kind: "chat", completionTokens: 12 } }), 1);
     assert.equal((await prisma.usage.findFirst({ where: { userId: user.id } }))?.messageCount, 1, "one message counted");
     assert.equal(await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }), 0);
 
@@ -890,7 +890,7 @@ if (!DB_URL) {
       assert.equal(last.type, "error");
       assert.equal(last.finishReason, "user_stopped", "a Stop, not a provider failure");
       assert.equal(await prisma.spendReservation.count({ where: { userId: user.id, state: "open" } }), 0, "no hold left open");
-      assert.equal(await prisma.apiSpend.count({ where: { userId: user.id } }), 0);
+      assert.equal(await prisma.apiSpend.count({ where: { userId: user.id, kind: "chat" } }), 0, "nothing served, nothing charged");
     } finally {
       process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "40";
       health.__setProviderHealthForTests([]);
@@ -943,7 +943,7 @@ if (!DB_URL) {
       for (const row of modelRows) assert.doesNotMatch(row.detail, /credit|balance|quota|billing/i);
 
       const generationId = frames[0].generationId as string;
-      const spend = await prisma.apiSpend.findMany({ where: { userId: user.id } });
+      const spend = await prisma.apiSpend.findMany({ where: { userId: user.id, kind: "chat" } });
       assert.deepEqual(spend.map((row) => row.model), [next.id], "one charge, at the answering model's rates");
       assert.equal((await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: `${generationId}:attempt-2` } }))?.state, "settled");
       assert.equal((await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: generationId } }))?.state, "released");
@@ -1325,6 +1325,11 @@ if (!DB_URL) {
     health.__setProviderHealthForTests([]);
     const owners = process.env.OWNER_EMAILS;
     delete process.env.OWNER_EMAILS;
+    // The offer after ONE failed attempt is the subject here. With the retry
+    // before the first byte on, Auto would spend the boundary's one remaining
+    // healthy lab on a second attempt (which this script also fails), and no
+    // offer inside the boundary would be left to check.
+    process.env.CHAT_PRESTREAM_RETRY = "off";
     try {
       const user = await seedUser();
       await prisma.settings.upsert({
@@ -1382,6 +1387,7 @@ if (!DB_URL) {
       assert.equal(autoDataUseVerdict(explicitOffer, terms).eligible, false, `${explicitOffer.id}: the boundary is what kept it out of the Auto offer`);
       assert.ok(explicitOffer.cost <= autoOffer.cost);
     } finally {
+      delete process.env.CHAT_PRESTREAM_RETRY;
       health.__setProviderHealthForTests([]);
       if (owners === undefined) delete process.env.OWNER_EMAILS;
       else process.env.OWNER_EMAILS = owners;

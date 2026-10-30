@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { buildRun } from "@/components/chat/thought-process-model";
 import { markModelCallError } from "@/lib/provider-error";
 import {
   DEFAULT_PRE_STREAM_RETRY_TUNABLES,
@@ -11,6 +12,7 @@ import {
   retryAfterMsOf,
   waitBeforeRetry,
 } from "@/lib/chat/turn/pre-stream-retry";
+import type { ClientActivityEvent } from "@/types/chat";
 
 /*
  * The one retry before the first byte (src/lib/chat/turn/pre-stream-retry.ts),
@@ -284,4 +286,32 @@ test("the activity rows: a visible 'Retrying…', in words true to the fault, an
   for (const row of moved) {
     assert.doesNotMatch(row.detail ?? "", /credit|balance|quota|billing|key|funds/i, "the platform's funding state stays off the stream");
   }
+});
+
+test("the run panel's Model fact names the model that answered after Auto moved on, and a same-model retry leaves it alone", () => {
+  const T0 = Date.parse("2026-10-30T10:00:00.000Z");
+  const stamp = (rows: Array<Omit<ClientActivityEvent, "id" | "createdAt">>): ClientActivityEvent[] =>
+    rows.map((row, index) => ({ ...row, id: `e${index}`, createdAt: new Date(T0 + index * 400).toISOString() }));
+  const selected = { kind: "model" as const, title: "Selected model", detail: "Auto picked Qwen3.8 Flash — quick reply, low cost" };
+  const writing = [
+    { kind: "write" as const, title: "Writing the answer", detail: "Streaming response text" },
+    { kind: "usage" as const, title: "Token usage recorded", detail: "40 input · 12 output" },
+    { kind: "done" as const, title: "Finished response" },
+  ];
+  const moved = buildRun(
+    stamp([
+      selected,
+      ...retryActivityRows({ failed: { name: "Qwen3.8 Flash" }, next: { name: "GPT-6 Luna" }, class: "billing", delayMs: 400 }),
+      ...writing,
+    ]),
+    null,
+  );
+  assert.equal(moved.facts.find((fact) => fact.label === "Model")?.value, "Auto switched to GPT-6 Luna — Qwen3.8 Flash did not answer");
+  const same = buildRun(
+    stamp([selected, ...retryActivityRows({ failed: { name: "Qwen3.8 Flash" }, class: "rate_limit", delayMs: 800 }), ...writing]),
+    null,
+  );
+  assert.equal(same.facts.find((fact) => fact.label === "Model")?.value, selected.detail, "the same model still answers");
+  // The retry row is not a warning: the finished run is not marked as cut short or failed.
+  assert.equal(same.steps.some((step) => step.failed), false);
 });
