@@ -338,7 +338,7 @@ function ChatLink({ entry }: { entry: LibraryEntry }) {
         <Link
           href={`/chat/${encodeURIComponent(entry.conversationId)}`}
           aria-label={`Open the chat ${entry.title} came from`}
-          className="-my-1 -mr-1 ml-auto grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring coarse:size-8"
+          className="-my-1 -mr-1 ml-auto grid size-6 shrink-0 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring coarse:size-8"
         >
           <MessageCircle className="size-4" aria-hidden="true" />
         </Link>
