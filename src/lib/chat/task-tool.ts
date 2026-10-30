@@ -39,6 +39,7 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { chatTaskPolicy } from "@/lib/chat/task-approval-mode";
+import { composeApprovalCallbacks } from "@/lib/tools/approval";
 import {
   CONVERSATION_LIVE_STATUSES,
   MAX_LIVE_TASKS_PER_CONVERSATION,
@@ -808,7 +809,10 @@ async function startTask(
         return notStarted(taskRefusalFromResponse(preflight.status, preflight.body));
       }
 
-      const onApprovalRequest = opts?.onApprovalRequest ?? ctx.onApprovalRequest;
+      // Both, never one or the other: the route's sends the card and pauses
+      // the stall clock, the dispatcher's (always present) marks the row as
+      // waiting. With `??` the card was never sent.
+      const onApprovalRequest = composeApprovalCallbacks(ctx.onApprovalRequest, opts?.onApprovalRequest);
       const taint = ctx.untrustedNow?.() ?? { untrusted: ctx.untrustedContent, hostile: false };
       if (taint.untrusted || estimate.requiresConfirmation) {
         const authorization = await store.authorizeExternalAction({
