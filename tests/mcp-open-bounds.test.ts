@@ -22,6 +22,8 @@ import { after, beforeEach, test } from "node:test";
  */
 
 const audits: Array<{ status: string; error?: string }> = [];
+/** What the stubbed broker answers next; reset to an allowance before every test. */
+let authorization: Record<string, unknown> = { kind: "authorized", receiptId: "receipt" };
 const logged: Array<{ event: string; fields: Record<string, unknown> }> = [];
 const mod = Module as unknown as { _load: (request: string, parent: unknown, isMain: boolean) => unknown };
 const origLoad = mod._load;
@@ -35,7 +37,7 @@ mod._load = function (request: string, parent: unknown, isMain: boolean) {
   }
   if (request === "@/lib/action-approval-store") {
     return {
-      authorizeExternalAction: async () => ({ kind: "allowed", receiptId: "receipt" }),
+      authorizeExternalAction: async () => authorization,
       completeExternalAction: async () => undefined,
     };
   }
@@ -154,6 +156,7 @@ async function eventually(check: () => boolean, ms = 3_000): Promise<boolean> {
 const opens = () => logged.filter((entry) => entry.event === "mcp.open").map((entry) => entry.fields);
 
 beforeEach(() => {
+  authorization = { kind: "authorized", receiptId: "receipt" };
   resetMcpToolListCacheForTests();
   audits.length = 0;
   logged.length = 0;
@@ -319,6 +322,35 @@ test("a cached server that stopped answering fails the call before any approval,
   assert.deepEqual(next.tools, [], "the failed connect forgot the list");
   assert.deepEqual(statuses, [["delta", "unreachable"]]);
   await next.close();
+});
+
+test("a refused connector call keeps the broker's verdict: denied and expired are not tool errors", async () => {
+  // A person pressing Deny on a connector's approval card ended as status
+  // `failed` with code `tool_error`: the row read as a broken tool, and the
+  // dispatcher could not tell the call was declined. Native tools already
+  // carried the verdict; the connector chokepoint dropped it.
+  const fast = await mcpServer("ok");
+  const toolset = await openMcpToolset([connector("alpha", fast)], ctx, { connectTimeoutMs: 2_000 });
+  try {
+    const cases: Array<[string | undefined, string, string]> = [
+      ["denied", "denied", "denied"],
+      ["expired", "expired", "expired"],
+      ["blocked", "failed", "blocked"],
+      ["superseded", "cancelled", "cancelled"],
+      [undefined, "failed", "not_permitted"],
+    ];
+    for (const [receipt, status, code] of cases) {
+      authorization = { kind: "refused", receiptId: "receipt", reason: `Action ${receipt ?? "refused"}.`, ...(receipt ? { status: receipt } : {}) };
+      const result = await toolset.execute("alpha__create_item", {}, undefined, `call-${receipt}`);
+      assert.equal(result.ok, false);
+      assert.equal(result.status, status, `a ${receipt ?? "statusless"} refusal`);
+      assert.deepEqual(result.error, { code });
+      assert.match(result.body, /Action not permitted/);
+    }
+    assert.equal(fast.counts["tools/call"], undefined, "nothing refused reached the server");
+  } finally {
+    await toolset.close();
+  }
 });
 
 test("the tool-list cache: a lifetime, a size bound, copies out, and keys that hold no credential", () => {
