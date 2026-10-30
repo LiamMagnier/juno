@@ -1000,6 +1000,21 @@ export function liveInputs(ui: readonly LiveComponent[]): LiveInput[] {
   return out;
 }
 
+/** The id of every checklist in the tree, steps and tabs included. */
+export function liveChecklistIds(ui: readonly LiveComponent[]): Set<string> {
+  const ids = new Set<string>();
+  const walk = (list: readonly LiveComponent[]) => {
+    for (const c of list) {
+      if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
+      else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
+      else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
+      else if (c.type === "checklist") ids.add(c.id);
+    }
+  };
+  walk(ui);
+  return ids;
+}
+
 /** The authored default of every input, by id. */
 export function liveDefaults(spec: LiveSpec): Record<string, LiveValue> {
   const out: Record<string, LiveValue> = {};

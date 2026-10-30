@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { LiveValue } from "@/lib/live-ui/expr";
-import { liveDefaults, liveInputs, liveStorageKey, type LiveComponent, type LiveSpec } from "@/lib/live-ui/spec";
+import { liveChecklistIds, liveDefaults, liveInputs, liveStorageKey, type LiveSpec } from "@/lib/live-ui/spec";
 
 /**
  * Input values, checklist ticks and nothing else: the whole state of one view.
@@ -26,18 +26,6 @@ export interface LiveState {
 interface Stored {
   v?: Record<string, LiveValue>;
   c?: Record<string, number[]>;
-}
-
-function checklistIds(ui: readonly LiveComponent[]): Set<string> {
-  const ids = new Set<string>();
-  const walk = (list: readonly LiveComponent[]) => {
-    for (const c of list) {
-      if ("children" in c) walk(c.children);
-      else if (c.type === "checklist") ids.add(c.id);
-    }
-  };
-  walk(ui);
-  return ids;
 }
 
 function sameType(a: LiveValue, b: LiveValue): boolean {
@@ -72,7 +60,7 @@ export function useLiveState(spec: LiveSpec | null, source: string, messageId: s
       const d = inputs.get(id);
       if (d !== undefined && sameType(d, v)) restored[id] = v;
     }
-    const lists = checklistIds(spec.ui);
+    const lists = liveChecklistIds(spec.ui);
     const restoredChecks: Record<string, number[]> = {};
     for (const [id, list] of Object.entries(stored.c ?? {})) {
       if (lists.has(id) && Array.isArray(list)) restoredChecks[id] = list.filter((n) => Number.isInteger(n)).slice(0, 40);

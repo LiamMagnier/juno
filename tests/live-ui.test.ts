@@ -6,6 +6,7 @@ import { readLiveJSON, openPaths } from "@/lib/live-ui/json";
 import { LiveScope, interpolate, parseExpr, type LiveValue } from "@/lib/live-ui/expr";
 import {
   isLiveUIFence,
+  liveChecklistIds,
   liveDefaults,
   liveHash,
   liveStorageKey,
@@ -243,6 +244,20 @@ test("format helpers", () => {
   assert.equal(canonicalNumberString(2e21), "2.000e+21");
   assert.equal(snapToStep(0.30000000000000004, 0, 1, 0.1), 0.3);
   assert.equal(snapToStep(7, 0, 10, 3), 6);
+});
+
+test("every checklist is found for restore, in layouts, steps and tabs", () => {
+  const list = (id: string) => ({ type: "checklist", id, items: ["a", "b"] });
+  const spec = parseLiveUI(
+    JSON.stringify({
+      ui: [
+        { type: "section", children: [list("top")] },
+        { type: "steps", steps: [{ title: "One", ui: [list("inStep")] }] },
+        { type: "tabs", tabs: [{ label: "A", children: [list("inTab")] }] },
+      ],
+    }),
+  ).spec!;
+  assert.deepEqual([...liveChecklistIds(spec.ui)].sort(), ["inStep", "inTab", "top"]);
 });
 
 test("fence names and storage keys", () => {
