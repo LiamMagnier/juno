@@ -68,6 +68,7 @@ import {
 } from "@/lib/agents/types";
 import { AGENT_PROMPT_TEAMMATES, buildAgentPromptBlock } from "@/lib/agents/prompt";
 import { CONVERSATION_LIVE_STATUSES as LIVE_TASK_STATUSES } from "@/lib/work/conversation-tasks";
+import { WORK_TERMINAL_STATUSES } from "@/lib/work/domain";
 
 export interface AgentActor {
   id: string;
@@ -1903,9 +1904,12 @@ export async function agentChatContext(
         title: true,
         status: true,
         runs: {
+          // Every terminal status: a newest attempt that timed out, was
+          // interrupted or lost its Mac is the task's latest result, not an
+          // older attempt's answer read under the new status.
           where: {
             userId: user.id,
-            status: { in: ["completed", "failed", "cancelled", "budget_exceeded"] },
+            status: { in: [...WORK_TERMINAL_STATUSES] },
           },
           orderBy: { finishedAt: "desc" },
           take: 1,
