@@ -251,6 +251,38 @@ test("refusals map to denied and expired records", async () => {
   }
 });
 
+test("a brokered spec's progress reaches the stream: run_code's output shows while it runs", async () => {
+  // The dispatcher ran Juno's own specs with a ToolContext that had no
+  // `reportProgress`, so the real run_code (exec/contract.ts forwards its
+  // stdout through it) streamed nothing until it ended; only a toolset
+  // executor, which run_code never is, got the callback.
+  const { ctx } = harness(fakeBroker("ask_for_any_change"));
+  const progressing = resolvedFromSpec(junoToolSpec("run_code")!, async (_args, toolCtx) => {
+    toolCtx.reportProgress?.({ lines: [{ stream: "stdout", text: "step 1" }], stdoutBytes: 7 });
+    return { status: "succeeded", text: "ok", body: "ok" };
+  });
+  const inner = ctx.toolset;
+  ctx.toolset = { ...inner, resolve: (name) => (name === "run_code" ? progressing : inner.resolve(name)) };
+  const { events, results } = await run(ctx, [{ name: "run_code", callId: "p", round: 0, index: 0, argsText: '{"code":"print(1)"}' }]);
+  assert.equal(results[0].isError, false);
+  const progress = events.filter((ev) => ev.type === "tool" && ev.phase === "progress");
+  assert.equal(progress.length, 1, "the frame the run reported");
+  assert.deepEqual(progress[0], {
+    type: "tool",
+    phase: "progress",
+    server: inner.labelFor("run_code"),
+    name: "run_code",
+    callId: "p",
+    progress: { lines: [{ stream: "stdout", text: "step 1" }], stdoutBytes: 7 },
+  });
+  // And it arrives between running and the result, never after it.
+  const at = (pred: (ev: LlmEvent) => boolean) => events.findIndex(pred);
+  const running = at((ev) => ev.type === "tool" && ev.phase === "status" && ev.status === "running");
+  const result = at((ev) => ev.type === "tool" && ev.phase === "result");
+  const frame = events.indexOf(progress[0]);
+  assert.ok(running < frame && frame < result);
+});
+
 test("the turn's resolved policy skips the policy query; one for another connector does not", async () => {
   const resolved: Snapshot = { policy: "ask_for_any_change", lockdown: false, connectorBlocked: false, connectorId: "juno_runtime", scopeKey: "account" };
   const withPolicy = fakeBroker("ask_for_any_change");
