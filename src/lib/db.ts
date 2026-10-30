@@ -56,6 +56,9 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // `userId_projectId` key still carries userId, so the guard is satisfied by
   // the query it was already making.
   ["ProjectWorkspace", "userId"],
+  // A Work run's shell log on its agent's computer (src/lib/computer/shell-output.ts):
+  // commands and their output, encrypted, read back only by the run's owner.
+  ["ComputerShellOutput", "userId"],
   ["MemoryEntry", "userId"],
   ["MemorySummary", "userId"],
   // One per (person, project). Keyed and filtered on userId like the account
@@ -243,6 +246,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // first, spending a code by its hash, uses prismaUnguarded on purpose
   // (src/lib/computer/handoff.ts): the code is the authorization.
   ["AgentComputerHandoff", "userId"],
+  // A computer's metered awake time and its operator audit
+  // (src/lib/computer/store.ts, audit.ts). Every read is one account's week or log.
+  ["AgentComputerUsageInterval", "userId"],
+  ["AgentComputerAudit", "userId"],
   // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
   // per-message plan of who answers. A room's membership is a statement about
   // one person's agents, so it is guarded like the agents themselves.

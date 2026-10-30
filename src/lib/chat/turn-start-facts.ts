@@ -103,6 +103,19 @@ export function noticeRow(notice: RunNotice, legacy?: { title?: string; detail?:
   return unstamped(noticeActivity(notice, { title: legacy?.title ?? text.title, ...(detail ? { detail } : {}) }));
 }
 
+/**
+ * The warning row for one connector that is not available this turn: the
+ * typed `connector_unavailable` notice and its legacy English line. Also sent
+ * mid-turn by the chat route when a connector is dropped while it opens (too
+ * slow to answer, refused), so both say it the same way.
+ */
+export function connectorUnavailableRow(failed: { label: string; reason: ConnectorFailure }): ClientActivityEvent {
+  return noticeRow(
+    { code: "connector_unavailable", params: { connector: failed.label, reason: failed.reason } },
+    { title: `${failed.label} unavailable`, detail: LEGACY_CONNECTOR_FAILURE[failed.reason] }
+  );
+}
+
 function capitalise(value: string): string {
   return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
@@ -166,14 +179,7 @@ export function turnStartFacts(input: TurnStartFactsInput): ClientActivityEvent[
         },
       })
     );
-    for (const failed of connectors.failed) {
-      rows.push(
-        noticeRow(
-          { code: "connector_unavailable", params: { connector: failed.label, reason: failed.reason } },
-          { title: `${failed.label} unavailable`, detail: LEGACY_CONNECTOR_FAILURE[failed.reason] }
-        )
-      );
-    }
+    for (const failed of connectors.failed) rows.push(connectorUnavailableRow(failed));
   }
 
   // Recorded for every client; the sender streams it only to a `timeline` one (SPEC §2.4).

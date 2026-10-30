@@ -204,15 +204,20 @@ export const SMALL_ASPECT: Partial<Record<AgentEyes, number>> = { soft: 1.45, ta
  * its middle (drawFace). The longer the cut the more it keeps; round eyes are
  * not bars, and a state whose eyes are not a pair of open bars (worry and
  * the happy capsules lean them apart, paused closes them, thinking closes or
- * turns them away) lets it go on the clock (`Pose.leanW`).
+ * turns them away) lets it go on the clock (`Pose.leanW`). The tall cut keeps
+ * 16°: where a pose faces you (waiting, listening, looking down at the work)
+ * its two eyes are alike, square to the line between them, and the lean is
+ * the one cue left; at 12° the pair read as ⏸ tipped over.
  */
-export const EYE_LEAN: Record<AgentEyes, number> = { soft: 9, round: 8, tall: 12, wide: 8 };
+export const EYE_LEAN: Record<AgentEyes, number> = { soft: 9, round: 8, tall: 16, wide: 8 };
 /** The knee of the lean floor (degrees): a pose leaning well past the floor keeps its own lean. */
 const LEAN_KNEE = 2;
 /** softplus, overflow-safe. */
 const softplus = (x: number) => (x > 0 ? x + Math.log1p(Math.exp(-x)) : Math.log1p(Math.exp(x)));
 /** At 20 and 28 px the happy capsule's ends drop this much of its width below its middle (0.1 from 48 px). */
-export const SMALL_BEND = 0.24;
+export const SMALL_BEND = 0.3;
+/** …and the capsule is never shorter than this many times its thickness: at 1x a stubbier one fills a 3 × 2 pixel square, a blob. */
+const SMALL_HAPPY_LENGTH = 1.6;
 
 /** How far the eye line sits above the face's equator, on the sphere. */
 const EYE_RAISE = 6;
@@ -789,6 +794,8 @@ export function drawFace(spec: FaceSpec, P: Pose, X: FaceExtras, ids: { mask: st
     if (P.smile > 0.01) {
       const thick = Math.max(0.6 * Math.min(w, h), happyMin);
       w = Math.min(w, Math.max(wCut, thick / 0.47));
+      // Never a stub (SMALL_HAPPY_LENGTH), growing with the smile so the change has no step.
+      w = Math.max(w, SMALL_HAPPY_LENGTH * thick * smooth01(P.smile / 0.3));
     }
   }
   let needClip = m > 0.01;

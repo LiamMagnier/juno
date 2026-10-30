@@ -53,6 +53,9 @@ import {
   type WorkProjectDefaults,
 } from "@/lib/work/projects";
 import { runBudgetForWindow } from "@/lib/work/budget";
+import { scriptedWorkModelFor } from "@/lib/dev/scripted-work-model";
+import { maxParkedRunsPerAccount } from "@/lib/work/park-resume";
+import { WORK_CAPPED_LIVE_STATUSES } from "@/lib/work/park-resume-rules";
 import { checkUsageWindows } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
@@ -670,6 +673,23 @@ const WORK_RUN_RATE_LIMIT = 10;
 const WORK_RUN_CONCURRENCY_CAP = 3;
 
 /*
+ * The concurrency cap counts `WORK_CAPPED_LIVE_STATUSES` (park-resume-rules.ts): every
+ * live run except a parked one, which holds no executor. Parked runs are
+ * bounded on their own instead (`maxParkedRunsPerAccount`,
+ * `WORK_MAX_PARKED_RUNS_PER_ACCOUNT`), so they cannot pile up without limit
+ * either. The "one live run per session" check below still counts them: a
+ * parked task has an attempt in flight.
+ */
+
+/** The refusal for an account holding as many parked runs as it may. */
+function parkedCapBody(parked: number): Record<string, unknown> {
+  return {
+    error: "parked_cap_exceeded",
+    message: `You have ${parked} tasks waiting for you. Answer, resume or cancel one of them before starting another.`,
+  };
+}
+
+/*
  * The live runs a `WORK_RUN_CONCURRENCY_CAP` check leaves out, both times it
  * is read in `startWorkRunForUser`: when `deadCloudQueue` says the cloud
  * executor is known to be absent (a heartbeat read that lapsed, not a failed
@@ -834,6 +854,14 @@ class NoReachableModelError extends Error {}
  * account's plan admits no model that could run a Work task at all — a 403, and
  * a different sentence.
  */
+/** The catalog model a scripted development run is recorded under: the one asked for, else the first drivable one. */
+function scriptedRunModel(requested: string): RunModel {
+  const asked = resolveModel(requested);
+  const model = asked && workModelOptions([asked]).length > 0 ? asked : workModelOptions(MODEL_LIST, { providers: null })[0];
+  if (!model) throw new NoReachableModelError();
+  return { requested, effective: model.id, degradation: [] };
+}
+
 function resolveRunModel(input: {
   requested: string;
   goal: string;
@@ -1184,12 +1212,18 @@ export async function startWorkRunForUser(
 
   let model: RunModel;
   try {
-    model = resolveRunModel({
-      requested: requestedModel,
-      goal: session.goal,
-      plan,
-      spentModels,
-    });
+    // D9 (docs/design/agents-v2/COMPUTERS_2026-10.md): a development run driven
+    // by the scripted Work model needs no provider key. Inert in production and
+    // unless the account is listed (src/lib/dev/scripted-work-model.ts); the
+    // runner's own event says no model was called.
+    model = scriptedWorkModelFor(user)
+      ? scriptedRunModel(requestedModel)
+      : resolveRunModel({
+          requested: requestedModel,
+          goal: session.goal,
+          plan,
+          spentModels,
+        });
   } catch (err) {
     if (err instanceof NoEntitledModelError) {
       return refused(403, {
@@ -1219,7 +1253,7 @@ export async function startWorkRunForUser(
     // which for somebody with three tasks going is the common case, not a race.
     const live =
       (await prisma.workRun.count({
-        where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+        where: { userId: user.id, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } },
       })) -
       (deadCloudQueue
         ? await prisma.workRun.count({
@@ -1236,6 +1270,8 @@ export async function startWorkRunForUser(
         preflight
       );
     }
+    const parked = await prisma.workRun.count({ where: { userId: user.id, status: "paused" } });
+    if (parked >= maxParkedRunsPerAccount()) return refused(429, parkedCapBody(parked), preflight);
     return { status: 200, body: { preflight }, run: null, preflight };
   }
   if (preflight.requiresConfirmation && !body.confirmExpensive) {
@@ -1370,7 +1406,7 @@ export async function startWorkRunForUser(
 
       const live =
         (await tx.workRun.count({
-          where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+          where: { userId: user.id, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } },
         })) -
         (deadCloudQueue
           ? await tx.workRun.count({
@@ -1379,6 +1415,10 @@ export async function startWorkRunForUser(
           : 0);
       if (live >= WORK_RUN_CONCURRENCY_CAP) {
         throw Object.assign(new Error("run_cap_exceeded"), { liveCount: live });
+      }
+      const parked = await tx.workRun.count({ where: { userId: user.id, status: "paused" } });
+      if (parked >= maxParkedRunsPerAccount()) {
+        throw Object.assign(new Error("parked_cap_exceeded"), { parkedCount: parked });
       }
 
       // One live run per session. A second attempt started while the first is
@@ -1481,6 +1521,10 @@ export async function startWorkRunForUser(
         },
         preflight
       );
+    }
+    if (err instanceof Error && err.message === "parked_cap_exceeded") {
+      const parked = (err as Error & { parkedCount?: number }).parkedCount ?? maxParkedRunsPerAccount();
+      return refused(429, parkedCapBody(parked), preflight);
     }
     if (err instanceof Error && err.message === "session_already_running") {
       return refused(

@@ -99,6 +99,22 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/alerts.ts#lastMailedAt": "per-process",
   "src/lib/computer/store.ts#posterCache": "per-process",
   "src/lib/computer/sweep.ts#orphanSince": "per-process",
+  // Log-once dedupe for the sweeper: a second process logs the same line once more.
+  "src/lib/computer/sweep.ts#unreachableRows": "per-process",
+  "src/lib/computer/sweep.ts#retentionLogged": "per-process",
+  "src/lib/computer/sweep.ts#staleImageAudited": "per-process",
+  // The chat's "session expired" dialog subscribers, in the tab.
+  "src/lib/chat/session-expired.ts#listeners": "browser",
+  // Which env misconfigurations this process has already logged (log once).
+  // A restart logs them again; nothing is decided from it.
+  "src/lib/computer/access.ts#warned": "per-process",
+  // One inbox upload at a time per computer in this process, so the free-name
+  // check and the write go together. Another process may race it; the worst
+  // case is a second file of the same name overwriting the first (S5.2).
+  "src/lib/computer/files.ts#uploadLocks": "per-process",
+  // Which unusable COMPUTER_HOST_URL / COMPUTER_HOST_TOKEN reasons this
+  // process has already logged (log once). A restart logs them again.
+  "src/lib/computer/remote.ts#loggedRefusals": "per-process",
   "src/lib/code-v2/env-link-store-pg.ts#wakeups": "per-process",
   "src/lib/download-feed.ts#signedLinks": "per-process",
   "src/lib/download-feed.ts#pendingLinks": "per-process",
@@ -113,8 +129,20 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/preflight-triage.ts#modelCooldown": "per-process",
   "src/lib/provider-health.ts#health": "per-process",
   "src/lib/provider-health.ts#inFlight": "per-process",
+  // Recent 5xx timestamps per lab from live turns, for the repeated-capacity
+  // rule. A burst counts within one process; a restart starts the count again,
+  // and the boot seed (RoutingOutcome) covers a lab that was failing.
+  "src/lib/provider-health.ts#capacityFaults": "per-process",
+  // What the web process last mailed the operator about each default lab, so
+  // a flapping lab's last mail stays true. A restart forgets it; the boot seed
+  // keeps a deploy from mailing the same outage again.
+  "src/lib/provider-health.ts#mailedOutage": "per-process",
   "src/lib/router/provider-pressure.ts#hits": "per-process",
   "src/lib/sync/thread-sync.ts#waiters": "per-process",
+  // What each loop of a tsx worker does to stop at a safe point when its own
+  // process must exit (an uncaught exception). Only that process's loops can
+  // be stopped by it; there is nothing to share.
+  "src/lib/worker-process.ts#registeredDrains": "per-process",
 };
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));

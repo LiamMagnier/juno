@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveModel, imageEditSupport, type MediaModality, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured, PROVIDERS, type Provider } from "@/lib/providers";
-import { providerHealthy } from "@/lib/provider-health";
+import { providerAccountUsable } from "@/lib/provider-health";
 import { getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
 import { checkBudget, recordSpend, mediaRequestCost, releaseSpend, reserveSpend, settleSpend } from "@/lib/spend";
 import { admitMeteredCall } from "@/lib/metering/admit";
@@ -156,13 +156,16 @@ export async function admitMediaGeneration(req: MediaGenerationRequest): Promise
   if (!isProviderConfigured(model.provider)) {
     return refuse(400, "not_configured", `${model.name} isn't configured — add its API key.`, undefined, { model: model.name });
   }
-  // A key the health probe proved dead (revoked, unfunded) answers every call
-  // with an error after the meter ran; say so first. Unknown counts as healthy.
-  if (!providerHealthy(model.provider)) {
+  // A key health knows is dead (revoked, unfunded) answers every call with an
+  // error after the meter ran; say so first. Only an account fault counts
+  // here: a hold for chat server errors says nothing about this endpoint.
+  // Unknown counts as healthy. The sentence is the neutral one chat uses: the
+  // platform's key and funding state is not the reader's to know.
+  if (!providerAccountUsable(model.provider as Provider)) {
     return refuse(
       503,
       "provider_unavailable",
-      `${model.name} can't be reached right now: ${PROVIDERS[model.provider as Provider]?.label ?? "its provider"} is reporting an account problem.`,
+      `${model.name} is temporarily unavailable. Try again later, or choose another model.`,
       undefined,
       { model: model.name }
     );

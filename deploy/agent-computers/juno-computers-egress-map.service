@@ -1,0 +1,21 @@
+# Installed by setup-vm.sh as /etc/systemd/system/juno-computers-egress-map.service.
+# Repairs the egress address map (egress-map.py) for computers that stop without
+# the broker: a crash, an OOM kill, the kill switch. The broker updates it around
+# every start, stop and remove itself. No timer.
+[Unit]
+Description=Address map of Juno computers for the egress proxy
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/juno-computers-egress-map watch
+Environment=JUNO_EGRESS_MAP=/run/juno-computers/egress-map.json
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target docker.service

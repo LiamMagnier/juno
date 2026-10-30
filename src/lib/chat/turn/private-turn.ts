@@ -12,6 +12,7 @@ import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationAbortedForShutdown, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
+import { noteLiveProviderFault } from "@/lib/provider-health";
 import { checkBudget, releaseSpend, reserveSpend, modelRatesMicroUsdPerToken, type billingPeriodFor } from "@/lib/spend";
 import { createSseSender, SSE_HEADERS } from "@/lib/chat-stream";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -38,6 +39,7 @@ import type { TurnRequest } from "./admission";
 import { refuse, usageWindowRefusal } from "./admission";
 import type { TurnSettings } from "./account";
 import type { TurnModel } from "./model";
+import { providerErrorRecovery } from "./failure-recovery";
 import type { TurnTokens } from "./context";
 import { skillSettlement } from "./context";
 import { createToolActivity, prepareChatArtifactOutput, privateAssistantMessage } from "./activity";
@@ -69,6 +71,7 @@ export async function runPrivateTurn({
   model,
   tokens,
   toolDetailEnabled,
+  requestStartedAt,
 }: {
   req: Request;
   user: TurnUser;
@@ -80,6 +83,8 @@ export async function runPrivateTurn({
   model: TurnModel;
   tokens: TurnTokens;
   toolDetailEnabled: boolean;
+  /** When the request reached the chat route: the start of the trace's `serverPrepMs`. */
+  requestStartedAt?: number;
 }): Promise<Response> {
   const { input, privateHistory, legacyClient, moderate, moderationTexts } = request;
   const { modelInfo, modelId, requestedId, requestedEffort, autoReasoningEffort, routingNote, routingWarning, routingReceipt } = model;
@@ -201,6 +206,7 @@ export async function runPrivateTurn({
       artifactEdit: false,
       regenerate: !!input.regenerate,
     },
+    requestStartedAt,
   }, emitTurnTrace);
 /*
    * Hold this turn's estimated cost against the ceiling for as long as it runs.
@@ -376,6 +382,8 @@ export async function runPrivateTurn({
             cacheKey: `private-${user.id}`,
             fastMode: useFastMode,
             proMode: useProMode,
+            // The end of the server's preparation, for the trace's `serverPrepMs`.
+            onProviderRequest: trace.noteProviderCall,
           }),
           {
             acc,
@@ -386,6 +394,8 @@ export async function runPrivateTurn({
             enforceStreamBudget,
             writing: { title: "Writing the private answer", detail: "Streaming response text" },
             forwardDeltas: true,
+            // First-token time for the trace (counts only: the trace keeps no text).
+            onEffect: trace.observe,
           }
         );
         // Provider done — stop measuring silence before Juno's own work. See
@@ -467,6 +477,15 @@ export async function runPrivateTurn({
           stalled: stallWatchdog.stalled,
           shutdown: wasGenerationAbortedForShutdown(generationId),
         };
+        // Private turns feed provider health like saved ones: the fault is
+        // the lab's, not the conversation's. Nothing of the conversation is
+        // recorded: for a private chat the verdict keeps the class and status
+        // only, never the provider's text (`noteLiveProviderFault`).
+        const endedByReaderOrPlatform =
+          cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown;
+        if (!endedByReaderOrPlatform) {
+          noteLiveProviderFault(modelInfo.provider, err, "private_chat", { requester: user.id, modelId: modelInfo.id });
+        }
         console.error("[chat] private generation error", {
           generationId,
           provider: modelInfo.provider,
@@ -544,12 +563,18 @@ export async function runPrivateTurn({
               : reason === "user_stopped"
                 ? "Generation stopped before any output."
                 : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
+          // Chat wire 1.1, as on the saved path: only when the message above
+          // is the provider's.
+          const recovery =
+            reason !== "user_stopped" && !endedByReaderOrPlatform
+              ? await providerErrorRecovery(err, { modelInfo, plan, history: privateHistory, requestedId, userId: user.id })
+              : {};
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
             detail: message,
           });
-          send({ type: "error", message, quota, finishReason: reason });
+          send({ type: "error", message, quota, finishReason: reason, ...recovery });
           trace.finish({
             finishReason: reason,
             outcome: reason === "user_stopped" ? "stopped" : "failed",

@@ -207,6 +207,9 @@ export const chatBodySchema = z
     origin: chatOriginSchema.optional(),
     // These keys are paired intentionally: the request key deduplicates a new
     // conversation while the message key deduplicates its first persisted turn.
+    // The web sends them on a new saved chat's first message, so the send it
+    // repeats after a deploy's 502 or a dropped connection is recognised
+    // rather than run twice (src/lib/chat/send-retry.ts).
     clientRequestId: clientIdempotencyKeySchema.optional(),
     clientMessageId: clientIdempotencyKeySchema.optional(),
     // Deep research mode: plan → search → read → cited report (saved chats only;

@@ -5,6 +5,7 @@ import { attachmentKind, isAcceptedUpload } from "@/lib/uploads";
 import type { ClientAttachment } from "@/types/chat";
 import type { LibraryUpload } from "@/components/library/library-types";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { formatBytes } from "@/lib/utils";
 
 /**
  * Uploads started from the Library page.
@@ -30,6 +31,21 @@ export interface LibraryUploadsOptions {
 }
 
 let sequence = 0;
+
+/** The plan's per-file limit in whole MB, as the plans table states it (`maxUploadMb`). */
+export function uploadLimitMb(maxBytes: number): number {
+  return Math.round(maxBytes / (1024 * 1024));
+}
+
+/** "This file is 51 MB. Your plan takes files up to 50 MB." */
+export function oversizeMessage(size: number, maxBytes: number): string {
+  const limit = `${uploadLimitMb(maxBytes)} MB`;
+  // 50.04 MB rounds to "50 MB": never print the limit as the reason it was refused.
+  const sized = [formatBytes(size), formatBytes(size, 2)].find((text) => text !== limit);
+  return sized
+    ? `This file is ${sized}. Your plan takes files up to ${limit}.`
+    : `This file is just over ${limit}, the most your plan takes in one file.`;
+}
 
 /** Server replies turned into one sentence for the row. */
 function failureMessage(status: number, body: unknown): string {
@@ -126,15 +142,21 @@ export function useLibraryUploads({ maxBytes, onUploaded }: LibraryUploadsOption
         if (!isAcceptedUpload(file.name || "file", file.type || "application/octet-stream")) {
           rows.push({ ...base, status: "failed", error: `${PRODUCT_NAME} can’t store this type of file.`, retryable: false });
         } else if (file.size > maxBytes) {
-          rows.push({ ...base, status: "failed", error: "This file is larger than your plan allows.", retryable: false });
+          // The number, not "larger than your plan allows": the same plan
+          // constant the server enforces (api/upload), so it is the real limit.
+          rows.push({ ...base, status: "failed", error: oversizeMessage(file.size, maxBytes), retryable: false });
         } else {
           files.current.set(localId, file);
           rows.push({ ...base, status: "uploading" });
           toSend.push([localId, file]);
         }
       }
-      // Newest first, the same order the list itself runs in.
-      setUploads((previous) => [...rows.reverse(), ...previous]);
+      // Newest first, the same order the list itself runs in. Reversed OUTSIDE
+      // the updater: `rows.reverse()` inside it mutated the array, so React's
+      // second call in Strict Mode flipped it back and the order depended on
+      // how many times the updater ran.
+      const newestFirst = [...rows].reverse();
+      setUploads((previous) => [...newestFirst, ...previous]);
       for (const [localId, file] of toSend) send(localId, file);
     },
     [maxBytes, send],

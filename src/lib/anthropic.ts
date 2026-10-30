@@ -10,6 +10,7 @@ import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/
 import { providerRequestModel } from "@/lib/model-request";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { markRequestRejected } from "@/lib/provider-error";
 import { providerApiKey } from "@/lib/providers";
 import { getObjectBytes } from "@/lib/storage";
 import {
@@ -411,10 +412,15 @@ export async function* streamAnthropic(
           stream = await openStream(false, params);
         } catch (retryErr) {
           metered?.end(null, { ok: false });
+          // Rejected before any stream, but this was already the request's
+          // second send: the turn does not ask this model a third time.
+          if (roundIndex === 0) markRequestRejected(retryErr, { adapterRetried: true });
           throw retryErr;
         }
       } else {
         metered?.end(null, { ok: false });
+        // The first request was refused before any stream (pre-stream-retry.ts).
+        if (roundIndex === 0) markRequestRejected(err);
         throw err;
       }
     }

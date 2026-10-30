@@ -45,6 +45,22 @@ test("the voice relay is allowed to connect only when configured", () => {
   assert.equal(withRelay.get("connect-src"), `'self' wss://relay.example.test ${STRIPE_CONNECT.join(" ")}`);
 });
 
+test("the computer relay origin is in connect-src when set; nothing changes when it is not", () => {
+  const withComputer = directives(
+    buildCsp({ nonce: NONCE, relayUrl: "wss://relay.example.test", computerRelayUrl: "http://localhost:8787/voice-relay" })
+  );
+  assert.equal(withComputer.get("connect-src"), `'self' wss://relay.example.test ws://localhost:8787 ${STRIPE_CONNECT.join(" ")}`);
+  const tls = directives(buildCsp({ nonce: NONCE, computerRelayUrl: "https://view.example.test" }));
+  assert.equal(tls.get("connect-src"), `'self' wss://view.example.test ${STRIPE_CONNECT.join(" ")}`);
+  for (const computerRelayUrl of ["", undefined, "not a url", "ftp://view.example.test"]) {
+    assert.equal(
+      directives(buildCsp({ nonce: NONCE, computerRelayUrl })).get("connect-src"),
+      `'self' ${STRIPE_CONNECT.join(" ")}`,
+      String(computerRelayUrl)
+    );
+  }
+});
+
 test("an empty relay URL does not produce a dangling connect-src", () => {
   for (const relayUrl of ["", undefined]) {
     const d = directives(buildCsp({ nonce: NONCE, relayUrl }));

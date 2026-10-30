@@ -178,7 +178,7 @@ all of the *runtime* exists and is stricter than theirs; what is missing is the
 
 | Capability | Grok Bot | Muse | Juno today | Where |
 | --- | --- | --- | --- | --- |
-| Own cloud computer | shared VM per account | VM per person | **per-agent** persistent Docker desktop (`AgentComputer`, `juno-computer:1`: Xvfb + XFCE + Chromium + shell + `/home/agent/work` volume, isolated per agent on `172.30.0.0/24` with `--icc=false` and RFC1918 egress blocked) plus the temporary per-run cloud browser as fallback | `src/lib/computer/`, `deploy/agent-computers/`, `scripts/work-runner.ts` |
+| Own cloud computer | shared VM per account | VM per person | **per-agent** persistent Docker computer (`AgentComputer`, `juno-computer:1`, label `pipe-v4`: Xvfb with the xfwm4 window manager and no desktop session, headful Chromium behind a token-checked CDP gate, a shell through the agent launcher, volumes `juno-agent-<agentId>` and `juno-agent-<agentId>-browser`, isolated on `172.30.0.0/24` with `--icc=false`, no DNS and egress only through the pinned proxy), **off in production** (`COMPUTER_PROVIDER` empty), plus the temporary per-run cloud browser as fallback | `src/lib/computer/`, `deploy/agent-computers/`, `scripts/work-runner.ts` |
 | Your own Mac as a computer | — | — | a paired Mac runs Work locally: files, a shell, the signed-in browser, computer use — the machine a person already trusts | `WorkHost`, `native/Packages/JunoWork`, §9b |
 | Plans a job, works it for hours | yes | yes | plan state machine, stall/repetition policing, structural validation | §9b.2 |
 | Stops to ask | approvals | Sentinel cards | questions + approvals with action/policy digests, expiry, always-allow ceilings | §9b.3 |
@@ -193,10 +193,10 @@ all of the *runtime* exists and is stricter than theirs; what is missing is the
 | Comes back to you | push | push, decides if a result is worth it | **in-app, Web Push, APNs and email** per `Agent.notify` (`needs_you | results | all`) | `src/lib/work/notify/` |
 | **A named, persistent agent** | **yes** | **yes** | **yes** (`Agent`) | `src/lib/agents/` |
 | **An avatar that shows state** | **yes** | **yes** | **yes** (`AgentFace`, `JunoAgentFace.swift`) | `src/components/agents/agent-face.tsx` |
-| **Goals the agent pursues** | via chat | Goals | **yes** (`AgentGoal`) | `src/lib/agents/` |
+| **Goals the agent pursues** | via chat | Goals | **yes** (`AgentGoal`): milestones run as Work tasks; met only when the last step's run checks the success criteria and the check passes, otherwise `unverified` ("Every step ran. Check the result.") | `src/lib/agents/goals.ts`, `goal-criteria.ts` |
 | **Proactive ideas / check-ins** | — | Ideas | **yes** (`AgentIdea`, `reflectAgent`) | `src/lib/agents/reflect.ts` |
-| **One place per agent: now, computer, setup** | Bot page | shelves | **yes** — thread-first split side panel (`Now · Computer · Setup`) | `src/components/agents/agent-panel.tsx` |
-| **Agent-scoped memory** | yes | Identity | **yes** (`AgentNote`, encrypted at rest) | `src/lib/agents/store.ts` |
+| **One place per agent** | Bot page | shelves | **yes** — thread-first: the agent's profile in the chat's side slot, and its computer full screen over the thread when it has one (`profile \| computer`) | `src/components/agents/agent-panel.tsx` |
+| **Agent-scoped memory** | yes | Identity | **yes** (`AgentNote`, encrypted at rest); a cloud task can save a note with `remember`, held for the person's review unless the agent may read all of their memory | `src/lib/agents/store.ts`, `run-notes.ts` |
 
 ---
 
@@ -207,7 +207,8 @@ does not reopen `TWO_PRODUCTS.md`: a conversation still decides when an ask
 becomes work, and an agent is *who* that work is delegated to. What an agent
 adds is a name, a face, a standing brief, goals, routines, rules, a memory of
 its own, and an optional **dedicated cloud computer** — with its thread as the
-home surface and a three-tab side panel (**Now · Computer · Setup**) beside it.
+home surface, its **profile** in the chat's side slot, and its computer full
+screen over the thread when it has one.
 
 - **Its thread is an ordinary chat.** `Conversation.agentId` points at the
   agent; `kind` stays `"chat"` (`TWO_PRODUCTS.md` §5 — no new kind, because
@@ -222,15 +223,19 @@ home surface and a three-tab side panel (**Now · Computer · Setup**) beside it
 - **Its computer is isolated per agent (`Agents v2`).** Reversing the v1
   stateless-only rule without copying Grok's shared account-wide VM: when the
   owner enables a computer for an agent (`AgentComputer`), that agent gets its
-  own isolated Docker container (`juno-computer:1`) and persistent `/home/agent`
-  volume (`juno-comp-<agentId>`). One agent's sign-ins, cookies and files are
+  own isolated Docker container (`juno-computer:1`) and two persistent volumes
+  (`juno-agent-<agentId>` for `/home/agent`, `juno-agent-<agentId>-browser` for
+  the browser profile). One agent's sign-ins, cookies and files are
   never shared with another agent's container (`--icc=false`). When a site needs
   a password, 2FA code, CAPTCHA or payment step, the agent calls `ask_user` and
-  the owner takes over the live desktop (`noVNC` over the authenticated WebSocket
-  relay) to type it directly, then hands control back.
-- **Configuration by chat.** Five chat tools (`update_agent`,
-  `manage_agent_goal`, `manage_agent_routine`, `manage_agent_note`,
-  `manage_agent_computer`) let the owner configure the agent in conversation.
+  the owner takes over the live view (`noVNC` over the authenticated WebSocket
+  relay; it shows Chromium, not a desktop) to type it directly, then hands
+  control back. Computers are **off in production** until the owner turns them
+  on (`docs/design/agents-v2/OPERATIONS.md`, `COMPUTERS_2026-10.md`).
+- **Configuration by chat.** Five chat tools (`create_agent`, `update_agent`,
+  `agent_goal`, `agent_routine`, `agent_memory`; the computer is the `computer`
+  parameter of `create_agent` and `update_agent`, not a tool of its own) let
+  the owner configure the agent in conversation.
   Benign edits on trusted turns apply immediately with an inline **Undo** card
   (`agentChange`); privilege-escalating changes (widening autonomy, enabling the
   computer, adding connectors, or any tool call on an untrusted turn) require
@@ -246,6 +251,38 @@ home surface and a three-tab side panel (**Now · Computer · Setup**) beside it
   a reflection: an idea is a card with **Start** on it. Reflection runs on the
   account's own background provider under the same policy titles and memory
   use (`runUtilityPrompt`), and it is billed as utility work.
+- **A goal is met only when it is checked** (2026-10-28). When every milestone
+  has run, the last step's cloud run reads every step's result against the
+  goal's success criteria with the run's own provider and model (the agent's
+  model; `checkGoalCriteria` beside the run judge in
+  `runner/agent-core/src/work/judge.ts`). A pass makes the goal `achieved`;
+  a NOT MET, a check that could not run, or a last step that ran on a Mac
+  (which has no such check) leaves it `unverified` for the person, who is
+  notified and marks it met or keeps it going. Nothing fails open. The
+  agent's own chat lists such a goal apart, as waiting for the person to
+  check, and is told never to call it met; its `agent_goal` *achieve* puts an
+  approval card to the person, so only their press closes a goal from chat.
+  The verdict counts only from the attempt that completed.
+- **What an agent learns in a task can stay** (2026-10-28, tightened
+  2026-10-30). A cloud task has `remember`, which saves one short note for
+  the agent, at most three per run, encrypted like every note. Every such
+  note waits on the profile until the person keeps it, under every memory
+  setting: a task may have read a page or an email, and a kept note reaches
+  the agent's chat and voice prompt as what it knows. Notes are screened for
+  secrets (a value beside a password, code, key or login label in the shipped
+  languages, a login pair, a card number, a credential-shaped word the person
+  typed into the task); the screen is a rule over words, not a guarantee.
+
+**What is deployed vs not (2026-10-28).** Hiring, threads, configuration by
+chat, Work tasks, routines, driven goals, notes and notifications are in the
+release deployed on 2026-10-26 (main `7c91a0c2e`), but none of it has an
+end-to-end production check yet: no Orbit capability is marked accepted in
+`src/lib/capabilities.ts` (`production.accepted: false`). The agent computer
+and hosted code execution are off in production (no host), and Mac execution
+is unverified on hardware. The two items above dated 2026-10-28, the hiring
+plan gate and the profile's notify and model controls are on the working
+branch and not deployed. The criteria check and `remember` exist only on the
+cloud executor (`scripts/work-runner.ts`); a Mac run has neither.
 
 ### 3.1 Where it appears
 
@@ -255,14 +292,19 @@ home surface and a three-tab side panel (**Now · Computer · Setup**) beside it
   needs you. Clicking an agent opens its **thread** (`/chat/[conversationId]`).
 - **`/agents`** — Orbit: what needs you, then the crew, one tile per agent
   (live face · name · role · what it is doing), then **New agent** (§4.3).
-- **`/agents/new`** — chat-first hiring (`AgentStart`): pick a template chip or
-  *Start from scratch* to create the agent and jump straight into its thread
-  where it sets itself up in one or two messages (`?form=1` keeps the full
-  four-step form).
+- **`/agents/new`** — the Orbit page with its field focused: describe a job,
+  the agent is created and opens its thread, where it sets itself up in one or
+  two messages (`?form=1` keeps the full four-step form). Hiring needs a plan
+  with agents (Pro and up, `PLANS[plan].agents`): on Free and Lite the server
+  refuses `POST /api/agents` with `402 plan_locked` and creates nothing, and
+  the page shows one upgrade card instead of the field. Agents kept from before
+  a downgrade stay listed and readable (`src/lib/agents/plan-gate.ts`). In a
+  chat, `create_agent` gives the same sentence before any approval card.
 - **`/agents/[id]`** — server redirect to `/chat/<conversationId>?agent=<tab>`
-  (`now | computer | setup`).
-- **`/chat/[conversationId]`** — the agent's thread and its split side panel
-  (`?agent=now|computer|setup`).
+  (`profile | computer`; the old `now`, `setup` and `goals` links open the
+  profile).
+- **`/chat/[conversationId]`** — the agent's thread with its profile in the
+  side slot (`?agent=profile|computer`).
 - **Mac and iPhone.** An **Agents** row in the Mac's Chat sidebar and the
   phone's drawer: the roster, the agent page with `NativeAgentComputerView`
   (poster, state sentence, **Wake**, **Watch**, **Take control**, **Hand back**
@@ -341,20 +383,25 @@ only). `tests/agents-face.test.ts` holds the promises below.
   **Never the pause glyph.** Two upright, parallel, equal bars side by side
   read as ⏸, never as eyes. Grok's eyes lean about 26° because its head rests
   rolled on a sphere; Juno's calmer rest leans 10 to 13° the same way, and
-  every other pose keeps a floor (`EYE_LEAN`: soft 9°, tall 12°, wide 8°;
+  every other pose keeps a floor (`EYE_LEAN`: soft 9°, tall 16°, wide 8°;
   round is not a bar): where a pose would stand a pair of long cuts upright
   (facing you while it waits, looking down at the work, a pointer across the
   face, the pickers), `drawFace` rolls the pair about its middle until it
   leans the agent's way by at least that (`pairRoll`, a soft floor: a pose
   already leaning past it keeps its own lean). The direction is the agent's
   side (`Pose.eyeLean`, blended, so a new look resting the other way turns it
-  over smoothly). Round cuts keep none (they are not bars). A state whose eyes
+  over smoothly). The tall cut keeps 16°: facing you (waiting, listening,
+  looking down at the work) its two eyes are alike and square to the line
+  between them, so the lean is the only cue left, and at 12° the pair read
+  as ⏸ tipped over (from 44 px no frame has the far eye within 5% of the
+  near one's width, no shear and under 14° of lean). Round cuts keep none
+  (they are not bars). A state whose eyes
   are not a pair of open bars lets it go **on the clock**, never on a
   threshold of the pose: `Pose.leanW` is 0 in done (the happy capsules),
   blocked (the worry leans the eyes apart), paused and a small face thinking
   (shut), 1 elsewhere, and it blends like any field (let go over the entry's
   own ease, 0.35 to 0.5 s, once the lids are half down or the expression has
-  formed; back over 0.3 s, at most about 2° a frame, before the eyes are
+  formed; back over 0.3 s, at most about 2.7° a frame, before the eyes are
   bars again). Released by the smile or the lid instead, the steep start of
   their eases dropped the whole roll in 8 to 30 ms: the pair stood upright
   in a frame or two (11° at 160 px) at the end of every run. Between two
@@ -400,7 +447,9 @@ only). `tests/agents-face.test.ts` holds the promises below.
   a slide, never an eviction. Done lifts the lower lids: each eye becomes a
   squashed capsule about half as thick as it is wide, bowed only a little,
   1.3× wider, its outer end 12° lower (mirrored). At 20 and 28 px it is 1.5×
-  wider, set a little further apart, 1.25 dashes thick and bowed by at
+  wider, set a little further apart, 1.25 dashes thick, never shorter than
+  1.6 times its thickness (a stubbier one fills a 3 × 2 pixel square at 1x,
+  a blob) where the pair has the room, and bowed by 0.3 of its width, at
   least 0.9 px, so done reads from a still
   in the sidebar rather than as two smaller dots. Same family as the cuts,
   never a `^ ^` caret, and always thicker than paused's dashes. Blocked's
@@ -460,7 +509,7 @@ hides behind a blink.
 | `idle` | rest pose; a `live` face blinks (~240 ms, random, 15% doubled) and now and then lets its gaze drift somewhere new (0.7 s, never a snap; a long drift opens with a blink); nothing floats in between | rest pose |
 | `thinking` | large faces turn away, round the back, starting at once and easing out (0.6 s; the eyes are carried off, never flicked: no more than 0.17 R a frame), while the body winds into the middle of three flat dots, so there is no blank beat; the middle one is round (each outline point slides onto the circle at its own angle over the first 62% of the wind-down), so every agent thinks with the same ellipsis, never ●◆● or ●■●, and the turn away still starts from the body's own silhouette. Small faces close their eyes instead (a turn at 28 px is a jump). A wave runs across the dots on the chat's 1.4 s rhythm (from 48 px each agent at its own rate, within ±6%; a face arriving on a page holds its painted dots for a beat of its own, up to one period, before its wave starts, so thinking agents mounted together never pulse as one, even at roster sizes where every wave keeps the chat's exact rhythm). Out of working, the most frequent change in an agent loop, the ring reels into its ball while the head turns away and the ball sinks as the body winds (0.44 s, opaque, never a cut). Coming out, the wave runs on while the dots merge, the body re-inflates over 0.5 s and the face turns back the way it went. Below 48 px the dots span the slot, so a thinking agent keeps the weight of the faces beside it | three dots, middle raised |
 | `working` | one action: an acknowledging blink, then the presence ball pops out on the near half of its ring, which passes under every body, at a point of each copy's own between the ring's right end and just past its front (5° to 125° round; 0.25 s), throws Juno's open ring forward round the body in its own direction of travel (0.35 to 0.95 s), the face goes once round the back the same way (0.45 to 1.45 s; not out of thinking, which is already a turn), and it settles looking down at the work, still turned (10°) and rolled its own way, so its eyes keep their lean and its far eye stays the narrower (looking straight down, a tall cut stood as ⏸ inside its spinning ring). Then the orbit turns at 96°/s, each agent at its own pace (±10%, from its identity, so one agent turns alike in the sidebar and the thread header), the eyes follow its ball as it passes in front (from 48 px), and the gaze looks up every few seconds; blinks come less often than at rest (4.5 to 9 s: focus). The ring is a tilted orbit in `--presence`, fitted under each body so its near half passes under it with its cut-paper gap and never across or through it (an arc under the eyes reads as a mouth); the far half goes behind. Its gap is 38°, about a ball's width either side of the ball: the brand's open ring with its ball terminal. As the ring gets short the gap closes, so a ring being thrown leaves the ball itself and a ring reeling in ends inside it (never a stray dash a gap ahead of the ball). Pixel floors: at 48 px a 1.6 px ring and a 2.6 px ball. Below 48 px: no ring, the ball rides just outside the rim and swings over the lower right (24° to 68°), in every frame, and the eyes keep clear of its notch; in the still it is parked at the upper right (−60°), where the logo's ball terminal sits (a ball held still at the lower right is every chat app's online dot, and the upper left is the needs-you notch's), and a live face arriving off that still rolls it down into its swing as its orbit starts (1.2 s, never a jump). Leaving, the ring reels back into its ball at once (an ease-out over 0.32 s) and the ball sinks into nothing as the last of the ring reels in (0.17 to 0.42 s), opaque throughout, as done puts it away: it never hangs beside the body as a lone, fading dot, and no stub of ring is ever left without its ball (whatever is left of a ring that is reeling in fades as the ball goes under half size; a whole ring never does, so a ball dipping to change its paint never ghosts the ring). **Never in lockstep**: every copy is painted with its ball at the same spot, so on a page load each holds it there for a beat of its own (0 to 2 s, skewed short) and then spins up at a rate of its own (time constant 0.63 to 1.17 s). Faces handed one change in one frame (the roster polls every 10 s, so agents that start within one poll window flip together; routines set for the same time do every day) part too: each acknowledges after a beat of its own (up to 0.45 s, and at least 90 ms clear of any other face's entry on the page; never for a state that needs you, a voice turn or a preview a person drives), so no two blink, pop and spin as one, and a fresh orbit pops at a point of its own and spins up at a rate of its own (0.45 to 2 s). Six agents started by one poll: 9% of pairs orbit within 15° of each other at a like speed 2 s later and 14% at 4 s (was 56% and 35%; six balls placed at random would be 8%) | ring with its ball in its gap, in front at the right (small: the ball parked at the upper right) |
-| `waiting` | leans in, eyes open to you; the needs-you ball pops once into a notch at the upper left (never Grok's upper-right corner), in `--status-needs-you` (the owner's needs-you ember, `--signal`, as in the sidebar and Activity; never `--attention`, which is for warnings only); the notch's air separates it from a coral or amber body; from 48 px the notch is a cut a pixel wide, not a ring of page round a sticker. The ball pops at 0.2 s. Below 48 px a working rim ball sinks first, in 0.18 s, so it is gone before the notch opens and the eyes never have two things to keep clear of (a 20 px face once lost both eyes between them). The eyes go to it and back, every 4.2 s at first and then every 16 s (small faces look half as far) | the ball |
+| `waiting` | leans in, eyes open to you; the needs-you ball pops once into a notch at the upper left (never Grok's upper-right corner), in `--status-needs-you` (the owner's needs-you ember, `--signal`, as in the sidebar and Activity; never `--attention`, which is for warnings only); the notch's air separates it from a coral or amber body; from 48 px the notch is a cut a pixel wide, not a ring of page round a sticker. The ball pops at 0.2 s; out of the dots at 0.5 s, once the face is nearly home (at 0.2 s a head coming back round is still turned about 70°, its near eye at the body's edge: the notch bit it and then shoved the pair in one frame, up to 4.3 px at 160 px, on agents that rest to the left). Switched between waiting and blocked before a badge has grown (a preview), the old glyph shrinks away before the new one grows: a badge never goes in a frame, nor the notch, nor the eyes it held clear. Below 48 px a working rim ball sinks first, in 0.18 s, so it is gone before the notch opens and the eyes never have two things to keep clear of (a 20 px face once lost both eyes between them). The eyes go to it and back, every 4.2 s at first and then every 16 s (small faces look half as far). **Never in lockstep**: a state that needs you is never held back or staggered, so faces handed it in one frame each answer a beat of their own late instead (0 to 120 ms, from the copy's own noise; blocked too): the acknowledgement blink (unless it joins a blink already under way), the head and eyes, the glances at the badge. The badge (and blocked's stalled orbit from 48 px) is the signal and comes on at once on every face | the ball |
 | `blocked` | head tilts and sinks, slowly; the eyes go worried (the cut shortened and leaned, tops in, §4.1: no lid cut, so no corner however long the block lasts). From 48 px no sticker: the orbit stalls, its open ring standing still in `--muted-foreground` with its ball, in `--destructive` (the blocked ink), rolled to rest at the lowest point of the ring. Out of working the running orbit is picked up and runs down: the ball coasts on with the speed it had, decaying (never faster, never back), then, slow, settles the shorter way to the lowest point, never faster than 55°/s, so it rocks back at most once, slowly, like a ball finding the bottom (the face stays on the clock until it has); the ring's paint blends grey over 220 ms, in step with the ball; the ball never blends (blue to red passes a magenta in neither palette): it dips to a third of its size in its old paint and grows back in the new one, changing colour at the bottom of the dip (0.14 s), under the acknowledgement blink, and the same back into working; from anything else it enters calmly, working's entrance without the pop: the stalled ball rises at the bottom (0.15 to 0.5 s) and the ring is drawn out of it, in the stalled paint from the first frame (the paint is set while the orbit is hidden, with no transition, so blocked never flashes the running blue). Leaving, the grey ring reels in and the red ball shrinks with it, so the two reach nothing together and the ball never sits alone under the body. Below 48 px a still bar in `--destructive` sits in a stadium notch, 2.5 balls wide, so blocked and waiting differ by shape and not only by hue; it grows in from 0.25 s, after a working rim ball has sunk (0.18 s). No pop, no loop: a block can last hours | the worried eyes, and the stalled orbit (small: the bar) |
 | `done` | from working, the gap closes so the open ring is whole for a moment (0.25 s), then the ring reels into its ball (0.3 to 0.7 s) and the ball sinks into the rim (to 0.83 s): put away, opaque throughout, never faded or thrown outward. The lower lids lift into happy capsules (§4.1) and stay content for as long as the state lasts; after the beat a `live` face lets its gaze drift slowly now and then (no blinks, not even the hover notice, which it answers with its look alone: the capsules hold), so a roster of finished agents is never a row of stickers. The happy capsule forms and lets go as one shape: the thickness it keeps while forming follows the smile continuously and thickens the whole profile about its centre line, so its round ends stay round through every blink and change (it once stepped 3 to 5 px in a frame and drew square-ended bars). Out of thinking it forms once the face is nearly round, and into thinking it lets go before the eyes reach the limb, so it is never seen edge-on | happy capsules, no ring |
 | `sleeping` | eyes close to dashes, head drops, and the body goes dormant: a neutral grey with a 14% trace of its tone (`--agent-dormant`, face-local in agent-face.css), clearing 1.8:1 or more on the page and the card in light (level with the amber body, so a paused face never fades out of a 20 px list), dashes in softened ink (4.8:1 in light, 3.3:1 or more in dark; tests/agents-face.test.ts), so paused never reads as done; it holds still. The paint keys off the state as drawn (`data-drawn`), not as requested, so a held change never greys a face that is still working. Waking, the eyes open with the colour, slowly and then fully (0.6 s) | dashes, dormant |
@@ -485,9 +534,16 @@ blink alone, never by the lid: a face that rests half-lidded (`visor`,
 0.86) is open, and acknowledges like every other (judged on the lid, a
 visor agent once entered working, waiting, listening and blocked with no
 blink at all). Eyes a lid had closed (paused, a small face thinking) need
-no acknowledgement: their opening is it. Into a state that shuts the
-eyes (paused, a small face thinking) the blink never reopens: the lid closes
-over it. Checked at 240 fps over 7,000 changes landing at every phase of a
+no acknowledgement: their opening is it. Into a state that takes the eyes
+away (paused and a small face thinking shut them, a large face thinking
+turns them round the back) the blink never reopens: how open it was is the
+ceiling, and the lid or the turn takes the eyes from there (a large face
+once reopened them to full on the way round, then lost them to the limb).
+The hover notice is a blink like the others, and joins one under way: a
+pointer arriving while the eyes are already blinking, or just before a
+needs-you face's late acknowledgement, starts no blink of its own (two
+curves multiplied closed the eyes twice), and a second arrival never
+restarts one still running. Checked at 240 fps over 7,000 changes landing at every phase of a
 blink, at 28 and 96 px, on three bodies and three marks (`visor` among
 them): no frame opens the eyes by more than a natural blink does (0.1 a
 frame), and no blink restarts; and every mark blinks on every entry that
@@ -496,9 +552,15 @@ events. State motion plays on every face, except a `still` face
 (`<AgentFace still>`): the still pose and nothing else, for pickers and for
 a second copy of a face that is alive elsewhere on the screen, so one agent
 never blinks and glances out of step with itself. The larger copy lives:
-the thread header's 34 px face is drawn still while the empty thread's
+the thread header's 34 px face is held still while the empty thread's
 greeting (88 px) or the profile panel's face (96 px) is up, and lives again
-when they go.
+when they go. A face that has been live is held on its own element, never
+swapped for a still copy (the swap was a new element, a one-frame cut from
+mid-blink to open): its rig eases it into the still frame from where it is
+(0.45 s; a blink under way finishes first, the pointer is let go over the
+look's own ease, an orbit or the thinking wave coasts to a stop), then asks
+for no frames; let go, the state carries on from the still with no entry
+beats (`FaceConfig.still`, `holdPose`).
 
 **A new look under a running state** (a colour, shape or eyes pick in the
 hire flow, a look saved from the studio while the thread is open) never
@@ -605,8 +667,8 @@ whole combination is visible before **Hire**. Pressing a row or **Hire**
 creates the agent and its thread (`POST /api/agents`) and redirects straight to
 `/chat/<conversationId>`, where the agent greets in its own voice and offers
 starter chips to refine its role, routines, goals, notes or computer in
-conversation (`update_agent`, `manage_agent_goal`, `manage_agent_routine`,
-`manage_agent_note`, `manage_agent_computer`). *Set up with a form*
+conversation (`update_agent`, `agent_goal`, `agent_routine`, `agent_memory`;
+the computer through `update_agent`'s `computer` parameter). *Set up with a form*
 (`/agents/new?form=1`) reveals the four-step form (template, name and face
 builder, style/brief/autonomy, and first goal).
 
@@ -618,35 +680,44 @@ glance (latest task, attention, schedules, ideas, computer) as optional, so a
 missing related table cannot turn an existing roster into an error or an empty
 list.
 
-### 5.2 The thread and the three-tab side panel (`Now · Computer · Setup`)
+### 5.2 The thread, the profile and the computer (`?agent=profile|computer`)
 
-An agent's home is its thread (`/chat/[conversationId]`), accompanied by a
-split side panel (`AgentPanel`, `380px` on desktop, bottom drawer on mobile,
-deep-linkable via `?agent=now|computer|setup`; `/agents/[id]` redirects there):
+An agent's home is its thread (`/chat/[conversationId]`). Two views sit with
+it (`AgentPanelTab = "profile" | "computer"` in `agent-panel.tsx`,
+deep-linkable via `?agent=profile|computer`; `/agents/[id]` redirects there):
 
-- **Now** — the block that needs you first (open questions and approvals from
-  its tasks, answerable in place with the existing Work cards — Deny first),
-  then the task it is doing (title, plan tally, the step it is on, time working),
-  then **Goals** (up to 5 active goals with quick add and *Work on this* →
-  thread), **Ideas** (Start / Not now), **Upcoming** (next routine fires), and a
-  collapsible **Recent activity** disclosure.
-- **Computer** — the agent's dedicated cloud desktop (`ComputerView` on web,
+- **Profile** — the agent in prose, in the chat's side slot: its face (press
+  for its appearance), name, role and **Message**; then, each only when it has
+  something to say: **Needs your answer** or **Working on** (with *Answer in
+  chat* / *Show in chat*), **Ideas** (Start / Not now), **Working toward**
+  (goals with milestones as a quiet checklist; a blocker in the attention
+  colour with *Continue*; a goal whose steps all ran but whose criteria were
+  not shown met says "Every step ran. Check the result.", links each step's
+  task, and offers *Mark it met* or *Keep working*), **When it works**
+  (routines, each with a switch), **What it knows** (notes; notes a task
+  saved for review wait apart with *Keep* and *Forget*), **What it can use**
+  (apps, and the computer line), **How much it asks**, **When it tells you**
+  (the notify level as a segmented control: *Needs you*, *Results*,
+  *Everything*), **What it thinks with** (the model picker Settings uses,
+  with its thinking effort), **Runs on** (cloud or a Mac), **What it may
+  remember about you** (the memory grant) and **What it may spend** (its
+  weekly cap). The footer pauses or retires it. Every control saves through
+  the same agent patch the thread's setup changes use (`patchAgentSchema`,
+  then `updateAgentForUser` and its plan check for a model).
+- **Computer** (only where the server offers computers; off in production) —
+  the agent's dedicated cloud computer (`ComputerView` on web,
   `NativeAgentComputerView` on Mac & iPhone): a 16:10 dark stage showing the
   last poster frame (`GET /api/agents/[id]/computer/poster`), a live state
   badge (`Running`, `Needs you — take control to continue`, `Paused for you`,
   `Sleeping`, or `Waking up…`), **Watch** / **Take control** / **Hand back to
   <name>**, and a live noVNC session over the authenticated WebSocket relay
-  (`/ws/agents/[id]/computer` on web, `/computer-view?c=…` one-time handoff
+  (the relay's `/voice-relay/computer` WebSocket on web, `src/lib/computer/live-view.ts`; `/computer-view?c=…` one-time handoff
   sheet on Mac & iPhone). Below the screen sits a compact feed of the last 5
   actions on the computer. When no cloud computer is enabled, it shows the quiet
   feed of recent browser/file/code actions plus **Give <name> a computer**.
-- **Setup** — identity (name, role, face swatches, style, instructions),
-  **Autonomy** with the floor spelled out, **Notify me** (`Only when it needs me`,
-  `When a task finishes or needs me`, `Every step`) and **Pin to sidebar**,
-  **Routines** (enable/pause/delete + create), **Connected apps**, **Own cloud
-  computer** (Enable, Reset computer, Delete computer and all its files),
-  **What it knows** (`AgentNote`, encrypted at rest, with edit/delete/download),
-  and **Retire agent**.
+- Everything else (its brief, style, autonomy, apps, routines, goals) is
+  changed by telling it in the thread: a setup change with a card and Undo, or
+  an approval when it widens what the agent may do.
 
 ---
 
@@ -660,20 +731,30 @@ All additive — new tables and nullable columns only (§20.2b expand/contract).
   `conversationId?` (its thread), `status` (`active | paused`), `proactive`,
   `notify` (`needs_you | results | all`), `pinned` (`Boolean`), `template?`,
   `lastReflectedAt?`, `sortOrder`, timestamps, `deletedAt?`.
-- `AgentComputer` — `agentId` (unique), `userId`, `status` (`creating | running |
-  taking_over | sleeping | error | destroyed`), `containerName`, `volumeName`,
-  `novncPort?`, `vncPasswordEnc?`, `width` (1280), `height` (800),
-  `takeoverReason?`, `takeoverSessionId?`, `lastActiveAt`, `lastPosterAt?`,
-  `lastError?`.
+- `AgentComputer` — `agentId` (unique), `userId`, `provider` (`docker | fake`),
+  `containerRef?` and `secrets?` (both encrypted: the container handle; the CDP
+  token and VNC passwords), `creationToken?`, `creationExpiresAt?`,
+  `billingStoppedAt?`, `status` (`asleep | starting | awake | resting | stopping
+  | error`), `streamOn`, `leaseRunId?`, `leaseExpiresAt?`, `lastResumedAt?`,
+  `lastActiveAt?`, `lastViewedAt?`, `activeSeconds`, `diskMb?`, `lastError?`,
+  `takeoverUntil?`, `takeoverStartedAt?`, `takeoverBy?`, `takeoverEpoch`,
+  `lastContactAt?`, timestamps (`prisma/schema.prisma` is the source).
 - `AgentGoal` — `title`, `detail`, `status` (`active | paused | achieved |
-  dropped`), `cadence` (`none | daily | weekly`), `lastCheckInAt?`,
-  `lastCheckInNote?`, `dueAt?`.
+  dropped | unverified`; `unverified` is set only by the goal driver when every
+  milestone ran but no criteria check passed), `cadence` (`none | daily |
+  weekly`), `lastCheckInAt?`, `lastCheckInNote?`, `dueAt?`, and the durable
+  fields (`milestones`, `successCriteria`, `blockers`, `progress`,
+  `nextAction`, `maxRuns`, `runsUsed`, …; `src/lib/agents/goals.ts`).
 - `AgentIdea` — `title`, `detail`, `prompt`, `status` (`new | started |
   dismissed`), `goalId?`, `decidedAt?`; the task a started idea became is
   recorded on its `idea_started` event.
 - `AgentNote` — the agent's own memory: `content` (AES-256-GCM encrypted at
   rest with prefix `enc:v1:`), `source` (`user | agent | reflection`),
-  soft-deleted.
+  `status` (`kept | pending`: a note a task saved waits as `pending` for the
+  person when the agent's memory grant asks for review, and nothing reads it
+  until it is kept), soft-deleted. No note keeps a secret: a value next to a
+  password, PIN, code or key label is refused, and a key or token is masked
+  (`src/lib/agents/note-review.ts`).
 - `AgentEvent` — the activity log: `kind`, `title`, `detail` JSON,
   `sessionId?`, `createdAt`.
 - `Conversation.agentId?` and `WorkSession.agentId?`, indexed.
@@ -685,17 +766,19 @@ Web and native share one surface, bearer- and cookie-authenticated through
 
 | Route | Does |
 | --- | --- |
-| `GET/POST /api/agents` | roster (with derived state) · hire |
+| `GET/POST /api/agents` | roster (with derived state) · hire (`402 plan_locked` with `upgradePlan` on a plan without agents; nothing is created) |
 | `GET/PATCH/DELETE /api/agents/[id]` | the panel's payload (including `computer` + `computerConfigured`) · edit / pause / pin / notify · retire |
 | `POST /api/agents/[id]/thread` | the agent's thread, created on first use |
-| `GET/POST /api/agents/[id]/computer` | computer status · `ensure` / `wake` / `sleep` / `takeover` / `handback` / `reset` / `destroy` |
-| `POST /api/agents/[id]/computer/view` | mint a single-use 60s WebSocket/handoff token (`wsPath`, `viewUrl`, `mode`, `expiresAt`) |
-| `POST /api/agents/[id]/computer/heartbeat` | keepalive while watching or taking over |
+| `GET/POST /api/agents/[id]/computer` | computer status (null while computers are off on the server) · `enable` / `disable` (deletes it and its files) / `wake` / `sleep` / `reset` / `policy` |
+| `POST /api/agents/[id]/computer/view` | watch or take control: a single-use 60 s relay token or app link (take control is the exclusive take over) |
+| `POST /api/agents/[id]/computer/heartbeat` | keepalive while watching or holding control; `ended` hands control back |
+| `GET /api/agents/[id]/computer/files` | browse and download the computer's files (awake or resting computers only) |
 | `GET /api/agents/[id]/computer/poster` | latest JPEG frame (`Cache-Control: private, no-store`, `204` if none) |
-| `GET/POST /api/agents/[id]/goals`, `PATCH/DELETE …/goals/[goalId]` | goals |
+| `GET/POST /api/agents/[id]/goals`, `PATCH/DELETE …/goals/[goalId]` | goals (a person may set `active`, `paused`, `achieved`, `dropped`; never `unverified`) |
+| `POST /api/agents/[id]/goals/[goalId]/advance` | *Keep working on it* / *Continue*; on an `unverified` goal, adds one milestone aimed at the gap the check named and drives it |
 | `GET/POST /api/agents/[id]/routines` | routines (a `WorkSession` + `WorkSchedule` under the agent) |
 | `GET /api/agents/[id]/activity` | the log |
-| `GET/POST /api/agents/[id]/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows (encrypted at rest) |
+| `GET/POST /api/agents/[id]/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows (encrypted at rest; `GET` lists kept notes, the panel payload lists pending ones apart as `pendingNotes`; `PATCH {"action":"keep"}` keeps a pending one) |
 | `POST /api/agents/[id]/reflect` | ideas and check-ins, at most every 6 h unless `force` |
 | `PATCH /api/agents/[id]/ideas/[ideaId]` | start / dismiss |
 | `POST /api/agents/[id]/tasks` | start a task as the agent (409 `confirm_expensive` asks first) |
@@ -703,9 +786,10 @@ Web and native share one surface, bearer- and cookie-authenticated through
 ## 8. What is deliberately not done
 
 - **No shared machine across agents.** See §3. Each agent that has a cloud
-  computer gets its own isolated Docker container (`juno-computer:1`) and volume
-  (`juno-comp-<agentId>`) with inter-container networking disabled
-  (`--icc=false`). A person can also pair their Mac for local Work.
+  computer gets its own isolated Docker container (`juno-computer:1`) and volumes
+  (`juno-agent-<agentId>` and `juno-agent-<agentId>-browser`) with
+  inter-container networking disabled (`--icc=false`). A person can also pair
+  their Mac for local Work.
 - **No watch-me skill capture.** Screen-recording a person's browser into
   instructions is a privacy surface of its own; skills already come from a run
   (*save as skill*) and from repositories.
@@ -714,14 +798,20 @@ Web and native share one surface, bearer- and cookie-authenticated through
   teammate, in its thread, and reports back there). Rooms where agents assign
   each other work still need a claim model the executor does not have.
 
-**Shipped in Agents v1 & v2** (September 2026): per-agent isolated Docker cloud
-computers (`juno-computer:1`: Xvfb + XFCE + Chromium + `x11vnc` + `xdotool` +
-`scrot`) with live noVNC Watch/Takeover/Hand-back on web (`/ws/agents/[id]/computer`)
-and Mac/iPhone (`/computer-view?c=…`); 9 `computer_*` Work tools (`computer_screenshot`,
-`computer_click`, `computer_move`, `computer_type`, `computer_key`,
-`computer_scroll`, `computer_open_url`, `computer_bash`, `computer_wait`);
-5 chat self-configuration tools (`update_agent`, `manage_agent_goal`,
-`manage_agent_routine`, `manage_agent_note`, `manage_agent_computer`) with
+**Shipped in Agents v1 & v2** (September 2026; the computer is **off in
+production**, `COMPUTER_PROVIDER` empty, and proven only on disposable hosts):
+per-agent isolated Docker cloud computers (`juno-computer:1`: Xvfb with the
+xfwm4 window manager and no desktop session since pipe-v3, headful Chromium
+behind the CDP gate, `x11vnc`, `xdotool`, `scrot`; the October 2026 image,
+pipe-v4, adds the exec launcher, pip and venv; see
+`docs/design/agents-v2/OPERATIONS.md` §7) with live noVNC
+Watch/Takeover/Hand-back on web (`/ws/agents/[id]/computer`) and Mac/iPhone
+(`/computer-view?c=…`); 10 `computer_*` Work tools (`computer_screenshot`,
+`computer_click`, `computer_type`, `computer_key`, `computer_scroll`,
+`computer_drag`, `computer_wait`, `computer_zoom`, `computer_shell`,
+`computer_files`); 5 chat self-configuration tools (`create_agent`,
+`update_agent`, `agent_goal`, `agent_routine`, `agent_memory`; the computer is
+their `computer` parameter) with
 inline Undo cards (`agentChange`) for benign edits and deterministic
 `ApprovalCard` confirmation for privilege escalations; thread-first home UX with
 the 3-tab side panel (`Now · Computer · Setup`), compact `/agents` list, and

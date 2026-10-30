@@ -168,6 +168,9 @@ sudo apt install nginx -y
 
 # 2. Create the site configuration (we've provided a template in your repository)
 sudo cp deploy/nginx.conf.template /etc/nginx/sites-available/juno
+# ...and the "Updating, back in a moment" page it shows page navigations while
+# the app restarts (without it, nginx shows its plain 502 as before)
+sudo install -D -m 644 deploy/maintenance/updating.html /var/www/juno-maintenance/updating.html
 
 # 3. Edit the copied config file to set your custom domain
 sudo nano /etc/nginx/sites-available/juno

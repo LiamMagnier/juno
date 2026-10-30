@@ -456,6 +456,8 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
       const result = await answerWorkQuestion(sessionId, questionId, text);
       setBusy(false);
       if (result.kind === "ok") {
+        // Kept, but not carrying on yet: the server says what it is waiting for.
+        if (!result.value.resumed && result.value.explanation) toast(result.value.explanation);
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
         return true;
       }
@@ -523,6 +525,8 @@ export function useWorkSessionFollower(initial: ClientWorkSession | null): Conve
         // stream is a second away. An optimistic answer here would be a second
         // source for the same fact, and it would win on screen even where the
         // server had refused.
+        // Kept, but not carrying on yet: the server says what it is waiting for.
+        if (!result.value.resumed && result.value.explanation) toast(result.value.explanation);
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
         return true;
       }

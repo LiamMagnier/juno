@@ -153,18 +153,21 @@ export {
   WORK_PLAN_TOOL_NAME,
   WORK_WRITE_PLAN_TOOL_NAME,
   WorkAgentSession,
+  WorkRunParked,
   askUserToolSpec,
   structuralValidation,
   updatePlanToolSpec,
   writePlanToolSpec,
   type WorkCheckpoint,
+  type WorkParkedCall,
+  type WorkParkedResolution,
   type WorkRunResult,
   type WorkSessionCallbacks,
   type WorkSessionOptions,
   type WorkValidator,
 } from './session.js';
 
-export { goalValidator } from './judge.js';
+export { checkGoalCriteria, goalValidator, type GoalCriteriaVerdict } from './judge.js';
 
 /*
  * The egress policy, re-exported for the one caller that is not a tool.
@@ -238,8 +241,10 @@ export {
 export { DEFAULT_REQUEST_TIMEOUT_MS } from '../providers/timeouts.js';
 
 export {
+  AGENT_NOTE_TOOL_NAME,
   MAX_BROWSER_ELEMENTS,
   MAX_BROWSER_TEXT_CHARS,
+  agentNoteTool,
   asWorkTool,
   blockedFetchAddress,
   blockedFetchTarget,
@@ -261,6 +266,7 @@ export {
   webFetchTool,
   webSearchTool,
   workspaceTools,
+  type AgentNoteToolDeps,
   type BrowserAction,
   type BrowserElement,
   type BrowserOutcome,
@@ -296,6 +302,17 @@ export {
   settleScreen,
   TAKEOVER_OVERLAP_TEXT,
   isSafeComputerWritePath,
+  decodeTextFile,
+  formatFileBytes,
+  COMPUTER_START_ACTION,
+  COMPUTER_START_DECLINED_TEXT,
+  COMPUTER_START_PENDING_TEXT,
+  computerStartDetailLine,
+  computerStartSummary,
+  computerStartedText,
+  withComputerStart,
+  type ComputerStartGate,
+  type StartState,
   type ComputerExecOutcome,
   type ComputerFileEntryItem,
   type ComputerPointTarget,
@@ -306,3 +323,12 @@ export {
   type SettledShot,
 } from './computer-tools.js';
 
+export {
+  SCRIPTED_MODEL_ID,
+  SCRIPTED_PROVIDER_ID,
+  createScriptedWorkProvider,
+  parseScriptedWorkScript,
+  scriptedExpectationFailure,
+  type ScriptedWorkScript,
+  type ScriptedWorkStep,
+} from './scripted-model.js';

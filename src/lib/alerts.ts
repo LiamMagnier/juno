@@ -26,6 +26,38 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type AlertSeverity = "warn" | "critical";
 
+/**
+ * The kinds the background workers' watchdogs raise (src/lib/worker-watchdog.ts),
+ * named once so a mute in ALERT_MUTED_KINDS and a grep of the log agree with
+ * the code. Each is mailed (deduplicated per kind:key per hour, like every
+ * kind) and raised at most once an hour while its condition lasts.
+ *
+ *  - `work_executor_stale` (key `cloud`): the cloud Work executor's heartbeat
+ *    lapsed while cloud runs wait for it. Raised by juno-sweepers.
+ *  - `sweeper_stale` (key: the loop's name, or `juno-sweepers` for the whole
+ *    process): a background loop has not finished a tick for longer than it
+ *    ever should. A loop is watched by its own process; the process by
+ *    juno-work.
+ *  - `worker_recovered` (same keys): one of the above is reporting again.
+ */
+export const WORKER_ALERT_KINDS = {
+  executorStale: "work_executor_stale",
+  sweeperStale: "sweeper_stale",
+  recovered: "worker_recovered",
+} as const;
+
+/**
+ * `chat_failure_rate` (src/lib/router/failure-alert.ts): saved-chat turns are
+ * failing. Raised by the web process from `RoutingOutcome` when, within
+ * `CHAT_FAILURE_ALERT_WINDOW_MINUTES` (10), one model or one failure class
+ * across every model has at least `CHAT_FAILURE_ALERT_THRESHOLD` (5) failed
+ * turns making at least `CHAT_FAILURE_ALERT_MIN_SHARE_PERCENT` (20) of its
+ * turns. Key: the worst subject, `model:<id>` or `class:error` /
+ * `class:network_error`. Mailed once per incident (and at most once an hour
+ * per key, like every kind); mute with `ALERT_MUTED_KINDS=chat_failure_rate`.
+ */
+export { CHAT_FAILURE_RATE_KIND as CHAT_FAILURE_ALERT_KIND } from "@/lib/router/failure-alert-rules";
+
 export interface AlertInput {
   /** Stable slug identifying the alert class, e.g. "provider_unhealthy". */
   kind: string;
@@ -49,7 +81,23 @@ export interface AlertInput {
    * for as long as the account is dry, and the log line still records it.
    */
   mail?: boolean;
+  /**
+   * Whether the hourly mail dedupe applies. Defaults to true. False only for
+   * a caller that bounds its own mail and must not have one dropped:
+   * provider-health's default-lab outage mail after an all-clear, which would
+   * otherwise leave "recovered" as the operator's last word while the lab is
+   * down again (provider-health-policy.ts, `outageMailDue`). The mail still
+   * starts a new dedupe window for its kind:key.
+   */
+  dedupe?: boolean;
 }
+
+/**
+ * What became of an alert's mail: handed to delivery, dropped by the hourly
+ * dedupe, muted (ALERT_MUTED_KINDS), or never wanted (`mail: false`). The log
+ * line is written in every case.
+ */
+export type AlertMail = "queued" | "deduped" | "muted" | "log_only";
 
 /**
  * Alert kinds the operator has muted, as `kind` or `kind:key`, comma-separated.
@@ -123,10 +171,10 @@ async function deliverMail(input: AlertInput, dedupeKey: string): Promise<void> 
 }
 
 /**
- * Record an operator alert. Returns immediately; delivery happens in the
- * background and swallows its own errors.
+ * Record an operator alert. Returns immediately, saying what became of the
+ * mail; delivery happens in the background and swallows its own errors.
  */
-export function alertOperator(input: AlertInput): void {
+export function alertOperator(input: AlertInput): AlertMail {
   const dedupeKey = input.key ? `${input.kind}:${input.key}` : input.kind;
   const severity = input.severity ?? "critical";
 
@@ -140,11 +188,13 @@ export function alertOperator(input: AlertInput): void {
 
   // The log line above is unconditional; only delivery is suppressed. An alert
   // that is not worth waking someone for is still worth being able to grep.
-  if (input.mail === false) return;
+  if (input.mail === false) return "log_only";
   const muted = mutedKinds();
-  if (muted.has(input.kind) || muted.has(dedupeKey)) return;
+  if (muted.has(input.kind) || muted.has(dedupeKey)) return "muted";
 
-  if (!shouldMail(dedupeKey, Date.now())) return;
+  const now = Date.now();
+  if (input.dedupe === false) lastMailedAt.set(dedupeKey, now);
+  else if (!shouldMail(dedupeKey, now)) return "deduped";
 
   void deliverMail(input, dedupeKey).catch((err) => {
     console.error("[alert] delivery failed", {
@@ -152,6 +202,7 @@ export function alertOperator(input: AlertInput): void {
       message: err instanceof Error ? err.message : String(err),
     });
   });
+  return "queued";
 }
 
 /** Test seam — clears the mail dedupe window. */

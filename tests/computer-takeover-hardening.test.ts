@@ -45,6 +45,8 @@ describe("takeover: holder-only hand-back and the epoch fence", () => {
   beforeEach(() => {
     process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-auth-secret-32-bytes-minimum-length!!";
     process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    // Open to every plan that includes computers (src/lib/computer/access.ts); an account the in-memory store does not know reads as the owner's.
+    process.env.AGENT_COMPUTER_ROLLOUT = "plans";
     resetComputerProviderCache();
     fakeComputerProvider.reset();
     memDb = store.createInMemoryComputerPersistence();

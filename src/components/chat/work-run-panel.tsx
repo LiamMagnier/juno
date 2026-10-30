@@ -23,7 +23,7 @@ import type { OpenQuestion } from "@/components/work/work-decisions";
 import { WorkLiveMeter } from "@/components/work/work-detail-panels";
 import { CaptureSkillButton, canCaptureSkill } from "@/components/work/skills/capture-skill";
 import { derivePerformedActions, type PlanStep } from "@/components/work/work-timeline";
-import { deriveTurns } from "@/components/work/work-conversation";
+import { deriveTurns } from "@/components/work/work-turns";
 import { DegradationNotes, statusSentence } from "@/components/work/work-vocabulary";
 import { StatusIcons } from "@/lib/app-icons";
 import { TIMING } from "@/lib/interaction";

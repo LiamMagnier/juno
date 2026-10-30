@@ -5,11 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { openWithViewTransition } from "@/lib/view-transition";
-import { MessageSquare, Plus, Pin, FolderInput, Search } from "@/components/ui/icons";
+import { MessageSquare, Plus, Pin, PinOff, FolderInput, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { EmptyState } from "@/components/ui/empty-state";
 import { dragSourceProps } from "@/components/projects/project-folders";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -112,11 +120,10 @@ export function ProjectChatList({
         />
       ) : (
         // `-mx-3`: the rows keep their 12px hover inset and their icons sit
-        // on the column's edge. Where the page is wide enough to have a
-        // margin (the two-column Overview), the icons hang into it instead
-        // (16px icon + 12px gap further out), so the chat titles sit on the
-        // same line as the tabs, the composer and the section labels.
-        <div className="-mx-3 space-y-5 @4xl/page:-ml-10">
+        // on the column's edge, as the Sources list's do. They used to hang
+        // 40px into the margin from @4xl, but the tab panel clips there, so
+        // every row on a desktop project page showed half a speech bubble.
+        <div className="-mx-3 space-y-5">
           {pinned.length > 0 && (
             <section aria-label="Pinned chats">
               <SectionLabel label="Pinned" count={pinned.length} />
@@ -147,15 +154,16 @@ export function ProjectChatList({
 }
 
 /**
- * A group's label with its count as a muted number after it, the rail's
- * section-label voice. Its inset matches the rows' text, including where the
- * rows' icons hang into the margin.
+ * A group's label with its count after it, in the label rung at the full
+ * muted ink (the sidebar's "Pinned" / "Recent" voice). The count used to be
+ * dimmed with an opacity on the ink, under the contrast the ink is tuned for.
+ * Its inset matches the rows' icons.
  */
 function SectionLabel({ label, count }: { label: string; count: number }) {
   return (
-    <p className="pj-annot mb-1 flex items-center gap-2 px-3 @4xl/page:pl-10">
+    <p className="pj-annot mb-1 flex items-center gap-2 px-3">
       {label}
-      <span className="text-muted-foreground/70">{count.toLocaleString()}</span>
+      <span>{count.toLocaleString()}</span>
     </p>
   );
 }
@@ -200,7 +208,9 @@ function ChatRow({
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
         <span className="truncate text-ui font-medium tracking-[-0.006em] text-foreground">{chat.title}</span>
-        <span className="pj-annot">
+        {/* On the hover fill the quiet ink steps to its on-fill twin, which
+            holds 4.5:1 there (spec §3.1). */}
+        <span className="pj-annot group-hover:text-muted-on-fill">
           Updated {timeAgo(chat.lastMessageAt)}
         </span>
       </Link>
@@ -215,12 +225,49 @@ function ChatRow({
       {chat.pinned && (
         <Pin
           weight="fill"
-          className="pointer-events-none absolute right-[7px] top-1/2 size-3.5 -translate-y-1/2 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 coarse:opacity-0 motion-reduce:transition-none"
+          className="pointer-events-none absolute right-[7px] top-1/2 size-3.5 -translate-y-1/2 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 coarse:hidden motion-reduce:transition-none"
           aria-hidden="true"
         />
       )}
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+      {/* On a touch screen the three buttons were drawn on every row, all
+          the time: titles were cut to ~22 characters and a Delete sat on
+          every line. There, one More button (44px target) holds the same
+          three actions, the way the sidebar's touch rows do, and the pinned
+          mark stays beside it. A fine pointer keeps the hover buttons. */}
+      <div className="hidden items-center gap-1.5 coarse:flex">
+        {chat.pinned && <Pin weight="fill" className="size-3.5 text-primary" aria-hidden="true" />}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Pressable kind="icon" size="sm" aria-label={`Actions for “${chat.title}”`} title="More">
+              <ActionIcons.more className="size-4" aria-hidden="true" />
+            </Pressable>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={MENU_W}>
+            <DropdownMenuItem onSelect={() => onTogglePin(chat.id, chat.pinned)}>
+              {chat.pinned ? <PinOff className="size-4" aria-hidden="true" /> : <Pin className="size-4" aria-hidden="true" />}
+              <span>{chat.pinned ? "Unpin" : "Pin"}</span>
+            </DropdownMenuItem>
+            {onRequestMove && (
+              <DropdownMenuItem onSelect={() => onRequestMove(chat)}>
+                <FolderInput className="size-4" aria-hidden="true" />
+                <span>Move to…</span>
+              </DropdownMenuItem>
+            )}
+            {onDeleteChat && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={() => onDeleteChat(chat)}>
+                  <ActionIcons.delete className="size-4" aria-hidden="true" />
+                  <span>Delete</span>
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:hidden motion-reduce:transition-none">
         <Pressable
           kind="icon"
           size="sm"

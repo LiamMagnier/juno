@@ -41,10 +41,15 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
   //
   // Health did not stop being useful, it stopped being a *filter*. It still
   // reports through /api/health, still alerts an operator on the down/recovered
-  // transition, still marks `available` on the runner catalog below, and
-  // /api/chat still reroutes a request off a dead provider with a visible
-  // warning instead of streaming a guaranteed failure — which is the honest
-  // place to handle it, because that is the moment there is a user to tell.
+  // transition (and mails when the lab serves a default model), still marks
+  // `unavailableReason` on the pickers' catalog (`withAvailability` below) and
+  // `available` on the runner catalog, and Auto still routes around a dead
+  // provider. What /api/chat does NOT do is reroute an explicit choice: a
+  // model the reader picked is a routing contract (model-selection.ts,
+  // `allowSubstitution`), so that turn goes to the chosen lab and fails with
+  // a neutral message, and the error card offers one other model as an
+  // explicit, one-click choice. A brand-new chat whose default is marked
+  // unavailable starts on Auto instead (src/lib/chat/initial-model.ts).
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 

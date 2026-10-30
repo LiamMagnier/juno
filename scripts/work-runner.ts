@@ -25,13 +25,20 @@
  * It never restarts a run on its own. A Work run can have moved files, sent a
  * message or spent most of a budget before it stopped, and repeating those is
  * worse than stopping. `interrupted` is a terminal state with a retry the user
- * chooses.
+ * chooses. One narrow exception, which repeats nothing: when this process is
+ * asked to stop (a deploy, a PM2 restart), each run it is driving finishes the
+ * step it is on and is set aside between two steps, and the next runner
+ * continues it only if its checkpoint shows no tool call was in flight
+ * (src/lib/work/restart-resume-rules.ts, `WORK_RESUME_AFTER_RESTART`). A run
+ * still inside a step when the wait runs out is stopped there and ends
+ * `interrupted`, as before.
  */
 
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
+import { readFileSync } from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
 
@@ -46,6 +53,7 @@ import {
   finishRun,
   parkRun,
   reclaimStalledRuns,
+  requeueParkedRun,
   saveRunCheckpoint,
   setSessionAttention,
   type WorkRunUsage,
@@ -62,6 +70,7 @@ import {
   defaultVisibilityFor,
   isWorkEventKind,
   steeringInstruction,
+  type WorkArtifactKind,
   type WorkEventKind,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
@@ -74,19 +83,69 @@ import { createCredentialFill } from "@/lib/secrets/browser-fill";
 import { workTaskKey } from "@/lib/secrets/policy";
 import { redeemSecretGrant, secretRefsForTask } from "@/lib/secrets/store";
 import {
-  BUSY_COMPUTER_FALLBACK_NOTE,
   computerPromptSection,
   computerBlockedReason,
   computerTakeoverFence,
-  resolveRunComputerSession,
+  prepareRunComputer,
   setCachedPoster,
-  type RunComputerAttachment,
+  settleLapsedTakeovers,
 } from "@/lib/computer/store";
+import {
+  computerToolNamesFor,
+  createLazyRunComputer,
+  createRunBrowserSwitch,
+  readRunStartApproval,
+  runWatchedComputerShell,
+  withBrowserNotice,
+  type LazyRunComputer,
+} from "@/lib/computer/run-tools";
+import { createShellOutputLog } from "@/lib/computer/shell-output";
+import { readComputerFileForPublish } from "@/lib/computer/files";
+import { computerFileDisposition, formatFileSize } from "@/lib/computer/file-types";
+import { recordComputerAudit } from "@/lib/computer/audit";
 import { sweepAgentComputers } from "@/lib/computer/sweep";
+import { SCRIPTED_MODEL_EXPLANATION, scriptedWorkModelFor, scriptedWorkModelSwitchedOn } from "@/lib/dev/scripted-work-model";
 import { loadAgentRunPersona } from "@/lib/agents/run-context";
+import { runAgentNoteDeps } from "@/lib/agents/run-notes";
+import { goalCriteriaCheckFor } from "@/lib/agents/goal-criteria";
+import { goalCheckModelBounds } from "@/lib/agents/orbit-limits";
 import { recordExecutorHeartbeat } from "@/lib/work/executor-heartbeat";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
+import {
+  attendedWaitMs,
+  closeAbandonedApprovals,
+  loadParkedDecisions,
+  parkedWaitAnswered,
+  type ParkedDecisions,
+  type ParkedWait,
+} from "@/lib/work/park-resume";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
+import {
+  HARD_STOP_GRACE_MS,
+  RESTART_CUT_SHORT_EVENT_CAUSE,
+  RESTART_EVENT_CAUSE,
+  RESTART_MID_STEP_DETAIL,
+  RESTART_MID_STEP_EVENT_CAUSE,
+  RESTART_PARK_MESSAGE,
+  RESTART_PAUSED_COPY,
+  RESTART_RESUMED_DETAIL,
+  RESTART_STOPPED_MID_STEP_COPY,
+  RESTART_TOOL_CUT_DETAIL,
+  RunRestartSignal,
+  SHUTDOWN_EXIT_MARGIN_MS,
+  drainRuns,
+  fittedShutdownStepWaitMs,
+  parkRunForRestart,
+  pauseAtStepBoundary,
+  restartResumeEnabled,
+  resumeRunsParkedForRestart,
+  resumingAfterRestart,
+  shutdownExitDeadlineMs,
+  shutdownStepWaitMs,
+  type RestartStopOutcome,
+} from "@/lib/work/restart-resume";
+import { installWorkerProcessGuard, registerWorkerDrain } from "@/lib/worker-process";
+import { createSweepersWatcher } from "@/lib/worker-watchdog";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
@@ -99,6 +158,8 @@ import {
   type Provider,
 } from "@/lib/providers";
 import { workModelOptions } from "@/lib/work/models";
+import { noteLiveProviderFault, type LiveFaultOrigin } from "@/lib/provider-health";
+import { classForWorkFailure } from "@/lib/provider-health-policy";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
 import { workExecDeps } from "@/lib/exec/work";
@@ -183,10 +244,13 @@ const LEASE_RENEW_MS = Math.floor(RUN_LEASE_MS / 3);
  * outstanding before checkpointing and letting the run go.
  *
  * Long enough that a user who is watching answers in place — reattaching costs
- * a cold start and the user sees a stall — and short enough that a question
- * asked at 17:59 does not hold a worker overnight.
+ * a cold start and the user sees a stall — and short enough not to hold one of
+ * this worker's few slots for everybody else. An answer that arrives after the
+ * run lets go puts it back in the queue (`requeueParkedRun`), so the wait no
+ * longer has to cover the person; a minute by default, `WORK_ATTENDED_WAIT_MS`
+ * to tune (src/lib/work/park-resume.ts, owner to confirm).
  */
-const ATTENDED_WAIT_MS = 4 * 60_000;
+const ATTENDED_WAIT_MS = attendedWaitMs();
 /** How often to look for the answer while attached. */
 const ANSWER_POLL_MS = 1_000;
 /**
@@ -222,7 +286,21 @@ const WINDOW_POLL_MS = 30_000;
 const EXECUTOR_ID = `work-runner:${process.pid}:${process.env.HOSTNAME ?? "local"}`;
 
 let stopping = false;
-const active = new Map<string, { renew: NodeJS.Timeout }>();
+/**
+ * The runs this worker is driving: the lease renewal, and the restart signal a
+ * shutdown asks each one to stop at its next step boundary through
+ * (src/lib/work/restart-resume-rules.ts).
+ */
+const active = new Map<string, { renew: NodeJS.Timeout; restart: RunRestartSignal }>();
+/**
+ * Claims this worker has sent and not yet heard back from. A shutdown's drain
+ * counts them as runs in flight, so a claim that lands after the drain began
+ * is waited for like any other run rather than left claimed when the process
+ * exits.
+ */
+let claimsInHand = 0;
+/** juno-work's look at juno-sweepers' heartbeat, once a minute at most (src/lib/worker-watchdog.ts). */
+const watchSweepers = createSweepersWatcher();
 
 function log(message: string, extra?: Record<string, unknown>): void {
   const suffix = extra ? ` ${JSON.stringify(extra)}` : "";
@@ -295,10 +373,10 @@ async function waitFor<T>(
 /**
  * How long the run will spend opening its connectors before giving up on them.
  *
- * `openMcpToolset` awaits `client.connect` and `client.listTools` with no
- * timeout and no signal (src/lib/mcp.ts), and `getActiveConnectors` may refresh
- * an OAuth token over the network on the way in. Neither has a ceiling of its
- * own, and both run before the session exists — before the plan is created,
+ * `openMcpToolset` used to await `client.connect` and `client.listTools` with
+ * no timeout and no signal (src/lib/mcp.ts), and `getActiveConnectors` may
+ * refresh an OAuth token over the network on the way in, with no ceiling of its
+ * own. Both run before the session exists — before the plan is created,
  * before the control poller that reads the Stop button is started, before a
  * single event other than `run_started` has been written. A connector whose
  * endpoint accepts the connection and then says nothing therefore froze the run
@@ -308,8 +386,19 @@ async function waitFor<T>(
  * Forty-five seconds is generous for a handshake and a tool list — the same
  * work in a chat turn happens while somebody is watching a spinner — and short
  * enough that a run does it, says what it lost, and gets on with the task.
+ * When it runs out, the open is cancelled, not only abandoned: the signal
+ * stops every handshake still in flight and closes its connection, and
+ * `openConnectors` revokes the run's broker handles on its way out.
  */
 const CONNECTOR_OPEN_TIMEOUT_MS = 45_000;
+
+/**
+ * Each connector's own budget for its handshake and tool list, inside the
+ * deadline above: one server that never answers is dropped (its connection
+ * closed, reported as not answering) without costing the run the others.
+ * Longer than a chat turn's 5 s because nobody is waiting on a spinner.
+ */
+const CONNECTOR_SERVER_TIMEOUT_MS = 30_000;
 
 /**
  * How long a provider stream may say nothing before this run gives up on it.
@@ -371,9 +460,12 @@ async function withDeadline<T>(work: Promise<T>, ms: number, whenLate: string): 
  * gate the run can never leave.
  */
 async function pollAnswer(runId: string, questionId: string): Promise<string | null> {
+  // The first answer, the one the answer route defends (it refuses a different
+  // second one) and `deriveQuestionState` and `loadParkedDecisions` read: one
+  // row, whichever reader asks.
   const event = await prismaUnguarded.workEvent.findFirst({
     where: answeredQuestionWhere(runId, questionId),
-    orderBy: { seq: "desc" },
+    orderBy: { seq: "asc" },
   });
   if (!event) return null;
   return answerTextFromPayload(event.payload, questionId);
@@ -515,9 +607,41 @@ function steerable(provider: WorkProvider, steering: Steering, runId: string): W
       if (instructions.length > 0) {
         log("delivered steering", { runId, count: instructions.length });
       }
-      yield* provider.stream(request);
+      try {
+        yield* provider.stream(request);
+      } catch (error) {
+        noteWorkProviderFault(provider.id, error, { requester: runId, modelId: request.model });
+        throw error;
+      }
     },
   };
+}
+
+/**
+ * The Work half of the live provider-fault feed (provider-health.ts,
+ * `noteLiveProviderFault`): a model call that failed on the lab's account, or
+ * kept meeting its server errors, marks the lab down in this process and —
+ * once a probe confirms it, when the lab serves a default model — mails the
+ * operator, exactly as a failed chat turn does. The run and its model are the
+ * fault's source: `runAgentLoop` retries one step up to four times and each
+ * attempt passes through here, and the repeated-capacity rule counts distinct
+ * sources, so one run's retries (or its later steps) cannot meet it alone.
+ * Only agent-core's own classified errors are fed (`ProviderCallError`, read
+ * by shape because the runtime is a separate package); anything else says
+ * nothing about the lab. Returns the class it fed, or null.
+ */
+function noteWorkProviderFault(
+  provider: string,
+  error: unknown,
+  origin: LiveFaultOrigin,
+): ReturnType<typeof classForWorkFailure> {
+  const failure = error as { name?: unknown; kind?: unknown; status?: unknown; message?: unknown } | null;
+  if (!failure || failure.name !== "ProviderCallError" || typeof failure.kind !== "string") return null;
+  const status = typeof failure.status === "number" ? failure.status : null;
+  const klass = classForWorkFailure(failure.kind, status);
+  if (!klass) return null;
+  noteLiveProviderFault(provider, { class: klass, status, raw: failure.kind }, "work", origin);
+  return klass;
 }
 
 // ---------------------------------------------------------------------------
@@ -941,6 +1065,8 @@ async function openingContext(input: {
   /** Whether a person started the run (false for a schedule or a trigger). */
   computerAttended?: boolean;
   computerNote?: string | null;
+  /** The computer section for a run that may start its computer (by attendance, vision and policy). */
+  computerSection?: string | null;
 }): Promise<string> {
   const identityLines: string[] = [];
   const sources: UntrustedSource[] = [];
@@ -955,7 +1081,9 @@ async function openingContext(input: {
     }
   }
 
-  if (input.computerAttached) {
+  if (input.computerSection) {
+    identityLines.push(`## Your computer\n${input.computerSection}`);
+  } else if (input.computerAttached) {
     // Nobody to take over the computer in a scheduled or triggered run.
     identityLines.push(`## Your computer\n${computerPromptSection({ attended: input.computerAttended !== false })}`);
   } else if (input.computerNote) {
@@ -1160,6 +1288,8 @@ async function openConnectors(input: {
   runtime: WorkRuntime;
   sink: SessionSink;
   emit(kind: WorkEventKind, payload: Prisma.InputJsonValue): Promise<void>;
+  /** Aborted when the run stops waiting (`CONNECTOR_OPEN_TIMEOUT_MS`). */
+  signal?: AbortSignal;
 }): Promise<ConnectorSurface> {
   const rows = await prisma.connection.findMany({
     where: { userId: input.userId },
@@ -1340,6 +1470,12 @@ async function openConnectors(input: {
     return { ...EMPTY_CONNECTOR_SURFACE, availability };
   }
 
+  // The run stopped waiting while the handles were being exchanged: nothing
+  // is dialled, and the handles die now rather than with the run.
+  if (input.signal?.aborted) {
+    broker.revokeRun(input.runId);
+    return { ...EMPTY_CONNECTOR_SURFACE, availability };
+  }
   const toolset: McpToolset = await openMcpToolset(
     authorized.map((entry) => ({
       id: entry.connectorId,
@@ -1354,8 +1490,16 @@ async function openConnectors(input: {
       // The run id, so a resumed run recognises actions it already brokered
       // rather than re-asking (and re-executing) after a restart.
       sessionId: input.runId,
-    }
+    },
+    { signal: input.signal, connectTimeoutMs: CONNECTOR_SERVER_TIMEOUT_MS }
   );
+  // Cancelled while opening: `openMcpToolset` closed what it had opened; the
+  // handles go too, so a late surface holds nothing live.
+  if (input.signal?.aborted) {
+    broker.revokeRun(input.runId);
+    await toolset.close().catch(() => {});
+    return { ...EMPTY_CONNECTOR_SURFACE, availability };
+  }
 
   const byConnector = new Map(authorized.map((entry) => [entry.connectorId, entry]));
   const descriptors: ConnectorToolDescriptor[] = [];
@@ -1731,10 +1875,14 @@ function buildTools(input: {
   sink: SessionSink;
   connectors: ConnectorSurface;
   egressDomains: { current: readonly string[] | null };
-  remoteComputer?: {
-    attachment: Extract<RunComputerAttachment, { attached: true }>;
-    browser: WorkBrowser;
-  } | null;
+  /**
+   * The agent's computer, started on the first computer tool call (asking
+   * first under `ask`), or null when the run has none
+   * (src/lib/computer/run-tools.ts).
+   */
+  lazyComputer?: LazyRunComputer<WorkBrowser> | null;
+  /** Whether the model sees images: pixel tools are offered only then. */
+  vision: boolean;
   /**
    * Teardown the run owes whatever it started. A browser left open is several
    * hundred megabytes of Chromium on a worker that runs three runs at once.
@@ -1746,6 +1894,12 @@ function buildTools(input: {
    * the programs run on the separate execution host with no network.
    */
   exec: { deps: NonNullable<ReturnType<typeof workExecDeps>>; manifestLine: string | null } | null;
+  /**
+   * `remember`: a note for the agent the run works as (src/lib/agents/run-notes.ts),
+   * kept or held for the person's review by its memory setting. Null when the
+   * run is not an agent's.
+   */
+  agentNote?: Awaited<ReturnType<typeof runAgentNoteDeps>>;
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -1823,9 +1977,7 @@ function buildTools(input: {
     }),
   ];
 
-  const browser = input.remoteComputer
-    ? input.remoteComputer.browser
-    : createWorkBrowser({
+  const temporaryBrowser = (): WorkBrowser => createWorkBrowser({
         ...(process.env.WORK_BROWSER_EXECUTABLE
           ? { executablePath: process.env.WORK_BROWSER_EXECUTABLE }
           : {}),
@@ -1869,12 +2021,16 @@ function buildTools(input: {
           }
         },
       });
+  // With a computer, the `browser` tool switches between the temporary browser
+  // and the computer's own (D15): see `createRunBrowserSwitch`.
+  const lazyComputer = input.lazyComputer ?? null;
+  const browserSwitch = lazyComputer ? createRunBrowserSwitch({ lazy: lazyComputer, temporary: temporaryBrowser }) : null;
+  const browser = browserSwitch ? browserSwitch.browser : temporaryBrowser();
 
-  if (input.remoteComputer) {
-    const remote = input.remoteComputer;
+  if (lazyComputer && browserSwitch) {
     input.disposers.push(async () => {
-      await remote.browser.close().catch(() => {});
-      await remote.attachment.release();
+      await browserSwitch.close().catch(() => {});
+      await lazyComputer.dispose();
     });
   } else {
     input.disposers.push(() => browser.close());
@@ -1901,7 +2057,7 @@ function buildTools(input: {
   });
   const scrubbed = credentialFill.scrub;
 
-  const browserTool = runtime.browserTool({
+  const baseBrowserTool = runtime.browserTool({
     available: () => browser.available(),
     open: async (url) => {
       const outcome = scrubbed(await browser.open(url));
@@ -1938,9 +2094,21 @@ function buildTools(input: {
     onCitation: (citation) => input.sink.session?.recordCitation(citation),
     screenEpoch: getEpoch,
   });
+  // The first result after a switch says which browser it is now (D15).
+  const browserTool = browserSwitch
+    ? withBrowserNotice(baseBrowserTool, () => browserSwitch.takeNotice())
+    : baseBrowserTool;
+
+  // Every computer tool reaches the computer through this, and only after the
+  // start gate (`withComputerStart`) let the call through, so it is attached.
+  const attached = () => {
+    const attachment = lazyComputer?.attachment();
+    if (!attachment) throw new Error("The computer is not started.");
+    return attachment;
+  };
 
   const takeShot = async () => {
-    const remote = input.remoteComputer!;
+    const remote = { attachment: attached() };
     const shot = await remote.attachment.provider.screenshot(remote.attachment.handle);
     setCachedPoster(remote.attachment.agentId, shot);
     return {
@@ -1957,35 +2125,43 @@ function buildTools(input: {
   // (src/lib/computer/frames.ts). The tools hand a frame over only after the
   // takeover fence has passed it, so nothing captured while the person held
   // control is ever stored.
-  const stepFrames = input.remoteComputer
+  const stepFrames = lazyComputer
     ? createRunFrameRecorder({ userId: input.userId, runId: input.runId })
     : null;
-  // The element under a click, in words, when Chromium is the window in front.
-  const pointDescriber =
-    input.remoteComputer && canDescribePoints(input.remoteComputer.browser) ? input.remoteComputer.browser : null;
+  // The shell's output as it happens, for the person's read-only terminal
+  // pane (S5.1). Only watched: the model's result is the provider's.
+  const shellLog = lazyComputer
+    ? createShellOutputLog({ userId: input.userId, agentId: lazyComputer.agentId, runId: input.runId })
+    : null;
+  // The element under a click, in words, when Chromium is the window in front
+  // (the computer's browser, once the computer is started).
+  const pointDescriber = () => {
+    const computerBrowser = lazyComputer?.browser();
+    return computerBrowser && canDescribePoints(computerBrowser) ? computerBrowser : null;
+  };
 
-  const remoteComputerTools = input.remoteComputer
+  const remoteComputerTools = lazyComputer
     ? runtime.computerTools({
         isHealthy: () => true,
         // While the person has control, every computer tool (screenshots
         // included) refuses before and after acting (D-011, audit C3).
         // ...and once this run no longer holds the computer's lease (put to sleep, reset, taken over by another task).
         blockedReason: () =>
-          computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId, new Date(), input.runId),
+          computerBlockedReason(input.userId, lazyComputer.agentId, new Date(), input.runId),
         takeoverEpoch: async () =>
-          (await computerTakeoverFence(input.userId, input.remoteComputer!.attachment.agentId)).epoch,
+          (await computerTakeoverFence(input.userId, lazyComputer.agentId)).epoch,
         pageTakesPayment: () => browser.pageTakesPayment(),
         currentUrl: () => browser.currentUrl(),
         screenEpoch: getEpoch,
         screenshot: takeShot,
         async click(opts) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.click(remote.attachment.handle, opts);
           bumpEpoch();
           return takeShot();
         },
         async type(text) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           // In chunks, with the takeover and lease fence read between them.
           const stopped = await typeInChunks(
             text,
@@ -1997,13 +2173,13 @@ function buildTools(input: {
           return takeShot();
         },
         async key(keys) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.key(remote.attachment.handle, keys);
           bumpEpoch();
           return takeShot();
         },
         async scroll(opts) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.scroll(remote.attachment.handle, {
             x: opts.x,
             y: opts.y,
@@ -2013,13 +2189,13 @@ function buildTools(input: {
           return takeShot();
         },
         async drag(opts) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           await remote.attachment.provider.drag(remote.attachment.handle, opts);
           bumpEpoch();
           return takeShot();
         },
         async zoom(region) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           const shot = await remote.attachment.provider.screenshot(remote.attachment.handle);
           setCachedPoster(remote.attachment.agentId, shot);
           const zoomed = await zoomFrame(shot.jpeg, region, shot);
@@ -2032,48 +2208,101 @@ function buildTools(input: {
         },
         storeFrame: (ref, shot) =>
           stepFrames!.store(ref, { jpeg: Buffer.from(shot.data, "base64"), width: shot.width, height: shot.height }),
-        ...(pointDescriber
-          ? {
-              describePoint: (x: number, y: number) => pointDescriber.describePoint(x, y),
-              describeFocus: () => pointDescriber.describeFocus(),
-            }
-          : {}),
+        describePoint: async (x: number, y: number) => (await pointDescriber()?.describePoint(x, y)) ?? null,
+        describeFocus: async () => (await pointDescriber()?.describeFocus()) ?? null,
         async exec(command, opts) {
-          const remote = input.remoteComputer!;
-          const effectiveCommand = opts.cwd
-            ? `cd ${JSON.stringify(opts.cwd)} && (${command})`
-            : command;
-          const res = await remote.attachment.provider.exec(
+          const remote = { attachment: attached() };
+          // The working directory goes to the provider, validated, as
+          // `--workdir`; the command is passed unchanged (never `cd "<cwd>"`).
+          // Its output streams to the terminal pane under the call's id.
+          const { callId, ...shellOpts } = opts;
+          const res = await runWatchedComputerShell(
+            remote.attachment.provider,
             remote.attachment.handle,
-            effectiveCommand,
-            { timeoutSeconds: opts.timeoutSeconds }
+            command,
+            shellOpts,
+            shellLog,
+            callId,
           );
           bumpEpoch();
           return res;
         },
         listFiles(dir) {
-          const remote = input.remoteComputer!;
+          const remote = { attachment: attached() };
           return remote.attachment.provider.listFiles(remote.attachment.handle, dir);
         },
         async readFile(path, maxBytes) {
-          const remote = input.remoteComputer!;
-          const bytes = await remote.attachment.provider.readFile(
-            remote.attachment.handle,
-            path,
-            { maxBytes }
-          );
-          return bytes.toString("utf8");
+          const remote = { attachment: attached() };
+          // The bytes as they are (S5.2): the tool decides whether they are text.
+          return remote.attachment.provider.readFile(remote.attachment.handle, path, { maxBytes });
         },
-        async writeFile(path, content) {
-          const remote = input.remoteComputer!;
-          await remote.attachment.provider.writeFile(
-            remote.attachment.handle,
-            path,
-            Buffer.from(content, "utf8")
-          );
+        async writeFile(path, bytes) {
+          const remote = { attachment: attached() };
+          await remote.attachment.provider.writeFile(remote.attachment.handle, path, Buffer.from(bytes));
           bumpEpoch();
         },
+        async fileSize(path) {
+          const remote = { attachment: attached() };
+          const info = await remote.attachment.provider.fileInfo(remote.attachment.handle, path);
+          return info?.type === "file" ? info.size : null;
+        },
+        // A file on the computer, unchanged, as a deliverable of this run (S5.3).
+        async publish(request) {
+          const remote = { attachment: attached() };
+          const file = await readComputerFileForPublish(
+            remote.attachment.provider,
+            remote.attachment.handle,
+            request.path,
+            request.title,
+          );
+          if (!file.ok) return { ok: false, message: file.message };
+          const artifact = await storeDeliverable({
+            runId: input.runId,
+            userId: input.userId,
+            sessionId: input.sessionId,
+            identifier: file.identifier,
+            origin: "computer",
+            disposition: computerFileDisposition(file.title, file.type.mimeType),
+            generated: {
+              kind: file.type.kind,
+              title: file.title,
+              mimeType: file.type.mimeType,
+              extension: file.type.extension ?? "bin",
+              bytes: file.bytes,
+              byteSize: file.bytes.byteLength,
+              contentHash: file.sha256,
+              provenance: [],
+              // Nothing re-opened it: the row says "not confirmed to open".
+              validation: {
+                ok: false,
+                validator: "none",
+                checkedAt: new Date().toISOString(),
+                kind: file.type.kind,
+                byteSize: file.bytes.byteLength,
+                observations: [],
+                problems: [],
+                details: {},
+              },
+            },
+          });
+          input.sink.session?.recordArtifact(artifact.ref);
+          await recordComputerAudit({
+            userId: input.userId,
+            agentId: remote.attachment.agentId,
+            kind: "file_published",
+            actor: "runner",
+            detail: { bytes: file.bytes.byteLength, runId: input.runId },
+          });
+          return {
+            ok: true,
+            detail: `Published ${file.path} as "${file.title}" (${formatFileSize(file.bytes.byteLength)}, sha256 ${file.sha256.slice(0, 12)}), version ${artifact.ref.version} of this task's deliverable "${file.identifier}". It is the file exactly as it is on the computer, offered to the person as a download; nothing opened or checked it.`,
+          };
+        },
       })
+        // Pixel tools only for a model that can see the screen.
+        .filter((tool) => computerToolNamesFor({ vision: input.vision }).includes(tool.spec.name))
+        // The first use starts the computer, asking first under `ask` (§S1.5).
+        .map((tool) => runtime.withComputerStart(tool, lazyComputer.gate))
     : [];
 
   const deliverables = runtime.deliverableTool({
@@ -2202,6 +2431,7 @@ function buildTools(input: {
     ...remoteComputerTools,
     deliverables,
     cloudFiles,
+    ...(input.agentNote ? [runtime.agentNoteTool(input.agentNote)] : []),
     // A sandbox on the execution host, not this worker: `withoutHostWorkspaceTools`
     // keeps these (they are not workspace tools) and strips the host ones below.
     ...(input.exec ? runtime.execTools({ ...input.exec.deps, manifestLine: input.exec.manifestLine }) : []),
@@ -2241,7 +2471,15 @@ async function storeDeliverable(input: {
   userId: string;
   sessionId: string;
   identifier: string;
-  generated: Awaited<ReturnType<typeof generateDeliverable>>;
+  /**
+   * Where the bytes came from: `generated` (a spec this run built) or
+   * `computer` (a file the agent published from its computer, S5.3, typed by
+   * its extension and never previewed). Recorded on the version.
+   */
+  origin?: "generated" | "computer";
+  /** The stored object's Content-Disposition, when not the kind's own. */
+  disposition?: string;
+  generated: Omit<Awaited<ReturnType<typeof generateDeliverable>>, "kind"> & { kind: WorkArtifactKind };
 }): Promise<{ ref: WorkArtifactRef; detail: string }> {
   const { generated } = input;
   const storageKey = `work-artifacts/${input.userId}/${randomUUID()}-${input.identifier}.${generated.extension}`;
@@ -2249,7 +2487,7 @@ async function storeDeliverable(input: {
     storageKey,
     generated.bytes,
     generated.mimeType,
-    attachmentDisposition(generated.title, input.identifier, generated.kind)
+    input.disposition ?? attachmentDisposition(generated.title, input.identifier, generated.kind)
   );
 
   const written = await prisma.$transaction(async (tx) => {
@@ -2298,7 +2536,7 @@ async function storeDeliverable(input: {
         storageKey,
         byteSize: generated.byteSize,
         contentHash: generated.contentHash,
-        origin: "generated",
+        origin: input.origin ?? "generated",
         provenance: provenanceForStorage(generated.provenance),
         validation: {
           ok: generated.validation.ok,
@@ -2831,6 +3069,15 @@ async function applySkill(input: {
  * tripping a guard whose entire job is to notice a query that forgot its
  * userId. Ordered oldest-first: a run that has been queued longest is the one a
  * user is most likely to have given up on.
+ *
+ * "Queued longest" is measured from when the run was last written, which for
+ * a queued run is when it entered the queue (`updatedAt`: it holds no lease,
+ * so nothing renews it while it waits; an instruction added meanwhile moves it
+ * back a little; the queued-run expiry reads the same column), not from when
+ * it was created. A parked run put back in the queue by an answer
+ * (`requeueParkedRun`) keeps its old `createdAt`; ordered by that, one account
+ * answering a stack of parked runs would put all of them ahead of every other
+ * account's newer work on the runner's few slots.
  */
 async function findQueuedRuns(limit: number) {
   return prismaUnguarded.workRun.findMany({
@@ -2842,7 +3089,7 @@ async function findQueuedRuns(limit: number) {
       // run here like any other, and `advanceTeams` below drives the lead.
       session: { OR: [{ teamRole: null }, { teamRole: { not: "lead" } }] },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ updatedAt: "asc" }, { createdAt: "asc" }],
     take: limit,
     select: { id: true, userId: true, sessionId: true },
   });
@@ -2863,6 +3110,11 @@ async function tick(): Promise<boolean> {
       log("computer sweep failed", { error: String(error) });
     });
   }
+  // A take over nobody handed back and whose window ran out: the person's VNC
+  // session is ended and the agent's processes thawed (src/lib/computer/store.ts).
+  await settleLapsedTakeovers().catch((error: unknown) => {
+    log("lapsed take over settlement failed", { error: String(error) });
+  });
 
   // Other workers' casualties first. A run whose executor died is invisible to
   // every surface as anything other than "still going", so clearing it is more
@@ -2872,6 +3124,28 @@ async function tick(): Promise<boolean> {
     log("reclaimed stalled runs", { count: swept.reclaimed.length });
   }
   let busy = swept.reclaimed.length > 0;
+
+  // Runs a runner that was going away set aside between two steps: continued
+  // when their checkpoint shows nothing in flight, ended `interrupted`
+  // otherwise (src/lib/work/restart-resume.ts). Before claiming, so a run put
+  // back in the queue here is claimed in this same tick.
+  const restarted = await resumeRunsParkedForRestart({
+    executorId: EXECUTOR_ID,
+    enabled: restartResumeEnabled(),
+  }).catch((error: unknown) => {
+    log("could not deal with runs set aside for a restart", { error: String(error) });
+    return { requeued: [], ended: [] };
+  });
+  if (restarted.requeued.length > 0) log("continuing runs set aside for a restart", { count: restarted.requeued.length });
+  for (const ended of restarted.ended) {
+    log("not continuing a run set aside for a restart", { runId: ended.runId, why: ended.why });
+    void deliverRunNotification({ runId: ended.runId, userId: ended.userId });
+  }
+  if (restarted.requeued.length + restarted.ended.length > 0) busy = true;
+
+  // Whether juno-sweepers still reports in; mails the operator when it does
+  // not. Once a minute at most, never throws.
+  await watchSweepers();
 
   // Temporary specialist teams (src/lib/agents/team-store.ts): start members
   // whose dependencies ended, retry one interrupted before it acted, write the
@@ -2893,24 +3167,41 @@ async function tick(): Promise<boolean> {
   let claimedThisTick = 0;
   for (const candidate of await findQueuedRuns(slots * 3)) {
     if (claimedThisTick >= slots) break;
+    // Back in the queue while this worker's own drive of it is still
+    // unwinding (a parked run answered at once is requeued before that
+    // drive's `finally` has run). Taken on a later tick, once its slot is free.
+    if (active.has(candidate.id)) continue;
     busy = true;
     if (stopping) return true;
-    const claim = await claimRun({
-      runId: candidate.id,
-      userId: candidate.userId,
-      executorId: EXECUTOR_ID,
-    });
+    claimsInHand += 1;
+    let claim: Awaited<ReturnType<typeof claimRun>>;
+    try {
+      claim = await claimRun({
+        runId: candidate.id,
+        userId: candidate.userId,
+        executorId: EXECUTOR_ID,
+      });
+    } finally {
+      // Nothing is awaited between here and `active.set` below, so a drain
+      // never sees this claim as neither in hand nor active.
+      claimsInHand -= 1;
+    }
     if (!claim.claimed) continue;
     claimedThisTick += 1;
 
     const renew = startLeaseRenewal(candidate.id, candidate.userId);
-    active.set(candidate.id, { renew });
+    // Already asked to stop if a shutdown began while this tick was claiming:
+    // the run then stops before its first model request.
+    const entry = { renew, restart: new RunRestartSignal(stopping) };
+    active.set(candidate.id, entry);
     // Deliberately not awaited: the tick loop keeps sweeping and claiming while
     // runs are in flight. Failures are handled inside drive(), which always
     // reaches finishRun.
-    void drive(candidate.id, candidate.userId).finally(() => {
+    void drive(candidate.id, candidate.userId, entry.restart).finally(() => {
       clearInterval(renew);
-      active.delete(candidate.id);
+      // Only this drive's own entry: never one a later claim of the same run
+      // put there, or the worker would under-count what it is running.
+      if (active.get(candidate.id) === entry) active.delete(candidate.id);
     });
   }
 
@@ -3134,8 +3425,17 @@ function runModelChoice(canonicalModelId: string): RunModelChoice {
  * defensive tidiness — it is the only thing standing between an unexpected
  * throw and a permanently stuck session.
  */
-async function drive(runId: string, userId: string): Promise<void> {
+async function drive(runId: string, userId: string, restart: RunRestartSignal): Promise<void> {
   let seq = 0;
+  // Set aside between two steps for a restart: the next runner deals with it,
+  // and nobody is notified about a pause nobody asked them anything in.
+  let parkedForRestart = false;
+  // This drive's own part of every event key. `seq` restarts at zero on each
+  // drive, and a run parked and requeued is often driven again by the same
+  // worker, so `runId:executor:seq` alone repeated the first drive's keys and
+  // `appendEvents` dropped the resumed run's opening events as duplicates —
+  // its `run_started`, and as many events after it as the first drive wrote.
+  const driveKey = randomUUID().replace(/-/g, "");
   // Whether the transcript already has a terminal event for this run.
   //
   // The session emits its own `run_finished` — carrying the reason, the
@@ -3182,7 +3482,7 @@ async function drive(runId: string, userId: string): Promise<void> {
   ): Promise<void> => {
     if (kind === "run_finished") emittedRunFinished = true;
     seq += 1;
-    const key = `${runId}:${EXECUTOR_ID}:${seq}`;
+    const key = `${runId}:${EXECUTOR_ID}:${driveKey}:${seq}`;
     const queued = appendTail.then(() =>
       appendEvents({
         runId,
@@ -3222,15 +3522,52 @@ async function drive(runId: string, userId: string): Promise<void> {
   try {
     await emit("run_started", { executor: "cloud" });
 
-    const outcome = await execute({ runId, userId, emit });
+    const outcome = await execute({ runId, userId, emit, restart });
+
+    if (outcome.paused && (outcome.restart === "mid_step" || outcome.restart === "cut_short")) {
+      // Stopped inside a step for a restart, after the wait ran out, or at a
+      // step boundary after a tool call the restart may have reached
+      // (`RunRestartSignal`): a tool may have been cut short, so it ends as an
+      // interrupted run always has, its checkpoint kept for the person to
+      // continue.
+      const detail = outcome.restart === "mid_step" ? RESTART_MID_STEP_DETAIL : RESTART_TOOL_CUT_DETAIL;
+      await finishRun({
+        runId,
+        userId,
+        reason: "interrupted",
+        detail,
+        executorId: EXECUTOR_ID,
+        usage: outcome.usage,
+      });
+      await billRunUsage(runId, userId, outcome.usage);
+      if (!emittedRunFinished) await emit("run_finished", { reason: "interrupted", detail });
+      return;
+    }
 
     if (outcome.paused) {
       // A paused run is resumable, not terminal. The executor has already
       // written the latest checkpoint; this conditional park releases its
       // lease only if this worker still owns it, so a fast Resume cannot be
       // overwritten by a late pause completion.
-      await parkRun({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
+      let parkedNow: boolean;
+      if (outcome.restart === "boundary") {
+        // Its `paused` event, which names the restart, is written before the
+        // run can be picked up: the next runner reads it to say why it resumed.
+        await flushEvents();
+        parkedNow = await parkRunForRestart({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
+        parkedForRestart = parkedNow;
+        if (parkedNow) log("set aside between two steps for the restart", { runId });
+      } else {
+        parkedNow = await parkRun({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
+      }
       await billRunUsage(runId, userId, outcome.usage);
+      // An answer that landed between the last poll and the park found the
+      // run still attached, so the route left the requeue to this worker.
+      // Compare-and-set like the route's, so the two cannot both move it.
+      if (parkedNow && outcome.parkedOn && (await parkedWaitAnswered({ runId, userId, wait: outcome.parkedOn }))) {
+        const requeued = await requeueParkedRun({ runId, userId });
+        if (requeued.requeued) log("answered while parking; back in the queue", { runId });
+      }
       return;
     }
 
@@ -3301,9 +3638,11 @@ async function drive(runId: string, userId: string): Promise<void> {
      * on — the approval or the question nobody answered in the attended wait —
      * and that is the notification a person started it for.
      */
-    const notified = await deliverRunNotification({ runId, userId });
-    if (!notified.delivered && notified.reason) {
-      log("no notification sent", { runId, reason: notified.reason });
+    if (!parkedForRestart) {
+      const notified = await deliverRunNotification({ runId, userId });
+      if (!notified.delivered && notified.reason) {
+        log("no notification sent", { runId, reason: notified.reason });
+      }
     }
   }
 }
@@ -3361,6 +3700,8 @@ interface ExecuteInput {
     /** The delegated child this event belongs to, when it belongs to one. */
     agentId?: string | null
   ): Promise<void>;
+  /** How a shutdown of this worker reaches the run (src/lib/work/restart-resume-rules.ts). */
+  restart: RunRestartSignal;
 }
 
 interface ExecuteOutcome {
@@ -3369,6 +3710,13 @@ interface ExecuteOutcome {
   usage?: WorkRunUsage;
   /** The session stopped at a resumable checkpoint rather than terminating. */
   paused?: boolean;
+  /** What it parked on, when it stopped to wait for a person. */
+  parkedOn?: ParkedWait;
+  /**
+   * It stopped for a shutdown of this worker: between two steps, between two
+   * steps after a tool call the shutdown may have cut short, or inside one.
+   */
+  restart?: RestartStopOutcome;
 }
 
 /**
@@ -3451,7 +3799,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // so within a second of the claim, which is the whole of requirement C: a run
   // that cannot start must say so in words, not sit at zero tokens.
   const choice = runModelChoice(run.effectiveModel ?? run.requestedModel ?? "");
-  const spec = providerSpecFor(choice.provider, runtime);
+  // Tests and local demos only (src/lib/dev/scripted-work-model.ts): never in
+  // production, never selectable, and the run says so in its own transcript.
+  const scripted = scriptedWorkModelSwitchedOn()
+    ? scriptedWorkModelFor({
+        id: input.userId,
+        email: (await prisma.user.findUnique({ where: { id: input.userId }, select: { email: true } }))?.email ?? null,
+      })
+    : null;
+  const spec = scripted ? null : providerSpecFor(choice.provider, runtime);
+  const modelVision = scripted ? scripted.vision : choice.info?.vision ?? false;
   const reasoning = reasoningEffortFor(choice, run.session.reasoningEffort, runtime);
 
   // Wrapped before the session ever sees it, so every turn this run takes — the
@@ -3459,10 +3816,25 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // it sat queued has that instruction in the log before it starts, and the
   // first turn is where it belongs.
   const provider = steerable(
-    runtime.createProviderFromSpec(spec),
+    scripted
+      ? runtime.createScriptedWorkProvider(runtime.parseScriptedWorkScript(JSON.parse(readFileSync(scripted.scriptPath, "utf8"))))
+      : runtime.createProviderFromSpec(spec!),
     openSteering(input.runId, input.userId),
     input.runId
   );
+  if (scripted) {
+    await input.emit("degraded", { kind: "model_substituted", subject: "scripted", explanation: SCRIPTED_MODEL_EXPLANATION });
+  }
+  // The session's own provider: the same one, stopping the run at its next
+  // step boundary once a shutdown asks (`pauseAtStepBoundary`). The goal check
+  // and the criteria check keep `provider`: they run after the loop, and a
+  // shutdown must not fail them.
+  const sessionProvider = pauseAtStepBoundary(provider, {
+    runId: input.runId,
+    signal: input.restart,
+    pause: () => activeSession().pause(RESTART_PAUSED_COPY),
+    park: () => new runtime.WorkRunParked(RESTART_PARK_MESSAGE),
+  });
 
   // The connectors go first because everything after them depends on knowing
   // which ones answered: the toolset includes their tools, and the skill
@@ -3475,6 +3847,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // which is strictly worse and is what used to happen. The degradation below
   // is the same sentence any other unreachable connector produces, because from
   // where the reader sits it is the same fact.
+  const openAbort = new AbortController();
   const opening = openConnectors({
     runId: input.runId,
     userId: input.userId,
@@ -3482,6 +3855,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     runtime,
     sink,
     emit: input.emit,
+    signal: openAbort.signal,
   });
   const connectors = await withDeadline(
     opening,
@@ -3490,10 +3864,11 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   ).catch(async (error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
     log("connectors did not open", { runId: input.runId, error: detail });
-    // The abandoned attempt is still tidied up if it ever finishes. It cannot
-    // be cancelled — `openMcpToolset` takes no signal — but it can be told to
-    // close on arrival, and it must be: a late surface holds live broker
-    // handles and open MCP sockets that nothing else has a reference to.
+    // Cancelled: every MCP handshake still in flight stops and its socket is
+    // closed, and `openConnectors` revokes the run's broker handles. Whatever
+    // it hands back late is closed on arrival as well, so nothing live is left
+    // that no one holds a reference to.
+    openAbort.abort();
     void opening.then(
       (late) => late.close(),
       () => {}
@@ -3507,45 +3882,48 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   });
 
   const egressDomains = { current: null as readonly string[] | null };
-  let remoteComputer: {
-    attachment: Extract<RunComputerAttachment, { attached: true }>;
-    browser: WorkBrowser;
-  } | null = null;
   let computerNote: string | null = null;
-
-  const computerAttachment = await resolveRunComputerSession({
+  // Nothing is woken here: the computer starts on the first computer tool call,
+  // asking first when the agent's policy is `ask` (src/lib/computer/run-tools.ts).
+  const computerPlan = await prepareRunComputer({
     userId: input.userId,
     agentId: run.session.agentId,
     runId: input.runId,
+    attended: isAttendedOrigin(run.origin),
+    vision: modelVision,
   });
-  if (computerAttachment.attached) {
-    try {
-      // The browser tool drives the same Chromium the person uses during a
-      // takeover, so it stops with the computer tools (src/lib/computer/takeover.ts).
-      const takeoverAgentId = computerAttachment.agentId;
-      const remoteBrowser = guardBrowserForTakeover(
-        connectAgentBrowser(computerAttachment.handle, computerAttachment.secrets, {
-          provider: computerAttachment.provider,
-          // The same site policy the browser tool applies to `open`, now also
-          // to every navigation the agent's clicks and submits cause.
-          navigationRefusal: (url) => {
-            const blocked = runtime.blockedFetchTarget(url);
-            if (blocked) return `${PRODUCT_NAME} will not open that: ${blocked}`;
-            const allowedDomains = egressDomains.current;
-            if (allowedDomains === null) return null;
-            const egress = runtime.evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
-            return egress.allowed ? null : `${PRODUCT_NAME} will not open that for this skill: ${egress.reason}.`;
-          },
-        }),
-        () => computerTakeoverFence(input.userId, takeoverAgentId, new Date(), input.runId)
-      );
-      remoteComputer = { attachment: computerAttachment, browser: remoteBrowser };
-    } catch {
-      await computerAttachment.release();
-      computerNote = BUSY_COMPUTER_FALLBACK_NOTE;
-    }
-  } else if (computerAttachment.note) {
-    computerNote = computerAttachment.note;
+  let lazyComputer: LazyRunComputer<WorkBrowser> | null = null;
+  if (computerPlan.kind === "lazy") {
+    lazyComputer = createLazyRunComputer<WorkBrowser>({
+      plan: computerPlan,
+      userId: input.userId,
+      runId: input.runId,
+      readStartApproval: () => readRunStartApproval(input.userId, input.runId),
+      connectBrowser: (attachment) => {
+        // The browser tool drives the same Chromium the person uses during a
+        // takeover, so it stops with the computer tools (src/lib/computer/takeover.ts).
+        const takeoverAgentId = attachment.agentId;
+        return guardBrowserForTakeover(
+          connectAgentBrowser(attachment.handle, attachment.secrets, {
+            provider: attachment.provider,
+            // The same site policy the browser tool applies to `open`, now also
+            // to every navigation the agent's clicks and submits cause.
+            navigationRefusal: (url) => {
+              const blocked = runtime.blockedFetchTarget(url);
+              if (blocked) return `${PRODUCT_NAME} will not open that: ${blocked}`;
+              const allowedDomains = egressDomains.current;
+              if (allowedDomains === null) return null;
+              const egress = runtime.evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
+              return egress.allowed ? null : `${PRODUCT_NAME} will not open that for this skill: ${egress.reason}.`;
+            },
+          }),
+          () => computerTakeoverFence(input.userId, takeoverAgentId, new Date(), input.runId)
+        );
+      },
+    });
+    await lazyComputer.refresh();
+  } else if (computerPlan.note) {
+    computerNote = computerPlan.note;
   }
 
   /**
@@ -3573,9 +3951,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     sink,
     connectors,
     egressDomains,
-    remoteComputer,
+    lazyComputer,
+    vision: modelVision,
     disposers,
     exec: execDeps ? { deps: execDeps, manifestLine: await runtimeManifestSummary().catch(() => null) } : null,
+    agentNote: run.session.agentId
+      ? await runAgentNoteDeps({ userId: input.userId, agentId: run.session.agentId, runId: input.runId, sessionId: run.sessionId })
+      : null,
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
@@ -3719,9 +4101,9 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     skillResources: skill?.resources ?? [],
     runtime,
     provider: choice.provider,
-    computerAttached: remoteComputer !== null,
     computerAttended: isAttendedOrigin(run.origin),
     computerNote,
+    computerSection: computerPlan.kind === "lazy" ? computerPlan.promptSection : null,
   });
 
   // Checkpoints are provider-neutral and safe to move between executors. Writes
@@ -3765,6 +4147,21 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     if (!sessionRef.current) throw new Error("The Work session was used before it was created.");
     return sessionRef.current;
   };
+  // What the person said while this run was parked, usable once each; filled
+  // after the session is restored (see `loadParkedDecisions` below). And what
+  // this execution parks on, if it does, for `drive`'s check after the park.
+  const parked: { decisions: ParkedDecisions | null; wait: ParkedWait | null } = { decisions: null, wait: null };
+  // Approval events wait for their row: the runtime announces a request before
+  // `requestApproval` creates the `WorkApproval`, and a card without the row's
+  // id and digest is one no browser can answer (the decision route looks the
+  // row up by id and checks the digest it stored). Keyed by the runtime's
+  // request id, which `approval_resolved` carries back as `requestId`.
+  const heldApprovalEvents = new Map<string, { payload: Prisma.InputJsonValue; agentId: string | null }>();
+  const approvalRowByRequest = new Map<string, string>();
+  // Whether this execution continues a run the last runner set aside for a
+  // restart (read below, once the session is restored): its `resumed` event
+  // then says so.
+  let resumedAfterRestart = false;
   // A model with no catalog price cannot be billed, and a ceiling that cannot
   // be billed against cannot stop anything.
   //
@@ -3786,7 +4183,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   const sessionOptions: WorkSessionOptions = {
     runId: input.runId,
     goal,
-    provider,
+    provider: sessionProvider,
     // The adapter was selected by the provider half, and this is the id that
     // lab's API expects — from the catalog, not from splitting the string, so a
     // stored id that has since been retired arrives as its replacement.
@@ -3851,7 +4248,17 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // It is built to be hard to fail and it fails open: see the note on
     // `goalValidator`. The run's own provider and model, so this adds no
     // credential and no second catalog.
-    validate: runtime.goalValidator({ provider, model: choice.providerModel }),
+    //
+    // A goal's last step also checks the goal's success criteria against what
+    // every step produced, with the same provider and model, and records the
+    // verdict for the goal driver (src/lib/agents/goal-criteria.ts). The
+    // step's own result is unchanged by it.
+    validate: goalCriteriaCheckFor(runtime.goalValidator({ provider, model: choice.providerModel }), {
+      userId: input.userId,
+      runId: input.runId,
+      session: run.session,
+      check: (criteria) => runtime.checkGoalCriteria({ provider, model: choice.providerModel, ...goalCheckModelBounds(), ...criteria }),
+    }),
     // A headless run should not wait as long as a person would.
     //
     // Unset, this falls through to `DEFAULT_STREAM_SILENCE_MS`, which is the
@@ -3901,9 +4308,43 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         // — it is a column every client is already served — so it is lifted
         // out here and the payload goes on carrying it too, harmlessly.
         const agentId = (event as { agentId?: unknown }).agentId;
+        // An approval request is held until `requestApproval` has its row
+        // (see `heldApprovalEvents`); its resolution names that row, so the
+        // card a browser drew from the request is the card it closes.
+        if (event.kind === "approval_requested") {
+          heldApprovalEvents.set(event.request.id, {
+            payload: event as unknown as Prisma.InputJsonValue,
+            agentId: typeof agentId === "string" ? agentId : null,
+          });
+          return;
+        }
+        const approvalId = event.kind === "approval_resolved" ? approvalRowByRequest.get(event.requestId) : undefined;
+        // What a shutdown needs to know about the step in progress: which
+        // tool calls are running when it is asked for, and how they end
+        // (`RunRestartSignal`). Before the event is written, so the step
+        // boundary that follows a finished call always knows of it.
+        if (event.kind === "tool_started") input.restart.toolStarted(event.callId, event.tool);
+        else if (event.kind === "tool_finished") input.restart.toolFinished(event.callId, event.isError);
+        // A shutdown's pause names itself, and the next runner's resume says
+        // what it resumed from (src/lib/work/restart-resume-rules.ts).
+        const stoppedHow = event.kind === "paused" ? input.restart.outcome() : null;
+        const restartMark =
+          stoppedHow === "boundary"
+            ? { cause: RESTART_EVENT_CAUSE }
+            : stoppedHow === "cut_short"
+              ? { cause: RESTART_CUT_SHORT_EVENT_CAUSE }
+              : stoppedHow === "mid_step"
+                ? { cause: RESTART_MID_STEP_EVENT_CAUSE }
+                : event.kind === "resumed" && resumedAfterRestart
+                  ? { cause: RESTART_EVENT_CAUSE, detail: RESTART_RESUMED_DETAIL }
+                  : null;
         void input.emit(
           event.kind,
-          event as unknown as Prisma.InputJsonValue,
+          {
+            ...event,
+            ...(approvalId === undefined ? {} : { approvalId }),
+            ...(restartMark ?? {}),
+          } as unknown as Prisma.InputJsonValue,
           typeof agentId === "string" ? agentId : null
         );
       },
@@ -3950,6 +4391,11 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         });
       },
       askQuestion: async (question) => {
+        // Answered already: the same question id (the plan review is asked
+        // under a fixed one), or the same question the run parked on and the
+        // person answered while it was set aside. The person answers once.
+        const recorded = (await pollAnswer(input.runId, question.id)) ?? parked.decisions?.takeAnswer(question.question) ?? null;
+        if (recorded !== null) return recorded;
         const waiting = await prisma.workRun.updateMany({
           where: {
             id: input.runId,
@@ -3982,10 +4428,14 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         );
         if (!waited.answered) {
           // Release rather than block. The run is checkpointed by the runtime's
-          // own pause path, and whichever worker is free picks it up once the
-          // answer lands.
+          // own pause path and parked; the answer route puts it back in the
+          // queue when the answer lands (`requeueParkedRun`), whichever worker
+          // is free picks it up, and the restored run is handed the answer
+          // (`loadParkedDecisions`). `WorkRunParked` tells the runtime this is
+          // a park, not a failure.
+          parked.wait = { kind: "question", questionId: question.id };
           activeSession().pause("Waiting for an answer.");
-          throw new Error("paused-waiting-for-answer");
+          throw new runtime.WorkRunParked("paused-waiting-for-answer");
         }
         const resumed = await prisma.workRun.updateMany({
           where: {
@@ -3997,9 +4447,37 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           data: { status: "running" },
         });
         if (resumed.count !== 1) throw new Error("The cloud executor lost this run's lease after the answer arrived.");
+        // Running again, so the session stops counting as "needs you".
+        await setSessionAttention({
+          sessionId: run.sessionId,
+          userId: input.userId,
+          runId: input.runId,
+          executorId: EXECUTOR_ID,
+          status: "running",
+        });
         return waited.value;
       },
       requestApproval: async (request) => {
+        // The person decided this exact call while the run was parked on it.
+        // Used once, and only as `judgeRecordedApproval` allows: the digest
+        // recomputed from the action about to run must equal the stored one,
+        // the policy must be the one it was given under, and the stored expiry
+        // is the expiry. Anything else asks again, below.
+        const recorded = parked.decisions?.takeApproval(request, run.permissionPolicy ?? {}, new Date()) ?? null;
+        if (recorded?.use) {
+          heldApprovalEvents.delete(request.id);
+          approvalRowByRequest.set(request.id, recorded.approvalId);
+          await recordWorkAudit({
+            userId: input.userId,
+            sessionId: run.sessionId,
+            runId: input.runId,
+            kind: "approval_decided",
+            detail: { approvalId: recorded.approvalId, action: request.action, decision: recorded.decision, outcome: "applied_after_park" },
+            actor: "cloud_runner",
+          });
+          return recorded.decision;
+        }
+        if (recorded) log("asking again: the decision given while parked does not cover this call", { runId: input.runId, approvalId: recorded.approvalId, reason: recorded.reason });
         const waiting = await prisma.workRun.updateMany({
           where: {
             id: input.runId,
@@ -4052,6 +4530,25 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
             expiresAt: new Date(request.expiresAt),
           },
         });
+        // The held request, now naming its row and the digest the row stores:
+        // what a browser posts back to the decision route, which looks the row
+        // up by that id and checks that digest.
+        approvalRowByRequest.set(request.id, approval.id);
+        const held = heldApprovalEvents.get(request.id);
+        heldApprovalEvents.delete(request.id);
+        if (held) {
+          const event = held.payload as Record<string, unknown>;
+          const announced = (event.request ?? {}) as Record<string, unknown>;
+          void input.emit(
+            "approval_requested",
+            {
+              ...event,
+              approvalId: approval.id,
+              request: { ...announced, approvalId: approval.id, actionDigest: approval.actionDigest },
+            } as Prisma.InputJsonValue,
+            held.agentId
+          );
+        }
         await setSessionAttention({
           sessionId: run.sessionId,
           userId: input.userId,
@@ -4071,8 +4568,11 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         }, ATTENDED_WAIT_MS);
 
         if (!waited.answered) {
+          // Parked, as for a question: the decision route requeues the run and
+          // the restored run is given the decision (`loadParkedDecisions`).
+          parked.wait = { kind: "approval", approvalId: approval.id };
           activeSession().pause("Waiting for an approval.");
-          throw new Error("paused-waiting-for-approval");
+          throw new runtime.WorkRunParked("paused-waiting-for-approval");
         }
 
         // Recomputed here, not trusted from the row. The approval travelled to
@@ -4099,6 +4599,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           data: { status: "running" },
         });
         if (resumed.count !== 1) throw new Error("The cloud executor lost this run's lease after approval.");
+        await setSessionAttention({
+          sessionId: run.sessionId,
+          userId: input.userId,
+          runId: input.runId,
+          executorId: EXECUTOR_ID,
+          status: "running",
+        });
 
         if (!verdict.ok) {
           await recordWorkAudit({
@@ -4129,6 +4636,50 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     ? runtime.WorkAgentSession.restore(checkpoint, sessionOptions)
     : new runtime.WorkAgentSession(sessionOptions);
   sessionRef.current = session;
+  // A shutdown whose wait ran out stops the run where it is (it then ends
+  // `interrupted`); until now there was no session to stop, and the boundary
+  // check stops it before its first model request instead.
+  input.restart.onHardStop(() => {
+    session.pause(RESTART_STOPPED_MID_STEP_COPY);
+    return true;
+  });
+  if (checkpoint) {
+    resumedAfterRestart = await resumingAfterRestart({ runId: input.runId, userId: input.userId }).catch(() => false);
+  }
+
+  // A run parked on a question or an approval comes back here once the person
+  // has answered (the answer and decision routes requeue it). The call it
+  // parked on is given what they said, so the model reads the answer as that
+  // call's result instead of "Stopped before this finished." and asking again:
+  // the person answers once. An approval is only told it was approved; the
+  // tool call it then repeats passes the gate on the recorded decision only
+  // for the same digest, policy and unexpired decision (`requestApproval`).
+  //
+  // First, whatever the ended execution left pending is closed: nobody waits
+  // on it now, and its card must stop offering buttons (`closeAbandonedApprovals`).
+  // Before the decisions are read, so a decision racing this either is read
+  // below or is refused as already resolved — never taken and then ignored.
+  const abandoned = await closeAbandonedApprovals({ runId: input.runId, userId: input.userId, now: new Date() });
+  for (const closed of abandoned) {
+    void input.emit("approval_resolved", { approvalId: closed.approvalId, decision: closed.decision });
+  }
+  if (checkpoint) {
+    const parkedCalls = runtime.WorkAgentSession.parkedToolCalls(checkpoint);
+    if (parkedCalls.length > 0) {
+      const loaded = await loadParkedDecisions({
+        runId: input.runId,
+        userId: input.userId,
+        calls: parkedCalls,
+        askToolName: runtime.WORK_ASK_TOOL_NAME,
+        policy: run.permissionPolicy ?? {},
+        now: new Date(),
+      });
+      const settled = session.settleParkedCalls(loaded.resolutions);
+      loaded.decisions.delivered(settled);
+      parked.decisions = loaded.decisions;
+      if (settled.length > 0) log("resumed with what the person said while it was parked", { runId: input.runId, settled: settled.length });
+    }
+  }
 
   // The tools were built before the session, because its constructor takes
   // them; this is where the two are joined so a citation, an artifact or an
@@ -4269,22 +4820,37 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           usage,
         };
       }
+      // A run waiting on a person parks for that person even during a
+      // shutdown (the wait ends early and their answer requeues it).
+      const stoppedForRestart = parked.wait ? null : input.restart.outcome();
       return {
         reason: "interrupted",
         detail: "Paused while waiting for the user.",
         usage,
         paused: true,
+        ...(parked.wait ? { parkedOn: parked.wait } : {}),
+        ...(stoppedForRestart ? { restart: stoppedForRestart } : {}),
       };
     }
     return { reason: result.terminalReason, detail: result.detail, usage };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.startsWith("paused-waiting-for")) {
-      // Not a failure. The run is parked and answerable; the next tick that
-      // sees an answer will resume it.
+      // Not a failure. The runtime catches a park inside the session
+      // (`WorkRunParked`) and returns `paused`, so this is only reached by a
+      // park that escaped it. It is parked the same way: answerable, and put
+      // back in the queue by the answer or decision that arrives. This branch
+      // used to return a terminal "interrupted" while saying it would
+      // continue, which it then could not.
+      await checkpointWrite;
+      if (!lastCheckpointWriteSucceeded) {
+        return { reason: "failed", detail: `${PRODUCT_NAME} could not safely save this paused run. Please try again.` };
+      }
       return {
         reason: "interrupted",
         detail: "Released while waiting for you. It will continue once you answer.",
+        paused: true,
+        ...(parked.wait ? { parkedOn: parked.wait } : {}),
       };
     }
     throw error;
@@ -4315,13 +4881,75 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
 async function main(): Promise<void> {
   log("started", { executor: EXECUTOR_ID, concurrency: MAX_CONCURRENT_RUNS });
 
-  const shutdown = (signal: string) => {
-    if (stopping) return;
-    stopping = true;
-    log(`${signal} received, finishing in-flight runs`);
+  // A shutdown (SIGINT from PM2 on a deploy or a restart, SIGTERM, or an
+  // uncaught exception): stop claiming, ask every run in flight to stop at its
+  // next step boundary and be set aside for the next runner, wait up to
+  // WORK_SHUTDOWN_STEP_WAIT_MS for them, stop whatever is still inside a step,
+  // give those a moment to be written down, exit. All inside juno-work's
+  // kill_timeout (deploy/ecosystem.config.js), so nothing is left for SIGKILL:
+  // the step wait is fitted to the kill_timeout PM2 hands the process in its
+  // environment, so a wait raised without it is not cut short by SIGKILL.
+  const configuredStepWaitMs = shutdownStepWaitMs();
+  const stepWaitMs = fittedShutdownStepWaitMs(configuredStepWaitMs);
+  if (stepWaitMs < configuredStepWaitMs) {
+    log("the shutdown step wait is shortened to fit juno-work's kill_timeout", {
+      configured: configuredStepWaitMs,
+      used: stepWaitMs,
+      killTimeout: process.env.kill_timeout,
+    });
+  }
+  let drained: Promise<void> | null = null;
+  let wake: (() => void) | null = null;
+  // A run still in flight after the drain (a tool that ignored the stop) keeps
+  // its lease until it expires, and the sweep then ends it `interrupted`. It
+  // is never handed straight back: it was inside a step.
+  const exitAfterDrain = (extra: Record<string, unknown> = {}): never => {
+    for (const { renew } of active.values()) clearInterval(renew);
+    log("stopped", { inFlight: active.size, ...extra });
+    process.exit(process.exitCode ?? 0);
   };
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  const drainForShutdown = (why: string): Promise<void> => {
+    if (drained) {
+      // Asked again while draining (a second Ctrl-C): stop now, mid-step.
+      if (why.startsWith("SIG")) {
+        log(`${why} again: stopping the runs in flight where they are`, { inFlight: active.size });
+        for (const entry of active.values()) entry.restart.stopNow();
+      }
+      return drained;
+    }
+    stopping = true;
+    for (const entry of active.values()) entry.restart.request();
+    wake?.();
+    log(`${why}: claiming nothing new; each run in flight stops at its next step boundary`, {
+      inFlight: active.size,
+      stepWaitMs,
+    });
+    drained = drainRuns({
+      signals: () => [...active.values()].map((entry) => entry.restart),
+      // A claim still in hand is a run about to be driven: it starts already
+      // asked to stop, and is waited for like the others.
+      remaining: () => active.size + claimsInHand,
+      stepWaitMs,
+      hardStopGraceMs: HARD_STOP_GRACE_MS,
+      // Still alive, so dispatch keeps queueing for the runner that replaces
+      // this one rather than refusing for the length of a deploy.
+      onPoll: () => recordExecutorHeartbeat(),
+    }).then((result) => log("drained", { ...result }));
+    // The loop below exits as soon as its tick returns. A tick still stuck at
+    // the end of the shutdown window (a docker CLI or a query that never
+    // answers) must not hold the process until PM2's SIGKILL: every run is
+    // set aside or ended once the drain has resolved, so the process exits
+    // without that tick, inside the exit margin. Anchored to the window, not
+    // to the drain, so an ordinary tick still finishes when nothing was in
+    // flight and the drain resolved at once.
+    const drain = drained;
+    setTimeout(() => void drain.then(() => exitAfterDrain({ tickStillRunning: true })), shutdownExitDeadlineMs(stepWaitMs)).unref();
+    return drained;
+  };
+  installWorkerProcessGuard({ name: "work-runner", drainTimeoutMs: stepWaitMs + HARD_STOP_GRACE_MS + SHUTDOWN_EXIT_MARGIN_MS });
+  registerWorkerDrain("work-runner", () => drainForShutdown("uncaught exception"));
+  process.on("SIGINT", () => void drainForShutdown("SIGINT received"));
+  process.on("SIGTERM", () => void drainForShutdown("SIGTERM received"));
 
   let waitMs = TICK_MS;
   while (!stopping) {
@@ -4338,14 +4966,20 @@ async function main(): Promise<void> {
       log("tick failed", { error: String(error) });
       waitMs = TICK_MS;
     }
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    if (stopping) break;
+    // Woken early by a shutdown: an idle wait is up to a minute.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, waitMs);
+      wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    wake = null;
   }
 
-  // Leases are left to expire rather than released. A worker shutting down
-  // mid-run has not finished the work, and handing the run straight back would
-  // start it again from the beginning on another worker.
-  for (const { renew } of active.values()) clearInterval(renew);
-  log("stopped", { inFlight: active.size });
+  await drainForShutdown("stopping");
+  exitAfterDrain();
 }
 
 void main();

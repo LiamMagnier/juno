@@ -6,6 +6,7 @@ import { decryptField, encryptField } from "@/lib/field-crypto";
 import { streamChat } from "@/lib/llm";
 import { MODEL_LIST, getModel, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
+import { noteLiveProviderFault, providerHealthy } from "@/lib/provider-health";
 import { getModelMetrics } from "@/lib/model-metrics";
 import {
   DEFAULT_BACKGROUND_PROVIDER_MODE,
@@ -413,6 +414,8 @@ export async function runUtilityPrompt<T>(opts: {
     candidates: opts.cheapestFirst
       ? [...utilityModelCandidates()].sort((a, b) => a.cost - b.cost)
       : utilityModelCandidates(),
+    // A lab known to be down is not worth a call (background-provider-policy.ts).
+    isProviderHealthy: (provider) => providerHealthy(provider as Parameters<typeof providerHealthy>[0]),
   });
 
   if (decision.candidates.length === 0) {
@@ -483,6 +486,8 @@ export async function runUtilityPrompt<T>(opts: {
       });
       const msg = ctrl.signal.aborted ? `timed out after ${ATTEMPT_TIMEOUT_MS}ms` : e instanceof Error ? e.message : String(e);
       console.error(`[${opts.label}] ${model.id} failed:`, msg);
+      // Background jobs feed provider health like chat turns (provider-health.ts).
+      if (!ctrl.signal.aborted) noteLiveProviderFault(model.provider, e, "background", { requester: opts.userId, modelId: model.id });
       // A timeout usually means an overloaded provider — worth one retry.
       return { result: null, transient: ctrl.signal.aborted || isTransientProviderError(msg) };
     } finally {

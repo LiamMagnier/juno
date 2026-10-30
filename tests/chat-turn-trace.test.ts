@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTurnTrace, traceUsage, type TurnTrace, type TurnTraceStart } from "@/lib/chat/turn/trace";
+import {
+  createTurnTrace,
+  latencyPercentiles,
+  summarizeTurnLatency,
+  traceUsage,
+  type TurnTrace,
+  type TurnTraceStart,
+} from "@/lib/chat/turn/trace";
 
 /*
  * The per-turn trace (src/lib/chat/turn/trace.ts, BRIEF §47).
@@ -133,6 +140,73 @@ test("the trace's fields are exactly these — a new field is a reviewed privacy
     "usage",
   ]);
   assert.deepEqual(Object.keys(out.cancellation).sort(), ["budgetHalted", "leaseLost", "shutdown", "stalled", "userStopped"]);
+  // Timings only: numbers, never text.
+  assert.deepEqual(Object.keys(out.latency).sort(), ["requestTtftMs", "serverPrepMs", "totalMs", "ttftMs"]);
+});
+
+test("server preparation is measured from route entry to the provider request, beside the first token", () => {
+  const emitted: TurnTrace[] = [];
+  // Route entry at 500; the trace opens at 1_000 (after history, memory, tools,
+  // prompt); the provider request goes out at 1_300 (after the connectors
+  // opened); the first token arrives at 2_100; the turn ends at 3_000.
+  const trace = createTurnTrace(start({ requestStartedAt: 500 }), (t) => emitted.push(t), clock(1_000, 1_300, 2_100, 3_000));
+  trace.noteProviderCall();
+  trace.noteProviderCall(); // a retry's request: not the end of the preparation
+  trace.observe({ kind: "text", text: SECRET, startedWriting: true });
+  const out = trace.finish({ finishReason: "stop", outcome: "completed" })!;
+  assert.equal(out.latency.serverPrepMs, 800, "500 → 1_300: everything the server did before asking the provider");
+  assert.equal(out.latency.ttftMs, 1_100, "unchanged: from the trace's start, as RoutingOutcome stores it");
+  assert.equal(out.latency.requestTtftMs, 1_600, "what the person waited for: route entry → first token");
+  assert.equal(out.latency.totalMs, 2_000);
+  assert.equal(emitted.length, 1);
+});
+
+test("without a route stamp or a provider request, the new timings are null, never guessed", () => {
+  const unstamped = createTurnTrace(start(), () => {}, clock(1_000, 1_200, 1_400, 2_000));
+  unstamped.noteProviderCall();
+  unstamped.observe({ kind: "text", text: "hi", startedWriting: true });
+  const a = unstamped.finish({ finishReason: "stop", outcome: "completed" })!;
+  assert.equal(a.latency.serverPrepMs, null);
+  assert.equal(a.latency.requestTtftMs, null);
+  assert.equal(a.latency.ttftMs, 400);
+
+  // A research hand-off (or a refusal) never asks a provider.
+  const handedOff = createTurnTrace(start({ requestStartedAt: 900 }), () => {}, clock(1_000, 1_500)).finish({
+    finishReason: "stop",
+    outcome: "completed",
+  })!;
+  assert.equal(handedOff.latency.serverPrepMs, null);
+  assert.equal(handedOff.latency.requestTtftMs, null);
+
+  // A stamp from a clock that ran backwards is clamped, not negative.
+  const skewed = createTurnTrace(start({ requestStartedAt: 5_000 }), () => {}, clock(1_000, 1_100, 1_200));
+  skewed.noteProviderCall();
+  assert.equal(skewed.finish({ finishReason: "stop", outcome: "completed" })!.latency.serverPrepMs, 0);
+
+  // A request noted after the turn finished changes nothing.
+  const late = createTurnTrace(start({ requestStartedAt: 0 }), () => {}, clock(10, 20, 30));
+  const done = late.finish({ finishReason: "error", outcome: "failed" })!;
+  late.noteProviderCall();
+  assert.equal(done.latency.serverPrepMs, null);
+});
+
+test("the admin summary: nearest-rank p50 and p95 of each wait, turns without a number left out", () => {
+  assert.equal(latencyPercentiles([]), null);
+  assert.deepEqual(latencyPercentiles([40]), { p50: 40, p95: 40, n: 1 });
+  const hundred = Array.from({ length: 100 }, (_, i) => i + 1);
+  assert.deepEqual(latencyPercentiles(hundred.reverse()), { p50: 50, p95: 95, n: 100 });
+  const traces = [
+    { latency: { totalMs: 1, ttftMs: 100, serverPrepMs: 300, requestTtftMs: 900 } },
+    { latency: { totalMs: 1, ttftMs: null, serverPrepMs: 500, requestTtftMs: null } },
+    { latency: { totalMs: 1, ttftMs: 300, serverPrepMs: null, requestTtftMs: null } },
+    // A trace from before this field existed reads as "no number".
+    { latency: { totalMs: 1, ttftMs: 200 } as TurnTrace["latency"] },
+  ];
+  const summary = summarizeTurnLatency(traces);
+  assert.deepEqual(summary.serverPrepMs, { p50: 300, p95: 500, n: 2 });
+  assert.deepEqual(summary.requestTtftMs, { p50: 900, p95: 900, n: 1 });
+  assert.deepEqual(summary.ttftMs, { p50: 200, p95: 300, n: 3 });
+  assert.deepEqual(summarizeTurnLatency([]), { serverPrepMs: null, requestTtftMs: null, ttftMs: null });
 });
 
 test("a rate-limited provider is classified, retryable, and not echoed", () => {

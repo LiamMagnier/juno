@@ -239,6 +239,37 @@ export function executorKnownAbsent(reading: ExecutorPresenceReading, now: Date)
 }
 
 /**
+ * How long the process watching the executor must itself have been up before
+ * a stale heartbeat it reads counts. A deploy stops juno-work and juno-sweepers
+ * together and starts them together; the watcher can be up a minute before the
+ * runner has loaded and written its first beat.
+ */
+export const EXECUTOR_STALE_WATCHER_GRACE_MS = 5 * 60_000;
+
+/**
+ * Whether the operator should hear that the cloud executor has stopped while
+ * work waits for it (src/lib/worker-watchdog.ts, in juno-sweepers): the
+ * heartbeat read and positively lapsed (`executorKnownAbsent`, so a failed read
+ * says nothing), at least one cloud run waiting for an executor (queued, or set
+ * aside for a restart), and the watcher up long enough for its reading to mean
+ * something.
+ *
+ * An executor that is down with nothing waiting is not mailed about here:
+ * nobody's work is held up yet, and dispatch already tells the next person who
+ * starts a cloud task, in words, that no cloud worker is running.
+ */
+export function executorStaleWithWaitingWork(input: {
+  reading: ExecutorPresenceReading;
+  waitingRuns: number;
+  now: Date;
+  watcherUpForMs: number;
+}): boolean {
+  if (input.waitingRuns <= 0) return false;
+  if (input.watcherUpForMs < EXECUTOR_STALE_WATCHER_GRACE_MS) return false;
+  return executorKnownAbsent(input.reading, input.now);
+}
+
+/**
  * The time a queued cloud run must have entered `queued` before for the sweep
  * to end it, or null when the sweep must end nothing.
  *

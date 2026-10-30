@@ -219,6 +219,9 @@ export function ProjectNameDialog({
   }, [open, initialName]);
   const optional = mode === "create";
   const submit = () => {
+    // Enter used to ignore `busy`, so a second press while the first request
+    // (or the navigation after it) was in flight made a second project.
+    if (busy) return;
     if (!optional && !name.trim()) return;
     onSubmit(name.trim());
   };
@@ -252,8 +255,10 @@ export function ProjectNameDialog({
       }
     >
       <div className="px-5 pb-5">
-        <label htmlFor="pj-name-input" className="pj-annot mb-2 block">
-          Name{optional ? " (optional)" : ""}
+        {/* A field label is a control's name: the interface face, as every
+            settings field label is, not the mono metadata voice. */}
+        <label htmlFor="pj-name-input" className="mb-2 block text-ui font-medium text-foreground">
+          Name{optional ? <span className="font-normal text-muted-foreground"> (optional)</span> : null}
         </label>
         <Input
           id="pj-name-input"
@@ -317,7 +322,7 @@ export function DeleteProjectDialog({
     >
       {folderCount > 0 && (
         <fieldset className="px-5 pb-5">
-          <legend className="pj-annot mb-2">
+          <legend className="mb-2 text-ui font-medium text-foreground">
             {folderCount === 1 ? "It holds 1 folder" : `It holds ${folderCount} folders`}
           </legend>
           <div className="grid gap-1.5" role="radiogroup">
@@ -522,6 +527,13 @@ function PickerRow({
  * Projects / Atlas launch / Research. Each crumb is a link and a drop target:
  * drop a folder or a chat on a crumb to move it there ("Projects" is the top
  * level, which only folders can go to).
+ *
+ * The trail ends at the parent. The page's H1 sits directly under it and
+ * names this project in full, so drawing it again here was the same words
+ * twice, and on a long name the repeat overflowed a phone's width. The
+ * current place is still in the trail for a screen reader (`aria-current`).
+ * Crumbs are navigation, so they are set in the interface face at the `ui`
+ * rung, like AppPageHeader's own eyebrow, with a 24px target (44 on touch).
  */
 export function ProjectBreadcrumbs({
   crumbs,
@@ -535,16 +547,15 @@ export function ProjectBreadcrumbs({
   accept?: (drag: ProjectDrag, targetId: string | null) => boolean;
 }) {
   return (
-    <nav aria-label="Folder path" className="pj flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+    <nav aria-label="Folder path" className="pj flex min-w-0 flex-wrap items-center gap-x-0.5 gap-y-1">
       <Crumb href="/projects" label="Projects" targetId={null} onDropInto={onDropInto} accept={accept} />
       {crumbs.map((crumb) => (
         <React.Fragment key={crumb.id}>
-          <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+          <ChevronRight className="size-3 shrink-0 text-ink-tertiary" aria-hidden="true" />
           <Crumb href={`/projects/${crumb.id}`} label={crumb.name} targetId={crumb.id} onDropInto={onDropInto} accept={accept} />
         </React.Fragment>
       ))}
-      <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
-      <span aria-current="page" className="pj-annot truncate text-foreground/80">
+      <span aria-current="page" className="sr-only">
         {current}
       </span>
     </nav>
@@ -572,7 +583,7 @@ function Crumb({
     <Link
       href={href}
       {...drop}
-      className="pj-drop pj-annot max-w-[14rem] truncate rounded-xs px-1 py-0.5 transition-colors duration-fast ease-out-soft hover:text-foreground"
+      className="pj-drop hit-44 relative inline-flex min-h-6 items-center break-words rounded-xs px-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
     >
       {label}
     </Link>
@@ -588,6 +599,15 @@ function plural(n: number, noun: string) {
 }
 
 /**
+ * "11 chats · 5 files · updated yesterday", breakable only after a dot: each
+ * part keeps its own words together (no-break spaces), so a narrow tile wraps
+ * the line between parts instead of truncating it or splitting "5 / files".
+ */
+function metaLine(parts: string[]) {
+  return parts.map((part) => part.replace(/ /g, " ")).join(" · ");
+}
+
+/**
  * One project or folder. A 12px card with a 4px frame: the cover plate
  * reaches the frame and takes 8 (12 - 4); the name, excerpt and meta sit on
  * the 12px text inset. The cover is the project's own dot-matrix drawing
@@ -595,9 +615,14 @@ function plural(n: number, noun: string) {
  * (stretched over the tile); the folder names are links above it; pin and
  * menu surface on hover and focus, and are always there on touch.
  *
- * `compact` (a folder inside a project) keeps the cover, on a shallower
- * 2:1 plate on a finer dot pitch, and drops the excerpt: a folder is read by its name and its
- * drawing, the same object as a project at a smaller size.
+ * `compact` (a folder inside a project) is one short card: a folder glyph in
+ * a small well, the serif name, one meta line and its actions inline at the
+ * end. It used to keep the cover on a 2:1 plate, which made two folders about
+ * 300px tall and put them between the composer and the project's chats, the
+ * work the page is for. Same link, same drop target, same menu.
+ *
+ * Names wrap rather than truncate: a name cut mid-word ("…stake…") is the
+ * one thing a reader came to the tile to read.
  */
 export function ProjectTile({
   project: p,
@@ -644,55 +669,156 @@ export function ProjectTile({
   const excerpt = promptPreview(p.instructions ?? "");
   const hasActions = !!(onToggleStar || onRename || onMove || onDelete);
 
-  // A folder tile is narrow: chats, its own folders and the age, no prefix.
+  // A folder card is narrow: chats, its own folders and the age, no prefix.
   const meta = compact
     ? [plural(p.conversationCount ?? 0, "chat"), ...(folderCount > 0 ? [plural(folderCount, "folder")] : []), ...(p.updatedAt ? [timeAgo(p.updatedAt)] : [])]
     : [plural(p.conversationCount ?? 0, "chat"), plural(fileCount, "file"), ...(p.updatedAt ? [`updated ${timeAgo(p.updatedAt)}`] : [])];
+
+  const nameLink = (
+    <Link
+      href={`/projects/${p.id}`}
+      // On aim, not on sight: every tile in view used to fire its own
+      // partial prefetch on page load (lib/intent-prefetch.ts).
+      prefetch={false}
+      {...intentPrefetch(router, `/projects/${p.id}`)}
+      draggable={false}
+      className={cn(
+        "block text-balance break-words text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
+        compact ? "pj-name-sm" : "pj-name"
+      )}
+    >
+      {p.name}
+    </Link>
+  );
+
+  const actions = hasActions ? (
+    <>
+      {onToggleStar && (
+        <Pressable
+          kind="icon"
+          size="sm"
+          aria-pressed={!!p.starred}
+          aria-label={p.starred ? `Unpin ${p.name}` : `Pin ${p.name}`}
+          title={p.starred ? "Unpin" : "Pin"}
+          onClick={onToggleStar}
+          className="rounded-full"
+        >
+          <IconSwap
+            swapped={!!p.starred}
+            from={<Pin motion="none" className="size-3.5" />}
+            to={<Pin motion="none" weight="fill" className="size-3.5" />}
+          />
+        </Pressable>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`} title="More" className="rounded-full">
+            <ActionIcons.more className="size-3.5" aria-hidden="true" />
+          </Pressable>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className={MENU_W}>
+          {onToggleStar && (
+            <DropdownMenuItem onSelect={onToggleStar}>
+              {p.starred ? <PinOff className="size-4" aria-hidden="true" /> : <Pin className="size-4" aria-hidden="true" />}
+              <span>{p.starred ? "Unpin" : "Pin"}</span>
+            </DropdownMenuItem>
+          )}
+          {onNewFolder && (
+            <DropdownMenuItem onSelect={onNewFolder} disabled={!canNest}>
+              <Plus className="size-4" aria-hidden="true" />
+              <span>New folder inside</span>
+            </DropdownMenuItem>
+          )}
+          {onRename && (
+            <DropdownMenuItem onSelect={onRename}>
+              <ActionIcons.edit className="size-4" aria-hidden="true" />
+              <span>Rename</span>
+            </DropdownMenuItem>
+          )}
+          {onMove && (
+            <DropdownMenuItem onSelect={onMove}>
+              <Folder className="size-4" aria-hidden="true" />
+              <span>Move to…</span>
+            </DropdownMenuItem>
+          )}
+          {onDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={onDelete} variant="destructive">
+                <ActionIcons.delete className="size-4" aria-hidden="true" />
+                <span>Delete</span>
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  ) : null;
+
+  if (compact) {
+    // A 12px card with a 6px frame: the glyph's well reaches the frame and
+    // takes 6 (12 - 6). The actions sit inline at the end, surfaced on hover
+    // or focus and always there on touch; a pinned folder keeps its mark.
+    return (
+      <article
+        {...drop}
+        {...dragSourceProps({ kind: "project", id: p.id })}
+        className="pj-tile pj-tile-compact nest-card nest-p-1.5 group/tile relative flex h-full items-center gap-3"
+        style={{ ["--i" as string]: Math.min(index, 11) }}
+      >
+        <span className="pj-well grid size-10 shrink-0 place-items-center rounded-inner" aria-hidden="true">
+          <Folder className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1 py-0.5">
+          {pathLabel && <p className="pj-annot mb-0.5 break-words">{pathLabel}</p>}
+          {nameLink}
+          <p className="pj-annot mt-0.5">{metaLine(meta)}</p>
+        </div>
+        {hasActions && p.starred && (
+          <Pin
+            motion="none"
+            weight="fill"
+            className="pj-pinned pointer-events-none size-3.5 shrink-0 text-muted-foreground coarse:hidden"
+            aria-hidden="true"
+          />
+        )}
+        {actions && (
+          <div className="relative z-[2] flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 has-[[data-state=open]]:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+            {actions}
+          </div>
+        )}
+      </article>
+    );
+  }
 
   return (
     <article
       {...drop}
       {...dragSourceProps({ kind: "project", id: p.id })}
-      className={cn("pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col", compact && "pj-tile-compact")}
+      className="pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col"
       style={{ ["--i" as string]: Math.min(index, 11) }}
     >
-      <div className={cn("pj-cover relative w-full overflow-hidden rounded-inner", compact ? "aspect-[16/7] @[30rem]/page:aspect-[2/1]" : "aspect-[16/7]")}>
+      <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-inner">
         {p.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={p.coverUrl} alt="" className="pj-cover-art size-full object-cover" draggable={false} />
         ) : (
-          <ProjectCover id={p.id} folders={folderCount} live={live} index={index} aspect={compact ? 2 : undefined}
-            className={compact ? "pj-cover-art-sm" : undefined} />
+          <ProjectCover id={p.id} folders={folderCount} live={live} index={index} />
         )}
       </div>
 
-      <div className={cn("flex flex-1 flex-col px-3", compact ? "pb-2.5 pt-3" : "pb-3 pt-3.5")}>
-        {pathLabel && <p className="pj-annot mb-1 truncate pr-6">{pathLabel}</p>}
-        <Link
-          href={`/projects/${p.id}`}
-          // On aim, not on sight: every tile in view used to fire its own
-          // partial prefetch on page load (lib/intent-prefetch.ts).
-          prefetch={false}
-          {...intentPrefetch(router, `/projects/${p.id}`)}
-          draggable={false}
-          className={cn(
-            "block truncate text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
-            compact ? "pj-name-sm" : "pj-name"
-          )}
-        >
-          {p.name}
-        </Link>
-        {!compact && (
-          <p className={cn("mt-1 truncate text-ui", excerpt ? "text-muted-foreground" : "text-muted-foreground/70")}>
-            {excerpt || "No instructions yet"}
-          </p>
-        )}
+      <div className="flex flex-1 flex-col px-3 pb-3 pt-3.5">
+        {pathLabel && <p className="pj-annot mb-1 break-words pr-6">{pathLabel}</p>}
+        {nameLink}
+        <p className="mt-1 truncate text-ui text-muted-foreground">
+          {excerpt || "No instructions yet"}
+        </p>
 
-        {!compact && folders.length > 0 && (
+        {folders.length > 0 && (
           <p className="relative z-[1] mt-3 flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
             <Folder className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="shrink-0 text-foreground/80">{plural(folders.length, "folder")}</span>
-            <span className="shrink-0 text-muted-foreground/60" aria-hidden="true">·</span>
+            <span className="shrink-0 text-foreground">{plural(folders.length, "folder")}</span>
+            <span className="shrink-0 text-ink-tertiary" aria-hidden="true">·</span>
             <span className="min-w-0 truncate">
               {folders.slice(0, FOLDER_NAMES).map((folder, i) => (
                 <React.Fragment key={folder.id}>
@@ -711,79 +837,27 @@ export function ProjectTile({
           </p>
         )}
 
-        <p className={cn("pj-annot mt-auto truncate", compact ? "pt-1.5" : "pt-4")}>{meta.join(" · ")}</p>
+        {/* Counts on the left, the age on the right: when a narrow tile has
+            no room for both, the age drops to its own line whole, rather than
+            the line being cut or a dot left hanging at its end. */}
+        <p className="pj-annot mt-auto flex flex-wrap items-baseline justify-between gap-x-3 pt-4">
+          <span>{metaLine(meta.slice(0, 2))}</span>
+          {p.updatedAt && <span>{metaLine([`Updated ${timeAgo(p.updatedAt)}`])}</span>}
+        </p>
       </div>
 
       {hasActions && p.starred && (
         <span
-          className="pj-pinned pointer-events-none absolute right-3 top-3 z-[2] grid size-7 place-items-center text-foreground/75 coarse:hidden"
+          className="pj-pinned pointer-events-none absolute right-3 top-3 z-[2] grid size-7 place-items-center text-muted-foreground coarse:hidden"
           aria-hidden="true"
         >
           <Pin motion="none" weight="fill" className="size-3.5" />
         </span>
       )}
 
-      {hasActions && (
+      {actions && (
         <div className="pj-actions absolute right-3 top-3 z-[2] flex items-center gap-0.5 rounded-full p-0.5">
-          {onToggleStar && (
-            <Pressable
-              kind="icon"
-              size="sm"
-              aria-pressed={!!p.starred}
-              aria-label={p.starred ? `Unpin ${p.name}` : `Pin ${p.name}`}
-              title={p.starred ? "Unpin" : "Pin"}
-              onClick={onToggleStar}
-              className="rounded-full"
-            >
-              <IconSwap
-                swapped={!!p.starred}
-                from={<Pin motion="none" className="size-3.5" />}
-                to={<Pin motion="none" weight="fill" className="size-3.5" />}
-              />
-            </Pressable>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`} title="More" className="rounded-full">
-                <ActionIcons.more className="size-3.5" aria-hidden="true" />
-              </Pressable>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className={MENU_W}>
-              {onToggleStar && (
-                <DropdownMenuItem onSelect={onToggleStar}>
-                  {p.starred ? <PinOff className="size-4" aria-hidden="true" /> : <Pin className="size-4" aria-hidden="true" />}
-                  <span>{p.starred ? "Unpin" : "Pin"}</span>
-                </DropdownMenuItem>
-              )}
-              {onNewFolder && (
-                <DropdownMenuItem onSelect={onNewFolder} disabled={!canNest}>
-                  <Plus className="size-4" aria-hidden="true" />
-                  <span>New folder inside</span>
-                </DropdownMenuItem>
-              )}
-              {onRename && (
-                <DropdownMenuItem onSelect={onRename}>
-                  <ActionIcons.edit className="size-4" aria-hidden="true" />
-                  <span>Rename</span>
-                </DropdownMenuItem>
-              )}
-              {onMove && (
-                <DropdownMenuItem onSelect={onMove}>
-                  <Folder className="size-4" aria-hidden="true" />
-                  <span>Move to…</span>
-                </DropdownMenuItem>
-              )}
-              {onDelete && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={onDelete} variant="destructive">
-                    <ActionIcons.delete className="size-4" aria-hidden="true" />
-                    <span>Delete</span>
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {actions}
         </div>
       )}
     </article>
@@ -791,14 +865,18 @@ export function ProjectTile({
 }
 
 /**
- * The Folders section's empty state: no dashed placeholder, an invitation in
- * the tile's own language. A cover plate drawn for this project's folders
- * (three spokes from the hub, the presence trajectory on its way round) next
- * to a serif line, a sentence and the one action. Where the tree is already
- * as deep as it goes, the action gives way to the reason, in mono.
+ * The Folders section's empty state: one sentence and the one action, on a
+ * single line where the column allows. It was a cover plate with its own
+ * serif title beside the sentence, ~200px on a desktop and twice that on a
+ * phone, on most projects (most have no folders), between the composer and
+ * the chats the page is for. The section's heading already says "Folders".
+ * Where the tree is already as deep as it goes, the action gives way to the
+ * reason.
+ *
+ * `projectId` is kept for callers; nothing is drawn from it any more.
  */
 export function FoldersEmpty({
-  projectId,
+  projectId: _projectId,
   projectName,
   onNewFolder,
   disabledReason,
@@ -808,24 +886,21 @@ export function FoldersEmpty({
   onNewFolder: () => void;
   disabledReason?: string | null;
 }) {
+  // A long name reads as a second title inside the sentence; the page's H1
+  // already says which project this is.
+  const subject = projectName.length <= 32 ? projectName : "this project";
   return (
-    <div className="pj-empty grid items-center gap-5 @[34rem]/page:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] @[34rem]/page:gap-7">
-      <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-card">
-        <ProjectCover id={`${projectId}:folders`} folders={3} live aspect={16 / 7} />
-      </div>
-      <div className="min-w-0">
-        <h3 className="pj-name-sm text-foreground">Arrange it in folders</h3>
-        <p className="mt-1.5 max-w-[34ch] text-pretty text-ui leading-relaxed text-muted-foreground">
-          A folder keeps one part of {projectName} together. Drag a chat onto it to file it there.
-        </p>
-        {disabledReason ? (
-          <p className="pj-annot mt-4">{disabledReason}</p>
-        ) : (
-          <Button variant="outline" size="sm" className="mt-4" onClick={onNewFolder}>
-            <Plus className="size-4" aria-hidden="true" /> New folder
-          </Button>
-        )}
-      </div>
+    <div className="pj-empty flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+      <p className="min-w-0 max-w-[56ch] flex-1 basis-64 text-pretty text-ui text-muted-foreground">
+        Keep one part of {subject} together in a folder, then drag chats onto it.
+      </p>
+      {disabledReason ? (
+        <p className="pj-annot">{disabledReason}</p>
+      ) : (
+        <Button variant="outline" size="sm" className="shrink-0" onClick={onNewFolder}>
+          <Plus className="size-4" aria-hidden="true" /> New folder
+        </Button>
+      )}
     </div>
   );
 }

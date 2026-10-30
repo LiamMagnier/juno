@@ -1259,6 +1259,11 @@ paths:
       servers: [{ url: /api }]
       operationId: hireNativeAgent
       summary: Hire an agent, with its thread and optional first goal
+      description: >-
+        Hiring needs a plan that includes agents. On any other plan the server
+        answers 402 with `error: plan_locked`, `upgradePlan` (the cheapest plan
+        that includes them) and a sentence to show, and creates nothing.
+        Agents an account kept from before a downgrade stay listed and readable.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AgentHireRequest' } } }
@@ -1268,6 +1273,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/AgentResponse' } } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '402': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '409': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
@@ -1413,6 +1419,12 @@ paths:
     post:
       servers: [{ url: /api }]
       operationId: createNativeAgentNote
+      description: >-
+        Notes are screened for secrets: one that puts a value beside a
+        password, PIN, code, key or login (in the languages the app ships) is
+        refused with 422 (`note_secret`); a key, token or card number inside a
+        sentence is masked before it is stored. The screen is a rule over
+        words, so a secret phrased another way can get through.
       requestBody:
         required: true
         content:
@@ -1426,6 +1438,7 @@ paths:
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '422': { $ref: '#/components/responses/GeneralRouteError' }
   /agents/{agentId}/notes/{noteId}:
     parameters:
       - { in: path, name: agentId, required: true, schema: { type: string } }
@@ -1433,19 +1446,28 @@ paths:
     patch:
       servers: [{ url: /api }]
       operationId: updateNativeAgentNote
-      description: An edited note becomes the person's words (`source` = user).
+      description: >-
+        An edited note becomes the person's words (`source` = user) and is
+        kept. `{ "action": "keep" }` instead keeps, unchanged, a note the agent
+        saved in a task that waits for review (`pendingNotes` on the agent's
+        detail); keeping one already kept answers `replay: true`. Screened like
+        a new note (422 `note_secret`).
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [content], properties: { content: { type: string, maxLength: 1000 } } }
+            schema:
+              oneOf:
+                - { type: object, required: [content], properties: { content: { type: string, maxLength: 1000 } } }
+                - { type: object, required: [action], additionalProperties: false, properties: { action: { type: string, enum: [keep] } } }
       responses:
         '200':
           description: The note after the change.
-          content: { application/json: { schema: { type: object, required: [note], properties: { note: { $ref: '#/components/schemas/AgentNote' } } } } }
+          content: { application/json: { schema: { type: object, required: [note], properties: { note: { $ref: '#/components/schemas/AgentNote' }, replay: { type: boolean } } } } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '422': { $ref: '#/components/responses/GeneralRouteError' }
     delete:
       servers: [{ url: /api }]
       operationId: deleteNativeAgentNote
@@ -5451,7 +5473,8 @@ components:
         agentId: { type: string }
         title: { type: string }
         detail: { type: string }
-        status: { type: string, enum: [active, paused, achieved, dropped] }
+        # unverified: every step ran but its success criteria were not shown to be met (server-set only).
+        status: { type: string, enum: [active, paused, achieved, dropped, unverified] }
         cadence: { type: string, enum: [none, daily, weekly] }
         lastCheckInAt: { type: [string, 'null'], format: date-time }
         lastCheckInNote: { type: [string, 'null'] }
@@ -5513,6 +5536,8 @@ components:
         goals: { type: array, items: { $ref: '#/components/schemas/AgentGoal' } }
         ideas: { type: array, items: { $ref: '#/components/schemas/AgentIdea' } }
         notes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
+        # Notes a task saved that wait for the person to keep or forget. Never in `notes`.
+        pendingNotes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
         routines: { type: array, items: { $ref: '#/components/schemas/AgentRoutine' } }
         tasks: { type: array, items: { $ref: '#/components/schemas/AgentTaskGlance' } }
     AgentTaskStarted:

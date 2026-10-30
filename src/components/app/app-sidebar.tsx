@@ -91,7 +91,7 @@ import { useNotifications } from "@/components/notifications/use-notifications";
 import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
 import { unreadDetail } from "@/components/notifications/inbox-model";
 import { AGENT_STATE_NAMES, BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
-import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
+import { AGENT_STATE_LABEL } from "@/lib/agents/state-labels";
 import { useCrossMessageInbox } from "@/components/chat/use-cross-messages";
 import { CrossMessagesMenuItem } from "@/components/chat/cross-messages-menu-item";
 import { useReducedMotion } from "@/lib/motion-preference";
@@ -264,8 +264,32 @@ type AttentionItem = {
   conversationId: string | null;
 };
 
+/**
+ * Whether a row in Needs you is one the person has already answered: the run
+ * was parked, their answer or decision put it back in the queue, and it stays
+ * here, as resuming, until an executor picks it up (`requeueParkedRun`).
+ */
+function isResuming(status: string | undefined): boolean {
+  return status === "queued" || status === "preparing";
+}
+
+/**
+ * A row in Needs you whose run is `paused`: the executor set it aside after
+ * waiting a while for an answer or an approval. A run the person paused is
+ * asking nothing and is never in Needs you: `parkRun` sets the session's
+ * `needsAttention` only for the executor's own wait (`pauseReason: "waiting"`),
+ * so callers check `needsAttention` before using these words. The session
+ * does not say which of the two it parked on, so its words fit both, and never
+ * "You stopped this".
+ */
+function isParked(status: string | undefined): boolean {
+  return status === "paused";
+}
+
 /** A run's waiting status, in the words Orbit uses for it. */
 function askWords(status: string | undefined): string {
+  if (isResuming(status)) return "Resuming";
+  if (isParked(status)) return "Waiting for you";
   if (status === "waiting_approval") return "Needs your approval";
   if (status === "host_offline") return "Waiting for your Mac";
   return AGENT_STATE_NAMES.needsAnswer;
@@ -278,6 +302,8 @@ function askWords(status: string | undefined): string {
  * room for two or three words of the task itself.
  */
 function shortAsk(status: string | undefined): string {
+  if (isResuming(status)) return "Resuming";
+  if (isParked(status)) return "Waiting";
   if (status === "waiting_approval") return "Approval";
   if (status === "host_offline") return "Mac offline";
   return "Answer";
@@ -908,10 +934,15 @@ export function AppSidebar({
     const signals = new Map<string, RowSignal>();
     for (const [conversationId, session] of workRuns.byConversation) {
       if (!workRunIsOpen(session.status, session.needsAttention)) continue;
+      // Parked waiting for the person (the executor's pause, so it is in
+      // Needs you): "Paused · You stopped this" would be untrue.
+      const parked = session.needsAttention && isParked(session.status);
       signals.set(conversationId, {
-        tone: statusTone(session.status),
-        label: statusLabel(session.status),
-        meaning: statusSentence(session.status),
+        tone: parked ? "attention" : statusTone(session.status),
+        label: parked ? "Needs you" : statusLabel(session.status),
+        meaning: parked
+          ? "Waiting for your answer or approval. It carries on once you reply."
+          : statusSentence(session.status),
       });
     }
     return signals;

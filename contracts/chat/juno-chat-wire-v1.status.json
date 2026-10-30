@@ -1,5 +1,10 @@
 {
   "$comment": "The native status of every field on the chat wire (POST /api/chat and its SSE frames). Read by scripts/generate-chat-wire-contract.ts, which stamps each status into contracts/chat/juno-chat-wire-v1.schema.json as `x-native` and fails `npm run native:wire:check` on a field nobody has classified. native: the Swift apps send or read it today (checked against the Swift sources under `swift`). planned: native means to; the gap is known. web-only: only the web sends or reads it, by decision; the note says why. A field under a native parent must be listed; a field under a planned or web-only parent inherits it. `nativeOnly` lists keys the Swift sends or reads that today's web does not define; each fails the check once the web defines it, so it moves into `fields`.",
+  "version": "1.1.0",
+  "changes": {
+    "1.0.0": "The wire as generated before the contract carried a version.",
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+  },
   "fields": {
     "request.conversationId": "native",
     "request.projectId": {
@@ -205,6 +210,26 @@
       "status": "web-only",
       "note": "Durable first-submission failure code, as meta.receiptState."
     },
+    "stream.error.errorClass": {
+      "status": "native",
+      "note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery as a string; set only when the turn failed at its provider. A provider-account fault arrives as account, never as auth or billing."
+    },
+    "stream.error.retryable": {
+      "status": "native",
+      "note": "Chat wire 1.1. Decoded; the cards do not use it yet."
+    },
+    "stream.error.retryAfterSeconds": {
+      "status": "native",
+      "note": "Chat wire 1.1. Decoded; the cards do not use it yet."
+    },
+    "stream.error.suggestedModelId": {
+      "status": "native",
+      "note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model>, sent as Switch Model sends a model. The iPhone decodes it and does not show it yet."
+    },
+    "stream.error.suggestedModelName": {
+      "status": "native",
+      "note": "Chat wire 1.1. The label of the Mac's Answer with <model> button."
+    },
     "stream.ping": "native",
     "ClientMessage.id": "native",
     "ClientMessage.role": "native",
@@ -244,6 +269,10 @@
     "ClientMessage.progress": {
       "status": "web-only",
       "note": "Client-transient on the web (use-chat sets it); the server never sends it."
+    },
+    "ClientMessage.recovery": {
+      "status": "web-only",
+      "note": "Client-transient on the web: use-chat copies the error frame's 1.1 fields onto the failed turn. The server never sends it on a message; native keeps the same fields on NativeChatMessage from the frame itself."
     },
     "ClientMessage.promptTokens": "native",
     "ClientMessage.completionTokens": "native",

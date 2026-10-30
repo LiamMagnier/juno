@@ -19,10 +19,16 @@
  *     `maxAttemptsPerStep`. One interrupted after it started acting is not:
  *     it may already have changed something, so the goal waits for the person.
  *   - A failed step waits for the person. The goal never loops on failure.
- *   - All milestones done: the goal is achieved.
+ *   - All milestones done is not "met". The final step's run checks the
+ *     success criteria against what the steps produced (the Work judge, with
+ *     the agent's model: src/lib/agents/goal-criteria.ts). Only a check that
+ *     passed makes the goal `achieved`; anything else leaves it `unverified`,
+ *     "Every step ran. Check the result.", for the person to mark met or keep
+ *     going (`planGoalCompletion`).
  *
  * Pure and client-safe.
  */
+import { RESTART_PAUSE_REASON } from "@/lib/work/restart-resume-rules";
 
 export const MAX_GOAL_MILESTONES = 12;
 export const MAX_GOAL_CRITERIA = 8;
@@ -114,6 +120,16 @@ export interface GoalStepNotStarted {
 /** The goal's line while a step waits on a heartbeat that could not be read. */
 export const GOAL_WAITING_ON_EXECUTOR_CHECK = "Waiting to check that a cloud worker is running";
 
+/** The goal's line while its step waits for the person, attached or parked. */
+export const GOAL_WAITING_FOR_ANSWER = "Waiting for your answer on the current task";
+
+/**
+ * The goal's line while its step's run is set aside for a server restart
+ * (src/lib/work/restart-resume.ts). The next runner continues it or ends it
+ * `interrupted`; nobody needs to press resume, so it is not the person's pause.
+ */
+export const GOAL_WAITING_FOR_RESTART = "Set aside for a server restart; waiting for it to finish";
+
 /**
  * What a step that did not start writes on the goal. Pure: the driver applies it.
  *
@@ -174,6 +190,20 @@ export interface GoalTaskView {
   acted: boolean;
   costMicroUsd: number;
   createdAt: Date;
+  /**
+   * The current run is parked (`paused`) and why: `waiting` when the executor
+   * set it aside to wait for an answer or approval, `user` when the person
+   * paused it, `server_restart` when a runner going away set it aside for the
+   * next one. Null or absent for anything else.
+   */
+  pauseReason?: string | null;
+  /**
+   * The current run was ended because it waited out the parked-run expiry
+   * (`PARKED_GOAL_STEP_EXPIRED_DETAIL` in src/lib/work/store.ts) rather than
+   * being interrupted mid-work. Retrying it on its own would only stop on the
+   * same question again, so the goal asks the person instead.
+   */
+  waitedOut?: boolean;
 }
 
 export interface GoalView {
@@ -208,7 +238,7 @@ export type GoalStep =
   | { kind: "retry"; sessionId: string; stepKey: string; attempt: number; nextAction: string }
   /** A step's task completed: mark it, then the next advance starts the next step. */
   | { kind: "complete_step"; sessionId: string; stepKey: string; nextAction: string }
-  /** Every milestone is done. */
+  /** Every milestone ran. Met or unverified is the criteria check's to say (`planGoalCompletion`). */
   | { kind: "achieved"; nextAction: string }
   /** Stop and ask the person. The goal pauses for a bound, or waits for a decision. */
   | { kind: "ask"; blocker: GoalBlocker; pause: boolean; nextAction: string };
@@ -258,11 +288,25 @@ export function planGoalStep(
 
   const live = tasks.find((task) => LIVE.has(task.status));
   if (live) {
-    const waiting = live.status === "waiting_input" || live.status === "waiting_approval";
+    // A step parked by the executor (`paused`, waiting) is waiting on the
+    // person exactly as one still attached is; it is not working.
+    const waiting =
+      live.status === "waiting_input" ||
+      live.status === "waiting_approval" ||
+      (live.status === "paused" && live.pauseReason === "waiting");
+    // Set aside by a runner going away: the next runner deals with it, not the person.
+    const setAsideForRestart = live.status === "paused" && live.pauseReason === RESTART_PAUSE_REASON;
+    const pausedByPerson = live.status === "paused" && !waiting && !setAsideForRestart;
     return {
       kind: "idle",
       reason: "task_in_flight",
-      nextAction: waiting ? "Waiting for your answer on the current task" : "Working on the current step",
+      nextAction: waiting
+        ? GOAL_WAITING_FOR_ANSWER
+        : setAsideForRestart
+          ? GOAL_WAITING_FOR_RESTART
+          : pausedByPerson
+            ? "Paused on the current step; resume it to continue"
+            : "Working on the current step",
     };
   }
 
@@ -287,6 +331,21 @@ export function planGoalStep(
       pause: false,
       blocker: { kind: "step_failed", text: `The task for "${step?.title ?? goal.title}" didn't finish. Retry it, change the goal, or drop it.`, at: nowIso },
       nextAction: "Waiting for your decision on the failed step",
+    };
+  }
+  if (last && last.waitedOut && RETRYABLE_INTERRUPT.has(last.status)) {
+    // Stopped after waiting a day for an answer that never came. Not retried
+    // on its own: a fresh attempt would stop on the same question again and
+    // spend a run of the goal's bound doing it. Continue retries it.
+    return {
+      kind: "ask",
+      pause: false,
+      blocker: {
+        kind: "needs_decision",
+        text: `"${step?.title ?? goal.title}" waited 24 hours for your answer and was stopped. Retry it, change the goal, or drop it.`,
+        at: nowIso,
+      },
+      nextAction: "Waiting for you: the step stopped waiting for an answer",
     };
   }
   if (last && RETRYABLE_INTERRUPT.has(last.status)) {
@@ -354,6 +413,142 @@ export function planGoalStep(
     idempotencyKey: `goal:${goal.id}:${stepKey}:${goal.runsUsed + 1}`,
     nextAction: attempt > 1 ? `Starting "${stepTitle}" again` : `Starting "${stepTitle}"`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Met, or only run: the success criteria
+// ---------------------------------------------------------------------------
+
+/**
+ * The status a goal takes when every milestone ran but its success criteria
+ * were not shown to be met. Only the driver sets it; the person then marks it
+ * met or keeps it going.
+ */
+export const GOAL_UNVERIFIED = "unverified";
+
+/** What the final step's run concluded about the goal's criteria (src/lib/agents/goal-criteria.ts). */
+export type GoalCriteriaVerdict = "met" | "not_met" | "unchecked";
+
+export interface GoalCriteriaCheck {
+  verdict: GoalCriteriaVerdict;
+  /** One line from the check: why it passed, or the first criterion not shown. Null when it did not run. */
+  why: string | null;
+}
+
+/** A stored check read back (an AgentEvent's detail); anything unreadable is null, never "met". */
+export function readGoalCriteriaCheck(detail: unknown): GoalCriteriaCheck | null {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const row = detail as Record<string, unknown>;
+  const verdict = row.verdict === "met" || row.verdict === "not_met" || row.verdict === "unchecked" ? row.verdict : null;
+  if (!verdict) return null;
+  return { verdict, why: typeof row.why === "string" && row.why.trim() ? oneLine(row.why, 300) : null };
+}
+
+/** The line a goal shows when every step ran and the check did not pass, or could not run. */
+export const GOAL_UNVERIFIED_LINE = "Every step ran. Check the result.";
+
+/**
+ * Every milestone ran: is the goal met? Only when its success criteria were
+ * checked and the check passed. Anything else (a NOT MET, a check that could
+ * not run, a step that ran where no check could be made, such as a Mac) is
+ * `unverified`, said in words, for the person to decide. Never fails open:
+ * no check is never read as a pass. Pure: the driver applies it.
+ */
+export function planGoalCompletion(input: { title: string; check: GoalCriteriaCheck | null }): {
+  status: "achieved" | typeof GOAL_UNVERIFIED;
+  nextAction: string;
+  event: { kind: "goal_achieved" | "goal_unverified"; title: string };
+} {
+  const { check } = input;
+  if (check?.verdict === "met") {
+    return {
+      status: "achieved",
+      nextAction: check.why ? `Met: every step ran and its criteria were checked. ${check.why}` : "Met: every step ran and its criteria were checked",
+      event: { kind: "goal_achieved", title: `Met the goal: ${input.title}` },
+    };
+  }
+  const nextAction =
+    check?.verdict === "not_met"
+      ? `${GOAL_UNVERIFIED_LINE} A check against its criteria found a gap${check.why ? `: ${check.why}` : "."}`
+      : `${GOAL_UNVERIFIED_LINE} Its criteria could not be checked, so nothing says it is met yet.`;
+  return {
+    status: GOAL_UNVERIFIED,
+    nextAction,
+    event: { kind: "goal_unverified", title: `Every step of "${input.title}" ran. Check the result.` },
+  };
+}
+
+/**
+ * "Keep working" on an unverified goal: one more milestone, aimed at what the
+ * check found missing (or at the criteria in general when it could not run),
+ * so the driver has a concrete step rather than re-reading "every milestone
+ * is done". Refused when the goal already has the most milestones it may.
+ */
+export function reopenUnverifiedGoal(
+  milestones: readonly GoalMilestone[],
+  gap: string | null
+): { ok: true; milestones: GoalMilestone[] } | { ok: false; message: string } {
+  if (milestones.length >= MAX_GOAL_MILESTONES) {
+    return {
+      ok: false,
+      message: `This goal already has ${MAX_GOAL_MILESTONES} milestones. Tell the agent what is missing in its thread, or mark the goal met.`,
+    };
+  }
+  const ids = new Set(milestones.map((m) => m.id));
+  let n = 1;
+  while (ids.has(`follow_up_${n}`)) n += 1;
+  const title = gap ? oneLine(`Close the gap the check found: ${gap}`, 160) : "Show that every success criterion is met";
+  return { ok: true, milestones: [...milestones, { id: `follow_up_${n}`, title, done: false, sessionId: null, doneAt: null }] };
+}
+
+/** Whether the step a run is working on is the goal's last one left: the run that may check its criteria. */
+export function isFinalGoalStep(milestones: readonly GoalMilestone[], stepKey: string | null | undefined): boolean {
+  if (!stepKey || stepKey === GOAL_NEXT_STEP_KEY || milestones.length === 0) return false;
+  const left = milestones.filter((m) => !m.done);
+  return left.length === 1 && left[0]!.id === stepKey;
+}
+
+/** The milestone that finished last: its run is the one that checked the criteria. */
+export function lastFinishedMilestone(milestones: readonly GoalMilestone[]): GoalMilestone | null {
+  let latest: GoalMilestone | null = null;
+  for (const m of milestones) {
+    if (!m.done || !m.sessionId) continue;
+    if (!latest || (m.doneAt ?? "") >= (latest.doneAt ?? "")) latest = m;
+  }
+  return latest;
+}
+
+/** One step's result as the criteria check reads it. */
+export interface GoalStepResult {
+  title: string;
+  /** The run's final answer, or null when none was written. */
+  answer: string | null;
+  /** Titles of the files it produced. */
+  artifacts: readonly string[];
+}
+
+/**
+ * Per step, and in all: the check reads what was produced, not every word of
+ * it. The defaults; `AGENT_GOAL_CHECK_STEP_CHARS` and
+ * `AGENT_GOAL_CHECK_TOTAL_CHARS` tune them (src/lib/agents/orbit-limits.ts).
+ */
+export const GOAL_CHECK_STEP_CHARS = 1_500;
+export const GOAL_CHECK_TOTAL_CHARS = 8_000;
+
+/** What the goal's steps produced, bounded, for the criteria check. */
+export function composeGoalDeliverables(
+  steps: readonly GoalStepResult[],
+  bounds: { stepChars: number; totalChars: number } = { stepChars: GOAL_CHECK_STEP_CHARS, totalChars: GOAL_CHECK_TOTAL_CHARS }
+): string {
+  const { stepChars, totalChars } = bounds;
+  const blocks = steps.map((step) => {
+    const answer = step.answer?.trim() ? step.answer.trim() : "(no written answer)";
+    const clipped = answer.length > stepChars ? `${answer.slice(0, stepChars - 1)}…` : answer;
+    const files = step.artifacts.length ? `\nFiles: ${step.artifacts.slice(0, 10).join(", ")}` : "";
+    return `## ${step.title}\n${clipped}${files}`;
+  });
+  const text = blocks.join("\n\n");
+  return text.length > totalChars ? `${text.slice(0, totalChars - 1)}…` : text;
 }
 
 /** Milestones after a step's task completed. */

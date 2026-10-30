@@ -179,6 +179,9 @@ model User {
   agentEvents                 AgentEvent[]
   agentComputers              AgentComputer[]
   agentComputerHandoffs       AgentComputerHandoff[]
+  agentComputerUsage          AgentComputerUsageInterval[]
+  agentComputerAudits         AgentComputerAudit[]
+  computerShellOutputs        ComputerShellOutput[]
   agentSetupChanges           AgentSetupChange[]
   agentRoomMembers            AgentRoomMember[]
   agentRoomTurns              AgentRoomTurn[]
@@ -3402,6 +3405,7 @@ model WorkRun {
   io        WorkRunIO[]
   commands  WorkCommand[]
   toolRuns  ToolRun[]
+  computerShellOutputs ComputerShellOutput[]
 
   @@unique([sessionId, attempt])
   @@unique([userId, idempotencyKey])
@@ -4688,6 +4692,9 @@ model Agent {
   /// The Mac (WorkHost id) a `mac` agent prefers. Null: any Mac switched on
   /// for Work. Re-checked against the account at every dispatch.
   preferredHostId String?
+  /// off | ask | allowed. Whether its Work runs may use its computer, and whether the
+  /// first use asks the person. Set by the person (panel, chat card), never by the agent.
+  computerPolicy  String  @default("ask")
 
   /// needs_you | results | all. Which notifications this agent sends.
   notify            String    @default("results")
@@ -4814,6 +4821,11 @@ model AgentNote {
   content String @db.Text
   /// user | agent | reflection
   source  String @default("user")
+  /// kept | pending. A note an agent saved during one of its tasks waits as
+  /// `pending` when its "What it may remember" setting asks the person to
+  /// review it (src/lib/agents/run-notes.ts). Nothing reads a pending note
+  /// (its turns, its tasks, reflection) until the person keeps it.
+  status  String @default("kept")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4884,6 +4896,9 @@ model AgentComputer {
   /// ran and another after was overlapped by a takeover, even one that began
   /// and ended inside the call, and its result is discarded.
   takeoverEpoch     Int       @default(0)
+  /// The last time the sweep reached this computer through its provider. Metering of an
+  /// awake computer stops here while its host is unreachable. Written by the sweep.
+  lastContactAt     DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -4891,6 +4906,70 @@ model AgentComputer {
 
   @@index([userId, status])
   @@index([status, lastActiveAt])
+}
+
+/// One metered awake interval of an agent's computer, counted against the
+/// account's weekly allowance (src/lib/computer/store.ts). Idempotent per
+/// (agentId, startedAt), like the spend key. No foreign key to Agent: usage
+/// must survive an agent's deletion within the week.
+model AgentComputerUsageInterval {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  startedAt DateTime
+  seconds   Int
+  /// Monday 00:00 UTC of the week `startedAt` falls in.
+  weekStart DateTime
+  runId     String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, startedAt])
+  @@index([userId, weekStart])
+}
+
+/// Streamed `computer_shell` output, for the read-only terminal pane
+/// (COMPUTERS_2026-10.md S5.1, writer: src/lib/computer/shell-output.ts). Each
+/// call writes a `command` row first and an `exit` row last; `text` is
+/// encryptSecret() of at most 16 KB of plaintext. The model's own result is
+/// unchanged and still lands in the run; this is only what the person watches.
+model ComputerShellOutput {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  runId     String
+  callId    String
+  seq       Int
+  /// command | stdout | stderr | exit
+  stream    String
+  /// encryptSecret(text); at most 16 KB of plaintext per row
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  run       WorkRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, callId, seq])
+  @@index([userId, agentId, createdAt])
+}
+
+/// Operator audit for computers. Identifiers and verdicts only (writer:
+/// src/lib/computer/audit.ts): never a path, a command, a container id, an
+/// address, a password or a token.
+model AgentComputerAudit {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  /// enabled | disabled | reset | policy_changed | started | woke | slept | … (audit.ts)
+  kind      String
+  detail    Json     @default("{}")
+  /// web | app | runner | sweep | chat | system
+  actor     String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([kind, createdAt])
 }
 
 /// A one-time link that opens an agent's computer in a web view (the apps'

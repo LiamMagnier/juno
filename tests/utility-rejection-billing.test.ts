@@ -32,7 +32,7 @@ const stubs: Record<string, unknown> = {
     for (const event of events) yield event;
     if (failure) throw failure;
   } },
-  "@/lib/models": { MODEL_LIST: [model], getModel: () => model },
+  "@/lib/models": { MODEL_LIST: [model], getModel: () => model, DEFAULT_MODEL: model.id, FREE_DEFAULT_MODEL: model.id },
   "@/lib/providers": { isProviderConfigured: () => true },
   "@/lib/model-metrics": { getModelMetrics: () => ({ speed: 100 }) },
   "@/lib/spend": {

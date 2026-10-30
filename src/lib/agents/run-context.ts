@@ -35,8 +35,10 @@ export async function loadAgentRunPersona(input: { userId: string; agentId: stri
     }),
     // `deletedAt: null`: "Forget this" is a soft delete, and a note the
     // person asked the agent to forget must not reach its runs either.
+    // `status: "kept"`: a note a task saved that waits for the person's
+    // review (src/lib/agents/note-review.ts) reaches nothing until kept.
     prisma.agentNote.findMany({
-      where: { userId: input.userId, agentId: input.agentId, deletedAt: null },
+      where: { userId: input.userId, agentId: input.agentId, deletedAt: null, status: "kept" },
       orderBy: { updatedAt: "desc" },
       take: 24,
       select: { content: true },

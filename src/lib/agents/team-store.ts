@@ -33,6 +33,7 @@ import {
   renewRunLease,
 } from "@/lib/work/store";
 import { WORK_LIVE_STATUSES, WORK_TERMINAL_STATUSES, type WorkPermissionPolicy } from "@/lib/work/domain";
+import { WORK_CAPPED_LIVE_STATUSES } from "@/lib/work/park-resume-rules";
 import { GOAL_ACTING_EVENT_KINDS } from "@/lib/agents/goals";
 import {
   TEAM_NODE_MAX_ATTEMPTS,
@@ -47,7 +48,11 @@ import {
   type TeamRole,
 } from "@/lib/agents/team";
 
-/** The account's live-run cap, mirrored from dispatch (WORK_RUN_CONCURRENCY_CAP). */
+/**
+ * The account's live-run cap, mirrored from dispatch (WORK_RUN_CONCURRENCY_CAP),
+ * counted over the same statuses (`WORK_CAPPED_LIVE_STATUSES`: parked runs hold
+ * no executor and are not counted).
+ */
 const ACCOUNT_RUN_CAP = 3;
 /** Attempts of the lead (coordinator restarts) before the team gives up. */
 const MAX_LEAD_ATTEMPTS = 5;
@@ -303,7 +308,7 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
     }
   }
 
-  const live = await prisma.workRun.count({ where: { userId, status: { in: [...WORK_LIVE_STATUSES] } } });
+  const live = await prisma.workRun.count({ where: { userId, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } } });
   const tick = planTeamTick(states, Math.max(0, ACCOUNT_RUN_CAP - live));
 
   for (const role of tick.skip) {

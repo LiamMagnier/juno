@@ -288,9 +288,71 @@ export const env = {
       }
       return positiveNumber(process.env.AGENT_COMPUTER_SLEEP_HOURS, 0.5);
     },
-    /** Days asleep before a computer, its sign-ins and its files are destroyed. */
-    get retentionDays(): number {
-      return positiveNumber(process.env.COMPUTER_RETENTION_DAYS, 30);
+    // No retention getter here: deleting computers by age is an owner decision
+    // behind a switch of its own, parsed only in src/lib/computer/retention.ts
+    // (COMPUTERS_2026-10.md D14). `COMPUTER_RETENTION_DAYS` is never honoured.
+    /**
+     * Who gets a computer once a provider is set: `allowlist` (the default:
+     * only AGENT_COMPUTER_ALLOWLIST), `plans` (every plan that includes one) or
+     * `off`. Parsed, with its fallback, in src/lib/computer/access.ts.
+     */
+    get rollout(): string {
+      return (process.env.AGENT_COMPUTER_ROLLOUT ?? "").trim();
+    },
+    /** Comma-separated user ids or verified emails (AGENT_COMPUTER_ALLOWLIST). Empty exposes nobody. */
+    get allowlist(): string {
+      return (process.env.AGENT_COMPUTER_ALLOWLIST ?? "").trim();
+    },
+    /** Past this age the image is reported stale at every wake (audit `image_stale`); nothing is refused. */
+    get maxImageAgeDays(): number {
+      return positiveNumber(process.env.AGENT_COMPUTER_MAX_IMAGE_AGE_DAYS, 14);
+    },
+    /**
+     * A separate computer host (COMPUTER_PROVIDER=remote,
+     * deploy/computer-host/README.md): its `https://` origin. `http://` is
+     * accepted only to 127.0.0.1, ::1 or localhost outside production;
+     * anything else keeps the provider off (src/lib/computer/remote.ts).
+     */
+    get hostUrl(): string {
+      return (process.env.COMPUTER_HOST_URL ?? "").trim();
+    },
+    /** The host's bearer token, as its setup.sh generates it (64 hex or 43+ base64url characters). */
+    get hostToken(): string {
+      return (process.env.COMPUTER_HOST_TOKEN ?? "").trim();
+    },
+    /** Per-request timeout to the host; an exec adds its own command limit. */
+    get hostTimeoutMs(): number {
+      return Math.floor(positiveNumber(process.env.COMPUTER_HOST_TIMEOUT_MS, 30_000));
+    },
+    /** 1: refuse to wake a computer whose Chromium runs without its own sandbox (owner decision 8). */
+    get requireBrowserSandbox(): boolean {
+      return (process.env.AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX ?? "").trim() === "1";
+    },
+    /**
+     * The largest file a person can put into the computer's ~/work/inbox
+     * (AGENT_COMPUTER_UPLOAD_MAX_MB, owner to confirm). Never above 25: the
+     * computer host takes request bodies up to 30 MB, and a file goes there
+     * whole.
+     */
+    get uploadMaxMb(): number {
+      return Math.min(25, positiveNumber(process.env.AGENT_COMPUTER_UPLOAD_MAX_MB, 25));
+    },
+    /**
+     * Streamed shell output kept per `computer_shell` call for the terminal
+     * pane, in KB (AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL, owner to confirm).
+     * Between 16 and 4096; the model's own result keeps its 20,000-character
+     * cap per stream whatever this is.
+     */
+    get shellLogKbPerCall(): number {
+      return Math.max(16, Math.min(4096, Math.floor(positiveNumber(process.env.AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL, 512))));
+    },
+    /**
+     * Server-only: the relay the computer view uses, read before the voice
+     * relay variables (src/lib/computer/live-view.ts), and added to the CSP's
+     * connect-src. Lets a demo relay serve the computer view without moving voice.
+     */
+    get viewRelayUrl(): string {
+      return (process.env.COMPUTER_VIEW_RELAY_URL ?? "").trim();
     },
     get costUsdPerMin(): number {
       if (process.env.COMPUTER_COST_MICRO_USD_PER_SECOND) {

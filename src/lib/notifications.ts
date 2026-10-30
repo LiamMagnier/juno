@@ -22,7 +22,9 @@ export type NotificationType =
   /** A proactive agent raised ideas between visits (the reflection sweep). */
   | "agent_ideas"
   /** One agent handed a task to another; it is running in the teammate's thread. */
-  | "agent_handoff";
+  | "agent_handoff"
+  /** A driven goal finished: met after its criteria were checked, or every step ran and it needs checking (src/lib/agents/goal-criteria.ts). */
+  | "agent_goal";
 
 export type NotificationPriority = "urgent" | "high" | "normal" | "low";
 

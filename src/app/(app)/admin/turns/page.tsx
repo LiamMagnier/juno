@@ -1,6 +1,6 @@
 import { requireOwnerPage } from "@/lib/admin";
 import { TurnsAdmin } from "@/components/admin/turns-admin";
-import { modelPerformance, recentTurnTraces } from "@/lib/chat/turn/trace-sink";
+import { modelPerformance, recentTurnTraces, turnLatencySummary } from "@/lib/chat/turn/trace-sink";
 
 export const dynamic = "force-dynamic";
 
@@ -11,5 +11,5 @@ export const dynamic = "force-dynamic";
  */
 export default async function TurnsAdminPage() {
   await requireOwnerPage();
-  return <TurnsAdmin traces={recentTurnTraces(100)} models={modelPerformance()} />;
+  return <TurnsAdmin traces={recentTurnTraces(100)} models={modelPerformance()} latency={turnLatencySummary()} />;
 }

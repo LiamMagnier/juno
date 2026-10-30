@@ -39,7 +39,7 @@ const MermaidBlock = nextDynamic(
   { ssr: false },
 );
 import { SourceChip } from "@/components/chat/source-chip";
-import { PhraseWithArgs } from "@/lib/i18n-phrase";
+import { PhraseWithArgs, usePhrase } from "@/lib/i18n-phrase";
 import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
 import { allowedImageKeys, imageDecision } from "@/lib/web/image-policy";
@@ -52,6 +52,8 @@ import { isLegacyVisualFence, legacyVisualSource } from "@/lib/live-ui/legacy/co
 export const MARKDOWN_COPY = {
   /** Followed by the image's host: "Image from example.com". */
   imageFrom: "Image from",
+  /** The name of a table wide enough to scroll sideways (`ScrollTable`). */
+  tableRegion: "Scrollable table",
 } as const;
 
 /** Pull the `language-xxx` hint rehype-highlight writes onto the inner <code>. */
@@ -905,6 +907,54 @@ function GuardedImage({
   );
 }
 
+/**
+ * A table's own sideways scroller.
+ *
+ * Wide tables scroll inside this box instead of stretching the message column
+ * past the viewport on phones. Under 640px the label column (sticky,
+ * globals.css) holds about twenty characters before it wraps, capped at half
+ * the screen: the table already scrolls there, and at 14ch a label stacked
+ * three lines tall ("Support bot, / 40k-token / handbook") beside a
+ * single-line row of figures.
+ *
+ * A box that scrolls has to be reachable without a pointer, or a keyboard user
+ * can never read its right-hand columns (WCAG 2.1.1; axe
+ * scrollable-region-focusable). So while the table is wider than the box, the
+ * box is a named region in the tab order and the arrow keys scroll it; its
+ * focus ring is the global keyboard ring (globals.css `:focus-visible`, shown
+ * only for keyboard focus), outside the edge: drawn inside, the sticky label
+ * column painted over its left side. A table that fits stays out of the tab
+ * order: a stop that does nothing is noise.
+ */
+function ScrollTable({ children }: { children: React.ReactNode }) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = React.useState(false);
+  const label = usePhrase(MARKDOWN_COPY.tableRegion);
+  React.useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const measure = () => setScrolls(box.scrollWidth > box.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      data-table-scroll=""
+      tabIndex={scrolls ? 0 : undefined}
+      role={scrolls ? "region" : undefined}
+      aria-label={scrolls ? label : undefined}
+      className="overflow-x-auto rounded-xs max-sm:[&_td:first-child]:min-w-[min(20ch,48vw)]"
+    >
+      {children}
+    </div>
+  );
+}
+
 /** One parsed block. Memoized so streamed chunks only re-render the final block. */
 const MarkdownBlock = React.memo(function MarkdownBlock({
   content,
@@ -947,16 +997,12 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
       ...DEMOTED_HEADINGS,
       // Stable across the stream's end: see StreamingContext.
       pre: CodeBlock as Components["pre"],
-      // Wide tables scroll inside their own container instead of stretching the
-      // message column past the viewport on phones. Under 640px the label
-      // column (sticky, globals.css) holds about twenty characters before it
-      // wraps, capped at half the screen: the table already scrolls there,
-      // and at 14ch a label stacked three lines tall ("Support bot, /
-      // 40k-token / handbook") beside a single-line row of figures.
+      // Wide tables scroll inside their own box, which a keyboard can reach
+      // while it scrolls (ScrollTable).
       table: ({ node: _node, ...props }) => (
-        <div className="overflow-x-auto max-sm:[&_td:first-child]:min-w-[min(20ch,48vw)]">
+        <ScrollTable>
           <table {...props} />
-        </div>
+        </ScrollTable>
       ),
       td: ({ node: _node, children, ...props }) => <td {...props}>{tightLeadingSign(children)}</td>,
       a: ({ children, node: _node, ...props }) => (

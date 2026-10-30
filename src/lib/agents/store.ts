@@ -17,11 +17,13 @@ import "server-only";
 
 import { createAgentTransaction } from "@/lib/agents/creation";
 import type { Agent, AgentGoal, Prisma } from "@prisma/client";
-import { goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
+import { GOAL_UNVERIFIED, goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
 import { prisma } from "@/lib/prisma";
 import { decryptField, encryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
 import { canUseModel } from "@/lib/plans";
+import { agentHiringGate } from "@/lib/agents/plan-gate";
+import { agentNoteStatusOf, screenAgentNote } from "@/lib/agents/note-review";
 import { getUserPlan } from "@/lib/usage";
 import { isUserMcpConnectorId, userMcpConnectorId, userMcpRowId } from "@/lib/user-mcp";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
@@ -34,6 +36,7 @@ import {
   MAX_AGENTS_PER_ACCOUNT,
   MAX_AGENT_GOALS,
   MAX_AGENT_NOTES,
+  MAX_AGENT_NOTE_CHARS,
   agentApprovalMode,
   agentExecutionTarget,
   agentRoutineHost,
@@ -395,6 +398,7 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
       orderBy: { createdAt: "desc" },
       take: 12,
     }),
+    // Kept and pending together: the profile lists both, apart.
     prisma.agentNote.findMany({
       where: { userId, agentId, deletedAt: null },
       orderBy: { createdAt: "desc" },
@@ -410,10 +414,13 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
   ]);
   const { loadAgentComputerStatusPayload } = await import("@/lib/computer/store");
   const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
+  const { computerAccessFor, publicComputerAccess } = await import("@/lib/computer/access");
   const { agentBudgetLineFor } = await import("@/lib/budgets-store");
-  const [computer, computerConfigured, budget] = await Promise.all([
+  const [computer, computerConfigured, computerAccess, budget] = await Promise.all([
     loadAgentComputerStatusPayload(userId, agentId),
     isAgentComputerConfigured(),
+    // The panel's one line when computers are off, not open, or not in the plan.
+    computerAccessFor(userId).then(publicComputerAccess),
     // A failed read leaves the line out rather than failing the profile.
     agentBudgetLineFor(userId, { id: agent.id, name: agent.name, budgetMicroUsd: agent.budgetMicroUsd ?? null }).catch(() => null),
   ]);
@@ -421,11 +428,15 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
     agent: serialized[0],
     goals: goals.map(serializeGoal),
     ideas: ideas.map(serializeIdea),
-    notes: notes.map((note) => serializeNote(readNote(note))),
+    // `notes` stays the kept ones, as every client written before review
+    // reads it; a note waiting for the person is only ever in `pendingNotes`.
+    notes: notes.filter((note) => agentNoteStatusOf(note.status) === "kept").map((note) => serializeNote(readNote(note))),
+    pendingNotes: notes.filter((note) => agentNoteStatusOf(note.status) === "pending").map((note) => serializeNote(readNote(note))),
     routines,
     tasks: tasks.map(toTask),
     computer,
     computerConfigured,
+    computerAccess,
     budget,
   };
 }
@@ -681,6 +692,17 @@ async function modelInPlan(userId: string, model: string | null | undefined): Pr
 
 const MODEL_NOT_IN_PLAN = "Your plan does not include that model. Pick another one, or keep your default.";
 
+/**
+ * The refusal for a plan without agents (src/lib/agents/plan-gate.ts), or null.
+ * 402 with the plan that includes them, the status dispatch already uses for
+ * the same rule, so every client reads it as an upgrade rather than a failure.
+ */
+async function hiringRefusal(userId: string): Promise<AgentResult<never> | null> {
+  const gate = agentHiringGate(await getUserPlan(userId));
+  if (gate.allowed) return null;
+  return { status: 402, body: { error: "plan_locked", message: gate.message, upgradePlan: gate.neededPlan } };
+}
+
 async function ownedProjectId(userId: string, projectId: string | null | undefined): Promise<string | null | undefined> {
   if (projectId === undefined) return undefined;
   if (projectId === null) return null;
@@ -816,6 +838,10 @@ function placementChanges(
 }
 
 export async function createAgentForUser(user: AgentActor, input: CreateAgentInput): Promise<AgentResult<ClientAgent>> {
+  // The plan first: a Free or Lite account is told before anything is made,
+  // not after it set an agent up whose every task dispatch would refuse.
+  const hiring = await hiringRefusal(user.id);
+  if (hiring) return hiring;
   const projectId = await ownedProjectId(user.id, input.projectId);
   if (input.projectId && projectId === undefined) return refusal(404, "project_not_found", "That project no longer exists.");
   const preferredHostId = await ownedHostId(user.id, input.preferredHostId);
@@ -1219,6 +1245,11 @@ export async function undoAgentEventForUser(
         where: { id: before.noteId, userId: user.id, agentId: agent.id },
         data: { deletedAt: new Date() },
       });
+    } else if (entity === "note_kept" && typeof before.noteId === "string") {
+      await prisma.agentNote.updateMany({
+        where: { id: before.noteId, userId: user.id, agentId: agent.id, deletedAt: null },
+        data: { status: "pending" },
+      });
     } else if (entity === "note_deleted" && typeof before.noteId === "string") {
       await prisma.agentNote.updateMany({
         where: { id: before.noteId, userId: user.id, agentId: agent.id },
@@ -1336,6 +1367,9 @@ export async function duplicateAgentForUser(
 ): Promise<AgentResult<ClientAgent>> {
   const source = await findAgent(user.id, agentId);
   if (!source) return refusal(404, "not_found", "That agent no longer exists.");
+  // A copy is a hire: the same plan rule as `createAgentForUser`.
+  const hiring = await hiringRefusal(user.id);
+  if (hiring) return hiring;
 
   const count = await prisma.agent.count({ where: { userId: user.id, deletedAt: null } });
   if (count >= MAX_AGENTS_PER_ACCOUNT) {
@@ -1833,15 +1867,18 @@ export async function agentChatContext(
   if (!agent) return null;
   const paused = agent.status !== "active";
   const [goals, notes, teammates, routinesCount, recentSessions] = await Promise.all([
+    // Active, and unverified (every step ran, nothing showed it met): the
+    // prompt names those apart so the agent never calls one met.
     prisma.agentGoal.findMany({
-      where: { userId: user.id, agentId, status: "active" },
+      where: { userId: user.id, agentId, status: { in: ["active", GOAL_UNVERIFIED] } },
       orderBy: { createdAt: "asc" },
       take: 8,
-      select: { title: true, status: true, lastCheckInNote: true },
+      select: { title: true, status: true, lastCheckInNote: true, nextAction: true },
     }),
     prisma.agentNote
       .findMany({
-        where: { userId: user.id, agentId, deletedAt: null },
+        // Kept only: a note waiting for the person reaches nothing yet.
+        where: { userId: user.id, agentId, deletedAt: null, status: "kept" },
         orderBy: { createdAt: "desc" },
         take: 24,
         select: { content: true, source: true },
@@ -1941,16 +1978,22 @@ interface DurableGoalData {
   budgetMicroUsd?: number | null;
 }
 
-function durableGoalData(input: DurableGoalInput, existing?: AgentGoal): DurableGoalData {
+/** The milestones a patch leaves, keeping what each one with the same id and title already finished. */
+function patchedMilestones(input: DurableGoalInput, existing?: AgentGoal) {
+  if (input.milestones === undefined) return null;
+  const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
+  return parseMilestones(input.milestones).map((m) => {
+    const before = previous.get(m.id);
+    return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
+  });
+}
+
+function durableGoalData(input: DurableGoalInput, existing?: AgentGoal, status?: string): DurableGoalData {
   const data: DurableGoalData = {};
-  if (input.milestones !== undefined) {
-    const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
-    const milestones = parseMilestones(input.milestones).map((m) => {
-      const before = previous.get(m.id);
-      return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
-    });
+  const milestones = patchedMilestones(input, existing);
+  if (milestones) {
     data.milestones = milestones as unknown as Prisma.InputJsonValue;
-    data.progress = goalProgress(milestones, existing?.status ?? "active");
+    data.progress = goalProgress(milestones, status ?? existing?.status ?? "active");
   }
   if (input.successCriteria !== undefined) data.successCriteria = parseCriteria(input.successCriteria);
   if (input.maxRuns !== undefined) data.maxRuns = input.maxRuns;
@@ -1963,8 +2006,10 @@ export async function createAgentGoal(
   agent: Agent,
   input: { title: string; detail: string; cadence: string; dueAt?: string | null } & DurableGoalInput
 ): Promise<AgentResult> {
+  // Open: still going, paused, or every step ran and it waits for the person
+  // to mark it met or keep it going (`unverified`).
   const count = await prisma.agentGoal.count({
-    where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused"] } },
+    where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused", GOAL_UNVERIFIED] } },
   });
   if (count >= MAX_AGENT_GOALS) {
     return refusal(409, "too_many_goals", `${agent.name} already has ${MAX_AGENT_GOALS} open goals. Finish or drop one first.`);
@@ -2012,30 +2057,39 @@ export async function updateAgentGoal(
     status: goal.status,
     dueAt: goal.dueAt,
   };
+  // An unverified goal ("Every step ran. Check the result.") given steps it
+  // has not run is no longer that: it goes back to work, so the driver runs
+  // them and the row stops saying every step ran.
+  const reopened =
+    patch.status === undefined &&
+    goal.status === GOAL_UNVERIFIED &&
+    (patchedMilestones(patch, goal)?.some((m) => !m.done) ?? false);
+  const nextStatus = patch.status ?? (reopened ? "active" : undefined);
   const updated = await prisma.agentGoal.update({
     where: { id: goal.id, userId: user.id },
     data: {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
       ...(patch.cadence !== undefined ? { cadence: patch.cadence } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(nextStatus !== undefined ? { status: nextStatus } : {}),
       ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt ? new Date(patch.dueAt) : null } : {}),
-      ...durableGoalData(patch, goal),
+      ...durableGoalData(patch, goal, nextStatus),
       // A goal the person resumes starts clean: whatever stopped it is theirs to have resolved.
-      ...(patch.status === "active" && goal.status !== "active" ? { blockers: [] } : {}),
+      ...(nextStatus === "active" && goal.status !== "active" ? { blockers: [] } : {}),
+      ...(reopened ? { nextAction: "New steps added; back to work on them." } : {}),
     },
   });
   let eventId: string | undefined;
-  if (patch.status && patch.status !== goal.status) {
+  if (nextStatus && nextStatus !== goal.status) {
     const verb =
-      patch.status === "achieved" ? "Achieved" : patch.status === "dropped" ? "Dropped" : patch.status === "paused" ? "Paused" : "Resumed";
+      nextStatus === "achieved" ? "Achieved" : nextStatus === "dropped" ? "Dropped" : nextStatus === "paused" ? "Paused" : "Resumed";
     eventId = await recordAgentEvent({
       userId: user.id,
       agentId: agent.id,
       kind: "goal_updated",
       title: `${verb}: ${updated.title}`,
       detail: {
-        status: patch.status,
+        status: nextStatus,
         before: { __entity: "goal_updated", goalId: goal.id, fields: beforeFields },
         after: { goalId: goal.id, status: updated.status },
       },
@@ -2065,9 +2119,10 @@ export async function deleteAgentGoal(user: AgentActor, agent: Agent, goalId: st
   return { status: 200, body: { ok: true } };
 }
 
+/** The notes it keeps. A note waiting for the person is not one of them yet (`loadAgentDetail` lists those apart). */
 export async function listAgentNotes(user: AgentActor, agent: Agent) {
   const notes = await prisma.agentNote.findMany({
-    where: { userId: user.id, agentId: agent.id, deletedAt: null },
+    where: { userId: user.id, agentId: agent.id, deletedAt: null, status: "kept" },
     orderBy: { createdAt: "desc" },
     take: MAX_AGENT_NOTES,
   });
@@ -2080,12 +2135,17 @@ export async function createAgentNote(
   content: string,
   source: AgentNoteSource = "user"
 ): Promise<AgentResult> {
+  // Never a secret, whoever writes it (src/lib/agents/note-review.ts): a
+  // value next to "password" is refused, a key or token is masked.
+  const screened = screenAgentNote(content, { maxChars: MAX_AGENT_NOTE_CHARS });
+  if (!screened.ok) return refusal(422, screened.reason === "secret" ? "note_secret" : "invalid_note", screened.message);
+  if (screened.redacted > 0) content = screened.content;
   const count = await prisma.agentNote.count({ where: { userId: user.id, agentId: agent.id, deletedAt: null } });
   if (count >= MAX_AGENT_NOTES) {
     return refusal(409, "too_many_notes", `${agent.name} already keeps ${MAX_AGENT_NOTES} notes. Delete some it no longer needs.`);
   }
   const note = await prisma.agentNote.create({
-    data: { userId: user.id, agentId: agent.id, content: encryptField(content), source },
+    data: { userId: user.id, agentId: agent.id, content: encryptField(content), source, status: "kept" },
   });
   // The log says THAT it learned something, never what: the note is encrypted
   // at rest and the log is not, so copying it there would undo the one and
@@ -2110,12 +2170,51 @@ export async function createAgentNote(
 export async function updateAgentNote(user: AgentActor, agent: Agent, noteId: string, content: string): Promise<AgentResult> {
   const note = await prisma.agentNote.findFirst({ where: { id: noteId, userId: user.id, agentId: agent.id, deletedAt: null } });
   if (!note) return refusal(404, "not_found", "That note no longer exists.");
-  // An edited note is the person's words now, whoever wrote it first.
+  const screened = screenAgentNote(content, { maxChars: MAX_AGENT_NOTE_CHARS });
+  if (!screened.ok) return refusal(422, screened.reason === "secret" ? "note_secret" : "invalid_note", screened.message);
+  if (screened.redacted > 0) content = screened.content;
+  // An edited note is the person's words now, whoever wrote it first, and
+  // editing one that was waiting for review is reviewing it: it is kept.
   const updated = await prisma.agentNote.update({
     where: { id: note.id, userId: user.id },
-    data: { content: encryptField(content), source: "user" },
+    data: { content: encryptField(content), source: "user", status: "kept" },
   });
   return { status: 200, body: { note: serializeNote({ ...updated, content }) } };
+}
+
+/**
+ * Keeps a note an agent saved in one of its tasks and that waited for the
+ * person (src/lib/agents/run-notes.ts). From here its turns and tasks read it
+ * like any other note. Keeping one already kept is a replay, not an error.
+ */
+export async function keepAgentNote(user: AgentActor, agent: Agent, noteId: string): Promise<AgentResult> {
+  const note = await prisma.agentNote.findFirst({ where: { id: noteId, userId: user.id, agentId: agent.id, deletedAt: null } });
+  if (!note) return refusal(404, "not_found", "That note no longer exists.");
+  if (agentNoteStatusOf(note.status) === "kept") {
+    return { status: 200, body: { note: serializeNote(readNote(note)), replay: true } };
+  }
+  const kept = await prisma.agentNote.updateMany({
+    where: { id: note.id, userId: user.id, agentId: agent.id, deletedAt: null, status: "pending" },
+    data: { status: "kept" },
+  });
+  // Forgotten in between: gone, not kept.
+  const fresh = await prisma.agentNote.findFirst({ where: { id: note.id, userId: user.id, deletedAt: null } });
+  if (!fresh) return refusal(404, "not_found", "That note no longer exists.");
+  let eventId: string | undefined;
+  if (kept.count === 1) {
+    // Said, never quoted: the note is encrypted and this log is not.
+    eventId = await recordAgentEvent({
+      userId: user.id,
+      agentId: agent.id,
+      kind: "note_added",
+      title: `You kept something ${agent.name} learned`,
+      detail: {
+        before: { __entity: "note_kept", noteId: note.id },
+        after: { noteId: note.id, status: "kept" },
+      },
+    });
+  }
+  return { status: 200, body: { note: serializeNote(readNote(fresh)), ...(eventId ? { eventId } : {}) }, eventId };
 }
 
 /** Deleted means gone from every later turn, which reads notes with `deletedAt: null`. */

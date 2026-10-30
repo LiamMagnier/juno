@@ -5,6 +5,7 @@ import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, Volume2 } from "@/components/ui/icons";
+import { ExportChatMenuSection } from "@/components/chat/conversation-export-menu";
 import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -101,6 +102,7 @@ import { TIMING } from "@/lib/interaction";
 import { AgentFace } from "@/components/agents/agent-face";
 import { useAgentThread } from "@/components/agents/agent-thread-context";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
+import { stripTrailingSourcesSection } from "@/components/chat/sources-section";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
 import { cn, formatTokens, formatUsd } from "@/lib/utils";
@@ -196,30 +198,9 @@ function StreamStatus({
   );
 }
 
-/**
- * Deep-research reports are prompted to end with a "## Sources" section listing
- * every citation as "[n] Title — URL" (see buildResearchContext). Once the same
- * list renders as the sources pill, that tail is a duplicate wall of naked URLs
- * — so drop it from the RENDERED markdown. Copy still yields the full text.
- *
- * Conservative on purpose: only the last such heading, only when every line
- * under it is a citation entry (a "Sources" section the model wrote prose into
- * is the model saying something, not a list we already render), and only when
- * the heading isn't inside a code fence.
- */
-function stripTrailingSourcesSection(content: string): string {
-  const lines = content.split("\n");
-  let start = -1;
-  let fenced = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^ {0,3}(`{3,}|~{3,})/.test(lines[i])) fenced = !fenced;
-    else if (!fenced && /^#{1,6}\s+sources\s*$/i.test(lines[i])) start = i;
-  }
-  if (start === -1) return content;
-  const isEntry = (line: string) => line.trim() === "" || /^\s*(?:[-*]\s+)?\[\d{1,3}\]/.test(line);
-  if (!lines.slice(start + 1).every(isEntry)) return content;
-  return lines.slice(0, start).join("\n").trimEnd();
-}
+// `stripTrailingSourcesSection` (the research report's trailing "## Sources"
+// list, dropped once the sources pill shows it) is in sources-section.ts, shared
+// with the conversation export.
 
 /**
  * ChatGPT-style "‹ 2/3 ›" pager, shown whenever a message has alternatives: the
@@ -1170,10 +1151,14 @@ export const MessageItem = React.memo(function MessageItem({
   const canForkPrivate = !!onFork && !busy && !privateMode;
   const canShare = !!message.conversationId && !privateMode;
   const canCopyLink = !!message.conversationId;
+  // The whole chat, not this answer (conversation-export-menu.tsx): on a phone
+  // this menu is the way to it, the header's More being desktop only. Settled
+  // answers only, so an export never catches this one half-written.
+  const canExport = !message.streaming;
   // Only on a settled answer: a streaming one would offer a half-written skill.
   // A plain call, not a memo: this sits past the component's early returns.
   const skillMarkdown = !message.streaming && hasTextContent ? extractSkillMarkdown(view.content) : null;
-  const showMore = canBranchSaved || canForkPrivate || canShare || hasTextContent || canCopyLink || hasMeta;
+  const showMore = canBranchSaved || canForkPrivate || canShare || canExport || hasTextContent || canCopyLink || hasMeta;
   const finishNote =
     view.finishReason === "length"
       ? "The model stopped at its token limit."
@@ -1332,14 +1317,32 @@ export const MessageItem = React.memo(function MessageItem({
               <span className="min-w-0">{message.content || message.errorMessage || "Something didn't go well."}</span>
             </p>
             {onRegenerate && isLast && !busy && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onRegenerate()}
-                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <ActionIcons.refresh className="size-3.5" /> Try again
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRegenerate()}
+                  className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <ActionIcons.refresh className="size-3.5" /> Try again
+                </Button>
+                {/* The error frame's one alternative (chat wire 1.1): a
+                    different, healthy lab that does not train on prompts.
+                    Clicking it is the reader's explicit choice for this
+                    answer — the same one-shot override as Switch model — so
+                    nothing is ever rerouted without them. */}
+                {message.recovery?.suggestedModelId && !privateMode && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRegenerate({ modelId: message.recovery!.suggestedModelId! })}
+                    className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <SettingsIcons.models className="size-3.5" />
+                    {`Answer with ${message.recovery.suggestedModelName ?? message.recovery.suggestedModelId}`}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -1647,7 +1650,8 @@ export const MessageItem = React.memo(function MessageItem({
                         <ActionIcons.share className="size-4" /> Share chat
                       </DropdownMenuItem>
                     )}
-                    {(hasTextContent || canCopyLink) && (canBranchSaved || canForkPrivate || canShare) && (
+                    {canExport && <ExportChatMenuSection />}
+                    {(hasTextContent || canCopyLink) && (canBranchSaved || canForkPrivate || canShare || canExport) && (
                       <DropdownMenuSeparator />
                     )}
                     {hasTextContent && (

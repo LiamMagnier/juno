@@ -16,7 +16,7 @@
 import type { AgentAvatar } from "@/lib/agents/avatar";
 import type {
   AgentGoalCadence,
-  AgentGoalStatus,
+  AgentGoalSettableStatus,
   AgentNotifyLevel,
   AgentRoutineCadence,
   AgentStatus,
@@ -196,6 +196,18 @@ export function computerAction(
   return call(`${base(id)}/computer`, { method: "POST", body: { action } }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
 }
 
+/** Whether an agent's tasks may use its computer: off, ask first, or on its own. The person's setting only. */
+export type ComputerPolicySetting = "off" | "ask" | "allowed";
+
+export function setComputerPolicy(
+  id: string,
+  policy: ComputerPolicySetting
+): Promise<AgentOutcome<ComputerPolicySetting>> {
+  return call(`${base(id)}/computer`, { method: "POST", body: { action: "policy", policy } }, (d) =>
+    d.policy === "off" || d.policy === "ask" || d.policy === "allowed" ? d.policy : policy
+  );
+}
+
 /** Who holds an agent's computer right now (`takeover` on the computer payload). */
 export interface ClientComputerTakeover {
   active: boolean;
@@ -274,6 +286,106 @@ export function computerFileDownloadUrl(id: string, path: string): string {
   return `${base(id)}/computer/files?path=${encodeURIComponent(path)}&download=1`;
 }
 
+/** Where the person's uploads land on the computer. */
+export const COMPUTER_INBOX_FOLDER = "/home/agent/work/inbox";
+
+/** The most the page sends at all; the server's own cap (AGENT_COMPUTER_UPLOAD_MAX_MB) may be lower. */
+export const COMPUTER_UPLOAD_CEILING_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Puts one file into the computer's ~/work/inbox (`POST /computer/files`,
+ * the raw bytes, the name percent-encoded in `X-File-Name`). The route's
+ * sentence on any refusal: too large, a name it can't use, asleep, the
+ * storage full, or the plan.
+ */
+export async function uploadComputerFile(
+  id: string,
+  file: Blob & { name: string }
+): Promise<AgentOutcome<{ name: string; path: string; sizeBytes: number }>> {
+  if (file.size > COMPUTER_UPLOAD_CEILING_BYTES) {
+    return {
+      kind: "failed",
+      status: 413,
+      error: "too_large",
+      message: "That file is larger than the 25 MB limit for adding files to the computer.",
+    };
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${base(id)}/computer/files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) },
+      body: file,
+    });
+  } catch {
+    return { kind: "failed", status: 0, error: "offline", message: `${PRODUCT_NAME} could not be reached. Check your connection and try again.` };
+  }
+  const data = await json(res);
+  if (res.ok && typeof data.name === "string" && typeof data.path === "string") {
+    return {
+      kind: "ok",
+      value: { name: data.name, path: data.path, sizeBytes: typeof data.sizeBytes === "number" ? data.sizeBytes : file.size },
+    };
+  }
+  return {
+    kind: "failed",
+    status: res.status,
+    error: typeof data.error === "string" ? data.error : "failed",
+    message:
+      typeof data.message === "string" && data.message.trim()
+        ? data.message
+        : `Something went wrong on ${PRODUCT_NAME}'s side. Try again in a moment.`,
+  };
+}
+
+/** One row of the agent's streamed shell output (`GET /computer/shell`). */
+export interface ClientShellOutputRow {
+  seq: number;
+  callId: string;
+  stream: "command" | "stdout" | "stderr" | "exit";
+  text: string;
+  createdAt: string;
+}
+
+export interface ClientShellOutputPage {
+  rows: ClientShellOutputRow[];
+  /** The cursor to ask from next. */
+  next: number;
+  /** More rows were waiting than one page holds. */
+  more: boolean;
+  /** Whether the run is still going (the pane stops polling once it is not). */
+  runLive: boolean;
+}
+
+function readShellRow(raw: unknown): ClientShellOutputRow[] {
+  if (!raw || typeof raw !== "object") return [];
+  const r = raw as Record<string, unknown>;
+  const stream = r.stream;
+  if (
+    typeof r.seq !== "number" ||
+    typeof r.callId !== "string" ||
+    typeof r.text !== "string" ||
+    (stream !== "command" && stream !== "stdout" && stream !== "stderr" && stream !== "exit")
+  ) {
+    return [];
+  }
+  return [{ seq: r.seq, callId: r.callId, stream, text: r.text, createdAt: typeof r.createdAt === "string" ? r.createdAt : "" }];
+}
+
+/** The agent's shell output in one run after `after` (read-only; nothing here reaches the computer). */
+export function fetchShellOutput(id: string, runId: string, after: number): Promise<AgentOutcome<ClientShellOutputPage>> {
+  return call(
+    `${base(id)}/computer/shell?runId=${encodeURIComponent(runId)}&after=${Math.max(0, Math.floor(after))}`,
+    {},
+    (d) => ({
+      rows: Array.isArray(d.rows) ? d.rows.flatMap(readShellRow) : [],
+      next: typeof d.next === "number" ? d.next : after,
+      more: d.more === true,
+      runLive: d.runLive !== false,
+    })
+  );
+}
+
 /**
  * One viewer heartbeat. A control beat holds the takeover; `ended` is Hand
  * back. The outcome carries the computer payload, so a viewer can tell when
@@ -335,7 +447,7 @@ export function createGoal(
 export function updateGoal(
   id: string,
   goalId: string,
-  patch: { title?: string; detail?: string; cadence?: AgentGoalCadence; status?: AgentGoalStatus }
+  patch: { title?: string; detail?: string; cadence?: AgentGoalCadence; status?: AgentGoalSettableStatus }
 ): Promise<AgentOutcome<ClientAgentGoal>> {
   return call(`${base(id)}/goals/${encodeURIComponent(goalId)}`, { method: "PATCH", body: patch }, (d) => d.goal as ClientAgentGoal);
 }
@@ -363,6 +475,11 @@ export function updateNote(id: string, noteId: string, content: string): Promise
 
 export function deleteNote(id: string, noteId: string): Promise<AgentOutcome<true>> {
   return call(`${base(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }, () => true as const);
+}
+
+/** Keeps a note the agent saved in a task and that waited for review. Forgetting it is `deleteNote`. */
+export function keepNote(id: string, noteId: string): Promise<AgentOutcome<ClientAgentNote>> {
+  return call(`${base(id)}/notes/${encodeURIComponent(noteId)}`, { method: "PATCH", body: { action: "keep" } }, (d) => d.note as ClientAgentNote);
 }
 
 export function decideIdea(

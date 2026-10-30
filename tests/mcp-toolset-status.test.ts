@@ -20,8 +20,9 @@ import { connectorUnavailableLine } from "@/lib/tools/connector-tools.prompt";
  * Connectors mapped into the chat contract (SPEC §3.4). `src/lib/mcp.ts` is
  * `server-only` and shared with Work, so its pure rules live in
  * `tools/connector-tools.ts` and are driven here; the wiring in mcp.ts is read
- * as text. Everything chat asks of it is opt-in: Work calls it as before and
- * gets today's behaviour, with no connect budget.
+ * as text. Everything chat asks of it is opt-in: Work passes its own, longer
+ * per-server budget and the run's signal, and no tool-list cache. The open's
+ * behaviour against real servers is tests/mcp-open-bounds.test.ts.
  */
 
 const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
@@ -70,15 +71,22 @@ test("an opt-in connect budget maps failures to a ConnectorFailure", () => {
   assert.equal(connectFailureOf(undefined), "unreachable");
 });
 
-test("with no budget (Work) the connection is not bounded, and Work's calls are unchanged", () => {
-  // The per-connection budget (connectTimeoutMs / requestOptions) and per-call timer were removed
-  // in the rf/tools-integration merge: connections now use the session AbortSignal passed directly.
-  assert.match(mcp, /await client\.connect\(transport\);/);
-  assert.match(mcp, /await client\.listTools\(\);/);
-  // Work's callers pass no options.
+test("each server's connect and list run under the budget and the caller's signal (Work passes both)", () => {
+  // One budget per server, covering connect + tools/list, raced against the
+  // signal so a server that accepts the socket and says nothing cannot hold it.
+  assert.match(mcp, /await untilAborted\(client\.connect\(transport, request\), budget\.signal\);/);
+  assert.match(mcp, /client\.listTools\(undefined, request\)/);
+  assert.match(mcp, /await client\?\.close\(\)\.catch\(/, "a failed or timed-out open closes its connection");
+  // Work: its own per-server budget and the run's signal, never the chat cache.
   const runner = read("scripts/work-runner.ts");
-  const openCall = runner.slice(runner.indexOf("await openMcpToolset("), runner.indexOf("await openMcpToolset(") + 600);
-  assert.doesNotMatch(openCall, /connectTimeoutMs/);
+  const openCall = runner.slice(runner.indexOf("await openMcpToolset("), runner.indexOf("await openMcpToolset(") + 900);
+  assert.match(openCall, /\{ signal: input\.signal, connectTimeoutMs: CONNECTOR_SERVER_TIMEOUT_MS \}/);
+  assert.doesNotMatch(openCall, /cacheTools/);
+  // The run's deadline cancels the open rather than only abandoning it, and
+  // the handles are revoked when it was cancelled.
+  assert.match(runner, /openAbort\.abort\(\);/);
+  assert.match(runner, /signal: openAbort\.signal,/);
+  assert.equal((runner.match(/if \(input\.signal\?\.aborted\) \{\n    broker\.revokeRun\(input\.runId\);/g) ?? []).length, 2);
 });
 
 test("tools are named in (connector, tool) order after every connection settled", () => {
@@ -95,8 +103,9 @@ test("tools are named in (connector, tool) order after every connection settled"
     "notion:search",
   ]);
   assert.deepEqual(settled[0], { connectorId: "notion", toolName: "search" }, "the input is not reordered in place");
-  // Loop pattern changed: tools are now iterated directly from listed.tools, sorted separately.
-  assert.match(mcp, /for \(const t of listed\.tools\) \{/);
+  // mcp.ts names the tools once every server has settled, in connector order.
+  assert.match(mcp, /\.sort\(\(a, b\) => \(a\.connector\.id < b\.connector\.id \? -1/);
+  assert.ok(mcp.indexOf("const listings = await Promise.all(") < mcp.indexOf("for (const { connector: c, tools: listed } of settled)"));
 });
 
 test("isError, images and structured content (M6)", () => {

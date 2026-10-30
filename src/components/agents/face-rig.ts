@@ -19,8 +19,11 @@
  *     attribute diffs with a quarter-pixel dead band.
  *
  * Rest life (blinks, glances, looking at the pointer) belongs to `live` faces.
- * State motion (the orbit, the thinking dots, the waiting glance at its badge)
- * plays on every face unless motion is reduced. State changes are smoothed
+ * A live face held still (a second copy while a larger one of the same agent
+ * lives: `FaceConfig.still`) eases into its state's still frame from where it
+ * is and stops (holdPose). State motion (the orbit, the thinking dots, the
+ * waiting glance at its badge) plays on every face unless motion is reduced
+ * or the face is held. State changes are smoothed
  * (`gateAt`): a request to think is held for 250 ms (2.5 s out of working, so
  * a model turn between two tool calls stays working), a request to work out of
  * thinking for 400 ms (a tool blip never throws a ring), a state stays on
@@ -325,6 +328,20 @@ function gestureNext(ts: number, start: number, period: number, dur: number) {
 const WAIT_GESTURE = [0.35, 0.85, 0.45] as const;
 const waitGesture = (ts: number) => (ts < 18.4 ? gesture(ts, 1.6, 4.2, ...WAIT_GESTURE) : gesture(ts - 18.4, 2, 16, ...WAIT_GESTURE));
 const waitGestureNext = (ts: number) => (ts < 18.4 ? gestureNext(ts, 1.6, 4.2, 1.65) : 18.4 + gestureNext(ts - 18.4, 2, 16, 1.65));
+
+/**
+ * A state that needs you (waiting, blocked) is never kept waiting and never
+ * staggered (`staggers`), so faces handed it in one frame (a poll of the
+ * roster) would blink, look up and glance at their badges as one machine.
+ * Each copy answers a beat of its own late instead, 0 to 120 ms from its own
+ * noise: its acknowledgement blink, its head and eyes, its glances at the
+ * badge. The badge (and, from 48 px, blocked's stalled orbit) is the signal,
+ * and comes on at once on every face.
+ */
+const needsYouLag = (ctx: FaceCtx) => 0.12 * noise(ctx.seed, 6, 103);
+
+/** Seconds into an acknowledgement blink that comes `lag` late, unless it joins a blink already under way, which never waits (blinkPhase). */
+const ackAt = (ts: number, snap: Pose | null, lag: number) => (blinkPhase(snap, true) === 0 ? ts - lag : ts);
 
 /** Done's slow drift once the beat is over: rarer than idle's. */
 const DONE_EVERY: [number, number] = [7, 12];
@@ -659,7 +676,9 @@ const STATES: Record<AgentState, StateDef> = {
   waiting: {
     target(ts, snap, ctx, _T, rebase) {
       const p = restPose(ctx);
-      const g = waitGesture(ts);
+      // This copy's own beat (needsYouLag): its glances at the badge, like its blink, never in step with another face's.
+      const lag = needsYouLag(ctx);
+      const g = waitGesture(ts - lag);
       const front = ctx.size.front;
       Object.assign(p, {
         yaw: lerp(0, front ? -7 : -12, g),
@@ -671,7 +690,14 @@ const STATES: Record<AgentState, StateDef> = {
         bs: 1.035,
         lookW: 0.5,
       });
-      p.blinkMul = forcedBlink(ts, snap, rebase);
+      p.blinkMul = forcedBlink(ackAt(ts, snap, lag), snap, rebase);
+      // Out of the dots the ball pops once the face is nearly home (0.5 s):
+      // at 0.2 s a head coming back round is still turned ~70°, its near eye
+      // at the body's edge, where the notch would bite it and then shove the
+      // pair in one frame.
+      const d0 = snap && snap.morph > 0.5 ? 0.5 : 0.2;
+      // Coming home from a turn (thinking left early, a spin): its eyes may be at the body's edge.
+      const turned = !!snap && Math.abs(snap.yaw) > 45;
       if (rebase && snap && snap.badgeKind === "ball") {
         // Only rebased: the ball is already in its notch and stays.
         p.badgeKind = "ball";
@@ -680,9 +706,23 @@ const STATES: Record<AgentState, StateDef> = {
         // From blocked: the bar shrinks nearly away, and the ball grows from that point.
         p.badgeKind = ts < 0.16 ? "bar" : "ball";
         p.badgeS = ts < 0.16 ? lerp(snap.badgeS, 0.15, outCubic(ts / 0.16)) : 0.15 + 0.85 * pop((ts - 0.16) / 0.6, 1.14);
+      } else if (snap && snap.badgeKind === "ball" && snap.badgeS > 0.001 && !turned) {
+        // A ball still on its way out (blocked fades it from 48 px; any other state too): it grows back from where it is.
+        p.badgeKind = "ball";
+        p.badgeS = lerp(snap.badgeS, 1, pop(ts / 0.65, 1.14));
+      } else if (snap && snap.badgeKind && snap.badgeS > 0.001) {
+        // From blocked before its bar had half grown (a preview switching
+        // back), or a ball on its way out on a face coming home from a turn:
+        // the old glyph shrinks away (fast when turned, its eyes may be at
+        // the edge), then the ball pops as from nothing. A badge never goes in
+        // a frame: its notch would go with it, and the eyes it held clear
+        // would jump.
+        const out = turned ? Math.min(d0, 0.1) : d0;
+        p.badgeKind = ts < d0 ? snap.badgeKind : "ball";
+        p.badgeS = ts < d0 ? lerp(snap.badgeS, 0, outCubic(ts / out)) : pop((ts - d0) / 0.65, 1.14);
       } else {
         p.badgeKind = "ball";
-        p.badgeS = ts < 0.2 ? 0 : pop((ts - 0.2) / 0.65, 1.14);
+        p.badgeS = ts < d0 ? 0 : pop((ts - d0) / 0.65, 1.14);
       }
       // An orbit leaves as everywhere else; small, its rim ball is gone before the notch opens.
       if (snap && snap.ringO > 0.002) leaveForBadge(p, ts, snap, ctx);
@@ -690,7 +730,10 @@ const STATES: Record<AgentState, StateDef> = {
       return p;
     },
     timing: { ringP: [0, 0.001], ballS: [0, 0.001], ringO: [0, 0.001], badgeS: [0, 0.001], bs: [0, 0.6], yaw: [0, 0.4], pitch: [0, 0.4] },
-    quiet: (ts, _ctx, T) => (ts < 0.9 ? T : T + waitGestureNext(ts) - ts),
+    quiet: (ts, ctx, T) => {
+      const tl = ts - needsYouLag(ctx);
+      return tl < 0.9 ? T : T + waitGestureNext(tl) - tl;
+    },
   },
 
   /* It looks up at you: the head tilts toward you, the eyes open wider and
@@ -742,7 +785,7 @@ const STATES: Record<AgentState, StateDef> = {
         // The worry leans the two eyes apart: no floor (it lets go as the worry comes in).
         leanW: 0,
       });
-      p.blinkMul = forcedBlink(ts, snap, rebase);
+      p.blinkMul = forcedBlink(ackAt(ts, snap, needsYouLag(ctx)), snap, rebase);
       if (ctx.size.ring) {
         p.ringKind = "stalled";
         p.ringA = 1;
@@ -779,6 +822,14 @@ const STATES: Record<AgentState, StateDef> = {
         // From waiting: the ball shrinks nearly away, and the bar grows from that point.
         p.badgeKind = ts < 0.16 ? "ball" : "bar";
         p.badgeS = ts < 0.16 ? lerp(snap.badgeS, 0.15, outCubic(ts / 0.16)) : lerp(0.15, 1, outQuint((ts - 0.16) / 0.45));
+      } else if (snap && snap.badgeKind === "ball" && snap.badgeS > 0.001) {
+        // From waiting before its ball had half grown: the ball shrinks away, then the bar grows as from nothing (never a frame without a badge).
+        p.badgeKind = ts < 0.25 ? "ball" : "bar";
+        p.badgeS = ts < 0.25 ? lerp(snap.badgeS, 0, outCubic(ts / 0.25)) : outQuint((ts - 0.25) / 0.5);
+      } else if (snap && snap.badgeKind === "bar" && snap.badgeS > 0.001) {
+        // A bar still on its way out: it grows back from where it is.
+        p.badgeKind = "bar";
+        p.badgeS = lerp(snap.badgeS, 1, outQuint(ts / 0.5));
       } else {
         p.badgeKind = "bar";
         p.badgeS = outQuint((ts - 0.25) / 0.5);
@@ -882,6 +933,8 @@ export interface Segment {
   from?: { pose: Pose; at: number };
   /** The state carries on under a changed look (`rebaseSegment`): no entry beats, every field eases over `REBASE`. */
   rebase?: boolean;
+  /** Held still (`holdPose`): the state's still frame, eased into from `snap`, and then nothing moves. */
+  hold?: boolean;
 }
 
 /**
@@ -919,7 +972,7 @@ const DEFAULT_TIMING: Timing = [0, 0.45, outQuint];
 /**
  * Fields that leave gentler than the default when a state's table says
  * nothing: an eye's lean (worry, happiness) unwinds, never flicks, and the
- * lean floor comes back over a third of a second (at most about 2° a frame),
+ * lean floor comes back over a third of a second (at most about 2.7° a frame),
  * before the eyes are bars again.
  */
 const FIELD_TIMING: Partial<Record<BlendedField, Timing>> = { tilt: [0, 0.5, outCubic], leanW: [0, 0.3, outCubic] };
@@ -973,8 +1026,12 @@ const FROM_SLEEP: Partial<Record<BlendedField, Timing>> = {
 const TURN_SPEED = 580;
 const TURN_SPEED_NEEDS_YOU = 1000;
 
+/** What a needs-you face's own beat (needsYouLag) never delays: its badge, its orbit, the dots merging back. */
+const UNLAGGED: ReadonlySet<BlendedField> = new Set<BlendedField>(["badgeS", "ringP", "ringGap", "ringA", "ringO", "ballS", "ballPark", "morph", "think"]);
+
 /** The pose at face time T (seconds), before rest life. */
 export function poseAt(seg: Segment, T: number, ctx: FaceCtx): Pose {
+  if (seg.hold) return holdPose(seg, T, ctx);
   const def = STATES[seg.state] ?? STATES.idle;
   const ts = T - seg.at;
   const snap = seg.snap;
@@ -999,11 +1056,18 @@ export function poseAt(seg: Segment, T: number, ctx: FaceCtx): Pose {
   // Into done, a blink carried on from the change has all but reopened (0.9
   // open, 0.745 of the way through blinkCurve) before the happy capsules
   // form: they form from the reopened eye, never squash it again as it opens.
+  // Their lean waits with them: a worried pair (blocked) letting go of its
+  // tilt while the capsules wait would stand as two upright bars (⏸).
   const carried = seg.state === "done" ? blinkPhase(snap, false) : null;
   const settle = carried === null ? 0 : Math.max(0, 0.745 - carried) * ACK_S;
   // A stalled orbit (blocked) leaving where the state's own table would
   // reel in a live one: its ball goes with the ring, over the same time.
   const stalledOut = snap.ringKind === "stalled" && snap.ringO > 0.002 && tgt.ringO <= 0.002 ? stallOut(def.timing?.ringP?.[1] ?? 0.45) : null;
+  // A needs-you face's own beat (needsYouLag): its head and eyes move off
+  // that late, never its badge or its orbit. Not out of the dots (the ball's
+  // pop there waits for the face to come home) nor on a long way round (a
+  // face caught mid-spin comes home without stopping).
+  const lag = (seg.state === "waiting" || seg.state === "blocked") && !fromDots && Math.abs(tgt.yaw - snap.yaw) <= 90 ? needsYouLag(ctx) : 0;
   for (const f of BLENDED) {
     const timing =
       (fromDots ? (FROM_DOTS[f] ?? (seg.state === "done" && !ctx.size.front ? FROM_DOTS_HAPPY[f] : undefined)) : undefined) ??
@@ -1013,7 +1077,7 @@ export function poseAt(seg: Segment, T: number, ctx: FaceCtx): Pose {
       def.timing?.[f] ??
       FIELD_TIMING[f] ??
       DEFAULT_TIMING;
-    const d = timing[0] + (f === "smile" || f === "eH" || f === "eW" ? settle : 0);
+    const d = timing[0] + (lag && !UNLAGGED.has(f) ? lag : 0) + (f === "smile" || f === "eH" || f === "eW" || f === "tilt" ? settle : 0);
     let dur = timing[1];
     let ez = timing[2];
     if (f === "yaw") {
@@ -1041,18 +1105,68 @@ export function poseAt(seg: Segment, T: number, ctx: FaceCtx): Pose {
  * A blink under way when the state changed runs on to its end in the new
  * state, whatever the state (blinkPhase): a change never cuts the eyes from
  * shut to open in one frame, and the state's own acknowledgement joins it
- * (forcedBlink) rather than closing them again. Into a state that shuts the
- * eyes itself (paused, a small face thinking), the blink never reopens: a
- * closing one goes on to shut and stays shut, one reopening stops where it
- * is, and the lid closes over it, so shut eyes never open to close again.
+ * (forcedBlink) rather than closing them again. Into a state that takes the
+ * eyes away (paused and a small face thinking shut them; a large face
+ * thinking turns them round the back), the blink never reopens: a closing
+ * one goes on to shut and stays shut, one reopening stops where it is (its
+ * openness is the ceiling), and the lid or the turn takes them from there,
+ * so eyes on their way out never open again first.
  */
 function carryOn(out: Pose, snap: Pose, tgt: Pose, ts: number): Pose {
   const phase = blinkPhase(snap, false);
   if (phase === null) return out;
-  const shuts = tgt.lid < 0.5 && tgt.lid < snap.lid - 0.05;
+  const shuts = (tgt.lid < 0.5 && tgt.lid < snap.lid - 0.05) || tgt.morph > 0.5;
   const carried = !shuts ? blinkFrom(phase, ts) : phase >= 0.46 ? blinkCurve(phase) : blinkCurve(Math.min(phase + Math.max(0, ts) / ACK_S, 0.4));
   out.blinkMul = Math.min(out.blinkMul, carried);
   return out;
+}
+
+/** How long a held face takes to ease into its still frame (s), and its loops to coast to a stop. */
+const HOLD_S = 0.45;
+const HOLD_STOP_S = 0.6;
+/** Seconds into a hold after which nothing moves: the ease, the loops' stop, and a blink carried in. */
+const HOLD_END = Math.max(HOLD_S, HOLD_STOP_S, ACK_S);
+
+/**
+ * Held still (`Segment.hold`): a second copy of a face whose larger copy is
+ * alive elsewhere on the screen (the thread header's face while the profile's
+ * is up) shows its state's still frame and nothing else, so one agent never
+ * blinks and glances out of step with itself; but it gets there from where it
+ * is, never by a cut or a swap of element: every field eases to the still
+ * pose over HOLD_S, a blink under way runs to its end (carryOn), and the
+ * loops (the orbit, the thinking wave) coast to a stop from their own speed
+ * where they are. Then nothing moves (nextChange) until the hold ends, when
+ * the state carries on from the still (rebaseSegment, no entry beats). A
+ * change of state while held eases from one still to the next.
+ */
+function holdPose(seg: Segment, T: number, ctx: FaceCtx): Pose {
+  const tgt = stillPose(seg.state, { ...ctx, seed: 0 });
+  const snap = seg.snap;
+  if (!snap) return tgt;
+  const ts = Math.max(0, T - seg.at);
+  const out: Pose = { ...tgt };
+  const e = inOutCubic(ts / HOLD_S);
+  for (const f of BLENDED) out[f] = lerp(snap[f], tgt[f], e);
+  if (snap.badgeKind && tgt.badgeKind && snap.badgeKind !== tgt.badgeKind && snap.badgeS > 0.001) {
+    // One badge giving way to the other (waiting ↔ blocked, small): it shrinks away before the new one grows.
+    const h = HOLD_S / 2;
+    out.badgeKind = ts < h ? snap.badgeKind : tgt.badgeKind;
+    out.badgeS = ts < h ? lerp(snap.badgeS, 0, outCubic(ts / h)) : lerp(0, tgt.badgeS, outCubic((ts - h) / h));
+  } else {
+    out.badgeKind = !tgt.badgeKind && snap.badgeKind ? snap.badgeKind : tgt.badgeKind;
+  }
+  out.ringKind = tgt.ringO > 0.002 ? tgt.ringKind : snap.ringKind;
+  // A visible orbit changing kind repaints its ball while it is small (never through magenta).
+  if (snap.ringKind !== tgt.ringKind && snap.ringO > 0.5 && snap.ballS > 0.05 && tgt.ringO > 0.5) out.ballS = repaintBall(out, ts, snap);
+  // The loops coast to a stop from their own speed, an ease-out over HOLD_STOP_S.
+  const stop = outCubic(ts / HOLD_STOP_S);
+  const left = (1 - clamp01(ts / HOLD_STOP_S)) ** 2;
+  out.ringPhase = snap.ringPhase + ((snap.ringSpeed * HOLD_STOP_S) / 3) * stop;
+  out.ringSpeed = snap.ringSpeed * left;
+  out.pulse = snap.pulse + (snap.think > 0.01 ? (waveRate(ctx) * HOLD_STOP_S) / 3 : 0) * stop;
+  out.spinYaw = 0;
+  out.blinkMul = 1;
+  return carryOn(out, snap, tgt, ts);
 }
 
 function arrive(tgt: Pose, from: { pose: Pose; at: number }, T: number, ctx: FaceCtx): Pose {
@@ -1124,6 +1238,7 @@ export function carryBlink(snap: Pose, c: number, dir: number): Pose {
  */
 export function nextChange(seg: Segment, T: number, ctx: FaceCtx, P: Pose): number {
   if (seg.from && T - seg.from.at < ARRIVE_S) return T;
+  if (seg.hold) return T - seg.at < HOLD_END ? T : Infinity;
   const def = STATES[seg.state] ?? STATES.idle;
   if (!def.quiet) return T;
   let next = def.quiet(T - seg.at, ctx, T, seg.snap);
@@ -1245,7 +1360,7 @@ function blinkNext(ctx: FaceCtx, state: AgentState, T: number, since = -Infinity
  * The runtime adds the pointer look and the hover notice on top.
  */
 export function restExtras(ctx: FaceCtx, seg: Segment, T: number, P: Pose = poseAt(seg, T, ctx)): FaceExtras {
-  if (!ctx.live) return NO_EXTRAS;
+  if (!ctx.live || seg.hold) return NO_EXTRAS;
   const since = seg.at + BLINK_QUIET_S;
   let blink = lerp(1, blinkAt(ctx, seg.state, T, since), P.blinkW);
   if (seg.state === "idle" && P.blinkW > 0) {
@@ -1253,6 +1368,25 @@ export function restExtras(ctx: FaceCtx, seg: Segment, T: number, P: Pose = pose
     if (Math.abs(g.b.y - g.a.y) > 8 && g.start >= since) blink = Math.min(blink, lerp(1, blinkCurve((T - g.start) / BLINK_S), P.blinkW));
   }
   return blink === 1 ? NO_EXTRAS : { ...NO_EXTRAS, blink };
+}
+
+/**
+ * Whether a hover notice starting at T joins a blink already under way: the
+ * state's acknowledgement or a blink carried across a change (blinkMul, and
+ * an acknowledgement still to come: a needs-you face's comes a beat late), a
+ * scheduled one, or a notice still running (`noticedAt`, its start). That
+ * blink is the notice. drawFace multiplies the state's blink by the rest
+ * blinks, so a notice run on top of an acknowledgement closed the eyes on
+ * two curves at once and they stuttered; a notice restarted while one runs
+ * would throw the eyes open in a frame. Pure: the runtime's rule, and the tests'.
+ */
+export function noticeJoins(seg: Segment, T: number, ctx: FaceCtx, noticedAt = 0): boolean {
+  if (noticedAt > 0 && T - noticedAt < BLINK_S) return true;
+  const P = poseAt(seg, T, ctx);
+  if (restExtras(ctx, seg, T, P).blink < 0.999) return true;
+  // Ahead as far as a needs-you face's acknowledgement may wait (needsYouLag).
+  for (let dt = 0; dt <= 0.12 + 1e-9; dt += 0.02) if ((dt ? poseAt(seg, T + dt, ctx) : P).blinkMul < 0.999) return true;
+  return false;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1273,6 +1407,13 @@ export interface FaceConfig {
    * so a click is answered in the next frame.
    */
   direct?: boolean;
+  /**
+   * Held still: a second copy of a face whose larger copy is alive elsewhere
+   * on the screen. Its rest life stops and it eases into its state's still
+   * frame from where it is (holdPose), on the same element; let go, the state
+   * carries on from there.
+   */
+  still?: boolean;
 }
 
 export interface FaceRigHandle {
@@ -1494,13 +1635,21 @@ function extrasFor(rt: Runtime, P: Pose, T: number, dt: number): FaceExtras {
   lk.y += (lk.ty - lk.y) * a;
   lk.p += (lk.tp - lk.p) * a;
   lk.by += (lk.ty - lk.by) * ab;
-  if (!ctx.live) return NO_EXTRAS;
   const lw = config.look ? P.lookW : 0;
   const big = !ctx.size.front;
-  let blink = restExtras(ctx, rt.seg, T, P).blink;
-  // The hover notice is a blink like any other: a state that holds its eyes
-  // (done's happy capsules, blinkW 0) answers with the pointer look alone.
-  if (rt.noticedAt > 0) blink = Math.min(blink, lerp(1, blinkCurve((T - rt.noticedAt) / BLINK_S), P.blinkW));
+  let blink = 1;
+  if (ctx.live) {
+    blink = restExtras(ctx, rt.seg, T, P).blink;
+    // The hover notice is a blink like any other: a state that holds its eyes
+    // (done's happy capsules, blinkW 0) answers with the pointer look alone.
+    // It never runs on top of the state's own blink (noticeJoins drops it
+    // when it would start in one): two curves multiplied are a stutter.
+    if (rt.noticedAt > 0 && P.blinkMul >= 0.999) blink = Math.min(blink, lerp(1, blinkCurve((T - rt.noticedAt) / BLINK_S), P.blinkW));
+  } else if (Math.abs(lk.y) + Math.abs(lk.p) + Math.abs(lk.by) < 0.002) {
+    // A face held still lets go of the pointer over the look's own ease (its
+    // targets are zero), never in a frame; one never live has none.
+    return NO_EXTRAS;
+  }
   return {
     yaw: lk.y * (big ? 16 : 10) * lw,
     pitch: -lk.p * (big ? 12 : 8) * lw,
@@ -1569,7 +1718,7 @@ function updateLookTargets() {
   const fresh = pointer && now - pointer.at < 5000 ? pointer : null;
   const reads: Array<{ rt: Runtime; rect: DOMRect }> = [];
   for (const rt of faces) {
-    if (rt.visible && rt.config.look && !rt.reduced) reads.push({ rt, rect: rt.el.getBoundingClientRect() });
+    if (rt.visible && rt.config.look && !rt.config.still && !rt.reduced) reads.push({ rt, rect: rt.el.getBoundingClientRect() });
   }
   for (const { rt, rect } of reads) {
     let ty = 0;
@@ -1708,7 +1857,7 @@ export function attachFaceRig(
     clip: el.querySelector("clipPath")?.id || ids.clip,
     body: parts.body?.id || ids.body,
   };
-  const ctx = faceCtx(config.spec, config.mark, seed, config.live, config.identity);
+  const ctx = faceCtx(config.spec, config.mark, seed, config.live && !config.still, config.identity);
   const T0 = (clockMs() + offset) / 1000;
   const rt: Runtime = {
     el,
@@ -1718,7 +1867,7 @@ export function attachFaceRig(
     ctx,
     // Settled in its state, as if there all along (each face at its own point
     // in its loops), arriving from the still frame the server drew.
-    seg: { state, at: T0 - 60 - noise(seed, 1, 5) * 9, snap: null, from: { pose: stillPose(state, ctx), at: T0 } },
+    seg: { state, at: T0 - 60 - noise(seed, 1, 5) * 9, snap: null, from: { pose: stillPose(state, ctx), at: T0 }, hold: config.still || undefined },
     offset,
     last: readFrame(parts),
     quantum: quantumOf(config),
@@ -1745,7 +1894,10 @@ export function attachFaceRig(
   if (rt.trigger) {
     rt.onEnter = () => {
       if (rt.reduced || !rt.ctx.live) return;
-      rt.noticedAt = faceTime(rt, clockMs());
+      const T = faceTime(rt, clockMs());
+      // A blink already under way (or one still running from the last entry) is the notice.
+      if (noticeJoins(rt.seg, T, rt.ctx, rt.noticedAt)) return;
+      rt.noticedAt = T;
       wake(rt);
     };
     rt.trigger.addEventListener("pointerenter", rt.onEnter);
@@ -1758,8 +1910,9 @@ export function attachFaceRig(
     rt.spinUntil = 0;
     el.setAttribute("data-drawn", next);
     const T = faceTime(rt, rt.shownAt);
+    const hold = rt.config.still || undefined;
     if (rt.reduced) {
-      rt.seg = { state: next, at: T - 60 - noise(rt.ctx.seed, 1, 5) * 9, snap: null };
+      rt.seg = { state: next, at: T - 60 - noise(rt.ctx.seed, 1, 5) * 9, snap: null, hold };
       // Under reduced motion the stills cross-fade (agent-face.css) instead of cutting.
       el.removeAttribute("data-swap");
       void el.getBoundingClientRect();
@@ -1767,8 +1920,9 @@ export function attachFaceRig(
       render(rt, clockMs(), 0);
       return;
     }
-    rt.seg = withNotice(rt, { state: next, at: T, snap: snapshot(rt.seg, T, rt.ctx) }, T);
-    rt.spinUntil = rt.shownAt + spinHold(next, rt.config.spec.size, rt.seg.snap) * 1000;
+    // Held still, a change eases from one still frame to the next (holdPose): no entry beats, no spin.
+    rt.seg = withNotice(rt, { state: next, at: T, snap: snapshot(rt.seg, T, rt.ctx), hold }, T);
+    rt.spinUntil = hold ? 0 : rt.shownAt + spinHold(next, rt.config.spec.size, rt.seg.snap) * 1000;
     wake(rt);
   };
 
@@ -1801,17 +1955,29 @@ export function attachFaceRig(
       const T = faceTime(rt, clockMs());
       const sizeChanged = next.spec.size.key !== rt.config.spec.size.key;
       const old = rt.ctx;
+      const held = !!next.still;
+      const wasHeld = !!rt.config.still;
       rt.config = next;
-      rt.ctx = faceCtx(next.spec, next.mark, rt.ctx.seed, next.live, next.identity);
+      rt.ctx = faceCtx(next.spec, next.mark, rt.ctx.seed, next.live && !held, next.identity);
       rt.quantum = quantumOf(next);
       if (sizeChanged) {
-        rt.seg = { state: rt.seg.state, at: T - 60 - noise(rt.ctx.seed, 1, 5) * 9, snap: null };
+        rt.seg = { state: rt.seg.state, at: T - 60 - noise(rt.ctx.seed, 1, 5) * 9, snap: null, hold: held || undefined };
         rt.spinUntil = 0;
-      } else if (!rt.reduced && (rt.ctx.side !== old.side || rt.ctx.pace !== old.pace)) {
-        // A new look under a running state: carry on from where the face is,
-        // never swap its rest side or pace in one frame (rebaseSegment).
-        rt.seg = withNotice(rt, rebaseSegment(rt.seg, T, old, rt.ctx), T);
+      } else if (!rt.reduced && (held !== wasHeld || rt.ctx.side !== old.side || rt.ctx.pace !== old.pace)) {
+        // Held still (holdPose), or a new look under a running state: carry on
+        // from where the face is, never cut to a still or swap its rest side
+        // or pace in one frame (rebaseSegment). Let go, the state carries on
+        // from the still the same way.
+        rt.seg = withNotice(rt, held ? { state: rt.seg.state, at: T, snap: snapshot(rt.seg, T, old), hold: true } : rebaseSegment(rt.seg, T, old, rt.ctx), T);
         rt.spinUntil = 0;
+      } else if (held !== wasHeld) {
+        // Under reduced motion the still is drawn anyway; the segment only remembers it is held.
+        rt.seg = { ...rt.seg, hold: held || undefined };
+      }
+      if (held) {
+        // The pointer is let go over the look's own ease (extrasFor).
+        rt.look.ty = 0;
+        rt.look.tp = 0;
       }
       render(rt, clockMs(), 0);
       wake(rt);

@@ -230,6 +230,35 @@ if (!DB_URL) {
     await waitFor(on(id, "settled"), "A to settle");
   });
 
+  test("a Stop pressed before a durable first submission registered stops it too: its receipt takes the caller's id", async () => {
+    // The web sends durable first-submission keys on a new chat's first
+    // message (src/lib/chat/send-retry.ts). Before the receipt took the
+    // caller's generation id, a Stop pressed in admission was recorded under
+    // an id the turn never registered with, and the turn ran on.
+    const user = await seedUser();
+    const generationId = `gen-${randomUUID()}`;
+    const stop = await pressStopFromProcessB(generationId);
+    assert.deepEqual(stop.body, { ok: true, cancelled: false, delivery: "queued" }, "nobody holds it yet: recorded, not claimed");
+
+    const id = startTurn(user.id, {
+      message: "Write a long essay.",
+      generationId,
+      clientRequestId: `req-${randomUUID()}`,
+      clientMessageId: `msg-${randomUUID()}`,
+    });
+    const meta = await waitFor(on(id, "meta"), "the turn's meta frame");
+    assert.equal(meta.generationId, generationId, "the receipt generates under the caller's id");
+    const terminal = await waitFor(on(id, "terminal"), "A's terminal frame", 10_000);
+    const sinceRegistered = (terminal.at as number) - (meta.at as number);
+    assert.ok(sinceRegistered < STOP_BUDGET_MS, `stopped ${sinceRegistered} ms after the turn registered`);
+    assert.equal((terminal.frame as Frame).finishReason, "user_stopped");
+    assert.ok((terminal.deltas as number) < 30, "the answer was cut short");
+    await waitFor(on(id, "settled"), "A to settle");
+    const receipt = await prisma.chatFirstSubmissionReceipt.findFirst({ where: { generationId } });
+    assert.ok(receipt, "the receipt is the caller's generation");
+    assert.notEqual(receipt.state, "running", "and it is settled, not left running");
+  });
+
   test("a private turn (no live lease, nothing written on its own) is still stopped from process B within 3 s", async () => {
     const user = await seedUser();
     const generationId = `gen-${randomUUID()}`;

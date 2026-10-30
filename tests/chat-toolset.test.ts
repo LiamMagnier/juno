@@ -140,7 +140,7 @@ test("Juno's tools come first in registry order, then connectors, then native to
     "web_fetch", "current_time", "calculate", "start_task",
     "github__list_issues", "github__create_issue", "notion__search",
   ]);
-  assert.equal(box.opts?.connectTimeoutMs, 10_000, "chat bounds each connector's connect");
+  assert.equal(box.opts?.connectTimeoutMs, 5_000, "chat bounds each connector's connect and list to 5 s");
   // Juno tools say which they are, for the adapters; the annotations never reach the wire.
   assert.equal(toolset.tools[0].annotations?.junoCanonical, "web_fetch");
   assert.deepEqual(toolset.connectors, [
