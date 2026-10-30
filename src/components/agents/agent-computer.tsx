@@ -471,15 +471,17 @@ export function AgentComputerOverlay({
               )}
             </div>
             {terminalRunId ? (
-              <ComputerTerminal
-                agentId={agent.id}
-                agentName={agent.name}
-                runId={terminalRunId}
+              // The pane fills a box the screen sizes (its row's height on a wide
+              // window, 16:10 in the narrow tab), and never grows it: a long
+              // output scrolls inside the pane instead of stretching the screen.
+              <div
                 className={cn(
-                  "lg:w-[22rem] lg:shrink-0",
+                  "relative min-w-0 lg:w-[22rem] lg:shrink-0",
                   pane === "terminal" ? "max-lg:aspect-[16/10] max-lg:flex-1" : "max-lg:hidden"
                 )}
-              />
+              >
+                <ComputerTerminal agentId={agent.id} agentName={agent.name} runId={terminalRunId} className="absolute inset-0" />
+              </div>
             ) : null}
           </div>
 

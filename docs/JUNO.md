@@ -842,8 +842,11 @@ and the sources, the doc adds the migration plan and the file paths.
 The first saved submission of a new conversation carries `clientRequestId` +
 `clientMessageId` (opaque 8–120 char keys, valid only for a new non-private,
 non-regenerate conversation). A `ChatFirstSubmissionReceipt` binds a SHA-256 hash of
-the generation-affecting envelope to **one** server-generated `generationId`. Recovery
-happens before rate limiting and returns precise 409s:
+the generation-affecting envelope to **one** `generationId`: the caller's when the first
+request sent one (so a Stop pressed while the turn is still in admission, recorded under
+that id, finds it), otherwise a server UUID. The id is not part of the hash, and a repeat
+is answered with the receipt's id. Recovery happens before rate limiting and returns
+precise 409s:
 
 - same request already accepted → **409** `REQUEST_ALREADY_SUBMITTED` (with canonical ids)
 - key reused with a different body → **409** `IDEMPOTENCY_KEY_REUSED`

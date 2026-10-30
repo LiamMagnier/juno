@@ -24,10 +24,12 @@ import {
 /** Copy, named so scripts/generate-i18n-catalog.mjs picks it up. */
 const sessionEndedTitle = "Your session ended";
 const sessionEndedKeepsMessage =
-  "Sign in again to keep going. Your message wasn’t sent. It will be waiting in the message box when you’re back.";
+  "Sign in again to keep going. Your message wasn’t sent. If you sign in again in this tab, its words will be waiting in the message box.";
+const sessionEndedKeepsWordsMessage =
+  "Sign in again to keep going. Your message wasn’t sent. If you sign in again in this tab, its words will be waiting in the message box, but not its attachments.";
 const sessionEndedCopyFirstMessage =
   "Sign in again to keep going. Your message wasn’t sent, and this browser can’t hold it for you, so copy it first if you want to keep it.";
-const sessionEndedReturnsMessage = "Sign in again to keep going. You’ll come back to this chat.";
+const sessionEndedReturnsMessage = "Sign in again to keep going. Nothing was sent, so try again once you’re back.";
 const sessionEndedIncognitoMessage =
   "Sign in again to keep going. Incognito chats aren’t kept, so copy your message first if you want to keep it.";
 const unsentRestoredMessage = "Your unsent message is back in the message box.";
@@ -61,8 +63,11 @@ function storageWorks(): boolean {
  *
  * Sign in again keeps the unsent words in this tab, goes through sign-in and
  * comes back to the same page; this component, mounted there again, hands the
- * words to the composer. Not now closes it: the unsent turn stays in the
- * transcript with its Retry send, and the composer keeps whatever it held.
+ * words to the composer. Only the words: attachments and references are not
+ * carried, and the copy says so. A sign-in finished in another tab (an email
+ * link) finds no stash, which is why the copy says "in this tab". Not now
+ * closes it: the unsent turn stays in the transcript with its Retry send, and
+ * the composer keeps whatever it held.
  */
 export function SessionExpiredDialog() {
   const { user } = useApp();
@@ -103,9 +108,11 @@ export function SessionExpiredDialog() {
     ? sessionEndedIncognitoMessage
     : !turn?.text
       ? sessionEndedReturnsMessage
-      : canKeep
-        ? sessionEndedKeepsMessage
-        : sessionEndedCopyFirstMessage;
+      : !canKeep
+        ? sessionEndedCopyFirstMessage
+        : turn?.withAttachments
+          ? sessionEndedKeepsWordsMessage
+          : sessionEndedKeepsMessage;
 
   return (
     <Dialog

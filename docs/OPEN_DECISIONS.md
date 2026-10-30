@@ -533,9 +533,12 @@ opens "Your session ended" and keeps the unsent words across sign-in
 - **Client bounds (code constants, not env: they ship in the browser bundle
   and the apps).** Web: at most 6 rounds per send (a POST or a "did it land?"
   check) within 60 s; `Retry-After` honoured between 1 and 15 s; otherwise
-  2, 4, 8, 10 s; up to +30% jitter. Apps: up to 5 re-sends on a drain, 5 s
-  each plus up to 30% jitter. A deploy whose restart takes longer than that
-  still ends the turn with the drain's own sentence and a Retry send.
+  2, 4, 8, 10 s; up to +30% jitter; one "did it land?" check gives up after
+  8 s and counts as unanswered. Apps: up to 5 re-sends on a drain, 5 s each
+  plus up to 30% jitter; the proxy's own 502/503/504 after a drain ends the
+  turn with the drain's sentence instead of a "reconnecting" recovery. A
+  deploy whose restart takes longer than that still ends the turn with the
+  drain's own sentence and a Retry send.
 - **Durable receipts for every new web chat.** The web now sends
   `clientRequestId`/`clientMessageId` on a new saved chat's first message, so
   each new web chat writes one `ChatFirstSubmissionReceipt` row (before, only
@@ -591,7 +594,11 @@ the Work browser no longer installs Playwright's own signal handlers (they
 closed every browser and exited 130 at once), but a host shutdown or a
 terminal's Ctrl-C still reaches every process. If the owner raises the step
 wait without raising `kill_timeout`, the runner shortens the wait to fit
-(`kill_timeout` − 10 s), since PM2 would otherwise kill it mid-drain.
+(`kill_timeout` − 10 s), since PM2 would otherwise kill it mid-drain. A
+background check of its own that is stuck at that point (a `docker` command or
+a database query that never answers) does not hold it either: once every run
+is set aside or ended, the runner exits at step wait + 9 s whether or not that
+check has returned, before PM2's kill.
 
 - **`WORK_RESUME_AFTER_RESTART`, default on.** `0` (or `false`, `off`, `no`):
   a run set aside for a restart ends `interrupted` instead, its progress kept,

@@ -468,13 +468,38 @@ print(json.dumps({"Control_L": down("Control_L"), "Shift_L": down("Shift_L"), "a
 """
 
 
+# As the browser uid: every uid-1000 process as "pid<TAB>state<TAB>args". A process in
+# uninterruptible sleep (D) with SIGSTOP pending is reported as "Tp": it runs none
+# of its own code again before it stops, and agent-exec's freeze counts it as
+# stopped (a fork held in D for seconds on a loaded host otherwise read as running).
+AGENT_PROCESSES_PROBE = r"""
+import os
+STOP = 1 << 18
+for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+        continue
+    try:
+        with open("/proc/%s/status" % pid) as file:
+            status = dict(line.split(":", 1) for line in file if ":" in line)
+        if int(status["Uid"].split()[0]) != 1000:
+            continue
+        state = status["State"].split()[0]
+        pending = int(status.get("SigPnd", "0").strip(), 16) | int(status.get("ShdPnd", "0").strip(), 16)
+        with open("/proc/%s/cmdline" % pid, "rb") as file:
+            args = file.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except (OSError, KeyError, ValueError):
+        continue
+    print("%s\t%s\t%s" % (pid, "Tp" if state == "D" and pending & STOP else state, args))
+"""
+
+
 def agent_processes(computer):
     """[(pid, state, command)] of every uid-1000 process, read as the browser uid."""
-    result = computer.run_as_browser(["ps", "-o", "pid=,stat=,args=", "-u", "1000"], check=False)
+    result = computer.run_as_browser(["python3", "-I", "-c", AGENT_PROCESSES_PROBE], check=False)
     rows = []
     for line in result.stdout.splitlines():
-        parts = line.split(None, 2)
-        if len(parts) >= 2:
+        parts = line.split("\t", 2)
+        if len(parts) >= 2 and parts[0].isdigit():
             rows.append((int(parts[0]), parts[1], parts[2] if len(parts) > 2 else ""))
     return rows
 

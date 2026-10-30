@@ -278,6 +278,8 @@ final class NativeChatAPIClientTests: XCTestCase {
                 #"{"error":"No model is available for Auto right now.","code":"AUTO_NO_ELIGIBLE_MODEL"}"#,
                 statusCode: 503
             ),
+            // The proxy's own page once the draining process has exited.
+            streamResponse("<html><body>502 Bad Gateway</body></html>", statusCode: 502),
         ])
         let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
         let request = NativeChatGenerationRequest(
@@ -308,6 +310,15 @@ final class NativeChatAPIClientTests: XCTestCase {
             XCTFail("Expected the other 503")
         } catch {
             XCTAssertEqual((error as? NativeChatAPIError)?.isServerDraining, false)
+            XCTAssertEqual((error as? NativeChatAPIError)?.isGatewayRefusal, false)
+        }
+        do {
+            _ = try await client.generationEvents(request, for: accountID)
+            XCTFail("Expected the proxy's 502")
+        } catch {
+            let proxy = try XCTUnwrap(error as? NativeChatAPIError)
+            XCTAssertTrue(proxy.isGatewayRefusal)
+            XCTAssertFalse(proxy.isServerDraining)
         }
         XCTAssertFalse(NativeChatAPIError.streamEndedWithoutTerminalEvent.isServerDraining)
         XCTAssertEqual(NativeChatAPIError.drainRetryAfterSeconds, 5)

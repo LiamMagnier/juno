@@ -1171,6 +1171,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
     private var generationTask: Task<Void, Never>?
     private var activeGenerationID: String?
+    /// The generation a Stop was pressed for, recorded the moment it is
+    /// pressed. The deploy-drain wait reads it, so a Stop holds whatever
+    /// `/api/chat/cancel` answers. Generation ids are never reused.
+    @ObservationIgnored private var stopRequestedGenerationID: String?
     private var chatApprovalErrors: [String: String] = [:]
     private var chatApprovalScopeRefusals = Set<String>()
 
@@ -2817,6 +2821,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             let chatClient
         else { return }
         chatPhase = .stopping
+        stopRequestedGenerationID = generationID
         // A Research turn answered in the chat also started a run the server
         // would otherwise go on driving: cancel that too (brief B6.8).
         if let turn = activeResearchTurn {
@@ -2829,7 +2834,12 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             do {
                 _ = try await chatClient.cancelGeneration(id: generationID, for: accountID)
             } catch {
-                guard let self, self.accountID == accountID else { return }
+                // Only while this turn is still the one running: a turn that
+                // has ended since (a Stop during a deploy's drain wait ends it
+                // at once) keeps its end.
+                guard let self, self.accountID == accountID,
+                    self.activeGenerationID == generationID
+                else { return }
                 self.chatErrorDescription = error.localizedDescription
                 self.chatPhase = .reconnecting
             }
@@ -2961,6 +2971,20 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             }
         } catch is CancellationError {
             return
+        } catch is NativeDrainWaitStopped {
+            // Stopped while the server restarted for a deploy: no answer was
+            // started, so the turn ends as a Stop before any output does.
+            guard accountID == context.accountID else { return }
+            failAssistant(
+                "Generation stopped before any output.",
+                reason: .userStopped,
+                context: context
+            )
+            activeGenerationID = nil
+            generationTask = nil
+            activeChatConversationID = nil
+            await syncModel.refresh()
+            await reload()
         } catch {
             guard accountID == context.accountID else { return }
             if shouldRecover(error) {
@@ -3412,17 +3436,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
 
     private func shouldRecover(_ error: any Error) -> Bool {
-        if let error = error as? NativeChatAPIError {
-            // A drain refused the request before reading it: there is no
-            // saved answer to wait for, so it is not a dropped stream.
-            if error.isServerDraining { return false }
-            switch error {
-            case .streamEndedWithoutTerminalEvent: true
-            case .server(_, _, _, let retryable): retryable
-            default: false
-            }
-        } else {
-            true
+        guard let error = error as? NativeChatAPIError else { return true }
+        // A drain refused the request before reading it: there is no saved
+        // answer to wait for, so it is not a dropped stream.
+        if error.isServerDraining { return false }
+        switch error {
+        case .streamEndedWithoutTerminalEvent: return true
+        case .server(_, _, _, let retryable): return retryable
+        default: return false
         }
     }
 
@@ -3435,24 +3456,42 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// for a dropped stream: "reconnecting to saved data", then minutes of
     /// polling for an answer that was never started. The wait shows the
     /// "Reconnecting in 5s" line a dropped stream shows; a Stop ends it.
+    ///
+    /// A Stop is read from ``stopRequestedGenerationID``, never from
+    /// `chatPhase` alone: a cancel that fails (the proxy's 502 once the old
+    /// process has exited, or no network) puts the phase back to
+    /// `.reconnecting`, and the wait must not send the turn after a Stop.
     private func drainAwareGenerationEvents(
         chatClient: NativeChatAPIClient,
         _ request: NativeChatGenerationRequest,
         for accountID: AccountID
     ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
         var retries = 0
+        var lastDrain: NativeChatAPIError?
         // However this ends — streaming, a Stop, cancellation or out of
         // tries — the "Reconnecting" line it raised goes with it.
-        defer { if retries > 0 { chatConnection = nil } }
+        defer { if lastDrain != nil { chatConnection = nil } }
         while true {
             do {
                 let events = try await chatClient.generationEvents(request, for: accountID)
-                if retries > 0 { chatPhase = .submitting }
+                // A Stop pressed during this last send stays a Stop: the
+                // cancel it sent is what ends the stream.
+                if lastDrain != nil, stopRequestedGenerationID != request.generationID {
+                    chatPhase = .submitting
+                }
                 return events
-            } catch let drain as NativeChatAPIError
-                where drain.isServerDraining && retries < NativeChatAPIError.drainRetryLimit
+            } catch let refusal as NativeChatAPIError
+                where lastDrain != nil && refusal.isGatewayRefusal
             {
-                guard chatPhase != .stopping else { throw drain }
+                // The draining process has exited and the proxy answers for it
+                // until the new one is up: still restarting, so the turn ends
+                // with the restart's sentence, not as a dropped stream to poll.
+                if stopRequestedGenerationID == request.generationID { throw NativeDrainWaitStopped() }
+                throw lastDrain ?? refusal
+            } catch let drain as NativeChatAPIError where drain.isServerDraining {
+                lastDrain = drain
+                if stopRequestedGenerationID == request.generationID { throw NativeDrainWaitStopped() }
+                guard retries < NativeChatAPIError.drainRetryLimit else { throw drain }
                 retries += 1
                 // Jittered, so devices refused together do not return together.
                 let delay = NativeChatAPIError.drainRetryAfterSeconds * Double.random(in: 1...1.3)
@@ -3462,8 +3501,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 chatConnection = TetherView(phase: .reconnecting, retryAt: deadline)
                 while Date() < deadline {
                     try await Task.sleep(for: .milliseconds(250))
-                    // Stop pressed while waiting: nothing more is sent.
-                    if chatPhase == .stopping { throw drain }
+                    // Stop pressed while waiting: nothing more is sent,
+                    // whatever its cancel got back.
+                    if stopRequestedGenerationID == request.generationID { throw NativeDrainWaitStopped() }
                 }
                 chatConnection = TetherView(phase: .reconnecting, retryAt: nil)
             }
@@ -4205,6 +4245,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         }
     }
 }
+
+/// A Stop pressed while `POST /api/chat` waited out a deploy's drain: nothing
+/// more was sent and no answer was started.
+private struct NativeDrainWaitStopped: Error {}
 
 private struct ConversationWire: Decodable {
     let id: String

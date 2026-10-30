@@ -1131,13 +1131,26 @@ class Host:
                 or not VNC_PASSWORD.fullmatch(view):
             raise Refused(400, "bad_password")
         self.docker(Argv.vnc_kill(name), ns, timeout=15, allow_nonzero=True)
+        # pkill only signals: the old server (the person's session) holds port
+        # 5900 until it has exited, and a new one started at once failed
+        # ("Address already in use") on a loaded host (src/lib/computer/docker.ts, the same wait).
+        self.wait_for_vnc_exit(ns, name)
         self.docker(Argv.vnc_password(name), ns, stdin=("%s\n__BEGIN_VIEWONLY__\n%s\n" % (control, view)).encode(), timeout=15)
         self.docker(Argv.vnc_start(name, self.gateway), ns, timeout=30)
         return {"ok": True}
 
     def stop_vnc(self, ns, name):
         self.docker(Argv.vnc_kill(name), ns, timeout=15, allow_nonzero=True)
+        # Stopped means exited: a take over that could not rotate ends the person's session this way, then thaws.
+        self.wait_for_vnc_exit(ns, name)
         return {"ok": True}
+
+    def wait_for_vnc_exit(self, ns, name, seconds=10):
+        deadline = time.monotonic() + seconds
+        while self.vnc_running(ns, name)["running"]:
+            if time.monotonic() >= deadline:
+                raise Refused(502, "host_error")
+            time.sleep(0.1)
 
     def vnc_running(self, ns, name):
         code, out, _ = self.docker(Argv.vnc_running(name), ns, timeout=10, allow_nonzero=True)

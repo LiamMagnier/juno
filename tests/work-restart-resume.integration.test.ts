@@ -14,10 +14,14 @@
  * inside a step when the wait runs out ends `interrupted`. No model is called;
  * the "model" is a script.
  *
- * The last sends the stop signal the way PM2's default treekill sends it, to
+ * The next sends the stop signal the way PM2's default treekill sends it, to
  * the runner and every process under it, while a browser call's process is
  * running: the run reaches its step boundary all the same, and still ends
  * `interrupted` rather than being continued.
+ *
+ * The last stops the runner while its main loop's tick is stuck on a database
+ * that no longer answers: the runner still exits by itself at the end of its
+ * shutdown window, before PM2's SIGKILL would come.
  *
  *   ORBIT_TEST_DATABASE_URL=postgresql://…/juno_restart_resume_test \
  *   NODE_OPTIONS=--conditions=react-server \
@@ -187,7 +191,15 @@ if (!url) {
     const logDir = process.env.RESTART_E2E_LOG_DIR ?? path.join(tmpdir(), "restart-e2e-logs");
     mkdirSync(logDir, { recursive: true });
 
-    async function sweepers(switchedOn: boolean, until: (log: string) => boolean) {
+    /** juno-sweepers' heartbeat row, when it is current. */
+    const freshBeat = async () => {
+      const beat = await db.rateLimit.findUnique({ where: { key: SWEEPERS_HEARTBEAT_KEY } });
+      return beat && beat.expiresAt.getTime() > Date.now() ? beat : null;
+    };
+
+    // `until` is polled, log line and database alike, before the stop signal:
+    // the process is stopped only once it has shown what is asserted on.
+    async function sweepers(switchedOn: boolean, until: (log: string) => boolean | Promise<boolean>) {
       const logFile = path.join(logDir, `sweepers-${switchedOn ? "on" : "off"}-${Date.now()}.log`);
       const child = spawn(process.execPath, ["--import", "tsx", "scripts/sweepers.ts", "--daemon"], {
         cwd: ROOT,
@@ -207,12 +219,14 @@ if (!url) {
       try {
         const deadline = Date.now() + 90_000;
         let log = "";
+        let there = false;
         while (Date.now() < deadline) {
           log = existsSync(logFile) ? readFileSync(logFile, "utf8") : "";
-          if (until(log)) break;
+          there = await until(log);
+          if (there) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        assert.ok(until(log), `sweepers did not get there (log: ${logFile})`);
+        assert.ok(there, `sweepers did not get there (log: ${logFile})`);
         return log;
       } finally {
         child.kill("SIGTERM");
@@ -223,11 +237,13 @@ if (!url) {
     }
 
     await db.rateLimit.deleteMany({ where: { key: SWEEPERS_HEARTBEAT_KEY } });
-    const off = await sweepers(false, (log) => /are not started in this process/.test(log));
+    // The log line is printed before the watchdog's first look, and its
+    // heartbeat write lands a few hundred ms to seconds later: the process is
+    // stopped only once both are there (the helper's wait is the assertion).
+    const off = await sweepers(false, async (log) => /are not started in this process/.test(log) && (await freshBeat()) !== null);
     assert.doesNotMatch(off, /\[work-scheduler\] started/);
     assert.doesNotMatch(off, /\[work-trigger-poller\] started/);
-    const beat = await db.rateLimit.findUnique({ where: { key: SWEEPERS_HEARTBEAT_KEY } });
-    assert.ok(beat && beat.expiresAt.getTime() > Date.now(), "the watchdog wrote the process's heartbeat on its first look");
+    assert.ok(await freshBeat(), "the watchdog wrote the process's heartbeat on its first look");
 
     const on = await sweepers(true, (log) => /\[work-scheduler\] started/.test(log) && /\[work-trigger-poller\] started/.test(log));
     assert.doesNotMatch(on, /are not started in this process/);
@@ -598,6 +614,99 @@ if (!url) {
       rmSync(scratch, { recursive: true, force: true });
       await db.$disconnect();
       console.log(`[restart-browser] runner logs: ${logDir}`);
+    }
+  });
+
+  test("a tick stuck when the stop arrives does not keep the runner past its shutdown window", { skip: distReady ? false : "runner/agent-core/dist is not built (npm run test:prepare)", timeout: 180_000 }, async () => {
+    // The runner reaches Postgres through a stand-in that can stop answering.
+    // Once its first tick is done the stand-in goes quiet, the next tick's
+    // first query never comes back, and SIGINT arrives while that tick is
+    // stuck. Nothing is in flight, so the drain resolves at once; the runner
+    // still gives the tick the whole window (step wait and grace), then exits
+    // without it, before PM2's SIGKILL would. It used to wait on the tick.
+    const net = await import("node:net");
+    const { readFileSync } = await import("node:fs");
+    const restart = await import("../src/lib/work/restart-resume");
+    const target = /@([^/:@]+)(?::(\d+))?\//.exec(url);
+    assert.ok(target, "a host in the test database URL");
+    // `askedAt` and `answeredAt`: the runner's last write, and the last reply
+    // handed back to it. Asked after answered is a query waiting for its reply.
+    const traffic = { frozen: false, lastAt: 0, bytes: 0, sentWhileFrozen: 0, askedAt: 0, answeredAt: 0, waitingAtFreeze: false };
+    const sockets = new Set<import("node:net").Socket>();
+    const standIn = net.createServer((client) => {
+      const upstream = net.connect(Number(target[2] ?? 5432), target[1]);
+      sockets.add(client);
+      sockets.add(upstream);
+      const close = () => {
+        client.destroy();
+        upstream.destroy();
+      };
+      client.on("data", (chunk: Buffer) => {
+        traffic.lastAt = Date.now();
+        traffic.askedAt = traffic.lastAt;
+        traffic.bytes += chunk.length;
+        if (traffic.frozen) traffic.sentWhileFrozen += chunk.length;
+        else upstream.write(chunk);
+      });
+      upstream.on("data", (chunk: Buffer) => {
+        traffic.lastAt = Date.now();
+        if (traffic.frozen) return;
+        traffic.answeredAt = traffic.lastAt;
+        client.write(chunk);
+      });
+      for (const socket of [client, upstream]) {
+        socket.on("error", close);
+        socket.on("close", close);
+      }
+    });
+    await new Promise<void>((resolve) => standIn.listen(0, "127.0.0.1", resolve));
+    const viaStandIn = url.replace(/@([^/:@]+)(?::\d+)?\//, `@127.0.0.1:${(standIn.address() as AddressInfo).port}/`);
+
+    const logDir = process.env.RESTART_E2E_LOG_DIR ?? path.join(tmpdir(), "restart-e2e-logs");
+    mkdirSync(logDir, { recursive: true });
+    const runners: ChildProcess[] = [];
+    const stepWaitMs = 2_000;
+    try {
+      // No run is queued and no model is called: the port is never used.
+      const runner = spawnRunner({ name: "runner-stuck-tick", port: 9, logDir, stepWaitMs, runners, env: { DATABASE_URL: viaStandIn, DIRECT_URL: viaStandIn } });
+      const logged = () => (existsSync(runner.logFile) ? readFileSync(runner.logFile, "utf8") : "");
+      // The first tick, done: it talked to the database, then went quiet.
+      await waitFor("the runner's first tick", async () => (/\[work-runner\] started/.test(logged()) && traffic.bytes > 0 && Date.now() - traffic.lastAt > 1_500 ? true : null), logDir, 90_000);
+      traffic.frozen = true;
+      // A reply slower than the quiet spell (a loaded database) leaves the
+      // first tick waiting on a query that is now never answered; otherwise
+      // the next tick (5 to 10 s on) sends its first query and gets no answer.
+      // Either way a tick is stuck on the database.
+      traffic.waitingAtFreeze = traffic.askedAt > traffic.answeredAt;
+      await waitFor(
+        "a tick's query to go unanswered",
+        async () => (traffic.waitingAtFreeze || traffic.sentWhileFrozen > 0 ? true : null),
+        logDir,
+        90_000
+      ).catch((error: unknown) => {
+        throw new Error(`${error instanceof Error ? error.message : String(error)} ${JSON.stringify(traffic)}`);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const signalledAt = Date.now();
+      runner.child.kill("SIGINT");
+      const exit = await Promise.race([
+        runner.exited,
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 40_000)),
+      ]);
+      assert.notEqual(exit, "hung", `the runner exits by itself while its tick is stuck (log: ${runner.logFile})`);
+      if (exit === "hung") return;
+      const tookMs = exit.at - signalledAt;
+      assert.equal(exit.code, 0, `it exits cleanly (log: ${runner.logFile})`);
+      const deadline = restart.shutdownExitDeadlineMs(stepWaitMs);
+      assert.ok(tookMs >= stepWaitMs + restart.HARD_STOP_GRACE_MS - 250, `the tick was given the whole window: ${tookMs} ms`);
+      assert.ok(tookMs < deadline + 5_000, `and the process went at the deadline (${deadline} ms): ${tookMs} ms`);
+      assert.match(logged(), /\[work-runner\] stopped \{"inFlight":0,"tickStillRunning":true\}/);
+    } finally {
+      for (const child of runners) if (child.exitCode === null) child.kill("SIGKILL");
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => standIn.close(() => resolve()));
+      console.log(`[restart-stuck-tick] runner logs: ${logDir}`);
     }
   });
 }

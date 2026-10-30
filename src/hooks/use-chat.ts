@@ -50,7 +50,7 @@ import type {
   TitleSource,
 } from "@/types/chat";
 import { memoryWriteOf } from "@/lib/chat/memory-receipts";
-import { abortableSleep, sendTurn, type SendSafety, type SendVerification } from "@/lib/chat/send-retry";
+import { abortableSleep, sendTurn, verifyTurnLanded, type SendSafety } from "@/lib/chat/send-retry";
 import { reportSessionExpired } from "@/lib/chat/session-expired";
 import { promptPlaceholderTitle } from "@/lib/title-ownership";
 
@@ -225,48 +225,6 @@ const regenerateFailedMessage = "Couldn’t regenerate that answer.";
 const unsentAfterMessage = "Resend or copy your unsent message first.";
 /** What a turn that is not a new message says when its send came back 401 (the dialog says the rest). */
 const sessionEndedTurnMessage = "Your session ended. Sign in again to continue.";
-
-/**
- * Whether a saved follow-up whose POST failed before any response reached the
- * server after all (lib/chat/send-retry.ts, `verify`): running under this
- * turn's generation id, or saved as the conversation's newest question. Only
- * an answer the server gave counts; a check it could not answer is `unknown`,
- * and nothing is sent again until it can be asked.
- */
-async function verifyTurnLanded(args: {
-  conversationId: string;
-  generationId: string;
-  /** The question as the transcript shows it, which is what the server stores. */
-  content: string | null;
-  /** User turns this tab already had before the send. */
-  knownUserIds: ReadonlySet<string>;
-}): Promise<SendVerification> {
-  try {
-    const active = await fetch(`/api/chat/stream/active?conversationId=${encodeURIComponent(args.conversationId)}`);
-    // Signed out: a POST is refused before anything is accepted, so sending
-    // again cannot duplicate the turn, and it is what surfaces the expiry.
-    if (active.status === 401) return { state: "absent" };
-    if (active.ok) {
-      const data = (await active.json().catch(() => null)) as { generationId?: unknown } | null;
-      if (data?.generationId === args.generationId) return { state: "landed", running: true, userMessageId: null };
-    } else if (active.status !== 404) {
-      return { state: "unknown" };
-    }
-    if (args.content === null) return { state: "unknown" };
-    const page = await fetch(`/api/conversations/${encodeURIComponent(args.conversationId)}?limit=6`);
-    if (page.status === 401) return { state: "absent" };
-    if (!page.ok) return { state: "unknown" };
-    const payload = (await page.json().catch(() => null)) as { messages?: ClientMessage[] } | null;
-    if (!payload || !Array.isArray(payload.messages)) return { state: "unknown" };
-    const newestUser = [...payload.messages].reverse().find((m) => m.role === "USER");
-    if (newestUser && !args.knownUserIds.has(newestUser.id) && newestUser.content.trim() === args.content.trim()) {
-      return { state: "landed", running: false, userMessageId: newestUser.id };
-    }
-    return { state: "absent" };
-  } catch {
-    return { state: "unknown" };
-  }
-}
 
 export type { LoadOlderRequest } from "@/lib/chat/history-client";
 
@@ -1400,12 +1358,14 @@ export function useChat(opts: UseChatOptions) {
           safety,
           verify:
             safety === "verify" && conversationAtSend
-              ? () =>
+              ? (signal) =>
                   verifyTurnLanded({
                     conversationId: conversationAtSend,
                     generationId,
                     content: sentQuestion,
                     knownUserIds,
+                    // Stop ends a check at once; a server that never answers ends it after a few seconds.
+                    signal,
                   })
               : undefined,
           // "Reconnecting in 4s", then "Reconnecting…": the same calm line a
@@ -1453,6 +1413,9 @@ export function useChat(opts: UseChatOptions) {
             text: unsentQuestion && !opts.privateMode ? sentQuestion : null,
             conversationId: opts.privateMode ? null : convoIdRef.current,
             incognito: !!opts.privateMode,
+            withAttachments:
+              (Array.isArray(body.attachmentIds) && body.attachmentIds.length > 0) ||
+              (Array.isArray(body.context) && body.context.length > 0),
           });
           return;
         }

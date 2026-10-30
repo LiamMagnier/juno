@@ -1057,6 +1057,14 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
         return statusCode == 503 && code == "SERVER_DRAINING"
     }
 
+    /// A 502, 503 or 504 with no error code: the proxy's own page, answered
+    /// while no app process is up (between a drain's old process exiting and
+    /// the new one listening), or an upstream timeout. Never a drain.
+    var isGatewayRefusal: Bool {
+        guard case .server(let statusCode, let code, _, _) = self, code == nil else { return false }
+        return statusCode == 502 || statusCode == 503 || statusCode == 504
+    }
+
     /// The drain's `Retry-After` (src/lib/shutdown.ts, DRAIN_RETRY_AFTER_SECONDS).
     public static let drainRetryAfterSeconds: Double = 5
     /// How many times a drained request is sent again before the turn fails,

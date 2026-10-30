@@ -45,6 +45,8 @@ export const SEND_RETRY = {
   backoffMs: [2_000, 4_000, 8_000, 10_000] as readonly number[],
   /** Up to this share of a wait is added at random, so tabs that failed together do not return together. */
   jitterRatio: 0.3,
+  /** One `verify` check gives up after this long and counts as unanswered (ms). */
+  verifyTimeoutMs: 8_000,
 } as const;
 
 /** How a repeat of this send would be made safe (see the header). */
@@ -250,6 +252,108 @@ export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * `signal`, also aborted after `ms`: a request the turn's Stop must end that
+ * also gives up on a server which takes the connection and never answers.
+ * `dispose` clears the timer and the listener once the caller is done.
+ */
+export function signalWithTimeout(signal: AbortSignal, ms: number): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const follow = () => controller.abort(signal.reason ?? new DOMException("Aborted", "AbortError"));
+  if (signal.aborted) follow();
+  else signal.addEventListener("abort", follow, { once: true });
+  const timer = setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", follow);
+    },
+  };
+}
+
+/** `promise`, or the abort's reason as soon as `signal` aborts, whichever comes first. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+    // Always settled here, so a check abandoned by Stop never rejects unheard.
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
+ * Whether a saved follow-up whose POST failed before any response reached the
+ * server after all (`verify`): running under this turn's generation id, or
+ * saved as the conversation's newest question. Only an answer the server gave
+ * counts. A check it could not answer — offline, an error, nothing back within
+ * `SEND_RETRY.verifyTimeoutMs`, or the turn's Stop — is `unknown`, and nothing
+ * is sent again until it can be asked. Both reads obey the turn's signal, so a
+ * Stop ends a check at once instead of leaving the turn waiting on it.
+ */
+export async function verifyTurnLanded(args: {
+  conversationId: string;
+  generationId: string;
+  /** The question as the transcript shows it, which is what the server stores. */
+  content: string | null;
+  /** User turns this tab already had before the send. */
+  knownUserIds: ReadonlySet<string>;
+  /** The turn's: Stop aborts it. */
+  signal: AbortSignal;
+  /** Tests inject theirs; the browser's otherwise. */
+  fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  timeoutMs?: number;
+}): Promise<SendVerification> {
+  const get = args.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
+  const bounded = signalWithTimeout(args.signal, args.timeoutMs ?? SEND_RETRY.verifyTimeoutMs);
+  const init: RequestInit = { signal: bounded.signal };
+  try {
+    const active = await get(`/api/chat/stream/active?conversationId=${encodeURIComponent(args.conversationId)}`, init);
+    // Signed out: a POST is refused before anything is accepted, so sending
+    // again cannot duplicate the turn, and it is what surfaces the expiry.
+    if (active.status === 401) return { state: "absent" };
+    if (active.ok) {
+      const data = (await active.json().catch(() => null)) as { generationId?: unknown } | null;
+      if (bounded.signal.aborted) return { state: "unknown" };
+      if (data?.generationId === args.generationId) return { state: "landed", running: true, userMessageId: null };
+    } else if (active.status !== 404) {
+      return { state: "unknown" };
+    }
+    if (args.content === null) return { state: "unknown" };
+    const page = await get(`/api/conversations/${encodeURIComponent(args.conversationId)}?limit=6`, init);
+    if (page.status === 401) return { state: "absent" };
+    if (!page.ok) return { state: "unknown" };
+    const payload = (await page.json().catch(() => null)) as {
+      messages?: Array<{ id: string; role: string; content: string }>;
+    } | null;
+    if (bounded.signal.aborted || !payload || !Array.isArray(payload.messages)) return { state: "unknown" };
+    const newestUser = [...payload.messages].reverse().find((m) => m.role === "USER");
+    if (
+      newestUser &&
+      !args.knownUserIds.has(newestUser.id) &&
+      typeof newestUser.content === "string" &&
+      newestUser.content.trim() === args.content.trim()
+    ) {
+      return { state: "landed", running: false, userMessageId: newestUser.id };
+    }
+    return { state: "absent" };
+  } catch {
+    return { state: "unknown" };
+  } finally {
+    bounded.dispose();
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   const type = response.headers.get("content-type") ?? "";
   if (!type.toLowerCase().includes("json")) {
@@ -271,8 +375,12 @@ export async function sendTurn(args: {
   body: string;
   signal: AbortSignal;
   safety: SendSafety;
-  /** Required for `verify`: asks the server whether the first attempt landed. */
-  verify?: () => Promise<SendVerification>;
+  /**
+   * Required for `verify`: asks the server whether the first attempt landed.
+   * Handed the turn's signal; a check still pending when it aborts is
+   * abandoned either way, so Stop never waits on one.
+   */
+  verify?: (signal: AbortSignal) => Promise<SendVerification>;
   /** A wait has started; the next round is due at `retryAt` (epoch ms). */
   onWaiting?: (info: { retryAt: number; failure: SendFailure; round: number }) => void;
   /** A round after the first is going out now. */
@@ -291,7 +399,7 @@ export async function sendTurn(args: {
     if (needsVerify) {
       let verdict: SendVerification = { state: "unknown" };
       try {
-        if (args.verify) verdict = await args.verify();
+        if (args.verify) verdict = await untilAborted(args.verify(signal), signal);
       } catch {
         // A check that could not complete proves nothing either way.
       }

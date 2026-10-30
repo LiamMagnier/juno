@@ -240,3 +240,31 @@ test("juno-work mails when juno-sweepers stops reporting, looks once a minute, a
   await settle();
   assert.equal(sent.length, 2);
 });
+
+test("a heartbeat row that is not there is never mailed as 'never reported': the weekly prune removes rows lapsed over a day ago", async () => {
+  // scripts/prune-sync.ts deletes RateLimit rows whose expiry is more than a
+  // day old, and both heartbeats are RateLimit rows: a process down for over a
+  // day has no row, exactly like one that never started.
+  const prune = (await import("node:fs")).readFileSync(new URL("../scripts/prune-sync.ts", import.meta.url), "utf8");
+  assert.match(prune, /rateLimit\.deleteMany\(\{ where: \{ expiresAt: \{ lt: rateLimitCutoff \} \} \}\)/);
+
+  const sweepersGone = watchdog.createSweepersWatcher({ readHeartbeat: async () => null, startedAtMs: T0 - 10 * MIN, expectSweepers: true });
+  await sweepersGone(new Date(T0));
+  const executorGone = watchdog.createSweepersWatchdog({
+    loops: new LoopMonitor(() => T0),
+    readPresence: async () => ({ kind: "read", lastBeatAt: null, localBeatFresh: false }),
+    countWaiting: async () => 2,
+    writeHeartbeat: async () => undefined,
+    startedAtMs: T0 - 10 * MIN,
+  });
+  await executorGone(new Date(T0));
+  await settle();
+  const subjects = sent.map((mail) => mail.subject);
+  assert.equal(subjects.length, 2, subjects.join("\n"));
+  assert.ok(subjects.some((subject) => /juno-sweepers has no current heartbeat \(none in over a day, or never\)/.test(subject)), subjects.join("\n"));
+  assert.ok(
+    subjects.some((subject) => /The cloud Work executor has no current heartbeat \(none in over a day, or never\) and 2 cloud runs are waiting/.test(subject)),
+    subjects.join("\n")
+  );
+  assert.ok(subjects.every((subject) => !/never reported|ever reported/.test(subject)), subjects.join("\n"));
+});

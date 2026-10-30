@@ -140,6 +140,7 @@ import {
   restartResumeEnabled,
   resumeRunsParkedForRestart,
   resumingAfterRestart,
+  shutdownExitDeadlineMs,
   shutdownStepWaitMs,
   type RestartStopOutcome,
 } from "@/lib/work/restart-resume";
@@ -4869,6 +4870,14 @@ async function main(): Promise<void> {
   }
   let drained: Promise<void> | null = null;
   let wake: (() => void) | null = null;
+  // A run still in flight after the drain (a tool that ignored the stop) keeps
+  // its lease until it expires, and the sweep then ends it `interrupted`. It
+  // is never handed straight back: it was inside a step.
+  const exitAfterDrain = (extra: Record<string, unknown> = {}): never => {
+    for (const { renew } of active.values()) clearInterval(renew);
+    log("stopped", { inFlight: active.size, ...extra });
+    process.exit(process.exitCode ?? 0);
+  };
   const drainForShutdown = (why: string): Promise<void> => {
     if (drained) {
       // Asked again while draining (a second Ctrl-C): stop now, mid-step.
@@ -4896,6 +4905,15 @@ async function main(): Promise<void> {
       // this one rather than refusing for the length of a deploy.
       onPoll: () => recordExecutorHeartbeat(),
     }).then((result) => log("drained", { ...result }));
+    // The loop below exits as soon as its tick returns. A tick still stuck at
+    // the end of the shutdown window (a docker CLI or a query that never
+    // answers) must not hold the process until PM2's SIGKILL: every run is
+    // set aside or ended once the drain has resolved, so the process exits
+    // without that tick, inside the exit margin. Anchored to the window, not
+    // to the drain, so an ordinary tick still finishes when nothing was in
+    // flight and the drain resolved at once.
+    const drain = drained;
+    setTimeout(() => void drain.then(() => exitAfterDrain({ tickStillRunning: true })), shutdownExitDeadlineMs(stepWaitMs)).unref();
     return drained;
   };
   installWorkerProcessGuard({ name: "work-runner", drainTimeoutMs: stepWaitMs + HARD_STOP_GRACE_MS + SHUTDOWN_EXIT_MARGIN_MS });
@@ -4931,12 +4949,7 @@ async function main(): Promise<void> {
   }
 
   await drainForShutdown("stopping");
-  // A run still in flight after the drain (a tool that ignored the stop) keeps
-  // its lease until it expires, and the sweep then ends it `interrupted`. It
-  // is never handed straight back: it was inside a step.
-  for (const { renew } of active.values()) clearInterval(renew);
-  log("stopped", { inFlight: active.size });
-  process.exit(process.exitCode ?? 0);
+  exitAfterDrain();
 }
 
 void main();

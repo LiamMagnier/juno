@@ -150,7 +150,9 @@ export function createSweepersWatchdog(deps: SweepersWatchdogDeps = {}) {
           severity: "critical",
           title: lastBeatAt
             ? `The cloud Work executor has not reported for ${minutesOf(nowMs - lastBeatAt.getTime())} min and ${waitingRuns} cloud run${waitingRuns === 1 ? " is" : "s are"} waiting`
-            : `No cloud Work executor has ever reported and ${waitingRuns} cloud run${waitingRuns === 1 ? " is" : "s are"} waiting`,
+            : // No row: never written, or its heartbeat lapsed over a day ago and
+              // scripts/prune-sync.ts removed it with the other expired RateLimit rows.
+              `The cloud Work executor has no current heartbeat (none in over a day, or never) and ${waitingRuns} cloud run${waitingRuns === 1 ? " is" : "s are"} waiting`,
           detail: {
             lastBeatAt: lastBeatAt?.toISOString() ?? null,
             waitingRuns,
@@ -237,7 +239,9 @@ export function createSweepersWatcher(deps: SweepersWatcherDeps = {}) {
           severity: "critical",
           title: lastBeatAt
             ? `juno-sweepers has not reported for ${minutesOf(nowMs - lastBeatAt.getTime())} min`
-            : "juno-sweepers has never reported",
+            : // No row: never written, or its heartbeat lapsed over a day ago and
+              // scripts/prune-sync.ts removed it with the other expired RateLimit rows.
+              "juno-sweepers has no current heartbeat (none in over a day, or never)",
           detail: {
             lastBeatAt: lastBeatAt?.toISOString() ?? null,
             process: "juno-sweepers",

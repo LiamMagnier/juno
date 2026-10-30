@@ -29,6 +29,11 @@ export interface SessionExpiredTurn {
   conversationId: string | null;
   /** An incognito chat: nothing of it is kept, the unsent words included. */
   incognito?: boolean;
+  /**
+   * The message also carried attachments or references. Only its words are
+   * kept across sign-in, so the dialog says the rest will need adding again.
+   */
+  withAttachments?: boolean;
 }
 
 // ── The one-slot store ─────────────────────────────────────────────────────
@@ -75,6 +80,10 @@ export function safeReturnPath(value: string | null | undefined): string {
   try {
     const parsed = new URL(value, "https://juno.invalid");
     if (parsed.origin !== "https://juno.invalid") return "/chat";
+    // Checked again once normalised: dot segments and stripped tabs collapse
+    // "/.//evil.com" or "/a/..//evil.com" into "//evil.com", which a browser
+    // reads as another host.
+    if (parsed.pathname.startsWith("//") || parsed.pathname.startsWith("/\\")) return "/chat";
     return `${parsed.pathname}${parsed.search}`;
   } catch {
     return "/chat";
@@ -90,6 +99,8 @@ export function signInUrlFor(returnTo: string): string {
 export const SESSION_EXPIRED_STASH_KEY = "juno:session-expired:v1";
 /** Longer than any sign-in takes; short enough that a forgotten tab does not resurrect old words. */
 export const SESSION_EXPIRED_STASH_TTL_MS = 2 * 60 * 60 * 1000;
+/** Where the sign-in page lands someone already signed in (app/(auth)/sign-in/page.tsx). */
+const SESSION_EXPIRED_FALLBACK_PATH = "/chat";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -130,8 +141,11 @@ export function stashUnsentTurn(
 
 /**
  * The stashed words for this page and this account, removed as they are
- * handed over. A stash for another page is left for that page; one that is
- * stale, malformed or another account's is discarded.
+ * handed over. A stash for another page is left for that page, except on
+ * `/chat`: the sign-in page sends someone who turns out to be signed in
+ * already there, whatever the way back said, and words waiting on a page that
+ * is never reached are as good as lost. One that is stale, malformed or
+ * another account's is discarded.
  */
 export function takeUnsentTurn(
   storage: StorageLike | null,
@@ -171,7 +185,7 @@ export function takeUnsentTurn(
   if (record.userId !== at.userId) return discard();
   if (at.now - record.savedAt > SESSION_EXPIRED_STASH_TTL_MS || at.now < record.savedAt - 60_000) return discard();
   const path = record.returnTo.split("?")[0];
-  if (path !== at.pathname) return null;
+  if (path !== at.pathname && at.pathname !== SESSION_EXPIRED_FALLBACK_PATH) return null;
   discard();
   return {
     returnTo: record.returnTo,

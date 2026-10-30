@@ -100,9 +100,27 @@ def ban_namespaces():
     rules.load()
 
 
+SIGSTOP_BIT = 1 << (signal.SIGSTOP - 1)
+
+
+def stop_is_pending(fields):
+    """Whether SIGSTOP waits on this thread or its process (SigPnd, ShdPnd)."""
+    try:
+        pending = int(fields.get("SigPnd", "0").strip(), 16) | int(fields.get("ShdPnd", "0").strip(), 16)
+    except ValueError:
+        return False
+    return bool(pending & SIGSTOP_BIT)
+
+
 def agent_tasks_not_stopped(own_pid):
     """Every uid-1000 thread in this container that is not stopped (T, t) or
-    gone (Z, X), other than this process."""
+    gone (Z, X), other than this process. A thread in uninterruptible sleep (D)
+    with SIGSTOP pending counts as stopped: it runs none of its own code again
+    before it stops, since the signal is taken on the way back from the kernel
+    (a fork in progress is restarted, so no child escapes). On a loaded host a
+    fork was seen to sit in D with the stop pending for over three seconds
+    (tests/computer-real-e2e.test.ts, October 2026), and the take over then
+    told the person the agent could not be paused."""
     running = []
     for pid in os.listdir("/proc"):
         if not pid.isdigit() or int(pid) == own_pid:
@@ -119,7 +137,7 @@ def agent_tasks_not_stopped(own_pid):
                 continue  # it ended between the listing and the read
             real_uid = int(fields.get("Uid", "-1").split()[0])
             state = fields.get("State", "?").split()[0]
-            if real_uid == AGENT_UID and state not in ("T", "t", "Z", "X"):
+            if real_uid == AGENT_UID and state not in ("T", "t", "Z", "X") and not (state == "D" and stop_is_pending(fields)):
                 running.append(int(tid))
     return running
 

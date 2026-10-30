@@ -129,6 +129,10 @@ server {
     # it gets nginx's plain 502, as it always did, and the clients retry what
     # is safe to retry (src/lib/chat/send-retry.ts). Keep the two blocks in
     # step: tests/deploy-maintenance-page.test.ts compares them.
+    #
+    # Side effect of the trailing slash: a request for exactly `/api` gets
+    # nginx's automatic 301 to `/api/` instead of reaching the app. Nothing
+    # calls it, and the app has no route there (src/app/api has no route.ts).
     location /api/ {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;

@@ -12,6 +12,8 @@ import {
   sendGatewayMessage,
   sendTurn,
   sendUnreachableMessage,
+  signalWithTimeout,
+  verifyTurnLanded,
   type SendSafety,
   type SendTurnDeps,
   type SendVerification,
@@ -309,6 +311,124 @@ test("Stop ends the wait at once and nothing more is sent", async () => {
   assert.equal(posts, 1);
 });
 
+test("Stop during a follow-up's check ends the turn at once, even if the check never answers", async () => {
+  // A check that ignores its signal and never settles: sendTurn still lets go.
+  const controller = new AbortController();
+  const h = harness([{ kind: "html", status: 502 }]);
+  let checkSignal: AbortSignal | null = null;
+  const pending = sendTurn({
+    url: "/api/chat",
+    body: BODY,
+    signal: controller.signal,
+    safety: "verify",
+    verify: (signal) => {
+      checkSignal = signal;
+      setTimeout(() => controller.abort(), 10);
+      return new Promise<SendVerification>(() => {});
+    },
+    deps: h.deps,
+  });
+  const started = Date.now();
+  await assert.rejects(pending, (error: unknown) => (error as { name?: string }).name === "AbortError");
+  assert.ok(Date.now() - started < 1_000);
+  assert.equal(h.posts.length, 1, "nothing posted after the Stop");
+  assert.equal(checkSignal, controller.signal, "the check is handed the turn's signal");
+});
+
+/** A fake GET: answers by URL, or hangs until its signal aborts (a server that takes the connection and never answers). */
+function getter(answers: Record<string, Response | "hang">) {
+  const seen: Array<{ url: string; signal: AbortSignal | null }> = [];
+  const fetch = (url: string, init: RequestInit) => {
+    const signal = init.signal ?? null;
+    seen.push({ url, signal });
+    const key = Object.keys(answers).find((prefix) => url.startsWith(prefix));
+    const answer = key ? answers[key] : undefined;
+    if (answer === undefined) return Promise.reject(new Error(`unexpected GET ${url}`));
+    if (answer !== "hang") return Promise.resolve(answer.clone());
+    return new Promise<Response>((_resolve, reject) => {
+      if (signal?.aborted) return reject(signal.reason);
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  };
+  return { fetch, seen };
+}
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const checkArgs = {
+  conversationId: "c1",
+  generationId: "gen-12345678",
+  content: "Hello",
+  knownUserIds: new Set(["u-old"]),
+};
+
+test("a follow-up's check reads the server's answer: running, saved, or absent", async () => {
+  const running = getter({ "/api/chat/stream/active": json(200, { generationId: "gen-12345678" }) });
+  assert.deepEqual(
+    await verifyTurnLanded({ ...checkArgs, signal: new AbortController().signal, fetch: running.fetch }),
+    { state: "landed", running: true, userMessageId: null }
+  );
+  const saved = getter({
+    "/api/chat/stream/active": json(404, { error: "none" }),
+    "/api/conversations/c1": json(200, { messages: [{ id: "u-old", role: "USER", content: "Earlier" }, { id: "u-new", role: "USER", content: "Hello " }] }),
+  });
+  assert.deepEqual(
+    await verifyTurnLanded({ ...checkArgs, signal: new AbortController().signal, fetch: saved.fetch }),
+    { state: "landed", running: false, userMessageId: "u-new" }
+  );
+  const absent = getter({
+    "/api/chat/stream/active": json(404, { error: "none" }),
+    "/api/conversations/c1": json(200, { messages: [{ id: "u-old", role: "USER", content: "Hello" }] }),
+  });
+  assert.deepEqual(
+    await verifyTurnLanded({ ...checkArgs, signal: new AbortController().signal, fetch: absent.fetch }),
+    { state: "absent" },
+    "a question this tab already had is not this send"
+  );
+  for (const { signal } of [...running.seen, ...saved.seen, ...absent.seen]) assert.ok(signal, "every read carries a signal");
+});
+
+test("a follow-up's check obeys Stop and gives up on a server that never answers", async () => {
+  // Stop: both reads are cut at once and the check proves nothing.
+  const controller = new AbortController();
+  const stuck = getter({ "/api/chat/stream/active": "hang" });
+  const started = Date.now();
+  const stopped = verifyTurnLanded({ ...checkArgs, signal: controller.signal, fetch: stuck.fetch, timeoutMs: 60_000 });
+  setTimeout(() => controller.abort(), 10);
+  assert.deepEqual(await stopped, { state: "unknown" });
+  assert.ok(Date.now() - started < 1_000, "ended by the Stop, not the timeout");
+  assert.equal(stuck.seen[0].signal?.aborted, true, "the GET itself was aborted");
+
+  // No Stop, no answer: the timeout ends it, and it counts as unanswered.
+  const silent = getter({ "/api/chat/stream/active": json(404, {}), "/api/conversations/c1": "hang" });
+  const timedOut = await verifyTurnLanded({ ...checkArgs, signal: new AbortController().signal, fetch: silent.fetch, timeoutMs: 30 });
+  assert.deepEqual(timedOut, { state: "unknown" });
+  assert.equal(silent.seen.length, 2);
+  assert.equal(silent.seen[1].signal?.aborted, true);
+  assert.equal(SEND_RETRY.verifyTimeoutMs, 8_000);
+});
+
+test("a bounded signal follows its parent, times out on its own, and lets go of both", async () => {
+  const parent = new AbortController();
+  const followed = signalWithTimeout(parent.signal, 60_000);
+  parent.abort(new DOMException("Stopped", "AbortError"));
+  assert.equal(followed.signal.aborted, true);
+  assert.equal((followed.signal.reason as DOMException).name, "AbortError");
+  followed.dispose();
+
+  const timed = signalWithTimeout(new AbortController().signal, 5);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(timed.signal.aborted, true);
+  assert.equal((timed.signal.reason as DOMException).name, "TimeoutError");
+  timed.dispose();
+
+  const disposed = signalWithTimeout(new AbortController().signal, 5);
+  disposed.dispose();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(disposed.signal.aborted, false, "a disposed timer never fires");
+});
+
 test("an abort during the POST itself is thrown, not retried", async () => {
   const controller = new AbortController();
   const deps: SendTurnDeps = {
@@ -401,6 +521,9 @@ test("the hook routes every send through sendTurn and never shows a raw 401 as t
   // Stop ends a wait at once.
   const stop = hook.slice(hook.indexOf("const stop = React.useCallback"));
   assert.ok(has(stop, /if \(sendWaitingRef\.current === controller\) controller\.abort\(\);/), "Stop aborts a pending wait");
+  // The follow-up check gets the turn's signal, so a Stop cuts its reads too.
+  assert.ok(has(run, /\(signal\) =>\s*verifyTurnLanded\(\{[\s\S]*?signal,\s*\}\)/), "the check obeys Stop");
+  assert.ok(!/async function verifyTurnLanded/.test(hook), "one check, the tested one in send-retry.ts");
 });
 
 test("the durable path generates under the caller's id, so a Stop pressed in admission finds it", () => {

@@ -927,6 +927,11 @@ export class DockerProvider implements ComputerProvider {
       "utf8"
     );
     await runDockerText(computerArgv.vncKill(handle.name), { allowNonZero: true });
+    // pkill only sends SIGTERM: the old server (the person's session) is
+    // gone only once it has exited, and until then it holds port 5900, so a
+    // new one started at once failed ("Address already in use") on a loaded
+    // host and the rotation at hand back failed with it.
+    await this.waitForVncExit(handle);
     await spawnWithStdin(computerArgv.vncPassword(handle.name), passFileContent);
     // Only the host side of the computers network (the relay dials from
     // there). The agent's own loopback and address are refused, so its shell
@@ -995,6 +1000,25 @@ export class DockerProvider implements ComputerProvider {
 
   async stopVnc(handle: ComputerHandle): Promise<void> {
     await runDockerText(computerArgv.vncKill(handle.name), { allowNonZero: true });
+    // A take over that could not rotate the passwords ends the person's
+    // session by stopping the stream, and thaws the agent after: stopped
+    // means exited, not signalled (tests/computer-real-e2e.test.ts).
+    await this.waitForVncExit(handle);
+  }
+
+  /**
+   * Waits until no x11vnc runs (the same `pgrep` as isVncRunning), up to 10 s;
+   * throws if one still does, so nothing is started beside it and no caller
+   * takes a session that is still open for ended.
+   */
+  private async waitForVncExit(handle: ComputerHandle): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    while (await this.isVncRunning(handle)) {
+      if (Date.now() >= deadline) {
+        throw new ComputerError(COMPUTER_NOT_RESPONDING, "x11vnc did not exit after pkill");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   /**

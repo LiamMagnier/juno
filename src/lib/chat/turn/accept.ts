@@ -265,10 +265,13 @@ export async function acceptTurn({
 
         const period = currentPeriod();
         const monthlyLimit = PLANS[plan].monthlyMessages;
-        await tx.usage.upsert({
-          where: { userId_period: { userId: user.id, period } },
-          create: { userId: user.id, period, messageCount: 0 },
-          update: {},
+        // INSERT … ON CONFLICT DO NOTHING, as consumeMessage does (lib/usage.ts):
+        // Prisma runs an upsert on this compound key as find-then-create, and
+        // the loser of two first turns of a period (two tabs) would fail the
+        // whole transaction on the unique key.
+        await tx.usage.createMany({
+          data: [{ userId: user.id, period, messageCount: 0 }],
+          skipDuplicates: true,
         });
         let quota: Awaited<ReturnType<typeof consumeMessage>>;
         if (monthlyLimit == null) {

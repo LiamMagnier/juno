@@ -463,8 +463,8 @@ describe("the shell route returns only the owner's rows", () => {
   });
 
   it("the route only reads: it has no handler that writes and never touches the provider", async () => {
-    const module = route() as Record<string, unknown>;
-    assert.deepEqual(Object.keys(module).filter((key) => /^(GET|POST|PUT|PATCH|DELETE)$/.test(key)), ["GET"]);
+    const handlers = route() as Record<string, unknown>;
+    assert.deepEqual(Object.keys(handlers).filter((key) => /^(GET|POST|PUT|PATCH|DELETE)$/.test(key)), ["GET"]);
     fakeComputerProvider.calls = [];
     await get("agent_1", "?runId=run_mine&after=0");
     assert.equal(fakeComputerProvider.calls.some((c) => c.method === "exec" || c.method === "writeFile"), false);

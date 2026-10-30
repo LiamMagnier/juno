@@ -589,6 +589,28 @@ if (!DB_URL) {
     }
   });
 
+  test("concurrent durable first submissions of a period all start: the durable path creates its usage row atomically", async () => {
+    // Every new web chat's first message carries durable keys (use-chat.ts),
+    // so two tabs opening chats at once both take the durable acceptance
+    // transaction. Its Usage row was an upsert, which Prisma runs as
+    // find-then-create: the loser failed the whole transaction with a 500.
+    script = () => answer("ok");
+    for (let round = 0; round < 4; round++) {
+      const user = await seedUser();
+      const results = await Promise.all(
+        [0, 1, 2].map((i) =>
+          chat({ message: `first ${i}`, clientRequestId: `req-${randomUUID()}`, clientMessageId: `msg-${randomUUID()}` })
+        )
+      );
+      assert.deepEqual(results.map((r) => r.status), [200, 200, 200], `round ${round}: ${results.map((r) => r.text.slice(0, 120)).join(" | ")}`);
+      assert.deepEqual(results.map((r) => r.frames.at(-1)?.type), ["done", "done", "done"]);
+      const usage = await prisma.usage.findMany({ where: { userId: user.id } });
+      assert.equal(usage.length, 1);
+      assert.equal(usage[0].messageCount, 3, "every turn was counted, once");
+      assert.equal(await prisma.chatFirstSubmissionReceipt.count({ where: { userId: user.id, state: "completed" } }), 3);
+    }
+  });
+
   const COMPARE_A = "qwen:qwen3.8-flash";
   const COMPARE_B = "anthropic:claude-opus-5-5";
 

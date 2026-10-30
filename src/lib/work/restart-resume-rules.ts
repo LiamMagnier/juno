@@ -101,6 +101,17 @@ export function fittedShutdownStepWaitMs(
 }
 
 /**
+ * How long after the stop request the runner exits even though its main
+ * loop's tick has not returned (a docker CLI or a query that never answers),
+ * once the drain has resolved: the step wait, the grace, and half the exit
+ * margin. With the step wait fitted to `kill_timeout`, that is before PM2's
+ * SIGKILL, which with `treekill: false` would leave the tick's children behind.
+ */
+export function shutdownExitDeadlineMs(stepWaitMs: number): number {
+  return stepWaitMs + HARD_STOP_GRACE_MS + SHUTDOWN_EXIT_MARGIN_MS / 2;
+}
+
+/**
  * The longest one heartbeat write may hold the drain. A write that waits on a
  * slow database (its pool waits up to 20 s for a connection) must not push the
  * drain past PM2's kill; the write itself is left to finish or fail on its own.

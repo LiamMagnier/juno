@@ -184,16 +184,22 @@ function observe(argv: string[], opts: { display?: boolean; allowFail?: boolean 
   return result.stdout;
 }
 
-/** Every uid-1000 process: [pid, state, args]. */
+/**
+ * Every uid-1000 process: its pid, its state, and its arguments. A process in
+ * uninterruptible sleep (D) with SIGSTOP pending reads as "Tp": it runs none of its
+ * own code again before it stops, and agent-exec's freeze counts it as stopped.
+ */
 function agentProcesses(): Array<{ pid: number; state: string; args: string }> {
-  return observe(["ps", "-o", "pid=,stat=,args=", "-u", "1000"], { allowFail: true })
+  return observe(["python3", "-I", "-c", AGENT_PROCESSES_PROBE], { allowFail: true })
     .split("\n")
-    .map((line) => line.trim().split(/\s+/))
+    .map((line) => line.split("\t"))
     .filter((parts) => parts.length >= 2 && /^\d+$/.test(parts[0]!))
-    .map((parts) => ({ pid: Number(parts[0]), state: parts[1]!, args: parts.slice(2).join(" ") }));
+    .map((parts) => ({ pid: Number(parts[0]), state: parts[1]!, args: parts.slice(2).join("\t") }));
 }
 
-const runningAgentProcesses = () => agentProcesses().filter((p) => !p.state.startsWith("T") && !p.state.startsWith("Z"));
+/** Stopped (T, t, or D with the stop pending) or gone (Z, X). */
+const frozen = (p: { state: string }) => /^[TtZX]/.test(p.state);
+const runningAgentProcesses = () => agentProcesses().filter((p) => !frozen(p));
 
 function evidence(name: string, data: Buffer | string): void {
   if (!EVIDENCE) return;
@@ -761,7 +767,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     assert.equal(late.code, 75, "a command after the take over is refused");
     assert.deepEqual(runningAgentProcesses(), [], "a command that raced the take over runs unfrozen");
     const stopped = agentProcesses().filter((p) => p.args.includes("sleep 90"));
-    assert.ok(stopped.length >= 2 && stopped.every((p) => p.state.startsWith("T")), `control: the early commands are stopped: ${JSON.stringify(stopped)}`);
+    assert.ok(stopped.length >= 2 && stopped.every(frozen), `control: the early commands are stopped: ${JSON.stringify(stopped)}`);
     await handBack();
     held.person.ws.close();
     // The early ones resume at hand back; end them before their write.
@@ -1246,6 +1252,27 @@ def ns(p):
 rend = subprocess.run(["pgrep", "-u", "1001", "-f", "chrome.*--type=renderer"], capture_output=True, text=True).stdout.split()
 seen = {ns(p) for p in rend if p != str(os.getpid())} - {None}
 print(ns("self"), " ".join(sorted(seen)))
+`;
+
+/** As the browser uid: every uid-1000 process as "pid<TAB>state<TAB>args" (see agentProcesses). */
+const AGENT_PROCESSES_PROBE = String.raw`
+import os
+STOP = 1 << 18
+for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+        continue
+    try:
+        with open("/proc/%s/status" % pid) as file:
+            status = dict(line.split(":", 1) for line in file if ":" in line)
+        if int(status["Uid"].split()[0]) != 1000:
+            continue
+        state = status["State"].split()[0]
+        pending = int(status.get("SigPnd", "0").strip(), 16) | int(status.get("ShdPnd", "0").strip(), 16)
+        with open("/proc/%s/cmdline" % pid, "rb") as file:
+            args = file.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except (OSError, KeyError, ValueError):
+        continue
+    print("%s\t%s\t%s" % (pid, "Tp" if state == "D" and pending & STOP else state, args))
 `;
 
 /** As the browser uid with python3-xlib: which keys and buttons the X server holds down. */

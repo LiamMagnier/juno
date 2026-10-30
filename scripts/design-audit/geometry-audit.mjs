@@ -28,7 +28,8 @@
  *                                (writes into --out, or back into the run dir)
  *   --no-screenshots             skip the annotated screenshots
  *   --timeout <ms>               navigation timeout (default 180000; the dev server compiles on first hit)
- *   --retries <n>                retries after a dropped connection, once the server answers again (default 2)
+ *   --retries <n>                retries after a dropped connection, once the server has answered steadily
+ *                                for 10 s (default 3)
  *   --chromium <path>            a Chromium executable, when Playwright's own is missing
  *   --busy <selector>            loading placeholders to wait out before measuring
  *                                (default '.skeleton, [aria-busy="true"], [data-skeleton]')
@@ -103,7 +104,7 @@ function parseArgs(argv) {
     concurrency: 2,
     top: 20,
     timeout: 180000,
-    retries: 2,
+    retries: 3,
     screenshots: true,
     raw: true,
     busy: '.skeleton, [aria-busy="true"], [data-skeleton]',
@@ -130,7 +131,7 @@ function parseArgs(argv) {
   args.concurrency = Math.max(1, Number(args.concurrency) || 1);
   args.top = Math.max(0, Number(args.top) || 0);
   args.timeout = Number(args.timeout) || 180000;
-  args.retries = Math.max(0, Number(args.retries ?? 2));
+  args.retries = Math.max(0, Number(args.retries ?? 3));
   args["busy-timeout"] = Math.max(0, Number(args["busy-timeout"]));
   if (!["light", "dark"].includes(args.scheme)) throw new Error("--scheme is light or dark");
   return args;
@@ -377,15 +378,30 @@ async function runStep(page, step, base, timeout) {
 // its selector, so timeouts are retried too (once the server answers again).
 const TRANSIENT = /rendered almost nothing|script chunk failed to load|Timeout \d+ms exceeded|rendered an error page|rendered the Next\.js error overlay|ERR_EMPTY_RESPONSE|ERR_CONNECTION_(REFUSED|RESET|CLOSED)|ECONNREFUSED|ECONNRESET|ERR_ABORTED|ERR_NETWORK_CHANGED|socket hang up|net::ERR_FAILED|Navigation failed because page crashed|Execution context was destroyed/;
 
-/** Poll until the server answers anything at all (the shared dev server restarts itself). */
-async function waitForServer(base, maxMs) {
+/**
+ * Poll until the server answers anything at all (the shared dev server restarts
+ * itself). With `steadyMs`, every poll over that long must answer: a server
+ * being stopped keeps answering for a few seconds, and a retry sent then is
+ * refused at once, which used to burn every retry in half a minute.
+ */
+async function waitForServer(base, maxMs, steadyMs = 0) {
   const until = Date.now() + maxMs;
+  let upSince = null;
   while (Date.now() < until) {
+    let up = false;
     try {
       const res = await fetch(new URL("/robots.txt", base), { signal: AbortSignal.timeout(15000) });
       await res.arrayBuffer().catch(() => {});
-      return true;
+      up = true;
     } catch {
+      /* down, or restarting */
+    }
+    if (up) {
+      upSince ??= Date.now();
+      if (Date.now() - upSince >= steadyMs) return true;
+      await new Promise((r) => setTimeout(r, 2000));
+    } else {
+      upSince = null;
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
@@ -398,7 +414,7 @@ async function measureWithRetry(browserCtx, route, args, ctxBase, outDir) {
     result = await measureRoute(browserCtx, route, args, ctxBase, outDir);
     if (!result.error || !TRANSIENT.test(result.error) || attempt === args.retries) break;
     console.error(`  ${route.name}: ${result.error.slice(0, 80)} · waiting for the server, then retrying`);
-    await waitForServer(args.base, args.timeout);
+    await waitForServer(args.base, args.timeout, 10000);
   }
   return result;
 }
@@ -558,7 +574,9 @@ async function measureRoute(browserCtx, route, args, ctxBase, outDir) {
     if (open.length) await page.evaluate(() => (window.__geometryBase = new Set(document.body.children)));
     for (const step of open) await runStep(page, step, args.base, args.timeout);
     if (open.length) {
-      ready = (await waitForContent(page, args.busy, Math.min(args["busy-timeout"], 10000))) && ready;
+      // A menu or popover fetches its own content when it opens (the
+      // notifications list): it gets the same wait as the page.
+      ready = (await waitForContent(page, args.busy, args["busy-timeout"])) && ready;
       await settle(page);
     }
     if (!ready) result.stillLoading = true;

@@ -28,6 +28,7 @@
  *
  * Pure and client-safe.
  */
+import { RESTART_PAUSE_REASON } from "@/lib/work/restart-resume-rules";
 
 export const MAX_GOAL_MILESTONES = 12;
 export const MAX_GOAL_CRITERIA = 8;
@@ -123,6 +124,13 @@ export const GOAL_WAITING_ON_EXECUTOR_CHECK = "Waiting to check that a cloud wor
 export const GOAL_WAITING_FOR_ANSWER = "Waiting for your answer on the current task";
 
 /**
+ * The goal's line while its step's run is set aside for a server restart
+ * (src/lib/work/restart-resume.ts). The next runner continues it or ends it
+ * `interrupted`; nobody needs to press resume, so it is not the person's pause.
+ */
+export const GOAL_WAITING_FOR_RESTART = "Set aside for a server restart; waiting for it to finish";
+
+/**
  * What a step that did not start writes on the goal. Pure: the driver applies it.
  *
  * A refusal is a decision for the person: a `needs_decision` blocker, and a
@@ -185,7 +193,8 @@ export interface GoalTaskView {
   /**
    * The current run is parked (`paused`) and why: `waiting` when the executor
    * set it aside to wait for an answer or approval, `user` when the person
-   * paused it. Null or absent for anything else.
+   * paused it, `server_restart` when a runner going away set it aside for the
+   * next one. Null or absent for anything else.
    */
   pauseReason?: string | null;
   /**
@@ -285,15 +294,19 @@ export function planGoalStep(
       live.status === "waiting_input" ||
       live.status === "waiting_approval" ||
       (live.status === "paused" && live.pauseReason === "waiting");
-    const pausedByPerson = live.status === "paused" && !waiting;
+    // Set aside by a runner going away: the next runner deals with it, not the person.
+    const setAsideForRestart = live.status === "paused" && live.pauseReason === RESTART_PAUSE_REASON;
+    const pausedByPerson = live.status === "paused" && !waiting && !setAsideForRestart;
     return {
       kind: "idle",
       reason: "task_in_flight",
       nextAction: waiting
         ? GOAL_WAITING_FOR_ANSWER
-        : pausedByPerson
-          ? "Paused on the current step; resume it to continue"
-          : "Working on the current step",
+        : setAsideForRestart
+          ? GOAL_WAITING_FOR_RESTART
+          : pausedByPerson
+            ? "Paused on the current step; resume it to continue"
+            : "Working on the current step",
     };
   }
 

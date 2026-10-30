@@ -17,9 +17,12 @@ import {
   pauseAtStepBoundary,
   restartCheckpointVerdict,
   restartResumeEnabled,
+  RESTART_PAUSE_REASON,
+  shutdownExitDeadlineMs,
   shutdownStepWaitMs,
   toolRunsInChildProcess,
 } from "../src/lib/work/restart-resume-rules";
+import { GOAL_WAITING_FOR_ANSWER, GOAL_WAITING_FOR_RESTART, planGoalStep, type GoalTaskView, type GoalView } from "../src/lib/agents/goals";
 
 /*
  * A cloud Work run across a restart of its runner
@@ -275,6 +278,43 @@ test("the step wait fits inside the kill_timeout PM2 hands the runner", () => {
   assert.equal(fittedShutdownStepWaitMs(300_000, "60000"), 60_000 - HARD_STOP_GRACE_MS - SHUTDOWN_EXIT_MARGIN_MS);
   // PM2's own 1.6 s leaves no room: stop mid-step at once rather than be killed.
   assert.equal(fittedShutdownStepWaitMs(45_000, "1600"), 0);
+});
+
+test("a tick stuck past the drain does not keep the runner alive until PM2's SIGKILL", () => {
+  // The runner exits at this deadline once the drain has resolved, whether or
+  // not its main loop's tick has returned. Fitted, it is inside kill_timeout.
+  for (const killTimeout of ["60000", "30000", "12000", "1600"]) {
+    const deadline = shutdownExitDeadlineMs(fittedShutdownStepWaitMs(DEFAULT_SHUTDOWN_STEP_WAIT_MS, killTimeout));
+    if (Number(killTimeout) >= HARD_STOP_GRACE_MS + SHUTDOWN_EXIT_MARGIN_MS) {
+      assert.ok(deadline < Number(killTimeout), `${killTimeout}: exits at ${deadline} ms`);
+    }
+  }
+  assert.equal(shutdownExitDeadlineMs(45_000), 45_000 + HARD_STOP_GRACE_MS + SHUTDOWN_EXIT_MARGIN_MS / 2);
+  // And the runner wires it: armed when the drain starts, exiting only after the drain.
+  const runner = readFileSync(new URL("../scripts/work-runner.ts", import.meta.url), "utf8");
+  assert.match(
+    runner,
+    /setTimeout\(\(\) => void drain\.then\(\(\) => exitAfterDrain\(\{ tickStillRunning: true \}\)\), shutdownExitDeadlineMs\(stepWaitMs\)\)\.unref\(\);/
+  );
+});
+
+test("a goal whose step is set aside for a restart says so, and does not ask the person to resume it", () => {
+  const goal: GoalView = {
+    id: "g1", title: "Ship the note", detail: "", status: "active", milestones: [{ id: "a", title: "Write it", done: false }],
+    successCriteria: [], budgetMicroUsd: null, spentMicroUsd: 0, maxRuns: 6, runsUsed: 1, maxAttemptsPerStep: 2, dueAt: null, cadence: "none",
+  };
+  const task = (partial: Partial<GoalTaskView>): GoalTaskView => ({
+    sessionId: "s1", stepKey: "a", status: "running", attempt: 1, acted: false, costMicroUsd: 0, createdAt: new Date("2026-10-27T10:00:00Z"), ...partial,
+  });
+  const now = new Date("2026-10-27T11:00:00Z");
+  const line = (partial: Partial<GoalTaskView>) => planGoalStep(goal, [task(partial)], now).nextAction;
+  assert.equal(line({ status: "paused", pauseReason: RESTART_PAUSE_REASON }), GOAL_WAITING_FOR_RESTART);
+  assert.doesNotMatch(GOAL_WAITING_FOR_RESTART, /resume/i);
+  assert.equal(planGoalStep(goal, [task({ status: "paused", pauseReason: RESTART_PAUSE_REASON })], now).kind, "idle");
+  // The others are unchanged.
+  assert.equal(line({ status: "paused", pauseReason: "user" }), "Paused on the current step; resume it to continue");
+  assert.equal(line({ status: "paused", pauseReason: "waiting" }), GOAL_WAITING_FOR_ANSWER);
+  assert.equal(line({ status: "running" }), "Working on the current step");
 });
 
 test("a heartbeat write that hangs or throws does not hold the drain past its deadline", async () => {
