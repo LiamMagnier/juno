@@ -23,8 +23,11 @@ import { toSteps } from "@/lib/reasoning-parts";
 import {
   receiptFailureReason,
   receiptIconKindForCall,
+  receiptCanRetry,
   receiptLabelForCall,
+  receiptRefusalOf,
   type ReceiptIconKind,
+  type ReceiptRefusal,
 } from "@/lib/chat/tool-receipt";
 import { activeRunId, readToolRun, runReceiptParts, type ToolRunView } from "@/lib/chat/tool-run";
 import { finishReasonTitle } from "@/lib/finish-reason";
@@ -237,6 +240,21 @@ export function isCutShortNotice(label: string): boolean {
   return CUT_SHORT_TITLES.has(label.split(" · ")[0]);
 }
 
+/**
+ * Whether a step offers "Ask to run again": a tool call that failed or never
+ * returned, with arguments to resend, that is not a write. Never a refusal: a
+ * declined, expired or cancelled call was a decision, and asking again would
+ * only ask the same question.
+ */
+export function stepCanAskToRunAgain(step: Pick<Step, "body" | "refusal">): boolean {
+  if (step.refusal || step.body?.type !== "tool") return false;
+  const tool = step.body.tool;
+  if (!tool.args || receiptRefusalOf(tool)) return false;
+  // Never a write: re-running a `create_issue` that half-landed files a
+  // duplicate. The shared rule, so Code and chat refuse the same calls.
+  return receiptCanRetry(tool.name) && (tool.status === "failed" || tool.resultNote === "unfinished");
+}
+
 export type PhaseKey = "research" | "think" | "write";
 
 interface Phase {
@@ -342,6 +360,10 @@ export interface Step {
   /** At most one `true` across the whole array. */
   running: boolean;
   failed: boolean;
+  /** A call that was declined, whose approval expired, or that was cancelled
+   *  before it ran: a decision, not a failure. Drawn in the muted ink with its
+   *  own word ("Declined") and never offered again. Absent on every other step. */
+  refusal?: ReceiptRefusal;
   /** The receipt glyph a tool step wears (`lib/chat/tool-receipt`). Absent on
    *  every other kind, which draws its kind's own mark. */
   icon?: ReceiptIconKind;
@@ -856,6 +878,7 @@ function buildSteps(input: {
     }
     const tool = call.tool;
     const live = call.id === liveCall;
+    const refusal = live ? null : receiptRefusalOf(tool);
     // The one receipt vocabulary: "Searched the web", "Linear · Create issue".
     // A failure says why in one line under it; a success says nothing more.
     steps.push({
@@ -870,7 +893,8 @@ function buildSteps(input: {
       // would read as "the connector answered instantly".
       ms: !live && tool && typeof tool.durationMs === "number" ? tool.durationMs : null,
       running: live,
-      failed: tool?.status === "failed",
+      failed: tool?.status === "failed" && !refusal,
+      ...(refusal ? { refusal } : {}),
       ...(tool ? { body: { type: "tool" as const, tool } } : {}),
     });
   }

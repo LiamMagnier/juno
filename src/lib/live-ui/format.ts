@@ -235,3 +235,39 @@ export function civilFromDays(z: number): string {
   const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+/**
+ * The decimal separator the locale writes: "," in fr-FR and de-DE, "." in
+ * en-US. Anything `Intl` cannot answer reads as ".", the behaviour a number
+ * field had before it asked.
+ */
+export function decimalSeparator(locale?: string): "." | "," {
+  try {
+    const part = new Intl.NumberFormat(locale).formatToParts(1.1).find((p) => p.type === "decimal");
+    return part?.value === "," ? "," : ".";
+  } catch {
+    return ".";
+  }
+}
+
+/**
+ * A number the reader typed, read the way their locale writes one. Where the
+ * decimal is a period, a comma groups thousands ("12,500.5"); where it is a
+ * comma, a period groups them ("12.500,5", "12 500,5"). Symbols, units and
+ * spaces around the digits are ignored. Null for text that is not a number.
+ */
+export function parseLiveNumber(text: string, locale?: string): number | null {
+  if (text.trim() === "") return null;
+  const comma = decimalSeparator(locale) === ",";
+  const digits = comma ? text.replace(/[\s.']/g, "").replace(/,/g, ".") : text.replace(/[\s,]/g, "");
+  const cleaned = digits.replace(/[^0-9.eE+\-]/g, "");
+  if (!/\d/.test(cleaned)) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** A value as the reader edits it: plain digits with their locale's decimal separator, never grouping. */
+export function editableNumberString(value: number, locale?: string): string {
+  const text = String(value);
+  return decimalSeparator(locale) === "," ? text.replace(".", ",") : text;
+}

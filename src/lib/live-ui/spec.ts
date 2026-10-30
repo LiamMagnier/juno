@@ -911,6 +911,20 @@ export function snapToStep(value: number, min: number, max: number, step: number
   return clamp(Number(snapped.toFixed(decimals)), min, max);
 }
 
+/**
+ * A number field's ArrowUp / ArrowDown: one step from `value`, clamped to the
+ * field's bounds. The field shows what this returns, so at a bound it keeps
+ * showing the bound rather than the step past it.
+ */
+export function stepNumberInput(
+  value: number,
+  direction: 1 | -1,
+  bounds: { step: number; min?: number; max?: number },
+): number {
+  const next = Number((value + direction * bounds.step).toFixed(10));
+  return clamp(next, bounds.min ?? -Infinity, bounds.max ?? Infinity);
+}
+
 function input(
   raw: { [key: string]: LiveJSON },
   type: string,
@@ -1037,6 +1051,25 @@ export function liveChecklistIds(ui: readonly LiveComponent[]): Set<string> {
   };
   walk(ui);
   return ids;
+}
+
+/**
+ * Every card that locks once the reader picks (choices, compare), by its
+ * component key, with how many options it offers. A stored pick is restored
+ * only onto a card that is still there and only for options it still has.
+ */
+export function liveLockingCards(ui: readonly LiveComponent[]): Map<string, number> {
+  const cards = new Map<string, number>();
+  const walk = (list: readonly LiveComponent[]) => {
+    for (const c of list) {
+      if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
+      else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
+      else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
+      else if (c.type === "choices" || c.type === "compare") cards.set(c.key, c.options.length);
+    }
+  };
+  walk(ui);
+  return cards;
 }
 
 /** The authored default of every input, by id. */

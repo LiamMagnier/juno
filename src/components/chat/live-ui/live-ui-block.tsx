@@ -242,9 +242,9 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
     case "recipe":
       return <LiveRecipe recipe={c} />;
     case "choices":
-      return <LiveChoices choices={c} onPrompt={onPrompt} />;
+      return <LiveChoices choices={c} onPrompt={onPrompt} locked={state.picks[c.key]} onLock={(picked) => state.pick(c.key, picked)} />;
     case "compare":
-      return <LiveCompare compare={c} onPrompt={onPrompt} />;
+      return <LiveCompare compare={c} onPrompt={onPrompt} locked={state.picks[c.key]} onLock={(picked) => state.pick(c.key, picked)} />;
     case "cards":
       return <LiveCards cards={c} onPrompt={onPrompt} />;
     case "tabs":

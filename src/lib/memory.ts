@@ -926,6 +926,8 @@ export interface SaveCandidatesResult {
   sensitiveSkipped: number;
   /** The distinct topics behind `sensitiveSkipped`, for that explanation. */
   sensitiveTopics: SensitiveTopic[];
+  /** Automatic facts dropped because they carried a password, key or account number. Never stored, never logged. */
+  secretSkipped: number;
   /**
    * The rows this batch made believed — new, or believed again — by id. What
    * the chat's "Memory updated" receipt offers Undo and Edit on.
@@ -1008,6 +1010,7 @@ export async function saveCandidates(
     reinstated: 0,
     sensitiveSkipped: 0,
     sensitiveTopics: [],
+    secretSkipped: 0,
     believed: [],
   };
   if (facts.length === 0) return result;
@@ -1056,6 +1059,7 @@ export async function saveCandidates(
         result.sensitiveSkipped++;
         if (!result.sensitiveTopics.includes(plan.topic)) result.sensitiveTopics.push(plan.topic);
       }
+      if (plan.reason === "secret") result.secretSkipped++;
       continue;
     }
 
@@ -1126,6 +1130,12 @@ export async function saveCandidates(
 
     if (plan.supersedes) await supersede(plan.supersedes.entryId, created.id, plan.supersedes.reason);
     for (const resolved of plan.resolves ?? []) await supersede(resolved.entryId, created.id, resolved.reason);
+  }
+
+  // The count only: the value is the thing being kept out of storage, and a
+  // log line is storage.
+  if (result.secretSkipped > 0) {
+    console.warn(`[memory] dropped ${result.secretSkipped} automatic fact(s) that looked like a secret`);
   }
 
   await embedMemoryEntries({
