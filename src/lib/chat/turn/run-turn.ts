@@ -714,14 +714,17 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       if (!verdict.retry) return false;
       const next =
         verdict.nextModel && autoRetry
-          ? await autoRetry.next({
-              failed,
-              // A lab's account, or a host that refused the connection,
-              // fails every model on it.
-              avoidProvider: verdict.class === "auth" || verdict.class === "billing" || verdict.class === "network",
-              proMode: useProMode,
-              compatible: sameTurnShape,
-            })
+          ? await autoRetry
+              .next({
+                failed,
+                // A lab's account, or a host that refused the connection,
+                // fails every model on it.
+                avoidProvider: verdict.class === "auth" || verdict.class === "billing" || verdict.class === "network",
+                proMode: useProMode,
+                compatible: sameTurnShape,
+              })
+              // A picker that fails must not replace the provider's error.
+              .catch(() => null)
           : null;
       const step = next ? verdict.nextModel : verdict.sameModel;
       if (!step) return false;
@@ -777,6 +780,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       }
       stallWatchdog.resume();
       retriesMade = 1;
+      trace.noteRetry(next ? { id: next.model.id, provider: next.model.provider } : undefined);
       return true;
     };
 

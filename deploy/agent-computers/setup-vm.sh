@@ -4,6 +4,13 @@
 #   ssh <vm> 'sudo bash ~/juno/current/deploy/agent-computers/setup-vm.sh'
 # Re-run it after changing the Dockerfile to rebuild the image.
 #
+# --computer-host: the shared steps only (network, egress map, egress proxy with
+# its log and budget, firewall, image, seccomp decision), for a separate
+# computer host (deploy/computer-host/setup.sh runs it this way). No sudoers
+# rule for an app user and no sudo broker: there, the host's socket broker is
+# the only thing that talks to Docker, and its policy is
+# /etc/juno/computer-host-broker.json.
+#
 # Owner-tunable (docs/OPEN_DECISIONS.md, "owner to confirm"):
 #   JUNO_EGRESS_MAX_MB_PER_HOUR   per computer, both directions, rolling hour (1024)
 #   JUNO_EGRESS_LOG_DAYS          days of the egress log logrotate keeps (14)
@@ -15,6 +22,12 @@
 set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo" >&2; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
+COMPUTER_HOST=0
+case "${1:-}" in
+  "") ;;
+  --computer-host) COMPUTER_HOST=1 ;;
+  *) echo "unknown option $1 (the only option is --computer-host)" >&2; exit 2 ;;
+esac
 RUN_USER="${SUDO_USER:-liammgnr}"
 # The tag `src/lib/env.ts` defaults to (`agentComputer.image`). Keep them equal.
 IMAGE="${COMPUTER_DOCKER_IMAGE:-juno-computer:1}"
@@ -25,40 +38,44 @@ MAX_MB_PER_HOUR="${JUNO_EGRESS_MAX_MB_PER_HOUR:-1024}"
 LOG_DAYS="${JUNO_EGRESS_LOG_DAYS:-14}"
 BROWSER_SANDBOX="${JUNO_COMPUTER_BROWSER_SANDBOX:-auto}"
 SECCOMP=/etc/juno/computer-seccomp.json
+POLICY_FILE=/etc/juno/computer-broker.json
+[ "$COMPUTER_HOST" = 1 ] && POLICY_FILE=/etc/juno/computer-host-broker.json
 [[ "$MAX_MB_PER_HOUR" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "JUNO_EGRESS_MAX_MB_PER_HOUR must be a positive whole number" >&2; exit 1; }
 [[ "$LOG_DAYS" =~ ^[1-9][0-9]{0,3}$ ]] || { echo "JUNO_EGRESS_LOG_DAYS must be a positive whole number" >&2; exit 1; }
 [[ "$BROWSER_SANDBOX" =~ ^(auto|off)$ ]] || { echo "JUNO_COMPUTER_BROWSER_SANDBOX is auto or off" >&2; exit 1; }
 
 write_policy() {  # <browserSandbox true|false>
-  python3 - "$IMAGE" "$NET" "$1" "$SECCOMP" <<'PYCONFIG'
+  python3 - "$IMAGE" "$NET" "$1" "$SECCOMP" "$POLICY_FILE.part" <<'PYCONFIG'
 import json, sys
 policy = {'image': sys.argv[1], 'network': sys.argv[2], 'maxMemoryMb': 2048, 'maxCpus': 2,
           'browserSandbox': sys.argv[3] == 'true'}
 if policy['browserSandbox']:
     policy['seccompProfile'] = sys.argv[4]
-with open('/etc/juno/computer-broker.json.part', 'w') as file:
+with open(sys.argv[5], 'w') as file:
     json.dump(policy, file)
 PYCONFIG
-  chmod 0644 /etc/juno/computer-broker.json.part
-  mv -f /etc/juno/computer-broker.json.part /etc/juno/computer-broker.json
+  chmod 0644 "$POLICY_FILE.part"
+  mv -f "$POLICY_FILE.part" "$POLICY_FILE"
 }
 
 echo "==> Docker"
 systemctl enable --now docker
-# The application user must never be root-equivalent through Docker.
-if id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx docker; then
-  gpasswd -d "$RUN_USER" docker
-fi
 install -d -m 0755 /etc/juno
-install -o root -g root -m 0755 "$HERE/docker-broker.py" /usr/local/sbin/juno-computer-docker-broker
 # The broker runs the address-map helper around every start, stop and remove.
 install -o root -g root -m 0755 "$HERE/egress-map.py" /usr/local/sbin/juno-computers-egress-map
 # Until the image is built and probed below, the browser sandbox stays off
 # (Docker's default seccomp profile), exactly as before.
-[ -f /etc/juno/computer-broker.json ] || write_policy false
-printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/juno-computer-docker-broker *\n' "$RUN_USER" > /etc/sudoers.d/juno-computers
-chmod 0440 /etc/sudoers.d/juno-computers
-visudo -cf /etc/sudoers.d/juno-computers
+[ -f "$POLICY_FILE" ] || write_policy false
+if [ "$COMPUTER_HOST" = 0 ]; then
+  # The application user must never be root-equivalent through Docker.
+  if id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx docker; then
+    gpasswd -d "$RUN_USER" docker
+  fi
+  install -o root -g root -m 0755 "$HERE/docker-broker.py" /usr/local/sbin/juno-computer-docker-broker
+  printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/juno-computer-docker-broker *\n' "$RUN_USER" > /etc/sudoers.d/juno-computers
+  chmod 0440 /etc/sudoers.d/juno-computers
+  visudo -cf /etc/sudoers.d/juno-computers
+fi
 
 echo "==> Network $NET ($SUBNET, bridge $BRIDGE, no container-to-container traffic)"
 docker network inspect "$NET" >/dev/null 2>&1 || docker network create \
@@ -130,6 +147,10 @@ else
 fi
 
 echo
+if [ "$COMPUTER_HOST" = 1 ]; then
+  echo "Computer host: network, egress proxy, firewall and image are in place (policy: $POLICY_FILE)."
+  exit 0
+fi
 echo "Image and narrow Docker broker installed. Restart the application login/session to drop its old docker group."
 echo "A computer made from an older image is recreated on its volumes at its next wake (files and sign-ins kept)."
 echo "Turn them on:  cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload   (value: docker)"

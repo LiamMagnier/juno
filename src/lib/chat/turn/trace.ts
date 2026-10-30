@@ -63,13 +63,14 @@ export interface TurnTrace {
     ttftMs: number | null;
   };
   /**
-   * Route-level provider attempts for this turn. Always 1: nothing above the
-   * adapter replays a turn, and the Anthropic and OpenAI-compatible SDKs run
+   * Route-level provider attempts for this turn: 1, or 2 when the provider
+   * rejected the first request before any byte arrived and the turn asked
+   * once more (pre-stream-retry.ts; `noteRetry`). The SDKs themselves run
    * with retries off (a streamed request can bill before a transport error is
-   * seen). The one retry below this line is Gemini's, before any byte of the
+   * seen). Gemini's own retry below this line, also before any byte of the
    * stream (gemini-network.ts: retryable statuses only, at most 4 attempts,
-   * Retry-After honoured, abortable), logged there as `gemini_request_failed`.
-   * Recorded so a future route-level retry shows up here.
+   * Retry-After honoured, abortable), is logged there as
+   * `gemini_request_failed` and not counted here.
    */
   attempts: number;
   toolCalls: TurnTraceToolCall[];
@@ -122,6 +123,12 @@ export interface TurnTraceRecorder {
   /** Folds one stream effect in (tool calls, first-token time). */
   observe: (effect: StreamEffect) => void;
   noteApproval: () => void;
+  /**
+   * The turn asked the provider again before its first byte
+   * (pre-stream-retry.ts). `model` when Auto moved the turn to another
+   * model: the trace then names that one, and says it was rerouted.
+   */
+  noteRetry: (model?: { id: string; provider: string }) => void;
   /** Emits the trace once; later calls are ignored. */
   finish: (input: TurnTraceFinish) => TurnTrace | null;
   readonly finished: boolean;
@@ -142,6 +149,9 @@ export function createTurnTrace(
   const calls = new Map<string, TurnTraceToolCall>();
   const order: string[] = [];
   let approvals = 0;
+  let attempts = 1;
+  /** The model that answers: the start's, unless a retry moved the turn. */
+  let answering = start.model;
   let done = false;
 
   const recorder: TurnTraceRecorder = {
@@ -170,6 +180,10 @@ export function createTurnTrace(
     noteApproval: () => {
       approvals += 1;
     },
+    noteRetry: (model) => {
+      attempts += 1;
+      if (model) answering = { id: model.id, provider: model.provider };
+    },
     finish: (input) => {
       if (done) return null;
       done = true;
@@ -183,17 +197,17 @@ export function createTurnTrace(
         surface: start.surface,
         client: start.client,
         agentId: start.agentId,
-        model: start.model.id,
-        provider: start.model.provider,
-        requestedModel: start.requestedModel !== start.model.id ? start.requestedModel : null,
-        rerouted: start.rerouted,
+        model: answering.id,
+        provider: answering.provider,
+        requestedModel: start.requestedModel !== answering.id ? start.requestedModel : null,
+        rerouted: start.rerouted || answering.id !== start.model.id,
         reasoningEffort: start.reasoningEffort ?? null,
         features: start.features,
         latency: {
           totalMs: Math.max(0, end - startedAt),
           ttftMs: firstTokenAt === null ? null : Math.max(0, firstTokenAt - startedAt),
         },
-        attempts: 1,
+        attempts,
         toolCalls: order.map((id) => calls.get(id)!),
         approvals,
         usage: {
