@@ -421,7 +421,6 @@ export function Composer({
           role="textbox"
           aria-multiline="true"
           aria-label="Message"
-          aria-expanded={paletteOpen}
           aria-controls={paletteOpen ? "cv-palette" : undefined}
           tabIndex={0}
           onFocus={() => dispatch({ type: "focus", on: true })}

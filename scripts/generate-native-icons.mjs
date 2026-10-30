@@ -56,7 +56,6 @@ import { junoGhostDrawing } from "../src/components/ui/juno-glyph-paths.ts";
 import { resolveCatalogIcon } from "../src/components/ui/juno-icons/catalog.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const phosphorDefs = join(root, "node_modules/@phosphor-icons/react/dist/defs");
 const junoSources = join(root, "scripts/icon-sources/juno");
 const iconsModule = join(root, "src/components/ui/icons.tsx");
 const registries = join(root, "src/lib/app-icons.ts");
