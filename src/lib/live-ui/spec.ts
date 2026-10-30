@@ -1000,6 +1000,30 @@ export function liveInputs(ui: readonly LiveComponent[]): LiveInput[] {
   return out;
 }
 
+/**
+ * A spec whose block will never close (the stream ended first): what arrived
+ * is final, so the skeletons standing in for the rest go, a layout left
+ * empty is dropped the way normalisation drops it, and nothing reads as
+ * still pending. A complete spec comes back unchanged.
+ */
+export function settleLiveSpec(spec: LiveSpec): LiveSpec {
+  if (!spec.streaming) return spec;
+  const settle = (list: readonly LiveComponent[]): LiveComponent[] => {
+    const out: LiveComponent[] = [];
+    for (const c of list) {
+      if (c.type === "pending") continue;
+      if (c.type === "row" || c.type === "grid" || c.type === "section") {
+        const children = settle(c.children);
+        if (children.length > 0) out.push({ ...c, children, pending: false });
+      } else if (c.type === "steps") out.push({ ...c, steps: c.steps.map((s) => ({ ...s, ui: settle(s.ui) })) });
+      else if (c.type === "tabs") out.push({ ...c, tabs: c.tabs.map((t) => ({ ...t, children: settle(t.children) })), pending: false });
+      else out.push(c);
+    }
+    return out;
+  };
+  return { ...spec, ui: settle(spec.ui), streaming: false };
+}
+
 /** The id of every checklist in the tree, steps and tabs included. */
 export function liveChecklistIds(ui: readonly LiveComponent[]): Set<string> {
   const ids = new Set<string>();

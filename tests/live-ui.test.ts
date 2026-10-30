@@ -11,6 +11,7 @@ import {
   liveHash,
   liveStorageKey,
   parseLiveUI,
+  settleLiveSpec,
   snapToStep,
   type LiveComponent,
 } from "@/lib/live-ui/spec";
@@ -175,6 +176,36 @@ test("streaming: a half-written number or string is never surfaced", () => {
   assert.deepEqual(r.spec!.ui.map((c) => c.type), ["pending"]);
   const t = readLiveJSON(`{"title":"Hel`);
   assert.deepEqual(t.value, {});
+});
+
+test("streaming: a block the stream ended unclosed keeps what arrived and no skeletons", () => {
+  const cut = `{"title":"T","ui":[{"type":"row","children":[{"type":"slider","id":"a","min":0,"max":5,"value":1},{"type":"metric","label":"x","value":"a*2"`;
+  const live = parseLiveUI(cut).spec!;
+  assert.equal(live.streaming, true);
+  const done = settleLiveSpec(live);
+  assert.equal(done.streaming, false);
+  const kinds: string[] = [];
+  const walk = (list: readonly LiveComponent[]) => {
+    for (const c of list) {
+      kinds.push(c.type);
+      if ("pending" in c) assert.equal(c.pending, false, c.key);
+      if ("children" in c) walk(c.children);
+    }
+  };
+  walk(done.ui);
+  assert.deepEqual(kinds, ["row", "slider"]);
+  // A layout left with nothing that arrived is dropped, as normalisation drops it.
+  const empty = settleLiveSpec(parseLiveUI(`{"ui":[{"type":"section","title":"S","children":[{"type":"text"`).spec!);
+  assert.deepEqual(empty.ui, []);
+  // Steps and tabs drop their unarrived leaves too.
+  const nested = settleLiveSpec(parseLiveUI(`{"ui":[{"type":"tabs","tabs":[{"label":"A","children":[{"type":"text","text":"hi"},{"type":"metric"`).spec!);
+  const tabs = nested.ui[0];
+  if (tabs.type !== "tabs") return assert.fail(tabs.type);
+  assert.equal(tabs.pending, false);
+  assert.deepEqual(tabs.tabs[0].children.map((c) => c.type), ["text"]);
+  // A complete spec comes back as it was.
+  const whole = parseLiveUI(`{"ui":[{"type":"text","text":"hi"}]}`).spec!;
+  assert.equal(settleLiveSpec(whole), whole);
 });
 
 // ── Safety bounds ───────────────────────────────────────────────────────────
