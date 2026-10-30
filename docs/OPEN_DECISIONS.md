@@ -665,6 +665,73 @@ never fails the deploy on them.
 
 ---
 
+## 15. Speed and observability: the connector budget, the tool-list cache, the failure-rate alert — **owner to confirm**
+
+**Measured, not yet improved.** Every `chat.turn` log line and the owner's
+`/admin/turns` page now carry `serverPrepMs` (the request reaching the chat
+route → the provider request going out, connectors included) and
+`requestTtftMs` (the request reaching the route → the first token) beside the
+existing `ttftMs` (which still starts after the route has built the turn, as
+`RoutingOutcome.firstTokenMs` stores it). The page shows p50 and p95 over the
+process's recent turns. Nothing in the pipeline was reordered: per the
+discovery, record a week of p50/p95 from the log lines first
+(`grep '"event":"chat.turn"' | jq '.latency'`), then decide what to optimise.
+Each chat turn with connectors also logs one `mcp.open` line (servers, ready,
+cached, dropped with the reason, ms; connector ids only).
+
+**Connectors in a chat turn** (`src/lib/mcp.ts`, `openMcpToolset`; chat asks
+through `src/lib/agent/runtime.ts`):
+
+- **`MCP_CONNECT_TIMEOUT_MS`, default 5000 (bounded 1000 to 30000).** Each
+  server's budget to connect and list its tools. A slower server is dropped
+  for that turn, its connection closed, and the reader sees one warning row
+  ("<app> unavailable — It took too long to connect."); the other servers and
+  the turn go on. Before, there was no budget of Juno's own (only the SDK's
+  60 s per request), so one slow server could hold the turn's first token
+  that long, and every server was connected and listed on every turn.
+- **`MCP_TOOL_LIST_CACHE_SECONDS`, default 300 (0 turns it off, at most
+  3600).** A server's tool list is reused, per person and per connector, for
+  this long, and a cached server is not dialled until the model calls one of
+  its tools. A connector the person edits, re-links or refreshes is listed
+  afresh (the key holds its row's `updatedAt`); a cached server that fails to
+  connect is forgotten at once. The cost: for up to this long, the model can
+  be offered a tool the server has since removed, or a server that has since
+  gone down; the call then fails and says so. Permission is untouched: which
+  connectors a turn may reach is read from the database every turn, switched-off
+  tools are filtered after the cache, and every call still goes through the
+  broker.
+- **Work runs** keep their 45 s deadline for the whole open, which now
+  **cancels** the open (sockets closed, broker handles revoked) instead of
+  abandoning it, and give each server **30 s** of its own (a code constant,
+  `CONNECTOR_SERVER_TIMEOUT_MS` in `scripts/work-runner.ts`), so one hung
+  server no longer costs a run all its connectors. Work never uses the cache.
+
+**Chat failure-rate alert** (`src/lib/router/failure-alert.ts`, kind
+`chat_failure_rate`, through `alertOperator`: mailed to `OWNER_EMAILS`, muted
+with `ALERT_MUTED_KINDS=chat_failure_rate`; `CHAT_FAILURE_ALERT=off` stops the
+watch altogether, default on). Counted from `RoutingOutcome`, so
+it is durable and covers every saved-chat turn; private chats write no row and
+are not covered. A failed turn is one that ended `failed` or `partial` with
+`error` or `network_error`; a capped answer, a safety refusal and an oversize
+prompt do not count. Woken only by a failed turn (no polling), at most one
+count every 30 s during an outage. One mail per new incident; an incident
+seen again within one window is the same one. Three numbers:
+
+- **`CHAT_FAILURE_ALERT_THRESHOLD`, default 5 (bounded 2 to 1000).** Failed
+  turns of one model, or of one failure class across every model.
+- **`CHAT_FAILURE_ALERT_WINDOW_MINUTES`, default 10 (1 to 120).**
+- **`CHAT_FAILURE_ALERT_MIN_SHARE_PERCENT`, default 20 (0 to 100).** The
+  failures must also be at least this share of that model's (or class's)
+  turns, so five failures among a busy hour's hundreds do not page. 0 makes it
+  a plain count.
+
+Not covered: the row holds no provider error class (billing, auth, rate
+limit), so the mail lists the classes the web process saw itself; the
+incident memory is per process, so a restart during an outage can mail it
+once more; Work runs and background jobs write no `RoutingOutcome` row.
+
+---
+
 ## Not a decision — a known scaling limit (review item 39)
 
 Recorded here so it is not rediscovered as a bug.

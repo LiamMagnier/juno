@@ -471,7 +471,8 @@ print(json.dumps({"Control_L": down("Control_L"), "Shift_L": down("Shift_L"), "a
 # As the browser uid: every uid-1000 process as "pid<TAB>state<TAB>args". A process in
 # uninterruptible sleep (D) with SIGSTOP pending is reported as "Tp": it runs none
 # of its own code again before it stops, and agent-exec's freeze counts it as
-# stopped (a fork held in D for seconds on a loaded host otherwise read as running).
+# stopped at its 3 s deadline (a fork held in D for seconds on a loaded host
+# otherwise read as running).
 AGENT_PROCESSES_PROBE = r"""
 import os
 STOP = 1 << 18

@@ -327,6 +327,10 @@ class Argv:
         return ["exec", "--user", "1001", name, "pkill", "-x", "x11vnc"]
 
     @staticmethod
+    def vnc_kill_hard(name):
+        return ["exec", "--user", "1001", name, "pkill", "-KILL", "-x", "x11vnc"]
+
+    @staticmethod
     def vnc_password(name):
         return ["exec", "-i", "--user", "1001", name, "sh", "-c", VNC_PASSWORD_SCRIPT]
 
@@ -406,6 +410,7 @@ def print_argv(operation, raw):
         "du": lambda: Argv.du(a["name"]),
         "stat": lambda: Argv.stat(a["name"], a["path"]),
         "vncKill": lambda: Argv.vnc_kill(a["name"]),
+        "vncKillHard": lambda: Argv.vnc_kill_hard(a["name"]),
         "vncPassword": lambda: Argv.vnc_password(a["name"]),
         "vncStart": lambda: Argv.vnc_start(a["name"], a["gateway"]),
         "vncRunning": lambda: Argv.vnc_running(a["name"]),
@@ -1145,11 +1150,18 @@ class Host:
         self.wait_for_vnc_exit(ns, name)
         return {"ok": True}
 
-    def wait_for_vnc_exit(self, ns, name, seconds=10):
-        deadline = time.monotonic() + seconds
+    def wait_for_vnc_exit(self, ns, name, seconds=10, kill_after=3):
+        """SIGTERM first; SIGKILL after `kill_after` s (x11vnc's TERM handler was seen deadlocked on a futex,
+        holding the port and the person's session open); 502 if one still runs after `seconds`."""
+        started = time.monotonic()
+        killed = False
         while self.vnc_running(ns, name)["running"]:
-            if time.monotonic() >= deadline:
+            waited = time.monotonic() - started
+            if waited >= seconds:
                 raise Refused(502, "host_error")
+            if not killed and waited >= kill_after:
+                killed = True
+                self.docker(Argv.vnc_kill_hard(name), ns, timeout=15, allow_nonzero=True)
             time.sleep(0.1)
 
     def vnc_running(self, ns, name):

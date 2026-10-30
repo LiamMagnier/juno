@@ -206,6 +206,19 @@ export function ComputerTerminal({
     if (box && followingRef.current) box.scrollTop = box.scrollHeight;
   }, [rows]);
 
+  // A pane that was hidden while output arrived (the narrow screen's other
+  // tab) has nothing to scroll; when it is shown, or resized, it catches up
+  // with the bottom, still only while it is following.
+  React.useEffect(() => {
+    const box = scroller.current;
+    if (!box || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (followingRef.current) box.scrollTop = box.scrollHeight;
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+
   const onScroll = () => {
     const box = scroller.current;
     if (!box) return;

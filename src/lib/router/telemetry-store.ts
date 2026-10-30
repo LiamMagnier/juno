@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { evidenceKey, type EvidenceCell, type EvidenceTable } from "@/lib/router/evidence";
 import { isTaskClass, type TaskClass } from "@/lib/router/task-class";
 import type { CompletionState } from "@/lib/router/telemetry-rules";
+import type { TurnOutcomeCount } from "@/lib/router/failure-alert-rules";
 
 export const ROUTING_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const ROUTING_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
@@ -173,6 +174,44 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
     });
   }
   return table;
+}
+
+interface OutcomeCountRow {
+  modelId: string;
+  provider: string;
+  total: bigint;
+  failedError: bigint;
+  failedNetwork: bigint;
+}
+
+/**
+ * Turns per model since `since`, with the failed ones by fault class: the
+ * chat failure-rate alert's durable source (src/lib/router/failure-alert.ts).
+ * "Failed" is a row that ended `failed` or `partial` with the finish reason
+ * `error` or `network_error` (failure-alert-rules.ts says why). Content-free
+ * like every read here. Throws on a database error; the caller decides.
+ */
+export async function countRecentTurnOutcomes(since: Date): Promise<TurnOutcomeCount[]> {
+  const rows = await prisma.$queryRaw<OutcomeCountRow[]>(Prisma.sql`
+    SELECT "modelId", "provider",
+      COUNT(*) AS total,
+      COUNT(*) FILTER (
+        WHERE "completionState" IN ('failed', 'partial') AND "finishReason" = 'error'
+      ) AS "failedError",
+      COUNT(*) FILTER (
+        WHERE "completionState" IN ('failed', 'partial') AND "finishReason" = 'network_error'
+      ) AS "failedNetwork"
+    FROM "RoutingOutcome"
+    -- Zone-less UTC column, compared as such (see aggregateRoutingEvidence).
+    WHERE "createdAt" >= ${since.toISOString()}::timestamp
+    GROUP BY "modelId", "provider"
+  `);
+  return rows.map((row) => ({
+    modelId: row.modelId,
+    provider: row.provider,
+    total: Number(row.total),
+    failed: { error: Number(row.failedError), network_error: Number(row.failedNetwork) },
+  }));
 }
 
 let cache: { at: number; table: EvidenceTable } | null = null;

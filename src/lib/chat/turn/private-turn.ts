@@ -71,6 +71,7 @@ export async function runPrivateTurn({
   model,
   tokens,
   toolDetailEnabled,
+  requestStartedAt,
 }: {
   req: Request;
   user: TurnUser;
@@ -82,6 +83,8 @@ export async function runPrivateTurn({
   model: TurnModel;
   tokens: TurnTokens;
   toolDetailEnabled: boolean;
+  /** When the request reached the chat route: the start of the trace's `serverPrepMs`. */
+  requestStartedAt?: number;
 }): Promise<Response> {
   const { input, privateHistory, legacyClient, moderate, moderationTexts } = request;
   const { modelInfo, modelId, requestedId, requestedEffort, autoReasoningEffort, routingNote, routingWarning, routingReceipt } = model;
@@ -203,6 +206,7 @@ export async function runPrivateTurn({
       artifactEdit: false,
       regenerate: !!input.regenerate,
     },
+    requestStartedAt,
   }, emitTurnTrace);
 /*
    * Hold this turn's estimated cost against the ceiling for as long as it runs.
@@ -374,6 +378,8 @@ export async function runPrivateTurn({
             cacheKey: `private-${user.id}`,
             fastMode: useFastMode,
             proMode: useProMode,
+            // The end of the server's preparation, for the trace's `serverPrepMs`.
+            onProviderRequest: trace.noteProviderCall,
           }),
           {
             acc,
@@ -384,6 +390,8 @@ export async function runPrivateTurn({
             enforceStreamBudget,
             writing: { title: "Writing the private answer", detail: "Streaming response text" },
             forwardDeltas: true,
+            // First-token time for the trace (counts only: the trace keeps no text).
+            onEffect: trace.observe,
           }
         );
         // Provider done — stop measuring silence before Juno's own work. See

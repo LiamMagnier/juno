@@ -322,14 +322,17 @@ test("checkNestedRadius flags only the menu row whose radius breaks the concentr
   assert.equal(again[0].values.expected, 8);
 });
 
-test("checkNestedRadius lets a small pill (a switch) sit in a corner rounder than concentric", () => {
+test("checkNestedRadius lets a pill (a switch, a capsule button, a slider track) sit in a corner rounder than concentric", () => {
   const records = [
     rec(0, -1, { role: "menu", x: 0, y: 0, w: 288, h: 328, rad: [18, 18, 18, 18], paint: "bs", bg: "white" }),
     rec(1, 0, { role: "switch", kind: "switch", inter: true, x: 243, y: 295, w: 28, h: 16, rad: [9999, 9999, 9999, 9999], paint: "b", bg: "black" }),
   ];
   assert.equal(checkNestedRadius(records, ctx).findings.length, 0);
-  // A 36px-tall pill button in the same spot is a container shape and is judged.
+  // A 36px-tall capsule button in the same spot is a capsule too: its ends are its own curve.
   records[1] = rec(1, 0, { tag: "button", kind: "button", x: 186, y: 280, w: 90, h: 36, rad: [9999, 9999, 9999, 9999], paint: "b", bg: "black" });
+  assert.equal(checkNestedRadius(records, ctx).findings.length, 0);
+  // The same button as a rounded rectangle (12 px corners) traces the menu's corner and is judged.
+  records[1] = rec(1, 0, { tag: "button", kind: "button", x: 186, y: 280, w: 90, h: 36, rad: [12, 12, 12, 12], paint: "b", bg: "black" });
   assert.equal(checkNestedRadius(records, ctx).findings[0].kind, "nested-radius");
 });
 
@@ -510,6 +513,27 @@ test("checkIconGaps flags the member of a family with a different icon gap", () 
   assert.ok(!measuredValues(records[4], ctx).some((m: Rec) => m.property === "icon-text-gap"));
 });
 
+test("checkIconGaps does not compare an avatar's gap with a glyph's", () => {
+  // Five sidebar buttons with a 16 px glyph 6 px from the label, and the
+  // account button with a 32 px avatar 10 px from the name: no family breach.
+  const records: Rec[] = [];
+  for (let k = 0; k < 5; k++) {
+    records.push(rec(records.length, -1, { tag: "button", kind: "button", ig: [6, null], txt: true }));
+    records.push(rec(records.length, records.length - 1, { tag: "svg", icon: true, w: 16, h: 16 }));
+  }
+  const account = records.length;
+  records.push(rec(account, -1, { tag: "button", kind: "button", ig: [10, null], txt: true }));
+  records.push(rec(account + 1, account, { tag: "span", w: 32, h: 32 }));
+  records.push(rec(account + 2, account + 1, { tag: "svg", icon: true, w: 32, h: 32 }));
+  assert.equal(checkIconGaps(records, ctx).findings.length, 0);
+  // The same 10 px gap beside a 16 px glyph is a breach.
+  records[account + 2] = { ...records[account + 2], w: 16, h: 16 };
+  records[account + 1] = { ...records[account + 1], w: 16, h: 16 };
+  const again = checkIconGaps(records, ctx).findings;
+  assert.equal(again.length, 1);
+  assert.equal(again[0].el, account);
+});
+
 test("checkTargets uses the hit-tested size, the spacing exception on desktop, and 44px on a phone", () => {
   const records = [
     rec(0, -1, { tag: "button", kind: "button", inter: true, x: 0, y: 0, w: 16, h: 16 }),
@@ -532,6 +556,21 @@ test("checkTargets uses the hit-tested size, the spacing exception on desktop, a
     phone.findings.map((f: Rec) => f.el),
     [0, 1, 2, 3],
   );
+});
+
+test("checkTargets does not judge a field's label as a target of its own", () => {
+  const phone = makeContext({ viewport: { width: 390, height: 844 } });
+  const records = [
+    rec(0, -1, { tag: "label", kind: "clickable", inter: true, x: 24, y: 300, w: 44, h: 16, txt: true, text: "Email" }),
+    rec(1, -1, { tag: "input", kind: "input", inter: true, x: 24, y: 320, w: 342, h: 48 }),
+    rec(2, -1, { tag: "a", kind: "link", inter: true, x: 200, y: 400, w: 130, h: 17, text: "Forgot your password?" }),
+  ];
+  const { findings, checked } = checkTargets(records, phone);
+  assert.deepEqual(
+    findings.map((f: Rec) => f.el),
+    [2],
+  );
+  assert.ok(!checked.has(0));
 });
 
 test("a field's padding that makes room for an overlaid glyph is judged as the glyph-to-text gap", () => {
@@ -629,6 +668,21 @@ test("analyzeRoute is deterministic and scores on-scale values and clean element
   assert.equal(a.counts.byKind["text-misalignment"], 1);
   assert.ok(a.score.score < 100 && a.score.score > 50);
   assert.equal(a.score.scaleShare, 100);
+});
+
+test("loading placeholders (busy records) are left out of the values and the checks", () => {
+  const records = menuPage();
+  const loaded = analyzeRoute(records, ctx);
+  // The same page with its odd menu rows still drawn as skeletons.
+  const flagged = new Set(loaded.findings.map((f: Rec) => f.el));
+  const busy = records.map((r: Rec) => (flagged.has(r.i) ? { ...r, busy: true, pad: [7, 7, 7, 7] } : r));
+  const a = analyzeRoute(busy, ctx);
+  assert.equal(a.counts.violations, 0);
+  assert.ok(flagged.size > 0);
+  assert.ok(a.counts.scaleTotal < loaded.counts.scaleTotal);
+  assert.ok(a.counts.checked < loaded.counts.checked);
+  assert.ok(!a.histograms.padding.some(([v]: [number]) => v === 7));
+  assert.ok(a.offScale.every((o: Rec) => o.value !== 7));
 });
 
 test("off-scale values are reported with their nearest rung and examples", () => {
@@ -734,16 +788,19 @@ test("issue signatures drop page coordinates so one component's problem groups a
   assert.equal(issueSignature(near), issueSignature(near2));
   const off = { kind: "off-scale", severity: 1, magnitude: 2, message: "", values: { property: "padding", value: 14, nearest: 12 } };
   assert.equal(issueSignature(off), "padding 14 → 12");
-  const target = { kind: "target-size", severity: 3, magnitude: 18, message: "separator target 6×900 under the 24 px pointer minimum", values: {} };
-  assert.equal(issueSignature(target), "target 6×900 under the 24 px pointer minimum");
+  const target = { kind: "target-size", severity: 3, magnitude: 18, message: "separator target 6×900 under the 24 px pointer minimum", values: { w: 6, h: 900, min: 24 } };
+  assert.equal(issueSignature(target), "target 6 px on its short side, under the 24 px pointer minimum");
   const ref = { i: 1, tag: "div", path: "aside > div", rect: [0, 0, 6, 900], role: "separator", comp: "AppShell" };
-  assert.equal(issueKey(target, ref), "target-size|AppShell|div|separator|target 6×900 under the 24 px pointer minimum");
+  assert.equal(issueKey(target, ref), "target-size|AppShell|div|separator|target 6 px on its short side, under the 24 px pointer minimum");
+  // Segments of one control differ in width with their labels, not in the problem.
+  const seg = (w: number) => ({ kind: "target-size", severity: 2, magnitude: 10, message: `button target ${w}×34 under the 44 px touch minimum`, values: { w, h: 34, min: 44 } });
+  assert.equal(issueSignature(seg(82.38)), issueSignature(seg(36)));
 });
 
 test("groupOffenders counts a problem once per page, light and dark at one width being one page, and ranks by badness x pages", () => {
   const ref = (path: string, comp = "SidebarRow") => ({ i: 0, tag: "a", path, rect: [0, 0, 200, 32], comp });
   const pad = { kind: "off-scale", severity: 1, magnitude: 2, message: "padding 14 is off scale (nearest 12)", values: { property: "padding", value: 14, nearest: 12 }, related: [] };
-  const handle = { kind: "target-size", severity: 3, magnitude: 18, message: "separator target 6×900 under the 24 px pointer minimum", values: {}, related: [] };
+  const handle = { kind: "target-size", severity: 3, magnitude: 18, message: "separator target 6×900 under the 24 px pointer minimum", values: { w: 6, h: 900, min: 24 }, related: [] };
   const origin = (order: number) => ({ order, run: {}, route: {} });
   const items = [
     // the row padding on three pages, twice on one page (two rows), and again in the dark run

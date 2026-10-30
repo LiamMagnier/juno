@@ -1,0 +1,36 @@
+{
+  "$comment": "Neutral seed content for the Identity v2 screenshot harness (MIGRATION §3). W0 ports it to scripts/design-audit/identity-seed.ts on top of scripts/qa/seed-qa-fixtures.ts (disposable *_test database only). Sources use example.com/.org/.net subdomains; people and vendors are invented; no real third-party site appears.",
+  "user": { "firstName": "Sam", "lastName": "Rivera", "plan": "max" },
+  "conversations": [
+    {
+      "title": "Planning formats for a small team",
+      "pinned": false,
+      "user": "We're six people on one product. Which planning format should we use, and how do they compare?",
+      "answer": "## Three planning formats for a team of six\n\nWith six people on one product, the right format depends on how far ahead you can see and how often priorities move.[1]\n\n**Weekly planning** keeps the queue short and suits work that changes every few days. **Two-week sprints** add a review and a retrospective, which helps when you want a steady rhythm.[2]\n\n**Six-week cycles** with a short cool-down leave room for larger, well-shaped pieces of work.[3]\n\n| Format | Best when | Watch out for |\n| --- | --- | --- |\n| Weekly | priorities move often | planning overhead |\n| Two-week sprints | a steady rhythm | sprint padding |\n| Six-week cycles | larger shaped work | late feedback |\n\n```ts\nconst cadence = { weekly: 7, sprint: 14, cycle: 42 };\n```",
+      "sources": [
+        { "n": 1, "title": "Planning cadence for small teams", "url": "https://field-notes.example.org/planning-cadence", "siteName": "Field Notes" },
+        { "n": 2, "title": "Running reviews and retrospectives", "url": "https://ledger.example.com/reviews", "siteName": "Ledger" },
+        { "n": 3, "title": "Shaping work for longer cycles", "url": "https://harbor.example.net/shaping", "siteName": "Harbor" }
+      ],
+      "stamp": { "model": "auto", "seconds": 14, "facts": ["3 sources"] }
+    },
+    { "title": "Weekly review template", "pinned": true },
+    { "title": "Hiring loop scorecard", "pinned": true },
+    { "title": "Summarise interview notes" },
+    { "title": "Fix the flaky date parsing test" },
+    { "title": "Draft a data retention policy", "waitsOnPerson": true },
+    { "title": "Compare three CRM exports" }
+  ],
+  "agents": [
+    { "name": "Mira", "tone": "teal", "state": "working", "task": "Competitor pricing brief" },
+    { "name": "Otto", "tone": "violet", "state": "waiting", "task": "Weekly summary",
+      "ask": { "kind": "approval", "question": "Send this summary to 4 people?", "people": ["Ana Ortiz", "Ben Hale", "Chen Kim", "Dana Noor"], "askedAt": "16:06" } },
+    { "name": "Nell", "tone": "sage", "state": "idle", "next": "Weekly spend review, Mon at 09:00" }
+  ],
+  "projects": [
+    { "name": "Q3 planning", "description": "Roadmap, staffing and the review cadence", "chats": 14, "files": 6 },
+    { "name": "Support summaries", "description": "Weekly ticket digests", "chats": 9, "files": 2 },
+    { "name": "Hiring loop", "description": "Scorecards and interview notes", "chats": 22, "files": 11 },
+    { "name": "Vendor review", "description": "Vendor A and Vendor B, side by side", "chats": 7, "files": 4 }
+  ]
+}

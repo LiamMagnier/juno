@@ -736,10 +736,12 @@ export function checkNestedRadius(records, ctx) {
     if (r.paint === "b" && parent.bg && r.bg === parent.bg) continue;
     const cr = effectiveRadii(r.rad || [0, 0, 0, 0], r.w, r.h);
     const insets = cornerInsets(r, parent);
-    // Circles (avatars, round icon buttons) and small pills (switches, chips,
-    // badges) have an intrinsic shape: they may be rounder than concentric.
+    // Circles (avatars, round icon buttons) and pills (switches, chips, badges,
+    // a slider's track) have an intrinsic shape: they may be rounder than
+    // concentric. A pill's ends are its own curve, not a corner tracing the
+    // card's (the effort slider's 36 px track in a 14 px panel read as broken).
     const allFull = cr.every((v) => isFullRadius(v, r.w, r.h));
-    const circle = allFull && (Math.abs(r.w - r.h) <= 1 || r.h <= 24);
+    const circle = allFull;
     let worst = null;
     let any = false;
     let exact = true;
@@ -1281,11 +1283,25 @@ export function checkIconGaps(records, ctx) {
   const checked = new Set();
   const families = new Map();
   const hasText = textFlags(records);
+  // An avatar or a 32 px tile before a name is not the 16 px glyph before a
+  // label: icon gaps are compared only between icons of one size class.
+  const iconClass = new Map();
+  for (const c of records) {
+    if (!c.icon || c.p < 0) continue;
+    const size = Math.max(c.w, c.h);
+    const parent = records[c.p];
+    for (const owner of [parent, parent && parent.p >= 0 ? records[parent.p] : null]) {
+      if (!owner || !owner.ig) continue;
+      iconClass.set(owner.i, Math.max(iconClass.get(owner.i) || 0, size));
+      break;
+    }
+  }
+  const sizeClass = (r) => ((iconClass.get(r.i) || 0) > 24 ? "large-icon" : "icon");
   for (const r of records) {
     if (!r.ig) continue;
     for (const [side, gap] of [["lead", r.ig[0]], ["trail", r.ig[1]]]) {
       if (gap === null || gap === undefined || gap < 0 || gap > tol.maxIconGap) continue;
-      const key = `${side}|${familyKey(r, hasText[r.i])}`;
+      const key = `${side}|${sizeClass(r)}|${familyKey(r, hasText[r.i])}`;
       if (!families.has(key)) families.set(key, []);
       families.get(key).push({ r, gap });
     }
@@ -1321,7 +1337,9 @@ export function checkTargets(records, ctx) {
   const findings = [];
   const notes = [];
   const checked = new Set();
-  const targets = records.filter((r) => r.inter && !r.inline && !r.disabled && !r.covered);
+  // A <label> is a second way to reach its field (WCAG 2.5.8's "equivalent"
+  // exception): the field is the target, the label's text box is not judged.
+  const targets = records.filter((r) => r.inter && !r.inline && !r.disabled && !r.covered && r.tag !== "label");
   const boxes = targets.map((r) => {
     const w = r.tgt ? Math.max(r.w, r.tgt[0]) : r.w;
     const h = r.tgt ? Math.max(r.h, r.tgt[1]) : r.h;
@@ -1407,8 +1425,20 @@ export function scoreFrom({ scaleTotal, scaleOn, checked, flagged }) {
   };
 }
 
+/**
+ * A loading placeholder (collectGeometry's busy flag) stays in the tree as a
+ * plain unpainted box: it is not a control, a text, an icon or a member of a
+ * family, so it can neither be flagged nor set the norm for its neighbours.
+ */
+function inertPlaceholder(r) {
+  if (!r.busy) return r;
+  const next = { ...r, paint: "", rad: [0, 0, 0, 0] };
+  for (const k of ["kind", "inter", "txt", "icon", "sel", "role", "comp", "comps", "label", "text", "inline"]) delete next[k];
+  return next;
+}
+
 export function analyzeRoute(input, ctx) {
-  const records = normalizeRecords(input);
+  const records = normalizeRecords(input).map(inertPlaceholder);
   const tree = buildTree(records);
   const flowChildren = tree.children.map((kids) => kids.filter((k) => inFlow(records[k])).length);
   const nested = checkNestedRadius(records, ctx);
@@ -1427,6 +1457,8 @@ export function analyzeRoute(input, ctx) {
   const offScaleMap = new Map();
   const offScaleFindings = [];
   for (const r of records) {
+    // Loading placeholders are not the page's geometry (see collectGeometry's busy flag).
+    if (r.busy) continue;
     for (const m of measuredValues(r, vctx)) {
       const label = m.property === "radius" && m.full ? "full" : m.value;
       (hist[m.property] ||= []).push(label);
@@ -1459,10 +1491,11 @@ export function analyzeRoute(input, ctx) {
   const gaps = checkIconGaps(records, ctx);
   const targets = checkTargets(records, ctx);
 
-  const findings = [...nested.findings, ...asym.findings, ...siblings.findings, ...rows.findings, ...align.findings, ...gaps.findings, ...targets.findings];
-  const notes = [...asym.notes, ...rows.notes, ...align.notes, ...targets.notes];
+  const placeholder = (i) => !!records[i]?.busy;
+  const findings = [...nested.findings, ...asym.findings, ...siblings.findings, ...rows.findings, ...align.findings, ...gaps.findings, ...targets.findings].filter((f) => !placeholder(f.el) && !(f.related || []).some(placeholder));
+  const notes = [...asym.notes, ...rows.notes, ...align.notes, ...targets.notes].filter((n) => !placeholder(n.el));
   const checked = new Set();
-  for (const part of [nested, asym, siblings, rows, align, gaps, targets]) for (const i of part.checked) checked.add(i);
+  for (const part of [nested, asym, siblings, rows, align, gaps, targets]) for (const i of part.checked) if (!placeholder(i)) checked.add(i);
   const flaggedSet = new Set(findings.map((f) => f.el));
 
   const byKind = Object.fromEntries(VIOLATION_KINDS.map((k) => [k, 0]));

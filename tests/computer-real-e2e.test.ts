@@ -35,7 +35,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import Module, { createRequire } from "node:module";
@@ -60,6 +60,14 @@ const AGENT = `e2e${PROVIDER === "remote" ? "r" : "d"}${randomBytes(4).toString(
 const NAME = `juno-agent-${AGENT}`;
 /** The docker suite's own tag of the image, so test 10's rebuild never retags juno-computer:1. */
 const DOCKER_TAG = "juno-computer:e2e";
+/**
+ * This suite's ledger beside the fixture's state: every image tag, retag, built
+ * image and directory it creates outside its container, written BEFORE it is
+ * created (a directory just after: mkdtemp names it), so
+ * `computer_host_fixture.py down` can remove or restore it if the suite is killed.
+ * Removed in after() once everything in it is gone again.
+ */
+const LEDGER = path.join(path.dirname(FIXTURE_STATE), `suite-${AGENT}.jsonl`);
 const RELAY_ORIGIN = "http://app.test";
 
 if (OPT_IN) {
@@ -123,6 +131,7 @@ const lib = {} as {
   runTools: typeof import("@/lib/computer/run-tools");
   takeover: typeof import("@/lib/computer/takeover");
   sweep: typeof import("@/lib/computer/sweep");
+  shellOutput: typeof import("@/lib/computer/shell-output");
   relay: typeof import("../relay/src/computer-view");
   WebSocket: WSConstructor;
   runtime: Runtime;
@@ -187,7 +196,8 @@ function observe(argv: string[], opts: { display?: boolean; allowFail?: boolean 
 /**
  * Every uid-1000 process: its pid, its state, and its arguments. A process in
  * uninterruptible sleep (D) with SIGSTOP pending reads as "Tp": it runs none of its
- * own code again before it stops, and agent-exec's freeze counts it as stopped.
+ * own code again before it stops, and agent-exec's freeze counts it as stopped at its
+ * 3 s deadline.
  */
 function agentProcesses(): Array<{ pid: number; state: string; args: string }> {
   return observe(["python3", "-I", "-c", AGENT_PROCESSES_PROBE], { allowFail: true })
@@ -209,6 +219,32 @@ function evidence(name: string, data: Buffer | string): void {
 
 function note(test: string, value: unknown): void {
   record[test] = value;
+}
+
+type LedgerEntry =
+  | { kind: "tag"; tag: string }
+  | { kind: "retag"; tag: string; restore: string }
+  | { kind: "image"; id: string }
+  | { kind: "dir"; path: string };
+const ledgered: LedgerEntry[] = [];
+
+function ledger(entry: LedgerEntry): void {
+  appendFileSync(LEDGER, `${JSON.stringify(entry)}\n`, { mode: 0o644 });
+  ledgered.push(entry);
+}
+
+/** Whether everything the ledger names is gone again (or, for a retag, back where it was). */
+function ledgerSettled(): boolean {
+  const idOf = (reference: string) => {
+    const result = dockerQuiet("image", "inspect", "--format", "{{.Id}}", reference);
+    return result.status === 0 ? result.stdout.toString().trim() : null;
+  };
+  return ledgered.every((entry) => {
+    if (entry.kind === "tag") return idOf(entry.tag) === null;
+    if (entry.kind === "retag") return idOf(entry.tag) === entry.restore;
+    if (entry.kind === "image") return idOf(entry.id) === null;
+    return !existsSync(entry.path);
+  });
 }
 
 function fixtureCommand(...args: string[]): string {
@@ -336,11 +372,16 @@ function ticks(): number[] {
 const tickCount = async () => ticks().length;
 
 /** Opens a take over through the store; the agent is frozen, the person logged in over RFB. */
+/** The browser uid's processes and x11vnc's log, for a failure message (nothing secret: x11vnc never logs a password). */
+function vncDiagnostics(): string {
+  const processes = observe(["ps", "-o", "pid,ppid,stat,wchan:24,etime,args", "-u", "1001"], { allowFail: true });
+  const vnc = observe(["tail", "-n", "12", "/tmp/x11vnc.log"], { allowFail: true });
+  return `\nbrowser uid processes:\n${processes}\nx11vnc.log:\n${vnc}`;
+}
+
 async function takeOver(): Promise<{ person: RfbSession; password: string }> {
   const control = await viewSession("control").catch((error: unknown) => {
-    // What x11vnc said, when starting the person's stream is what failed.
-    const vnc = observe(["tail", "-n", "15", "/tmp/x11vnc.log"], { allowFail: true });
-    throw new Error(`take over failed: ${error instanceof Error ? error.message : String(error)}\nx11vnc.log:\n${vnc}`);
+    throw new Error(`take over failed: ${error instanceof Error ? error.message : String(error)}${vncDiagnostics()}`);
   });
   assert.equal(control.freeze, "ok", "the store froze the agent at take over");
   const { session, result } = await rfbLogin(control.token, control.password);
@@ -376,6 +417,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     lib.runTools = req("../src/lib/computer/run-tools") as typeof lib.runTools;
     lib.takeover = req("../src/lib/computer/takeover") as typeof lib.takeover;
     lib.sweep = req("../src/lib/computer/sweep") as typeof lib.sweep;
+    lib.shellOutput = req("../src/lib/computer/shell-output") as typeof lib.shellOutput;
     lib.relay = req("../relay/src/computer-view") as typeof lib.relay;
     lib.WebSocket = (req("../relay/node_modules/ws") as { WebSocket: WSConstructor }).WebSocket;
     lib.runtime = (await import("../runner/agent-core/dist/work/index.js")) as unknown as Runtime;
@@ -397,6 +439,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     if (PROVIDER === "docker") {
       // The image under its own tag (test 10 rebuilds that tag), Chromium's sandbox as the fixture decided it.
       originalImageId = docker("image", "inspect", "--format", "{{.Id}}", fixture.image);
+      ledger({ kind: "tag", tag: DOCKER_TAG });
       docker("tag", originalImageId, DOCKER_TAG);
       setEnv({ COMPUTER_DOCKER_IMAGE: DOCKER_TAG, AGENT_COMPUTER_IMAGE: undefined, JUNO_COMPUTER_SECCOMP_PROFILE: fixture.seccompProfile ?? "" });
       // Production's single-box path: every docker call the provider makes goes through the
@@ -404,6 +447,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
       // check and its egress-map hooks), under the fixture's policy for this suite's tag.
       // Outside production the provider runs `docker` from PATH; here that is the broker.
       shimDirectory = mkdtempSync(path.join(tmpdir(), "juno-e2e-broker-"));
+      ledger({ kind: "dir", path: shimDirectory });
       const policy = { ...(JSON.parse(readFileSync(fixture.policyFile, "utf8")) as Record<string, unknown>), image: DOCKER_TAG };
       const policyFile = path.join(shimDirectory, "computer-broker.json");
       writeFileSync(policyFile, JSON.stringify(policy));
@@ -423,8 +467,16 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
         throw new Error(`start Node with NODE_EXTRA_CA_CERTS=${host.caFile} (source host.env): the host's TLS is the production path`);
       }
       originalImageId = docker("image", "inspect", "--format", "{{.Id}}", "juno-computer:1");
-      // A short per-request timeout, so test 14's outage is quick to observe.
-      setEnv({ COMPUTER_HOST_URL: host.url, COMPUTER_HOST_TOKEN: readFileSync(host.tokenFile, "utf8").trim(), COMPUTER_HOST_TIMEOUT_MS: "8000" });
+      // The per-request limit of every host call that has no floor of its own (state,
+      // pause, tickets, screenshot, files, the VNC stop): above the host's own 10 s wait
+      // for x11vnc to exit (juno-computer-host.py wait_for_vnc_exit), scaled like every
+      // other limit here. Test 14's outage needs no short one: nginx answers 502 at once
+      // while the service is stopped.
+      setEnv({
+        COMPUTER_HOST_URL: host.url,
+        COMPUTER_HOST_TOKEN: readFileSync(host.tokenFile, "utf8").trim(),
+        COMPUTER_HOST_TIMEOUT_MS: String(Math.round(15_000 * SLACK)),
+      });
       lib.remote.resetRemoteComputerProviderForTest();
     }
     lib.providerModule.resetComputerProviderCache();
@@ -434,6 +486,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
 
     mem = lib.store.createInMemoryComputerPersistence();
     lib.store.setComputerStorePersistenceForTest(mem);
+    lib.shellOutput.setShellOutputPersistenceForTest(lib.shellOutput.createInMemoryShellOutputPersistence());
     mem.accessUsers.set(USER, { id: USER, email: null, emailVerified: null, plan: "PRO" });
     mem.agents.set(AGENT, { userId: USER, name: "Mira", executionTarget: "cloud", computerPolicy: "allowed" });
     const provider = lib.providerModule.computerProvider();
@@ -473,8 +526,12 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
       dockerQuiet("volume", "rm", "-f", NAME, `${NAME}-browser`);
       if (PROVIDER === "docker") dockerQuiet("image", "rm", DOCKER_TAG);
       if (shimDirectory) rmSync(shimDirectory, { recursive: true, force: true });
+      // The ledger goes only once what it names is gone; otherwise `fixture down` finishes the job.
+      if (ledgerSettled()) rmSync(LEDGER, { force: true });
+      else note("ledger", { left: LEDGER, entries: ledgered });
       if (relayServer) await new Promise<void>((resolve) => relayServer!.close(() => resolve()));
       lib.store?.setComputerStorePersistenceForTest(null);
+      lib.shellOutput?.setShellOutputPersistenceForTest(null);
       for (const [key, value] of Object.entries(savedEnv)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
@@ -675,7 +732,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     const handedBackAt = Date.now();
     await handBack();
     const closedAt = await Promise.race([person.closed, sleep(20_000 * SLACK).then(() => 0)]);
-    assert.ok(closedAt > 0, "hand back ended the person's VNC session");
+    assert.ok(closedAt > 0, `hand back ended the person's VNC session${closedAt > 0 ? "" : vncDiagnostics()}`);
     await waitFor("the loop to resume", 10, async () => ticks().length > frozenAt + 2);
     const resumedAt = ticks()[frozenAt]!;
     assert.ok(closedAt <= resumedAt, `the person's session ended (${closedAt}) before the agent resumed (${resumedAt})`);
@@ -694,8 +751,10 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     // The runner's tick, at a moment past the window (nobody sent a heartbeat).
     const settled = await lib.store.settleLapsedTakeovers(new Date(row.takeoverUntil.getTime() + 1000));
     assert.equal(settled, 1);
+    const lapseAudits = mem.audits.filter((a) => a.agentId === AGENT).slice(-4).map((a) => a.kind);
+    assert.ok(!lapseAudits.includes("rotate_failed"), `the lapse rotated the passwords (${lapseAudits.join(",")})${vncDiagnostics()}`);
     const closedAt = await Promise.race([person.closed, sleep(20_000 * SLACK).then(() => 0)]);
-    assert.ok(closedAt > 0, "the lapse ended the person's VNC session");
+    assert.ok(closedAt > 0, `the lapse ended the person's VNC session${closedAt > 0 ? "" : vncDiagnostics()}`);
     await waitFor("the loop to resume", 10, async () => ticks().length > frozenAt + 2);
     const resumedAt = ticks()[frozenAt]!;
     assert.ok(closedAt <= resumedAt, `the session ended (${closedAt}) before the agent resumed (${resumedAt})`);
@@ -751,30 +810,72 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     await handBack();
     held.person.ws.close();
 
-    // (b) A command racing the take over: one started before it is stopped, one after it is refused (75).
+    // (b) Commands racing the take over. Each writes a timestamp to its own file every
+    // 100 ms for as long as it runs, so one that is not frozen shows in its file at
+    // once. Two start well before the take over and one right as it begins (frozen
+    // with the rest, or refused with 75 if it reaches the launcher after the marker);
+    // a command after the take over is refused. While the person has control no file
+    // grows; after hand back the early ones write again (they were stopped, not ended).
     awake = await fresh();
+    const RACE = "/home/agent/work/e2e/race";
+    await awake.provider.exec(awake.handle, `rm -rf ${RACE} && mkdir -p ${RACE}`, { timeoutSeconds: 20 });
+    const writer = (name: string) => `while true; do date +%s%N >> ${RACE}/${name}; sleep 0.1; done`;
     const exec = (command: string) =>
       awake.provider.exec(awake.handle, command, { timeoutSeconds: 120 }).then(
-        (res) => ({ code: res.exitCode, at: Date.now() }),
-        (error: unknown) => ({ code: -1, at: Date.now(), error: String(error) }),
+        (res) => ({ code: res.exitCode }),
+        (error: unknown) => ({ code: -1, error: String(error) }),
       );
-    const early = [exec("sleep 90 && touch /home/agent/work/e2e/raced-early"), exec("sleep 90 && touch /home/agent/work/e2e/raced-early")];
-    await waitFor("the early commands to run", 10, async () => agentProcesses().filter((p) => p.args.includes("sleep 90")).length >= 2);
-    const racing = exec("sleep 90 && touch /home/agent/work/e2e/raced");
+    /** Each writer's lines: how many, and the newest timestamp (ms, the same kernel clock as Date.now()). */
+    const raceFiles = () =>
+      Object.fromEntries(
+        observe(["sh", "-c", `cd ${RACE} && for f in *; do [ -f "$f" ] && printf '%s %s %s\\n' "$f" "$(wc -l < "$f")" "$(tail -n 1 "$f")"; done; true`])
+          .split("\n")
+          .map((line) => line.trim().split(/\s+/))
+          .filter((parts) => parts.length >= 2 && /^\d+$/.test(parts[1]!))
+          .map(([name, lines, last]) => [
+            name!,
+            { lines: Number(lines), lastMs: last && /^\d+$/.test(last) ? Math.floor(Number(BigInt(last) / 1_000_000n)) : 0 },
+          ]),
+      ) as Record<string, { lines: number; lastMs: number }>;
+    const early = [exec(writer("early-1")), exec(writer("early-2"))];
+    await waitFor("the early writers to write", 10, async () => {
+      const files = raceFiles();
+      return (files["early-1"]?.lines ?? 0) >= 3 && (files["early-2"]?.lines ?? 0) >= 3;
+    });
+    const racer: { code: number | null } = { code: null };
+    const racing = exec(writer("racing")).then((res) => ((racer.code = res.code), res));
     held = await takeOver();
     const tookAt = Date.now();
-    const late = await exec("touch /home/agent/work/e2e/raced-late");
+    const atTakeOver = raceFiles();
+    const late = await exec(`touch ${RACE}/late`);
     assert.equal(late.code, 75, "a command after the take over is refused");
     assert.deepEqual(runningAgentProcesses(), [], "a command that raced the take over runs unfrozen");
-    const stopped = agentProcesses().filter((p) => p.args.includes("sleep 90"));
-    assert.ok(stopped.length >= 2 && stopped.every(frozen), `control: the early commands are stopped: ${JSON.stringify(stopped)}`);
+    await sleep(2000 * SLACK);
+    const beforeHandBack = raceFiles();
+    const handBackAt = Date.now();
+    assert.deepEqual(beforeHandBack, atTakeOver, `a writer wrote while the person had control (${JSON.stringify({ atTakeOver, beforeHandBack })})`);
+    for (const [name, file] of Object.entries(beforeHandBack)) {
+      assert.ok(file.lastMs <= tookAt, `${name} wrote at ${file.lastMs}, after the take over had frozen the agent (${tookAt})`);
+    }
+    assert.ok(!("late" in beforeHandBack), "the refused command wrote nothing");
     await handBack();
     held.person.ws.close();
-    // The early ones resume at hand back; end them before their write.
-    await awake.provider.exec(awake.handle, "pkill -u agent -x sleep; true", { timeoutSeconds: 20 });
-    const settled = await Promise.all([...early, racing]);
-    assert.ok(settled.every((s) => s.code === 75 || s.at > tookAt), `nothing finished during the take over: ${JSON.stringify(settled)}`);
-    assert.equal(observe(["sh", "-c", "ls /home/agent/work/e2e/ | grep -c raced || true"]).trim(), "0", "no racer wrote");
+    // The racer reached the launcher either before the marker (frozen with the rest:
+    // it writes again now) or after it (refused with 75, never ran).
+    const grew = (files: Record<string, { lines: number }>, name: string) => (files[name]?.lines ?? 0) > (beforeHandBack[name]?.lines ?? 0);
+    await waitFor("the writers to write again after hand back", 10, async () => {
+      const files = raceFiles();
+      return grew(files, "early-1") && grew(files, "early-2") && (racer.code === 75 || grew(files, "racing"));
+    });
+    const racingOutcome = racer.code === 75 ? "refused" : "frozen";
+    assert.ok(racer.code === null || racer.code === 75, `the racer ended on its own with ${racer.code}`);
+    await awake.provider.exec(awake.handle, "pkill -u agent -f 'date \\+%s%N >>'; pkill -u agent -x sleep; true", { timeoutSeconds: 20 });
+    await Promise.all([...early, racing]);
+    const resumed = raceFiles();
+    const firstAfter = Object.fromEntries(
+      ["early-1", "early-2"].map((name) => [name, (resumed[name]?.lines ?? 0) - (beforeHandBack[name]?.lines ?? 0)]),
+    );
+    note("12b", { racingOutcome, linesAtTakeOver: atTakeOver, linesWrittenAfterHandBack: firstAfter, windowMs: handBackAt - tookAt });
 
     // (c) A held modifier and button are released for the person.
     awake = await fresh();
@@ -868,6 +969,17 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     const shellCard = runA.approvals.find((a) => a.action === "work.computer.shell");
     assert.ok(shellCard, `the shell asked: ${runA.approvals.map((a) => a.action).join(",")}`);
     assert.equal(shellCard.risk, "sensitive");
+    // The shell's output reached the person's read-only terminal pane as it ran (S5.1): the
+    // command, its stdout and its exit, under the call's id, through the runner's watcher.
+    const shellCall = runA.shell.filter((row) => row.callId === runA.shell.find((r) => r.stream === "command")?.callId);
+    assert.deepEqual(
+      [...new Set(shellCall.map((row) => row.stream))],
+      ["command", "stdout", "exit"],
+      `the shell's output streamed to the pane: ${JSON.stringify(runA.shell)}`,
+    );
+    assert.match(shellCall.find((row) => row.stream === "command")!.text, /printf 'from-the-shell'/);
+    assert.equal(shellCall.filter((row) => row.stream === "stdout").map((row) => row.text).join(""), "from-the-shell");
+    assert.equal(JSON.parse(shellCall.find((row) => row.stream === "exit")!.text).exitCode, 0);
     const after = await wake();
     assert.equal((await after.provider.readFile(after.handle, "/home/agent/work/e2e-run/shell.txt")).toString(), "from-the-shell");
     assert.equal((await after.provider.readFile(after.handle, "/home/agent/work/e2e-run/note.txt")).toString(), "written-by-the-files-tool");
@@ -980,16 +1092,23 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
     await lib.store.sleepComputer(USER, AGENT, { reason: "person", actor: "web" });
     const tag = PROVIDER === "docker" ? DOCKER_TAG : "juno-computer:1";
     const base = `juno-computer-e2e-base:${PROVIDER}`;
-    const build = path.join(ROOT, ".e2e-rebuild-" + randomBytes(4).toString("hex"));
+    // The build context in the temporary directory, never in the checkout (a killed run
+    // would leave it untracked there); the ledger names it for `fixture down`.
+    let build = "";
     let rebuilt = "";
     try {
       // A rebuild under the same tag and label with one changed file: a new image id, as a Chromium security rebuild would be.
+      ledger({ kind: "tag", tag: base });
       docker("tag", originalImageId, base);
-      mkdirSync(build);
+      build = mkdtempSync(path.join(tmpdir(), "juno-e2e-rebuild-"));
+      ledger({ kind: "dir", path: build });
       writeFileSync(path.join(build, "rebuilt"), randomBytes(8).toString("hex"));
       writeFileSync(path.join(build, "Dockerfile"), `FROM ${base}\nCOPY rebuilt /opt/juno/rebuilt\n`);
+      // The remote suite rebuilds the shared tag (the host runs juno-computer:1): restored in finally, or by `fixture down`.
+      if (tag !== DOCKER_TAG) ledger({ kind: "retag", tag, restore: originalImageId });
       docker("build", "-q", "-t", tag, build);
       rebuilt = docker("image", "inspect", "--format", "{{.Id}}", tag);
+      ledger({ kind: "image", id: rebuilt });
       assert.notEqual(rebuilt, originalImageId);
       assert.equal(docker("image", "inspect", "--format", '{{index .Config.Labels "juno.security"}}', tag), "pipe-v4", "the same label");
       assert.equal(await awake.provider.isOutdated(awake.handle), true, "the container is outdated");
@@ -1000,7 +1119,7 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
       assert.ok(mem.audits.some((a) => a.agentId === AGENT && a.kind === "rebuilt"));
       assert.equal(await withAgentPage(woken, (page) => page.evaluate(() => 6 * 7)), 42, "its browser answers");
     } finally {
-      spawnSync("rm", ["-rf", build]);
+      if (build) rmSync(build, { recursive: true, force: true });
       // The tag goes back to the image it was; the rebuilt image goes with this suite's container (after()).
       docker("tag", originalImageId, tag);
       dockerQuiet("image", "rm", base);
@@ -1020,6 +1139,8 @@ describe(`agent computers for real (${PROVIDER})`, { skip: SKIP }, () => {
 interface ScriptedRunResult {
   approvals: WorkApprovalRequest[];
   events: WorkEmittedEvent[];
+  /** The run's shell output as the person's terminal pane reads it. */
+  shell: import("@/lib/computer/shell-output").ClientShellOutputRow[];
   said: string[];
   failures: Array<{ tool: string; output: string }>;
   results: Array<{ tool: string; output: string; isError: boolean }>;
@@ -1028,11 +1149,20 @@ interface ScriptedRunResult {
 
 /**
  * The Work runner's computer wiring (scripts/work-runner.ts buildTools and the
- * attach), in miniature: the store's lazy plan, the holder, the start gate, the
- * computer tools over the real provider, and the `browser` tool switching between
- * a temporary browser (a recording stand-in here) and the computer's own browser
- * (the product's agent browser over CDP, behind the take-over guard). Approvals are
- * answered "allowed" by the test.
+ * attach), rebuilt here from the same library parts: the store's lazy plan, the
+ * holder, the start gate, agent-core's computer tools over the real provider, the
+ * shell through the runner's watcher into the terminal pane's log (in memory), typing
+ * in fenced chunks, and the `browser` tool switching between a temporary browser (a
+ * recording stand-in here) and the computer's own browser (the product's agent browser
+ * over CDP, behind the take-over guard). Approvals are answered "allowed" by the test.
+ *
+ * NOT proven here: buildTools itself. The runner module starts its worker loop when it
+ * is imported, so this suite cannot call it, and the glue that lives only there (step
+ * frames, the poster cache, `publish` into the deliverable store, `zoom`, point
+ * descriptions) is not exercised on a real computer by this suite. The local demo
+ * (COMPUTERS_2026-10.md S6) runs the real runner; until then that glue is covered only by
+ * unit tests of its parts on a fake computer (tests/computer-publish-deliverable.test.ts,
+ * tests/computer-frames.test.ts). Keep this in step with buildTools when either changes.
  */
 async function scriptedRun(opts: {
   script: ScriptedWorkScript;
@@ -1068,8 +1198,8 @@ async function scriptedRun(opts: {
     if (!attachment) throw new Error("The computer is not started.");
     return attachment;
   };
-  // agent-core's computer tools take bytes since S5 (binary-safe files) and text before it.
-  const bytesApi = readFileSync(path.join(ROOT, "runner/agent-core/dist/work/computer-tools.js"), "utf8").includes("decodeTextFile");
+  // The person's read-only terminal pane, fed as the runner feeds it (S5.1).
+  const shellLog = lib.shellOutput.createShellOutputLog({ userId: USER, agentId: AGENT, runId: opts.runId });
   let epoch = 0;
   const shot = async () => {
     const s = await attached().provider.screenshot(attached().handle);
@@ -1084,23 +1214,37 @@ async function scriptedRun(opts: {
     screenEpoch: () => epoch,
     screenshot: shot,
     click: async (o: { x: number; y: number; button?: "left" | "right" | "double" }) => (await attached().provider.click(attached().handle, o), shot()),
-    type: async (text: string) => (await attached().provider.type(attached().handle, text), shot()),
+    type: async (text: string) => {
+      // In chunks, with the take over and lease fence read between them, as the runner types.
+      const stopped = await lib.takeover.typeInChunks(
+        text,
+        (chunk) => attached().provider.type(attached().handle, chunk),
+        () => store.computerTakeoverFence(USER, AGENT, new Date(), opts.runId),
+      );
+      epoch += 1;
+      if (stopped) throw new Error(stopped);
+      return shot();
+    },
     key: async (keys: string) => (await attached().provider.key(attached().handle, keys), shot()),
     scroll: async (o: { x: number; y: number; direction: string; amount: number }) =>
       (await attached().provider.scroll(attached().handle, { x: o.x, y: o.y, dy: o.direction === "up" ? -o.amount : o.amount }), shot()),
-    exec: async (command: string, o: { timeoutSeconds: number; cwd?: string }) => {
-      const res = await runTools.runComputerShell(attached().provider, attached().handle, command, o);
+    exec: async (command: string, o: { timeoutSeconds: number; cwd?: string; callId?: string }) => {
+      // The working directory to the provider (validated, as --workdir), the output to the pane under the call's id.
+      const { callId, ...shellOpts } = o;
+      const res = await runTools.runWatchedComputerShell(attached().provider, attached().handle, command, shellOpts, shellLog, callId);
       epoch += 1;
       return res;
     },
     listFiles: (dir: string) => attached().provider.listFiles(attached().handle, dir),
-    readFile: async (p: string, max: number) => {
-      const bytes = await attached().provider.readFile(attached().handle, p, { maxBytes: max });
-      return bytesApi ? bytes : bytes.toString("utf8");
-    },
-    writeFile: async (p: string, content: string | Uint8Array) => {
-      await attached().provider.writeFile(attached().handle, p, typeof content === "string" ? content : Buffer.from(content));
+    // The bytes as they are (S5.2): the tool decides whether they are text.
+    readFile: (p: string, max: number) => attached().provider.readFile(attached().handle, p, { maxBytes: max }),
+    writeFile: async (p: string, bytes: Uint8Array) => {
+      await attached().provider.writeFile(attached().handle, p, Buffer.from(bytes));
       epoch += 1;
+    },
+    fileSize: async (p: string) => {
+      const info = await attached().provider.fileInfo(attached().handle, p);
+      return info?.type === "file" ? info.size : null;
     },
     settle: false,
   };
@@ -1189,10 +1333,13 @@ async function scriptedRun(opts: {
   } finally {
     await browserSwitch.close();
     await lazy.dispose();
+    await shellLog.drain();
   }
+  const shell = await lib.shellOutput.readShellOutput({ userId: USER, agentId: AGENT, runId: opts.runId, afterSeq: 0 });
   return {
     approvals,
     events,
+    shell: shell.rows,
     said: events.flatMap((e) => (e.kind === "assistant_message" ? [e.text] : [])),
     failures: results.filter((r) => r.isError).map(({ tool, output }) => ({ tool, output })),
     results,

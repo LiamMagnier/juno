@@ -1,0 +1,195 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width">
+<script>
+// Identity v2 prototype (static; review revision 3). Query: s=<scene> t=light|dark p=cool|warm w=<window width> + per-scene flags.
+// Scenes: margin, phone-menu, phone-drill, phone-thread, home, home-phone, agent, voice, voice-phone, settings, projects, landing, auth, greet-measure.
+const q=new URLSearchParams(location.search);const T=q.get('t')||'light';const PAL=q.get('p')==='warm'?'tokens-warm.css':'tokens.css';
+document.write(`<link rel=stylesheet href="${PAL}"><link rel=stylesheet href="proto.css">`);
+if(T==='dark')document.documentElement.dataset.theme='dark';
+</script>
+<body><div id=app></div>
+<script>
+const P={ // 24-unit sketches, flat-cut terminals (butt caps), round joins; prototype stand-ins for the v4 drawings
+ clip:'M15.5 7.5v8a3.5 3.5 0 0 1-7 0V6a2.25 2.25 0 0 1 4.5 0v9a1 1 0 0 1-2 0V8',
+ lib:'M5 5v14M8.5 5v14M12.5 5.5l4.2 13.4M4 19h16',
+ proj:'M4.5 9.5h15v8.5a1.5 1.5 0 0 1-1.5 1.5H6a1.5 1.5 0 0 1-1.5-1.5zM9 9.5V7a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2.5M4.5 13.5h6.5M13 13.5h6.5',
+ globe:'M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17M3.5 12h17M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.1-3.6-8.5s1.2-6.2 3.6-8.5',
+ deep:'M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13M15.4 15.4L20 20M8 10.5h5M10.5 8v5',
+ telescope:'M4 13.2l10.6-5.6 1.9 3.6L5.9 16.8zM14.6 7.6l3.3-1.8 1.9 3.6-3.3 1.8M10.6 14.6l-2.6 5.4M12.2 13.8l2.8 6.2',
+ image:'M6 4.5h12A1.5 1.5 0 0 1 19.5 6v12a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V6A1.5 1.5 0 0 1 6 4.5zM4.5 16l4.5-4.5 4 4 2.5-2.5 4 4',
+ skill:'M7 4.5h10A1.5 1.5 0 0 1 18.5 6v12a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 18V6A1.5 1.5 0 0 1 7 4.5zM9 9h6M9 12h6M9 15h3.5',
+ apps:'M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z',
+ chevR:'M10 7l5 5-5 5', chevL:'M14 7l-5 5 5 5', chevD:'M7 10l5 5 5-5', check:'M5.5 12.5l4 4 9-9',
+ plus:'M12 5v14M5 12h14', x:'M7 7l10 10M17 7L7 17', menu:'M5 9h14M5 15h9', compose:'M13 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V11M10 14l1-3.5 7.2-7.2 2.5 2.5-7.2 7.2z',
+ mic:'M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4zM7 11.5a5 5 0 0 0 10 0M12 16.5V20', micoff:'M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4zM7 11.5a5 5 0 0 0 10 0M12 16.5V20M5 5l14 14',
+ gauge:'M5 16a7 7 0 1 1 14 0M12 16l3.2-4.2', copy:'M9 9h9.5v10.5H9zM6 15V5.5h9.5', retry:'M18.5 12a6.5 6.5 0 1 1-2-4.7M17 4v4h-4', share:'M12 15V4.5M8.5 8L12 4.5 15.5 8M7 11.5H6v8h12v-8h-1',
+ more:'M6 12h.01M12 12h.01M18 12h.01', search:'M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13M15.4 15.4L20 20', bell:'M6.5 16V11a5.5 5.5 0 0 1 11 0v5l1.5 2H5zM10 20.5h4', sidebar:'M5 5h14v14H5zM10 5v14',
+ code:'M8.5 8l-4 4 4 4M15.5 8l4 4-4 4M13.5 6l-3 12', custom:'M5 8h7M16 8h3M5 16h3M12 16h7M14 6v4M10 14v4', arrowup:'M12 19V5M6.5 10.5L12 5l5.5 5.5',
+ orbit:'M7.5 5h9A3.5 3.5 0 0 1 20 8.5v7a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 15.5v-7A3.5 3.5 0 0 1 7.5 5zM9.5 10.5v2.5M14.5 10.5v2.5',
+ pin:'M9 4.5h6M10 4.5v6l-3 3.5h10l-3-3.5v-6M12 14v5.5', wave:'M5 10.5v3M8.5 8v8M12 5v14M15.5 8.5v7M19 10.5v3',
+ file:'M7 4.5h6.5L18 9v10.5H7zM13.5 4.5V9H18', mail:'M4.5 6.5h15v11h-15zM4.5 7l7.5 6 7.5-6', table:'M4.5 5.5h15v13h-15zM4.5 10h15M10 10v8.5',
+ monitor:'M4 5.5h16v10H4zM9 19h6M12 15.5V19', pause:'M9 6v12M15 6v12', computer:'M4 5.5h16v10H4zM9 19h6M12 15.5V19', grid:'M5 5h5.5v5.5H5zM13.5 5H19v5.5h-5.5zM5 13.5h5.5V19H5zM13.5 13.5H19V19h-5.5z', list:'M5 7h14M5 12h14M5 17h14',
+ arrowL:'M19 12H5M10.5 6.5L5 12l5.5 5.5', lock:'M7 11h10v8.5H7zM9 11V8.5a3 3 0 0 1 6 0V11', back:'M14 7l-5 5 5 5'};
+const ic=(n,c='ic')=>`<svg class="${c}" viewBox="0 0 24 24" aria-hidden=true${n==='more'?' style="stroke-linecap:round;stroke-width:2.6"':''}><path d="${P[n]}"/></svg>`;
+const stopSq=s=>`<span style="width:${s}px;height:${s}px;border-radius:3px;background:var(--on-ink)"></span>`;
+const app=document.getElementById('app');const s=q.get('s')||'margin';const W=+(q.get('w')||1440);
+const GREET=q.get('g')||'What needs doing, Sam?';
+// Arch drawn inline so the stone can lift (voice) and take ink or bronze
+function archSvg(sz,stone,lift=0){return `<svg width="${sz}" height="${sz}" viewBox="0 0 100 100" aria-hidden=true><path fill="var(--ink)" d="M16 90L16 43L16.092 37.05L16.37 33.264L16.832 30.052L17.478 27.2L18.307 24.622L19.32 22.277L20.515 20.142L21.894 18.204L23.456 16.456L25.204 14.894L27.142 13.515L29.277 12.32L31.622 11.307L34.2 10.478L37.052 9.832L40.264 9.37L44.05 9.092L50 9L55.95 9.092L59.736 9.37L62.948 9.832L65.8 10.478L68.378 11.307L70.723 12.32L72.858 13.515L74.796 14.894L76.544 16.456L78.106 18.204L79.485 20.142L80.68 22.277L81.693 24.622L82.522 27.2L83.168 30.052L83.63 33.264L83.908 37.05L84 43L84 90L65.5 90L65.5 41.3L65.455 38.928L65.319 37.269L65.092 35.82L64.776 34.509L64.37 33.309L63.876 32.206L63.295 31.193L62.627 30.267L61.873 29.427L61.033 28.673L60.107 28.005L59.094 27.424L57.991 26.93L56.791 26.524L55.48 26.208L54.031 25.981L52.372 25.845L50 25.8L47.628 25.845L45.969 25.981L44.52 26.208L43.209 26.524L42.009 26.93L40.906 27.424L39.893 28.005L38.967 28.673L38.127 29.427L37.373 30.267L36.705 31.193L36.124 32.206L35.63 33.309L35.224 34.509L34.908 35.82L34.681 37.269L34.545 38.928L34.5 41.3L34.5 90Z"/><circle cx="50" cy="${76-lift}" r="10" fill="${stone}"/></svg>`}
+function face(tone,sz){const ew=Math.max(2,Math.round(sz*0.105)),eh=Math.max(3,Math.round(sz*0.2)),gx=Math.round(sz*0.2),top=Math.round(sz*0.38);
+ return `<span class=face style="width:${sz}px;height:${sz}px;background:var(--agent-${tone})"><i style="width:${ew}px;height:${eh}px;left:${Math.round(sz/2-gx-ew/2+sz*0.04)}px;top:${top}px;transform:rotate(-10deg)"></i><i style="width:${ew}px;height:${eh}px;left:${Math.round(sz/2+gx-ew/2+sz*0.04)}px;top:${top}px;transform:rotate(-10deg)"></i></span>`}
+function sidebar(o={}){const sel=o.sel||'';const live=o.live;const row=(g,l,id,tr='')=>`<div class="srow${sel===id?' sel':''}"${sel===id?' aria-current=page':''}>${ic(g,'ic ic16')}${l}${tr}</div>`;
+ const agents=o.agents||[{n:'Mira',t:'teal',st:'w'},{n:'Otto',t:'violet',st:'n'}];
+ const nw=agents.filter(a=>a.st==='w').length,nn=agents.filter(a=>a.st==='n').length;
+ return `<div class=side>
+ <div style="height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 6px 0 10px">${archSvgSmall(live)}<div style="display:flex;gap:2px"><div class=ib style="width:32px;height:32px;position:relative" aria-label="Inbox, 2 unread">${ic('bell','ic ic16')}<span style="position:absolute;top:8px;right:8px;width:5px;height:5px;border-radius:9px;background:var(--ink)"></span></div><div class=ib style="width:32px;height:32px">${ic('sidebar','ic ic16')}</div></div></div>
+ ${row('compose','New chat','new')}${row('search','Search','search','<span class=tr style="font:450 12px/16px I;color:var(--ink-2)">⌘K</span>')}<div style="height:12px"></div>
+ ${row('proj','Projects','projects')}${row('lib','Library','library')}${row('telescope','Research','research')}${row('code','Code','code')}${row('custom','Customize','customize')}
+ <div class="srow orow" aria-label="Orbit, ${nw} working, ${nn} needs you">${ic('orbit','ic ic16')}<span style="color:var(--ink-2);font-weight:520">Orbit</span><span class=tr><span class="cnt tnum">${nw} working · <span class=sig>${nn} needs you</span></span>${ic('chevR','ic ic12')}</span></div>
+ ${agents.map(a=>`<div class=srow style="color:var(--ink);padding-left:12px">${face(a.t,20)}${a.n}<span class=tr>${a.st==='w'?'<span class=live><span class=dot></span>Working</span>':'<span class=nyl><span class=ndot></span>Needs you</span>'}</span></div>`).join('')}
+ <div class=slab>Recent</div>
+ ${['Weekly review template','Hiring loop scorecard'].map(t=>`<div class=srow>${t}<span class=tr>${ic('pin','ic ic16')}</span></div>`).join('')}
+ ${(o.recent||['Planning formats for a small team','Summarise interview notes','Fix the flaky date parsing test','Draft a data retention policy','Compare three CRM exports']).map((t,i)=>`<div class="srow${o.selChat===i?' sel':''}">${t}</div>`).join('')}
+ <div style="margin-top:auto;height:44px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:8px"><span class=av style="width:24px;height:24px">SR</span><span style="font:520 13.5px/20px I">Sam Rivera</span><span style="font:450 12px/16px I;color:var(--ink-2)">Max</span></div></div>`}
+function archSvgSmall(live){return `<svg width="20" height="20" viewBox="0 0 20 20" aria-label="Alevr"><path fill="var(--ink)" d="M3 18L3 8.5L3.019 7.275L3.076 6.496L3.171 5.834L3.304 5.247L3.475 4.716L3.683 4.233L3.93 3.794L4.213 3.395L4.535 3.035L4.895 2.713L5.294 2.43L5.733 2.183L6.216 1.975L6.747 1.804L7.334 1.671L7.996 1.576L8.775 1.519L10 1.5L11.225 1.519L12.004 1.576L12.666 1.671L13.253 1.804L13.784 1.975L14.267 2.183L14.706 2.43L15.105 2.713L15.465 3.035L15.787 3.395L16.07 3.794L16.317 4.233L16.525 4.716L16.696 5.247L16.829 5.834L16.924 6.496L16.981 7.275L17 8.5L17 18L13.5 18L13.5 8.5L13.49 7.964L13.459 7.59L13.408 7.263L13.336 6.967L13.245 6.696L13.133 6.446L13.002 6.218L12.851 6.009L12.681 5.819L12.491 5.649L12.282 5.498L12.054 5.367L11.804 5.255L11.533 5.164L11.237 5.092L10.91 5.041L10.536 5.01L10 5L9.464 5.01L9.09 5.041L8.763 5.092L8.467 5.164L8.196 5.255L7.946 5.367L7.718 5.498L7.509 5.649L7.319 5.819L7.149 6.009L6.998 6.218L6.867 6.446L6.755 6.696L6.664 6.967L6.592 7.263L6.541 7.59L6.51 7.964L6.5 8.5L6.5 18Z"/><circle cx="10" cy="14.5" r="2.5" fill="${live?'var(--bronze-fill)':'var(--ink)'}"/></svg>`}
+function comp(o){ // desktop composer; o.left (px in stage), o.col; text inset puts the field's first character on the column edge
+ const st=o.streaming?stopSq(10):ic('arrowup','ic ic16');
+ return `<div class="dcomp${o.rest?' rest':''}" style="left:${o.left-24}px;width:${o.col+48}px;${o.top!=null?`top:${o.top}px;bottom:auto`:''}"><div class=frow><div class=ph>${o.ph||'Reply, or ask something new'}</div><div class=adorn title="Dictate">${ic('mic','ic ic16')}</div></div>
+ <div class=prow style="gap:4px"><div class=btn32 style="width:32px;height:32px" aria-label=Add>${ic('plus','ic ic16')}</div><div class="dtok model">${ic('gauge','ic ic16')}Auto${ic('chevD','ic ic12')}</div>${o.noTok?'':`<div class=dtok>${ic('globe','ic ic16')}Web search<span class=x aria-label="Web search, remove">${ic('x','ic ic16')}</span></div>`}
+ <div class=talk style="margin-left:auto">${ic('wave','ic ic16')}Talk</div><div class=sdisc aria-label="${o.streaming?'Stop answering':'Send'}">${st}</div></div></div>`}
+function geom(W){const content=W-264-8;const col=576;const tier=content>=col+544?'wide':content>=col+364?'compact':'none';const gap=tier==='wide'?48:32,rail=tier==='wide'?208:160;const group=tier==='none'?col:col+gap+rail;return {content,col,tier,gap,rail,group,left:Math.round((content-group)/2)}}
+function stageHead(title,sub){return `<div class=shead><span style="display:flex;flex-direction:column"><span style="display:flex;align-items:center;gap:4px">${title} ${ic('chevD','ic ic12')}</span>${sub?`<span style="font:450 12px/16px I;color:var(--ink-2)">${sub}</span>`:''}</span><span class=ink2 style="display:flex;gap:4px"><span class=ib style="width:32px;height:32px">${ic('share','ic ic16')}</span><span class=ib style="width:32px;height:32px">${ic('sidebar','ic ic16')}</span><span class=ib style="width:32px;height:32px">${ic('more','ic ic16')}</span></span></div>`}
+const notesData=[['n1','Planning cadence for small teams','field-notes.example.org','F'],['n2','Running reviews and retrospectives','ledger.example.com','L'],['n3','Shaping work for longer cycles','harbor.example.net','H']];
+function placeNotes(tier,streaming){if(tier==='none')return;const host=document.getElementById('notes');const ans=document.querySelector('.answer').getBoundingClientRect();
+ const h3=document.querySelector('.answer h3').getBoundingClientRect();const head=document.querySelector('.rhead');head.style.top=(h3.top-ans.top+6)+'px';let floor=h3.top-ans.top+6+16+(streaming?20:0)+8;
+ notesData.forEach(([id,ti,dm],i)=>{if(streaming&&i===2)return;const num=document.querySelector(`[data-note=${id}]`);if(!num)return;const r=num.getBoundingClientRect();
+  const prev=num.previousSibling;const pre=document.createRange();pre.setStart(prev,Math.max(0,prev.length-1));pre.setEnd(prev,prev.length);const lr=pre.getClientRects()[0]||r;const lineTop=lr.top-(27-lr.height)/2;
+  let top=Math.max(lineTop-ans.top+5,floor);const el=document.createElement('li');el.className='note';el.id=id;el.style.top=top+'px';
+  el.innerHTML=`<span class="n tnum">${i+1}</span><span>${tier==='wide'?`<span class=ti>${ti}</span><br>`:''}<span class=dm>${dm}</span></span>`;host.appendChild(el);floor=top+el.getBoundingClientRect().height+8;});}
+function focusBox(){const num=document.querySelector('[data-note=n1]');const ans=document.querySelector('.answer');const ar=ans.getBoundingClientRect();const r=num.getBoundingClientRect();
+ const pre=document.createRange();pre.setStart(num.previousSibling,Math.max(0,num.previousSibling.length-1));pre.setEnd(num.previousSibling,num.previousSibling.length);const lr=pre.getClientRects()[0];const lineTop=lr.top-(27-lr.height)/2;
+ const b=document.createElement('span');b.className='hitbox';b.style.left=(r.left+r.width/2-12-ar.left)+'px';b.style.top=(lineTop+1.5-ar.top)+'px';ans.appendChild(b);
+ return {lineTop:lineTop,boxTop:lineTop+1.5,boxBottom:lineTop+25.5,lineBottom:lineTop+27}}
+const answerHTML=(streaming,tier)=>`<div class=ubub style="max-width:440px">We're six people on one product. Which planning format should we use, and how do they compare?</div>
+  <h3>Three planning formats for a team of six</h3>
+  <p>With six people on one product, the right format depends on how far ahead you can see and how often priorities move.<button class=num data-note=n1 aria-describedby=n1 aria-label="Source 1" style="all:unset;font:560 11px/14px I;color:var(--ink);vertical-align:5px;margin-left:1px;padding:0 1px">1</button></p>
+  ${tier==='none'?srcLine([[1,'field-notes.example.org']]):''}
+  <p><b style="font-weight:600">Weekly planning</b> keeps the queue short and suits work that changes every few days. <b style="font-weight:600">Two-week sprints</b> add a review and a retrospective, which helps when you want a steady rhythm.<button class=num data-note=n2 aria-describedby=n2 aria-label="Source 2" style="all:unset;font:560 11px/14px I;color:var(--ink);vertical-align:5px;margin-left:1px;padding:0 1px">2</button></p>
+  ${tier==='none'?srcLine([[2,'ledger.example.com']]):''}
+  <p><b style="font-weight:600">Six-week cycles</b> with a short cool-down leave room for larger, well-shaped pieces of work${streaming?'<span class=wp></span>':'.<button class=num data-note=n3 aria-describedby=n3 aria-label="Source 3" style="all:unset;font:560 11px/14px I;color:var(--ink);vertical-align:5px;margin-left:1px;padding:0 1px">3</button>'}</p>
+  ${tier==='none'&&!streaming?srcLine([[3,'harbor.example.net']]):''}`;
+const srcLine=a=>`<ol class=srcline aria-label="Sources for this paragraph" style="list-style:none;padding:0;margin-top:-8px">${a.map(([n,d])=>`<li id=n${n}><b>${n}</b> ${d}</li>`).join('<li aria-hidden=true>·</li>')}</ol>`;
+const actRow=(tier)=>`<div class=actrow><div class=ib>${ic('copy','ic ic16')}</div><div class=ib>${ic('retry','ic ic16')}</div><div class=ib>${ic('share','ic ic16')}</div><div class=ib>${ic('more','ic ic16')}</div>${tier==='none'?`<div class=src><span class=mono>F</span><span class=mono style="margin-left:-10px">L</span><span class=mono style="margin-left:-10px">H</span>3 sources</div>`:''}<span class="stamp tnum">Auto · 14 s · 3 sources</span></div>`;
+
+if(s==='margin'){const g=geom(W);const streaming=q.get('live')==='1';
+ app.innerHTML=`<div class=desk style="width:${W}px">${sidebar({selChat:0,live:streaming})}<div class=stage>${stageHead('Planning formats for a small team')}
+ <div style="position:absolute;left:${g.left}px;top:64px;width:${g.group}px"><div class=answer style="width:${g.col}px">${answerHTML(streaming,g.tier)}${streaming?'':actRow(g.tier)}</div>
+ ${g.tier==='none'?'':`<div class=rail style="left:${g.col+g.gap}px;width:${g.rail}px;top:0"><div class=rhead style="position:absolute;width:100%">${streaming?`<span class=live><span class=dot></span>Reading sources</span><span class="tnum ink2" style="font-weight:450">3 of 4</span>`:`<span>3 sources</span>${ic('chevR','ic ic12')}`}</div>
+ ${streaming?`<div class=rule style="position:absolute;width:100%" id=lrule><i style="width:75%"></i></div>`:''}<ol id=notes style="list-style:none;margin:0;padding:0" aria-label="Sources"></ol></div>`}</div>
+ ${comp({left:g.left,col:g.col,streaming})}</div></div>`;
+ placeNotes(g.tier,streaming);const r=document.getElementById('lrule');if(r){const h=document.querySelector('.rhead');r.style.top=(parseFloat(h.style.top)+22)+'px'}
+ if(q.get('focus'))window.__box=focusBox();}
+
+function phoneComposer(o={}){return `<div class=pcomp><div class=ph style="display:flex;justify-content:space-between">${o.ph||'Reply, or ask something new'}</div><div class=prow><div class=btn32 aria-label=Add>${ic('plus')}</div><div class="tok model" aria-label="Model: Auto">${ic('gauge','ic ic16')}</div>${o.noTok?'':`<div class=tok>${ic('globe','ic ic16')}Web search<span class=x aria-label="Web search, remove">${ic('x','ic ic16')}</span></div>`}<div class=btn32 style="margin-left:auto;color:var(--ink)" aria-label="Talk">${ic('wave')}</div><div class=send aria-label=Send>${ic('arrowup')}</div></div></div>`}
+function phoneThread(){return `<div class=phone><div class=pbar><div class=ib>${ic('menu')}</div><div class=t>Planning formats ${ic('chevD','ic ic16')}</div><div class=ib>${ic('compose')}</div></div>
+<div class=tx><div class=ubub>We're six people on one product. Which planning format should we use?</div>
+<p><b style="font-weight:600">Two-week sprints</b> suit a steady rhythm: a review and a retrospective every second week.<b style="font:560 11px/14px I;vertical-align:5px;margin-left:1px">1</b></p>${srcLine([[1,'ledger.example.com']])}
+<p>Weekly planning keeps the queue short when priorities move every few days.<b style="font:560 11px/14px I;vertical-align:5px;margin-left:1px">2</b></p>${srcLine([[2,'field-notes.example.org']])}
+<div class=actrow style="margin-top:0"><div class=ib style="width:44px;height:44px">${ic('copy','ic ic16')}</div><div class=ib style="width:44px;height:44px">${ic('retry','ic ic16')}</div><div class=ib style="width:44px;height:44px">${ic('more','ic ic16')}</div><div class=src style="height:44px;padding:0 14px 0 10px"><span class=mono>L</span><span class=mono style="margin-left:-10px">F</span>2 sources</div></div>
+<div class="stamp tnum" style="margin-top:4px">Auto · 9 s · 2 sources</div></div>${phoneComposer()}`}
+const rows=(arr)=>arr.map(r=>r==='-'?'<div class=sep role=separator></div>':r.h?`<div class=mhead role=presentation>${r.h}</div>`:`<div class="mrow ${r.c||''}" role=menuitem>${r.i?ic(r.i):''}<span>${r.l}</span>${r.k?`<span class=tr>${r.k==='>'?ic('chevR','ic ic16'):r.k==='v'?ic('check','ic ic16'):r.k}</span>`:''}</div>`).join('');
+if(s==='phone-thread'){app.innerHTML=phoneThread();}
+if(s==='phone-menu'){app.innerHTML=phoneThread()+`<div class=scrim></div><div class=sheet role=dialog aria-modal=true aria-labelledby=sh-t><div class=shhead><span id=sh-t>Add</span><div class=ib aria-label=Close>${ic('x')}</div></div><div role=menu aria-labelledby=sh-t>${rows([
+ {i:'clip',l:'Add photos and files'},{i:'lib',l:'Add from Library'},{i:'proj',l:'Add to project',k:'>'},'-',
+ {i:'globe',l:'Web search',k:'v'},{i:'deep',l:'Deep research'},{i:'image',l:'Create an image'},'-',
+ {i:'skill',l:'Run a skill',k:'>',c:q.get('kb')?'on kb':'on'},{i:'apps',l:'Use an app',k:'>'}])}</div></div></div>`;}
+if(s==='phone-drill'){app.innerHTML=phoneThread()+`<div class=scrim></div><div class=sheet role=dialog aria-modal=true aria-labelledby=sh-t><div class=shhead><span id=sh-t>Run a skill</span><div class=ib aria-label=Close>${ic('x')}</div></div><div class=back role=menuitem aria-label="Back to Add">${ic('chevL')}<span>Add</span></div><div class=sep style="margin-top:2px"></div><div role=menu aria-labelledby=sh-t>${rows([
+ {h:'Your skills'},{l:'Weekly review'},{l:'Meeting notes'},{l:'Release notes'},{l:'Interview debrief'},'-',{l:'Browse skills…'}])}</div></div></div>`;}
+
+const nyCard=(o={})=>`<section class=ny aria-labelledby=nyq style="${o.style||''}"><div class=lr><span class=nyl><span class=ndot></span>Needs you</span><span class="tnum" style="font:450 12px/16px I;color:var(--ink-2)">${o.who?o.who+' · ':''}Asked at 16:06</span></div>
+ <div class=q id=nyq>Send this summary to 4 people?</div>${o.compact?'':`<div class=chips>${[['AO','Ana Ortiz'],['BH','Ben Hale'],['CK','Chen Kim'],['DN','Dana Noor']].map(([i,n])=>`<span class=chip><span class=av>${i}</span>${n}</span>`).join('')}</div>
+ <div class=draft>This week: 42 tickets closed, median first reply 3 h 10 min. Two themes: export timeouts and invoice dates…<div style="margin-top:6px"><span class="btn qui" style="height:24px;padding:0;font-size:12.5px">Show the draft</span></div></div>`}
+ <div class=acts><span class="btn pri">Approve and send</span><span class="btn sec">Edit first</span><span class="btn qui">Don't send</span></div></section>`;
+if(s==='home'){const g=geom(W);const ny=q.get('ny')==='1';const H=884;const top=Math.round(H*0.30);
+ app.innerHTML=`<div class=desk style="width:${W}px">${sidebar({sel:'new',agents:ny?[{n:'Mira',t:'teal',st:'w'},{n:'Otto',t:'violet',st:'n'}]:[{n:'Mira',t:'teal',st:'w'}]})}<div class=stage>
+ <div style="position:absolute;left:${g.left}px;top:${top-60}px;width:${g.col}px" id=hcol><div class=tnum style="font:450 12px/16px I;color:var(--ink-2)" id=dateline>Thursday 30 October</div>
+ <h1 class=g id=greet style="font-size:40px;line-height:46px;margin:8px 0 0;max-width:${g.col+24}px;text-wrap:balance">${GREET}</h1></div>
+ ${comp({left:g.left,col:g.col,rest:true,top:top+24,ph:'Describe what you need, or drop a file',noTok:true})}
+ ${ny?`<div style="position:absolute;left:${g.left-24}px;top:${top+24+112+16}px;width:${g.col+48}px">${nyCard({who:'Otto',compact:false})}</div>`:''}
+ </div></div>`;
+ const c=document.querySelector('.dcomp .ph').getBoundingClientRect(),gr=document.getElementById('greet'),dl=document.getElementById('dateline');
+ const rg=document.createRange();rg.selectNodeContents(gr);const gl=rg.getClientRects()[0];const rd=document.createRange();rd.selectNodeContents(dl);
+ const rp=document.createRange();rp.selectNodeContents(document.querySelector('.dcomp .ph'));
+ window.__edges={dateline:rd.getClientRects()[0].left,greeting:gl.left,placeholder:rp.getClientRects()[0].left,greetingLines:rg.getClientRects().length};}
+if(s==='home-phone'){const ny=q.get('ny')==='1';
+ app.innerHTML=`<div class=phone><div class=pbar><div class=ib>${ic('menu')}</div><div></div><div class=ib>${ic('compose')}</div></div>
+ <div style="position:absolute;left:20px;right:20px;top:${Math.round(844*0.24)}px"><div class=tnum style="font:450 12px/16px I;color:var(--ink-2)">Thursday 30 October</div><h1 class=g style="font-size:30px;line-height:36px;margin:8px 0 0;letter-spacing:-.022em;text-wrap:balance">${GREET}</h1>
+ ${ny?`<div style="margin-top:24px">${nyCard({who:'Otto',compact:true,style:'padding:16px'})}</div>`:''}</div>
+ ${phoneComposer({ph:'Describe what you need',noTok:true})}</div>`;}
+
+if(s==='agent'){const g=geom(W);const ans=q.get('ans')==='1';
+ const stepsD=[['globe','Read 42 support tickets','done','0:48'],['table','Group them by theme','done','1:12'],['file','Draft the summary','done','2:30'],['mail','Send the summary to 4 people',ans?'done':'ny',ans?'0:02':''],['apps','Post the link in the team space',ans?'live':'pend',ans?'0:03':'']];
+ const stepRow=([g2,l,st,el])=>`<li class=step aria-current="${st==='ny'||st==='live'?'step':'false'}"><span class="mk ${st==='done'?'done':st==='pend'?'pend':''}">${st==='ny'?'<span class=ndot style="display:block"></span>':st==='live'?'<span class=dot style="display:block"></span>':''}</span>${ic(g2,'ic ic16')}<span style="color:${st==='done'?'var(--ink-2)':'var(--ink)'}">${l}</span><span class="el tnum">${st==='ny'?'<span class=nyl>Needs you</span>':st==='live'?`<span class=live>Working</span> · ${el}`:el}</span></li>`;
+ app.innerHTML=`<div class=desk style="width:${W}px">${sidebar({live:true,agents:ans?[{n:'Mira',t:'teal',st:'w'},{n:'Otto',t:'violet',st:'w'}]:[{n:'Mira',t:'teal',st:'w'},{n:'Otto',t:'violet',st:'n'}],recent:['Otto · Weekly summary','Planning formats for a small team','Summarise interview notes','Fix the flaky date parsing test'],selChat:0})}<div class=stage>
+ <div style="height:64px;display:flex;align-items:center;gap:12px;padding:0 16px 0 24px">${face('violet',34)}<div style="display:flex;flex-direction:column"><span style="font:600 15px/22px I">Otto</span><span class=tnum style="font:450 12px/16px I;color:var(--ink-2)">${ans?'<span class=live><span class=dot></span>Working</span>':'<span class=nyl>Needs you</span>'} · Weekly summary · Step ${ans?5:4} of 5 · 6 min 12 s</span></div>
+ <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="btn ton">${ic('pause','ic ic16')}Pause</span><span class="btn qui">${ic('computer','ic ic16')}Open computer</span><span class=ib style="width:32px;height:32px">${ic('more','ic ic16')}</span></span></div>
+ <div style="position:absolute;left:${g.left}px;top:80px;width:${g.col}px" class=answer>
+ <div class=ubub style="max-width:460px">Every Friday, summarise the week's support tickets and send it to the team.</div>
+ <p>I read this week's tickets, grouped them and drafted the summary. Sending it needs your approval.</p>
+ <ol class=steps style="list-style:none;padding:0" aria-label="Steps">${stepsD.map(stepRow).join('')}</ol>
+ ${ans?`<div class=receipt>${ic('check','ic ic16')}<span>You approved · Sent to 4 people · <span class=tnum>16:07</span></span><span class="btn ton" style="margin-left:auto;height:28px">Undo</span></div>`:nyCard()}
+ </div>${comp({left:g.left,col:g.col,ph:'Message Otto',noTok:true})}</div></div>`;}
+
+if(s==='voice'){const g=geom(W);const sp=q.get('speak')!=='0';
+ app.innerHTML=`<div class=desk style="width:${W}px">${sidebar({selChat:0,live:sp})}<div class=stage>${stageHead('Planning formats for a small team')}
+ <div style="position:absolute;left:${g.left}px;top:64px;width:${g.col}px" class=answer><div class=ubub style="max-width:440px">Can you move the review to Thursday and tell the team?</div><p style="color:var(--ink)">Done. The review is on Thursday at 10:00. I'll send the team a note now<span class=wp></span></p></div>
+ <section class=dcomp aria-label="Voice conversation" style="left:${g.left-24}px;width:${g.col+48}px;padding:12px 8px 12px 16px;display:flex;align-items:center;gap:14px">
+  <div aria-hidden=true>${archSvg(40,sp?'var(--bronze-fill)':'var(--ink)',sp?4:2)}</div>
+  <div style="flex:1;min-width:0"><div style="font:450 12px/16px I;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">You: Can you move the review to Thursday and tell the team?</div><div style="font:450 15px/22px I;color:var(--ink)">${sp?'Done. The review is on Thursday at 10:00. I\'ll send the team a note now':'…and tell the team'}</div></div>
+  <span class=${sp?'live':'ink2'} style="font:520 12px/16px I">${sp?'<span class=dot></span>Speaking':'Listening'}</span>
+  <div class=ib style="width:44px;height:44px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--line)" aria-label=Mute>${ic('mic','ic ic16')}</div><span class="btn pri" style="height:44px;border-radius:999px;padding:0 18px">End</span></section></div></div>`;}
+if(s==='voice-phone'){const sp=q.get('speak')!=='0';
+ app.innerHTML=`<div class=phone><div class=pbar><div class=ib>${ic('menu')}</div><div class=t>Planning formats</div><div class=ib>${ic('compose')}</div></div>
+ <div class=tx><div class=ubub>Can you move the review to Thursday and tell the team?</div><p>Done. The review is on Thursday at 10:00. I'll send the team a note now<span class=wp></span></p></div>
+ <section class=pcomp aria-label="Voice conversation" style="display:flex;align-items:center;gap:12px;padding:12px 12px 12px 16px">${archSvg(44,sp?'var(--bronze-fill)':'var(--ink)',sp?4:2)}<span class=${sp?'live':'ink2'} style="font:520 13px/18px I;flex:1">${sp?'<span class=dot></span>Speaking':'Listening'}</span>
+ <div class=ib style="border-radius:999px;box-shadow:inset 0 0 0 1px var(--line)" aria-label=Mute>${ic('mic')}</div><span class="btn pri" style="height:44px;border-radius:999px;padding:0 20px;font-size:15px">End</span></section></div>`;}
+
+if(s==='settings'){const groups=[['Personal',['General','Notifications','Personalization','Memory','Models','Voice']],['Account',['Account','Data & privacy','Plan & usage']],['Connections',['Apps','Devices','Code']]];
+ app.innerHTML=`<div class=desk style="width:${W}px"><div class=side><div class=srow style="color:var(--ink);font-weight:520">${ic('chevL','ic ic16')}Back to Alevr</div><div class="field well" style="margin:8px 0 4px">${ic('search','ic ic16')}Search settings</div>
+ ${groups.map(([g2,it])=>`<div class=slab>${g2}</div>${it.map(n=>`<div class="srow${n==='General'?' sel':''}">${n}</div>`).join('')}`).join('')}</div>
+ <div class=stage><div style="max-width:720px;margin:56px auto 0;padding:0 32px"><h1 class=ph1 style="margin:0">General</h1><div style="color:var(--ink-2);margin:6px 0 28px">Appearance, reading and the answers' receipt line.</div>
+ <div style="font:600 15px/22px I;margin:0 0 8px">Appearance</div><div class=card>
+ <div class=setrow><div class=lab><b>Theme</b><span>Follows your system unless you choose one.</span></div><span class=seg role=radiogroup aria-label=Theme><span class=on>System</span><span>Light</span><span>Dark</span></span></div>
+ <div class=setrow><div class=lab><b>Reading size</b><span>The answer column follows it.</span></div><span class=seg role=radiogroup aria-label="Reading size"><span>Small</span><span class=on>Default</span><span>Large</span></span></div></div>
+ <div style="font:600 15px/22px I;margin:24px 0 8px">Answers</div><div class=card>
+ <div class=setrow><div class=lab><b>Show timing on answers</b><span>The receipt keeps the model; this hides the time and facts.</span></div><span class=sw role=switch aria-checked=true></span></div>
+ <div class=setrow><div class=lab><b>Sources beside the text</b><span>On wide windows each source sits next to the line it supports.</span></div><span class=sw role=switch aria-checked=true></span></div>
+ <div class=setrow><div class=lab><b>Language</b><span>Interface and dates.</span></div><span class=field style="width:200px">English (United Kingdom)<span style="margin-left:auto">${ic('chevD','ic ic12')}</span></span></div></div></div></div></div>`;}
+
+if(s==='projects'){const rowsP=[['Q3 planning','Roadmap, staffing and the review cadence',14,6,'16:20'],['Support summaries','Weekly ticket digests',9,2,'Yesterday'],['Hiring loop','Scorecards and interview notes',22,11,'Tue'],['Data retention','Policy drafts and the legal review',5,3,'28 Oct'],['Vendor review','Vendor A and Vendor B, side by side',7,4,'21 Oct']];
+ app.innerHTML=`<div class=desk style="width:${W}px">${sidebar({sel:'projects'})}<div class=stage><div style="max-width:1040px;margin:0 auto;padding:40px 32px 0">
+ <div style="display:flex;align-items:flex-end;gap:12px"><h1 class=ph1 style="margin:0">Projects</h1><span class=tnum style="font:450 20px/26px I;color:var(--ink-2)">12</span><span class="btn pri" style="margin-left:auto">New project</span></div>
+ <div style="color:var(--ink-2);margin-top:6px">Chats, files and memory that belong together.</div>
+ <div style="display:flex;align-items:center;gap:8px;margin:16px 0 0;padding-bottom:16px;border-bottom:1px solid var(--line)"><span class=seg role=radiogroup><span class="on">All <span class="tnum ink2">12</span></span><span>Pinned <span class=tnum>3</span></span><span>Shared <span class=tnum>2</span></span></span>
+ <span class=field style="margin-left:auto;width:240px">${ic('search','ic ic16')}Filter projects</span><span class=field style="width:150px">Last updated<span style="margin-left:auto">${ic('chevD','ic ic12')}</span></span><span class=seg><span class=on aria-label=List>${ic('list','ic ic16')}</span><span aria-label=Grid>${ic('grid','ic ic16')}</span></span></div>
+ <table class=t><thead><tr><th>Name</th><th class=r style="width:90px">Chats</th><th class=r style="width:90px">Files</th><th class=r style="width:120px">Updated</th><th style="width:40px"></th></tr></thead><tbody>
+ ${rowsP.map(([n,d,c,f,u])=>`<tr><td><span style="display:flex;align-items:center;gap:12px"><span class=tile>${ic('proj','ic ic16')}</span><span><span style="display:block;font-weight:520">${n}</span><span style="font:450 12px/16px I;color:var(--ink-2)">${d}</span></span></span></td><td class="r tnum">${c}</td><td class="r tnum">${f}</td><td class="r tnum ink2">${u}</td><td><span class=ib style="width:28px;height:28px">${ic('more','ic ic16')}</span></td></tr>`).join('')}</tbody></table></div></div></div>`;}
+
+if(s==='landing'){const dl=q.get('dl')==='1';
+ app.innerHTML=`<div style="width:${W}px;height:900px;background:var(--base);position:relative;overflow:hidden">
+ <div style="height:64px;display:flex;align-items:center;gap:28px;padding:0 40px"><img src="../brand/lockup-small-${T}.svg" height=22><span style="display:flex;gap:24px;margin-left:24px;color:var(--ink-2);font:450 14px/20px I"><span>Product</span><span>Orbit</span><span>Code</span><span>Pricing</span><span>Download</span></span><span style="margin-left:auto" class="btn qui">Sign in</span><span class="btn pri lg">Get Alevr</span></div>
+ <div style="position:absolute;left:80px;top:180px;width:520px"><div style="font:450 12px/16px I;color:var(--ink-2)">Alevr for Mac, iPhone and the web</div>
+ <h1 class=g style="font-size:64px;line-height:66px;letter-spacing:-.032em;margin:14px 0 20px">Answers you can check. Work that keeps going.</h1>
+ <p style="font:450 18px/28px I;color:var(--ink-2);margin:0 0 28px;max-width:460px">Alevr reads, writes and codes with you, puts every source beside the line it supports, and runs agents that ask before they act.</p>
+ <div style="display:flex;gap:10px"><span class="btn pri lg">Get started</span>${dl?'<span class="btn sec lg">Download for Mac</span>':''}</div></div>
+ <div style="position:absolute;left:660px;top:120px;width:1123px;height:702px;border-radius:16px;overflow:hidden;box-shadow:0 0 0 1px var(--stage-edge),var(--sh2);transform-origin:0 0;transform:scale(.78)"><iframe src="proto.html?s=margin&t=${T}&p=${q.get('p')||'cool'}&w=1440" style="width:1440px;height:900px;border:0;transform:translate(-264px,-8px)"></iframe></div></div>`;}
+
+if(s==='auth'){app.innerHTML=`<div style="width:${W}px;height:900px;display:flex;background:var(--base)"><div style="flex:1;display:grid;place-items:center"><div style="display:flex;flex-direction:column;align-items:center;gap:28px"><img src="../brand/symbol-large-${T}.svg" width=240 height=240><img src="../brand/lockup-${T}.svg" height=40></div></div>
+ <div style="flex:1;margin:8px 8px 8px 0;background:var(--stage);border-radius:16px;box-shadow:0 0 0 1px var(--stage-edge);display:grid;place-items:center"><div style="width:360px"><h1 class=ph1 style="margin:0 0 24px">Sign in to Alevr</h1>
+ <label style="display:block;font:520 13.5px/20px I;margin-bottom:6px">Email</label><div class=field style="height:40px;margin-bottom:14px">sam.rivera@example.com</div>
+ <label style="display:block;font:520 13.5px/20px I;margin-bottom:6px">Password</label><div class=field style="height:40px;margin-bottom:20px">••••••••••</div>
+ <span class="btn pri lg" style="width:100%;justify-content:center">Sign in</span><div style="display:flex;justify-content:space-between;margin-top:16px"><span class="btn qui" style="padding:0">Forgot password?</span><span class="btn qui" style="padding:0;color:var(--ink)">Create an account</span></div></div></div></div>`;}
+
+if(s==='greet-measure'){ // measures greeting candidates at the display rung (40 px desktop, 30 px phone)
+ const C=JSON.parse(decodeURIComponent(q.get('c')||'[]'));app.innerHTML=C.map(c=>`<div><span class=g style="font-size:40px;line-height:46px;white-space:nowrap">${c}</span></div><div><span class=g style="font-size:30px;line-height:36px;letter-spacing:-.022em;white-space:nowrap">${c}</span></div>`).join('');
+ document.fonts.ready.then(()=>{window.__w=[...document.querySelectorAll('.g')].map(e=>Math.round(e.getBoundingClientRect().width));});}
+</script>

@@ -91,7 +91,7 @@ import { useNotifications } from "@/components/notifications/use-notifications";
 import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
 import { unreadDetail } from "@/components/notifications/inbox-model";
 import { AGENT_STATE_NAMES, BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
-import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
+import { AGENT_STATE_LABEL } from "@/lib/agents/state-labels";
 import { useCrossMessageInbox } from "@/components/chat/use-cross-messages";
 import { CrossMessagesMenuItem } from "@/components/chat/cross-messages-menu-item";
 import { useReducedMotion } from "@/lib/motion-preference";

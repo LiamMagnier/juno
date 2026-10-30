@@ -60,6 +60,9 @@ export const runtime = "nodejs";
  * model's output. Behaviour is pinned by tests/chat-turn-pipeline.integration.test.ts.
  */
 async function handleChat(req: Request) {
+  // The turn trace's `serverPrepMs` and `requestTtftMs` start here: everything
+  // below, up to the provider request, is preparation the reader waits through.
+  const requestStartedAt = Date.now();
   // A process that has been told to stop takes no new generations: whatever
   // it started now it would have to abort in a few seconds anyway. Answered
   // before auth so the retry costs nothing; the client backs off and lands on
@@ -106,7 +109,7 @@ async function handleChat(req: Request) {
   const { turnContext, activeConnectors: offeredConnectors } = tokens;
 
   if (input.privateMode) {
-    return runPrivateTurn({ req, user, request, settings, plan, period, effective, model, tokens, toolDetailEnabled });
+    return runPrivateTurn({ req, user, request, settings, plan, period, effective, model, tokens, toolDetailEnabled, requestStartedAt });
   }
 
   const accepted = await acceptTurn({
@@ -354,6 +357,7 @@ async function handleChat(req: Request) {
         artifactEdit: !!artifactEditTarget,
         regenerate: !!input.regenerate,
       },
+      requestStartedAt,
     }, emitTurnTrace);
 
     const run = await runTurn({

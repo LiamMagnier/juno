@@ -46,6 +46,18 @@ export const WORKER_ALERT_KINDS = {
   recovered: "worker_recovered",
 } as const;
 
+/**
+ * `chat_failure_rate` (src/lib/router/failure-alert.ts): saved-chat turns are
+ * failing. Raised by the web process from `RoutingOutcome` when, within
+ * `CHAT_FAILURE_ALERT_WINDOW_MINUTES` (10), one model or one failure class
+ * across every model has at least `CHAT_FAILURE_ALERT_THRESHOLD` (5) failed
+ * turns making at least `CHAT_FAILURE_ALERT_MIN_SHARE_PERCENT` (20) of its
+ * turns. Key: the worst subject, `model:<id>` or `class:error` /
+ * `class:network_error`. Mailed once per incident (and at most once an hour
+ * per key, like every kind); mute with `ALERT_MUTED_KINDS=chat_failure_rate`.
+ */
+export { CHAT_FAILURE_RATE_KIND as CHAT_FAILURE_ALERT_KIND } from "@/lib/router/failure-alert-rules";
+
 export interface AlertInput {
   /** Stable slug identifying the alert class, e.g. "provider_unhealthy". */
   kind: string;

@@ -18,6 +18,9 @@ export function collectGeometry(opts) {
   const targetSize = options.targetSize || 24;
   const maxRecords = options.maxRecords || 25000;
   const scopeSelector = options.scope || null;
+  // Loading placeholders (and everything inside one) are marked so the checks
+  // skip them: a skeleton is not the geometry the page settles into.
+  const busySelector = options.busy || null;
 
   const R = (n) => Math.round(n * 100) / 100;
   const vw = window.innerWidth;
@@ -354,6 +357,13 @@ export function collectGeometry(opts) {
       if (inter) rec.inter = true;
       if (disabled) rec.disabled = true;
       if (inline) rec.inline = true;
+      if (busySelector) {
+        try {
+          if (el.closest(busySelector)) rec.busy = true;
+        } catch {
+          /* an invalid selector marks nothing */
+        }
+      }
       const selAttr = el.getAttribute("aria-pressed") ?? el.getAttribute("aria-selected") ?? el.getAttribute("aria-checked");
       if (selAttr !== null) rec.sel = selAttr === "true";
       if (txt) {

@@ -521,6 +521,32 @@ function approvalVerb(toolName: string): string {
   return verbs ? `${verbs[1][0].toUpperCase()}${verbs[1].slice(1)} ${verbs[2]}` : "Allow this action";
 }
 
+/**
+ * The tool in plain words, beside its connector: "Slack · Post message", never
+ * `slack__post_message`. Read from the identifier alone (never the untrusted
+ * arguments), as the verb is: the namespace before `__` goes, snake, kebab and
+ * camel case become words, and a leading repeat of the connector's own name
+ * ("slack_post_message" in Slack) is dropped. An identifier with no words left
+ * in it is shown as it is. The exact identifier stays one disclosure down,
+ * with the arguments it is sent with (`argumentList`).
+ */
+export function approvalToolTitle(toolName: string, connectorLabel: string): string {
+  const bare = toolName.split("__").at(-1) ?? toolName;
+  const words = bare
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\-.]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    // A camel-case hump ("postMessage") reads lower case; an acronym ("URL") stays.
+    .map((word) => (/^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word));
+  const connector = connectorLabel.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (connector.length && words.length > connector.length && connector.every((part, i) => words[i].toLowerCase() === part)) {
+    words.splice(0, connector.length);
+  }
+  const text = words.join(" ");
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : toolName;
+}
+
 export function ApprovalCard({
   approval,
   onDecided,
@@ -853,8 +879,10 @@ export function ApprovalCard({
       ) : (
         <>
           <p className="text-ui text-muted-foreground">
-            <span className="font-medium text-foreground">{current.connectorLabel}</span>{" "}
-            <span className="font-mono">{current.toolName}</span>
+            <span className="font-medium text-foreground">{current.connectorLabel}</span>
+            <span aria-hidden="true">{" · "}</span>
+            <span className="sr-only">, </span>
+            {approvalToolTitle(current.toolName, current.connectorLabel)}
           </p>
           <p className="mt-0.5 text-nav text-foreground">{current.preview}</p>
         </>
@@ -862,7 +890,7 @@ export function ApprovalCard({
     </div>
   );
 
-  const argumentList =
+  const argumentRows =
     task && taskBrief ? (
       <p className="whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground">{taskBrief}</p>
     ) : detailRows.length === 0 ? (
@@ -878,6 +906,21 @@ export function ApprovalCard({
           </div>
         ))}
       </dl>
+    );
+  // A connector call names its exact tool above the arguments: the card heads
+  // it in plain words ("Slack · Post message"), and this is the identifier the
+  // answer's digest binds, for whoever wants to check it. A task, a handoff
+  // and a setup change say what they are in their own words instead.
+  const argumentList =
+    task || agentConfig ? (
+      argumentRows
+    ) : (
+      <>
+        <p className="mb-1.5 text-micro text-muted-foreground">
+          Tool <span className="font-mono text-foreground">{current.toolName}</span>
+        </p>
+        {argumentRows}
+      </>
     );
 
   const disclosure = (label: string, className?: string) => (

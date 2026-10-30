@@ -25,7 +25,7 @@
 
 import * as React from "react";
 import type { AgentAvatar } from "@/lib/agents/avatar";
-import { AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/domain";
+import { AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/state-labels";
 import { reducedMotionAt } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
 import { NO_EXTRAS, drawFace, sizeClass, type FaceFrame, type FaceSpec } from "./face-geometry";

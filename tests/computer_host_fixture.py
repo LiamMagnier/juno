@@ -6,7 +6,7 @@ for the real-container suites, and taken off again.
     sudo -E python3 tests/computer_host_fixture.py host-up          # the remote provider's computer host
     sudo -E python3 tests/computer_host_fixture.py host-service stop|start
     sudo -E python3 tests/computer_host_fixture.py host-down
-    sudo -E python3 tests/computer_host_fixture.py down [--state FILE]
+    sudo -E python3 tests/computer_host_fixture.py down [--state FILE] [--disposable-host]
     python3 tests/computer_host_fixture.py status [--state FILE]
 
 What `up` puts on the machine, each exactly as deploy/agent-computers/setup-vm.sh does it
@@ -25,11 +25,26 @@ does). Nothing in the proxy, the firewall or the site policy changes for any of 
 the proxy until `down`. The state file (default /run/juno-computer-fixture/state.json,
 or JUNO_COMPUTER_FIXTURE_STATE) says where the egress map and log are and what the
 sandbox decision was; tests/computer-real-e2e.test.ts reads it and refuses to run
-without it. `down` stops that process (which removes everything it added, in reverse
-order), removes what the suites may have left on the network (`juno-agent-*` containers
-and the local host's nginx container), then lists the network, containers, volumes,
-iptables rules, lo addresses, hosts lines and nginx containers again and exits 1 if
-anything the fixture or a suite added is still there.
+without it. `up` writes that file (a claim, with the inventory taken before it
+changed anything) BEFORE it changes anything, so a fixture killed half-way still
+leaves a record of what it may have added.
+
+`down` acts only on what a state file says the fixture set up, and on what the
+suites record in their ledgers beside it (suite-*.jsonl: image tags, a retagged
+image, temporary directories, written before each is created). It stops the holder
+(which removes everything it added, in reverse order), removes what the suites left
+(containers and volumes named juno-agent-e2e* or juno-agent-boundary-*, their image
+tags and directories, and the computer host's nginx container when host-up started
+it), then lists the network, containers, volumes, iptables rules, lo addresses, hosts
+lines, nginx containers, suite images and suite directories again and exits 1 if
+anything the fixture or a suite added is still there. A container on the fixture's
+network that no suite named (a demo's computer, say) is listed, not removed.
+
+With no state file, `down` removes NOTHING: it lists what looks like a fixture or a
+computer host (a production single-box install has the same network, firewall rules
+and juno-agent-* containers, and the repository is checked out there) and exits 1
+if it found any. Only `--disposable-host` (a throwaway CI runner) makes it remove
+them anyway.
 
 tests/test_computer_boundary.py builds the same Host in its own process (setUpModule),
 so the two suites test one arrangement. Needs root, and refuses a machine that already
@@ -96,6 +111,17 @@ FIREWALL_RULES = [
 # deploy/computer-host/local/run-local.sh --nginx (the remote provider's suite).
 NGINX_CONTAINER = "juno-computer-host-nginx"
 DEFAULT_STATE = "/run/juno-computer-fixture/state.json"
+# What the suites name their own things (tests/computer-real-e2e.test.ts,
+# tests/test_computer_boundary.py). `down` removes containers and volumes by these
+# names only; anything else on the network is someone else's.
+SUITE_CONTAINER_PREFIXES = ("juno-agent-e2e", "juno-agent-boundary-")
+# The e2e suite's image tags (its own tag of the image, and test 10's base tag).
+SUITE_IMAGE_TAGS = ("juno-computer:e2e",)
+SUITE_IMAGE_REPOSITORIES = ("juno-computer-e2e-base",)
+# The e2e suite's temporary directories (the broker shim, test 10's build context).
+SUITE_DIRECTORY_PREFIX = "juno-e2e-"
+# The fixture holder's own directory (Host.directory).
+HOLDER_DIRECTORY_PREFIX = "juno-boundary-"
 
 
 def docker(*args, check=True, timeout=300, input_text=None):
@@ -513,6 +539,8 @@ def inventory():
             hosts_lines = [line.strip() for line in hosts if "# juno computer" in line]
     except OSError:
         hosts_lines = []
+    images = [tag for tag in lines(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}"])
+              if tag in SUITE_IMAGE_TAGS or tag.split(":", 1)[0] in SUITE_IMAGE_REPOSITORIES]
     return {
         "networks": sorted(name for name in lines(["docker", "network", "ls", "--format", "{{.Name}}"]) if name == NETWORK),
         "containers": sorted(lines(["docker", "ps", "-a", "--filter", "label=app=juno", "--format", "{{.Names}}"])),
@@ -521,10 +549,73 @@ def inventory():
         "loAddresses": sorted(lo),
         "hostsLines": sorted(hosts_lines),
         "nginxContainers": sorted(lines(["docker", "ps", "-a", "--filter", "name=^/%s$" % NGINX_CONTAINER, "--format", "{{.Names}}"])),
+        "suiteImages": sorted(images),
+        "suiteDirectories": sorted(suite_directories()),
     }
 
 
-def leftovers(before, after):
+def temporary_roots():
+    """Where the suites' temporary directories can be: Node's and Python's tmpdir (both TMPDIR, else /tmp)."""
+    return sorted({tempfile.gettempdir(), "/tmp"})
+
+
+def suite_directories():
+    found = []
+    for root in temporary_roots():
+        try:
+            names = os.listdir(root)
+        except OSError:
+            continue
+        found += [os.path.join(root, name) for name in names
+                  if name.startswith(SUITE_DIRECTORY_PREFIX) and os.path.isdir(os.path.join(root, name))]
+    return found
+
+
+def image_id(reference):
+    result = docker("image", "inspect", "--format", "{{.Id}}", reference, check=False)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def is_image_id(value):
+    return isinstance(value, str) and len(value) == 71 and value.startswith("sha256:") and all(c in "0123456789abcdef" for c in value[7:])
+
+
+def is_suite_tag(tag):
+    return isinstance(tag, str) and (tag in SUITE_IMAGE_TAGS or tag.split(":", 1)[0] in SUITE_IMAGE_REPOSITORIES)
+
+
+def is_suite_directory(path):
+    """Only a directory directly inside a temporary root, named by a suite."""
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return False
+    real = os.path.realpath(path)
+    return (os.path.dirname(real) in [os.path.realpath(root) for root in temporary_roots()]
+            and os.path.basename(real).startswith(SUITE_DIRECTORY_PREFIX))
+
+
+def ledger_paths(path):
+    return sorted(Path(path).parent.glob("suite-*.jsonl"))
+
+
+def ledger_entries(path):
+    """What the suites recorded, before creating it, beside the state file (data, checked before use)."""
+    entries = []
+    for ledger in ledger_paths(path):
+        try:
+            text = ledger.read_text()
+        except OSError:
+            continue
+        for line in text.splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict):
+                entries.append(entry)
+    return entries
+
+
+def leftovers(before, after, unrestored=()):
     """What is there now and was not before `up` (only what this fixture or a suite on it adds)."""
     added = {}
     for key, now in after.items():
@@ -532,10 +623,26 @@ def leftovers(before, after):
         if key == "containers" or key == "volumes":
             # Another job's computers on its own network are not this fixture's;
             # the suites name theirs juno-agent-e2e* and juno-agent-boundary-*.
-            extra = [name for name in extra if name.startswith(("juno-agent-e2e", "juno-agent-boundary-"))]
+            extra = [name for name in extra if name.startswith(SUITE_CONTAINER_PREFIXES)]
+        if key == "loAddresses":
+            # Only the fixture's own addresses (with no `before`, lo's 127.0.0.1/8 is not one).
+            extra = [entry for entry in extra if entry.split("/")[0] in CANARY_ADDRESSES + (PUBLIC_CANARY, DEMO_ADDRESS)]
         if extra:
             added[key] = extra
+    if unrestored:
+        added["retaggedImages"] = sorted(unrestored)
     return added
+
+
+def fixture_traces(found):
+    """The parts of an inventory that look like this fixture or a computer host (for `down` with no state)."""
+    ours = CANARY_ADDRESSES + (PUBLIC_CANARY, DEMO_ADDRESS)
+    traces = {key: value for key, value in found.items() if value and key != "loAddresses"}
+    traces["containers"] = [name for name in found.get("containers", []) if name.startswith("juno-agent-")]
+    lo = [entry for entry in found.get("loAddresses", []) if entry.split("/")[0] in ours]
+    if lo:
+        traces["loAddresses"] = lo
+    return {key: value for key, value in traces.items() if value}
 
 
 def serve(args):
@@ -545,13 +652,19 @@ def serve(args):
     signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
     signal.signal(signal.SIGINT, lambda *_: stop.append(1))
     host = Host()
+    before = json.loads(os.environ.get("JUNO_COMPUTER_FIXTURE_BEFORE") or "{}")
     try:
+        # Still a claim (not ready), now naming this process and its directory, so
+        # a `down` after a holder killed half-way through run() can find both.
+        write_json(path, {**(read_state(path) or {}), "pid": os.getpid(), "ready": False, "directory": host.directory,
+                          "before": before}, mode=0o644)
         host.run()
         if args.demo_page:
             host.add_demo_page()
         state = {
             "pid": os.getpid(),
             "ready": True,
+            "directory": host.directory,
             "network": NETWORK,
             "gateway": GATEWAY,
             "image": IMAGE,
@@ -562,14 +675,10 @@ def serve(args):
             "sandboxReason": host.sandbox_reason,
             "seccompProfile": SECCOMP_PROFILE if host.sandbox else None,
             "demoPage": {"url": "http://%s/" % DEMO_NAME, "address": DEMO_ADDRESS} if host.demo_page else None,
-            "before": json.loads(os.environ.get("JUNO_COMPUTER_FIXTURE_BEFORE") or "{}"),
+            "before": before,
             "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        partial = str(path) + ".part"
-        with open(partial, "w") as file:
-            json.dump(state, file, indent=1)
-        os.chmod(partial, 0o644)
-        os.replace(partial, path)
+        write_json(path, state, mode=0o644)
         print("fixture up: sandbox %s (%s)" % ("on" if host.sandbox else "off", host.sandbox_reason), flush=True)
         reported = False
         while not stop:
@@ -604,10 +713,19 @@ def up(args):
     if existing and alive(existing.get("pid")):
         print("computer_host_fixture: already up (pid %s, %s)" % (existing["pid"], path), file=sys.stderr)
         return 1
+    if existing or path.exists():
+        # A holder that ends cleanly removes its state, so this one ended half-way.
+        print("computer_host_fixture: an earlier fixture's state is at %s and its holder is not running; "
+              "run `down` first" % path, file=sys.stderr)
+        return 1
     path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(path.parent, 0o755)
     log = path.with_name("fixture.log")
     before = inventory()
+    # The claim, before anything changes: `down` acts only where a state file says
+    # the fixture may have set something up.
+    write_json(path, {"pid": None, "ready": False, "claimedBy": os.getpid(), "before": before,
+                      "claimedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, mode=0o644)
     command = [sys.executable, "-I", str(Path(__file__).resolve()), "serve", "--state", str(path)]
     if args.demo_page:
         command.append("--demo-page")
@@ -629,6 +747,8 @@ def up(args):
         child.terminate()
         child.wait(timeout=60)
     print("computer_host_fixture: up failed; its log:\n" + log.read_text()[-4000:], file=sys.stderr)
+    if path.exists():
+        print("computer_host_fixture: its state is still at %s: run `down` to take off what it added" % path, file=sys.stderr)
     return 1
 
 
@@ -637,17 +757,33 @@ def down(args):
         print("computer_host_fixture: down needs root", file=sys.stderr)
         return 2
     path = state_path(args.state)
-    host_down(args)
-    state = read_state(path) or {}
+    state = read_state(path)
+    if state is None and path.exists():
+        print("computer_host_fixture: %s is not readable JSON; nothing was removed" % path, file=sys.stderr)
+        return 1
+    if host_state_path(path).exists():
+        host_down(args)  # host.json is written only by host-up, which refuses an existing nginx container
+    if state is None and not args.disposable_host:
+        # Nothing says this fixture set anything up here. A production single-box
+        # install has the same network, firewall and juno-agent-* containers (and
+        # the repository is checked out there): list, never remove.
+        traces = fixture_traces(inventory())
+        if not traces:
+            print("computer_host_fixture: no state at %s and nothing of a fixture here; nothing to do" % path)
+            return 0
+        print(json.dumps(traces, indent=1))
+        print("computer_host_fixture: no state at %s, so nothing was removed. The above may belong to a real "
+              "computer host (the network, firewall rules and juno-agent-* containers are normal on one). On a "
+              "throwaway machine, `down --disposable-host` removes them." % path, file=sys.stderr)
+        return 1
+    disposable = state is None
+    if disposable:
+        print("computer_host_fixture: no state at %s; --disposable-host: removing everything a fixture or a suite "
+              "could have added" % path)
+    state = state or {}
     before = state.get("before") or {}
     pid = state.get("pid")
-    # Containers the suites left on the network would keep it from being removed.
-    attached = docker("ps", "-aq", "--filter", "network=" + NETWORK, "--filter", "name=juno-agent-", check=False).stdout.split()
-    if attached:
-        print("computer_host_fixture: removing %d computer container(s) left on %s" % (len(attached), NETWORK))
-        docker("rm", "-f", *attached, check=False)
-    if NGINX_CONTAINER not in before.get("nginxContainers", []):
-        docker("rm", "-f", NGINX_CONTAINER, check=False)
+    entries = ledger_entries(path)
     if pid and alive(pid):
         os.kill(int(pid), signal.SIGTERM)
         deadline = time.monotonic() + 90
@@ -656,9 +792,33 @@ def down(args):
         if alive(pid):
             print("computer_host_fixture: the holder did not stop; killing it", file=sys.stderr)
             os.kill(int(pid), signal.SIGKILL)
-    elif not state:
-        print("computer_host_fixture: no state file at %s; checking for leftovers only" % path)
-    # Whatever an interrupted holder could not undo: the same steps, idempotent.
+    directory = state.get("directory")
+    if isinstance(directory, str) and os.path.basename(directory).startswith(HOLDER_DIRECTORY_PREFIX) and not alive(pid):
+        shutil.rmtree(directory, ignore_errors=True)
+    # The suites' containers (by their names only, unless the host is disposable),
+    # then their volumes, images and directories.
+    on_network = docker("ps", "-a", "--filter", "network=" + NETWORK, "--format", "{{.Names}}", check=False).stdout.split()
+    named = docker("ps", "-a", "--filter", "name=juno-agent-", "--format", "{{.Names}}", check=False).stdout.split()
+    ours = sorted({name for name in named if name.startswith(SUITE_CONTAINER_PREFIXES)}
+                  | ({name for name in on_network if name.startswith("juno-agent-")} if disposable else set()))
+    if ours:
+        print("computer_host_fixture: removing %d suite container(s): %s" % (len(ours), " ".join(ours)))
+        docker("rm", "-f", *ours, check=False)
+    others = sorted(set(on_network) - set(ours))
+    if others:
+        print("computer_host_fixture: containers no suite named are attached to %s and were left alone: %s"
+              % (NETWORK, " ".join(others)), file=sys.stderr)
+    for name in docker("volume", "ls", "-q", "--filter", "name=juno-agent-", check=False).stdout.split():
+        if name.startswith(SUITE_CONTAINER_PREFIXES):
+            docker("volume", "rm", "-f", name, check=False)
+    unrestored = undo_suite_images(entries, before)
+    for directory in sorted({entry.get("path") for entry in entries if entry.get("kind") == "dir"} | set(suite_directories())):
+        if is_suite_directory(directory) and directory not in before.get("suiteDirectories", []):
+            shutil.rmtree(directory, ignore_errors=True)
+    if NGINX_CONTAINER not in before.get("nginxContainers", []):
+        docker("rm", "-f", NGINX_CONTAINER, check=False)  # host-up's, if it was killed before writing host.json
+    # Whatever an interrupted holder could not undo: the same steps, idempotent,
+    # each only where `before` shows it was not there already.
     if docker("network", "inspect", NETWORK, check=False).returncode == 0 and NETWORK not in before.get("networks", []):
         docker("network", "rm", NETWORK, check=False)
     present = [rule for rule in FIREWALL_RULES if Host._has_rule(rule)]
@@ -668,21 +828,58 @@ def down(args):
         if not any(entry.startswith(address + "/") for entry in before.get("loAddresses", [])):
             ip("addr", "del", address + "/32", "dev", "lo", check=False)
     for line in (HOSTS_LINE, DEMO_HOSTS_LINE):
-        Host._remove_hosts_line(line)
-    for name in docker("volume", "ls", "-q", "--filter", "name=juno-agent-e2e", check=False).stdout.split():
-        docker("volume", "rm", "-f", name, check=False)
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        pass
+        if line not in before.get("hostsLines", []):
+            Host._remove_hosts_line(line)
     after = inventory()
     print(json.dumps({"before": before, "after": after}, indent=1))
-    left = leftovers(before, after)
+    left = leftovers(before, after, unrestored)
     if left:
+        # The state and the ledgers stay, so a second `down` can finish the job.
         print("computer_host_fixture: down left these behind: %s" % json.dumps(left), file=sys.stderr)
         return 1
+    for leftover in [path, *ledger_paths(path)]:
+        try:
+            leftover.unlink()
+        except FileNotFoundError:
+            pass
     print("computer_host_fixture: down; nothing the fixture or a suite added is left")
     return 0
+
+
+def undo_suite_images(entries, before):
+    """The suites' image changes, undone: a retagged shared tag goes back to the
+    image it named (test 10 of the remote suite rebuilds juno-computer:1), then
+    the suites' own tags and the images they built go. Returns the retags that
+    could not be restored. Nothing is forced: an image a container still uses,
+    or one with another tag, stays (and the inventory says so)."""
+    unrestored = []
+    for entry in entries:
+        if entry.get("kind") != "retag":
+            continue
+        tag, restore = entry.get("tag"), entry.get("restore")
+        if tag != IMAGE or not is_image_id(restore):
+            continue
+        current = image_id(tag)
+        if current == restore:
+            continue
+        if image_id(restore) is None or docker("tag", restore, tag, check=False).returncode != 0:
+            unrestored.append("%s (was %s)" % (tag, restore[:19]))
+            continue
+        print("computer_host_fixture: %s points at %s again" % (tag, restore[:19]))
+        if current:
+            docker("image", "rm", current, check=False)  # the suite's rebuild, now untagged
+    tags = {entry.get("tag") for entry in entries if entry.get("kind") == "tag"} | set(inventory_suite_tags())
+    for tag in sorted(tag for tag in tags if is_suite_tag(tag) and tag not in before.get("suiteImages", [])):
+        docker("image", "rm", tag, check=False)  # untags; deletes only an image nothing else names or uses
+    for entry in entries:
+        if entry.get("kind") == "image" and is_image_id(entry.get("id")) and entry.get("id") != image_id(IMAGE):
+            docker("image", "rm", entry["id"], check=False)
+    return unrestored
+
+
+def inventory_suite_tags():
+    result = docker("image", "ls", "--format", "{{.Repository}}:{{.Tag}}", check=False)
+    return [tag for tag in result.stdout.split() if is_suite_tag(tag)]
 
 
 def status(args):
@@ -905,6 +1102,10 @@ def main(argv):
         command.add_argument("--state", help="state file (default %s, or JUNO_COMPUTER_FIXTURE_STATE)" % DEFAULT_STATE)
         if name in ("up", "serve"):
             command.add_argument("--demo-page", action="store_true", help="also serve http://demo-page.test/ (S4.3)")
+        if name == "down":
+            command.add_argument("--disposable-host", action="store_true",
+                                 help="with no state file, remove what a fixture or a suite could have added anyway "
+                                      "(a throwaway CI runner only: on a real computer host that is its computers and firewall)")
         if name == "host-service":
             command.add_argument("action", choices=("stop", "start"))
     args = parser.parse_args(argv)

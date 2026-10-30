@@ -67,13 +67,16 @@ ENVIRONMENT = {
 # CLONE_NEWPID, CLONE_NEWNET (linux/sched.h).
 NAMESPACE_FLAGS = (0x00020000, 0x02000000, 0x04000000, 0x08000000, 0x10000000, 0x20000000, 0x40000000)
 EX_FROZEN = 75
-# How long the freeze keeps signalling and scanning before it reports a task
-# still running (exit 3). A task with SIGSTOP pending runs no more of its own
-# code, but it shows as stopped only once the scheduler has run it (or its
-# uninterruptible call has returned): on a loaded host (load 11 on 4 vCPUs,
-# tests/computer-real-e2e.test.ts, October 2026) that took longer than the half
-# second (10 rounds of 50 ms) the first version allowed, and a take over told
-# the person the agent could not be paused when it was pausing.
+# How long the freeze keeps signalling and scanning, every FREEZE_PAUSE_SECONDS,
+# until every uid-1000 task shows as stopped (T). A task with SIGSTOP pending
+# runs no more of its own code, but it shows as stopped only once the scheduler
+# has run it (or its uninterruptible call has returned): on a loaded host (load
+# 11 on 4 vCPUs, tests/computer-real-e2e.test.ts, October 2026) that took longer
+# than the half second (10 rounds of 50 ms) the first version allowed, and a
+# take over told the person the agent could not be paused when it was pausing.
+# Only at this deadline does a task in uninterruptible sleep with the stop
+# pending count as stopped (agent_tasks_not_stopped); anything else still
+# running then fails the freeze (exit 3).
 FREEZE_SECONDS = 3.0
 FREEZE_PAUSE_SECONDS = 0.05
 
@@ -112,33 +115,40 @@ def stop_is_pending(fields):
     return bool(pending & SIGSTOP_BIT)
 
 
-def agent_tasks_not_stopped(own_pid):
+def agent_tasks_not_stopped(own_pid, accept_pending_stop=False, proc="/proc"):
     """Every uid-1000 thread in this container that is not stopped (T, t) or
-    gone (Z, X), other than this process. A thread in uninterruptible sleep (D)
-    with SIGSTOP pending counts as stopped: it runs none of its own code again
-    before it stops, since the signal is taken on the way back from the kernel
-    (a fork in progress is restarted, so no child escapes). On a loaded host a
-    fork was seen to sit in D with the stop pending for over three seconds
+    gone (Z, X), other than this process.
+
+    With accept_pending_stop (only at the freeze's deadline), a thread in
+    uninterruptible sleep (D) with SIGSTOP pending also counts as stopped: it
+    runs none of its own code again before it stops, since the signal is taken
+    on the way back from the kernel (a fork in progress is restarted, so no
+    child escapes), though the call it is blocked in (a disk write, say) may
+    still complete after the person has control. On a loaded host a fork was
+    seen to sit in D with the stop pending for over three seconds
     (tests/computer-real-e2e.test.ts, October 2026), and the take over then
     told the person the agent could not be paused."""
     running = []
-    for pid in os.listdir("/proc"):
+    for pid in os.listdir(proc):
         if not pid.isdigit() or int(pid) == own_pid:
             continue
         try:
-            tasks = os.listdir("/proc/%s/task" % pid)
+            tasks = os.listdir("%s/%s/task" % (proc, pid))
         except OSError:
             continue
         for tid in tasks:
             try:
-                with open("/proc/%s/task/%s/status" % (pid, tid)) as status:
+                with open("%s/%s/task/%s/status" % (proc, pid, tid)) as status:
                     fields = dict(line.split(":", 1) for line in status if ":" in line)
             except OSError:
                 continue  # it ended between the listing and the read
             real_uid = int(fields.get("Uid", "-1").split()[0])
             state = fields.get("State", "?").split()[0]
-            if real_uid == AGENT_UID and state not in ("T", "t", "Z", "X") and not (state == "D" and stop_is_pending(fields)):
-                running.append(int(tid))
+            if real_uid != AGENT_UID or state in ("T", "t", "Z", "X"):
+                continue
+            if accept_pending_stop and state == "D" and stop_is_pending(fields):
+                continue
+            running.append(int(tid))
     return running
 
 
@@ -148,7 +158,9 @@ def freeze():
     the set under the task-list lock; a fork caught in progress hands the
     signal to its child or is restarted. The scan is what this relies on: it
     repeats until no uid-1000 task outside state T is left, or gives up after
-    FREEZE_SECONDS."""
+    FREEZE_SECONDS. Until then only state T counts; at the deadline a task
+    in uninterruptible sleep with the stop pending counts too (see
+    agent_tasks_not_stopped)."""
     own = os.getpid()
     deadline = time.monotonic() + FREEZE_SECONDS
     while True:
@@ -157,11 +169,14 @@ def freeze():
         except ProcessLookupError:
             pass  # nothing of this uid is running
         time.sleep(FREEZE_PAUSE_SECONDS)
-        left = agent_tasks_not_stopped(own)
-        if not left:
+        if not agent_tasks_not_stopped(own):
             return 0
         if time.monotonic() >= deadline:
             break
+    left = agent_tasks_not_stopped(own, accept_pending_stop=True)
+    if not left:
+        sys.stderr.write("agent-exec: frozen; a task in an uninterruptible call stops when the call returns\n")
+        return 0
     sys.stderr.write("agent-exec: %d task(s) still running after the freeze\n" % len(left))
     return 3
 

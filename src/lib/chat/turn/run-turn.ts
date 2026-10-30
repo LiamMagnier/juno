@@ -78,6 +78,8 @@ import { chatRuntimeToolAllowlist } from "@/lib/chat/tool-policy";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { ActiveConnector } from "@/lib/mcp";
+import { connectorUnavailableRow } from "@/lib/chat/turn-start-facts";
+import type { ConnectorFailure } from "@/types/run";
 import type { ModelInfo } from "@/lib/models";
 import { SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
 import type { ClientArtifact, ReasoningEffort, StreamChunk } from "@/types/chat";
@@ -846,6 +848,16 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         console.info("[chat] research handed off", { generationId, conversationId, runId: handoffRunId });
         return;
       }
+      // A connector dropped while its toolset opened (too slow to answer within
+      // its budget, unreachable, signed out) gets one quiet warning row; the
+      // turn goes on without it. Once per connector, also across a retry.
+      const droppedConnectors = new Set<string>();
+      const reportConnectorStatus = (id: string, state: "ready" | ConnectorFailure) => {
+        if (state === "ready" || droppedConnectors.has(id)) return;
+        droppedConnectors.add(id);
+        const label = activeConnectors.find((connector) => connector.id === id)?.label ?? id;
+        sendActivity(connectorUnavailableRow({ label, reason: state }));
+      };
       // One provider request for this generation; `attempt` 2 is the retry
       // before the first byte, which the request meter records as a retry.
       // Reads the answering model and effort, which that retry may move.
@@ -890,6 +902,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           generationId,
           conversationId,
         },
+        // The end of the server's preparation (the trace's `serverPrepMs`).
+        onProviderRequest: trace.noteProviderCall,
+        onConnectorStatus: reportConnectorStatus,
         audit: {
           userId: user.id,
           conversationId,
@@ -934,6 +949,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       if (researchNotice) {
         await pump(streamResearchNotice(researchNotice));
       } else if (deterministicSmokeProviderEnabled) {
+        // The smoke provider is this turn's provider: its start ends the
+        // preparation, so the production smoke measures `serverPrepMs` too.
+        trace.noteProviderCall();
         await pump(
           streamDeterministicSmokeResponse(
             input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? "",

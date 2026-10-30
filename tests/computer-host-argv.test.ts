@@ -145,6 +145,7 @@ const CASES: Array<{ op: string; input: Record<string, unknown>; ts: () => strin
   { op: "du", input: { name: NAME }, ts: () => [computerArgv.du(NAME)] },
   { op: "stat", input: { name: NAME, path: "/home/agent/work/a" }, ts: () => [computerArgv.stat(NAME, "/home/agent/work/a")] },
   { op: "vncKill", input: { name: NAME }, ts: () => [computerArgv.vncKill(NAME)] },
+  { op: "vncKillHard", input: { name: NAME }, ts: () => [computerArgv.vncKillHard(NAME)] },
   { op: "vncPassword", input: { name: NAME }, ts: () => [computerArgv.vncPassword(NAME)] },
   { op: "vncStart", input: { name: NAME, gateway: docker.COMPUTER_NETWORK_GATEWAY }, ts: () => [computerArgv.vncStart(NAME, docker.COMPUTER_NETWORK_GATEWAY)] },
   { op: "vncRunning", input: { name: NAME }, ts: () => [computerArgv.vncRunning(NAME)] },

@@ -8,7 +8,11 @@
  *
  *   node scripts/design-audit/geometry-synthesis.mjs \
  *     --runs /tmp/geometry/light-1440,/tmp/geometry/dark-1440,/tmp/geometry/light-390 \
- *     --out /tmp/geometry/synthesis [--top 30] [--crops 60]
+ *     --out /tmp/geometry/synthesis [--top 30] [--crops 60] [--include-loading]
+ *
+ * Routes measured while loading placeholders still showed are listed in the
+ * score table, marked, but kept out of the offenders and the scales unless
+ * --include-loading: half-loaded pages are not the geometry the product settles into.
  *
  * Every run is re-scored from its raw records with the current rules (as
  * --reanalyze does), so the runs are judged alike. Writes synthesis.md,
@@ -76,7 +80,13 @@ export function scaleUsage(pairs, core = 0.9) {
 export function issueSignature(f) {
   if (f.kind === "off-scale") return `${f.values.property} ${fmt(f.values.value)} → ${fmt(f.values.nearest)}`;
   if (f.kind === "text-misalignment") return f.message.replace(/ \([^)]*\)$/, "");
-  if (f.kind === "target-size") return f.message.replace(/^(\S+ )?target /, "target ");
+  // One component's targets differ in width with their labels: its short side is what it shares.
+  if (f.kind === "target-size") {
+    const v = f.values || {};
+    const short = Math.min(Number(v.w), Number(v.h));
+    const kind = /touch/.test(f.message) ? "touch" : "pointer";
+    return Number.isFinite(short) ? `target ${fmt(Math.round(short * 2) / 2)} px on its short side, under the ${fmt(v.min)} px ${kind} minimum` : f.message.replace(/^(\S+ )?target /, "target ");
+  }
   return f.message;
 }
 
@@ -122,10 +132,11 @@ export function groupOffenders(items) {
 }
 
 function parseArgs(argv) {
-  const args = { top: 30, crops: 60 };
+  const args = { top: 30, crops: 60, includeLoading: false };
   for (let k = 0; k < argv.length; k++) {
     const a = argv[k];
     if (a === "--help") args.help = true;
+    else if (a === "--include-loading") args.includeLoading = true;
     else if (["--runs", "--out", "--top", "--crops"].includes(a)) args[a.slice(2)] = argv[++k];
     else throw new Error(`Unknown argument ${a} (see --help)`);
   }
@@ -233,9 +244,10 @@ function render(runs, offenders, args, outDir, cropFiles) {
 
   // Scales in use: counts from the first run at each viewport; distinct values across every run.
   const firstPerViewport = new Map();
-  for (const run of runs) for (const r of run.routes) if (r.analysis && !firstPerViewport.has(`${r.viewport}|${r.name}`)) firstPerViewport.set(`${r.viewport}|${r.name}`, r);
-  const merged = mergeHistograms([...firstPerViewport.values()].map((r) => r.analysis.histograms));
-  const everywhere = mergeHistograms(runs.flatMap((run) => run.routes.filter((r) => r.analysis).map((r) => r.analysis.histograms)));
+  for (const run of runs) for (const r of run.routes) if (r.analysis && (args.includeLoading || !r.stillLoading) && !firstPerViewport.has(`${r.viewport}|${r.name}`)) firstPerViewport.set(`${r.viewport}|${r.name}`, r);
+  const counted = (r) => r.analysis && (args.includeLoading || !r.stillLoading);
+  const merged = mergeHistograms([...firstPerViewport.values()].filter(counted).map((r) => r.analysis.histograms));
+  const everywhere = mergeHistograms(runs.flatMap((run) => run.routes.filter(counted).map((r) => r.analysis.histograms)));
   L.push("## Scales in use");
   L.push("");
   L.push("Counts are uses (one per element and property) on every page; *core* is the smallest set of values covering 90% of uses, most used first; the *long tail* is everything else. Distinct values include every run.");
@@ -301,7 +313,7 @@ function render(runs, offenders, args, outDir, cropFiles) {
   // Per-page scores.
   L.push("## Per-page scores");
   L.push("");
-  L.push("Score / 100 = half values on scale + half checked elements with no violation; then the number of violations. (loading) = measured while placeholders still showed; FAILED = not measured.");
+  L.push(`Score / 100 = half values on scale + half checked elements with no violation; then the number of violations. (loading) = measured while placeholders still showed${args.includeLoading ? "" : ", so left out of the offenders and scales above"}; FAILED = not measured.`);
   L.push("");
   const names = [];
   for (const run of runs) for (const r of run.routes) if (!names.includes(r.name)) names.push(r.name);
@@ -346,7 +358,7 @@ async function main() {
   const items = [];
   for (const run of runs) {
     for (const route of run.routes) {
-      if (!route.analysis) continue;
+      if (!route.analysis || (route.stillLoading && !args.includeLoading)) continue;
       const page = `${route.name} @ ${route.viewport}`;
       const order = run.order * 1000 + run.routes.indexOf(route);
       for (const f of [...route.analysis.findings, ...route.analysis.offScaleFindings]) {

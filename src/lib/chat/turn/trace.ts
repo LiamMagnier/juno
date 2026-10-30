@@ -58,9 +58,27 @@ export interface TurnTrace {
     regenerate: boolean;
   };
   latency: {
+    /** From the trace's start (just before the turn runs) to its end. */
     totalMs: number;
-    /** First text or reasoning from the provider. Null when none arrived. */
+    /**
+     * First text or reasoning from the provider, from the trace's start. Null
+     * when none arrived. Starts after the route has built the turn (history,
+     * memory, context, tools, prompt), so it leaves that preparation out:
+     * see `serverPrepMs` and `requestTtftMs`.
+     */
     ttftMs: number | null;
+    /**
+     * Server preparation: from the request reaching the chat route to the
+     * provider request going out (after the connectors opened). Null when no
+     * provider request was made (a research hand-off, a refusal) or the route
+     * did not stamp its start.
+     */
+    serverPrepMs: number | null;
+    /**
+     * What the person waited for: from the request reaching the chat route to
+     * the first text or reasoning. Null when either end is missing.
+     */
+    requestTtftMs: number | null;
   };
   /**
    * Route-level provider attempts for this turn: 1, or 2 when the provider
@@ -108,6 +126,11 @@ export interface TurnTraceStart {
   rerouted: boolean;
   reasoningEffort: string | null | undefined;
   features: TurnTrace["features"];
+  /**
+   * When the request reached the chat route (epoch ms, the trace's clock),
+   * stamped at route entry. Absent: `serverPrepMs` and `requestTtftMs` are null.
+   */
+  requestStartedAt?: number | null;
 }
 
 export interface TurnTraceFinish {
@@ -129,6 +152,12 @@ export interface TurnTraceRecorder {
    * model: the trace then names that one, and says it was rerouted.
    */
   noteRetry: (model?: { id: string; provider: string }) => void;
+  /**
+   * The provider request is going out (streamChat's `onProviderRequest`, or
+   * the smoke provider starting). Only the first call counts: a retry's
+   * request is not the end of the preparation.
+   */
+  noteProviderCall: () => void;
   /** Emits the trace once; later calls are ignored. */
   finish: (input: TurnTraceFinish) => TurnTrace | null;
   readonly finished: boolean;
@@ -146,6 +175,11 @@ export function createTurnTrace(
 ): TurnTraceRecorder {
   const startedAt = now();
   let firstTokenAt: number | null = null;
+  let providerCallAt: number | null = null;
+  const requestStartedAt =
+    typeof start.requestStartedAt === "number" && Number.isFinite(start.requestStartedAt) ? start.requestStartedAt : null;
+  /** Milliseconds from the route's stamp to `at`; null when either is missing. */
+  const sinceRequest = (at: number | null) => (at === null || requestStartedAt === null ? null : Math.max(0, at - requestStartedAt));
   const calls = new Map<string, TurnTraceToolCall>();
   const order: string[] = [];
   let approvals = 0;
@@ -184,6 +218,9 @@ export function createTurnTrace(
       attempts += 1;
       if (model) answering = { id: model.id, provider: model.provider };
     },
+    noteProviderCall: () => {
+      if (providerCallAt === null && !done) providerCallAt = now();
+    },
     finish: (input) => {
       if (done) return null;
       done = true;
@@ -206,6 +243,8 @@ export function createTurnTrace(
         latency: {
           totalMs: Math.max(0, end - startedAt),
           ttftMs: firstTokenAt === null ? null : Math.max(0, firstTokenAt - startedAt),
+          serverPrepMs: sinceRequest(providerCallAt),
+          requestTtftMs: sinceRequest(firstTokenAt),
         },
         attempts,
         toolCalls: order.map((id) => calls.get(id)!),
@@ -242,6 +281,46 @@ export function createTurnTrace(
     },
   };
   return recorder;
+}
+
+export interface LatencyPercentiles {
+  p50: number;
+  p95: number;
+  /** How many turns had the number. */
+  n: number;
+}
+
+export interface TurnLatencySummary {
+  serverPrepMs: LatencyPercentiles | null;
+  requestTtftMs: LatencyPercentiles | null;
+  ttftMs: LatencyPercentiles | null;
+}
+
+/** Nearest-rank p50 and p95 of the numbers given; null when there are none. */
+export function latencyPercentiles(values: readonly number[]): LatencyPercentiles | null {
+  const sorted = values.filter((value) => typeof value === "number" && Number.isFinite(value)).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const rank = (q: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))];
+  return { p50: Math.round(rank(0.5)), p95: Math.round(rank(0.95)), n: sorted.length };
+}
+
+/**
+ * p50 and p95 of the three waits over a set of traces: server preparation
+ * (route entry to the provider request), the person's wait to the first
+ * token, and the provider-side first token the trace has always logged.
+ * A trace without a number (no provider request, no token) is left out.
+ */
+export function summarizeTurnLatency(traces: readonly Pick<TurnTrace, "latency">[]): TurnLatencySummary {
+  const pick = (read: (latency: Partial<TurnTrace["latency"]>) => number | null | undefined) =>
+    latencyPercentiles(traces.flatMap((trace) => {
+      const value = read(trace.latency ?? {});
+      return typeof value === "number" ? [value] : [];
+    }));
+  return {
+    serverPrepMs: pick((latency) => latency.serverPrepMs),
+    requestTtftMs: pick((latency) => latency.requestTtftMs),
+    ttftMs: pick((latency) => latency.ttftMs),
+  };
 }
 
 /** A turn's usage, in the trace's shape: counts and cost only. */

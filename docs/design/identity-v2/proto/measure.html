@@ -1,0 +1,11 @@
+<!doctype html><meta charset=utf-8><style>
+@font-face{font-family:I;src:url(fonts/inter.woff2) format('woff2');font-weight:350 650}
+body{margin:0;font-family:I;font-size:16px;line-height:27px;letter-spacing:-0.008em;font-optical-sizing:auto;font-weight:400}
+p{margin:0 0 16px}
+</style><div id=box></div><script>
+const T=`With six people on one product, the right planning format depends on how far ahead you can see and how often priorities move. Weekly planning keeps the queue short and suits work that changes every few days, while two-week sprints add a review and a retrospective, which helps when you want a steady rhythm. Six-week cycles with a short cool-down leave room for larger, well-shaped pieces of work, but they ask more of whoever shapes the work up front. If you are unsure, run two-week sprints for a quarter, then look at how often the plan changed mid-sprint and decide from that. The format matters less than the habit of writing down what you decided and why, so the next review starts from facts rather than memory. Teams that change direction every few days tend to get more from a short weekly list than from a board with many columns. A good rule is to keep the number of things in progress smaller than the number of people, so that work finishes before new work starts. When priorities are stable for a month or more, longer cycles give people room to think, and the cool-down absorbs the small fixes that would otherwise interrupt the cycle.`;
+window.measure=(w)=>{const box=document.getElementById('box');box.innerHTML='';const p=document.createElement('p');p.style.width=w+'px';p.textContent=T;box.appendChild(p);
+ const tn=p.firstChild;const r=document.createRange();const lines={};
+ for(let i=0;i<tn.length;i++){r.setStart(tn,i);r.setEnd(tn,i+1);const rc=r.getClientRects()[0];if(!rc)continue;const k=Math.round(rc.top);lines[k]=(lines[k]||0)+1;}
+ const counts=Object.values(lines);const full=counts.slice(0,-1);const avg=full.reduce((a,b)=>a+b,0)/full.length;return {w,lines:counts.length,avg:+avg.toFixed(1),min:Math.min(...full),max:Math.max(...full)};}
+</script>

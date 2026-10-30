@@ -373,10 +373,10 @@ async function waitFor<T>(
 /**
  * How long the run will spend opening its connectors before giving up on them.
  *
- * `openMcpToolset` awaits `client.connect` and `client.listTools` with no
- * timeout and no signal (src/lib/mcp.ts), and `getActiveConnectors` may refresh
- * an OAuth token over the network on the way in. Neither has a ceiling of its
- * own, and both run before the session exists — before the plan is created,
+ * `openMcpToolset` used to await `client.connect` and `client.listTools` with
+ * no timeout and no signal (src/lib/mcp.ts), and `getActiveConnectors` may
+ * refresh an OAuth token over the network on the way in, with no ceiling of its
+ * own. Both run before the session exists — before the plan is created,
  * before the control poller that reads the Stop button is started, before a
  * single event other than `run_started` has been written. A connector whose
  * endpoint accepts the connection and then says nothing therefore froze the run
@@ -386,8 +386,19 @@ async function waitFor<T>(
  * Forty-five seconds is generous for a handshake and a tool list — the same
  * work in a chat turn happens while somebody is watching a spinner — and short
  * enough that a run does it, says what it lost, and gets on with the task.
+ * When it runs out, the open is cancelled, not only abandoned: the signal
+ * stops every handshake still in flight and closes its connection, and
+ * `openConnectors` revokes the run's broker handles on its way out.
  */
 const CONNECTOR_OPEN_TIMEOUT_MS = 45_000;
+
+/**
+ * Each connector's own budget for its handshake and tool list, inside the
+ * deadline above: one server that never answers is dropped (its connection
+ * closed, reported as not answering) without costing the run the others.
+ * Longer than a chat turn's 5 s because nobody is waiting on a spinner.
+ */
+const CONNECTOR_SERVER_TIMEOUT_MS = 30_000;
 
 /**
  * How long a provider stream may say nothing before this run gives up on it.
@@ -1277,6 +1288,8 @@ async function openConnectors(input: {
   runtime: WorkRuntime;
   sink: SessionSink;
   emit(kind: WorkEventKind, payload: Prisma.InputJsonValue): Promise<void>;
+  /** Aborted when the run stops waiting (`CONNECTOR_OPEN_TIMEOUT_MS`). */
+  signal?: AbortSignal;
 }): Promise<ConnectorSurface> {
   const rows = await prisma.connection.findMany({
     where: { userId: input.userId },
@@ -1457,6 +1470,12 @@ async function openConnectors(input: {
     return { ...EMPTY_CONNECTOR_SURFACE, availability };
   }
 
+  // The run stopped waiting while the handles were being exchanged: nothing
+  // is dialled, and the handles die now rather than with the run.
+  if (input.signal?.aborted) {
+    broker.revokeRun(input.runId);
+    return { ...EMPTY_CONNECTOR_SURFACE, availability };
+  }
   const toolset: McpToolset = await openMcpToolset(
     authorized.map((entry) => ({
       id: entry.connectorId,
@@ -1471,8 +1490,16 @@ async function openConnectors(input: {
       // The run id, so a resumed run recognises actions it already brokered
       // rather than re-asking (and re-executing) after a restart.
       sessionId: input.runId,
-    }
+    },
+    { signal: input.signal, connectTimeoutMs: CONNECTOR_SERVER_TIMEOUT_MS }
   );
+  // Cancelled while opening: `openMcpToolset` closed what it had opened; the
+  // handles go too, so a late surface holds nothing live.
+  if (input.signal?.aborted) {
+    broker.revokeRun(input.runId);
+    await toolset.close().catch(() => {});
+    return { ...EMPTY_CONNECTOR_SURFACE, availability };
+  }
 
   const byConnector = new Map(authorized.map((entry) => [entry.connectorId, entry]));
   const descriptors: ConnectorToolDescriptor[] = [];
@@ -3820,6 +3847,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // which is strictly worse and is what used to happen. The degradation below
   // is the same sentence any other unreachable connector produces, because from
   // where the reader sits it is the same fact.
+  const openAbort = new AbortController();
   const opening = openConnectors({
     runId: input.runId,
     userId: input.userId,
@@ -3827,6 +3855,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     runtime,
     sink,
     emit: input.emit,
+    signal: openAbort.signal,
   });
   const connectors = await withDeadline(
     opening,
@@ -3835,10 +3864,11 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   ).catch(async (error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
     log("connectors did not open", { runId: input.runId, error: detail });
-    // The abandoned attempt is still tidied up if it ever finishes. It cannot
-    // be cancelled — `openMcpToolset` takes no signal — but it can be told to
-    // close on arrival, and it must be: a late surface holds live broker
-    // handles and open MCP sockets that nothing else has a reference to.
+    // Cancelled: every MCP handshake still in flight stops and its socket is
+    // closed, and `openConnectors` revokes the run's broker handles. Whatever
+    // it hands back late is closed on arrival as well, so nothing live is left
+    // that no one holds a reference to.
+    openAbort.abort();
     void opening.then(
       (late) => late.close(),
       () => {}

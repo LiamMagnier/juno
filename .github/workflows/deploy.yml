@@ -713,21 +713,23 @@ jobs:
         run: docker build --pull -t juno-computer:1 deploy/agent-computers
 
       # The app refuses any other label (src/lib/computer/docker.ts), so an image
-      # that does not carry it would turn both suites into tests of nothing.
+      # that does not carry it would turn both suites into tests of nothing. The
+      # script reads the app's constant and checks every copy of it
+      # (tests/computer-image-label.test.ts holds it to the constant).
       - name: The image carries the security label the app requires
-        run: |
-          label=$(docker image inspect --format '{{index .Config.Labels "juno.security"}}' juno-computer:1)
-          required=$(sed -n 's/^export const COMPUTER_IMAGE_SECURITY_LABEL = "\(.*\)";$/\1/p' src/lib/computer/docker.ts)
-          echo "image label: $label, required: $required"
-          [ -n "$required" ] && [ "$label" = "$required" ]
+        run: node scripts/computer-image-label.mjs --image juno-computer:1
 
       - name: Save the image
         run: docker save juno-computer:1 | zstd -T0 -3 -o "$RUNNER_TEMP/juno-computer.tar.zst"
 
+      # Already zstd-compressed: stored as it is (compression-level 0). Kept one
+      # day; a job re-run after that finds it gone and builds the image itself
+      # (the load steps below), so an expired artifact never fails a re-run.
       - uses: actions/upload-artifact@v4
         with:
           name: juno-computer-image
           path: ${{ runner.temp }}/juno-computer.tar.zst
+          compression-level: 0
           retention-days: 1
           if-no-files-found: error
 
@@ -741,13 +743,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A missing artifact (expired on a re-run, or a failed transfer) is not a
+      # test failure: the next step builds the image from this commit instead.
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: juno-computer-image
           path: ${{ runner.temp }}
 
       - name: Load the agent-computer image the computer-image job built
-        run: zstd -dc "$RUNNER_TEMP/juno-computer.tar.zst" | docker load
+        run: |
+          if [ -f "$RUNNER_TEMP/juno-computer.tar.zst" ]; then
+            zstd -dc "$RUNNER_TEMP/juno-computer.tar.zst" | docker load
+          else
+            echo "::warning::no computer-image artifact (it is kept one day): building the image in this job"
+            docker build --pull -t juno-computer:1 deploy/agent-computers
+          fi
+          node scripts/computer-image-label.mjs --image juno-computer:1
 
       # Root: the suite creates the juno-computers network, installs
       # firewall.sh's rules, puts canary addresses on lo and runs the egress
@@ -811,13 +823,23 @@ jobs:
       - name: Install relay dependencies
         run: npm ci --prefix relay
 
+      # A missing artifact (expired on a re-run, or a failed transfer) is not a
+      # test failure: the next step builds the image from this commit instead.
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: juno-computer-image
           path: ${{ runner.temp }}
 
       - name: Load the agent-computer image the computer-image job built
-        run: zstd -dc "$RUNNER_TEMP/juno-computer.tar.zst" | docker load
+        run: |
+          if [ -f "$RUNNER_TEMP/juno-computer.tar.zst" ]; then
+            zstd -dc "$RUNNER_TEMP/juno-computer.tar.zst" | docker load
+          else
+            echo "::warning::no computer-image artifact (it is kept one day): building the image in this job"
+            docker build --pull -t juno-computer:1 deploy/agent-computers
+          fi
+          node scripts/computer-image-label.mjs --image juno-computer:1
 
       # ubuntu-latest restricts unprivileged user namespaces through AppArmor;
       # the build machine has no AppArmor. Pinned here rather than inherited from
@@ -849,6 +871,7 @@ jobs:
         env:
           JUNO_COMPUTER_E2E: "1"
           JUNO_COMPUTER_E2E_PROVIDER: docker
+          JUNO_COMPUTER_E2E_EVIDENCE: ${{ runner.temp }}/e2e-evidence
         run: sudo -E env "PATH=$PATH" npx tsx --test tests/computer-real-e2e.test.ts
 
       # deploy/computer-host/local/run-local.sh --nginx: TLS through the
@@ -864,6 +887,7 @@ jobs:
         env:
           JUNO_COMPUTER_E2E: "1"
           JUNO_COMPUTER_E2E_PROVIDER: remote
+          JUNO_COMPUTER_E2E_EVIDENCE: ${{ runner.temp }}/e2e-evidence
         run: |
           . /run/juno-computer-fixture/host.env
           sudo -E env "PATH=$PATH" npx tsx --test tests/computer-real-e2e.test.ts
@@ -872,11 +896,26 @@ jobs:
         if: always()
         run: sudo sh -c 'tail -n 200 /run/juno-computer-fixture/fixture.log /run/juno-computer-fixture/host.log 2>/dev/null' || true
 
+      # What a red run in the promotion window is read from: each suite's
+      # screenshots and its record of the run (no secret in either: the record
+      # names tests, sizes and timings, never a token or a password).
+      - name: Keep the suites' evidence of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: computer-e2e-evidence
+          path: ${{ runner.temp }}/e2e-evidence
+          retention-days: 7
+          if-no-files-found: ignore
+
       # Removes the host (and its nginx container), the network, the firewall
-      # rules, the lo addresses and the hosts lines, and fails if any is left.
+      # rules, the lo addresses, the hosts lines and what the suites recorded in
+      # their ledgers, and fails if any is left. --disposable-host: the runner is
+      # thrown away, so even with no state file (an `up` that never started) it
+      # removes what a fixture could have added. Never pass it on a real host.
       - name: Take the fixture down
         if: always()
-        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py down
+        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py down --disposable-host
 
   build-and-deploy:
     needs: [test, unit-tests, runner, migrations, exec-boundary, computer-boundary]

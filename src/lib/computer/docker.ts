@@ -415,6 +415,10 @@ export const computerArgv = {
   vncKill(name: string): string[] {
     return ["exec", "--user", "1001", name, "pkill", "-x", "x11vnc"];
   },
+  /** SIGKILL, for an x11vnc that did not exit on SIGTERM (its handler can deadlock). */
+  vncKillHard(name: string): string[] {
+    return ["exec", "--user", "1001", name, "pkill", "-KILL", "-x", "x11vnc"];
+  },
   vncPassword(name: string): string[] {
     return ["exec", "-i", "--user", "1001", name, "sh", "-c", VNC_PASSWORD_SCRIPT];
   },
@@ -1006,19 +1010,14 @@ export class DockerProvider implements ComputerProvider {
     await this.waitForVncExit(handle);
   }
 
-  /**
-   * Waits until no x11vnc runs (the same `pgrep` as isVncRunning), up to 10 s;
-   * throws if one still does, so nothing is started beside it and no caller
-   * takes a session that is still open for ended.
-   */
-  private async waitForVncExit(handle: ComputerHandle): Promise<void> {
-    const deadline = Date.now() + 10_000;
-    while (await this.isVncRunning(handle)) {
-      if (Date.now() >= deadline) {
-        throw new ComputerError(COMPUTER_NOT_RESPONDING, "x11vnc did not exit after pkill");
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+  /** See `waitForVncExitWith`: the same `pgrep` as isVncRunning, then `pkill -KILL`. */
+  private waitForVncExit(handle: ComputerHandle): Promise<void> {
+    return waitForVncExitWith({
+      isRunning: () => this.isVncRunning(handle),
+      killHard: async () => {
+        await runDockerText(computerArgv.vncKillHard(handle.name), { allowNonZero: true });
+      },
+    });
   }
 
   /**
@@ -1102,5 +1101,42 @@ export class DockerProvider implements ComputerProvider {
   }
 }
 
+
+/** After SIGTERM, how long x11vnc gets to exit before it is killed, and before the wait fails. */
+export const VNC_EXIT_KILL_AFTER_MS = 3_000;
+export const VNC_EXIT_GIVE_UP_MS = 10_000;
+
+/**
+ * Waits until no x11vnc runs, after the caller's SIGTERM (`pkill -x x11vnc`).
+ * SIGTERM first, so x11vnc can put the display back; one still running after
+ * VNC_EXIT_KILL_AFTER_MS is killed (on a real computer its TERM handler was seen
+ * deadlocked on a futex, holding the port and the person's session open for
+ * good). Throws if one still runs after VNC_EXIT_GIVE_UP_MS, so nothing is
+ * started beside it and no caller takes a session that is still open for
+ * ended. The clock and the pause are injectable for tests; the host's
+ * wait_for_vnc_exit (deploy/computer-host/juno-computer-host.py) is the same.
+ */
+export async function waitForVncExitWith(deps: {
+  isRunning: () => Promise<boolean>;
+  killHard: () => Promise<void>;
+  now?: () => number;
+  pause?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  const now = deps.now ?? Date.now;
+  const pause = deps.pause ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const started = now();
+  let killed = false;
+  while (await deps.isRunning()) {
+    const waited = now() - started;
+    if (waited >= VNC_EXIT_GIVE_UP_MS) {
+      throw new ComputerError(COMPUTER_NOT_RESPONDING, "x11vnc did not exit after pkill");
+    }
+    if (!killed && waited >= VNC_EXIT_KILL_AFTER_MS) {
+      killed = true;
+      await deps.killHard();
+    }
+    await pause(100);
+  }
+}
 
 export const dockerComputerProvider = new DockerProvider();

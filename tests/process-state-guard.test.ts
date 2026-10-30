@@ -106,6 +106,9 @@ const ALLOWED: Record<string, Category> = {
   // check and the write go together. Another process may race it; the worst
   // case is a second file of the same name overwriting the first (S5.2).
   "src/lib/computer/files.ts#uploadLocks": "per-process",
+  // Which unusable COMPUTER_HOST_URL / COMPUTER_HOST_TOKEN reasons this
+  // process has already logged (log once). A restart logs them again.
+  "src/lib/computer/remote.ts#loggedRefusals": "per-process",
   "src/lib/code-v2/env-link-store-pg.ts#wakeups": "per-process",
   "src/lib/download-feed.ts#signedLinks": "per-process",
   "src/lib/download-feed.ts#pendingLinks": "per-process",

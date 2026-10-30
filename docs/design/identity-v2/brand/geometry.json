@@ -1,0 +1,150 @@
+{
+ "masters": {
+  "16": {
+   "box": 16,
+   "arch": {
+    "x0": 2,
+    "x1": 14,
+    "top": 1,
+    "base": 14,
+    "leg": 3.0,
+    "crown": 3.0
+   },
+   "stone": {
+    "cx": 8,
+    "cy": 11,
+    "r": 2.0
+   },
+   "opening": 6.0,
+   "clearance": 1.0,
+   "lift": 1.0
+  },
+  "20": {
+   "box": 20,
+   "arch": {
+    "x0": 3,
+    "x1": 17,
+    "top": 1.5,
+    "base": 18,
+    "leg": 3.5,
+    "crown": 3.5
+   },
+   "stone": {
+    "cx": 10,
+    "cy": 14.5,
+    "r": 2.5
+   },
+   "opening": 7.0,
+   "clearance": 1.0,
+   "lift": 1.0
+  },
+  "24": {
+   "box": 24,
+   "arch": {
+    "x0": 4,
+    "x1": 20,
+    "top": 2,
+    "base": 21.5,
+    "leg": 4,
+    "crown": 4
+   },
+   "stone": {
+    "cx": 12,
+    "cy": 17.5,
+    "r": 3.0
+   },
+   "opening": 8,
+   "clearance": 1.0,
+   "lift": 1.0
+  },
+  "large": {
+   "box": 100,
+   "arch": {
+    "x0": 16,
+    "x1": 84,
+    "top": 9,
+    "base": 90,
+    "leg": 18.5,
+    "crown": 16.8
+   },
+   "stone": {
+    "cx": 50,
+    "cy": 76,
+    "r": 10
+   },
+   "opening": 31.0,
+   "clearance": 5.5,
+   "lift": 4
+  }
+ },
+ "shoulders": {
+  "n_outer": 2.8,
+  "n_inner": 2.6
+ },
+ "wordmark": {
+  "large": {
+   "axes": {
+    "wght": 450,
+    "CRSV": 1,
+    "SHRP": 0,
+    "slnt": 0
+   },
+   "tracking": -0.012,
+   "kern": {
+    "Al": 0.02,
+    "ev": -0.004,
+    "vr": -0.008
+   },
+   "advance": 243.65,
+   "cap": 70.0
+  },
+  "small": {
+   "axes": {
+    "wght": 520,
+    "CRSV": 1,
+    "SHRP": 0,
+    "slnt": 0
+   },
+   "tracking": 0.01,
+   "kern": {
+    "Al": 0.03,
+    "ev": 0.0,
+    "vr": -0.004
+   },
+   "advance": 260.15,
+   "cap": 70.0
+  }
+ },
+ "colors": {
+  "ink": {
+   "light": "#15171b",
+   "dark": "#e8eaec"
+  },
+  "bronze": {
+   "light": "#a7722e",
+   "dark": "#d7aa67"
+  },
+  "appIcon": {
+   "default": {
+    "bg": "#202225",
+    "arch": "#eef0f3",
+    "stone": "#c4914a"
+   },
+   "dark": {
+    "bg": "#0e1012",
+    "arch": "#e4e6e9",
+    "stone": "#d6a866"
+   },
+   "light": {
+    "bg": "#eef0f3",
+    "arch": "#202225",
+    "stone": "#a7722e"
+   },
+   "tinted": {
+    "bg": "#141414",
+    "arch": "#f5f5f5",
+    "stone": "#bdbdbd"
+   }
+  }
+ }
+}

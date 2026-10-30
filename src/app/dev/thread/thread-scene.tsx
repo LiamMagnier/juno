@@ -5,7 +5,8 @@ import { AppProvider, useApp } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import { MessageList } from "@/components/chat/message-list";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
-import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { MemoryUpdatedAnnouncement, MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { PHONE_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -314,20 +315,24 @@ export function ThreadScene({ scene }: { scene: "thread" | "thinking" | "settled
   const work = React.useMemo(() => workFor(scene), [scene]);
   const noop = React.useCallback(() => undefined, []);
   const [memoryNotice, setMemoryNotice] = React.useState(true);
+  const phoneWidth = useMediaQuery(PHONE_QUERY);
+  const memoryWrite = ANSWER_ACTIVITY.find((row) => row.memoryWrite)?.memoryWrite ?? null;
   return (
     <AppProvider bootstrap={BOOTSTRAP}>
       <SelectConversation id="c-q3" />
       <AppShell>
         <div className="flex h-full min-h-0 flex-1 flex-col" data-thread-scene={scene}>
           {/* The actionable "Memory updated" notice, as chat-view draws it
-              after the turn that saved the fact (G20). */}
-          {scene === "thread" && memoryNotice && (
+              after the turn that saved the fact (G20): never over the
+              conversation on a phone, where the answer's chip says it and
+              only a screen reader is told. */}
+          {scene === "thread" && memoryNotice && !phoneWidth && (
             <div className="flex justify-center px-4 pt-2">
-              <MemoryUpdatedNotice
-                write={ANSWER_ACTIVITY.find((row) => row.memoryWrite)?.memoryWrite ?? null}
-                onDismiss={() => setMemoryNotice(false)}
-              />
+              <MemoryUpdatedNotice write={memoryWrite} onDismiss={() => setMemoryNotice(false)} />
             </div>
+          )}
+          {scene === "thread" && memoryNotice && phoneWidth && memoryWrite && (
+            <MemoryUpdatedAnnouncement write={memoryWrite} onDismiss={() => setMemoryNotice(false)} />
           )}
           <MessageList
             messages={messages}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { agentStateSentence, type AgentState } from "@/lib/agents/domain";
+import { agentStateSentence, type AgentState } from "@/lib/agents/state-labels";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 

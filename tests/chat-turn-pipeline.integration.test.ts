@@ -117,6 +117,12 @@ if (!DB_URL) {
     // bound itself set their own.
     process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "40";
     delete process.env.CHAT_PRESTREAM_RETRY;
+    // The chat failure-rate watch (src/lib/router/failure-alert.ts) counts
+    // RoutingOutcome on its own clock once failed turns pile up, and this
+    // suite fails many on purpose. Its query must not land inside a case
+    // that times a Stop to 100 ms; tests/chat-failure-alert.test.ts and
+    // tests/router-telemetry.integration.test.ts cover it.
+    process.env.CHAT_FAILURE_ALERT = "off";
     globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       if (localProviderOrigin && url.startsWith(`${localProviderOrigin}/`)) return realFetch(input, init);

@@ -7,7 +7,7 @@ import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
 import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
-import type { ActiveConnector, McpToolsetContext } from "@/lib/mcp";
+import type { ActiveConnector, McpToolsetContext, OpenMcpToolsetOptions } from "@/lib/mcp";
 import { createToolLoop, type ToolLoop } from "@/lib/tools/loop";
 import { withNativeChatTools, type NativeChatTool } from "@/lib/tools/toolset";
 import type { ChatToolset, ToolSpec } from "@/lib/tools/types";
@@ -121,6 +121,14 @@ export async function* streamChat(opts: {
   toolset?: ChatToolset;
   batch?: AdapterRequest["batch"];
   responseSchema?: AdapterRequest["responseSchema"];
+  /**
+   * Called once per call, just before the provider request goes out (after
+   * the toolset opened): the end of the server's preparation, which the chat
+   * turn trace records as `serverPrepMs`. Never allowed to throw.
+   */
+  onProviderRequest?: () => void;
+  /** Once per connector as the toolset opens: "ready", or why it was dropped for this call. */
+  onConnectorStatus?: OpenMcpToolsetOptions["onConnectorStatus"];
 }): AsyncGenerator<LlmEvent> {
   const { model, system: initialSystem, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
@@ -172,6 +180,7 @@ export async function* streamChat(opts: {
         // Never `undefined`: that is the registry's "all tools" value.
         allowedToolIds: opts.allowedTools ?? [...NO_RUNTIME_TOOLS],
         specs: opts.toolSpecs,
+        onConnectorStatus: opts.onConnectorStatus,
       });
     } catch (err) {
       console.error("[llm] error opening unified agent toolset:", err);
@@ -210,6 +219,11 @@ export async function* streamChat(opts: {
   try {
     // `webSearch` picks Meta's transport: its search exists only on Responses.
     const adapter = providerAdapterFor(model, proMode, { webSearch: !!webSearch });
+    try {
+      opts.onProviderRequest?.();
+    } catch {
+      // Observability must never be the reason a request is not sent.
+    }
     // Every provider call in the product funnels through the switch below, so
     // this is the one place that learns what a live request discovered. The
     // only verdict taken is `not_found`, and taking it is what stops a retired

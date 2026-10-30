@@ -29,7 +29,7 @@
  *   --no-screenshots             skip the annotated screenshots
  *   --timeout <ms>               navigation timeout (default 180000; the dev server compiles on first hit)
  *   --retries <n>                retries after a dropped connection, once the server has answered steadily
- *                                for 10 s (default 3)
+ *                                for 10 s, then 20, 40 and 60 s (default 3)
  *   --chromium <path>            a Chromium executable, when Playwright's own is missing
  *   --busy <selector>            loading placeholders to wait out before measuring
  *                                (default '.skeleton, [aria-busy="true"], [data-skeleton]')
@@ -408,13 +408,17 @@ async function waitForServer(base, maxMs, steadyMs = 0) {
   return false;
 }
 
-async function measureWithRetry(browserCtx, route, args, ctxBase, outDir) {
+async function measureWithRetry(browserCtx, route, args, ctxBase, outDir, session = null) {
   let result;
   for (let attempt = 0; attempt <= args.retries; attempt++) {
-    result = await measureRoute(browserCtx, route, args, ctxBase, outDir);
+    // A retry always loads the page afresh.
+    result = await measureRoute(browserCtx, route, args, ctxBase, outDir, attempt === 0 ? session : null);
     if (!result.error || !TRANSIENT.test(result.error) || attempt === args.retries) break;
-    console.error(`  ${route.name}: ${result.error.slice(0, 80)} · waiting for the server, then retrying`);
-    await waitForServer(args.base, args.timeout, 10000);
+    // Backing off (10, 20, 40, then 60 s of steady answers) spreads the
+    // attempts past a burst of restarts or of recompiles of other people's edits.
+    const steady = Math.min(60000, 10000 * 2 ** attempt);
+    console.error(`  ${route.name}: ${result.error.slice(0, 80)} · waiting for ${steady / 1000} s of steady answers, then retrying`);
+    await waitForServer(args.base, args.timeout, steady);
   }
   return result;
 }
@@ -532,41 +536,127 @@ async function reanalyze(args) {
   return { meta, routeResults, outDir };
 }
 
-async function measureRoute(browserCtx, route, args, ctxBase, outDir) {
-  const page = await browserCtx.newPage();
+/** Pages are kept between routes on the same path, signed-in state and viewport. */
+function sessionKey(route, vp) {
+  return `${route.auth === false ? "out" : "in"}|${vp.width}x${vp.height}|${route.path}`;
+}
+
+/**
+ * Bring a kept page back to how it loaded: close what the last route opened
+ * (Escape), drop focus and hover, and check that <body> holds exactly the
+ * visible layers it held after load and that the URL has not moved. False
+ * when it cannot: the caller then loads the page afresh.
+ */
+async function resetPage(page, routePath) {
+  const clean = () =>
+    page
+      .evaluate((wanted) => {
+        const home = window.__geometryHome;
+        if (!home) return false;
+        const want = new URL(wanted, location.href);
+        if (location.pathname + location.search !== want.pathname + want.search) return false;
+        const shown = (e) => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden";
+        };
+        const extra = [...document.body.children].filter((e) => !home.has(e) && shown(e));
+        return extra.length === 0 && [...home].every((e) => e.isConnected);
+      }, routePath)
+      .catch(() => false);
+  await page.evaluate(() => document.getElementById("__geometry_overlay")?.remove()).catch(() => {});
+  let ok = await clean();
+  for (let k = 0; k < 3 && !ok; k++) {
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(300);
+    ok = await clean();
+  }
+  if (!ok) return false;
+  await page.evaluate(() => document.activeElement && document.activeElement !== document.body && document.activeElement.blur?.()).catch(() => {});
+  await page.mouse.move(0, 0).catch(() => {});
+  await settle(page);
+  return clean();
+}
+
+async function measureRoute(browserCtx, route, args, ctxBase, outDir, session = null) {
+  const vp = route.viewport ? parseViewport(route.viewport) : ctxBase.viewport;
+  const key = sessionKey(route, vp);
   const result = { name: route.name, slug: route.slug, path: route.path };
   const started = Date.now();
-  let chunkFailure = null;
-  const onChunk = (url, why) => {
-    // Connection-level failures and 5xx only: a cancelled prefetch (ERR_ABORTED) is not a restart.
-    if (!chunkFailure && /\/_next\/static\//.test(url) && /REFUSED|RESET|EMPTY_RESPONSE|CLOSED|HTTP 5/.test(why)) chunkFailure = `script chunk failed to load (${why}): the server restarted mid-load`;
-  };
-  page.on("requestfailed", (req) => onChunk(req.url(), req.failure()?.errorText || "failed"));
-  page.on("response", (res) => {
-    if (res.status() >= 500) onChunk(res.url(), `HTTP ${res.status()}`);
-  });
+  // A page the previous route on this path left open (it only opened menus or
+  // dialogs) is reset and reused: on the shared dev server a fresh load of
+  // /chat costs minutes, and its eight menus would pay it eight times.
+  let page = null;
+  if (session?.page && session.key === key && !session.page.isClosed()) {
+    page = session.page;
+    session.page = null;
+    if (!(await resetPage(page, route.path))) {
+      await page.close().catch(() => {});
+      page = null;
+    }
+  } else if (session?.page) {
+    await session.page.close().catch(() => {});
+    session.page = null;
+  }
+  const reused = !!page;
+  if (!page) {
+    page = await browserCtx.newPage();
+    const fresh = { chunkFailure: null, errors: [] };
+    page.__geometry = fresh;
+    // Kept so an error screen says what broke it (a chunk that timed out, a render error).
+    // Kept so an error screen says what broke it (a lazy chunk that failed, a
+    // render error). An uncaught error alone does not fail the route: the
+    // agent thread's announcement-popup chunk failed on every load without
+    // touching the view, and a chunk that does break the view shows its error
+    // boundary, which the error-screen check catches.
+    page.on("pageerror", (err) => {
+      if (fresh.errors.length < 5) fresh.errors.push(String(err?.message || err).split("\n")[0].slice(0, 200));
+    });
+    const onChunk = (url, why) => {
+      // Connection-level failures and 5xx only: a cancelled prefetch (ERR_ABORTED) is not a restart.
+      // NETWORK_CHANGED: Chromium drops every open connection when the host's
+      // network interfaces change (another job starting a container).
+      if (!fresh.chunkFailure && /\/_next\/static\//.test(url) && /REFUSED|RESET|EMPTY_RESPONSE|CLOSED|NETWORK_CHANGED|HTTP 5/.test(why)) fresh.chunkFailure = `script chunk failed to load (${why}): the server restarted or the connection dropped mid-load`;
+    };
+    page.on("requestfailed", (req) => onChunk(req.url(), req.failure()?.errorText || "failed"));
+    page.on("response", (res) => {
+      if (res.status() >= 500) onChunk(res.url(), `HTTP ${res.status()}`);
+    });
+  }
+  const state = page.__geometry;
+  let keep = false;
   try {
-    const url = new URL(route.path, args.base).href;
-    const resp = await page.goto(url, { timeout: args.timeout, waitUntil: "domcontentloaded" });
-    result.status = resp ? resp.status() : null;
-    await page.waitForLoadState("load", { timeout: args.timeout }).catch(() => {});
-    const final = new URL(page.url());
-    result.finalPath = final.pathname + final.search;
-    if (final.pathname.startsWith("/sign-in") && !route.path.startsWith("/sign-in")) {
-      throw new Error(`redirected to ${final.pathname}: the storage state is signed out (refresh it, then rerun)`);
+    let ready = true;
+    if (!reused) {
+      const url = new URL(route.path, args.base).href;
+      const resp = await page.goto(url, { timeout: args.timeout, waitUntil: "domcontentloaded" });
+      state.status = resp ? resp.status() : null;
+      await page.waitForLoadState("load", { timeout: args.timeout }).catch(() => {});
+      const final = new URL(page.url());
+      state.finalPath = final.pathname + final.search;
+      if (final.pathname.startsWith("/sign-in") && !route.path.startsWith("/sign-in")) {
+        throw new Error(`redirected to ${final.pathname}: the storage state is signed out (refresh it, then rerun)`);
+      }
+      // Measuring server HTML before React hydrates gives a different page (no
+      // client-only UI, no component names), so a page that never hydrates fails
+      // and is retried. Routes that are not React pages set "hydrate": false.
+      if (route.hydrate !== false && !(await waitForHydration(page, args.timeout, () => state.chunkFailure))) {
+        throw new Error(`never hydrated (Timeout ${args.timeout}ms exceeded waiting for React)`);
+      }
+      result.loadMs = Date.now() - started;
+      await page.addStyleTag({ content: STILL_CSS }).catch(() => {});
+      if (route.waitFor) await page.locator(route.waitFor).filter({ visible: true }).first().waitFor({ state: "visible", timeout: Math.min(args.timeout, 60000) });
+      ready = await waitForContent(page, args.busy, args["busy-timeout"]);
+      await settle(page);
+      await page.evaluate(() => (window.__geometryHome = new Set(document.body.children)));
+      state.ready = ready;
+    } else {
+      result.loadMs = 0;
+      result.reusedPage = true;
+      if (route.waitFor) await page.locator(route.waitFor).filter({ visible: true }).first().waitFor({ state: "visible", timeout: 20000 });
+      ready = state.ready !== false;
     }
-    // Measuring server HTML before React hydrates gives a different page (no
-    // client-only UI, no component names), so a page that never hydrates fails
-    // and is retried. Routes that are not React pages set "hydrate": false.
-    if (route.hydrate !== false && !(await waitForHydration(page, args.timeout, () => chunkFailure))) {
-      throw new Error(`never hydrated (Timeout ${args.timeout}ms exceeded waiting for React)`);
-    }
-    result.loadMs = Date.now() - started;
-    await page.addStyleTag({ content: STILL_CSS }).catch(() => {});
-    if (route.waitFor) await page.locator(route.waitFor).filter({ visible: true }).first().waitFor({ state: "visible", timeout: Math.min(args.timeout, 60000) });
-    let ready = await waitForContent(page, args.busy, args["busy-timeout"]);
-    await settle(page);
-    const vp = route.viewport ? parseViewport(route.viewport) : ctxBase.viewport;
+    result.status = state.status;
+    result.finalPath = state.finalPath;
     // Steps marked "when": "phone" or "desktop" run only at that width.
     const open = (typeof route.open === "function" ? [route.open] : route.open).filter((step) => appliesAt(step, isPhoneViewport(vp)));
     // Remember what <body> held before the open script: the layers it adds
@@ -579,25 +669,34 @@ async function measureRoute(browserCtx, route, args, ctxBase, outDir) {
       ready = (await waitForContent(page, args.busy, args["busy-timeout"])) && ready;
       await settle(page);
     }
+    if (state.chunkFailure) throw new Error(state.chunkFailure);
     if (!ready) result.stillLoading = true;
 
     // An error boundary renders with HTTP 200; never score an error screen.
     const errorShown = await page.evaluate((pattern) => {
       const re = new RegExp(pattern, "i");
-      const heads = [...document.querySelectorAll("h1, h2")].map((h) => (h.textContent || "").trim()).filter(Boolean);
+      // Headings, and the titles of status and alert panels: a menu or panel
+      // that failed to load ("Couldn’t load notifications") is an error state too.
+      const heads = [...document.querySelectorAll("h1, h2"), ...[...document.querySelectorAll("[role=status], [role=alert]")].map((e) => e.querySelector("h1, h2, h3, p, strong") || e)]
+        .filter((h) => {
+          const r = h.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        })
+        .map((h) => (h.textContent || "").trim().replace(/\s+/g, " "))
+        .filter(Boolean);
       const hit = heads.find((t) => re.test(t));
       const portal = document.querySelector("nextjs-portal");
       const overlay = portal && portal.shadowRoot && portal.shadowRoot.querySelector("[data-nextjs-dialog], [data-nextjs-dialog-overlay]");
       if (hit) return `rendered an error page: "${hit}"`;
       return overlay ? "rendered the Next.js error overlay" : null;
     }, args["error-text"]);
-    if (errorShown && !route.allowError) throw new Error(errorShown);
+    if (errorShown && !route.allowError) throw new Error(`${errorShown}${state.errors.length ? ` after: ${state.errors[0]}` : ""}`);
 
     result.viewport = `${vp.width}x${vp.height}`;
     const ctx = makeContext({ scales: ctxBase.scales, tolerances: ctxBase.tolerances, viewport: vp });
     const target = ctx.phone ? ctx.tol.targetTouch : ctx.tol.targetPointer;
     const scope = route.scope === "page" ? null : route.scope || (open.length ? "new" : null);
-    const collected = await page.evaluate(collectGeometry, { full: !!args.full, scope, targetSize: target });
+    const collected = await page.evaluate(collectGeometry, { full: !!args.full, scope, targetSize: target, busy: args.busy });
     result.scope = collected.scope;
     result.title = collected.title;
     result.hydrated = collected.hydrated;
@@ -615,7 +714,9 @@ async function measureRoute(browserCtx, route, args, ctxBase, outDir) {
       fs.mkdirSync(path.join(outDir, "raw"), { recursive: true });
       const meta = { ...collected };
       delete meta.records;
-      fs.writeFileSync(path.join(outDir, "raw", `${route.slug}.json`), JSON.stringify({ ...meta, viewportName: result.viewport, records }));
+      // stillLoading travels with the records, so a run resumed from raw files
+      // alone (no geometry.json) still knows the capture was half-loaded.
+      fs.writeFileSync(path.join(outDir, "raw", `${route.slug}.json`), JSON.stringify({ ...meta, viewportName: result.viewport, ...(result.stillLoading ? { stillLoading: true } : {}), records }));
     }
     if (args.screenshots) {
       fs.mkdirSync(path.join(outDir, "shots"), { recursive: true });
@@ -626,10 +727,16 @@ async function measureRoute(browserCtx, route, args, ctxBase, outDir) {
       await page.screenshot({ ...shot, path: path.join(outDir, rel) });
       result.screenshot = rel;
     }
+    // Only a page whose route opened layers (scope "new") or nothing at all is
+    // kept: a scrolled or navigated page is not the page the next route expects.
+    keep = !!session && (!open.length || (collected.scope !== "page" && !route.scope));
   } catch (err) {
     result.error = String(err?.message || err).split("\n")[0];
   } finally {
-    await page.close().catch(() => {});
+    if (keep) {
+      session.page = page;
+      session.key = key;
+    } else await page.close().catch(() => {});
   }
   result.ms = Date.now() - started;
   return result;
@@ -741,8 +848,9 @@ async function main() {
       const rawPath = path.join(outDir, "raw", `${route.slug}.json`);
       if (resumeFrom.has(route.name) || !keep(route.name) || !fs.existsSync(rawPath)) continue;
       const raw = JSON.parse(fs.readFileSync(rawPath, "utf8"));
-      if (redoLoading && fs.existsSync(path.join(outDir, "geometry.json"))) continue; // its loading state is unknown here
-      resumeFrom.set(route.name, { name: route.name, slug: route.slug, path: route.path, viewport: raw.viewportName, scope: raw.scope, title: raw.title, hydrated: raw.hydrated, truncated: raw.truncated });
+      // A half-loaded capture is redone; so is one whose loading state is unknown (saved before the flag was).
+      if (redoLoading && (raw.stillLoading || fs.existsSync(path.join(outDir, "geometry.json")))) continue;
+      resumeFrom.set(route.name, { name: route.name, slug: route.slug, path: route.path, viewport: raw.viewportName, scope: raw.scope, title: raw.title, hydrated: raw.hydrated, truncated: raw.truncated, ...(raw.stillLoading ? { stillLoading: true } : {}) });
     }
     console.error(`geometry-audit: resuming, ${resumeFrom.size} routes kept from ${outDir}`);
   }
@@ -759,6 +867,15 @@ async function main() {
   let done = 0;
   const t0 = Date.now();
   const worker = async () => {
+    // Each worker keeps its last page for the next route on the same path.
+    const session = { page: null, key: null };
+    try {
+      await work(session);
+    } finally {
+      if (session.page) await session.page.close().catch(() => {});
+    }
+  };
+  const work = async (session) => {
     while (next < routes.length) {
       const k = next++;
       const route = routes[k];
@@ -775,12 +892,13 @@ async function main() {
       }
       await ensureBrowser();
       const bctx = await contextFor(route.auth !== false, vp);
-      const r = await measureWithRetry(bctx, route, args, ctxBase, outDir);
+      if (session.page && (session.page.context() !== bctx || session.page.isClosed())) session.page = null;
+      const r = await measureWithRetry(bctx, route, args, ctxBase, outDir, session);
       results[k] = r;
       done++;
       writeProgress();
       const tail = r.error ? `FAILED ${r.error}` : `${r.elements} elements · score ${r.score.score} · ${r.counts.violations} violations`;
-      const split = r.loadMs !== undefined ? ` (load ${(r.loadMs / 1000).toFixed(1)}s, open+measure ${((r.ms - r.loadMs) / 1000).toFixed(1)}s)` : "";
+      const split = r.reusedPage ? " (on the page the last route loaded)" : r.loadMs !== undefined ? ` (load ${(r.loadMs / 1000).toFixed(1)}s, open+measure ${((r.ms - r.loadMs) / 1000).toFixed(1)}s)` : "";
       console.error(`[${done}/${routes.length}] ${route.name} · ${tail} · ${(r.ms / 1000).toFixed(1)}s${split}`);
     }
   };
@@ -800,6 +918,7 @@ function stripTimings(r) {
   const rest = { ...r };
   delete rest.ms;
   delete rest.loadMs;
+  delete rest.reusedPage;
   return rest;
 }
 

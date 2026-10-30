@@ -471,13 +471,14 @@ export function AgentComputerOverlay({
               )}
             </div>
             {terminalRunId ? (
-              // The pane fills a box the screen sizes (its row's height on a wide
-              // window, 16:10 in the narrow tab), and never grows it: a long
-              // output scrolls inside the pane instead of stretching the screen.
+              // The pane fills a box the layout sizes (the screen's row on a wide
+              // window, a fixed height in the narrow tab), and never grows it: a
+              // long output scrolls inside the pane instead of stretching the screen.
               <div
                 className={cn(
                   "relative min-w-0 lg:w-[22rem] lg:shrink-0",
-                  pane === "terminal" ? "max-lg:aspect-[16/10] max-lg:flex-1" : "max-lg:hidden"
+                  // Taller than the screen's 16:10 in the narrow tab: output is read in lines.
+                  pane === "terminal" ? "max-lg:h-[min(60dvh,34rem)] max-lg:flex-1" : "max-lg:hidden"
                 )}
               >
                 <ComputerTerminal agentId={agent.id} agentName={agent.name} runId={terminalRunId} className="absolute inset-0" />

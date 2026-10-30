@@ -47,8 +47,20 @@ const EXIT_MS = 180;
 const actionClass =
   "inline-flex h-7 items-center gap-1 rounded-md px-2 font-sans text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-9";
 
-function truncate(text: string, max = 72): string {
-  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+/**
+ * The fact, short enough for two lines of the notice, cut only between words.
+ * It used to be one line clipped by CSS and a cut at the 71st character, so a
+ * phone showed "Halvorsen is the …" with the fact's subject cut off mid-name.
+ * Only a single word longer than half the limit (a pasted address) is cut
+ * inside itself, because there is nowhere else to cut it.
+ */
+export function noticeSummary(text: string, max = 72): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const head = clean.slice(0, max);
+  const lastSpace = head.lastIndexOf(" ");
+  const cut = lastSpace > max / 2 ? head.slice(0, lastSpace) : head.slice(0, max - 1);
+  return `${cut.replace(/[\s,;:.\u2013\u2014-]+$/, "")}…`;
 }
 
 export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryWrite | null; onDismiss: () => void }) {
@@ -93,9 +105,9 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
   );
 
   const summary = first
-    ? truncate(first.content)
+    ? noticeSummary(first.content)
     : forgotten[0]
-      ? truncate(forgotten[0])
+      ? noticeSummary(forgotten[0])
       : null;
   const more = saved.length > 1 ? saved.length - 1 : forgotten.length > 1 && !first ? forgotten.length - 1 : 0;
   const forgetOnly = !first && forgotten.length > 0;
@@ -149,10 +161,12 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
           ) : null}
         </span>
         {summary && !allUndone ? (
+          // Wraps to a second line rather than clipping: `noticeSummary`
+          // already cut it between words, short enough for two.
           <span
             data-no-auto-translate
             className={cn(
-              "min-w-0 truncate text-ui font-medium leading-5 text-foreground",
+              "min-w-0 whitespace-normal break-words text-ui font-medium leading-5 text-foreground",
               forgetOnly && "text-muted-foreground line-through decoration-muted-foreground/40",
             )}
           >
@@ -240,5 +254,40 @@ function UndoButton({ id, onUndone }: { id: string; onUndone: () => void }) {
     >
       {busy ? "Undoing…" : failed ? "Try again" : "Undo"}
     </button>
+  );
+}
+
+/**
+ * On a phone, "Memory updated" is not drawn over the conversation: the answer
+ * that saved the fact already says it in its own chip (AnswerMemory, "Memory
+ * updated" under the answer) with the same View, Edit and Undo, so a notice
+ * at the top only covered the transcript the reader was looking at. What a
+ * screen reader would have heard from the notice is still said, here, once:
+ * the region is in place before its words arrive, so it is announced, and it
+ * goes with the notice's own timing. Used only for a write the turn could
+ * name; one it could not has no chip, so the notice is drawn (above the
+ * composer, chat-view.tsx).
+ */
+export function MemoryUpdatedAnnouncement({ write, onDismiss }: { write: ClientMemoryWrite; onDismiss: () => void }) {
+  const [text, setText] = React.useState("");
+  const dismissRef = React.useRef(onDismiss);
+  React.useEffect(() => {
+    dismissRef.current = onDismiss;
+  }, [onDismiss]);
+  const first = write.saved[0];
+  const forgotten = write.forgotten?.[0];
+  const sentence = first ? `Memory updated: ${noticeSummary(first.content)}` : forgotten ? `Forgotten: ${noticeSummary(forgotten)}` : "Memory updated";
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => setText(sentence));
+    const stay = window.setTimeout(() => dismissRef.current(), MEMORY_NOTICE_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(stay);
+    };
+  }, [sentence]);
+  return (
+    <p role="status" aria-live="polite" className="sr-only" data-memory-announcement="">
+      {text}
+    </p>
   );
 }
