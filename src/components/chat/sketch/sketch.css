@@ -65,7 +65,6 @@
   inset: 0;
   z-index: var(--z-modal);
   background: rgb(14 15 17 / 0.32);
-  backdrop-filter: blur(6px);
 }
 .dark .sketch-overlay {
   background: rgb(0 0 0 / 0.55);

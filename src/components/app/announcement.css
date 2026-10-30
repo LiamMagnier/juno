@@ -90,10 +90,8 @@
   height: 32px;
   border-radius: 999px;
   border: 1px solid hsl(var(--border) / .6);
-  background: hsl(var(--popover) / .82);
+  background: hsl(var(--popover));
   color: var(--ann-ink);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
   cursor: pointer;
   opacity: .82;
   transition: opacity 160ms var(--ann-ease-out), transform 90ms var(--ann-ease-out), background-color 160ms var(--ann-ease-out);

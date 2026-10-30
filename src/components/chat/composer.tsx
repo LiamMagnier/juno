@@ -3104,7 +3104,7 @@ function ComposerImpl({
               {modeControl}
               {steerMode && steering?.above}
               {dragging && !privateMode && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm animate-fade-in">
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-card bg-[linear-gradient(hsl(var(--primary)/0.1),hsl(var(--primary)/0.1))] animate-fade-in">
                   <ComposerIcons.files aria-hidden="true" className="size-6 text-primary" />
                   <span className="font-mono text-label text-primary">
                     Drop to attach
