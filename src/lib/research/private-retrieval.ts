@@ -21,6 +21,7 @@ import { retrieveAttachmentKnowledge, retrieveKnowledge, retrieveProjectKnowledg
 import { getMemoryProfile, loadBackgroundProviderPolicy } from "@/lib/memory";
 import { getActiveConnectors, openMcpToolset } from "@/lib/mcp";
 import { getConnector, isConnectorConfigured } from "@/lib/connectors";
+import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 import {
   type PrivateRetrievalPorts,
   type PrivatePassage,
@@ -128,10 +129,21 @@ export function productionPrivatePorts(): PrivateRetrievalPorts {
       const found = await retrieveKnowledge({ userId, query, policy: await loadBackgroundProviderPolicy(userId), signal, limit: 8 });
       return toPassages(found.passages);
     },
-    async memory({ userId, query }) {
+    async memory({ userId, conversationId, query }) {
       const settings = await prisma.settings.findUnique({ where: { userId }, select: { memoryEnabled: true } });
       if (settings && !settings.memoryEnabled) return [];
-      const profile = await getMemoryProfile(userId, { query, budgetTokens: 1_200 });
+      // The scope the chat itself reads (getMemoryProfile's isolation): a run
+      // in a project chat reads that project's memory, never the account's
+      // personal facts, and none at all where the project turned recall off.
+      const conversation = conversationId
+        ? await prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true } })
+        : null;
+      const projectId = conversation?.projectId ?? null;
+      if (projectId) {
+        const workspace = await prisma.projectWorkspace.findFirst({ where: { projectId, userId }, select: { config: true } });
+        if (!workspacePermits(parseWorkspaceConfig(workspace?.config), "memoryRecall")) return [];
+      }
+      const profile = await getMemoryProfile(userId, { projectId, query, budgetTokens: 1_200 });
       return profile.recent;
     },
     async openConnector({ userId, runId, conversationId, connectorId, timeZone }) {

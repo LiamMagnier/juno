@@ -52,8 +52,11 @@ export interface PrivateRetrievalPorts {
   project?(input: { userId: string; conversationId: string; query: string; signal?: AbortSignal }): Promise<PrivatePassage[]>;
   /** Every indexed file the person owns. */
   library?(input: { userId: string; query: string; signal?: AbortSignal }): Promise<PrivatePassage[]>;
-  /** Saved memories relevant to the query. */
-  memory?(input: { userId: string; query: string }): Promise<string[]>;
+  /**
+   * Saved memories relevant to the query, as the conversation's own chat would
+   * read them: a project chat's run reads that project's memory, not the account's.
+   */
+  memory?(input: { userId: string; conversationId: string | null; query: string }): Promise<string[]>;
   /**
    * A connector session: whether a tool is a read, and the call itself. Opened
    * once per search and always closed. Null when the connector is not usable
@@ -280,7 +283,7 @@ export async function searchPrivateSourcesWith(
         }
         case "memory": {
           if (!ports.memory) break;
-          const facts = [...new Set(await ports.memory({ userId: input.userId, query: questions.join("\n") }))].slice(0, 12);
+          const facts = [...new Set(await ports.memory({ userId: input.userId, conversationId: input.conversationId, query: questions.join("\n") }))].slice(0, 12);
           if (facts.length === 0) break;
           hits.push({
             url: privateSourceUrl({ kind: "memory", id: "saved" }),
