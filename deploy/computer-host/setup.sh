@@ -128,9 +128,12 @@ print_nginx() {
   local listen
   if [ -n "$LISTEN" ]; then
     listen="    listen $LISTEN ssl;"
-  else
+  elif [ "$(family_of "$WEB_IP")" = ip6 ]; then
+    # IPv6 only when the web VM comes over it: a host without IPv6 cannot bind [::].
     listen="    listen 443 ssl;
     listen [::]:443 ssl;"
+  else
+    listen="    listen 443 ssl;"
   fi
   python3 - "$HERE/nginx.conf.template" "$listen" "$DOMAIN" "$CERT" "$KEY" "$ACCESS_LOG" "$ERROR_LOG" \
     "127.0.0.1:$API_PORT" "127.0.0.1:$TUNNEL_PORT" <<'PY'

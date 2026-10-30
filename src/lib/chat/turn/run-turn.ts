@@ -9,7 +9,7 @@ import { classifyProviderError } from "@/lib/provider-error";
 import { noteLiveProviderFault } from "@/lib/provider-health";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
 import { providerErrorRecovery } from "./failure-recovery";
-import { countingStream, planPreStreamRetry, retryActivityRows, waitBeforeRetry } from "./pre-stream-retry";
+import { countingStream, planPreStreamRetry, preStreamRetrySpendRef, retryActivityRows, waitBeforeRetry } from "./pre-stream-retry";
 import { resolveFastMode } from "@/lib/pricing";
 import { supportsProMode } from "@/lib/model-metrics";
 import { providerAdapterFor } from "@/lib/provider-routing";
@@ -306,7 +306,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
    * hold is settled by `recordSpend` below, which is the one place every
    * streaming path passes through.
    */
-  await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan, period, budget: effective });
+  const initialHold = await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan, period, budget: effective });
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
     userId: user.id,
@@ -391,6 +391,11 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
      * when nothing was recorded.
      */
     let activeSpendRef = generationId;
+    /**
+     * Whether `activeSpendRef` names a hold this turn took. A refused hold
+     * took no headroom, so there is nothing to release before attempt 2.
+     */
+    let activeHoldTaken = initialHold.allowed && initialHold.reservationId !== null;
     /** 1 once the turn asked again before its first byte (the outcome row's `retryCount`). */
     let retriesMade = 0;
     /** The outcome row's model fields, when the retry moved the turn to another model. */
@@ -685,6 +690,20 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
      * called for the provider stream, never for a research notice or the
      * smoke provider.
      */
+    /** A Stop, a drain, the stall watchdog, the budget guard or a lost lease ended the turn. */
+    const turnEnded = () =>
+      generationController.signal.aborted ||
+      wasGenerationStopped(generationId) ||
+      wasGenerationAbortedForShutdown(generationId) ||
+      stallWatchdog.stalled ||
+      budgetHalted ||
+      receipt.leaseLost;
+    /**
+     * Read after every await of the retry: an ending that lands meanwhile ends
+     * the turn before anything is moved, re-held or announced. The catch
+     * below reads which ending it was from its own flags.
+     */
+    const endedWhileRetrying = () => new DOMException("The turn ended while preparing to retry", "AbortError");
     const retryBeforeFirstByte = async (err: unknown, attempt: number, received: number): Promise<boolean> => {
       const failed = modelInfo;
       const verdict = planPreStreamRetry({
@@ -699,13 +718,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             (acc.tokens.promptTokens ?? 0) > 0 ||
             (acc.tokens.completionTokens ?? 0) > 0,
         },
-        cancelled:
-          generationController.signal.aborted ||
-          wasGenerationStopped(generationId) ||
-          wasGenerationAbortedForShutdown(generationId) ||
-          stallWatchdog.stalled ||
-          budgetHalted ||
-          receipt.leaseLost,
+        cancelled: turnEnded(),
         auto: !!autoRetry,
         // Gemini's adapter already retried its own transient faults
         // (gemini-network.ts); asking it a third time is not "one retry".
@@ -728,22 +741,48 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           : null;
       const step = next ? verdict.nextModel : verdict.sameModel;
       if (!step) return false;
+      /*
+       * The first rejection is evidence however the turn ends: provider
+       * health (an account fault takes the lab down at once) and Auto's
+       * retry pressure read it, exactly as the catch below would have. Fed
+       * once the retry is going ahead, or just before an ending replaces the
+       * provider's error with a Stop; a `return false` leaves it to the catch.
+       */
+      const noteFirstRejection = () => {
+        if (verdict.class === "rate_limit") recordProviderRateLimit(failed.provider);
+        noteLiveProviderFault(failed.provider, err, "chat", { requester: user.id, modelId: failed.id });
+      };
+      if (turnEnded()) {
+        noteFirstRejection();
+        throw endedWhileRetrying();
+      }
       // Attempt 1 received nothing, so it spent nothing: its hold goes, and
-      // attempt 2 holds its own. A refused hold (the account is at its
-      // ceiling) means no retry; the turn fails as it would have.
-      await releaseSpend(user.id, activeSpendRef).catch(() => false);
-      const retryRef = `${generationId}:attempt-2`;
+      // attempt 2 holds its own. A release that did not happen (the database
+      // refused) means no retry: two holds must never be open at once, and
+      // the `finally` releases the one still active. A refused hold for
+      // attempt 2 (the account is at its ceiling) means no retry either; the
+      // turn fails as it would have.
+      if (activeHoldTaken) {
+        const released = await releaseSpend(user.id, activeSpendRef).catch(() => false);
+        if (!released) {
+          console.warn("[chat] not retried: the first attempt's spend hold could not be released", { generationId, conversationId });
+          return false;
+        }
+        activeHoldTaken = false;
+      }
+      const retryRef = preStreamRetrySpendRef(generationId);
       const hold = await reserveSpend({ userId: user.id, kind: "chat", ref: retryRef, plan, period, budget: effective }).catch(() => null);
       if (!hold?.allowed) {
         console.warn("[chat] not retried: the second attempt's spend hold was refused", { generationId, conversationId });
         return false;
       }
       activeSpendRef = retryRef;
-      // The first rejection is evidence however the turn ends: provider
-      // health (an account fault takes the lab down at once) and Auto's
-      // retry pressure read it, exactly as the catch below would have.
-      if (verdict.class === "rate_limit") recordProviderRateLimit(failed.provider);
-      noteLiveProviderFault(failed.provider, err, "chat", { requester: user.id, modelId: failed.id });
+      activeHoldTaken = true;
+      noteFirstRejection();
+      // Nothing about the turn has changed yet: an ending that arrived during
+      // the release or the hold ends it here, and the `finally` releases
+      // attempt 2's hold.
+      if (turnEnded()) throw endedWhileRetrying();
       if (next) {
         modelInfo = next.model;
         modelId = next.model.id;
@@ -773,7 +812,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       // and then gives attempt 2 a whole startup window.
       stallWatchdog.pause();
       await waitBeforeRetry(step.delayMs, generationController.signal);
-      if (generationController.signal.aborted) {
+      if (turnEnded()) {
         // A Stop, a drain or a lost lease while waiting: the catch below
         // reads which from its own flags.
         throw new DOMException("The turn ended while waiting to retry", "AbortError");

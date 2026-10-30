@@ -113,16 +113,21 @@ export function buildAgentPromptBlock(ctx: AgentPromptContext, userName?: string
   }
 
   // Every step ran but nothing showed the goal met: the agent must not say it
-  // is met when asked, and can say what the check found missing.
+  // is met when asked, and can say what the check found missing. What the
+  // check said was written by a model reading the runs' results (which can
+  // carry a web page's words), so it is fenced like recent work, as data.
   const unchecked = ctx.goals.filter((goal) => goal.status === GOAL_UNVERIFIED).slice(0, AGENT_PROMPT_GOALS);
   if (unchecked.length > 0) {
+    const checks = unchecked
+      .filter((goal) => goal.nextAction?.trim())
+      .map((goal) => `- ${line(goal.title)}: ${line(goal.nextAction!).slice(0, 240)}`)
+      .join("\n");
     parts.push(
       [
         "## Goals waiting for the person to check",
         "Every step of these ran, but a check of their success criteria did not show them met, or could not be made. Never say one is met: the person marks it met on your profile, or asks you to keep working on it.",
-        ...unchecked.map((goal) =>
-          goal.nextAction?.trim() ? `- ${line(goal.title)} (${line(goal.nextAction).slice(0, 240)})` : `- ${line(goal.title)}`
-        ),
+        ...unchecked.map((goal) => `- ${line(goal.title)}`),
+        ...(checks ? [wrapUntrusted("goal_checks", `<untrusted source="goal_checks">\n${checks}\n</untrusted>`)] : []),
       ].join("\n")
     );
   }

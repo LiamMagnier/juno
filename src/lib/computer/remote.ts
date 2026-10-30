@@ -178,7 +178,12 @@ export class RemoteComputerProvider implements ComputerProvider {
           bytes,
           code,
           json<T>() {
-            return JSON.parse(bytes.toString("utf8")) as T;
+            try {
+              return JSON.parse(bytes.toString("utf8")) as T;
+            } catch {
+              // Something that is not the host answered (a proxy's error page).
+              throw new ComputerError(COMPUTER_UNREACHABLE, `computer host ${method} answered ${res.status} with no JSON`);
+            }
           },
         };
       } catch (error) {

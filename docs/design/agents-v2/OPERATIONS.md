@@ -7,10 +7,13 @@ computers (`juno-computer:1` Docker containers, image label `juno.security=pipe-
 `AGENT_COMPUTER_PROVIDER`) is empty by default, which means no computer can be created,
 woken, viewed or used, and no run gets computer tools. Nothing in this guide has been
 run on the production VM; every statement about a real host below was checked on a
-disposable Linux machine (`tests/test_computer_boundary.py`), not in production. The
-plan that changes this is `COMPUTERS_2026-10.md`; until its remote computer host (S3)
-lands, the only provider is same-host Docker, which must not run on the web VM next to
-the database URL and provider keys (`COMPUTERS_2026-10.md` fact 19).
+disposable Linux machine (`tests/test_computer_boundary.py`, and for the computer host
+`deploy/computer-host/local/run-local.sh` against real containers), not in production.
+There are two providers. **Same-host Docker** (`docker`, §1) is for development and a
+single-box install; it must not run on the web VM next to the database URL and provider
+keys (`COMPUTERS_2026-10.md` fact 19). **A separate computer host** (`remote`, §8) is the
+production path: computers run on a Linux machine of their own, which holds none of the
+web VM's secrets. Who may use a computer once either is on is §9.
 
 ---
 
@@ -54,7 +57,7 @@ App side, read from `~/juno/.env` through `src/lib/env.ts` (defaults as the code
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COMPUTER_PROVIDER` / `AGENT_COMPUTER_PROVIDER` | empty (off) | `docker`; `fake` only when `NODE_ENV !== "production"` |
+| `COMPUTER_PROVIDER` / `AGENT_COMPUTER_PROVIDER` | empty (off) | `docker` (same host), `remote` (a computer host, §8); `fake` only when `NODE_ENV !== "production"` |
 | `COMPUTER_DOCKER_IMAGE` / `AGENT_COMPUTER_IMAGE` | `juno-computer:1` | The tag `setup-vm.sh` builds |
 | `AGENT_COMPUTER_NETWORK` / `COMPUTER_DOCKER_NETWORK` | `juno-computers` | The bridge network (`172.30.0.0/24`) |
 | `COMPUTER_MAX_RUNNING_PER_USER` | `2` | Awake computers per account (also `AGENT_COMPUTER_MAX_AWAKE_USER`) |
@@ -185,6 +188,10 @@ To disable every agent computer at once without redeploying:
    computers are switched back on, a computer whose container was removed is recreated
    on its volumes at its next wake, with its files and sign-ins. Remove the volumes too
    only on the owner's decision: that deletes every person's files and sign-ins.
+3. **On a computer host** (§8) the command in step 2 is the same, run as root on the
+   host; to also stop new tunnels and API calls at once, stop the service there:
+   `sudo systemctl stop juno-computer-host` (open tunnels end with it). Step 1 on the
+   web VM is still what keeps computers off after a restart.
 
 ---
 
@@ -277,3 +284,111 @@ agent process were killed during a take over (by the OOM killer, say), a stopped
 process in an orphaned group could resume. Its old display connection is cut, but it
 could open a new one. A watchdog that re-stops the agent's processes while the marker
 exists, or the cgroup freezer on a cgroup of the agent's own, would close it.
+
+---
+
+## 8. A separate computer host (`COMPUTER_PROVIDER=remote`)
+
+The production path (`COMPUTERS_2026-10.md` S3, decision 5). The web VM runs no desktop:
+every computer operation is one request to the host's narrow API
+(`deploy/computer-host/juno-computer-host.py`), and the live view and the agent's
+browser reach a computer only through the host's WebSocket tunnels. The owner guide,
+with sizing and every command, is `deploy/computer-host/README.md`. In short:
+
+1. **Provision** a dedicated Linux AMD64 machine (same region as the web VM; about 16 GB
+   for 6 awake computers) and, as root there, from a checkout of this repository:
+   ```bash
+   sudo bash deploy/computer-host/setup.sh --web-ip <web VM address> --domain <host name> \
+        --ssh-from <admin CIDR> [--namespace prod] [--max-running 6] [--tls private|certbot|own]
+   ```
+   It runs the shared steps of `setup-vm.sh --computer-host` (network, egress proxy and
+   its log and budget, firewall, image, sandbox decision; no sudoers rule), installs the
+   socket-activated root broker (`/run/juno-computer-host/broker.sock`, the only thing
+   that talks to Docker; its argv policy is `docker-broker.py`'s, in host mode), the
+   service (`juno-computer-host.service`: `NoNewPrivileges`, `ProtectSystem=strict`, no
+   capabilities, `MemoryMax=512M`), TLS, nginx on 443 and the nftables table
+   `inet juno_computer_host` (443 from `--web-ip` only, SSH from `--ssh-from`, the
+   computers' way to the egress proxy, everything else dropped), and the first token,
+   written once to a root-only file under `/root` whose path it prints.
+2. **On the web VM**, set and reload: `COMPUTER_PROVIDER=remote`,
+   `COMPUTER_HOST_URL=https://<host name>`, `COMPUTER_HOST_TOKEN=<the token>`,
+   `NODE_EXTRA_CA_CERTS=<a file holding the CA certificate setup.sh printed>` (only with
+   the default private TLS), and for the relay `RELAY_COMPUTER_HOSTS=https://<host name>`.
+   `NODE_EXTRA_CA_CERTS` is read only when a process starts, so it must reach the
+   process environment of the app, the Work runner and the relay:
+   `deploy/ecosystem.config.js` passes it from the release `.env`, and the processes must
+   be restarted (a reload of the env file alone is not enough). Keep
+   `AGENT_COMPUTER_ROLLOUT=allowlist` (§9).
+3. **Check** from the web VM: `curl -fsS -H "Authorization: Bearer $COMPUTER_HOST_TOKEN"
+   https://<host name>/v1/health`. It reports the image (id, label, build time, age in
+   days), how many computers run, the certificate's expiry and the source address it saw
+   for the web VM; if that differs from `--web-ip` (Azure may SNAT), re-run setup with it.
+
+What the host enforces, whatever the web VM sends:
+
+- **Tokens** (D17): a bearer token in the generator's format (64 hex, or 43+
+  base64url), hashed and compared with every stored hash; at most two per environment
+  namespace; `SIGHUP` (`systemctl reload juno-computer-host`) re-reads them. The log
+  names the token id, never the token. Rotate: `setup.sh --add-token --namespace prod`,
+  set the new token on the web VM and restart the app, runner and relay when
+  convenient, then `setup.sh --retire-token <old id>`.
+- **Namespaces**: every container and volume carries `juno.ns=<namespace>`; listings,
+  destroy, state, tickets and tunnels see only the token's namespace. One host per
+  environment (a staging database restored from production shares agent ids and would
+  meet name conflicts, never another environment's computer).
+- **No user ids**: the owner label on the host is `u_` + 32 hex of sha256(user id).
+- **Tunnels**: a single-use ticket (60 s, one container, one port, 16 outstanding per
+  computer at most) in `X-Juno-Tunnel-Ticket`; port 9222 (the CDP gate, with the
+  caller's gate token forwarded) or 5900 (x11vnc) only; the container's address must be
+  on the computers network. VNC tunnels end after 2 hours.
+- **Missing vs failing**: only Docker's "No such container" is a 404; every other
+  failure is a 502, so the app never mistakes an outage for a deleted computer.
+- **Logs** (`journalctl -u juno-computer-host`): operation, computer, token id, status
+  and duration per request; never a path, query, command, file content, token,
+  password or ticket. nginx logs no path either, and its error log is at `crit`.
+- **No app secrets**: the service refuses to start with `DATABASE_URL`, `AUTH_SECRET`
+  or any `*_API_KEY` in its environment.
+
+**Losing the host.** The sweep records the last time it reached each awake computer
+(`lastContactAt`). When the host stops answering, an awake computer's time is metered
+only up to that contact, nothing accrues during the outage, and `host_unreachable` is
+audited once; nothing is recreated, marked missing or reaped. Tool calls return "{product}
+could not reach the agent's computer right now." and the panel says "Computers on this
+server can't be reached right now." At the first answer afterwards metering resumes and
+`host_reachable` is audited with the outage's minutes.
+
+**Maintenance on the host:** `--renew-tls` (a month before the expiry health reports;
+with private TLS it makes a new CA, which the web VM's trust file holds beside the old
+one until every process restarted), `--rebuild-image` (`docker build --pull --no-cache`,
+the label checked, unused computer images pruned; containers made from the old image
+are recreated on their volumes at their next wake), `--rebuild-timer on|off` (weekly,
+off by default). The egress log is `/var/log/juno-computers-egress/egress.jsonl`, as on
+a single box (§4).
+
+---
+
+## 9. Rollout, caps and the weekly allowance
+
+Setting a provider exposes nobody (`COMPUTERS_2026-10.md` S1; `src/lib/computer/access.ts`).
+Every path checks, on the server, in this order: a provider is configured; the rollout
+(`AGENT_COMPUTER_ROLLOUT`: `allowlist`, the default, `plans` or `off`; anything else is
+`off`); under `allowlist`, the account is in `AGENT_COMPUTER_ALLOWLIST` (user ids, or
+emails that match only a verified email; empty: nobody); the plan includes computers
+(Pro and up, `PLAN_AGENT_COMPUTER` in `src/lib/plans.ts`); and the provider answers
+(`unavailable` otherwise, cached 30 s). Free and Lite are told which plan includes them.
+
+| Gate | Where |
+|---|---|
+| Enable (the account's computers, `AGENT_COMPUTER_MAX_ENABLED_<PLAN>`) | `enableComputer`, one transaction under an advisory lock |
+| Wake, run start, view and take over, the chat tools, the run's own start | access, then the weekly allowance, then (at a price above 0) the spend windows |
+| Lease renewal (40 s) and the sweep (60 s) | the same; a refusal puts the computer to sleep |
+| Delete, sleep, hand back, the poster | never gated: they reduce use or return control |
+
+The weekly allowance (`AGENT_COMPUTER_WEEKLY_MINUTES_<PLAN>`, Monday 00:00 UTC) is
+metered whatever the price (`AgentComputerUsageInterval`), and is soft by at most (awake
+computers) × 40 s. Each agent's policy (`Agent.computerPolicy`: `off`, `ask`, the
+default, or `allowed`) decides whether its runs may start its computer, and whether the
+first start asks the person ("Start {name}'s computer"). The numbers and their defaults
+are in `docs/OPEN_DECISIONS.md` §10, owner to confirm. Every change of state (enabled,
+woke, slept, take over, refused, host outages, image age, the sandbox state) is a row in
+`AgentComputerAudit`: identifiers and verdicts only.

@@ -325,11 +325,52 @@ and needs a notice to users first.
 and a run it drives says "Development run: a scripted test model drove this
 task. No AI model was called."
 
+**Egress, on whichever machine runs the computers** (stage S2; written into
+the proxy's unit by `deploy/agent-computers/setup-vm.sh`, and by
+`deploy/computer-host/setup.sh` through it): **`JUNO_EGRESS_MAX_MB_PER_HOUR`,
+default 1024** (per computer, both directions, rolling hour; over it new
+connections get 403 and open tunnels close) and **`JUNO_EGRESS_LOG_DAYS`,
+default 14** (days of `/var/log/juno-computers-egress/egress.jsonl` kept; it
+names the hosts each computer reached, so it is personal data about what an
+agent did). Whether computers may reach any public host on 80 and 443 (today)
+or an allowlist is the owner's.
+
+**The computer host** (stage S3, `deploy/computer-host/`; nothing runs until the
+owner provisions a machine, runs its `setup.sh` and sets
+`COMPUTER_PROVIDER=remote` on the web VM):
+
+- **Computers running at once per host: 6** (`setup.sh --max-running`, the
+  host's `maxRunning`). By arithmetic, not measurement: 2 GB and 2 CPUs per
+  awake computer, plus 2 GB for the system and a 1 GB free-memory floor, so 6
+  need about 16 GB. Start and unpause are refused past it, and also below 1 GB
+  of free memory or 10 GB of free disk on the Docker root (`minFreeMemMb`,
+  `minFreeDiskMb` in `/etc/juno/computer-host.json`).
+- **`COMPUTER_HOST_TIMEOUT_MS`, default 30000** on the web VM: how long one
+  request to the host may take (a command adds its own limit of up to 300 s).
+- **Tunnel tickets**: single use, **60 s**, at most **16** outstanding per
+  computer (`ticketTtlSeconds`, `maxTicketsPerComputer`).
+- **Tokens**: at most two per environment namespace at once, rotated with
+  `setup.sh --add-token` then `--retire-token`, without a restart. How often to
+  rotate, and who holds them, is the owner's. One host per environment.
+- **TLS**: default a private CA that can sign only the host's name, its key
+  destroyed after signing, the certificate valid **397 days** (renew a month
+  ahead with `--renew-tls`); Let's Encrypt with port 80 open only during
+  renewals, or the owner's own certificate, are the alternatives.
+- **`AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX`, default 0.** 1 refuses to wake a
+  computer whose Chromium runs without its own sandbox ("This server requires
+  the browser's own sandbox, and this computer can't use it."). On Ubuntu
+  24.04, whose AppArmor restricts unprivileged user namespaces, the sandbox
+  reports off unless the owner relaxes that on the host.
+- **Image freshness**: the weekly rebuild timer is **off** (`setup.sh
+  --rebuild-timer on` installs it; it pulls Debian packages on the host). A
+  stale image is audited once a day and at every wake; nothing is refused.
+- **Losing the host**: an awake computer's time is metered only up to the last
+  time the host answered, and resumes at the next answer; nothing is recreated
+  or deleted during the outage.
+
 **Planned numbers that later stages add** (named here so the list is whole;
 none of them is in the code yet, and each stage that builds one updates this
-section): the per-computer egress budget `JUNO_EGRESS_MAX_MB_PER_HOUR` (1024)
-and the egress log's `JUNO_EGRESS_LOG_DAYS` (14) on the host; the host's
-`maxRunning` (6); the inbox upload cap `AGENT_COMPUTER_UPLOAD_MAX_MB` (25); the
+section): the inbox upload cap `AGENT_COMPUTER_UPLOAD_MAX_MB` (25); the
 streamed shell output kept per call `AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL` (512).
 
 **Still the owner's** (the plan's section 8): the computer host and its size,
@@ -372,20 +413,30 @@ its test.
 
 ## 12. Retry before the first byte: one switch and one number — **owner to confirm**
 
-A saved chat turn whose provider rejects the first request before anything
-arrives (an HTTP status, or a connection refused, reset or unresolvable, with
-zero events and zero usage received) now asks once more
-(`src/lib/chat/turn/pre-stream-retry.ts`, wired in `run-turn.ts`). An
+A saved chat turn whose provider rejects the first request before answering
+it now asks once more (`src/lib/chat/turn/pre-stream-retry.ts`, wired in
+`run-turn.ts`). "Rejects" is narrow: the error must come from opening the
+turn's first request, before the response headers arrived (an HTTP error
+status instead of a stream, or a connection refused, reset or unresolvable),
+and the adapter must have passed nothing on. A stream the provider had already
+accepted is never asked again, even when it breaks before the adapter passes
+anything on: its opening events can carry usage the provider bills (Anthropic's
+`message_start`). Timeouts are never retried. An
 explicit choice is asked again on the same model, and only for a rate limit,
 a server error or a failed connection. Auto moves to the decision's next
 ranked healthy candidate, which clears the same plan, capability and data-use
 terms, also after an account fault or a model the lab no longer serves. Never
-after a single event or token, never for a safety refusal, an oversize prompt
-or a malformed request, never after a Stop, a drain, the watchdog or the
-budget guard, and never twice. Attempt 1's spend hold is released and attempt
-2 takes its own (`<generationId>:attempt-2`). If that hold is refused, there
-is no retry. The reader sees a "Retrying…" row. Both settings are in env,
-with defaults and clamps:
+after a single event or token, never for a safety refusal (read from the
+wording, whatever the status, so a 403 refusal is not moved to another lab),
+an oversize prompt or a malformed request, never after a Stop, a drain, the
+watchdog or the budget guard, and never twice. An adapter that already sent
+the request a second time itself (Gemini's own retries, Anthropic's fast-mode
+fallback) has used that model's second ask, so only Auto may still move on.
+Attempt 1's spend hold is released and attempt 2 takes its own
+(`<generationId>:attempt-2`; the abandoned-receipt sweep releases both). If
+attempt 1's hold cannot be released, or attempt 2's is refused, there is no
+retry. The reader sees a "Retrying…" row. Both settings are in env, with
+defaults and clamps:
 
 - **`CHAT_PRESTREAM_RETRY`, default on.** `off` (or `0`, `false`, `no`) turns
   the retry off everywhere. The turn then fails on the first rejection, as
@@ -403,9 +454,9 @@ Also for the owner:
 - **Cost.** A retried turn makes one more provider request. It is billed to
   the reader only for what that request serves: attempt 1 received nothing,
   so nothing was recorded for it. A provider *may* still bill the platform
-  for a request whose connection was reset after it was sent. That is the one
-  case the zero-events rule cannot see, and it is why timeouts are never
-  retried.
+  for a request whose connection was reset after it was sent but before the
+  response headers came back. That is the one case the rule cannot see, and
+  it is why timeouts (the likelier shape of it) are never retried.
 - **Auto may answer on a different lab after an account fault.** This is
   the in-turn failover the discovery asked for (gap 1e). The receipt says
   "Auto's first choice couldn't be reached, so the next best model answered".

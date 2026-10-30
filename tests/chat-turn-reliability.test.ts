@@ -74,8 +74,13 @@ test("every terminal path releases the spend hold or settles it", () => {
   // The turn's own finally releases whichever hold is still open: the
   // generation's, or attempt 2's after a retry before the first byte.
   assert.match(run, /if \(!spendRecorded\) \{\s*await releaseSpend\(user\.id, activeSpendRef\)\.catch\(\(\) => \{\}\);/);
-  // That retry releases attempt 1's hold before taking attempt 2's own.
-  assert.match(run, /await releaseSpend\(user\.id, activeSpendRef\)[\s\S]{0,200}?reserveSpend\(\{[^}]*ref: retryRef/);
+  // That retry releases attempt 1's hold before taking attempt 2's own, and
+  // does not retry at all when that release did not happen: two holds are
+  // never open at once.
+  assert.match(
+    run,
+    /const released = await releaseSpend\(user\.id, activeSpendRef\)[\s\S]{0,40}?if \(!released\) \{[\s\S]{0,200}?return false;[\s\S]{0,300}?reserveSpend\(\{[^}]*ref: retryRef/,
+  );
   // And every charge the turn records settles the hold that is open.
   assert.equal(run.split("recordTurnSpend({").length - 1, 3);
   assert.equal(run.split("reservationRef: activeSpendRef,").length - 1, 3);

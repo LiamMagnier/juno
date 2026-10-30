@@ -1,4 +1,11 @@
-import { classifyProviderError, isModelCallError, retryAfterFrom, type ProviderErrorClass } from "@/lib/provider-error";
+import {
+  classifyProviderError,
+  isModelCallError,
+  isSafetyRefusal,
+  requestRejection,
+  retryAfterFrom,
+  type ProviderErrorClass,
+} from "@/lib/provider-error";
 import type { ClientActivityEvent } from "@/types/chat";
 
 /*
@@ -14,19 +21,30 @@ import type { ClientActivityEvent } from "@/types/chat";
  * This module decides the one case where a turn may ask again, and run-turn
  * performs it:
  *
- *  - The provider REJECTED the request: an HTTP status error, or a connection
- *    that failed (refused, reset, unresolvable), thrown by the model call
- *    itself (`isModelCallError`). A timeout is not a rejection — the request
- *    may be running at the provider — and neither is an error event inside an
- *    accepted stream, which carries no status.
+ *  - The provider REJECTED the request: the adapter's await on opening its
+ *    FIRST request threw (`requestRejection`, marked in anthropic.ts,
+ *    openai-responses.ts, openai-compat.ts and gemini.ts). That await settles
+ *    when the response headers arrive, so what it throws is an HTTP status the
+ *    provider answered instead of a stream, or a connection that failed
+ *    (refused, reset, unresolvable) before any response. Anything raised while
+ *    reading an accepted stream is never a rejection, whatever it looks like:
+ *    a socket dropped after the provider's 200 (undici's "terminated") or an
+ *    SSE error event. The provider had accepted the request and started work
+ *    (and billing), and its opening events — Anthropic's `message_start`
+ *    usage, the Responses `response.created` — stay inside the adapter, so an
+ *    empty stream alone cannot tell the two apart. A timeout is not a
+ *    rejection either: the request may be running at the provider.
  *  - BEFORE ANYTHING WAS RECEIVED: the attempt's stream yielded no event at
  *    all — no text, no reasoning, no tool call, no usage — and the
  *    accumulator holds nothing. One event of any kind and the turn never
  *    retries: that is the no-double-billing, no-duplicated-text rule, and it
- *    is checked on what was received, not on what the error says.
+ *    is checked on what was received as well as on where the error came from.
  *  - Not ended by the reader or the platform: a Stop, a drain, the stall
  *    watchdog, the budget guard or a lost lease is never retried.
- *  - Once. The second attempt's failure is the turn's failure.
+ *  - Once. The second attempt's failure is the turn's failure. An adapter that
+ *    already re-sent the request itself (Gemini's own retries, Anthropic's
+ *    fast-mode fallback) has used the same model's second ask; only Auto may
+ *    still move on to another model.
  *
  * Where the retry goes is the routing contract:
  *  - An EXPLICIT choice retries the same model, and only for a fault a moment
@@ -42,7 +60,10 @@ import type { ClientActivityEvent } from "@/types/chat";
  *    its own pick for a transient fault, like an explicit choice.
  *  - Never for a safety refusal, an oversize prompt, a malformed request or an
  *    unclassified error: another model answering a prompt the first one
- *    refused is model-shopping, and the rest would fail again.
+ *    refused is model-shopping, and the rest would fail again. A safety
+ *    refusal is read from the wording whatever the status, so a lab that
+ *    sends it as a 403 (which the classifier calls `auth`) is not shopped
+ *    either (`isSafetyRefusal`).
  *
  * Pure apart from the timer in `waitBeforeRetry`; no `server-only`, so it is
  * unit tested directly (tests/chat-pre-stream-retry.test.ts).
@@ -102,8 +123,12 @@ const NEXT_MODEL_CLASSES: ReadonlySet<ProviderErrorClass> = new Set([
 
 /**
  * Socket-level failures that mean the request never got an answer from the
- * provider's server: refused, reset, unresolvable, unreachable. Timeouts are
- * deliberately absent (see `connectionFailure`).
+ * provider's server: refused, reset, unresolvable, unreachable. Read only on
+ * an error the adapter threw while opening the request (`requestRejection`),
+ * so `UND_ERR_SOCKET` here is a socket closed before the response headers,
+ * never one closed mid-body. Timeouts are deliberately absent (see
+ * `connectionFailure`), except a CONNECT timeout: no connection was made, so
+ * no request was sent.
  */
 const CONNECTION_CODES: ReadonlySet<string> = new Set([
   "ECONNREFUSED",
@@ -128,27 +153,54 @@ function messageOf(err: unknown): string {
 }
 
 /**
+ * The error and every `cause` under it (bounded, cycle-safe): the SDKs wrap
+ * fetch's TypeError, which wraps undici's own error, so the socket's code can
+ * sit two levels down.
+ */
+function causeChain(err: unknown): unknown[] {
+  const chain: unknown[] = [];
+  let link: unknown = err;
+  while (link && typeof link === "object" && chain.length < 8 && !chain.includes(link)) {
+    chain.push(link);
+    link = (link as { cause?: unknown }).cause;
+  }
+  return chain;
+}
+
+/** A timeout code, other than the connect timeout (no connection, so no request). */
+function isTimeoutCode(code: string): boolean {
+  return code !== "UND_ERR_CONNECT_TIMEOUT" && /TIMEOUT|TIMEDOUT/i.test(code);
+}
+
+/**
  * True when the request failed to connect rather than being answered.
  *
  * Both SDKs throw `APIConnectionError` with the message "Connection error."
  * when `fetch` itself fails (the class name is not used: server bundles may
- * minify it), and undici reports the socket's own code on the error or its
- * `cause`. An abort is never a connection failure — it is a Stop, a drain or
- * the watchdog, all decided elsewhere — and neither is a timeout: "Request
- * timed out." and the undici header/body timeouts mean the provider may have
- * received the request and be working on it, which is the billing risk this
- * whole module exists to avoid. A connect timeout (`UND_ERR_CONNECT_TIMEOUT`)
- * is different: no connection, no request.
+ * minify it), and undici reports the socket's own code somewhere down the
+ * `cause` chain. The whole chain is read, and any abort or timeout in it
+ * refuses: an abort is a Stop, a drain or the watchdog, all decided
+ * elsewhere, and a timeout ("Request timed out.", undici's header and body
+ * timeouts, `ETIMEDOUT`) means the provider may have received the request and
+ * be working on it, which is the billing risk this whole module exists to
+ * avoid. A connect timeout (`UND_ERR_CONNECT_TIMEOUT`) is different: no
+ * connection, no request. Nothing else counts: a status-less error whose
+ * words merely mention the network is not a failed connection.
  */
-function connectionFailure(err: unknown, klass: ProviderErrorClass): boolean {
-  const name = (err as { name?: unknown } | null | undefined)?.name;
-  const message = messageOf(err);
-  if (name === "AbortError" || /abort/i.test(message)) return false;
-  const code = codeOf(err) ?? codeOf((err as { cause?: unknown } | null | undefined)?.cause);
-  if (code && CONNECTION_CODES.has(code)) return true;
-  if (/timed?\s?out|timeout|etimedout/i.test(message) || (code && /TIMEOUT|ETIMEDOUT/.test(code))) return false;
-  if (message === "Connection error.") return true;
-  return klass === "network";
+function connectionFailure(err: unknown): boolean {
+  const chain = causeChain(err);
+  // Its own wording ("Connect Timeout Error") is explained by the code.
+  const connectTimeout = chain.some((link) => codeOf(link) === "UND_ERR_CONNECT_TIMEOUT");
+  for (const link of chain) {
+    const name = (link as { name?: unknown }).name;
+    const message = messageOf(link);
+    const code = codeOf(link);
+    if (name === "AbortError" || /abort/i.test(message)) return false;
+    if (code && isTimeoutCode(code)) return false;
+    if (!connectTimeout && /timed?\s?out|timeout/i.test(message)) return false;
+  }
+  if (chain.some((link) => CONNECTION_CODES.has(codeOf(link) ?? ""))) return true;
+  return messageOf(err) === "Connection error.";
 }
 
 /** A header value from either SDK shape: a `Headers` object or a plain record. */
@@ -205,7 +257,11 @@ export type PreStreamRetryRefusal =
   | "output_received"
   /** The error did not come out of the model call (a tool, a research leg, our own code). */
   | "not_model_call"
-  /** Not a rejection of the request (no HTTP status, not a failed connection). */
+  /**
+   * Not a rejection of the request: not thrown while opening the first
+   * request (a stream the provider had accepted failed), or neither an HTTP
+   * status nor a failed connection (a timeout, an abort).
+   */
   | "not_rejection"
   /** A class another attempt cannot fix, or that this turn may not move for. */
   | "class"
@@ -264,17 +320,27 @@ export function planPreStreamRetry(input: {
   if (!isModelCallError(input.err)) return refuse("not_model_call");
 
   const { class: klass, status } = classifyProviderError(input.err);
+  // Thrown while the adapter opened its first request, or not at all: a
+  // stream the provider accepted is never asked again, however it failed.
+  const rejection = requestRejection(input.err);
+  if (!rejection) return refuse("not_rejection", klass);
+  // A safety refusal, whatever status carried it (xAI-style 403s read as
+  // `auth`): never retried, and never moved to another lab under Auto.
+  if (isSafetyRefusal(input.err)) return refuse("class", "content_filter");
   const httpRejection = typeof status === "number" && status >= 400;
-  if (!httpRejection && !connectionFailure(input.err, klass)) return refuse("not_rejection", klass);
+  if (!httpRejection && !connectionFailure(input.err)) return refuse("not_rejection", klass);
   // A failed connection with no recognisable wording still counts as one.
   const effective: ProviderErrorClass = httpRejection ? klass : "network";
+  // The adapter already sent this request twice (Gemini's own retries,
+  // Anthropic's fast-mode fallback): the same model's second ask is used.
+  const adapterRetried = input.adapterRetries === true || rejection.adapterRetried;
 
   const retryAfterMs = retryAfterMsOf(input.err, input.now);
   const jittered = (base: number) => Math.round(base * (0.5 + random()));
 
   let sameModel: PreStreamRetryPlan["sameModel"] = null;
   let tooLong = false;
-  if (SAME_MODEL_CLASSES.has(effective) && !input.adapterRetries) {
+  if (SAME_MODEL_CLASSES.has(effective) && !adapterRetried) {
     if (retryAfterMs !== null && retryAfterMs > tunables.maxWaitMs) {
       tooLong = true;
     } else {
@@ -291,6 +357,16 @@ export function planPreStreamRetry(input: {
 
   if (!sameModel && !nextModel) return refuse(tooLong ? "wait_too_long" : "class", effective);
   return { retry: true, class: effective, status, retryAfterMs, sameModel, nextModel };
+}
+
+/**
+ * The spend hold attempt 2 takes (`reserveSpend` ref). Attempt 1's is the
+ * generation's own id. The abandoned-receipt sweep releases both
+ * (chat-first-submission-receipt.ts), so a process that dies during a retried
+ * turn leaves neither open.
+ */
+export function preStreamRetrySpendRef(generationId: string): string {
+  return `${generationId}:attempt-2`;
 }
 
 /**

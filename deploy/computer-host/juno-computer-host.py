@@ -1465,7 +1465,24 @@ def tunnel_server(host, loop_ready=None):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
+# What the web VM holds and a computer host must never (decision 5): it would
+# put the database URL, the app's signing secret or a provider key one process
+# away from model-driven desktops. The host refuses to start with any of them.
+APP_SECRET_NAMES = ("DATABASE_URL", "DIRECT_URL", "AUTH_SECRET", "NEXTAUTH_SECRET", "COMPUTER_HOST_TOKEN",
+                    "CODE_INTERPRETER_TOKEN", "STRIPE_SECRET_KEY", "RESEND_API_KEY")
+
+
+def app_secrets_in(environment):
+    """The names of app secrets present in an environment (never their values)."""
+    return sorted(name for name, value in environment.items()
+                  if value and (name in APP_SECRET_NAMES or name.endswith("_API_KEY")))
+
+
 def serve(config_path):
+    leaked = app_secrets_in(os.environ)
+    if leaked:
+        raise SystemExit("juno-computer-host: refusing to start with app secrets in its environment (%s): "
+                         "a computer host holds none of the web VM's secrets" % ", ".join(leaked))
     config = load_config(config_path)
     try:
         tokens = Tokens(config["tokensFile"])

@@ -1,0 +1,32 @@
+{
+  "_comment": "Path rules an agent computer's files follow, the same for the Docker provider (src/lib/computer/docker.ts, errors.ts) and the computer host (deploy/computer-host/juno-computer-host.py). `writes`: raw paths as a caller sends them (relative ones are under /home/agent/work), resolved with realpath -m and then checked. `resolved`: already-resolved paths and the two rules.",
+  "writes": [
+    {"path": "/home/agent/work/notes.txt", "allowed": true},
+    {"path": "notes.txt", "allowed": true},
+    {"path": "work/x.txt", "allowed": true},
+    {"path": "/home/agent/work/sub/dir/a.bin", "allowed": true},
+    {"path": "/home/agent/work/inbox/report 2026.pdf", "allowed": true},
+    {"path": "/home/agent/.bashrc", "allowed": false},
+    {"path": "/home/agent/.profile", "allowed": false},
+    {"path": "/home/agent/work/.config/autostart/x.desktop", "allowed": false},
+    {"path": "/home/agent/work/.hidden", "allowed": false},
+    {"path": "/home/agent/work/../.profile", "allowed": false},
+    {"path": "../.bashrc", "allowed": false},
+    {"path": "/home/agent/work", "allowed": false},
+    {"path": "/home/agent/notes.txt", "allowed": false},
+    {"path": "/etc/passwd", "allowed": false},
+    {"path": "/home/browser/.chrome/Default/Cookies", "allowed": false},
+    {"path": "/home/agent/work/a\nb.txt", "allowed": false}
+  ],
+  "resolved": [
+    {"path": "/home/agent", "safe": true, "workArea": false},
+    {"path": "/home/agent/work/a.txt", "safe": true, "workArea": true},
+    {"path": "/home/agent/.ssh/id_rsa", "safe": true, "workArea": false},
+    {"path": "/home/agent/work/.git/config", "safe": true, "workArea": false},
+    {"path": "/home/agent/work//a.txt", "safe": false, "workArea": false},
+    {"path": "/home/agent/work/../a.txt", "safe": false, "workArea": false},
+    {"path": "/home/agentx/a.txt", "safe": false, "workArea": false},
+    {"path": "home/agent/a.txt", "safe": false, "workArea": false},
+    {"path": "/tmp/a.txt", "safe": false, "workArea": false}
+  ]
+}

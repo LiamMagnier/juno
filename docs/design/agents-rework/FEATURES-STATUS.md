@@ -276,17 +276,50 @@ Done:
   (the Settings model picker, with thinking effort), both through the same
   agent patch and plan check as the thread's setup changes.
 
+Second pass (2026-10-30, same branch, not deployed):
+- The chat's `create_agent` on a plan without agents answers with the plan's
+  sentence before any approval card, so nobody approves a routine or an app
+  for a hire the plan then refuses (`hiringRefusal`, handed in by the chat
+  turn from `agentHiringGate`; `createAgentForUser` still refuses either way).
+- An agent's chat knows its `unverified` goals apart from its active ones
+  ("Goals waiting for the person to check", with the gap the check named),
+  and is told never to call one met (`src/lib/agents/prompt.ts`).
+- An `unverified` goal counts as open against the 20-goal cap until the
+  person marks it met or keeps it going.
+- The OpenAPI contract documents the hire's `402 plan_locked`, the note
+  route's `{ "action": "keep" }` and its `422 note_secret`
+  (`JunoNativeContract.swift` digest regenerated). The native profile says
+  "Every step ran. Check the result." under an unverified goal, as the web
+  does (Swift, uncompiled here).
+- The wiring is now exercised, not only read: `tests/orbit-truth-runner.integration.test.ts`
+  drives the real cloud executor (`scripts/work-runner.ts`) against a local
+  stand-in for the model API. An agent's run is offered `remember` and a plain
+  run is not; the note waits for review, encrypted; a secret is refused even
+  under "Everything"; the last milestone's run asks the criteria check with
+  the run's own model and records MET or NOT MET; the driver then makes the
+  goal `achieved` or `unverified`. It also calls the routes: hire on Free is
+  402 and makes nothing, `unverified` cannot be set by hand, *Mark it met*,
+  *Keep working* (a follow-up milestone dispatched as a real task) and *Keep*.
+  Both O2 integration suites run in deploy.yml's isolated-database loop.
+
 Tests: `tests/orbit-truth.test.ts`, `tests/orbit-truth.integration.test.ts`,
+`tests/orbit-truth-runner.integration.test.ts`,
 `runner/agent-core/src/test/work-judge.test.ts` (criteria cases) and
 `work-agent-note-tool.test.ts`; `tests/orbit-goals.integration.test.ts` now
 expects `unverified` when no check ran.
 
 Not done or not verified:
 - No real model has run the criteria check or `remember` (no provider keys
-  here; the tests use fakes). How often a real model calls `remember`, and how
-  well a real model's MET/NOT MET matches a person's judgement, is unmeasured.
+  here; the tests use a stand-in that answers MET or NOT MET by a marker). How
+  often a real model calls `remember`, and how well a real model's MET/NOT MET
+  matches a person's judgement, is unmeasured.
 - Native: the Swift edits are uncompiled here, and the native profile has no
   *Keep* / *Forget* for pending notes (they never reach native's `notes`) and
   no *Mark it met* / *Keep working* beyond the existing tap to mark achieved.
+- The profile was looked at as a static render of the real API's answer with
+  the app's CSS (the shared dev server restarted every few minutes under load,
+  so the live chat page did not load for a screenshot); the controls'
+  interaction (pressing a segment, picking a model) was not clicked through in
+  a browser here.
 - A Mac run has no `remember` and no criteria check; a goal whose last step ran
   on a Mac ends `unverified` by design.

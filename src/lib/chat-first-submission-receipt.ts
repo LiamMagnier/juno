@@ -9,6 +9,7 @@ import {
   type ReceiptSweepResult,
 } from "@/lib/chat/receipt-sweep";
 import { PROCESS_LOST_FAILURE_CODE } from "@/lib/chat/terminal-state";
+import { preStreamRetrySpendRef } from "@/lib/chat/turn/pre-stream-retry";
 import { releaseSpend } from "@/lib/spend";
 import { getUserPlan, refundMessage } from "@/lib/usage";
 
@@ -93,7 +94,13 @@ export async function sweepAbandonedFirstSubmissionReceipts(
     refundMessage: async (userId) => {
       await refundMessage(userId, await getUserPlan(userId));
     },
-    releaseReservation: (userId, generationId) => releaseSpend(userId, generationId),
+    // A turn that retried before its first byte holds attempt 2 under its own
+    // ref (pre-stream-retry.ts): a process lost mid-retry leaves that one open.
+    releaseReservation: async (userId, generationId) => {
+      const own = await releaseSpend(userId, generationId);
+      const retry = await releaseSpend(userId, preStreamRetrySpendRef(generationId));
+      return own || retry;
+    },
   };
   return sweepAbandonedReceipts(port, {
     limit: options.limit,

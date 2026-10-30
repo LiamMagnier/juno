@@ -55,6 +55,12 @@ const RELAY_ENV_ALLOWLIST = [
 ];
 
 const rootEnv = loadEnv(path.join(__dirname, "..", ".env"));
+// A separate computer host's private, name-constrained CA (COMPUTERS_2026-10.md
+// D18, deploy/computer-host/README.md). Node reads NODE_EXTRA_CA_CERTS only when
+// a process starts, so the release .env alone never reaches it: the app, the
+// Work runner and the relay get it here. Unset (the default): nothing changes.
+const computerHostCaEnv = rootEnv.NODE_EXTRA_CA_CERTS ? { NODE_EXTRA_CA_CERTS: rootEnv.NODE_EXTRA_CA_CERTS } : {};
+
 const relayEnv = {};
 for (const [key, value] of Object.entries(rootEnv)) {
   // RELAY_* are the relay's own model/feature overrides.
@@ -193,6 +199,7 @@ module.exports = {
       env: {
         ...releaseEnv,
         ...pooledDatabaseEnv("juno-backend"),
+        ...computerHostCaEnv,
         PORT: 3000,
         NODE_ENV: "production",
         // Higher default HTTP header limit (16kb) and heap for big chat bodies.
@@ -235,6 +242,7 @@ module.exports = {
       env: {
         ...releaseEnv,
         ...pooledDatabaseEnv("juno-work"),
+        ...computerHostCaEnv,
         NODE_ENV: "production",
       },
       error_file: "logs/work-err.log",
@@ -290,6 +298,7 @@ module.exports = {
         // those callbacks are silently skipped (relay/src/session.ts).
         JUNO_APP_URL: rootEnv.JUNO_APP_URL || "http://127.0.0.1:3000",
         ...relayEnv,
+        ...computerHostCaEnv,
       },
       error_file: path.join(__dirname, "..", "logs", "relay-err.log"),
       out_file: path.join(__dirname, "..", "logs", "relay-out.log"),

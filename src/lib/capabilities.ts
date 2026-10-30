@@ -486,7 +486,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       evidence: [],
       blockers: [
         "Real workflow, deployment and cross-platform acceptance are pending.",
-        "`remember` has run only against a fake model (tests/orbit-truth.integration.test.ts); a Mac run has no such tool.",
+        "`remember` has run only against a stand-in model API (tests/orbit-truth-runner.integration.test.ts drives the real cloud executor); a Mac run has no such tool.",
       ],
     },
   },
@@ -538,7 +538,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       evidence: [],
       blockers: [
         "The goal sweep runs in the agent reflector process; its deployed schedule and a real multi-day goal have not been observed.",
-        "The success-criteria check has run only against a fake judge (tests/orbit-truth.integration.test.ts); no real model has judged a goal.",
+        "The success-criteria check has run only against a stand-in model API through the real cloud executor (tests/orbit-truth-runner.integration.test.ts); no real model has judged a goal.",
         "Real workflow, deployment and cross-platform acceptance are pending.",
       ],
     },

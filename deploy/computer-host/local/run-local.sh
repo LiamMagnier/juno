@@ -103,7 +103,7 @@ cat > "$DATA/config.json" <<JSON
  "minFreeMemMb": ${COMPUTER_MIN_FREE_MEMORY_MB:-512}, "minFreeDiskMb": ${COMPUTER_MIN_FREE_DISK_MB:-2048},
  "maxRunning": ${JUNO_COMPUTER_HOST_MAX_RUNNING:-2}, "apiPort": $API_PORT, "tunnelPort": $TUNNEL_PORT,
  "tokensFile": "$DATA/tokens.json", "brokerPolicy": "$DATA/broker-policy.json", "dockerRoot": "/",
- "developerBroker": {"policy": "$DATA/broker-policy.json", "egressMap": "$EGRESS_MAP"},
+ "developerBroker": {"policy": "$DATA/broker-policy.json", "egressMap": "$EGRESS_MAP", "docker": "$(command -v docker)"},
  "tlsCertificate": $TLS_CERT}
 JSON
 
@@ -122,4 +122,7 @@ if [ "$NGINX" = 1 ]; then
   echo "run-local: nginx (TLS) on https://localhost:$TLS_PORT, CA $DATA/tls/ca.pem" >&2
 fi
 echo "run-local: host on http://127.0.0.1:$API_PORT (tunnels :$TUNNEL_PORT), token in $DATA/token, namespace dev" >&2
-"$PYTHON" -I "$HOST_DIR/juno-computer-host.py" --config "$DATA/config.json"
+# A clean environment: nothing of the developer's shell (an .env with the
+# database URL or provider keys) reaches the host, which refuses to start with
+# any app secret anyway.
+env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$HOME" LANG=C.UTF-8 "$PYTHON" -I "$HOST_DIR/juno-computer-host.py" --config "$DATA/config.json"

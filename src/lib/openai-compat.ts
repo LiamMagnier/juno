@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { markRequestRejected } from "@/lib/provider-error";
 import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import {
   compatPromptCacheRequestFields,
@@ -575,6 +576,8 @@ export async function* streamOpenAICompat(
       stream = await c.create(params, { signal, headers: requestHeaders });
     } catch (err) {
       metered?.end(null, { ok: false });
+      // The first request was refused before any stream (pre-stream-retry.ts).
+      if (round === 0) markRequestRejected(err);
       throw err;
     }
 

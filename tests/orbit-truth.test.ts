@@ -424,7 +424,12 @@ test("an unverified goal reaches the agent's chat apart, so it never calls one m
   });
   assert.match(block, /## Goals you are working towards\n- Weekly digest/);
   assert.doesNotMatch(block.split("## Goals waiting for the person to check")[0]!, /October post/, "not listed as a goal it is working towards");
-  assert.match(block, /## Goals waiting for the person to check\n[^\n]*Never say one is met[^\n]*\n- October post \(Every step ran\. Check the result\. A check against its criteria found a gap: Nothing shows it is live\.\)/);
+  assert.match(block, /## Goals waiting for the person to check\n[^\n]*Never say one is met[^\n]*\n- October post\n/);
+  // What the check said was written by a model reading the runs: fenced as data, like recent work.
+  const fenced = block.split("## Goals waiting for the person to check")[1]!;
+  assert.match(fenced, /<untrusted source="goal_checks">\n- October post: Every step ran\. Check the result\. A check against its criteria found a gap: Nothing shows it is live\.\n<\/untrusted>/);
+  const { wrapUntrusted } = await import("@/lib/untrusted-content");
+  assert.ok(fenced.includes(wrapUntrusted("goal_checks", "x").split("\n")[0]!), "inside the shared untrusted envelope");
   // No unverified goal, no such section: every other agent's prompt is unchanged.
   assert.doesNotMatch(buildAgentPromptBlock({ ...base, goals: [{ title: "Weekly digest", status: "active", lastCheckInNote: null }] }), /waiting for the person to check/);
   // The chat context reads them; an unverified goal still counts as open against the goal cap.

@@ -117,6 +117,14 @@ if (!url) {
       const gap = await finishedGoal("Q3 reconciliation", { verdict: "not_met", why: "Nothing shows the report reached finance." });
       const unchecked = await finishedGoal("Q4 reconciliation", null);
 
+      // The agent's own chat reads them apart, never as goals it is working towards, and the check's words fenced as data.
+      const { agentChatContext } = await import("../src/lib/agents/store");
+      const context = await agentChatContext({ id: owner }, agentId, { taskHandoff: false });
+      const [working = "", waiting = ""] = String(context?.block).split("## Goals waiting for the person to check");
+      assert.doesNotMatch(working, /Q3 reconciliation|Q4 reconciliation/);
+      assert.match(waiting, /- Q3 reconciliation\n- Q4 reconciliation\n/);
+      assert.match(waiting, /<untrusted source="goal_checks">\n- Q3 reconciliation: Every step ran\. Check the result\./);
+
       // `unverified` is the driver's word only: a person (or a native client) cannot set it.
       const setByHand = await json(await goalRoute.PATCH(request("PATCH", { status: "unverified" }), params({ id: agentId, goalId: unchecked.id })));
       assert.equal(setByHand.status, 400);

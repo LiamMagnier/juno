@@ -65,7 +65,7 @@ const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "[::1]", "localhost"]);
  * A host origin the relay may open tunnels to: an exact origin, https, or
  * http to a loopback address outside production. Null otherwise.
  */
-export function normalizeComputerHost(raw: string, nodeEnv = process.env.NODE_ENV ?? "development"): string | null {
+export function normalizeComputerHost(raw: string, nodeEnv: string = process.env.NODE_ENV ?? "development"): string | null {
   let url: URL;
   try {
     url = new URL(raw.trim());

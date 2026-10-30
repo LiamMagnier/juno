@@ -1,6 +1,8 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { PrismaClient } from "@prisma/client";
 import type { ModelInfo } from "@/lib/models";
 
@@ -69,6 +71,18 @@ if (!DB_URL) {
    */
   let unmarkedErrors = false;
   const logLines: string[] = [];
+  /**
+   * The one case that runs the REAL `streamChat`, adapter and SDK against a
+   * local server standing in for the provider: the tripwire lets requests to
+   * this origin (127.0.0.1 only) through, and nothing else.
+   */
+  const realFetch = globalThis.fetch;
+  let localProviderOrigin: string | null = null;
+  let realStreamChat: typeof import("@/lib/llm").streamChat | null = null;
+  /** Runs once, inside the next platform-budget read (Auto's retry picker reads it). */
+  let onPlatformBudgetRead: (() => Promise<void>) | null = null;
+  /** The next release of this hold ref answers false, as `releaseSpend` does when the database refuses. */
+  let failReleaseOnce: string | null = null;
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -85,10 +99,16 @@ if (!DB_URL) {
   /** The model and the attempt a scripted call was made for (streamChat's own options). */
   const modelOf = (opts: unknown) => String((opts as { model?: { id?: string } }).model?.id);
   const attemptOf = (opts: unknown) => (opts as { attempt?: number }).attempt ?? 1;
-  /** A provider that rejects the request before streaming anything. */
+  /**
+   * A provider that rejects the request before streaming anything: thrown
+   * where the real adapters open their first request, and marked there the
+   * same way (provider-error.ts, `markRequestRejected`).
+   */
   const rejects = (message: string, extra: Record<string, unknown>) =>
     (async function* (): AsyncGenerator<Record<string, unknown>> {
-      throw Object.assign(new Error(message), extra);
+      const error = Object.assign(new Error(message), extra);
+      (await import("@/lib/provider-error")).markRequestRejected(error);
+      throw error;
     })();
 
   test("stand in for the session, the model and after()", async () => {
@@ -97,8 +117,9 @@ if (!DB_URL) {
     // bound itself set their own.
     process.env.CHAT_PRESTREAM_RETRY_MAX_WAIT_MS = "40";
     delete process.env.CHAT_PRESTREAM_RETRY;
-    globalThis.fetch = async (input: string | URL | Request) => {
+    globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
+      if (localProviderOrigin && url.startsWith(`${localProviderOrigin}/`)) return realFetch(input, init);
       outbound.push(url);
       throw new Error(`unexpected network call to ${url}`);
     };
@@ -116,7 +137,28 @@ if (!DB_URL) {
     });
     const budget = await import("@/lib/platform-budget");
     mock.module("@/lib/platform-budget", {
-      namedExports: { ...budget, isPlatformBudgetExceeded: async () => forcedPlatformBudget || await budget.isPlatformBudgetExceeded() },
+      namedExports: {
+        ...budget,
+        isPlatformBudgetExceeded: async () => {
+          const hook = onPlatformBudgetRead;
+          onPlatformBudgetRead = null;
+          if (hook) await hook();
+          return forcedPlatformBudget || await budget.isPlatformBudgetExceeded();
+        },
+      },
+    });
+    const spend = await import("@/lib/spend");
+    mock.module("@/lib/spend", {
+      namedExports: {
+        ...spend,
+        releaseSpend: async (userId: string, ref: string) => {
+          if (failReleaseOnce === ref) {
+            failReleaseOnce = null;
+            return false;
+          }
+          return spend.releaseSpend(userId, ref);
+        },
+      },
     });
     const selection = await import("@/lib/model-selection");
     const { getModelMetrics } = await import("@/lib/model-metrics");
@@ -155,6 +197,7 @@ if (!DB_URL) {
       },
     });
     const llm = await import("@/lib/llm");
+    realStreamChat = llm.streamChat;
     const { markModelCallError } = await import("@/lib/provider-error");
     async function* asModelCall(stream: AsyncGenerator<Record<string, unknown>>) {
       try {
@@ -842,6 +885,59 @@ if (!DB_URL) {
     }
   });
 
+  test("a first hold that could not be released is never doubled: no second hold, no retry", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    try {
+      const user = await seedUser();
+      const generationId = `gen-${randomUUID()}`;
+      failReleaseOnce = generationId;
+      script = () => rejects("503 Service Unavailable", { status: 503 });
+      const calls = streamCalls;
+      const { frames } = await chat({ message: "Hello?", generationId });
+      assert.equal(failReleaseOnce, null, "the retry tried to release attempt 1's hold");
+      assert.equal(streamCalls - calls, 1, "and, refused, did not ask again");
+      assert.equal(retryRows(frames).length, 0);
+      assert.equal(frames.at(-1)?.type, "error");
+      const holds = await prisma.spendReservation.findMany({ where: { userId: user.id } });
+      assert.deepEqual(holds.map((hold) => [hold.ref, hold.state]), [[generationId, "released"]], "one hold, released by the turn's own teardown");
+    } finally {
+      failReleaseOnce = null;
+      health.__setProviderHealthForTests([]);
+    }
+  });
+
+  test("the abandoned-receipt sweep releases attempt 2's hold too: a process lost mid-retry leaves nothing open", async () => {
+    const user = await seedUser();
+    const { reserveSpend } = await import("@/lib/spend");
+    const { sweepAbandonedFirstSubmissionReceipts } = await import("@/lib/chat-first-submission-receipt");
+    const generationId = `gen-${randomUUID()}`;
+    await prisma.chatFirstSubmissionReceipt.create({
+      data: {
+        userId: user.id,
+        clientRequestId: `req-${randomUUID()}`,
+        clientMessageId: `msg-${randomUUID()}`,
+        requestHash: "sweep",
+        generationId,
+        state: "running",
+        conversationId: `conv-${randomUUID()}`,
+        userMessageId: `msg-${randomUUID()}`,
+        leaseExpiresAt: new Date(Date.now() - 60 * 60_000),
+      },
+    });
+    // The process died after the retry began: attempt 1's hold was released,
+    // attempt 2's is open.
+    const held = await reserveSpend({ userId: user.id, kind: "chat", ref: `${generationId}:attempt-2` });
+    assert.equal(held.allowed, true);
+    await sweepAbandonedFirstSubmissionReceipts();
+    assert.equal((await prisma.chatFirstSubmissionReceipt.findUnique({ where: { generationId } }))?.state, "failed");
+    assert.equal(
+      (await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: `${generationId}:attempt-2` } }))?.state,
+      "released",
+      "the sweep released the retry's hold, not only the generation's own",
+    );
+  });
+
   test("a provider that asks the same model to wait longer than the bound is not retried: the error card carries its wait", async () => {
     const health = await import("@/lib/provider-health");
     health.__setProviderHealthForTests([]);
@@ -959,6 +1055,249 @@ if (!DB_URL) {
       }
       assert.equal(outcome?.modelId, next.id, "Auto's evidence is about the model that answered");
       assert.equal(outcome?.retryCount, 1);
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+  });
+
+  test("through the real adapter and SDK: a stream the provider accepted and then dropped is asked exactly once; a 429 before any stream is asked again and answered", async () => {
+    const health = await import("@/lib/provider-health");
+    health.__setProviderHealthForTests([]);
+    // A local server stands in for Anthropic; the real streamChat, adapter and
+    // @anthropic-ai/sdk talk to it. The key is a placeholder.
+    const { getModel } = await import("@/lib/models");
+    const model = "anthropic:claude-sonnet-5-5";
+    const turnModel = getModel(model)!.providerModel;
+    const behaviours: Array<"accept-then-reset" | "429" | "answer"> = [];
+    /** The turn's own requests (its model); background utility calls are answered and not counted. */
+    const hits: string[] = [];
+    const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const server = http.createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        let requested: unknown = null;
+        try {
+          requested = (JSON.parse(raw) as { model?: unknown }).model;
+        } catch {
+          // Not JSON: not the turn's request.
+        }
+        const turnRequest = requested === turnModel;
+        if (turnRequest) hits.push(`${req.method} ${req.url}`);
+        const behaviour = turnRequest ? behaviours.shift() : "answer";
+        if (behaviour === "429") {
+          res.writeHead(429, { "content-type": "application/json", "retry-after": "0" });
+          res.end(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "Rate limited" } }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        // Accepted: the opening event already carries the prompt's billed input.
+        res.write(
+          sse("message_start", {
+            type: "message_start",
+            message: { id: "msg_local", type: "message", role: "assistant", model: "local", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 12345, output_tokens: 1 } },
+          }),
+        );
+        if (behaviour === "answer") {
+          res.end(
+            sse("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }) +
+              sse("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Answered through the real adapter." } }) +
+              sse("content_block_stop", { type: "content_block_stop", index: 0 }) +
+              sse("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 9 } }) +
+              sse("message_stop", { type: "message_stop" }),
+          );
+          return;
+        }
+        // The socket drops mid-body: undici's "terminated", nothing passed on.
+        setTimeout(() => req.socket.destroy(), 40);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const saved = { key: process.env.ANTHROPIC_API_KEY, base: process.env.ANTHROPIC_BASE_URL };
+    process.env.ANTHROPIC_API_KEY = "local-test-placeholder";
+    process.env.ANTHROPIC_BASE_URL = origin;
+    localProviderOrigin = origin;
+    try {
+      const user = await seedUser();
+      script = (opts) => realStreamChat!(opts as never) as unknown as AsyncGenerator<Record<string, unknown>>;
+
+      behaviours.push("accept-then-reset");
+      const calls = streamCalls;
+      const dropped = await chat({ message: "Hello?", model });
+      assert.equal(hits.length, 1, "exactly one provider request: the provider had accepted the first");
+      assert.equal(streamCalls - calls, 1);
+      assert.equal(retryRows(dropped.frames).length, 0, "no retry row");
+      assert.equal(dropped.frames.at(-1)?.type, "error", dropped.text.slice(-400));
+      assert.equal(await prisma.spendReservation.count({ where: { userId: user.id } }), 1, "no attempt-2 hold");
+
+      health.__setProviderHealthForTests([]);
+      hits.length = 0;
+      behaviours.push("429", "answer");
+      const { frames } = await chat({ message: "Hello again?", model });
+      const done = frames.at(-1) as Frame & { message: { content: string } };
+      assert.equal(done.type, "done", JSON.stringify(frames.slice(-3)));
+      assert.equal(hits.length, 2, "the rejected request, then the one retry");
+      assert.equal(done.message.content, "Answered through the real adapter.");
+      assert.equal(frames.filter((frame) => frame.type === "delta").map((frame) => frame.text).join(""), "Answered through the real adapter.");
+      assert.equal(retryRows(frames).length, 1);
+      const generationId = frames[0].generationId as string;
+      assert.equal((await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: generationId } }))?.state, "released");
+      assert.equal((await prisma.spendReservation.findFirst({ where: { userId: user.id, ref: `${generationId}:attempt-2` } }))?.state, "settled");
+      assert.equal(outbound.length, 0, "nothing left the process");
+    } finally {
+      localProviderOrigin = null;
+      if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = saved.key;
+      if (saved.base === undefined) delete process.env.ANTHROPIC_BASE_URL;
+      else process.env.ANTHROPIC_BASE_URL = saved.base;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      health.__setProviderHealthForTests([]);
+    }
+  });
+
+  test("Auto: a safety refusal sent as a 403 is final: one request, never moved to another lab", async () => {
+    const health = await import("@/lib/provider-health");
+    const { AUTO_MODEL_ID } = await import("@/lib/auto-model");
+    health.__setProviderHealthForTests([]);
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    try {
+      const user = await seedUser();
+      const asked: string[] = [];
+      script = (opts) => {
+        asked.push(modelOf(opts));
+        // The openai SDK's shape for xAI's `{ code, error }` body.
+        return rejects('403 "Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_BIO"', {
+          status: 403,
+          error: "Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_BIO",
+        });
+      };
+      const { frames } = await chat({ message: "Say hi.", model: AUTO_MODEL_ID });
+      assert.equal(asked.length, 1, "the refused prompt is not shopped to another lab");
+      assert.equal(retryRows(frames).length, 0);
+      assert.equal(frames.at(-1)?.type, "error");
+      assert.equal(await prisma.spendReservation.count({ where: { userId: user.id } }), 1, "no attempt-2 hold");
+    } finally {
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+  });
+
+  test("Auto: a Stop that lands while the retry is being prepared ends the turn before anything is moved, re-held or announced", async () => {
+    const health = await import("@/lib/provider-health");
+    const { AUTO_MODEL_ID } = await import("@/lib/auto-model");
+    const { recentTurnTraces } = await import("@/lib/chat/turn/trace-sink");
+    health.__setProviderHealthForTests([]);
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    try {
+      const user = await seedUser();
+      const generationId = `gen-${randomUUID()}`;
+      const asked: string[] = [];
+      script = (opts) => {
+        asked.push(modelOf(opts));
+        // The reader presses Stop while Auto's picker reads the platform budget.
+        onPlatformBudgetRead = async () => {
+          const { cancelGeneration } = await import("@/lib/generation-cancel");
+          cancelGeneration(generationId, user.id);
+        };
+        return rejects("402 Insufficient Balance", { status: 402, error: { message: "Insufficient Balance" } });
+      };
+      const started = new Date();
+      const { frames } = await chat({ message: "Say hi.", model: AUTO_MODEL_ID, generationId });
+      assert.equal(onPlatformBudgetRead, null, "the Stop landed inside the picker's await");
+      assert.equal(asked.length, 1, "attempt 2 was never sent");
+      const last = frames.at(-1) as Frame & { finishReason?: string };
+      assert.equal(last.type, "error");
+      assert.equal(last.finishReason, "user_stopped", "a Stop, not a provider failure");
+      const modelRows = frames
+        .filter((frame) => frame.type === "activity" && (frame.event as { kind: string }).kind === "model")
+        .map((frame) => (frame.event as { title: string }).title);
+      assert.deepEqual(modelRows, ["Selected model"], "no 'Retrying…' and no switch announced");
+      const holds = await prisma.spendReservation.findMany({ where: { userId: user.id } });
+      assert.deepEqual(holds.map((hold) => [hold.ref, hold.state]), [[generationId, "released"]], "attempt 2 was never held");
+      const trace = recentTurnTraces().find((entry) => entry.runId === generationId);
+      assert.equal(trace?.model, asked[0], "the trace names the model that was asked");
+      assert.equal(trace?.attempts, 1);
+      const { getModel } = await import("@/lib/models");
+      assert.equal(health.providerHealthy(getModel(asked[0])!.provider), false, "the first rejection still reached provider health");
+      await sleep(100);
+      const outcomes = await prisma.routingOutcome.findMany({ where: { createdAt: { gte: started } } });
+      for (const outcome of outcomes) {
+        assert.equal(outcome.modelId, asked[0], "the outcome row is about the model that was asked");
+        assert.equal(outcome.retryCount, 0);
+      }
+    } finally {
+      onPlatformBudgetRead = null;
+      health.__setProviderHealthForTests([]);
+      if (owners === undefined) delete process.env.OWNER_EMAILS;
+      else process.env.OWNER_EMAILS = owners;
+    }
+  });
+
+  test("Auto's retry stays inside the reader's Auto data boundary: with no other lab inside it healthy there is no retry, though labs outside it are", async () => {
+    const health = await import("@/lib/provider-health");
+    const { getModel, MODEL_LIST } = await import("@/lib/models");
+    const { AUTO_MODEL_ID } = await import("@/lib/auto-model");
+    const { autoDataUseVerdict } = await import("@/lib/router/data-policy");
+    const { autoPaidTierProviders } = await import("@/lib/router/chat-inputs");
+    health.__setProviderHealthForTests([]);
+    const owners = process.env.OWNER_EMAILS;
+    delete process.env.OWNER_EMAILS;
+    try {
+      const user = await seedUser();
+      const setBoundary = (autoDataBoundary: "eu_us_only" | "verified_no_training") =>
+        prisma.settings.upsert({ where: { userId: user.id }, create: { userId: user.id, autoDataBoundary }, update: { autoDataBoundary } });
+      const terms = { paidTier: autoPaidTierProviders(), boundary: "eu_us_only" as const };
+      const inside = (id: string) => autoDataUseVerdict(getModel(id)!, terms).eligible;
+      let asked: string[] = [];
+      script = (opts) => {
+        asked.push(modelOf(opts));
+        return rejects("402 Insufficient Balance", { status: 402, error: { message: "Insufficient Balance" } });
+      };
+
+      // Every lab healthy: the pick and the next choice are both inside the boundary.
+      await setBoundary("eu_us_only");
+      const open = await chat({ message: "Say hi.", model: AUTO_MODEL_ID });
+      assert.equal(open.frames.at(-1)?.type, "error");
+      assert.equal(asked.length, 2, `moved on once: ${asked.join(", ")}`);
+      for (const id of asked) assert.equal(inside(id), true, `${id} is inside the boundary`);
+      const firstLab = getModel(asked[0])!.provider;
+      assert.notEqual(getModel(asked[1])!.provider, firstLab);
+
+      // Every OTHER lab inside the boundary confirmed down; the labs outside
+      // it stay healthy. The pick's lab fails its account: nothing inside the
+      // boundary is left, so Auto does not retry.
+      const insideLabs = [
+        ...new Set(MODEL_LIST.filter((model) => model.modality === "chat" && !model.comingSoon && autoDataUseVerdict(model, terms).eligible).map((model) => model.provider)),
+      ];
+      const downElsewhere = () =>
+        health.__setProviderHealthForTests(
+          insideLabs
+            .filter((provider) => provider !== firstLab)
+            .map((provider) => ({ provider, healthy: false, checkedAt: Date.now(), failure: "billing", detail: "402", source: "probe", recheckAt: null })) as never,
+        );
+      downElsewhere();
+      asked = [];
+      const closed = await chat({ message: "Say hi.", model: AUTO_MODEL_ID });
+      assert.equal(closed.frames.at(-1)?.type, "error");
+      assert.equal(getModel(asked[0])!.provider, firstLab);
+      assert.equal(asked.length, 1, `no retry outside the boundary: ${asked.join(", ")}`);
+      assert.equal(retryRows(closed.frames).length, 0);
+
+      // Control, same health without that boundary: Auto moves on, and does
+      // so outside it. Only the boundary held the turn above.
+      await setBoundary("verified_no_training");
+      downElsewhere();
+      asked = [];
+      const control = await chat({ message: "Say hi.", model: AUTO_MODEL_ID });
+      assert.equal(control.frames.at(-1)?.type, "error");
+      assert.equal(asked.length, 2, `the control retries: ${asked.join(", ")}`);
+      assert.ok(asked.some((id) => !inside(id)), `the control reaches a lab outside eu_us_only: ${asked.join(", ")}`);
     } finally {
       health.__setProviderHealthForTests([]);
       if (owners === undefined) delete process.env.OWNER_EMAILS;

@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { markRequestRejected } from "@/lib/provider-error";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { hostedSearchAllowedAt, toolCapabilitiesFor } from "@/lib/model-tools";
 import {
@@ -550,6 +551,8 @@ export async function* streamOpenAIResponses(
       stream = await c.create(params, { signal });
     } catch (err) {
       endMetered(false);
+      // The first request was refused before any stream (pre-stream-retry.ts).
+      if (round === 0) markRequestRejected(err);
       throw err;
     }
 

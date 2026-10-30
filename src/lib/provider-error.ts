@@ -229,6 +229,60 @@ export function isModelCallError(err: unknown): boolean {
 }
 
 /**
+ * Marks an error thrown while OPENING a model call's first request: the await
+ * on the SDK's `create` (or Gemini's request), which settles when the response
+ * headers arrive. What it throws is an HTTP status the provider answered with
+ * instead of a stream, or a connection that never got a response. Nothing was
+ * streamed, so nothing was served.
+ *
+ * Errors raised while READING an accepted stream are never marked: a socket
+ * dropped after the provider's 200 (undici's "terminated"), an SSE error
+ * event. By then the provider had accepted the request and started work, and
+ * its opening events (Anthropic's `message_start` usage, the Responses
+ * `response.created`) stay inside the adapter, so "the adapter yielded
+ * nothing" cannot tell the two apart. The retry before the first byte
+ * (src/lib/chat/turn/pre-stream-retry.ts) asks for this mark.
+ *
+ * Only the first request of a call is marked: a later tool round follows a
+ * round the provider served. `adapterRetried` says the adapter itself already
+ * sent the request a second time (Anthropic's fast-mode fallback), so the
+ * same model is not asked a third time.
+ */
+const REQUEST_REJECTED = Symbol.for("juno.provider-error.request-rejected");
+
+export function markRequestRejected(err: unknown, options: { adapterRetried?: boolean } = {}): void {
+  if (!err || typeof err !== "object") return;
+  try {
+    Object.defineProperty(err, REQUEST_REJECTED, {
+      value: { adapterRetried: options.adapterRetried === true },
+      enumerable: false,
+      configurable: true,
+    });
+  } catch {
+    // Frozen or exotic: left unmarked, so it is never retried.
+  }
+}
+
+/** The mark `markRequestRejected` left, or null when the error came from anywhere else. */
+export function requestRejection(err: unknown): { adapterRetried: boolean } | null {
+  if (!err || typeof err !== "object") return null;
+  const mark = (err as Record<symbol, unknown>)[REQUEST_REJECTED];
+  return mark && typeof mark === "object" ? { adapterRetried: (mark as { adapterRetried?: unknown }).adapterRetried === true } : null;
+}
+
+/**
+ * True when the provider's words say a safety or content-policy check refused
+ * the request, whatever the status. `classifyProviderError` reads a 403 as
+ * `auth` before it reads the wording, which is right for the health probe and
+ * wrong for a decision to send the same prompt somewhere else: a lab that
+ * answers its safety refusal with a 403 must not have the prompt shopped to
+ * another lab.
+ */
+export function isSafetyRefusal(err: unknown): boolean {
+  return FILTER.test(extract(err).raw);
+}
+
+/**
  * The class an error frame carries (chat wire 1.1, `ChatErrorClass`): this
  * module's class, except that `auth` and `billing` are one, `account`. Both
  * are the platform's own provider account, and the sentence already hides

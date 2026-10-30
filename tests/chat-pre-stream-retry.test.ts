@@ -5,7 +5,7 @@ import { buildRun } from "@/components/chat/thought-process-model";
 import { createRequestMeter, type ProviderRequestRecord } from "@/lib/llm/request-meter";
 import { createPrefixTracker } from "@/lib/llm/prefix-diagnostic";
 import { getModel } from "@/lib/models";
-import { markModelCallError } from "@/lib/provider-error";
+import { markModelCallError, markRequestRejected, requestRejection } from "@/lib/provider-error";
 import {
   DEFAULT_PRE_STREAM_RETRY_TUNABLES,
   RETRYING_ACTIVITY_TITLE,
@@ -26,12 +26,25 @@ import type { ClientActivityEvent } from "@/types/chat";
  * with a scripted provider standing in for the model.
  *
  * The errors below are shaped like the SDKs' (status, headers, cause) and
- * marked the way `streamChat` marks what its adapters throw. Nothing is
- * called: there is no provider key on this machine and none is needed.
+ * marked the way the adapters and `streamChat` mark what they throw. Nothing
+ * is called here: there is no provider key on this machine and none is
+ * needed. The marks themselves are pinned against the real SDKs and a local
+ * server in tests/chat-pre-stream-retry-wire.test.ts.
  */
 
-/** An error the model call threw, as `streamChat` hands it on. */
+/**
+ * An error thrown while the adapter opened its first request (an HTTP status
+ * instead of a stream, or a connection that failed), as `streamChat` hands it on.
+ */
 function modelError(message: string, extra: Record<string, unknown> = {}): Error {
+  const err = Object.assign(new Error(message), extra);
+  markRequestRejected(err);
+  markModelCallError(err);
+  return err;
+}
+
+/** An error raised while reading a stream the provider had accepted. */
+function streamError(message: string, extra: Record<string, unknown> = {}): Error {
   const err = Object.assign(new Error(message), extra);
   markModelCallError(err);
   return err;
@@ -83,7 +96,8 @@ test("a connection that failed before any answer is a rejection too: reset, refu
   const cases: Error[] = [
     modelError("fetch failed", { cause: { code: "ECONNREFUSED" } }),
     modelError("socket hang up", { code: "ECONNRESET" }),
-    modelError("getaddrinfo ENOTFOUND api.example.invalid"),
+    // Undici's shape: the code rides the cause, not the words.
+    modelError("fetch failed", { cause: Object.assign(new Error("getaddrinfo ENOTFOUND api.example.invalid"), { code: "ENOTFOUND" }) }),
     modelError("Connection error.", { cause: { code: "UND_ERR_SOCKET" } }),
     modelError("Connection error."),
     modelError("connect timeout", { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } }),
@@ -93,6 +107,104 @@ test("a connection that failed before any answer is a rejection too: reset, refu
     assert.equal(verdict.retry, true, err.message);
     if (verdict.retry) assert.equal(verdict.class, "network", err.message);
   }
+});
+
+test("a stream the provider had accepted is never asked again, however it broke: only the request's own opening is a rejection", () => {
+  // Undici's mid-body failure after the provider's 200 and opening events
+  // (Anthropic's message_start, the Responses response.created), which the
+  // adapters keep to themselves: the stream yielded nothing, but the provider
+  // had started work and billing.
+  const terminated = Object.assign(new TypeError("terminated"), {
+    cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+  });
+  markModelCallError(terminated);
+  for (const err of [
+    terminated,
+    streamError("network error while generating"),
+    streamError("Connection error.", { cause: { code: "ECONNRESET" } }),
+    // An SSE error event the SDK raises with a status mid-stream.
+    streamError("503 overloaded_error", { status: 503 }),
+    streamError("429 rate_limit_error", { status: 429 }),
+  ]) {
+    for (const auto of [false, true]) {
+      const verdict = planPreStreamRetry({ err, attempt: 1, received: nothing, cancelled: false, auto, tunables, random: mid });
+      assert.equal(verdict.retry, false, `${err.message} (auto ${auto})`);
+      if (!verdict.retry) assert.equal(verdict.why, "not_rejection", err.message);
+    }
+  }
+  // Marked at the request's opening but with neither a status nor a socket
+  // code: wording that mentions the network is not a failed connection.
+  const worded = planPreStreamRetry({ err: modelError("network error while generating"), attempt: 1, received: nothing, cancelled: false, auto: false, tunables });
+  assert.equal(worded.retry, false);
+  if (!worded.retry) assert.equal(worded.why, "not_rejection");
+});
+
+test("a timeout anywhere down the cause chain is never a failed connection; a connect timeout (no request sent) is", () => {
+  // The SDKs wrap fetch's TypeError, which wraps undici's error: the code
+  // sits two levels down under "Connection error.".
+  const headersTimeout = modelError("Connection error.", {
+    cause: Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("Headers Timeout Error"), { code: "UND_ERR_HEADERS_TIMEOUT" }),
+    }),
+  });
+  const bodyTimeout = modelError("Connection error.", {
+    cause: Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("Body Timeout Error"), { code: "UND_ERR_BODY_TIMEOUT" }),
+    }),
+  });
+  for (const err of [headersTimeout, bodyTimeout]) {
+    const verdict = planPreStreamRetry({ err, attempt: 1, received: nothing, cancelled: false, auto: true, tunables });
+    assert.deepEqual(verdict, { retry: false, why: "not_rejection", class: "unknown" }, String((err.cause as Error).cause));
+  }
+  const connectTimeout = modelError("Connection error.", {
+    cause: Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("Connect Timeout Error (attempted address: api.example.invalid:443, timeout: 10000ms)"), {
+        code: "UND_ERR_CONNECT_TIMEOUT",
+      }),
+    }),
+  });
+  const verdict = planPreStreamRetry({ err: connectTimeout, attempt: 1, received: nothing, cancelled: false, auto: false, tunables, random: mid });
+  assert.ok(verdict.retry && verdict.class === "network" && verdict.sameModel);
+  // A cycle in the chain does not hang the check.
+  const looped = modelError("Connection error.");
+  Object.defineProperty(looped, "cause", { value: looped });
+  assert.equal(planPreStreamRetry({ err: looped, attempt: 1, received: nothing, cancelled: false, auto: false, tunables, random: mid }).retry, true);
+});
+
+test("a safety refusal sent as a 403 is final under Auto too: never moved to another lab", () => {
+  for (const err of [
+    modelError("Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_BIO", { status: 403 }),
+    // The openai SDK's shape for a body whose `error` is a bare string (xAI's
+    // `{ code, error }`): the string becomes `error` and, quoted, the message.
+    modelError('403 "Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_CSAM"', {
+      status: 403,
+      error: "Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_CSAM",
+    }),
+    modelError("Request blocked by content policy", { status: 403 }),
+  ]) {
+    for (const auto of [false, true]) {
+      const verdict = planPreStreamRetry({ err, attempt: 1, received: nothing, cancelled: false, auto, tunables, random: mid });
+      assert.deepEqual(verdict, { retry: false, why: "class", class: "content_filter" }, `${err.message} (auto ${auto})`);
+    }
+  }
+  // A bare 403 with no safety wording is still an account fault Auto may move on from.
+  const bare = planPreStreamRetry({ err: modelError("403 Forbidden", { status: 403 }), attempt: 1, received: nothing, cancelled: false, auto: true, tunables, random: mid });
+  assert.ok(bare.retry && bare.class === "auth" && bare.nextModel && !bare.sameModel);
+});
+
+test("an adapter that already sent the request twice (Anthropic's fast-mode fallback) has used the same model's second ask", () => {
+  const err = Object.assign(new Error("429 rate_limit_error"), { status: 429 });
+  markRequestRejected(err, { adapterRetried: true });
+  markModelCallError(err);
+  assert.deepEqual(requestRejection(err), { adapterRetried: true });
+  const explicit = planPreStreamRetry({ err, attempt: 1, received: nothing, cancelled: false, auto: false, tunables, random: mid });
+  assert.deepEqual(explicit, { retry: false, why: "class", class: "rate_limit" }, "a third request to the same model is not 'one retry'");
+  const auto = planPreStreamRetry({ err, attempt: 1, received: nothing, cancelled: false, auto: true, tunables, random: mid });
+  assert.ok(auto.retry && auto.sameModel === null && auto.nextModel, "Auto may still ask another model once");
+  // The marks are invisible to everything else that reads the error.
+  assert.deepEqual(Object.keys(err), ["status"]);
+  assert.equal(requestRejection(new Error("plain")), null);
+  assert.equal(requestRejection(null), null);
 });
 
 test("never after a single event, a token or a usage report: the no-double-billing rule comes before the error is read", () => {

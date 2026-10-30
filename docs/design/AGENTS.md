@@ -258,7 +258,9 @@ screen over the thread when it has one.
   `runner/agent-core/src/work/judge.ts`). A pass makes the goal `achieved`;
   a NOT MET, a check that could not run, or a last step that ran on a Mac
   (which has no such check) leaves it `unverified` for the person, who is
-  notified and marks it met or keeps it going. Nothing fails open.
+  notified and marks it met or keeps it going. Nothing fails open. The
+  agent's own chat lists such a goal apart, as waiting for the person to
+  check, and is told never to call it met.
 - **What an agent learns in a task can stay** (2026-10-28). A cloud task has
   `remember`, which saves one short note for the agent, at most three per run,
   encrypted like every note. Under the default memory grant the note waits on
@@ -290,7 +292,8 @@ cloud executor (`scripts/work-runner.ts`); a Mac run has neither.
   with agents (Pro and up, `PLANS[plan].agents`): on Free and Lite the server
   refuses `POST /api/agents` with `402 plan_locked` and creates nothing, and
   the page shows one upgrade card instead of the field. Agents kept from before
-  a downgrade stay listed and readable (`src/lib/agents/plan-gate.ts`).
+  a downgrade stay listed and readable (`src/lib/agents/plan-gate.ts`). In a
+  chat, `create_agent` gives the same sentence before any approval card.
 - **`/agents/[id]`** — server redirect to `/chat/<conversationId>?agent=<tab>`
   (`profile | computer`; the old `now`, `setup` and `goals` links open the
   profile).
