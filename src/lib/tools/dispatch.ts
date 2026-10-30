@@ -620,6 +620,9 @@ async function execute(
             round: call.round,
             signal: controller.signal,
             onApprovalRequest,
+            // run_code forwards its output through this (exec/contract.ts);
+            // the same rate limit and bounds as a toolset executor's.
+            reportProgress,
           } as ToolContext),
           controller.signal,
         );

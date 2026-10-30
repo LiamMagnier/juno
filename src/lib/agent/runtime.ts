@@ -16,6 +16,7 @@ import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { composeApprovalCallbacks } from "@/lib/tools/approval";
+import { internalToolErrorText } from "@/lib/tools/dispatch.prompt";
 import { mcpConnectTimeoutMs } from "@/lib/tools/connector-tools";
 import {
   portableSchemaProblem,
@@ -301,22 +302,33 @@ export class UnifiedAgentRegistry {
 
       return result;
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      
+      // Juno's own code threw: a bug or an infrastructure fault. Its message
+      // (a database error, an internal path) stays in the server log. The
+      // summary is the model's result text and the panel's, and the receipt's
+      // text is what a replay of this call hands the model, so both get a
+      // sentence instead, as `executeSpec` and the dispatcher do.
+      console.error("[agent] a registry tool threw", {
+        tool: tool.id,
+        callId,
+        error: err instanceof Error ? err.name : typeof err,
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      });
+      const text = internalToolErrorText(tool.riskClass !== "read_only");
+
       if (receiptId) {
         const { completeExternalAction } = await import("@/lib/action-approval-store");
         await completeExternalAction({
           userId: context.userId,
           receiptId,
           ok: false,
-          result: errorMsg,
+          result: "The tool failed with an internal error.",
         });
       }
 
       return {
         success: false,
-        error: errorMsg,
-        summary: `Execution of ${tool.name} failed: ${errorMsg}`,
+        error: text,
+        summary: text,
         durationMs: Date.now() - startTime,
       };
     }
