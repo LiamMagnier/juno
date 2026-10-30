@@ -115,16 +115,17 @@ export type PlusMenuSection = PlusMenuItem[];
 export const plusMenuRowClass = cn(menuRowClass, "min-h-9");
 
 /**
- * How a menu arrives (REFINEMENT_BRIEF: ~180ms, .97 → 1 from the trigger side,
- * on the homepage's ease). The shell's own `animate-pop-in` already anchors to
- * the trigger (`origin-popper`) and drifts toward it; this tightens it to the
- * brief's numbers at the call site. The scale is set under `motion-safe` only,
- * so the reduced tier keeps its identity scale and gets the fade alone.
+ * How a menu arrives (REFINEMENT_BRIEF: ~180ms, so the nearest rung, exit;
+ * .97 → 1 from the trigger side, on the homepage's ease). The shell's own
+ * `animate-pop-in` already anchors to the trigger (`origin-popper`) and drifts
+ * toward it; this tightens it to the brief's numbers at the call site. The
+ * scale is set under `motion-safe` only, so the reduced tier keeps its
+ * identity scale and gets the fade alone.
  * Exported so the account menu arrives the same way.
  */
 export const menuEntranceClass =
   "motion-safe:[--motion-scale-from:0.97] " +
-  "data-[state=open]:[animation-duration:180ms] data-[state=open]:[animation-timing-function:var(--ease-out-expo)]";
+  "data-[state=open]:[animation-duration:var(--dur-exit)] data-[state=open]:[animation-timing-function:var(--ease-out-expo)]";
 
 /** The hairline between groups, inset to the rows' text edge rather than run to the shell. */
 export const menuInsetSeparatorClass = "mx-2.5 my-1.5 bg-foreground/[0.08]";

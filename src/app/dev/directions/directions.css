@@ -294,10 +294,10 @@ html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span 
 .dir-glyph[data-state="thinking"] .dir-orbit__x { transform: translateX(41.7%); }
 @media (prefers-reduced-motion: no-preference) {
   .dir-glyph[data-state="thinking"] .dir-orbit__x {
-    animation: dir-orbit-x 1.5s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+    animation: dir-orbit-x var(--loop-breathe) cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
   }
   .dir-glyph[data-state="thinking"] .dir-orbit__y {
-    animation: dir-orbit-y 1.5s cubic-bezier(0.37, 0, 0.63, 1) -0.75s infinite alternate;
+    animation: dir-orbit-y var(--loop-breathe) cubic-bezier(0.37, 0, 0.63, 1) calc(var(--loop-breathe) / -2) infinite alternate;
   }
 }
 @keyframes dir-orbit-x { from { transform: translateX(-41.7%); } to { transform: translateX(41.7%); } }
@@ -314,10 +314,10 @@ html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span 
 .dir-glyph[data-state="thinking"] .dir-constellation__point:first-of-type { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
   .dir-glyph[data-state="thinking"] .dir-constellation__point {
-    animation: dir-constellation 1.35s var(--ease-in-out) infinite;
+    animation: dir-constellation var(--loop-beat) var(--ease-in-out) infinite;
   }
-  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(2) { animation-delay: 0.22s; }
-  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(3) { animation-delay: 0.44s; }
+  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(2) { animation-delay: var(--dur-base); }
+  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(3) { animation-delay: calc(var(--dur-base) * 2); }
 }
 @keyframes dir-constellation {
   0%, 100% { opacity: 0.25; }
@@ -331,7 +331,7 @@ html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span 
 .dir-meridian__arc { transform-box: view-box; transform-origin: 50% 50%; transform: scaleX(0.9); }
 @media (prefers-reduced-motion: no-preference) {
   .dir-glyph[data-state="thinking"] .dir-meridian__arc {
-    animation: dir-meridian 2.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+    animation: dir-meridian var(--loop) cubic-bezier(0.37, 0, 0.63, 1) infinite;
   }
 }
 @keyframes dir-meridian { from { transform: scaleX(1.8); } to { transform: scaleX(-1.8); } }

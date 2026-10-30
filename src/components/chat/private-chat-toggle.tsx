@@ -63,7 +63,7 @@ export function PrivateChatToggle({
           onClick={onToggle}
           className={cn(
             "inline-flex h-9 items-center justify-center gap-2 rounded-full text-ui font-medium outline-none coarse:h-11",
-            "transition-[background-color,color,padding,width,transform] duration-base ease-out-expo active:scale-[0.97] active:duration-75",
+            "transition-[background-color,color,padding,width,transform] duration-base ease-out-expo active:scale-[0.97] active:duration-press",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-colors motion-reduce:active:scale-100",
             active

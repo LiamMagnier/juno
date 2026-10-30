@@ -582,7 +582,7 @@ export function Approval({ animate = false, menuOpen = false, onInstead }: { ani
               className="jn-approve__receipt"
               initial={reduced ? { opacity: 0 } : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={reduced ? R : { ...SPRING.reward, opacity: { duration: 0.16, ease: EASE_OUT, delay: 0.06 } }}
+              transition={reduced ? R : { ...SPRING.reward, opacity: { duration: 0.16, ease: EASE_OUT, delay: 0.07 } }}
             >
               <SlackMark size={16} />
               {outcome === "denied" ? (

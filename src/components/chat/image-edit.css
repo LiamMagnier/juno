@@ -122,10 +122,10 @@
 .ie-root[data-state="open"] { animation: ie-fade 220ms var(--ie-ease) both; }
 .ie-root[data-state="closed"] { animation: ie-fade-out 160ms cubic-bezier(.4, 0, 1, 1) both; }
 @media (prefers-reduced-motion: no-preference) {
-  .ie-root[data-state="open"] .ie-chrome { animation: ie-drop 420ms var(--ie-ease) 120ms both; }
-  .ie-root[data-state="open"] .ie-dock { animation: ie-rise 520ms var(--ie-ease) 140ms both; }
-  .ie-sel[data-live] .ie-sel-ants { animation: ie-march 800ms linear infinite; }
-  .ie-sel-draw { animation: ie-draw 520ms var(--ie-ease) both; }
+  .ie-root[data-state="open"] .ie-chrome { animation: ie-drop var(--dur-slow) var(--ie-ease) 120ms both; }
+  .ie-root[data-state="open"] .ie-dock { animation: ie-rise var(--dur-emphasis) var(--ie-ease) var(--dur-exit) both; }
+  .ie-sel[data-live] .ie-sel-ants { animation: ie-march var(--loop-beat) linear infinite; }
+  .ie-sel-draw { animation: ie-draw var(--dur-emphasis) var(--ie-ease) both; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ie-root[data-state="open"] .ie-chrome,

@@ -67,7 +67,7 @@
   -webkit-mask-composite: source-in;
   mask-image: linear-gradient(90deg, transparent 0%, #000 55%), linear-gradient(180deg, #000 60%, transparent 100%);
   mask-composite: intersect;
-  transition: opacity 900ms var(--tpp-ease);
+  transition: opacity var(--dur-emphasis) var(--tpp-ease);
 }
 .tpp-orbits[data-rest] { opacity: 0.7; }
 
@@ -92,14 +92,14 @@
   -webkit-mask: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.18) 45%, rgb(0 0 0 / 0.6) 82%, #000 96%, transparent 100%) 0 0 / 46% 100% no-repeat;
   mask: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.18) 45%, rgb(0 0 0 / 0.6) 82%, #000 96%, transparent 100%) 0 0 / 46% 100% no-repeat;
   opacity: 0;
-  transition: opacity 500ms var(--tpp-ease);
+  transition: opacity var(--dur-emphasis) var(--tpp-ease);
 }
 .tpp-lattice[data-live]::after { opacity: 1; }
 .tpp-lattice[data-rest] { --_ink: var(--tpp-dot-rest); }
 
 @media (prefers-reduced-motion: no-preference) {
   .tpp-lattice[data-live]::after {
-    animation: tpp-travel 2600ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+    animation: tpp-travel var(--loop) cubic-bezier(0.45, 0, 0.25, 1) infinite;
   }
 }
 /* Reduced motion: the trajectory holds still at the leading edge. The state
@@ -126,7 +126,7 @@
   mask: linear-gradient(120deg, transparent 0%, rgb(0 0 0 / 0.35) 40%, #000 70%, transparent 100%) 0 0 / 200% 200% no-repeat;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .tpp-cell[data-live]::after { animation: tpp-cross 1400ms ease-in-out infinite; }
+  .tpp-cell[data-live]::after { animation: tpp-cross var(--loop-beat) ease-in-out infinite; }
 }
 @keyframes tpp-cross {
   from { -webkit-mask-position: 120% 120%; mask-position: 120% 120%; }
@@ -136,16 +136,16 @@
 /* ── Entrances. The panel settles in from its edge; the hero rises line by
       line; steps rise once, on the first paint of their id. ─────────────── */
 @media (prefers-reduced-motion: no-preference) {
-  .tpp-enter { animation: tpp-enter 520ms var(--tpp-ease) both; }
+  .tpp-enter { animation: tpp-enter var(--dur-emphasis) var(--tpp-ease) both; }
   .tpp-rise {
-    animation: tpp-rise 760ms var(--tpp-ease) both;
-    animation-delay: calc(var(--i, 0) * 70ms + 60ms);
+    animation: tpp-rise var(--dur-emphasis) var(--tpp-ease) both;
+    animation-delay: calc(var(--i, 0) * 70ms + var(--dur-press));
   }
   .tpp-step {
     animation: tpp-rise 560ms var(--tpp-ease) both;
-    animation-delay: calc(var(--i, 0) * 45ms);
+    animation-delay: calc(var(--i, 0) * var(--stagger-tile));
   }
-  .tpp-swap { animation: tpp-fade 420ms var(--tpp-ease) both; }
+  .tpp-swap { animation: tpp-fade var(--dur-slow) var(--tpp-ease) both; }
 }
 @keyframes tpp-enter { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 @keyframes tpp-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -153,7 +153,7 @@
 
 /* The compact title in the header crossfades in once the hero has scrolled
    out of view, so what the run is doing is never off screen. */
-.tpp-compact { transition: opacity 260ms var(--tpp-ease), transform 260ms var(--tpp-ease); }
+.tpp-compact { transition: opacity var(--dur-base) var(--tpp-ease), transform var(--dur-base) var(--tpp-ease); }
 .tpp-compact[data-hidden] { opacity: 0; transform: translateY(4px); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   .tpp-compact { transition: opacity 120ms linear; }

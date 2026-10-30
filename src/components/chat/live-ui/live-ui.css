@@ -46,7 +46,7 @@
   background: hsl(var(--live) / 0.08);
 }
 .live-eyebrow[data-live] svg {
-  animation: live-breathe 1.4s var(--ease-in-out, ease-in-out) infinite;
+  animation: live-breathe var(--loop-beat) var(--ease-in-out, ease-in-out) infinite;
 }
 @keyframes live-breathe {
   0%, 100% { opacity: 0.45; transform: scale(0.85); }
@@ -175,7 +175,7 @@ div:has(> .live-slider:active) > div > .live-value {
   .live-line {
     stroke-dasharray: 1;
     stroke-dashoffset: 1;
-    animation: live-draw 900ms var(--ease-out-soft) 80ms forwards;
+    animation: live-draw var(--dur-emphasis) var(--ease-out-soft) var(--dur-press) forwards;
   }
   .live-dot { animation: live-pop var(--dur-fast) var(--ease-spring); transform-box: fill-box; transform-origin: center; }
 }
@@ -375,8 +375,8 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-timer[data-finished] { color: hsl(var(--success-ink)); background: hsl(var(--success) / 0.1); }
 .live-timer[data-finished] svg { color: hsl(var(--success)); }
 @media (prefers-reduced-motion: no-preference) {
-  .live-timer[data-running] svg { animation: live-breathe 2s var(--ease-in-out, ease-in-out) infinite; }
-  .live-timer[data-finished] { animation: live-ring 600ms var(--ease-out-back) 2; }
+  .live-timer[data-running] svg { animation: live-breathe var(--loop-breathe) var(--ease-in-out, ease-in-out) infinite; }
+  .live-timer[data-finished] { animation: live-ring var(--dur-emphasis) var(--ease-out-back) 2; }
 }
 @keyframes live-ring {
   0%, 100% { rotate: 0deg; }

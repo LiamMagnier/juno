@@ -86,15 +86,15 @@
   position: absolute;
   border-radius: 9999px;
   will-change: transform;
-  animation: 22s var(--ease-breathe, cubic-bezier(0.45, 0, 0.55, 1)) infinite alternate both;
+  animation: calc(var(--loop-beat) * 18) var(--ease-breathe, cubic-bezier(0.45, 0, 0.55, 1)) infinite alternate both;
 }
 /* Two pools of ink, one of light, one breath of presence. Positions are set
    so the four never sit on one another at rest, and the periods are coprime
    so the field never visibly loops. */
-.gen-field__blob--a { left: -20%; top: -25%; width: 85%; height: 95%; background: radial-gradient(closest-side, var(--gen-ink), transparent); animation-name: gen-drift-a; animation-duration: 19s; }
-.gen-field__blob--b { right: -25%; bottom: -30%; width: 90%; height: 100%; background: radial-gradient(closest-side, var(--gen-ink), transparent); animation-name: gen-drift-b; animation-duration: 23s; }
-.gen-field__blob--c { left: 20%; top: 15%; width: 70%; height: 75%; background: radial-gradient(closest-side, var(--gen-light), transparent); animation-name: gen-drift-c; animation-duration: 29s; }
-.gen-field__blob--p { left: 25%; top: 30%; width: 80%; height: 85%; background: radial-gradient(closest-side, var(--gen-presence), transparent); animation-name: gen-drift-p; animation-duration: 31s; }
+.gen-field__blob--a { left: -20%; top: -25%; width: 85%; height: 95%; background: radial-gradient(closest-side, var(--gen-ink), transparent); animation-name: gen-drift-a; animation-duration: calc(var(--loop-beat) * 16); }
+.gen-field__blob--b { right: -25%; bottom: -30%; width: 90%; height: 100%; background: radial-gradient(closest-side, var(--gen-ink), transparent); animation-name: gen-drift-b; animation-duration: calc(var(--loop-beat) * 19); }
+.gen-field__blob--c { left: 20%; top: 15%; width: 70%; height: 75%; background: radial-gradient(closest-side, var(--gen-light), transparent); animation-name: gen-drift-c; animation-duration: calc(var(--loop-beat) * 24); }
+.gen-field__blob--p { left: 25%; top: 30%; width: 80%; height: 85%; background: radial-gradient(closest-side, var(--gen-presence), transparent); animation-name: gen-drift-p; animation-duration: calc(var(--loop-beat) * 26); }
 
 @keyframes gen-drift-a { 0% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(22%, 14%, 0) scale(1.18); } 100% { transform: translate3d(8%, 30%, 0) scale(0.92); } }
 @keyframes gen-drift-b { 0% { transform: translate3d(0, 0, 0) scale(1.05); } 50% { transform: translate3d(-18%, -10%, 0) scale(0.9); } 100% { transform: translate3d(-30%, -24%, 0) scale(1.12); } }
@@ -164,7 +164,7 @@
   background: hsl(var(--foreground) / 0.5);
   transform-origin: left center;
   transform: scaleX(var(--gen-pct, 0));
-  transition: transform 600ms var(--gen-ease);
+  transition: transform var(--dur-emphasis) var(--gen-ease);
 }
 
 /* ---- The arrival -------------------------------------------------------------- */
@@ -208,11 +208,11 @@
   animation-delay: calc(var(--gen-delay, 0ms) + var(--gen-lead));
 }
 .gen-root[data-phase="revealing"] .gen-layer--blur {
-  animation: gen-blur-in 900ms var(--gen-ease) both;
+  animation: gen-blur-in var(--dur-emphasis) var(--gen-ease) both;
   animation-delay: var(--gen-delay, 0ms);
 }
 .gen-root[data-phase="revealing"] .gen-field {
-  animation: gen-fade-out 700ms var(--gen-ease) both;
+  animation: gen-fade-out var(--dur-emphasis) var(--gen-ease) both;
   animation-delay: var(--gen-delay, 0ms);
 }
 
@@ -243,5 +243,5 @@
 @media (prefers-reduced-motion: reduce) {
   .gen-field__blob { animation: none; }
   .gen-progress__fill { transition: none; }
-  .gen-sharp { transition-duration: 200ms; }
+  .gen-sharp { transition-duration: var(--dur-base); }
 }

@@ -85,14 +85,14 @@
 @keyframes alevr-public-settle { from { opacity:.6; transform:translateX(-12px) scale(.98); } to { opacity:1; transform:none; } }
 @media(prefers-reduced-motion:no-preference) {
   .alevr-access-header { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) both; }
-  .alevr-access-story { animation:alevr-public-settle var(--dur-emphasis) var(--ease-out-expo) 80ms both; }
-  .alevr-auth-form > div > div:first-child { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) 100ms both; }
-  .alevr-auth-form form { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) 180ms both; }
-  .alevr-access-footer { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) 260ms both; }
+  .alevr-access-story { animation:alevr-public-settle var(--dur-emphasis) var(--ease-out-expo) var(--dur-press) both; }
+  .alevr-auth-form > div > div:first-child { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) var(--dur-fast) both; }
+  .alevr-auth-form form { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) var(--dur-exit) both; }
+  .alevr-access-footer { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) var(--dur-base) both; }
   .alevr-state-identifier { animation:alevr-public-settle var(--dur-emphasis) var(--ease-out-expo) both; }
-  .alevr-state-copy h1 { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) 80ms both; }
+  .alevr-state-copy h1 { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) var(--dur-press) both; }
   .alevr-state-copy > p:not(.sr-only) { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) 160ms both; }
-  .alevr-state-actions { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) 240ms both; }
+  .alevr-state-actions { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) var(--dur-base) both; }
   [role="dialog"]:has(#onboarding-name) h2 { animation:alevr-public-rise var(--dur-emphasis) var(--ease-out-expo) both; }
 }
 @media(max-width:1023px) {
