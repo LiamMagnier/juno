@@ -103,3 +103,15 @@ export function readerMayUse(
 export function readerMayUseSummary(reader: MemoryReader): boolean {
   return reader.kind !== "agent" || reader.access === "full";
 }
+
+/**
+ * Whether a turn touches the person's memory at all: reads it, is told how to
+ * save to it, or acts on the `<juno:memory>` and `<juno:forget>` tags it emits.
+ * An agent granted "none" is held to it the way a private chat is — not only
+ * kept from reading, but kept from writing, because "nothing from your
+ * memory" that could still add to it or wipe it would not be what it says.
+ * `agentAccess` is null for a turn no agent speaks in.
+ */
+export function turnMayUseMemory(input: { enabled: boolean; agentAccess: AgentMemoryAccess | null }): boolean {
+  return input.enabled && input.agentAccess !== "none";
+}
