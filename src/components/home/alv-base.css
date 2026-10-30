@@ -70,13 +70,13 @@
 
 /* The construction is a dot matrix now (dot-construction.css); each surface below only places it. */
 @media (prefers-reduced-motion: no-preference) {
-  /* Entrances fade up out of a slight blur (owner: "make the animation of homepage fade"): 12 px of
-     rise, not 24, so it reads as settling into focus rather than sliding in. */
-  .alv-enter { opacity: 0; animation: alv-enter 900ms var(--alv-ease) both; animation-delay: calc(var(--i, 0) * 110ms + 120ms); }
+  /* Entrances fade up (owner: "make the animation of homepage fade"): 12 px of rise, not 24, so it
+     reads as settling into place rather than sliding in. No blur: no entrance blurs (spec C1). */
+  .alv-enter { opacity: 0; animation: alv-enter var(--dur-emphasis) var(--alv-ease) both; animation-delay: calc(var(--i, 0) * var(--dur-fast) + 120ms); }
 }
 @keyframes alv-enter {
-  from { opacity: 0; transform: translateY(12px); filter: blur(8px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* The scroll reveal (home-reveal.tsx). On filter + translate so it never fights a section's own
@@ -85,7 +85,7 @@
   .alv [data-reveal] {
     filter: opacity(0) blur(4px);
     translate: 0 14px;
-    transition: filter 760ms var(--alv-ease-out), translate 820ms var(--alv-ease);
+    transition: filter var(--dur-emphasis) var(--alv-ease-out), translate var(--dur-emphasis) var(--alv-ease);
     transition-delay: var(--alv-reveal-delay, 0ms);
   }
   .alv [data-reveal="on"] { filter: opacity(1) blur(0); translate: 0 0; }
@@ -112,8 +112,8 @@
 .alv-access-main .alevr-auth-form { margin: auto; padding: 40px 0; }
 .alv-access-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 24px; padding: 16px 0 20px; border-top: 1px solid hsl(var(--border)); }
 @media (prefers-reduced-motion: no-preference) {
-  .alv-access-promise { animation: alv-enter 1000ms var(--alv-ease) 500ms both; }
-  .alv-access-main .alevr-auth-form { animation: alv-enter 800ms var(--alv-ease) 120ms both; }
+  .alv-access-promise { animation: alv-enter var(--dur-emphasis) var(--alv-ease) var(--dur-emphasis) both; }
+  .alv-access-main .alevr-auth-form { animation: alv-enter var(--dur-emphasis) var(--alv-ease) 120ms both; }
 }
 @media (max-width: 1023px) {
   .alv-access { grid-template-columns: minmax(0, 1fr); }
@@ -149,5 +149,5 @@
 .alv-download-construction { position: absolute; inset: 0; z-index: -1; pointer-events: none; --construction-zoom: 1.7; }
 .alv-download-icon { width: clamp(112px, 12vw, 168px); height: auto; filter: drop-shadow(0 24px 40px rgb(0 0 0 / .5)); }
 @media (prefers-reduced-motion: no-preference) {
-  .alv-download-icon { animation: alv-enter 1100ms var(--alv-ease) 400ms both; }
+  .alv-download-icon { animation: alv-enter var(--dur-emphasis) var(--alv-ease) var(--dur-slow) both; }
 }

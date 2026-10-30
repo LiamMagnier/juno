@@ -53,6 +53,7 @@ import {
   type WorkProjectDefaults,
 } from "@/lib/work/projects";
 import { runBudgetForWindow } from "@/lib/work/budget";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { scriptedWorkModelFor } from "@/lib/dev/scripted-work-model";
 import { maxParkedRunsPerAccount } from "@/lib/work/park-resume";
 import { WORK_CAPPED_LIVE_STATUSES } from "@/lib/work/park-resume-rules";
@@ -1034,6 +1035,20 @@ export async function startWorkRunForUser(
       return { status: 200, body: { run: serializeRun(existing), replay: true }, run: existing, preflight: null };
     }
   }
+
+  // A paused agent starts nothing (AUDIT.md §3 item 8). The chat tools and the
+  // goal runner refused on their own, but Retry, Run again and Continue on a
+  // task card in its thread reached here with nothing in the way. Read fresh:
+  // a pause made after the card was drawn is the one that counts.
+  const paused = pausedAgentRunRefusal(
+    session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: session.agentId, userId: user.id, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (paused) return refused(409, paused);
 
   // The plan gate, on the id this attempt would actually ask for. The session's
   // stored model is checked too, not just the body's: a session drafted while

@@ -1,6 +1,7 @@
 import type { ClientToolDetail } from "@/types/chat";
 import type { RunModel, Step } from "@/components/chat/thought-process-model";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { RECEIPT_REFUSAL_TEXT, receiptRefusalOf } from "@/lib/chat/tool-receipt";
 // Functions only, called at copy time: the import is circular (tool-run reads
 // `formatSpan` from here) and safe because neither module calls the other
 // while it is being evaluated.
@@ -283,6 +284,7 @@ export function toRunSummary(run: RunModel, finishNote?: string | null): string 
 export function toStepMarkdown(step: Step): string {
   const lines: string[] = [`### ${step.label}`];
   if (step.failed) lines.push("Failed");
+  if (step.refusal) lines.push(RECEIPT_REFUSAL_TEXT[step.refusal]);
   if (step.detail) lines.push(step.detail);
   // Absent, never zero — the same rule the row's figure cell follows.
   if (step.ms !== null) lines.push(`Duration ${formatSpan(step.ms)}`);
@@ -446,7 +448,10 @@ export function toRunMarkdown(
       // "Failed" only. A successful call gets no marker, exactly as on screen:
       // absence is this panel's idiom for the ordinary case, and a "Succeeded"
       // line on every row would bury the one that says otherwise.
-      if (tool.status === "failed") lines.push("Failed");
+      // A refusal says its own word, never "Failed": it was a decision.
+      const refusal = receiptRefusalOf(tool);
+      if (refusal) lines.push(RECEIPT_REFUSAL_TEXT[refusal]);
+      else if (tool.status === "failed") lines.push("Failed");
       // Absent, never zero, for a call that never reached the network — so the
       // line is simply not written rather than written with a placeholder in it.
       if (typeof tool.durationMs === "number") lines.push(`Duration ${formatSpan(tool.durationMs)}`);

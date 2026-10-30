@@ -190,7 +190,7 @@ export function WorkRunPanel({
             {session.title.trim() || session.goal}
           </h3>
           {/* The words change with the run; announced politely, once per phase. */}
-          <p className="mt-px text-ui text-foreground/75" aria-live="polite">
+          <p className="mt-px text-ui text-muted-foreground" aria-live="polite">
             {progress}
           </p>
         </div>
@@ -237,7 +237,7 @@ export function WorkRunPanel({
             aria-expanded={planOpen}
             className={cn(
               "flex h-[38px] w-full items-center gap-1.5 border-t border-border/70 px-4 text-left text-ui text-muted-foreground coarse:h-11",
-              "transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-foreground/75 motion-reduce:transition-none",
+              "transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-muted-foreground motion-reduce:transition-none",
               planOpen ? "rounded-none" : "rounded-b-field"
             )}
           >
@@ -247,13 +247,13 @@ export function WorkRunPanel({
             />
             {work.plan.length > 0 ? (
               <>
-                <span className="text-foreground/75">Plan</span>
+                <span className="text-muted-foreground">Plan</span>
                 <span className="tabular-nums">
                   {tally.done} of {tally.total} {tally.total === 1 ? "step" : "steps"} done
                 </span>
               </>
             ) : (
-              <span className="text-foreground/75">Details</span>
+              <span className="text-muted-foreground">Details</span>
             )}
           </button>
           <Collapse open={planOpen} innerClassName="px-4 pb-3">
@@ -288,7 +288,7 @@ function PlanList({ steps, needs }: { steps: readonly PlanStep[]; needs: "answer
             data-state={waiting ? "waiting" : step.state}
             className={cn(
               "flex min-h-[30px] items-center gap-2.5 py-1 text-nav",
-              step.state === "done" && "text-foreground/75",
+              step.state === "done" && "text-muted-foreground",
               (step.state === "active" || step.state === "failed") && "text-foreground",
               (step.state === "pending" || step.state === "skipped" || step.state === "unreported") && "text-muted-foreground"
             )}
@@ -354,7 +354,7 @@ function StopButton({ stop }: { stop: () => Promise<boolean> }) {
           if (!stopped) setStopping(false);
         });
       }}
-      className="px-2.5 font-normal text-foreground/75 hover:text-foreground"
+      className="px-2.5 font-normal text-muted-foreground hover:text-foreground"
     >
       Stop
     </Button>
@@ -444,7 +444,7 @@ function TaskQuestion({
       <p id={groupId} className="text-body text-foreground">
         <NeedsLead>Needs your answer:</NeedsLead> {question.question}
       </p>
-      {question.why !== null && <p className="mt-0.5 text-ui leading-relaxed text-foreground/75">{question.why}</p>}
+      {question.why !== null && <p className="mt-0.5 text-ui leading-relaxed text-muted-foreground">{question.why}</p>}
       {question.options.length > 0 ? (
         <>
           <div role="radiogroup" aria-label={question.question} className="-ml-2.5 mt-2 flex flex-col gap-0.5">
@@ -456,7 +456,7 @@ function TaskQuestion({
                 aria-checked={choice === option}
                 disabled={busy}
                 onClick={() => setChoice(option)}
-                className="group/opt flex min-h-11 items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-nav text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 active:bg-accent motion-reduce:transition-none"
+                className="group/opt flex min-h-11 items-center gap-3 rounded-control px-2.5 py-1.5 text-left text-nav text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 active:bg-accent motion-reduce:transition-none"
               >
                 <span
                   aria-hidden="true"
@@ -474,7 +474,7 @@ function TaskQuestion({
               <button
                 type="button"
                 onClick={answerInComposer}
-                className="flex min-h-9 items-center gap-3 rounded-md px-2.5 text-left text-nav text-foreground/75 transition-colors duration-fast ease-out-soft hover:bg-accent/70 motion-reduce:transition-none"
+                className="flex min-h-9 items-center gap-3 rounded-control px-2.5 text-left text-nav text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 motion-reduce:transition-none"
               >
                 <span aria-hidden="true" className="size-4 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_hsl(var(--muted-foreground)/0.7)]" />
                 Something else

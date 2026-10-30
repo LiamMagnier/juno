@@ -4,7 +4,9 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Loader2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { fieldFrameClass, fieldHeightClass } from "@/components/ui/field-recipe";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,6 +87,9 @@ interface PolicyOption<T extends string> {
  * "advanced" fold: a schedule is by definition the case where the person who
  * set it up is asleep.
  */
+/** A native <select> cut from the field recipe Input uses, at Input's inset. */
+const NATIVE_SELECT = cn(fieldFrameClass, fieldHeightClass, "px-3.5");
+
 const UNATTENDED_OPTIONS: readonly PolicyOption<WorkUnattendedPolicy>[] = [
   {
     value: "pause_for_approval",
@@ -702,20 +707,16 @@ export function WorkScheduleEditor({
         {draft.target !== "cloud" && (
           <div className="mt-3">
             <Label htmlFor="schedule-host">Mac</Label>
-            {/* No `bg-*` utility beside `field-well`. Utilities are emitted
-                after the components layer at equal specificity, so `bg-secondary`
-                here silently beat the class — and `.field-well` is exactly where
-                the per-theme fill belongs (page ground on light, one rung UP on
-                dark, because nothing recesses below black). With the utility on,
-                this select was secondary on both themes while the `Input` for
-                Timezone directly below it was background on light: one form,
-                two fills. `px-3.5` and `coarse:h-11` are that Input's too. */}
+            {/* The field recipe the `Input` for Timezone directly below it is
+                cut from (NATIVE_SELECT): one form, one fill, one focus edge.
+                It was the legacy `field-well` alias with its own hover and a
+                2px focus ring, which Input had already left behind. */}
             <select
               id="schedule-host"
               value={draft.hostId ?? ""}
               disabled={saving || hosts === null}
               onChange={(event) => set("hostId", event.target.value === "" ? null : event.target.value)}
-              className="field-well mt-1 h-9 w-full max-w-xs rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+              className={cn(NATIVE_SELECT, "mt-1 max-w-xs")}
             >
               <option value="">
                 {draft.target === "local" ? "Choose a Mac…" : "Any of my Macs"}
@@ -862,7 +863,7 @@ export function WorkScheduleEditor({
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="schedule-model">Model</Label>
-            {/* The same `field-well` recipe as the Mac select above, for the
+            {/* The same field recipe as the Mac select above, for the
                 same reason. Only the models an agent runtime can drive, which
                 is one line — `backendAgentCatalog` draws it for the Code runner
                 and `isWorkCapableModel` is that same line stated once — so one
@@ -887,7 +888,7 @@ export function WorkScheduleEditor({
               value={draft.model}
               disabled={saving}
               onChange={(event) => set("model", event.target.value)}
-              className="field-well mt-1 h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+              className={cn(NATIVE_SELECT, "mt-1")}
             >
               <option value="">
                 {isCode ? "Whatever the runner picks" : "The task’s own model"}
@@ -1129,14 +1130,14 @@ function CodeRoutineFields({
         <div className="mt-3 grid gap-3 @md:grid-cols-2">
           <div>
             <Label htmlFor="routine-environment">Environment</Label>
-            {/* The `field-well` recipe the Mac and model selects use, for the
+            {/* The field recipe the Mac and model selects use, for the
                 reason stated at those call sites: one form, one fill. */}
             <select
               id="routine-environment"
               value={draft.environmentId}
               disabled={disabled || environments === null}
               onChange={(event) => set({ environmentId: event.target.value })}
-              className="field-well mt-1 h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+              className={cn(NATIVE_SELECT, "mt-1")}
             >
               <option value="">No environment</option>
               {/* The stored one, even when the list could not be read or no

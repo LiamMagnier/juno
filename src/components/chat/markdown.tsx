@@ -272,7 +272,7 @@ function WrittenFileFence({ filename, children }: { filename: string; children: 
   return (
     <p className="my-3 flex min-w-0 items-baseline gap-2 text-caption text-muted-foreground">
       <span className="min-w-0 truncate">
-        <span className="font-mono text-foreground/80">{filename}</span> is in the changes above.
+        <span className="font-mono text-muted-foreground">{filename}</span> is in the changes above.
       </span>
       <button
         type="button"
@@ -900,7 +900,7 @@ function GuardedImage({
       referrerPolicy="no-referrer"
       title={alt || undefined}
       data-image-link=""
-      className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
+      className="inline-flex max-w-full items-center gap-1 rounded-control border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
     >
       <PhraseWithArgs spec={{ parts: [{ phrase: MARKDOWN_COPY.imageFrom }, { kind: "domain", value: decision.host }] }} />
     </a>

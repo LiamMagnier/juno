@@ -58,6 +58,21 @@ export const AGENT_STYLE_PROMPT: Record<AgentStyle, string> = {
 export const AGENT_STATUSES = ["active", "paused"] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
+/**
+ * Why an attempt may not start under this agent's name, or null when it may.
+ * Anything but `active` starts nothing. Null for a task with no agent (or one
+ * whose agent was retired, which `findFirst` with `deletedAt: null` reads as
+ * none). The dispatcher (`startWorkRunForUser`) asks this for every attempt,
+ * so Retry, Run again and Continue in a paused agent's thread are refused like
+ * `start_task` is. The sentence is `startAgentTask`'s.
+ */
+export function pausedAgentRunRefusal(
+  agent: { name: string; status: string } | null
+): { error: "agent_paused"; message: string } | null {
+  if (!agent || agent.status === "active") return null;
+  return { error: "agent_paused", message: `${agent.name} is paused. Resume it to start something new.` };
+}
+
 /*
  * The face's states, their words, the task glance and the sentence beside the
  * face live in `src/lib/agents/state-labels.ts`, which imports no zod: the

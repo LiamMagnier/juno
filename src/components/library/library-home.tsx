@@ -300,7 +300,7 @@ export function LibraryHome() {
             <>
               {/* bg-background: the header's drawing (backdrop) runs behind this
                   corner, and a transparent button let it show through its words. */}
-              <Button variant="ghost" size="sm" asChild className="h-9 gap-2 border-foreground/10 bg-background px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16]">
+              <Button variant="ghost" asChild className="gap-2 border-foreground/10 bg-background px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] dark:border-white/10 dark:hover:border-white/[0.16]">
                 <Link href="/library?view=trash">
                   <Trash2 className="size-4" aria-hidden="true" />
                   {/* A glyph and its count on a phone (G54), so both actions
@@ -352,7 +352,7 @@ export function LibraryHome() {
           />
           <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
             {show === "files" ? (
-              <Button variant="ghost" size="sm" asChild className="hidden h-9 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
+              <Button variant="ghost" asChild className="hidden px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
                 <Link href="/library?view=files">Manage files</Link>
               </Button>
             ) : null}

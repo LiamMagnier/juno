@@ -6,7 +6,6 @@ import { SourceFavicon } from "@/components/chat/source-chip";
 import { formatNumber, useUiLocale } from "@/lib/i18n-format";
 import { Phrase } from "@/lib/i18n-phrase";
 import type { SourceRow, SourcesSplit } from "@/lib/panel/sources-split";
-import { cn } from "@/lib/utils";
 
 import { PANEL_COPY } from "./copy";
 
@@ -35,7 +34,7 @@ function SourceLink({ row, instant }: { row: SourceRow; instant: boolean }) {
         href={row.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="-mx-1.5 flex min-w-0 items-center gap-2.5 rounded-md px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+        className="-mx-1.5 flex min-w-0 items-center gap-2.5 rounded-control px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
       >
         <SourceFavicon url={row.url} variant="cluster" className="size-4" />
         <span className="flex min-w-0 flex-1 flex-col">
@@ -72,12 +71,10 @@ function SourceLink({ row, instant }: { row: SourceRow; instant: boolean }) {
 function Group({
   heading,
   rows,
-  quiet,
   instantKeys,
 }: {
   heading: string;
   rows: SourceRow[];
-  quiet?: boolean;
   instantKeys: ReadonlySet<string>;
 }) {
   const locale = useUiLocale();
@@ -85,7 +82,7 @@ function Group({
   if (rows.length === 0) return null;
   return (
     <section aria-labelledby={id} className="flex flex-col gap-1">
-      <h3 id={id} className={cn("flex items-baseline gap-1.5 text-caption font-medium", quiet ? "text-muted-foreground/80" : "text-muted-foreground")}>
+      <h3 id={id} className="flex items-baseline gap-1.5 text-caption font-medium text-muted-foreground">
         <Phrase text={heading} />
         <span className="tabular-nums" data-no-auto-translate>
           {formatNumber(rows.length, locale)}
@@ -120,7 +117,7 @@ export function ActivitySourcesTab({ split }: { split: SourcesSplit }) {
     <div className="flex flex-col gap-4 px-4 py-3">
       <Group heading={PANEL_COPY.sources.cited} rows={split.cited} instantKeys={instantKeys} />
       <Group heading={PANEL_COPY.sources.alsoRead} rows={split.alsoRead} instantKeys={instantKeys} />
-      <Group heading={PANEL_COPY.sources.found} rows={split.found} quiet instantKeys={instantKeys} />
+      <Group heading={PANEL_COPY.sources.found} rows={split.found} instantKeys={instantKeys} />
     </div>
   );
 }

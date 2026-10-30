@@ -157,7 +157,7 @@ const ReasoningRow = React.memo(
               {headline}
             </h3>
           ) : null}
-          <div className="prose-juno space-y-3 text-reading text-foreground/85" dir="auto">
+          <div className="prose-juno space-y-3 text-reading text-foreground" dir="auto">
             {paragraphs.map((paragraph, i) => (
               // `auto`: an off-screen paragraph keeps the height it last
               // rendered at, so the scroll height does not jump while reading.
@@ -271,7 +271,7 @@ const ToolRow = React.memo(
           aria-expanded={expanded}
           aria-controls={expanded ? detailId : undefined}
           onClick={() => onToggle(item.key)}
-          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-2.5 rounded-md px-1.5 py-1.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none"
+          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-2.5 rounded-control px-1.5 py-1.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none"
         >
           {state === "working" ? (
             <RunningMarker owner={owner}>{icon}</RunningMarker>

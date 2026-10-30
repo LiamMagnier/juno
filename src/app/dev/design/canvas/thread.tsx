@@ -142,7 +142,7 @@ export function ActivityLine({ open: initialOpen = false }: { open?: boolean }) 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={reduced ? T.instant : { duration: 0.2, ease: EASE_OUT }}
+            transition={reduced ? T.instant : { duration: 0.22, ease: EASE_OUT }}
             style={{ overflow: "hidden" }}
           >
             {READS.map((r) => (
@@ -242,7 +242,7 @@ export function TaskCard({ planOpen: initialPlan = false, answered = false }: { 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={reduced ? T.instant : { duration: 0.2, ease: EASE_OUT }}
+            transition={reduced ? T.instant : { duration: 0.22, ease: EASE_OUT }}
             style={{ listStyle: "none", padding: 0 }}
           >
             {MIRA_PLAN.map((step) => (
@@ -290,7 +290,7 @@ export function Approval({ animate = false }: { animate?: boolean }) {
     <motion.div
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: "auto", opacity: 1 }}
-      transition={reduced ? T.fade : { duration: 0.26, ease: EASE_OUT }}
+      transition={reduced ? T.fade : { duration: 0.22, ease: EASE_OUT }}
       style={{ overflow: "hidden" }}
     >
       {body}

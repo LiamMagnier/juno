@@ -1048,7 +1048,8 @@ class ComputerHostScripts(unittest.TestCase):
         # Any local user can read another process's argv: tokens go through stdin or a file.
         on_argv = re.compile(r"""-H\s+["']?Authorization: Bearer \$""")
         for path in ("deploy/computer-host/setup.sh", "deploy/computer-host/smoke.sh", "deploy/computer-host/README.md",
-                     "deploy/computer-host/local/run-local.sh", "docs/design/agents-v2/OPERATIONS.md"):
+                     "deploy/computer-host/local/run-local.sh", "docs/design/agents-v2/OPERATIONS.md",
+                     "docs/design/agents-v2/ENABLE_COMPUTERS.md"):
             with self.subTest(path=path):
                 for number, line in enumerate((ROOT / path).read_text().splitlines(), 1):
                     self.assertIsNone(on_argv.search(line), "%s:%d puts the token on curl's command line" % (path, number))
@@ -1063,7 +1064,7 @@ class ComputerHostScripts(unittest.TestCase):
         builtin_before = re.compile(r"""(?:printf\s+'[^']*'\s+"?|\[\s+-[zn]\s+"?)\Z""")
         paths = ["deploy/computer-host/setup.sh", "deploy/computer-host/smoke.sh", "deploy/computer-host/private-tls.sh",
                  "deploy/computer-host/local/run-local.sh", "deploy/computer-host/README.md",
-                 "docs/design/agents-v2/OPERATIONS.md"]
+                 "docs/design/agents-v2/OPERATIONS.md", "docs/design/agents-v2/ENABLE_COMPUTERS.md"]
         checked = 0
         for path in paths:
             with self.subTest(path=path):

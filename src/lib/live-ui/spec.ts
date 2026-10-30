@@ -911,6 +911,20 @@ export function snapToStep(value: number, min: number, max: number, step: number
   return clamp(Number(snapped.toFixed(decimals)), min, max);
 }
 
+/**
+ * A number field's ArrowUp / ArrowDown: one step from `value`, clamped to the
+ * field's bounds. The field shows what this returns, so at a bound it keeps
+ * showing the bound rather than the step past it.
+ */
+export function stepNumberInput(
+  value: number,
+  direction: 1 | -1,
+  bounds: { step: number; min?: number; max?: number },
+): number {
+  const next = Number((value + direction * bounds.step).toFixed(10));
+  return clamp(next, bounds.min ?? -Infinity, bounds.max ?? Infinity);
+}
+
 function input(
   raw: { [key: string]: LiveJSON },
   type: string,
@@ -992,11 +1006,70 @@ export function liveInputs(ui: readonly LiveComponent[]): LiveInput[] {
     for (const c of list) {
       if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
       else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
+      else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
       else if (["slider", "number", "stepper", "select", "toggle", "date", "input"].includes(c.type)) out.push(c as LiveInput);
     }
   };
   walk(ui);
   return out;
+}
+
+/**
+ * A spec whose block will never close (the stream ended first): what arrived
+ * is final, so the skeletons standing in for the rest go, a layout left
+ * empty is dropped the way normalisation drops it, and nothing reads as
+ * still pending. A complete spec comes back unchanged.
+ */
+export function settleLiveSpec(spec: LiveSpec): LiveSpec {
+  if (!spec.streaming) return spec;
+  const settle = (list: readonly LiveComponent[]): LiveComponent[] => {
+    const out: LiveComponent[] = [];
+    for (const c of list) {
+      if (c.type === "pending") continue;
+      if (c.type === "row" || c.type === "grid" || c.type === "section") {
+        const children = settle(c.children);
+        if (children.length > 0) out.push({ ...c, children, pending: false });
+      } else if (c.type === "steps") out.push({ ...c, steps: c.steps.map((s) => ({ ...s, ui: settle(s.ui) })) });
+      else if (c.type === "tabs") out.push({ ...c, tabs: c.tabs.map((t) => ({ ...t, children: settle(t.children) })), pending: false });
+      else out.push(c);
+    }
+    return out;
+  };
+  return { ...spec, ui: settle(spec.ui), streaming: false };
+}
+
+/** The id of every checklist in the tree, steps and tabs included. */
+export function liveChecklistIds(ui: readonly LiveComponent[]): Set<string> {
+  const ids = new Set<string>();
+  const walk = (list: readonly LiveComponent[]) => {
+    for (const c of list) {
+      if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
+      else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
+      else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
+      else if (c.type === "checklist") ids.add(c.id);
+    }
+  };
+  walk(ui);
+  return ids;
+}
+
+/**
+ * Every card that locks once the reader picks (choices, compare), by its
+ * component key, with how many options it offers. A stored pick is restored
+ * only onto a card that is still there and only for options it still has.
+ */
+export function liveLockingCards(ui: readonly LiveComponent[]): Map<string, number> {
+  const cards = new Map<string, number>();
+  const walk = (list: readonly LiveComponent[]) => {
+    for (const c of list) {
+      if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
+      else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
+      else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
+      else if (c.type === "choices" || c.type === "compare") cards.set(c.key, c.options.length);
+    }
+  };
+  walk(ui);
+  return cards;
 }
 
 /** The authored default of every input, by id. */

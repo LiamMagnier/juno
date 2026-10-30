@@ -213,7 +213,7 @@
   stroke-linejoin: round;
 }
 .jcr[data-play] .jcr__mark {
-  animation: jcr-mark 760ms var(--e-expo) 300ms both;
+  animation: jcr-mark var(--dur-emphasis) var(--e-expo) var(--dur-slow) both;
 }
 @keyframes jcr-mark {
   0% {

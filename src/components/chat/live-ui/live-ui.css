@@ -46,7 +46,7 @@
   background: hsl(var(--live) / 0.08);
 }
 .live-eyebrow[data-live] svg {
-  animation: live-breathe 1.4s var(--ease-in-out, ease-in-out) infinite;
+  animation: live-breathe var(--loop-beat) var(--ease-in-out, ease-in-out) infinite;
 }
 @keyframes live-breathe {
   0%, 100% { opacity: 0.45; transform: scale(0.85); }
@@ -108,8 +108,8 @@ div:has(> .live-slider:active) > div > .live-value {
   .live-stepper-value { animation: live-roll var(--dur-base) var(--ease-spring); }
 }
 @keyframes live-roll {
-  from { opacity: 0; transform: translateY(35%); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(35%); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Metrics: the hero figure gets a tinted tile so the answer to the question
@@ -175,7 +175,7 @@ div:has(> .live-slider:active) > div > .live-value {
   .live-line {
     stroke-dasharray: 1;
     stroke-dashoffset: 1;
-    animation: live-draw 900ms var(--ease-out-soft) 80ms forwards;
+    animation: live-draw var(--dur-emphasis) var(--ease-out-soft) var(--dur-press) forwards;
   }
   .live-dot { animation: live-pop var(--dur-fast) var(--ease-spring); transform-box: fill-box; transform-origin: center; }
 }
@@ -224,8 +224,7 @@ div:has(> .live-slider:active) > div > .live-value {
   transition:
     scale var(--dur-slow) var(--ease-out-back),
     background-color var(--dur-base) var(--ease-out-soft),
-    box-shadow var(--dur-base) var(--ease-out-soft),
-    backdrop-filter var(--dur-base) var(--ease-out-soft);
+    box-shadow var(--dur-base) var(--ease-out-soft);
 }
 .glass-slider span[role="slider"]::after {
   /* The specular rim: a light that sits on the top edge of the glass. */
@@ -251,8 +250,6 @@ div:has(> .live-slider:active) > div > .live-value {
   cursor: grabbing;
   scale: 1.45 1.3;
   background: hsl(0 0% 100% / 0.14);
-  -webkit-backdrop-filter: blur(0.5px) saturate(2.2) brightness(1.12) contrast(1.05);
-  backdrop-filter: blur(0.5px) saturate(2.2) brightness(1.12) contrast(1.05);
   box-shadow:
     inset 0 0 0 0.75px hsl(0 0% 100% / 0.7),
     inset 0 -3px 6px -2px hsl(var(--shadow-ink) / 0.18),
@@ -378,8 +375,8 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-timer[data-finished] { color: hsl(var(--success-ink)); background: hsl(var(--success) / 0.1); }
 .live-timer[data-finished] svg { color: hsl(var(--success)); }
 @media (prefers-reduced-motion: no-preference) {
-  .live-timer[data-running] svg { animation: live-breathe 2s var(--ease-in-out, ease-in-out) infinite; }
-  .live-timer[data-finished] { animation: live-ring 600ms var(--ease-out-back) 2; }
+  .live-timer[data-running] svg { animation: live-breathe var(--loop-breathe) var(--ease-in-out, ease-in-out) infinite; }
+  .live-timer[data-finished] { animation: live-ring var(--dur-emphasis) var(--ease-out-back) 2; }
 }
 @keyframes live-ring {
   0%, 100% { rotate: 0deg; }

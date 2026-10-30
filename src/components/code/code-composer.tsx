@@ -677,7 +677,7 @@ export function CodeComposer({
     </p>
   ) : (
     <p aria-live="polite" className="mt-2.5 px-5 text-caption text-muted-foreground">
-      <span className="font-medium text-foreground/80">{composerModeInfo(mode).label}</span> {composerModeInfo(mode).description}
+      <span className="font-medium text-muted-foreground">{composerModeInfo(mode).label}</span> {composerModeInfo(mode).description}
     </p>
   );
 

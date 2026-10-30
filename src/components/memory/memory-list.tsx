@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Plus, Search, type IconComponent } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Collapse } from "@/components/ui/collapse";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -713,7 +714,7 @@ function AddForm({
         void submit();
       }}
     >
-      <textarea
+      <Textarea
         ref={fieldRef}
         value={draft}
         rows={1}
@@ -730,7 +731,7 @@ function AddForm({
         }}
         placeholder={project ? PROJECT_ADD_PLACEHOLDER : ACCOUNT_ADD_PLACEHOLDER}
         aria-label="New memory"
-        className="block w-full resize-none overflow-hidden rounded-field border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus-visible:border-foreground/60"
+        className="block min-h-0 resize-none overflow-hidden px-3 py-2"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="min-w-0 text-caption text-muted-foreground">

@@ -55,7 +55,7 @@
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 600ms var(--ann-ease-out);
+  transition: opacity var(--dur-emphasis) var(--ann-ease-out);
 }
 .ann-media-layer[data-ready] { opacity: 1; }
 .ann-media-layer[data-contain] { object-fit: contain; padding: 12%; }
@@ -90,13 +90,11 @@
   height: 32px;
   border-radius: 999px;
   border: 1px solid hsl(var(--border) / .6);
-  background: hsl(var(--popover) / .82);
+  background: hsl(var(--popover));
   color: var(--ann-ink);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
   cursor: pointer;
   opacity: .82;
-  transition: opacity 160ms var(--ann-ease-out), transform 90ms var(--ann-ease-out), background-color 160ms var(--ann-ease-out);
+  transition: opacity 160ms var(--ann-ease-out), transform var(--dur-press) var(--ann-ease-out), background-color 160ms var(--ann-ease-out);
 }
 .ann-media:hover .ann-media-control,
 .ann-media-control:focus-visible { opacity: 1; }
@@ -171,11 +169,11 @@
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 160ms var(--ann-ease-out), border-color 160ms var(--ann-ease-out), color 160ms var(--ann-ease-out), transform 90ms var(--ann-ease-out);
+  transition: background-color 160ms var(--ann-ease-out), border-color 160ms var(--ann-ease-out), color 160ms var(--ann-ease-out), transform var(--dur-press) var(--ann-ease-out);
 }
 .ann-btn:active { transform: scale(.97); }
 .ann-btn:focus-visible { outline: 2px solid var(--ann-ink); outline-offset: 2px; }
-.ann-btn svg { width: 16px; height: 16px; transition: transform 260ms var(--ann-ease); }
+.ann-btn svg { width: 16px; height: 16px; transition: transform var(--dur-base) var(--ann-ease); }
 .ann-btn:hover svg,
 .ann-btn:focus-visible svg { transform: translateX(3px); }
 .ann-btn-primary { background: var(--ann-ink); border-color: var(--ann-ink); color: hsl(var(--background)); }
@@ -202,8 +200,8 @@
    lens finding focus); the copy follows line by line. Reduced motion keeps
    the panel's cross-fade and skips both. */
 @media (prefers-reduced-motion: no-preference) {
-  .ann[data-state="open"] .ann-media { animation: ann-settle 900ms var(--ann-ease) both; }
-  .ann[data-state="open"] .ann-rise { animation: ann-rise 700ms var(--ann-ease) both; animation-delay: calc(var(--i, 0) * 60ms + 140ms); }
+  .ann[data-state="open"] .ann-media { animation: ann-settle var(--dur-emphasis) var(--ann-ease) both; }
+  .ann[data-state="open"] .ann-rise { animation: ann-rise var(--dur-emphasis) var(--ann-ease) both; animation-delay: calc(var(--i, 0) * var(--stagger-onboarding) + var(--dur-exit)); }
   .ann-preview .ann-media { animation: none; }
   .ann-preview .ann-rise { animation: none; }
 }

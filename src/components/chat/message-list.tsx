@@ -113,7 +113,7 @@ interface MessageListProps {
 /** "Mira asked Scout to check the pricing": an annotation, not a card. */
 function RoomHandoffLine({ text }: { text: string }) {
   return (
-    <p className="mb-2 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in">
+    <p className="mb-2 font-mono text-label font-normal text-muted-foreground motion-safe:animate-fade-in">
       {text}
     </p>
   );

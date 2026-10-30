@@ -5,7 +5,7 @@ import { Check, Copy, RotateCcw, ArrowUpRight, SlidersHorizontal } from "@/compo
 import { Skeleton } from "@/components/ui/skeleton";
 import { LiveScope, interpolate, valueToString, type LiveValue } from "@/lib/live-ui/expr";
 import { LIVE_NULL_TEXT, platformFormatter, type LiveFormatter } from "@/lib/live-ui/format";
-import { parseLiveUI, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
+import { parseLiveUI, settleLiveSpec, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
@@ -50,7 +50,7 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
   if (parsed.spec) lastGood.current = parsed.spec;
   const spec = parsed.spec ?? (streaming ? lastGood.current : null);
   // A fence the stream finished is final even if its JSON never closed.
-  const view = React.useMemo(() => (spec && !streaming && spec.streaming ? { ...spec, streaming: false } : spec), [spec, streaming]);
+  const view = React.useMemo(() => (spec && !streaming ? settleLiveSpec(spec) : spec), [spec, streaming]);
 
   const state = useLiveState(view, source, host.messageId);
   const locale = useLocale();
@@ -188,15 +188,16 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       const max = scope.evaluate(c.max).value;
       const ratio = typeof v === "number" && typeof max === "number" && max > 0 ? Math.min(1, Math.max(0, v / max)) : 0;
       const shown = typeof v === "number" ? formatter.number(v, c.format ?? "number", { currency: spec.currency }) : LIVE_NULL_TEXT;
+      const label = interpolate(c.label, scope);
       return (
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-ui text-muted-foreground">{interpolate(c.label, scope)}</span>
+            <span className="text-ui text-muted-foreground">{label}</span>
             <span className="text-ui font-medium tabular-nums">{shown}</span>
           </div>
           <div
             role="meter"
-            aria-label={c.label}
+            aria-label={label}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(ratio * 100)}
@@ -241,9 +242,9 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
     case "recipe":
       return <LiveRecipe recipe={c} />;
     case "choices":
-      return <LiveChoices choices={c} onPrompt={onPrompt} />;
+      return <LiveChoices choices={c} onPrompt={onPrompt} locked={state.picks[c.key]} onLock={(picked) => state.pick(c.key, picked)} />;
     case "compare":
-      return <LiveCompare compare={c} onPrompt={onPrompt} />;
+      return <LiveCompare compare={c} onPrompt={onPrompt} locked={state.picks[c.key]} onLock={(picked) => state.pick(c.key, picked)} />;
     case "cards":
       return <LiveCards cards={c} onPrompt={onPrompt} />;
     case "tabs":
@@ -312,7 +313,7 @@ function LiveText({ text, tone }: { text: string; tone: "body" | "muted" | "head
     <p
       className={cn(
         "min-w-0 whitespace-pre-line",
-        tone === "heading" ? "text-body font-medium" : tone === "muted" ? "text-ui text-muted-foreground" : "text-ui leading-relaxed text-foreground/90",
+        tone === "heading" ? "text-body font-medium" : tone === "muted" ? "text-ui text-muted-foreground" : "text-ui leading-relaxed text-foreground",
       )}
     >
       {parts.map((p, i) =>
@@ -386,7 +387,7 @@ function LiveTable({
                       "px-3.5 py-2.5 align-baseline",
                       numeric[ci] && "tabular-nums",
                       lead(ci) && "pr-2 font-medium text-foreground",
-                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground/85",
+                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground",
                       hi(ci) && "bg-[hsl(var(--live)/0.06)] font-medium text-foreground",
                     )}
                   >
@@ -456,7 +457,7 @@ function LiveButton({
 function LiveUIFallback({ source, error }: { source: string; error?: string }) {
   return (
     <div className="live-card my-6 flex flex-col gap-2 p-5">
-      <p className="text-ui text-foreground/85">
+      <p className="text-ui text-foreground">
         This interactive view couldn&apos;t be shown{error ? <span className="text-muted-foreground"> ({error})</span> : null}.
       </p>
       <details className="text-ui text-muted-foreground">

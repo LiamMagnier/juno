@@ -102,7 +102,7 @@
   /* The keyboard focus indicator: one 2 px ring hugging the edge (no gap, no
      second line), in the presence ink mixed a little toward the panel so it is
      restrained but still 3:1 or more against every plane (light 4.4:1, dark 6.1:1). */
-  --focus-ring: light-dark(color-mix(in oklab, #2d49c9 82%, #fbfbfc), color-mix(in oklab, #97a6e6 86%, #18191b));
+  --focus-ring: light-dark(color-mix(in oklab, var(--presence) 82%, var(--ground)), color-mix(in oklab, var(--presence) 86%, var(--ground)));
 
   /* Attention: the words that say someone needs you. Nowhere else. Dark is a
      quieter honey at regular weight (light text on charcoal reads heavier), so
@@ -500,7 +500,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
 }
 
 /* The one sanctioned spinner (§1.6 item 5): inside a control the person pressed,
-   shown only after 200ms, 16px, one turn per 800ms, linear. */
+   shown only after 200ms, 16px, one turn per beat (--loop-beat), linear. */
 .jn .jspin {
   display: inline-block;
   width: 16px;
@@ -509,7 +509,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   border: 1.5px solid currentColor;
   border-right-color: transparent;
   opacity: 0.85;
-  animation: jspin 800ms linear infinite;
+  animation: jspin var(--loop-beat) linear infinite;
 }
 @keyframes jspin {
   to {
@@ -853,7 +853,7 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
   .jn .jtip:hover::after {
     opacity: 1;
     translate: -50% 0;
-    transition-delay: 600ms;
+    transition-delay: var(--dur-emphasis);
   }
   .jn .jtip:is([data-tip-align="end"], [data-tip-align="start"]):hover::after {
     translate: 0 0;
@@ -987,11 +987,11 @@ html:has(.jn[data-theme="dark"] .jn-frame) body {
 .jn[data-rm] *,
 .jn[data-rm] *::before,
 .jn[data-rm] *::after {
-  animation-duration: 1ms !important;
+  animation-duration: 0ms !important;
   animation-iteration-count: 1 !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .jn .jspin {
-    animation-duration: 1600ms;
+    animation-duration: var(--loop-breathe);
   }
 }

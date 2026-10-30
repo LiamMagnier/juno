@@ -55,7 +55,7 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        "ui-tooltip z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden break-words rounded-control px-2.5 py-1.5 text-caption font-medium data-[state=delayed-open]:animate-tooltip-in data-[state=closed]:animate-tooltip-out",
+        "ui-tooltip z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden break-words rounded-control px-2.5 py-1.5 font-sans text-label font-medium data-[state=delayed-open]:animate-tooltip-in data-[state=closed]:animate-tooltip-out",
         className
       )}
       {...props}

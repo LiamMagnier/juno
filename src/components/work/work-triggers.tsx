@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
+import { fieldFrameClass, fieldHeightClass } from "@/components/ui/field-recipe";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -31,6 +32,9 @@ import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { useReducedMotion } from "@/lib/motion-preference";
+
+/** A native <select> cut from the field recipe Input uses, at Input's inset. */
+const NATIVE_SELECT = cn(fieldFrameClass, fieldHeightClass, "px-3.5");
 
 /*
  * What starts a schedule, in a form.
@@ -701,26 +705,17 @@ function ChoiceField({
           a dozen fields, and a listbox that traps focus for each of them is
           slower to fill in than the control every platform already has.
 
-          NO `bg-*` utility beside `field-well`. Tailwind emits utilities after
-          the components layer at equal specificity, so the `bg-secondary` that
-          was here beat the class outright — and `.field-well` is precisely where
-          the per-theme answer lives (page fill on light, one rung UP on dark,
-          because nothing recesses below black). Carrying the utility meant this
-          select was secondary on BOTH themes while the `Input` and `Textarea`
-          two fields above it were background on light: three controls in one
-          form, two fills.
-
-          The ring is the same `ring-2 ring-ring` every other control in Work
-          focuses with — a 1px border tint was the only keyboard indicator here,
-          which is a focus bug rather than a style choice. `px-3.5` and
-          `coarse:h-11` are Input's, for the same reason: a native select and a
-          text field in one column that disagree about their gutter and their
-          touch height read as two form kits. */}
+          It is cut from the field recipe the `Input` and `Textarea` two fields
+          above it use (NATIVE_SELECT): one fill, one hover and focus edge, one
+          keyboard line, and Input's `px-3.5` gutter and touch height. A native
+          select and a text field in one column that disagree about any of
+          those read as two form kits — which is what the legacy `field-well`
+          alias with its own 2px ring had become once Input moved on. */}
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="field-well h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+        className={NATIVE_SELECT}
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -1302,14 +1297,12 @@ function TriggerConfigFields({
               </p>
             ) : (
               // Same shape as the interval select above, and for the same
-              // reasons: no `bg-*` beside `field-well` (the utility beats the
-              // class and forces one theme's fill onto both), Input's `px-3.5`
-              // and Input's `coarse:h-11`.
+              // reasons: the field recipe Input is cut from.
               <select
                 value={stringAt(config, "grantId")}
                 disabled={disabled}
                 onChange={(event) => set({ grantId: event.target.value })}
-                className="field-well h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+                className={NATIVE_SELECT}
               >
                 <option value="">Choose a folder…</option>
                 {grants.map((grant) => (

@@ -3,12 +3,10 @@
    authoritative. */
 .agent-thread-bar {
   position: relative;
-  background: hsl(var(--background) / 0.86);
-  backdrop-filter: blur(18px) saturate(1.1);
-  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  /* Opaque, like every product header (spec D15): no backdrop-filter. */
+  background: hsl(var(--background));
   box-shadow: inset 0 -1px 0 hsl(var(--border) / 0.6);
 }
-@supports not (backdrop-filter: blur(1px)) { .agent-thread-bar { background: hsl(var(--background)); } }
 
 
 /* ---------- Orbit crew (orbit-stage.tsx) ----------

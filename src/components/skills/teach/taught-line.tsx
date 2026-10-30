@@ -50,7 +50,7 @@ export function TaughtLine({
         {!enabled ? " · Off until you switch it on" : ""}
       </span>
       {canReteach ? (
-        <Button asChild size="sm" variant="outline" className="h-7">
+        <Button asChild size="xs" variant="outline">
           <Link href={`/skills/teach?skill=${encodeURIComponent(skillId)}`}>{enabled ? "Teach it again" : "Review and turn on"}</Link>
         </Button>
       ) : null}

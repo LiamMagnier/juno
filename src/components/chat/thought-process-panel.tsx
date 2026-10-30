@@ -57,7 +57,7 @@ import {
 import type { ClientMemoryReceipt, ClientToolDetail } from "@/types/chat";
 import { ReceiptGlyph } from "@/components/chat/tool-receipt";
 import { ToolRunDetail } from "@/components/chat/tool-run";
-import { receiptCanRetry } from "@/lib/chat/tool-receipt";
+import { RECEIPT_REFUSAL_TEXT } from "@/lib/chat/tool-receipt";
 import {
   LiveCopy,
   PhaseKey,
@@ -67,6 +67,7 @@ import {
   StepKind,
   plural,
   speakSpan,
+  stepCanAskToRunAgain,
 } from "@/components/chat/thought-process-model";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 
@@ -683,15 +684,9 @@ export function ThoughtProcessPanel({
    * seeds the composer and the person presses send. And it is offered ONLY on a
    * call that failed or never returned — re-running a successful `create_issue`
    * files a duplicate ticket, and an action button that does damage on a
-   * misclick is worse than a missing feature. */
-  const rerunnable = (step: Step) =>
-    !!seedDraft &&
-    step.body?.type === "tool" &&
-    !!step.body.tool.args &&
-    // Never a write: re-running a `create_issue` that half-landed files a
-    // duplicate. The shared rule, so Code and chat refuse the same calls.
-    receiptCanRetry(step.body.tool.name) &&
-    (step.body.tool.status === "failed" || step.body.tool.resultNote === "unfinished");
+   * misclick is worse than a missing feature. A declined call is never
+   * offered: the rule is the model's `stepCanAskToRunAgain`. */
+  const rerunnable = (step: Step) => !!seedDraft && stepCanAskToRunAgain(step);
 
   const askToRunAgain = React.useCallback(
     (tool: ClientToolDetail) => {
@@ -1500,6 +1495,10 @@ function StepRow({
     <span className={cn("col-start-3 row-start-1 flex shrink-0 items-baseline gap-2 pt-px", !showDetail && "coarse:pt-0")}>
       {step.failed && step.kind === "tool" && (
         <span className="font-mono text-caption text-warning">Failed</span>
+      )}
+      {/* A refusal says how it ended in the muted ink: a decision, not a fault. */}
+      {step.refusal && (
+        <span className="font-mono text-caption text-muted-foreground">{RECEIPT_REFUSAL_TEXT[step.refusal]}</span>
       )}
       {step.ms !== null && (
         <span className="font-mono text-caption tabular-nums text-muted-foreground">

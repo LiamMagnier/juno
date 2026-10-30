@@ -30,7 +30,7 @@ import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/li
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
 import type { ImageEditInput, SendResult } from "@/hooks/use-chat";
-import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+import { DURATION, SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import "./image-edit.css";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 
@@ -360,7 +360,7 @@ export function ImageEditOverlay({
         { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
         { transform: "none" },
       ],
-      { duration: 460, easing: "cubic-bezier(.16, 1, .3, 1)", fill: "backwards" }
+      { duration: DURATION.emphasis, easing: "cubic-bezier(.16, 1, .3, 1)", fill: "backwards" }
     );
   }, [open, imgReady, imgFailed, frameSize, originRect]);
 

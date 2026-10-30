@@ -52,7 +52,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
         </div>
 
         {linkable && (
-          <ExternalLink className="size-3 shrink-0 text-muted-foreground/50 transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none" />
+          <ExternalLink className="size-3 shrink-0 text-ink-tertiary transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none" />
         )}
       </div>
 
@@ -61,7 +61,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
       </span>
 
       {(source.sourceType || source.publishedAt) && (
-        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/40 pt-1.5 text-caption text-muted-foreground/75">
+        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/40 pt-1.5 text-caption text-muted-foreground">
           {source.sourceType ? (
             <span className="capitalize">{source.sourceType.replace(/_/g, " ")}</span>
           ) : (

@@ -373,7 +373,7 @@ export function ComposerArmedMark({
       type="button"
       onClick={onOpen}
       aria-label={openLabel}
-      className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="inline-flex min-w-0 items-center gap-1.5 rounded-control py-0.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <span className={cn("truncate", labelClassName)}>{label}</span>
       {detail && (
@@ -389,7 +389,7 @@ export function ComposerArmedMark({
   return (
     <span
       className={cn(
-        "group/armed inline-flex min-w-0 items-center gap-1 rounded-md bg-accent pl-1 align-baseline font-medium text-foreground",
+        "group/armed inline-flex min-w-0 items-center gap-1 rounded-control bg-accent pl-1 align-baseline font-medium text-foreground",
         "motion-safe:animate-pop-in",
       )}
     >
@@ -678,12 +678,12 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
             ? // Empty, the disc is the quiet voice entry: a tone step and the
               // second ink, so the field (the thing to do) leads and the disc
               // is never the strongest object of an empty composer.
-              "bg-secondary text-foreground/75 hover:bg-selected hover:text-foreground active:bg-selected"
+              "bg-secondary text-muted-foreground hover:bg-selected hover:text-foreground active:bg-selected"
             : // With words, send: the ink disc, the one strong spot on the
               // composer (V3: graphite is the active control, ultramarine only
               // a small live presence). Stop and busy wear the same disc.
               "bg-foreground text-background hover:bg-foreground/90 dark:hover:bg-white active:bg-foreground/80",
-          "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
+          "disabled:pointer-events-none disabled:bg-secondary disabled:text-ink-tertiary",
           // 44px under a coarse pointer, the touch minimum; 36px on a mouse.
           "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
           className
@@ -835,7 +835,7 @@ export function ComposerAttachmentTile({
       sizes="64px"
     />
   ) : (
-    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-caption font-medium text-muted-foreground">
+    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-label font-medium text-muted-foreground">
       {extension}
     </span>
   );
@@ -869,12 +869,12 @@ export function ComposerAttachmentTile({
                 a filename is identified by its END as often as its start
                 ("…-final-v3.pdf"), so `line-clamp-2` keeps the tail visible
                 where `truncate` would always eat it. */}
-            <span className="line-clamp-2 text-caption font-medium leading-tight text-foreground">
+            <span className="line-clamp-2 font-sans text-label font-medium leading-tight text-foreground">
               {upload.fileName}
             </span>
             <span
               className={cn(
-                "truncate font-mono text-micro uppercase text-muted-foreground",
+                "truncate font-mono text-label font-normal uppercase text-muted-foreground",
               )}
             >
               {line}
@@ -883,7 +883,7 @@ export function ComposerAttachmentTile({
         </>
       )}
       {isImage && label ? (
-        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-px text-center font-mono text-micro uppercase leading-4 text-muted-foreground">
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-px text-center font-mono text-label font-normal uppercase leading-4 text-muted-foreground">
           {label}
         </span>
       ) : null}

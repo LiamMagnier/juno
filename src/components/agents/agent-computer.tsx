@@ -365,7 +365,7 @@ export function AgentComputerOverlay({
       role="dialog"
       aria-modal="true"
       aria-label={`${agent.name}’s computer`}
-      className="fixed inset-0 z-modal flex flex-col bg-background/85 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in duration-base"
+      className="fixed inset-0 z-modal flex flex-col bg-background motion-safe:animate-in motion-safe:fade-in duration-base"
     >
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}

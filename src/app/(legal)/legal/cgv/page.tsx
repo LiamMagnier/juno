@@ -438,7 +438,7 @@ export default function CgvPage() {
         vices cachés (articles 1641 à 1649 du code civil). Pour la mettre en œuvre, contactez le service
         client à <Fill value={SELLER.email} what="adresse e-mail du service client" />.
       </p>
-      <div className="mt-4 rounded-lg border border-border p-5 [&>p:first-child]:mt-0">
+      <div className="mt-4 rounded-card border border-border p-5 [&>p:first-child]:mt-0">
         <p>
           Le consommateur a droit à la mise en œuvre de la garantie légale de conformité en cas
           d&apos;apparition d&apos;un défaut de conformité durant un délai de{" "}
@@ -661,7 +661,7 @@ export default function CgvPage() {
         (Veuillez compléter et renvoyer le présent formulaire uniquement si vous souhaitez vous rétracter
         du contrat.)
       </p>
-      <div className="mt-4 rounded-lg border border-border p-5 [&>p:first-child]:mt-0">
+      <div className="mt-4 rounded-card border border-border p-5 [&>p:first-child]:mt-0">
         <p>
           À l&apos;attention de <Fill value={SELLER.name} what="raison sociale" />,{" "}
           <Fill value={SELLER.address} what="adresse postale" />, adresse électronique :{" "}

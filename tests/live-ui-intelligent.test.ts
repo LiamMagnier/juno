@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseLiveUI } from "@/lib/live-ui/spec";
+import { LiveScope } from "@/lib/live-ui/expr";
+import { liveDefaults, parseLiveUI } from "@/lib/live-ui/spec";
 import { liveUISummaryLines } from "@/lib/live-ui/summary";
 import { scaleQuantity } from "@/components/chat/live-ui/live-ui-intelligent";
 
@@ -59,6 +60,23 @@ test("tabs hold ordinary components, and every new view prints a summary", () =>
   });
   const lines = liveUISummaryLines(spec);
   for (const want of ["One", "Hello", "Two", "Note", "For 2 servings", "• 3 eggs", "1. Whisk. (1 min)"]) assert.ok(lines.includes(want), want);
+});
+
+test("an input inside a tab has its default in scope before the reader touches it", () => {
+  const spec = one({
+    let: { total: "price * qty" },
+    ui: [
+      {
+        type: "tabs",
+        tabs: [
+          { label: "Plan", children: [{ type: "slider", id: "price", label: "Price", min: 0, max: 100, value: 20 }] },
+          { label: "Order", children: [{ type: "stepper", id: "qty", label: "Qty", min: 1, max: 10, value: 3 }, { type: "metric", label: "Total", value: "total" }] },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(liveDefaults(spec), { price: 20, qty: 3 });
+  assert.equal(new LiveScope({ inputs: liveDefaults(spec), lets: spec.lets, data: spec.data }).evaluate("total").value, 60);
 });
 
 test("a recipe scales like a cook: grams to kg, whole things stay whole, spoons snap to fractions", () => {

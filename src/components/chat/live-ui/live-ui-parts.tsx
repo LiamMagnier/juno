@@ -151,11 +151,11 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                   tabIndex={on ? 0 : -1}
                   onClick={() => setSelected(p.id)}
                   className={cn(
-                    "relative flex min-w-0 flex-col items-start rounded-xl px-3 py-2 text-left transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                    "relative flex min-w-0 flex-col items-start rounded-card px-3 py-2 text-left transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
                     on ? "bg-[hsl(var(--live)/0.08)] shadow-[inset_2px_0_0_hsl(var(--live))]" : "hover:bg-accent",
                   )}
                 >
-                  <span className={cn("text-ui", on ? "font-medium text-foreground" : "text-foreground/85")}>{p.label}</span>
+                  <span className={cn("text-ui", on ? "font-medium text-foreground" : "text-foreground")}>{p.label}</span>
                   {p.summary ? <span className="line-clamp-1 text-caption text-muted-foreground">{p.summary}</span> : null}
                 </button>
               );
@@ -175,7 +175,7 @@ function PartDetail({ id, part, framed }: { id: string; part: LiveExplorerPart; 
         {part.label}
       </p>
       {part.summary && part.summary !== part.detail ? <p className="text-ui text-muted-foreground">{part.summary}</p> : null}
-      {part.detail ? <p className="text-ui leading-relaxed text-foreground/90">{part.detail}</p> : null}
+      {part.detail ? <p className="text-ui leading-relaxed text-foreground">{part.detail}</p> : null}
       {part.facts.length ? (
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-ui">
           {part.facts.map((f, i) => (
@@ -289,7 +289,7 @@ export function LiveChecklist({
                 role="checkbox"
                 aria-checked={on}
                 onClick={() => onToggle(i)}
-                className="flex w-full min-w-0 items-start gap-3 rounded-xl px-2 py-2 text-left transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
+                className="flex w-full min-w-0 items-start gap-3 rounded-card px-2 py-2 text-left transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
               >
                 <span
                   aria-hidden

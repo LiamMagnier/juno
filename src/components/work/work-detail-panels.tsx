@@ -549,7 +549,7 @@ function Meter({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <Icon className="size-3 text-muted-foreground/70" aria-hidden="true" />
+      <Icon className="size-3 text-ink-tertiary" aria-hidden="true" />
       <dt className="sr-only">{label}</dt>
       <dd>{value}</dd>
     </div>

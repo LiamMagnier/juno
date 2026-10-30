@@ -280,7 +280,7 @@ export function AnnouncementDialog({
           onDismiss={() => onOpenChange(false)}
         />
         {/* Over the media's corner, on the floating chip, so it stays findable over any frame. */}
-        <DialogCloseButton className="right-3.5 top-3.5 z-20 bg-popover/85 shadow-pop backdrop-blur-sm" />
+        <DialogCloseButton className="right-3.5 top-3.5 z-20 bg-popover shadow-pop" />
       </DialogContent>
     </Dialog>
   );

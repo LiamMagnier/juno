@@ -63,7 +63,7 @@ const buttonVariants = cva(
         secondary: "control-neu text-foreground",
         ghost:
           "border-transparent bg-transparent shadow-none hover:bg-accent hover:text-foreground active:bg-selected",
-        link: "border-transparent text-primary underline-offset-4 hover:underline active:text-primary/75",
+        link: "border-transparent text-primary underline-offset-4 hover:underline active:text-muted-foreground",
       },
       // Every size grows to a ~44px hit area on touch devices (coarse:) so a
       // field with a button beside it stays aligned on a phone.
@@ -72,6 +72,13 @@ const buttonVariants = cva(
         // Same face as `default` — a small button is shorter, not quieter. It
         // was text-xs (12px), a size between two rungs of the type scale.
         sm: "h-8 px-3 text-ui coarse:h-10 hit-44",
+        // The 28px inline action: Retry under a failed tool, Continue under a
+        // cut-off answer, Save beside an edited memory, the selection bar's
+        // verbs. A dozen call sites were hand-rolling it (or writing `sm` and
+        // overriding the height), each with its own padding and touch height.
+        // No type size: it inherits the base `text-ui`, and a site that sets
+        // a caption label says so.
+        xs: "h-7 gap-1.5 px-2.5 coarse:h-10 hit-44",
         // text-body IS 0.9375rem — the arbitrary value was the token spelled out
         // longhand, minus the 1.6 line-height that comes with it.
         lg: "h-11 rounded-field px-6 text-body",

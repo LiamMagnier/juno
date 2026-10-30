@@ -40,7 +40,7 @@ export default function CodeLandingLoading() {
             line under it. Spelled out so a composer that grows a tier does
             not leave this skeleton quietly short. */}
         <div className="w-full">
-          <Skeleton className="mx-3.5 h-8 rounded-b-none rounded-t-2xl opacity-60" />
+          <Skeleton className="mx-3.5 h-8 rounded-b-none rounded-t-panel opacity-60" />
           <Skeleton className="h-[7.875rem] w-full rounded-composer" />
           <Skeleton className="mx-auto mt-2.5 h-4 w-64 max-w-full rounded-full" />
         </div>

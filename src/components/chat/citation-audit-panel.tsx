@@ -105,7 +105,7 @@ function SourceInspector({
       <div className="flex items-start gap-2">
         {source && <SourceFavicon url={source.url} variant="list" />}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-body leading-tight text-foreground/90">{source?.title ?? "Cited source"}</p>
+          <p className="truncate text-body leading-tight text-foreground">{source?.title ?? "Cited source"}</p>
           <p className="truncate font-mono text-caption text-muted-foreground">
             {source ? hostOf(source.url) : ""}
             {published ? ` · published ${published.toISOString().slice(0, 10)}` : " · no publication date"}
@@ -190,7 +190,7 @@ function SourceInspector({
         </p>
       )}
 
-      <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground/85">
+      <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground">
         {quoteRange ? (
           <>
             {link.passage.slice(0, quoteRange[0])}
@@ -422,7 +422,7 @@ function ClaimRow({
           className={cn("mt-1.5 size-2 shrink-0 rounded-full", STATES[claim.label].dot)}
         />
         <span className="min-w-0 flex-1">
-          <span className="block text-body leading-snug text-foreground/90">{claim.text}</span>
+          <span className="block text-body leading-snug text-foreground">{claim.text}</span>
           <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <SupportBadge label={claim.label} />
             {/* The number behind the badge, at the top level. "Partly
@@ -467,7 +467,7 @@ function ClaimRow({
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "mt-1 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "mt-1 size-3.5 shrink-0 text-ink-tertiary transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -634,7 +634,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3.5 shrink-0 text-ink-tertiary transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />

@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from "@/components/ui/icons";
 import { Icon } from "@/components/ui/juno-icons";
+import { fieldFrameClass } from "@/components/ui/field-recipe";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { RUN_STATE_META, isBlockedOnYou, prSettled, runState } from "@/lib/code-runs";
 import { newestPerConversation } from "@/lib/conversation-status";
@@ -145,9 +146,10 @@ function WorkRow({
       <div data-flip={t.id} className="flex min-h-11 items-center rounded-control px-1">
         <InlineTitleInput
           initial={t.title}
-          // It opens focused: a pressed or autofocused field steps its edge
-          // up, and only the keyboard gets the 2px line (`kbd-focus:`).
-          className="h-8 w-full rounded-control border border-input bg-background px-2 text-nav outline-none focus-visible:border-foreground/60 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]"
+          // The shared field (field-recipe): it opens focused, a pressed or
+          // autofocused field steps its edge up, and only the keyboard gets
+          // the ring line. 32px and the row's own type, inside a 44px row.
+          className={cn(fieldFrameClass, "h-8 px-2 text-nav")}
           onCommit={(value) => {
             setRenaming(false);
             if (value.trim() && value.trim() !== t.title) actions.rename(t.id, value);

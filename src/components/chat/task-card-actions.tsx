@@ -77,7 +77,7 @@ export function TaskLiveControl({ work }: { work: ConversationWork }) {
           if (!ok) setPending(false);
         });
       }}
-      className="px-2.5 font-normal text-foreground/75 hover:text-foreground"
+      className="px-2.5 font-normal text-muted-foreground hover:text-foreground"
     >
       {control === "pause" ? "Pause" : "Resume"}
     </Button>
@@ -94,7 +94,7 @@ export function TaskConnectionNotice({ work, className }: { work: ConversationWo
       <button
         type="button"
         onClick={reconnect}
-        className="rounded-control text-foreground/75 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
+        className="rounded-control text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
       >
         Reconnect
       </button>

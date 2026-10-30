@@ -19,7 +19,7 @@ import {
 } from "@/lib/user-mcp";
 import { safeMcpFetch, userMcpUrlProblem } from "@/lib/mcp-safe-fetch";
 import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
-import { connectFailureOf, flattenToolResult } from "@/lib/tools/connector-tools";
+import { connectFailureOf, flattenToolResult, refusalStatusFields } from "@/lib/tools/connector-tools";
 import {
   createMcpToolListCache,
   mcpToolListCacheKey,
@@ -877,7 +877,12 @@ export async function openMcpToolset(
 
       if (authorization.kind === "refused") {
         await settleToolInvocation(auditId, { status: "failed", error: authorization.reason });
-        return toolExecution(label, `Action not permitted: ${authorization.reason}`, false);
+        // The receipt's verdict travels with the refusal: a declined or
+        // expired approval is not a tool error, on the row or to the model.
+        return {
+          ...toolExecution(label, `Action not permitted: ${authorization.reason}`, false),
+          ...refusalStatusFields(authorization.status),
+        };
       }
       if (authorization.kind === "replay") {
         await settleToolInvocation(auditId, {

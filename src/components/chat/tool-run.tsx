@@ -161,7 +161,7 @@ export function ToolRunDetail({
       ) : null}
 
       {live && (lines.length || progressNote) ? (
-        <div className="mt-2 overflow-hidden rounded-lg border border-border/60 bg-secondary">
+        <div className="mt-2 overflow-hidden rounded-card border border-border/60 bg-secondary">
           <div className="flex items-center justify-between gap-3 border-b border-border/60 px-2.5 py-1.5 text-caption text-muted-foreground">
             <span>Output</span>
             {progressNote ? <span className="font-mono tabular-nums">{progressNote}</span> : null}

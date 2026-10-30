@@ -4,6 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight, Check, EyeOff, Pencil, Trash2, Undo2 } from "@/components/ui/icons";
 import { memoryEntryHref, memorySourceChat } from "@/lib/chat/memory-receipts";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { ClientMemoryReceipt } from "@/types/chat";
 
@@ -141,7 +143,7 @@ const linkClass =
 
 /** A fact's action: a compact ghost button, glyph then word, inked on hover. */
 const actionClass =
-  "inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none disabled:cursor-wait disabled:opacity-60 coarse:h-9 [&>svg]:size-3.5 [&>svg]:shrink-0";
+  "inline-flex h-7 items-center gap-1 rounded-control px-1.5 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none disabled:cursor-wait disabled:opacity-60 coarse:h-9 [&>svg]:size-3.5 [&>svg]:shrink-0";
 
 export function MemoryFactRow({
   fact,
@@ -248,7 +250,7 @@ export function MemoryFactRow({
           <label className="sr-only" htmlFor={`memory-fact-${fact.id}`}>
             Edit this memory
           </label>
-          <textarea
+          <Textarea
             id={`memory-fact-${fact.id}`}
             ref={fieldRef}
             value={draft}
@@ -266,16 +268,14 @@ export function MemoryFactRow({
               }
             }}
             disabled={busy === "edit"}
-            className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-ui text-foreground outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft focus-visible:border-foreground/40 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] motion-reduce:transition-none"
+            // The shared field, at the row's tighter inset; `min-h-0` lets
+            // `rows` size it to the fact instead of the field's 60px floor.
+            className="min-h-0 resize-none px-2.5 py-1.5"
           />
           <div className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground">
-            <button
-              type="submit"
-              disabled={busy === "edit"}
-              className="inline-flex h-7 items-center rounded-md bg-foreground px-2.5 text-caption font-medium text-background transition-opacity duration-fast ease-out-soft hover:opacity-90 disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none coarse:h-9"
-            >
+            <Button type="submit" size="xs" disabled={busy === "edit"} className="text-caption disabled:cursor-wait disabled:opacity-60 coarse:h-9">
               {busy === "edit" ? "Saving…" : "Save"}
-            </button>
+            </Button>
             <button type="button" onClick={cancel} disabled={busy === "edit"} className={actionClass}>
               Cancel
             </button>

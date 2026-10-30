@@ -169,7 +169,7 @@ export function WorkProgressChecklist({ steps }: { steps: readonly PlanStep[] })
             <span
               className={cn(
                 "min-w-0 transition-colors duration-slow ease-out-soft",
-                step.state === "pending" && "text-foreground/80",
+                step.state === "pending" && "text-muted-foreground",
                 // Struck through and dimmed together. Either alone reads as an
                 // edit; the pair reads as a to-do list.
                 step.state === "done" && "text-muted-foreground line-through decoration-border",

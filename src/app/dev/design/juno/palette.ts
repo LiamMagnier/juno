@@ -1,3 +1,5 @@
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+
 /*
  * The palette as data, mirroring tokens.css, so the system sheet can print
  * each value with its role and compute contrast from the same numbers.
@@ -34,7 +36,7 @@ export const INKS: Swatch[] = [
 ];
 
 export const COLOURS: Swatch[] = [
-  { key: "presence", name: "Presence", role: "Only what is acting now: the live line, a live verb", light: "#2d49c9", dark: "#97a6e6", text: { min: 4.5, on: ["ground", "surface", "card"] } },
+  { key: "presence", name: "Presence", role: "Only what is acting now: the live line, a live verb", light: SCRIPT_COLOR.presence.light, dark: SCRIPT_COLOR.presence.dark, text: { min: 4.5, on: ["ground", "surface", "card"] } },
   { key: "attn", name: "Attention", role: "Only the words that say someone needs you", light: "#8f5406", dark: "#e6bd7e", text: { min: 4.5, on: ["ground", "surface", "card", "side"] } },
   { key: "add-ink", name: "Added", role: "Diff counts and added lines, as text", light: "#1b7a3a", dark: "#74c68a", text: { min: 4.5, on: ["ground", "side"] } },
   { key: "del-ink", name: "Removed", role: "Diff counts, removed lines, destructive verbs", light: "#b3261e", dark: "#f0928a", text: { min: 4.5, on: ["ground", "side"] } },

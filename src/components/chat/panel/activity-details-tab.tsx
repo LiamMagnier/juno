@@ -53,7 +53,7 @@ function ToolsRow({ tools }: { tools: NonNullable<DetailsModel["tools"]> }) {
         aria-controls={open ? listId : undefined}
         onClick={() => setOpen((value) => !value)}
         disabled={names.length === 0}
-        className="-mx-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent disabled:pointer-events-none motion-reduce:transition-none"
+        className="-mx-1.5 inline-flex items-center gap-1.5 rounded-control px-1.5 py-0.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent disabled:pointer-events-none motion-reduce:transition-none"
       >
         <PhraseWithArgs
           spec={{ parts: [{ phrase: PANEL_COPY.details.toolsAvailable }, { kind: "number", value: names.length }] }}
@@ -218,7 +218,7 @@ function MemoryRow({ memory, onForget }: { memory: ClientMemoryReceipt; onForget
   return (
     <li className="flex flex-col gap-1 py-1.5">
       {/* The saved fact is the reader's own content: shown as written. */}
-      <p className="break-words text-ui text-foreground/85" data-no-auto-translate dir="auto">
+      <p className="break-words text-ui text-foreground" data-no-auto-translate dir="auto">
         {memory.content}
       </p>
       <div className="flex flex-wrap gap-x-3 text-caption text-muted-foreground">

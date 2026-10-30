@@ -175,7 +175,7 @@ export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeC
         <RunGalaxy phase="waiting" loopId={`research-plan:${runId}`} />
         <PhraseWithArgs
           spec={[phrase(RESEARCH_COPY.scope.planReady), phrase(RESEARCH_COPY.scope.review)]}
-          className="min-w-0 flex-1 truncate text-ui text-foreground/80"
+          className="min-w-0 flex-1 truncate text-ui text-muted-foreground"
         />
         <ChevronRight aria-hidden className="size-3.5 text-muted-foreground rtl:-scale-x-100" />
       </Pressable>
@@ -395,7 +395,7 @@ function ScopeCardBody({
               const answer = draft.answers[clarification.id] ?? "";
               return (
                 <div key={clarification.id} className="space-y-1.5">
-                  <p lang={contentLang} id={`clarify-${run.id}-${clarification.id}`} className="text-body text-foreground/90">
+                  <p lang={contentLang} id={`clarify-${run.id}-${clarification.id}`} className="text-body text-foreground">
                     {clarification.question}
                   </p>
                   {clarification.options.length > 0 ? (

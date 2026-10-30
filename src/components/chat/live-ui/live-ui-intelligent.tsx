@@ -291,17 +291,32 @@ export function LiveRecipe({ recipe }: { recipe: Of<"recipe"> }) {
  * A question answered with a tap (ChatGPT's multiple-choice follow-ups): the
  * pick is sent as the user's next message. One choice sends at once; a multi
  * question collects picks and sends them together. Once sent, the card keeps
- * the answer and stops taking more.
+ * the answer and stops taking more — after a reload too, through `locked`,
+ * the view's stored pick (use-live-state.ts).
  */
-export function LiveChoices({ choices, onPrompt }: { choices: Of<"choices">; onPrompt?: (text: string) => void }) {
-  const [picked, setPicked] = React.useState<ReadonlySet<number>>(() => new Set());
-  const [sent, setSent] = React.useState(false);
+export function LiveChoices({
+  choices,
+  onPrompt,
+  locked,
+  onLock,
+}: {
+  choices: Of<"choices">;
+  onPrompt?: (text: string) => void;
+  locked?: readonly number[];
+  onLock?: (indices: number[]) => void;
+}) {
+  const [draft, setPicked] = React.useState<ReadonlySet<number>>(() => new Set());
+  const [sentHere, setSentHere] = React.useState<readonly number[] | null>(null);
+  const sentPick = locked && locked.length > 0 ? locked : sentHere;
+  const sent = sentPick !== null;
+  const picked: ReadonlySet<number> = sentPick ? new Set(sentPick) : draft;
   const disabled = !onPrompt;
   const send = (indices: number[]) => {
     if (!onPrompt || indices.length === 0) return;
     const text = indices.length === 1 ? choices.options[indices[0]].prompt : indices.map((i) => choices.options[i].label).join(", ");
     onPrompt(text);
-    setSent(true);
+    setSentHere(indices);
+    onLock?.(indices);
   };
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -359,8 +374,20 @@ export function LiveChoices({ choices, onPrompt }: { choices: Of<"choices">; onP
 
 /* —————————————————————————————— Compare —————————————————————————————— */
 
-export function LiveCompare({ compare, onPrompt }: { compare: Of<"compare">; onPrompt?: (text: string) => void }) {
-  const [chosen, setChosen] = React.useState<number | null>(null);
+/** Options side by side. Going with one sends it and locks the card, kept across a reload through `locked`. */
+export function LiveCompare({
+  compare,
+  onPrompt,
+  locked,
+  onLock,
+}: {
+  compare: Of<"compare">;
+  onPrompt?: (text: string) => void;
+  locked?: readonly number[];
+  onLock?: (indices: number[]) => void;
+}) {
+  const [chosenHere, setChosen] = React.useState<number | null>(null);
+  const chosen = locked && locked.length > 0 ? locked[0] : chosenHere;
   const cols = compare.options.length >= 3 ? "@[36rem]:grid-cols-3" : "@[28rem]:grid-cols-2";
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -416,6 +443,7 @@ export function LiveCompare({ compare, onPrompt }: { compare: Of<"compare">; onP
                   onClick={() => {
                     setChosen(i);
                     onPrompt?.(o.prompt!);
+                    onLock?.([i]);
                   }}
                   className={cn("mt-auto w-full justify-center", best ? "live-primary" : "live-chip live-chip-lg")}
                 >
@@ -438,7 +466,7 @@ function Rating({ value }: { value: number }) {
     <span className="inline-flex items-center gap-1 text-caption tabular-nums text-muted-foreground" aria-label={`Rated ${value} out of 5`}>
       <span className="inline-flex" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (
-          <Star key={i} weight={value >= i + 0.75 ? "fill" : undefined} className={cn("size-3", value >= i + 0.75 ? "text-[hsl(var(--warning))]" : "text-muted-foreground/50")} />
+          <Star key={i} weight={value >= i + 0.75 ? "fill" : undefined} className={cn("size-3", value >= i + 0.75 ? "text-[hsl(var(--warning))]" : "text-ink-tertiary")} />
         ))}
       </span>
       {value.toFixed(1)}

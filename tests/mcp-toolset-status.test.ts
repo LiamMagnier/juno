@@ -147,9 +147,9 @@ test("per-call approvals and the timer start after authorisation", () => {
   // The timeout is now managed by the caller via the session AbortSignal passed in directly;
   // AbortSignal.timeout(opts.timeoutMs) was replaced by passing through the external signal.
   assert.ok(mcp.indexOf("client.callTool(") > authorized, "callTool must follow onAuthorized");
-  // mcp.ts now inlines the refusal status directly rather than spreading refusalStatusFields;
-  // the pattern in connector-tools.ts handles the logic.
+  // A refusal carries the receipt's verdict (refusalStatusFields, below).
   assert.match(mcp, /authorization\.kind === ["']refused["']/);
+  assert.match(mcp, /refusalStatusFields\(authorization\.status\)/);
 });
 
 test("refusals carry their record status", () => {

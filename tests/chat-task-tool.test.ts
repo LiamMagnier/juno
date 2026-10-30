@@ -557,7 +557,8 @@ test("the declaration is the registry's start_task entry, so the two cannot drif
 
 test("the approval waits on the turn signal with the per-call card; the timer starts after the yes", () => {
   const source = read("../src/lib/chat/task-tool.ts");
-  assert.match(source, /const onApprovalRequest = opts\?\.onApprovalRequest \?\? ctx\.onApprovalRequest;/);
+  // The route's card and the dispatcher's row both (tests/chat-task-tool-approval.test.ts).
+  assert.match(source, /const onApprovalRequest = composeApprovalCallbacks\(ctx\.onApprovalRequest, opts\?\.onApprovalRequest\);/);
   const authorize = source.indexOf("await store.authorizeExternalAction({");
   const authorized = source.indexOf("opts?.onAuthorized?.();");
   const timer = source.indexOf("const bounded = dispatchSignal(signal, opts?.timeoutMs);");

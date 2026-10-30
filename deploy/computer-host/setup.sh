@@ -32,7 +32,8 @@
 #   --add-token --namespace <ns>   a second token for a namespace (rotation; at most two)
 #   --retire-token <id>            stop accepting one (after the web VM has the new one); its
 #                                  tunnel tickets and open tunnels are closed too
-#   --renew-tls                    a new certificate (private: a new CA too)
+#   --renew-tls                    a new certificate of the kind setup installed, or of --tls
+#                                  (private: a new CA too)
 #   --rebuild-image                docker build --pull --no-cache, check the label, prune
 #   --rebuild-timer on|off         a weekly --rebuild-image (it pulls Debian packages)
 # Print modes (no root, nothing changed; used by the tests and run-local.sh):
@@ -45,14 +46,14 @@ HERE="$(cd "$(dirname "$0")" && pwd -P)"
 # runs) the image context setup copied beside it.
 if [ -d "$HERE/../agent-computers" ]; then COMPUTERS="$(cd "$HERE/../agent-computers" && pwd -P)"; else COMPUTERS="$HERE/image-context"; fi
 
-WEB_IP="" DOMAIN="" TLS=private CERTBOT_EMAIL="" CERT="" KEY="" NAMESPACE=prod SSH_FROM="" MAX_RUNNING=6
+WEB_IP="" DOMAIN="" TLS=private TLS_GIVEN=0 CERTBOT_EMAIL="" CERT="" KEY="" NAMESPACE=prod SSH_FROM="" MAX_RUNNING=6
 ACTION=setup TOKEN_ID="" TIMER="" LISTEN="" API_PORT=8750 TUNNEL_PORT=8751
 ACCESS_LOG=/var/log/nginx/juno-computer-host.access.log ERROR_LOG=/var/log/nginx/juno-computer-host.error.log
 while [ $# -gt 0 ]; do
   case "$1" in
     --web-ip) WEB_IP="$2"; shift 2 ;;
     --domain) DOMAIN="$2"; shift 2 ;;
-    --tls) TLS="$2"; shift 2 ;;
+    --tls) TLS="$2"; TLS_GIVEN=1; shift 2 ;;
     --certbot-email) CERTBOT_EMAIL="$2"; shift 2 ;;
     --cert) CERT="$2"; shift 2 ;;
     --key) KEY="$2"; shift 2 ;;
@@ -93,6 +94,14 @@ valid_address() {  # <address or cidr>
 family_of() {  # ip | ip6
   case "$1" in *:*) echo ip6 ;; *) echo ip ;; esac
 }
+
+# Checked before anything is installed: the private CA certifies DNS:<domain>, which a
+# client never matches against an https://<IP> origin (private-tls.sh refuses it too).
+if [ "$ACTION" = setup ] || [ "$ACTION" = renew-tls ]; then
+  if [ -n "$DOMAIN" ] && [ "$TLS" = private ] && valid_address "$DOMAIN"; then
+    echo "--domain must be a DNS name, not an IP address, with --tls private: give the host a private DNS record (or an /etc/hosts line on the web VM)" >&2; exit 2
+  fi
+fi
 
 print_nftables() {
   [ -n "$WEB_IP" ] && valid_address "$WEB_IP" || { echo "--web-ip must be the web VM's address" >&2; exit 2; }
@@ -256,6 +265,9 @@ PY
     echo "Retired $TOKEN_ID; the host no longer accepts it, and its tunnel tickets and open tunnels are closed."
     exit 0 ;;
   renew-tls)
+    # The kind setup installed, unless --tls says otherwise: `own` and `private` serve the
+    # same file, and a private CA's certificate over the owner's would cut off the web VM.
+    [ "$TLS_GIVEN" = 1 ] || TLS="$(python3 -c 'import json; print(json.load(open("/etc/juno/computer-host-setup.json"))["tls"])')"
     [ -n "$DOMAIN" ] || DOMAIN="$(python3 -c 'import json; print(json.load(open("/etc/juno/computer-host-setup.json"))["domain"])')"
     [ "$TLS" != private ] || [ -n "$DOMAIN" ] || { echo "--domain is required" >&2; exit 2; }
     install_tls

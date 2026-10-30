@@ -65,7 +65,6 @@
   inset: 0;
   z-index: var(--z-modal);
   background: rgb(14 15 17 / 0.32);
-  backdrop-filter: blur(6px);
 }
 .dark .sketch-overlay {
   background: rgb(0 0 0 / 0.55);
@@ -74,17 +73,17 @@
 /* ——— motion: the composer menus' arrival, larger ——— */
 @media (prefers-reduced-motion: no-preference) {
   .sketch-sheet[data-state="open"] {
-    animation: sketch-in 280ms var(--sk-ease) both;
+    animation: sketch-in var(--dur-base) var(--sk-ease) both;
   }
   .sketch-sheet[data-state="closed"] {
-    animation: sketch-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+    animation: sketch-out var(--dur-exit) cubic-bezier(0.4, 0, 1, 1) both;
   }
 }
 .sketch-overlay[data-state="open"] {
   animation: sketch-fade-in 220ms ease-out both;
 }
 .sketch-overlay[data-state="closed"] {
-  animation: sketch-fade-out 140ms ease-in both;
+  animation: sketch-fade-out var(--dur-exit) ease-in both;
 }
 @media (prefers-reduced-motion: reduce) {
   .sketch-sheet[data-state="open"] {
@@ -275,7 +274,7 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .sketch-shapes {
-    animation: sketch-flyout 200ms var(--sk-ease) both;
+    animation: sketch-flyout var(--dur-base) var(--sk-ease) both;
   }
 }
 @keyframes sketch-flyout {

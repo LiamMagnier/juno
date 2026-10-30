@@ -56,10 +56,10 @@ export function DraftRestoreBar({
     >
       <History className="size-3.5 shrink-0" aria-hidden />
       <PhraseWithArgs spec={draftOfferLine(offer, now, locale)} className="min-w-0 flex-1 truncate" />
-      <Button variant="ghost" size="sm" onClick={onDiscard} className="h-7 px-2 text-caption coarse:h-9">
+      <Button variant="ghost" size="xs" onClick={onDiscard} className="px-2 text-caption">
         <Phrase text={CANVAS_DRAFT_COPY.discard} />
       </Button>
-      <Button variant="outline" size="sm" onClick={onRestore} className="h-7 px-2.5 text-caption coarse:h-9">
+      <Button variant="outline" size="xs" onClick={onRestore} className="text-caption">
         <Phrase text={CANVAS_DRAFT_COPY.restore} />
       </Button>
     </div>
