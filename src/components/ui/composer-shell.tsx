@@ -835,7 +835,7 @@ export function ComposerAttachmentTile({
       sizes="64px"
     />
   ) : (
-    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-caption font-medium text-muted-foreground">
+    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-label font-medium text-muted-foreground">
       {extension}
     </span>
   );
@@ -869,12 +869,12 @@ export function ComposerAttachmentTile({
                 a filename is identified by its END as often as its start
                 ("…-final-v3.pdf"), so `line-clamp-2` keeps the tail visible
                 where `truncate` would always eat it. */}
-            <span className="line-clamp-2 text-caption font-medium leading-tight text-foreground">
+            <span className="line-clamp-2 font-sans text-label font-medium leading-tight text-foreground">
               {upload.fileName}
             </span>
             <span
               className={cn(
-                "truncate font-mono text-micro uppercase text-muted-foreground",
+                "truncate font-mono text-label font-normal uppercase text-muted-foreground",
               )}
             >
               {line}
@@ -883,7 +883,7 @@ export function ComposerAttachmentTile({
         </>
       )}
       {isImage && label ? (
-        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-px text-center font-mono text-micro uppercase leading-4 text-muted-foreground">
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-px text-center font-mono text-label font-normal uppercase leading-4 text-muted-foreground">
           {label}
         </span>
       ) : null}

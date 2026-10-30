@@ -3031,7 +3031,7 @@ function ComposerImpl({
         <div className="mb-2 flex">
           {/* Muted glyph on the caption rung (14px, gap-1.5): the folder is a
               label on the chip, not a state, so it does not take the accent. */}
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card pl-2.5 pr-1 text-caption text-muted-foreground motion-safe:animate-rise-in">
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card pl-2.5 pr-1 font-sans text-label font-normal text-muted-foreground motion-safe:animate-rise-in">
             <AppIcons.projects aria-hidden="true" className="size-3.5" />
             <span>
               {"New chat in "}
@@ -3173,12 +3173,12 @@ function ComposerImpl({
                       {quote.title}
                     </span>
                     {quoteLocationLabel(quote) && (
-                      <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
+                      <span className="min-w-0 truncate font-mono text-label font-normal text-muted-foreground">
                         {quoteLocationLabel(quote)}
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 line-clamp-2 break-all font-mono text-caption leading-relaxed text-muted-foreground">
+                  <p className="mt-0.5 line-clamp-2 break-all font-mono text-label font-normal leading-relaxed text-muted-foreground">
                     {quote.text.trim()
                       ? quote.text.replace(/\s+/g, " ").trim().slice(0, 220)
                       : quote.kind === "area"
@@ -3222,11 +3222,11 @@ function ComposerImpl({
                     <p className="text-ui font-medium">
                       Large paste ready to send
                     </p>
-                    <p className="mt-0.5 font-mono text-caption text-muted-foreground">
+                    <p className="mt-0.5 font-mono text-label font-normal text-muted-foreground">
                       {text.length.toLocaleString()} characters · full text is
                       kept and will be sent · Enter to send
                     </p>
-                    <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-caption text-muted-foreground/90">
+                    <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words font-sans text-label font-normal text-muted-foreground/90">
                       {text.slice(0, 280)}
                       {text.length > 280 ? "…" : ""}
                     </p>
@@ -3291,7 +3291,7 @@ function ComposerImpl({
               features.storage &&
               !privateMode && (
                 <div className="flex items-center justify-between gap-3 px-4 pt-3">
-                  <span className="text-caption text-muted-foreground">
+                  <span className="font-sans text-label font-normal text-muted-foreground">
                     That’s a long one. Attach it as a file to keep the chat
                     tidy?
                   </span>
@@ -3338,7 +3338,7 @@ function ComposerImpl({
                             <ProviderLogo provider={m.provider} className="size-4" />
                           </PaletteIcon>
                           <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                          <span className="shrink-0 text-caption text-muted-foreground">
+                          <span className="shrink-0 font-sans text-label font-normal text-muted-foreground">
                             {PROVIDERS[m.provider].label.split(" · ")[0]}
                           </span>
                           {m.id === model && (
@@ -3380,14 +3380,14 @@ function ComposerImpl({
                               </PaletteIcon>
                               <span className="flex min-w-0 flex-1 items-baseline gap-2">
                                 <span className="max-w-[55%] shrink-0 truncate font-mono text-ui">{item.label}</span>
-                                <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{item.hint}</span>
+                                <span className="min-w-0 flex-1 truncate font-sans text-label font-normal text-muted-foreground">{item.hint}</span>
                               </span>
                               {(item.note || item.on) && (
                                 // One trailing slot, note then tick, so an armed
                                 // skill keeps its source beside the tick.
                                 <span className="flex shrink-0 items-center gap-1.5">
                                   {item.note && (
-                                    <span className="whitespace-nowrap text-caption text-muted-foreground">{item.note}</span>
+                                    <span className="whitespace-nowrap font-sans text-label font-normal text-muted-foreground">{item.note}</span>
                                   )}
                                   {item.on && <StatusIcons.success aria-hidden className="size-3.5 shrink-0 text-foreground" />}
                                 </span>
@@ -3664,7 +3664,7 @@ function ComposerImpl({
           caller whose line is too much for a phone hides it under `sm` and
           the empty inset keeps its height. */}
       {dockFootnote && (
-        <div className="flex min-h-4 select-none items-center justify-center text-center text-caption leading-4 text-muted-foreground sm:min-h-6">
+        <div className="flex min-h-4 select-none items-center justify-center text-center font-sans text-label font-normal leading-4 text-muted-foreground sm:min-h-6">
           {dockFootnote}
         </div>
       )}

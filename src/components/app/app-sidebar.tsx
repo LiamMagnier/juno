@@ -2020,7 +2020,7 @@ export function AppSidebar({
               >
                 <ArrowUpCircle className="size-4 shrink-0 text-foreground" aria-hidden />
                 <span className="text-ui font-medium text-foreground">Upgrade</span>
-                <span className="ml-auto min-w-0 truncate text-caption text-muted-foreground">
+                <span className="ml-auto min-w-0 truncate font-sans text-label font-normal text-muted-foreground">
                   {nudge === "free" ? "Every model" : "More usage"}
                 </span>
               </Link>
@@ -2053,7 +2053,7 @@ export function AppSidebar({
                     {/* The plan truncates, the usage note never does: "Limit
                         reached" is the one phrase on this line a narrow column
                         must not eat. */}
-                    <span className="flex min-w-0 items-baseline text-caption text-muted-foreground">
+                    <span className="flex min-w-0 items-baseline font-sans text-label font-normal text-muted-foreground">
                       <span translate="no" className="truncate">
                         {`${plan.name} plan`}
                       </span>
@@ -3211,7 +3211,7 @@ function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: b
           {agent.name}
         </span>
         {word && (
-          <span aria-hidden="true" className="shrink-0 text-caption text-muted-foreground transition-opacity duration-fast ease-out-soft motion-reduce:transition-none">
+          <span aria-hidden="true" className="shrink-0 font-sans text-label font-normal text-muted-foreground transition-opacity duration-fast ease-out-soft motion-reduce:transition-none">
             {word}
           </span>
         )}
@@ -3611,7 +3611,7 @@ function ArchivedChatsDialog({
                       <span className="block truncate text-ui font-medium">
                         {c.title || (isCode ? "Untitled session" : "New chat")}
                       </span>
-                      <span className="block truncate font-mono text-caption text-muted-foreground">
+                      <span className="block truncate font-mono text-label font-normal text-muted-foreground">
                         Archived {c.archivedAt ? new Date(c.archivedAt).toLocaleDateString() : ""}
                       </span>
                     </span>

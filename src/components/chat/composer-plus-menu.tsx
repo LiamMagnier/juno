@@ -202,7 +202,7 @@ export const PlusMenuRow = React.forwardRef<
       {stacked && description ? (
         <span className="flex min-w-0 flex-1 flex-col py-1.5">
           <span className="truncate">{children}</span>
-          <span className="truncate text-caption font-normal text-muted-foreground">{description}</span>
+          <span className="truncate font-sans text-label font-normal text-muted-foreground">{description}</span>
         </span>
       ) : (
         // The name is the row: it keeps its whole width (up to the row's) and
@@ -211,14 +211,14 @@ export const PlusMenuRow = React.forwardRef<
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <span className="min-w-0 max-w-full shrink-0 truncate">{children}</span>
           {description && (
-            <span className="min-w-0 truncate text-caption font-normal text-muted-foreground">{description}</span>
+            <span className="min-w-0 truncate font-sans text-label font-normal text-muted-foreground">{description}</span>
           )}
         </span>
       )}
       {detail && (
         <span
           className={cn(
-            "max-w-[7rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground tabular-nums",
+            "max-w-[7rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground tabular-nums",
             keyHint && "coarse:hidden",
           )}
         >
@@ -226,7 +226,7 @@ export const PlusMenuRow = React.forwardRef<
         </span>
       )}
       {note ? (
-        <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
+        <span className="max-w-28 text-right font-sans text-label font-normal text-muted-foreground">{note}</span>
       ) : toggle ? (
         /* A toggle draws a switch: the state is legible at rest, off as well
            as on, where a tick only ever said "on". */
@@ -471,7 +471,7 @@ export function PlusMenu({
                         <PlusMenuGlyph icon={item.icon} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.detail && (
-                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground">
+                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground">
                             {item.detail}
                           </span>
                         )}
@@ -483,7 +483,7 @@ export function PlusMenu({
                           <PlusMenuGlyph icon={item.icon} />
                           <span className="min-w-0 flex-1 truncate">{item.label}</span>
                           {item.detail && (
-                            <span className="mr-0.5 max-w-[6rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground">
+                            <span className="mr-0.5 max-w-[6rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground">
                               {item.detail}
                             </span>
                           )}
