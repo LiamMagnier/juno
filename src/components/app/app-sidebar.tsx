@@ -1454,7 +1454,7 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-[18px] pr-2")}
+          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-4.5 pr-2")}
         >
           <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex-1")}>
             {collapsed && onToggleCollapse ? (
@@ -2773,7 +2773,7 @@ function InlineNameInput({
       />
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button size="icon-sm" variant="ghost" className="size-7 rounded-control" onMouseDown={(e) => e.preventDefault()} onClick={commit} aria-label="Save">
+          <Button size="icon-sm" variant="ghost" className="size-7" onMouseDown={(e) => e.preventDefault()} onClick={commit} aria-label="Save">
             <StatusIcons.success className="size-3.5" />
           </Button>
         </TooltipTrigger>

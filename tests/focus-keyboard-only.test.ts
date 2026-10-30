@@ -103,6 +103,7 @@ test("no fixed text field draws a ring or a primary halo on every focus", () => 
     ["src/components/ui/input.tsx", /fieldFrameClass/],
     ["src/components/ui/textarea.tsx", /fieldFrameClass/],
     ["src/components/chat/memory-fact-row.tsx", /<Textarea\b/],
+    ["src/components/app/code-work-list.tsx", /fieldFrameClass/],
     ["src/components/settings/sections/account-username.tsx", /<Input\b/],
   ]);
   for (const file of fields) {
