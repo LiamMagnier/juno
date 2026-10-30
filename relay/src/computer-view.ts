@@ -150,6 +150,8 @@ export interface ComputerViewVerifyOptions {
   cidr?: string;
   nodeEnv?: string;
   nowMs?: number;
+  /** Exact origins a version 2 token may tunnel to; default RELAY_COMPUTER_HOSTS. */
+  computerHosts?: readonly string[];
 }
 
 const DEFAULT_COMPUTER_CIDR = "172.30.0.0/24";
@@ -215,10 +217,18 @@ export function mintComputerViewToken(
   return `${body}.${sig}`;
 }
 
+function signatureMatches(body: string, mac: string, secret: string, version: 1 | 2): boolean {
+  const key = createHmac("sha256", secret).update(SIGNING_LABEL[version]).digest();
+  const expected = createHmac("sha256", key).update(body).digest("base64url");
+  const macBuf = Buffer.from(mac, "utf8");
+  const expectedBuf = Buffer.from(expected, "utf8");
+  return macBuf.length === expectedBuf.length && timingSafeEqual(macBuf, expectedBuf);
+}
+
 export function verifyComputerViewToken(
   token: string | null | undefined,
   opts?: ComputerViewVerifyOptions
-): ComputerViewTokenPayload | null {
+): ComputerViewGrant | null {
   if (!token || typeof token !== "string") return null;
   const secret = opts?.authSecret ?? process.env.AUTH_SECRET;
   if (!secret) return null;
@@ -229,25 +239,19 @@ export function verifyComputerViewToken(
   const mac = token.slice(dotIdx + 1);
   if (!body || !mac) return null;
 
-  const key = createHmac("sha256", secret).update("juno-computer-view-v1").digest();
-  const expected = createHmac("sha256", key).update(body).digest("base64url");
-  const macBuf = Buffer.from(mac, "utf8");
-  const expectedBuf = Buffer.from(expected, "utf8");
-  if (macBuf.length !== expectedBuf.length || !timingSafeEqual(macBuf, expectedBuf)) {
-    return null;
-  }
+  // The signature decides the version: a body signed under v1's key is read
+  // as v1 only, under v2's as v2 only.
+  const version = signatureMatches(body, mac, secret, 1) ? 1 : signatureMatches(body, mac, secret, 2) ? 2 : null;
+  if (version === null) return null;
 
   try {
-    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Partial<ComputerViewTokenPayload>;
+    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Record<string, unknown>;
     if (
-      parsed.v !== 1 ||
+      parsed.v !== version ||
       typeof parsed.a !== "string" ||
       parsed.a.length === 0 ||
       typeof parsed.u !== "string" ||
       parsed.u.length === 0 ||
-      typeof parsed.h !== "string" ||
-      parsed.h.length === 0 ||
-      typeof parsed.p !== "number" ||
       (parsed.m !== "watch" && parsed.m !== "control") ||
       typeof parsed.exp !== "number" ||
       typeof parsed.j !== "string" ||
@@ -262,7 +266,22 @@ export function verifyComputerViewToken(
       return null;
     }
 
+    if (version === 2) {
+      const nodeEnv = opts?.nodeEnv ?? process.env.NODE_ENV ?? "development";
+      const hosts = opts?.computerHosts ?? parseComputerHosts(process.env.RELAY_COMPUTER_HOSTS, nodeEnv);
+      if (typeof parsed.r !== "string" || typeof parsed.k !== "string") return null;
+      const origin = normalizeComputerHost(parsed.r, nodeEnv);
+      if (!origin || origin !== parsed.r || !hosts.includes(origin)) return null;
+      const fields = { a: parsed.a, u: parsed.u, m: parsed.m, exp: parsed.exp, j: parsed.j, r: origin };
+      const ticket = unsealTunnelTicket(parsed.k, viewTokenAad(fields), secret);
+      if (!ticket) return null;
+      return { v: 2, ...fields, ticket };
+    }
+
     if (
+      typeof parsed.h !== "string" ||
+      parsed.h.length === 0 ||
+      typeof parsed.p !== "number" ||
       !isAllowedComputerEndpoint(parsed.h, parsed.p, {
         cidr: opts?.cidr,
         nodeEnv: opts?.nodeEnv,
