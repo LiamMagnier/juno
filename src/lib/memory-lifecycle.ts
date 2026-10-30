@@ -6,6 +6,7 @@ import {
 } from "@/lib/memory-suppression";
 import { scrubCoveredSentences } from "@/lib/memory-topics";
 import {
+  looksLikeSecret,
   normalizeSensitiveTopics,
   sensitiveTopicOf,
   sensitiveWriteDecision,
@@ -746,6 +747,8 @@ export type IngestionPlan =
    */
   | { action: "skip"; reason: "empty" | "suppressed" }
   | { action: "skip"; reason: "sensitive"; topic: SensitiveTopic }
+  /** An automatic fact that carries a password, key or account number (`looksLikeSecret`). */
+  | { action: "skip"; reason: "secret" }
   /**
    * Already known. Refreshes `lastVerifiedAt` instead of adding a row; a
    * restated temporary fact also gets its clock and status wound back.
@@ -848,6 +851,10 @@ export function planFactIngestion(
    * ones alive forever.
    */
   if (candidate.source === "AUTO") {
+    // A secret is never written down on the model's say-so, whatever the
+    // topic settings: the prompts forbid it, and this is what makes that true.
+    // Checked on the untrimmed text so a key cut at 500 characters still counts.
+    if (looksLikeSecret(candidate.content)) return { action: "skip", reason: "secret" };
     const sensitive = sensitiveWriteDecision(content, context.allowedSensitiveTopics);
     if (!sensitive.ok) return { action: "skip", reason: "sensitive", topic: sensitive.topic };
   }

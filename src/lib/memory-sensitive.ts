@@ -205,6 +205,27 @@ export function sensitiveRefusalMessage(topic: SensitiveTopic): string {
   return `${REFUSAL.lead} ${SENSITIVE_TOPIC_META[topic].label.toLowerCase()} ${REFUSAL.tail}`;
 }
 
+/** A secret noun followed by the value itself: "password is …", "API key: …". */
+const SECRET_VALUE =
+  /\b(?:passwords?|passcodes?|passphrases?|pins?|pin codes?|api[ _-]?keys?|secret keys?|client secrets?|(?:access|auth|bearer|api|refresh) tokens?|private keys?|seed phrases?|recovery (?:codes?|phrases?)|cvv|cvc|security codes?|ssn|social security numbers?|card numbers?|credit card numbers?|iban|account numbers?|routing numbers?)\b\s*(?:is|was|are|:|=)\s*\S+/i;
+/** Credential-shaped strings, whatever sentence they sit in. */
+const SECRET_SHAPE =
+  /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[abposr]-[A-Za-z0-9-]{10,}|\bAKIA[0-9A-Z]{16}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+
+/**
+ * Whether a candidate carries a secret VALUE — not merely mentions one.
+ *
+ * Juno's extractor and memory editor are both told never to store passwords
+ * or keys, and a prompt is a request, not a guarantee: the automatic write
+ * path (a `<juno:memory>` tag, an extractor fact) and an import are both held
+ * to this test. The test is for the value, deliberately: "prefers passkeys
+ * over passwords" is a preference and is kept; "password is hunter2" is not.
+ * A fact typed on the memory page is the person's own call and is not screened.
+ */
+export function looksLikeSecret(content: string): boolean {
+  return SECRET_VALUE.test(content) || SECRET_SHAPE.test(content);
+}
+
 /**
  * The topics an update turns OFF: allowed before, not after. Turning a topic
  * on changes nothing already written; turning one off has to reach the prose a
