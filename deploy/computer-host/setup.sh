@@ -94,6 +94,14 @@ family_of() {  # ip | ip6
   case "$1" in *:*) echo ip6 ;; *) echo ip ;; esac
 }
 
+# Checked before anything is installed: the private CA certifies DNS:<domain>, which a
+# client never matches against an https://<IP> origin (private-tls.sh refuses it too).
+if [ "$ACTION" = setup ] || [ "$ACTION" = renew-tls ]; then
+  if [ -n "$DOMAIN" ] && [ "$TLS" = private ] && valid_address "$DOMAIN"; then
+    echo "--domain must be a DNS name, not an IP address, with --tls private: give the host a private DNS record (or an /etc/hosts line on the web VM)" >&2; exit 2
+  fi
+fi
+
 print_nftables() {
   [ -n "$WEB_IP" ] && valid_address "$WEB_IP" || { echo "--web-ip must be the web VM's address" >&2; exit 2; }
   local ssh_rule

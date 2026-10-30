@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -103,4 +103,27 @@ test("a certificate for another name, signed by a name-constrained CA, is reject
     assert.equal(result.ok, false, `${name} was trusted`);
     assert.match(result.error ?? "", /subtree|constraint|PERMITTED/i, result.error);
   }
+});
+
+test("an IP address is refused as the host name, by private-tls.sh and by setup.sh before it changes anything", () => {
+  // The certificate names its host as DNS:<name>, and Node checks an https://<IP>
+  // origin against IP entries only ("IP: 10.0.0.5 is not in the cert's list"), so
+  // a certificate made for an address could never be trusted by the web VM. The
+  // host needs a name: a private one (a private DNS zone, or /etc/hosts on the
+  // web VM) or a public one.
+  for (const address of ["10.0.0.5", "2001:db8::5"]) {
+    const out = path.join(dir, `ip-${address.replace(/[^0-9a-f]/gi, "-")}`);
+    const res = spawnSync("bash", [SCRIPT, address, out], { encoding: "utf8" });
+    assert.equal(res.status, 2, `private-tls.sh signed for ${address}`);
+    assert.match(res.stderr, /a DNS name, not an IP address/);
+    assert.equal(existsSync(out), false, "nothing was written");
+  }
+  // setup.sh refuses it before the root check and before the first step (never
+  // run here: as root it would install packages and load a firewall).
+  const setup = readFileSync(path.join(ROOT, "deploy/computer-host/setup.sh"), "utf8");
+  const check = setup.indexOf("--domain must be a DNS name");
+  assert.ok(check > 0, "setup.sh checks --domain under private TLS");
+  assert.match(setup.slice(setup.lastIndexOf("\n", setup.lastIndexOf("\n", check) - 1), check), /\[ "\$TLS" = private \] && valid_address "\$DOMAIN"/);
+  assert.ok(check < setup.indexOf('[ "$(id -u)" -eq 0 ]'), "before the root check");
+  assert.ok(check < setup.indexOf('echo "==> Packages"'), "before anything is installed");
 });
