@@ -7,9 +7,9 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { LiveFormatter, LiveFormat } from "@/lib/live-ui/format";
+import { editableNumberString, parseLiveNumber, type LiveFormatter, type LiveFormat } from "@/lib/live-ui/format";
 import type { LiveValue } from "@/lib/live-ui/expr";
-import { snapToStep, type LiveInput } from "@/lib/live-ui/spec";
+import { snapToStep, stepNumberInput, type LiveInput } from "@/lib/live-ui/spec";
 import { cn } from "@/lib/utils";
 
 /**
@@ -227,11 +227,13 @@ function NumberField({
 }) {
   const id = React.useId();
   const percent = input.format === "percent";
-  const toEdit = (v: number) => String(percent ? Number((v * 100).toFixed(8)) : v);
+  // The reader's default locale, the one `focusedFormat` shows the value in at
+  // rest: the separator they see is the one they type ("12,5" in fr-FR).
+  const toEdit = (v: number) => editableNumberString(percent ? Number((v * 100).toFixed(8)) : v);
   const [draft, setDraft] = React.useState<string | null>(null);
   const commit = (text: string) => {
-    const parsed = Number(text.replace(/[\s,]/g, "").replace(/[^0-9.eE+\-]/g, ""));
-    if (!Number.isFinite(parsed) || text.trim() === "") return;
+    const parsed = parseLiveNumber(text);
+    if (parsed === null) return;
     let next = percent ? parsed / 100 : parsed;
     if (input.min !== undefined) next = Math.max(input.min, next);
     if (input.max !== undefined) next = Math.min(input.max, next);
@@ -263,8 +265,9 @@ function NumberField({
             if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
             e.preventDefault();
             const step = input.step ?? (percent ? 0.01 : 1);
-            const next = value + (e.key === "ArrowUp" ? step : -step);
-            onChange(Math.min(input.max ?? Infinity, Math.max(input.min ?? -Infinity, Number(next.toFixed(10)))));
+            // The draft shows the clamped value: at the max it stays the max.
+            const next = stepNumberInput(value, e.key === "ArrowUp" ? 1 : -1, { step, min: input.min, max: input.max });
+            onChange(next);
             setDraft(toEdit(next));
           }}
           className={cn("tabular-nums", prefix && "pl-8", suffix && "pr-10")}
