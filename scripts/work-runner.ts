@@ -167,7 +167,9 @@ import { runtimeManifestSummary } from "@/lib/exec/runtime";
 import { isWebSearchConfigured, meteredWebSearch } from "@/lib/web-search";
 import {
   admitConnectorResult,
+  isInternalConnectionProvider,
   summarizeConnectors,
+  taskConnectorAllowance,
   type WorkConnectorAllowlist,
   type WorkConnectorAvailability,
   type WorkConnectorCandidate,
@@ -1291,10 +1293,14 @@ async function openConnectors(input: {
   /** Aborted when the run stops waiting (`CONNECTOR_OPEN_TIMEOUT_MS`). */
   signal?: AbortSignal;
 }): Promise<ConnectorSurface> {
-  const rows = await prisma.connection.findMany({
-    where: { userId: input.userId },
-    select: { id: true, provider: true, accountLabel: true },
-  });
+  // Internal rows (Composio's hidden directory session) are not apps anybody
+  // linked, and asked about they only ever produce a degradation nobody can act on.
+  const rows = (
+    await prisma.connection.findMany({
+      where: { userId: input.userId },
+      select: { id: true, provider: true, accountLabel: true },
+    })
+  ).filter((row) => !isInternalConnectionProvider(row.provider));
   if (rows.length === 0) return EMPTY_CONNECTOR_SURFACE;
 
   // What this one task was given, which is not what the account has. A reader
@@ -1308,14 +1314,27 @@ async function openConnectors(input: {
   // control — and passes null, leaving the account's own rules as the only
   // narrowing. True with no rows is a reader who switched everything off, and
   // passes `[]`, which admits nothing.
+  //
+  // A session that never chose and belongs to an agent is narrowed to the
+  // agent's own apps (`taskConnectorAllowance`): "the apps it may use" is a
+  // limit on the agent, so a task with no answer of its own does not reach
+  // every app on the account under the agent's name.
   const session = await prisma.workSession.findFirst({
     where: { id: input.sessionId, userId: input.userId },
-    select: { connectorsChosen: true, connectors: { select: { connectorId: true } } },
+    select: { agentId: true, connectorsChosen: true, connectors: { select: { connectorId: true } } },
   });
+  const owningAgent =
+    session?.agentId && !session.connectorsChosen
+      ? await prisma.agent.findFirst({
+          where: { id: session.agentId, userId: input.userId, deletedAt: null },
+          select: { connectorIds: true },
+        })
+      : null;
   const allowlist: WorkConnectorAllowlist = {
-    taskAllowed: session?.connectorsChosen
-      ? session.connectors.map((row) => row.connectorId)
-      : null,
+    taskAllowed: taskConnectorAllowance({
+      chosen: session?.connectorsChosen ? session.connectors.map((row) => row.connectorId) : null,
+      agentConnectorIds: owningAgent?.connectorIds ?? null,
+    }),
   };
 
   const knownIds = new Set(listConnectors().map((def) => def.id as string));
