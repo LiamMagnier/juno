@@ -175,6 +175,14 @@ html:has(.pc) nextjs-portal { display: none; }
 .pc-muted { color: var(--pc-ink-2); }
 .pc-quiet { color: var(--pc-ink-3); }
 .pc-needs { color: var(--pc-amber); font-size: 12.5px; font-weight: 500; line-height: 1.3; }
+/* One-off sizes a specimen sets on top of a ramp class (the porcelain scale
+   lives here, not in the app's text-* rungs). Important, like the utilities
+   they replace, so they also beat the narrow-viewport .pc-greet step. */
+.pc-fs-12 { font-size: 12px !important; }
+.pc-fs-13 { font-size: 13px !important; }
+.pc-fs-14 { font-size: 14px !important; }
+.pc-fs-15 { font-size: 15px !important; }
+.pc-fs-32 { font-size: 32px !important; }
 .pc-num { display: inline-flex; white-space: nowrap; }
 .pc-num__d { display: inline-block; width: 0.6em; text-align: center; }
 .pc-link { color: var(--pc-ink); text-decoration: underline; text-decoration-color: var(--pc-hair-2); text-underline-offset: 3px; text-decoration-thickness: 1px; }

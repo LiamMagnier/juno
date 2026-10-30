@@ -193,7 +193,7 @@ function M4() {
                 exit={{ opacity: 0, transition: { duration: 0.12, ease: "linear" } }}
                 transition={{ duration: 0.2 }}
               >
-                <h2 className="pc-greet !text-[32px]">Good afternoon, Liam</h2>
+                <h2 className="pc-greet pc-fs-32">Good afternoon, Liam</h2>
                 <div className="pc-chips !mb-5 !mt-4">
                   <span className="pc-chip">
                     <Face avatar={MIRA.avatar} presence="waiting" size={18} />
@@ -298,7 +298,7 @@ function M5() {
   return (
     <div className="pc-mstage__top !items-start">
       <div className="w-[560px] max-w-full">
-        <div className="pc-bubble ml-auto w-fit !text-[15px]">Where is renewal risk this quarter?</div>
+        <div className="pc-bubble ml-auto w-fit pc-fs-15">Where is renewal risk this quarter?</div>
         <div className="mt-6 min-h-[180px]">
           <AnimatePresence mode="wait" initial={false}>
             {step < 2 ? (
@@ -391,7 +391,7 @@ function M7() {
         <AnimatePresence mode="wait" initial={false}>
           <motion.p
             key={presence + step}
-            className={presence === "waiting" ? "pc-needs !text-[14px]" : "pc-ui pc-muted"}
+            className={presence === "waiting" ? "pc-needs pc-fs-14" : "pc-ui pc-muted"}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
