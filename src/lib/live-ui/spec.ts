@@ -992,6 +992,7 @@ export function liveInputs(ui: readonly LiveComponent[]): LiveInput[] {
     for (const c of list) {
       if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
       else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
+      else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
       else if (["slider", "number", "stepper", "select", "toggle", "date", "input"].includes(c.type)) out.push(c as LiveInput);
     }
   };
