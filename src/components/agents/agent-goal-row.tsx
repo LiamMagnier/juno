@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { AlertCircle, Check } from "@/components/ui/icons";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import type { ClientAgentGoal } from "@/lib/agents/types";
+import { GOAL_UNVERIFIED, GOAL_UNVERIFIED_LINE } from "@/lib/agents/goals";
+import { workSessionPath } from "@/lib/notify/paths";
 
 /**
  * One goal on an agent's profile: the objective, its milestones as a quiet
@@ -14,6 +17,11 @@ import type { ClientAgentGoal } from "@/lib/agents/types";
  * the milestones themselves, "2 of 4", and a blocker is attention-coloured
  * text with an icon. The one action is a text button whose words say what it
  * does: "Keep working on it" turns driving on, "Continue" answers a blocker.
+ *
+ * A goal whose every step ran without its criteria being shown met
+ * (`unverified`, src/lib/agents/goals.ts `planGoalCompletion`) says so in the
+ * attention colour, links each step to the task that did it, and offers the
+ * two honest ways on: "Mark it met" and "Keep working".
  */
 export function AgentGoalRow({
   goal,
@@ -28,9 +36,10 @@ export function AgentGoalRow({
 }) {
   const milestones = goal.milestones ?? [];
   const done = milestones.filter((m) => m.done).length;
-  const blocker = goal.blockers?.[0] ?? null;
+  const unverified = goal.status === GOAL_UNVERIFIED;
+  const blocker = unverified ? null : (goal.blockers?.[0] ?? null);
   const driven = (goal.maxRuns ?? 0) > 0;
-  const action = blocker ? "Continue" : !driven && goal.status === "active" ? "Keep working on it" : null;
+  const action = unverified ? "Keep working" : blocker ? "Continue" : !driven && goal.status === "active" ? "Keep working on it" : null;
   const meta = [
     milestones.length ? `${done} of ${milestones.length} done` : null,
     driven && goal.status === "active" && goal.runsUsed ? `${goal.runsUsed} of ${goal.maxRuns} runs` : null,
@@ -57,13 +66,28 @@ export function AgentGoalRow({
                 <span className="inline-flex size-3.5 shrink-0 items-center justify-center" aria-hidden="true">
                   {m.done ? <Check className="size-3.5" /> : <span className="block h-px w-2 bg-border" />}
                 </span>
-                <span className={cn(m.done && "line-through decoration-border")}>{m.title}</span>
+                {unverified && m.sessionId ? (
+                  // What each step produced, one press away: the result to check.
+                  <Link
+                    href={workSessionPath(m.sessionId)}
+                    className="underline decoration-border underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:decoration-foreground"
+                  >
+                    {m.title}
+                  </Link>
+                ) : (
+                  <span className={cn(m.done && "line-through decoration-border")}>{m.title}</span>
+                )}
                 <span className="sr-only">{m.done ? "(done)" : "(to do)"}</span>
               </li>
             ))}
           </ol>
         ) : null}
-        {blocker ? (
+        {unverified ? (
+          <p className="mt-1.5 flex items-start gap-1.5 text-ui text-[hsl(var(--attention))]" data-goal-unverified>
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span>{goal.nextAction ?? GOAL_UNVERIFIED_LINE}</span>
+          </p>
+        ) : blocker ? (
           <p className="mt-1.5 flex items-start gap-1.5 text-ui text-[hsl(var(--attention))]">
             <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             <span>{blocker.text}</span>
@@ -73,7 +97,26 @@ export function AgentGoalRow({
         ) : goal.lastCheckInNote ? (
           <p className="mt-0.5 text-ui text-muted-foreground">{goal.lastCheckInNote}</p>
         ) : null}
-        {action ? (
+        {unverified ? (
+          <span className="mt-1 flex items-center gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onAchieved}
+              className="text-ui text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              Mark it met
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onAdvance}
+              className="text-ui text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              {action}
+            </button>
+          </span>
+        ) : action ? (
           <button
             type="button"
             disabled={busy}

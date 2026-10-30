@@ -521,7 +521,7 @@ test("the pipeline checks health, plan, budget, windows, moderation, rate and qu
   const order = [
     "workspacePermits(",
     "isProviderConfigured(",
-    "providerHealthy(",
+    "providerAccountUsable(",
     "planRank(plan) < planRank(model.minPlan)",
     "checkBudget(",
     "admitMeteredCall(",

@@ -158,6 +158,7 @@ const T_CORPUS = "Research corpus ready";
 const T_SEARCHING = "Searching the web";
 const T_CONNECTORS = "Connected tools ready";
 const T_EFFORT = "Reasoning mode enabled";
+const T_SELECTED_MODEL = "Selected model";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * ROW COPY THE EXTRACTOR CAN SEE.
@@ -446,7 +447,13 @@ export function buildRun(
   const t0 = at(events[0]) ?? anchorT0 ?? null;
   const writeEv = events.find((e) => e.kind === "write");
   const usageEv = events.find((e) => e.kind === "usage");
-  const modelEv = events.find((e) => e.kind === "model");
+  // The LAST "Selected model": a turn whose Auto pick refused the request
+  // before streaming moves to the next candidate and says so in a second one
+  // (src/lib/chat/turn/pre-stream-retry.ts), so this names the model that
+  // answered. Every other turn has exactly one.
+  const modelEv =
+    [...events].reverse().find((e) => e.kind === "model" && e.title === T_SELECTED_MODEL) ??
+    events.find((e) => e.kind === "model");
   const effortEv = events.find((e) => e.kind === "reasoning" && e.title === T_EFFORT);
   const connectorsEv = events.find((e) => e.kind === "tool" && e.title === T_CONNECTORS);
   const contextEv = events.find((e) => e.kind === "context" && e.title !== T_CORPUS && !isMemoryWrite(e));

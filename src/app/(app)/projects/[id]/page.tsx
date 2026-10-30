@@ -680,36 +680,44 @@ export default function ProjectDetailPage() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Couldn’t create the folder.");
-      setFolderDialog(false);
       window.dispatchEvent(new CustomEvent("projects:sync"));
+      // The dialog stays open and busy until the folder's page replaces this
+      // one: closing it (or dropping `busy` in a `finally`) while the route
+      // was still changing left a live "Create folder" that made a second.
       router.push(`/projects/${d.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn’t create the folder.");
-    } finally {
       setFolderBusy(false);
     }
   };
 
-  // Quick Action: Star chat
+  // The route reuses this page for the new folder's id, so the dialog and its
+  // busy flag are put down when the id changes, not when the push is queued.
+  React.useEffect(() => {
+    setFolderDialog(false);
+    setFolderBusy(false);
+  }, [id]);
+
+  // Quick Action: pin a chat. Optimistic, like the project's own pin: the
+  // mark turns under the pointer, which is the receipt, so there is no
+  // success toast (it said "Chat starred." for a control labelled Pin). A
+  // failure, a network reject included, puts it back and says so.
   const togglePin = async (chatId: string, currentPinned: boolean) => {
+    const setPinned = (pinned: boolean) =>
+      setData((cur) =>
+        cur
+          ? { ...cur, conversations: cur.conversations.map((c) => (c.id === chatId ? { ...c, pinned } : c)) }
+          : cur
+      );
+    setPinned(!currentPinned);
     const r = await fetch(`/api/conversations/${chatId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !currentPinned }),
-    });
-    if (r.ok) {
-      setData((cur) => {
-        if (!cur) return null;
-        return {
-          ...cur,
-          conversations: cur.conversations.map((c) =>
-            c.id === chatId ? { ...c, pinned: !currentPinned } : c
-          ),
-        };
-      });
-      toast.success(currentPinned ? "Chat unstarred." : "Chat starred.");
-    } else {
-      toast.error("Couldn’t update chat.");
+    }).catch(() => null);
+    if (!r?.ok) {
+      setPinned(currentPinned);
+      toast.error("Couldn’t update this chat.");
     }
   };
 
@@ -1006,13 +1014,13 @@ export default function ProjectDetailPage() {
                   }
                 />
 
-                {/* Folders: the projects inside this one, drawn as the
-                    Projects grid draws a project (cover, serif name, one mono
-                    line) at a smaller size. Each is a drop target, so a chat
-                    or a sibling folder can be dragged in. Making one is a
-                    quiet verb in the section's header, not a dashed
-                    placeholder tile; with none yet, the section is an
-                    invitation in the same language. */}
+                {/* Folders: the projects inside this one, as compact cards
+                    (folder glyph, serif name, one meta line), so they read as
+                    navigation and leave the project's chats near the top.
+                    Each is a drop target, so a chat or a sibling folder can
+                    be dragged in. Making one is a quiet verb in the section's
+                    header, not a dashed placeholder tile; with none yet, the
+                    section is one sentence and the button. */}
                 {isOwnerView && (
                   <section className="pj mt-10" aria-labelledby="pj-folders-title">
                     <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
@@ -1035,7 +1043,7 @@ export default function ProjectDetailPage() {
                         ))}
                     </div>
                     {folders.length > 0 ? (
-                      <ul className="pj-grid grid gap-3 @[30rem]/page:grid-cols-2 @[80rem]/page:grid-cols-3 @[80rem]/page:gap-4">
+                      <ul className="pj-grid grid gap-2 @[30rem]/page:grid-cols-2 @[80rem]/page:grid-cols-3">
                         {folders.map((folder, i) => (
                           <li key={folder.id} className="min-w-0">
                             <ProjectTile
@@ -1222,7 +1230,7 @@ export default function ProjectDetailPage() {
                   the Tools card had no Save of its own and read as if its
                   switch applied the moment it moved. */}
               <SettingsGroup
-                className="[animation-delay:40ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                className="[animation-delay:var(--stagger-tile)] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 title="Identity and model"
                 description={`What ${PRODUCT_NAME} is called here, and which model answers by default.`}
                 footer={
@@ -1323,7 +1331,7 @@ export default function ProjectDetailPage() {
               </SettingsGroup>
 
               <ProjectWorkDefaults
-                className="[animation-delay:80ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                className="[animation-delay:calc(var(--stagger-tile)*2)] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 value={workDefaults}
                 onChange={setWorkDefaults}
                 onSave={() => void saveWorkDefaults()}

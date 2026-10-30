@@ -21,12 +21,44 @@ import {
   type PublicTakeover,
 } from "./takeover";
 import {
+  COMPUTER_NOT_RESPONDING,
   COMPUTER_PATH_REFUSED,
+  COMPUTER_UNREACHABLE,
+  ComputerAccessError,
   ComputerError,
   isSafeAgentPath,
   publicComputerMessage,
+  type ComputerRefusalCode,
 } from "./errors";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
+import {
+  computerAccessError,
+  computerAccessFor,
+  setComputerAccessUserReaderForTest,
+  type AccessUser,
+} from "./access";
+import {
+  recordComputerAudit,
+  setComputerAuditSinkForTest,
+  type ComputerAuditActor,
+  type ComputerAuditDetail,
+  type ComputerAuditKind,
+  type ComputerAuditRow,
+} from "./audit";
+import {
+  COMPUTER_ACCESS_COPY,
+  COMPUTER_UNAVAILABLE_NOTE,
+  POLICY_NOW_ASK_RESULT,
+  POLICY_OFF_RESULT,
+  PROMPT_ASK_BROWSER_LINE,
+  PROMPT_ASK_LINES,
+  PROMPT_ASK_UNATTENDED_LINE,
+  WAKE_REFUSED_SANDBOX,
+  WAKE_REFUSED_SANDBOX_REQUIRED,
+  allowanceSentence,
+  enabledCapSentence,
+  type ComputerPolicyValue,
+} from "./access-copy";
 import type {
   ComputerHandle,
   ComputerProvider,
@@ -60,8 +92,27 @@ export interface AgentComputerRow {
   takeoverStartedAt?: Date | null;
   takeoverBy?: string | null;
   takeoverEpoch?: number;
+  /** The last time the sweep reached it through its provider (S3 writes it; S1 only stores it). */
+  lastContactAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** One metered awake interval (`AgentComputerUsageInterval`). */
+export interface ComputerUsageIntervalRow {
+  userId: string;
+  agentId: string;
+  startedAt: Date;
+  seconds: number;
+  weekStart: Date;
+  runId: string | null;
+}
+
+/** What the computer layer reads of an agent: its name for sentences, where it runs, its policy. */
+export interface AgentForComputer {
+  name: string;
+  executionTarget: string;
+  computerPolicy: string;
 }
 
 export interface PublicAgentComputerState {
@@ -163,6 +214,51 @@ export interface ComputerStorePersistence {
     expected: { status: ComputerStatus; lastActiveAt: Date | null; lastViewedAt: Date | null },
     now: Date
   ): Promise<boolean>;
+  /**
+   * The claim on a sleep held for the host (finishHeldSleep): applies only
+   * while the row still holds the pinned end and the open interval that were
+   * read. It turns the row into a plain "stopping" claim with that interval
+   * closed (already metered by the claimant), so exactly one of the sweep, a
+   * wake and a run finishes the sleep, and one that comes later finds nothing
+   * held. Without it the sweep finished, from a stale read, a sleep a run had
+   * already finished, then stopped the computer the run had woken.
+   */
+  claimHeldSleepCas(
+    userId: string,
+    agentId: string,
+    expected: { billingStoppedAt: Date; lastResumedAt: Date | null },
+    activeSeconds: number
+  ): Promise<boolean>;
+  /** The agent as the computer layer needs it, or null when it is gone. */
+  readAgentForComputer(userId: string, agentId: string): Promise<AgentForComputer | null>;
+  /** Writes `Agent.computerPolicy`; returns the value it replaced, or null when there is no such agent. */
+  writeAgentComputerPolicy(userId: string, agentId: string, policy: ComputerPolicyValue): Promise<string | null>;
+  /**
+   * Meters one awake interval against the weekly allowance. Idempotent per
+   * (agentId, startedAt); a second settlement of the same start keeps the
+   * longer length, so a retried settlement can neither count twice nor lose
+   * the time added since the first try.
+   */
+  recordUsageInterval(row: ComputerUsageIntervalRow): Promise<void>;
+  /** Seconds metered for the account in the week starting `weekStart`. */
+  sumUsageSeconds(userId: string, weekStart: Date): Promise<number>;
+  /** The account's computers with an open (not yet metered) awake interval. */
+  listAccruingForUser(userId: string): Promise<AgentComputerRow[]>;
+  /**
+   * Counts the account's computers other than this agent's and inserts this
+   * agent's row in one step, serialized per account, so two enables at once
+   * cannot both pass the cap. "exists" when the row was already there.
+   */
+  claimEnableSlot(
+    userId: string,
+    agentId: string,
+    maxEnabled: number,
+    createData: Omit<AgentComputerRow, "id" | "createdAt" | "updatedAt">
+  ): Promise<"created" | "exists" | "cap">;
+  /** Rows whose take over window has run out but was never closed. */
+  findLapsedTakeoversUnguarded(now: Date): Promise<AgentComputerRow[]>;
+  /** Closes a lapsed take over, only if its window is still the one that was read. */
+  closeLapsedTakeoverCas(userId: string, agentId: string, expectedUntil: Date): Promise<boolean>;
 }
 
 /**
@@ -256,6 +352,7 @@ function toRow(raw: {
   takeoverStartedAt?: Date | null;
   takeoverBy?: string | null;
   takeoverEpoch?: number;
+  lastContactAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): AgentComputerRow {
@@ -491,6 +588,92 @@ const prismaPersistence: ComputerStorePersistence = {
     });
     return updated.count > 0;
   },
+
+  async claimHeldSleepCas(userId, agentId, expected, activeSeconds) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, billingStoppedAt: expected.billingStoppedAt, lastResumedAt: expected.lastResumedAt },
+      data: { status: "stopping", billingStoppedAt: null, lastResumedAt: null, activeSeconds },
+    });
+    return updated.count > 0;
+  },
+
+  async readAgentForComputer(userId, agentId) {
+    const { prisma } = await import("@/lib/db");
+    const agent = await prisma.agent.findFirst({
+      where: { id: agentId, userId, deletedAt: null },
+      select: { name: true, executionTarget: true, computerPolicy: true },
+    });
+    return agent ?? null;
+  },
+
+  async writeAgentComputerPolicy(userId, agentId, policy) {
+    const { prisma } = await import("@/lib/db");
+    const before = await prisma.agent.findFirst({
+      where: { id: agentId, userId, deletedAt: null },
+      select: { computerPolicy: true },
+    });
+    if (!before) return null;
+    await prisma.agent.updateMany({ where: { id: agentId, userId }, data: { computerPolicy: policy } });
+    return before.computerPolicy;
+  },
+
+  async recordUsageInterval(row) {
+    const { prisma } = await import("@/lib/db");
+    // Insert once per (agentId, startedAt), then only ever lengthen it.
+    await prisma.agentComputerUsageInterval.createMany({ data: [row], skipDuplicates: true });
+    await prisma.agentComputerUsageInterval.updateMany({
+      where: { userId: row.userId, agentId: row.agentId, startedAt: row.startedAt, seconds: { lt: row.seconds } },
+      data: { seconds: row.seconds },
+    });
+  },
+
+  async sumUsageSeconds(userId, weekStart) {
+    const { prisma } = await import("@/lib/db");
+    const result = await prisma.agentComputerUsageInterval.aggregate({
+      where: { userId, weekStart },
+      _sum: { seconds: true },
+    });
+    return result._sum.seconds ?? 0;
+  },
+
+  async listAccruingForUser(userId) {
+    const { prisma } = await import("@/lib/db");
+    const rows = await prisma.agentComputer.findMany({ where: { userId, lastResumedAt: { not: null } } });
+    return rows.map(toRow);
+  },
+
+  async claimEnableSlot(userId, agentId, maxEnabled, createData) {
+    const { prismaUnguarded } = await import("@/lib/db");
+    return prismaUnguarded.$transaction(async (tx) => {
+      // Per account, short, and never held across Docker I/O.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`juno.agent-computer.enabled:${userId}`}))::text`;
+      const existing = await tx.agentComputer.findFirst({ where: { userId, agentId }, select: { id: true } });
+      if (existing) return "exists" as const;
+      const others = await tx.agentComputer.count({ where: { userId, agentId: { not: agentId } } });
+      if (others >= maxEnabled) return "cap" as const;
+      await tx.agentComputer.create({ data: createData });
+      return "created" as const;
+    });
+  },
+
+  async findLapsedTakeoversUnguarded(now) {
+    const { prismaUnguarded } = await import("@/lib/db");
+    const rows = await prismaUnguarded.agentComputer.findMany({
+      where: { takeoverBy: { not: null }, takeoverUntil: { lte: now } },
+      take: 50,
+    });
+    return rows.map(toRow);
+  },
+
+  async closeLapsedTakeoverCas(userId, agentId, expectedUntil) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, takeoverUntil: expectedUntil },
+      data: takeoverClosed(),
+    });
+    return updated.count > 0;
+  },
 };
 
 let activePersistence: ComputerStorePersistence = prismaPersistence;
@@ -499,6 +682,12 @@ export function setComputerStorePersistenceForTest(
   custom: ComputerStorePersistence | null
 ): void {
   activePersistence = custom ?? prismaPersistence;
+  // An in-memory store brings its own accounts and audit log, so the access
+  // and allowance checks run for real against it rather than passing because
+  // there is no database.
+  const memory = custom as Partial<InMemoryComputerPersistence> | null;
+  setComputerAccessUserReaderForTest(memory?.findAccessUser ? (userId) => memory.findAccessUser!(userId) : null);
+  setComputerAuditSinkForTest(memory?.audits ? async (row) => void memory.audits!.push(row) : null);
 }
 
 export function getComputerStorePersistence(): ComputerStorePersistence {
@@ -510,13 +699,93 @@ export function computerStoreUsesDatabase(): boolean {
   return activePersistence === prismaPersistence;
 }
 
-export function createInMemoryComputerPersistence(): ComputerStorePersistence & {
+/**
+ * The in-memory stand-in tests use. It carries the accounts, agents, usage
+ * and audit rows the store reads, so access, the allowance and the policy are
+ * checked for real. An account a test did not register reads as the owner's
+ * (the widest caps), with no verified email, so a test about something else is
+ * not stopped by them; a test about plans registers its accounts. An agent a
+ * test did not register reads as a cloud
+ * agent whose policy is `allowed` when it already has a computer and `ask`
+ * otherwise (the migration's own mapping).
+ */
+export interface InMemoryComputerPersistence extends ComputerStorePersistence {
   rows: Map<string, AgentComputerRow>;
-} {
+  accessUsers: Map<string, AccessUser>;
+  agents: Map<string, AgentForComputer & { userId: string }>;
+  usage: ComputerUsageIntervalRow[];
+  audits: ComputerAuditRow[];
+  findAccessUser(userId: string): Promise<AccessUser | null>;
+}
+
+export function createInMemoryComputerPersistence(): InMemoryComputerPersistence {
   const rows = new Map<string, AgentComputerRow>();
+  const accessUsers = new Map<string, AccessUser>();
+  const agents = new Map<string, AgentForComputer & { userId: string }>();
+  const usage: ComputerUsageIntervalRow[] = [];
+  const audits: ComputerAuditRow[] = [];
 
   return {
     rows,
+    accessUsers,
+    agents,
+    usage,
+    audits,
+    async findAccessUser(userId) {
+      return accessUsers.get(userId) ?? { id: userId, email: null, emailVerified: null, plan: "OWNER" };
+    },
+    async readAgentForComputer(userId, agentId) {
+      const agent = agents.get(agentId);
+      if (agent) return agent.userId === userId ? { name: agent.name, executionTarget: agent.executionTarget, computerPolicy: agent.computerPolicy } : null;
+      const row = rows.get(agentId);
+      if (row && row.userId !== userId) return null;
+      return { name: "Agent", executionTarget: "cloud", computerPolicy: row ? "allowed" : "ask" };
+    },
+    async writeAgentComputerPolicy(userId, agentId, policy) {
+      const agent = agents.get(agentId);
+      if (agent && agent.userId !== userId) return null;
+      const before = agent?.computerPolicy ?? (rows.has(agentId) ? "allowed" : "ask");
+      agents.set(agentId, { userId, name: agent?.name ?? "Agent", executionTarget: agent?.executionTarget ?? "cloud", computerPolicy: policy });
+      return before;
+    },
+    async recordUsageInterval(row) {
+      const existing = usage.find((u) => u.agentId === row.agentId && u.startedAt.getTime() === row.startedAt.getTime());
+      if (!existing) {
+        usage.push({ ...row });
+        return;
+      }
+      if (existing.userId === row.userId && existing.seconds < row.seconds) existing.seconds = row.seconds;
+    },
+    async sumUsageSeconds(userId, weekStart) {
+      return usage
+        .filter((u) => u.userId === userId && u.weekStart.getTime() === weekStart.getTime())
+        .reduce((sum, u) => sum + u.seconds, 0);
+    },
+    async listAccruingForUser(userId) {
+      return Array.from(rows.values())
+        .filter((r) => r.userId === userId && r.lastResumedAt)
+        .map((r) => ({ ...r }));
+    },
+    async claimEnableSlot(userId, agentId, maxEnabled, createData) {
+      const existing = rows.get(agentId);
+      if (existing) return existing.userId === userId ? "exists" : "cap";
+      const others = Array.from(rows.values()).filter((r) => r.userId === userId && r.agentId !== agentId).length;
+      if (others >= maxEnabled) return "cap";
+      const now = new Date();
+      rows.set(agentId, { id: `ac_${agentId}`, ...createData, createdAt: now, updatedAt: now });
+      return "created";
+    },
+    async findLapsedTakeoversUnguarded(now) {
+      return Array.from(rows.values())
+        .filter((r) => r.takeoverBy && r.takeoverUntil && r.takeoverUntil.getTime() <= now.getTime())
+        .map((r) => ({ ...r }));
+    },
+    async closeLapsedTakeoverCas(userId, agentId, expectedUntil) {
+      const existing = rows.get(agentId);
+      if (!existing || existing.userId !== userId || existing.takeoverUntil?.getTime() !== expectedUntil.getTime()) return false;
+      rows.set(agentId, { ...existing, ...takeoverClosed(), updatedAt: new Date() });
+      return true;
+    },
     async claimCreation(userId, agentId, token, now, expiresAt) {
       const row = rows.get(agentId);
       if (!row || row.userId !== userId || (row.creationToken && (!row.creationExpiresAt || row.creationExpiresAt >= now))) return false;
@@ -734,6 +1003,25 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
       });
       return true;
     },
+    async claimHeldSleepCas(userId, agentId, expected, activeSeconds) {
+      const existing = rows.get(agentId);
+      if (!existing || existing.userId !== userId) return false;
+      if (
+        existing.billingStoppedAt?.getTime() !== expected.billingStoppedAt.getTime() ||
+        (existing.lastResumedAt?.getTime() ?? null) !== (expected.lastResumedAt?.getTime() ?? null)
+      ) {
+        return false;
+      }
+      rows.set(agentId, {
+        ...existing,
+        status: "stopping",
+        billingStoppedAt: null,
+        lastResumedAt: null,
+        activeSeconds,
+        updatedAt: new Date(),
+      });
+      return true;
+    },
   };
 }
 
@@ -916,39 +1204,102 @@ export async function loadAgentComputerStatusPayload(
   };
 }
 
+/** Who did something to a computer, and for whom: the audit's actor and the sentences' agent name. */
+export interface ComputerCaller {
+  actor?: ComputerAuditActor;
+  /** The agent's name, for a refusal that names it ("Upgrade to give Mira a computer."). */
+  agentName?: string | null;
+}
+
+function audit(
+  userId: string,
+  agentId: string,
+  kind: ComputerAuditKind,
+  actor: ComputerAuditActor | undefined,
+  detail?: ComputerAuditDetail,
+): Promise<void> {
+  return recordComputerAudit({ userId, agentId, kind, actor: actor ?? "system", ...(detail ? { detail } : {}) });
+}
+
+/** The audit's `refused` reason for an error the gates threw. */
+function refusalReason(err: ComputerError): ComputerRefusalCode | "budget" {
+  return err instanceof ComputerAccessError ? err.code : "budget";
+}
+
+/**
+ * Audits a refusal and hands it back, so a caller can `throw await refused(...)`.
+ * A server with no computers (`server_off`) writes nothing: there is no
+ * computer layer to audit, and production today must not grow a row per
+ * request (docs/OPEN_DECISIONS.md section 10).
+ */
+async function refused<E extends ComputerError>(
+  userId: string,
+  agentId: string,
+  err: E,
+  actor: ComputerAuditActor | undefined,
+): Promise<E> {
+  if (err instanceof ComputerAccessError && err.code === "server_off") return err;
+  await audit(userId, agentId, "refused", actor, { reason: refusalReason(err) });
+  return err;
+}
+
+/**
+ * Gives an agent a computer: access first (provider, rollout, plan, host),
+ * then the plan's cap on computers per account, claimed together with the row
+ * so two enables at once cannot both pass it.
+ */
 export async function enableComputer(
   userId: string,
-  agentId: string
+  agentId: string,
+  caller: ComputerCaller = {}
 ): Promise<AgentComputerRow> {
   const provider = computerProvider();
-  if (!provider || !(await isAgentComputerConfigured())) {
-    throw new ComputerError("Agent computers are not configured on this server.");
-  }
+  const access = await computerAccessFor(userId);
+  if (!access.ok) throw await refused(userId, agentId, computerAccessError(access, caller.agentName), caller.actor);
+  if (!provider) throw await refused(userId, agentId, new ComputerAccessError("server_off", COMPUTER_ACCESS_COPY.serverOff), caller.actor);
 
-  const now = new Date();
-  await activePersistence.upsertByAgent(
+  const verdict = await activePersistence.claimEnableSlot(
     userId,
     agentId,
-    {
-      userId,
-      agentId,
-      provider: provider.name,
-      containerRef: null,
-      secrets: null,
-      status: "asleep",
-      streamOn: false,
-      leaseRunId: null,
-      leaseExpiresAt: null,
-      lastResumedAt: null,
-      lastActiveAt: now,
-      lastViewedAt: null,
-      activeSeconds: 0,
-      diskMb: 0,
-      lastError: null,
-    },
-    {}
+    access.caps.maxEnabled,
+    newComputerRowData(userId, agentId, provider.name, new Date()),
   );
-  return ensureComputerCreated(userId, agentId, provider);
+  if (verdict === "cap") throw await refused(userId, agentId, enabledCapError(access.caps.maxEnabled, caller), caller.actor);
+  const row = await ensureComputerCreated(userId, agentId, provider);
+  if (verdict === "created") await audit(userId, agentId, "enabled", caller.actor);
+  return row;
+}
+
+/** The row a computer starts as, before its container exists. */
+function newComputerRowData(
+  userId: string,
+  agentId: string,
+  providerName: string,
+  now: Date,
+): Omit<AgentComputerRow, "id" | "createdAt" | "updatedAt"> {
+  return {
+    userId,
+    agentId,
+    provider: providerName,
+    containerRef: null,
+    secrets: null,
+    status: "asleep",
+    streamOn: false,
+    leaseRunId: null,
+    leaseExpiresAt: null,
+    lastResumedAt: null,
+    lastActiveAt: now,
+    lastViewedAt: null,
+    activeSeconds: 0,
+    diskMb: 0,
+    lastError: null,
+  };
+}
+
+function enabledCapError(maxEnabled: number, caller: ComputerCaller): ComputerAccessError {
+  return new ComputerAccessError("enabled_cap", enabledCapSentence(maxEnabled, caller.agentName?.trim() || "this agent"), {
+    maxEnabled,
+  });
 }
 
 /** Serialises creation across processes without retaining a DB connection. */
@@ -1000,9 +1351,24 @@ export async function billComputerSeconds(input: {
   /** The start of the billed interval; part of the idempotency key. */
   since?: Date | null;
 }): Promise<number> {
-  const rate = computerCostMicroUsdPerSecond();
   const secs = Math.max(0, Math.floor(input.seconds));
-  if (rate <= 0 || secs <= 0) return 0;
+  if (secs <= 0) return 0;
+  // Metered against the weekly allowance first, whatever the price: at 0 the
+  // allowance is the only thing that bounds computer time (§S1.2).
+  const startedAt = input.since ?? new Date(Date.now() - secs * 1000);
+  // Cut at each Monday 00:00 UTC, so each week is charged only its own share.
+  for (const piece of splitUsageAtWeeks(startedAt, secs)) {
+    await activePersistence.recordUsageInterval({
+      userId: input.userId,
+      agentId: input.agentId,
+      startedAt: piece.startedAt,
+      seconds: piece.seconds,
+      weekStart: weekStartUtc(piece.startedAt),
+      runId: input.runId ?? null,
+    });
+  }
+  const rate = computerCostMicroUsdPerSecond();
+  if (rate <= 0) return 0;
   const costMicroUsd = secs * rate;
   if (activePersistence === prismaPersistence) {
     const { recordSpend } = await import("@/lib/spend");
@@ -1052,22 +1418,305 @@ export async function settleRunComputerBilling(
   return cost;
 }
 
-/** Includes accrued computer time that has not reached the spend ledger yet. */
-export async function computerUsageBudgetRefusal(userId: string, agentId: string, now = new Date()): Promise<string | null> {
+/**
+ * The host stopped answering for an awake computer (S3.3, losing the host
+ * mid-run): its open interval is settled up to the last time anything reached
+ * it (`lastContactAt`), metered against the allowance and, at a price above 0,
+ * billed; `lastResumedAt` is cleared so nothing accrues during the outage; and
+ * `host_unreachable` is audited. Once per outage: a second call finds the
+ * interval already settled and does nothing. The row is otherwise left alone,
+ * never marked missing and never recreated. `actor` is who found the outage:
+ * the sweep, or a sleep or rest that could not reach the host.
+ */
+export async function settleComputerOutage(
+  row: AgentComputerRow,
+  now = new Date(),
+  actor: ComputerAuditActor = "sweep",
+): Promise<boolean> {
+  if (row.status !== "awake" || !row.lastResumedAt) return false;
+  const resumedMs = row.lastResumedAt.getTime();
+  const contactMs = Math.min(row.lastContactAt?.getTime() ?? resumedMs, now.getTime());
+  const seconds = Math.max(0, Math.floor((contactMs - resumedMs) / 1000));
+  if (seconds > 0) {
+    await billComputerSeconds({
+      userId: row.userId,
+      agentId: row.agentId,
+      seconds,
+      runId: row.leaseRunId,
+      since: row.lastResumedAt,
+    });
+  }
+  await activePersistence.updateByAgent(row.userId, row.agentId, {
+    lastResumedAt: null,
+    activeSeconds: row.activeSeconds + seconds,
+  });
+  await audit(row.userId, row.agentId, "host_unreachable", actor);
+  return true;
+}
+
+/**
+ * A sleep the host could not carry out (S3.3): the computer may still be
+ * running there, so the row is neither marked as an error nor recorded asleep.
+ * It stays "stopping" with `billingStoppedAt` set, which keeps it in the
+ * sweep's list (findAllActiveUnguarded) and on the awake caps, and the sweep
+ * finishes the sleep (stop, then asleep) at its first pass that reaches the
+ * host; a wake or a run that needs the computer first finishes it the same way
+ * (finishHeldSleep). The end of the metered interval is pinned at the last
+ * contact before the ledger call, then the outage is settled there, so nothing
+ * accrues while the host is gone and nothing before it goes unmetered. An
+ * earlier attempt that already pinned the end is kept as it is.
+ */
+async function holdSleepForHost(
+  row: AgentComputerRow,
+  now: Date,
+  actor: ComputerAuditActor | undefined,
+  pinned?: Date
+): Promise<void> {
+  if (row.billingStoppedAt) return;
+  // A held sleep claimed and tried again (finishHeldSleep) keeps the end it was pinned at.
+  let end = pinned ?? now;
+  if (row.lastResumedAt) {
+    const resumedMs = row.lastResumedAt.getTime();
+    const contactMs = row.lastContactAt?.getTime() ?? resumedMs;
+    end = new Date(Math.min(Math.max(contactMs, resumedMs), now.getTime()));
+  }
+  await activePersistence.updateByAgent(row.userId, row.agentId, { status: "stopping", billingStoppedAt: end });
+  await settleComputerOutage(row, now, actor ?? "system").catch((error: unknown) => {
+    // The pinned end keeps the interval for the sleep that finishes later.
+    console.error("[agent-computer] outage settlement failed", { agentId: row.agentId, error: String(error) });
+    return false;
+  });
+}
+
+/**
+ * Finishes a sleep held for the host (holdSleepForHost, or a sleep whose ledger
+ * write failed), as read in `held`. It is a claim, like the idle path's: the
+ * held interval is metered first (idempotent per start, so two claimants
+ * meter it once), then claimHeldSleepCas takes the row only if it still holds
+ * that pinned end, and only the claimant stops the computer. The sweep, a wake
+ * and a run can each find the same held row; whoever comes second, or reads
+ * the row before someone finished the sleep and woke the computer again, gets
+ * false and touches nothing. While the host still does not answer, the sleep
+ * throws the unreachable sentence and the row is held again.
+ */
+export async function finishHeldSleep(
+  held: AgentComputerRow,
+  opts: { now?: Date; actor?: ComputerAuditActor }
+): Promise<boolean> {
+  const end = held.billingStoppedAt;
+  if (!end) return false;
+  let seconds = 0;
+  if (held.lastResumedAt) {
+    seconds = Math.max(0, Math.floor((end.getTime() - held.lastResumedAt.getTime()) / 1000));
+    if (seconds > 0) {
+      await billComputerSeconds({
+        userId: held.userId,
+        agentId: held.agentId,
+        seconds,
+        runId: held.leaseRunId,
+        since: held.lastResumedAt,
+      });
+    }
+  }
+  const claimed = await activePersistence.claimHeldSleepCas(
+    held.userId,
+    held.agentId,
+    { billingStoppedAt: end, lastResumedAt: held.lastResumedAt },
+    held.activeSeconds + seconds,
+  );
+  if (!claimed) return false;
+  await sleepComputer(held.userId, held.agentId, { now: opts.now, actor: opts.actor, heldEnd: end });
+  return true;
+}
+
+/**
+ * A computer is used again only once any sleep in progress has landed: a sleep
+ * held for the host is finished here (finishHeldSleep; this caller's claim, or
+ * someone else's that it then waits for), and a "stopping" claim (the sweep
+ * pausing or stopping it right now) is waited for, up to 30 s, rather than
+ * raced with `docker start`. Throws the unreachable sentence while the host
+ * still does not answer.
+ */
+async function waitOutSleep(
+  userId: string,
+  agentId: string,
+  read: AgentComputerRow,
+  actor: ComputerAuditActor | undefined
+): Promise<AgentComputerRow> {
+  const deadline = Date.now() + 30_000;
+  let row: AgentComputerRow | null = read;
+  while (row && (row.billingStoppedAt || row.status === "stopping")) {
+    if (Date.now() >= deadline) {
+      // A plain claim that never landed is waited for no longer (as before);
+      // a held one is never woken around.
+      if (row.billingStoppedAt) throw new ComputerError(COMPUTER_NOT_RESPONDING);
+      break;
+    }
+    if (row.billingStoppedAt) {
+      try {
+        await finishHeldSleep(row, { actor });
+      } catch (error) {
+        throw error instanceof ComputerError ? error : new ComputerError(publicComputerMessage(error));
+      }
+    } else {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    row = await activePersistence.findByAgent(userId, agentId);
+  }
+  if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
+  return row;
+}
+
+/**
+ * The sweep reached an awake computer through its provider: `lastContactAt`
+ * moves to now. After an outage (an awake row whose interval
+ * settleComputerOutage closed), metering resumes from this moment and
+ * `host_reachable` is audited with the outage's minutes. Returns the row as
+ * written, so the rest of the pass compares against it.
+ */
+export async function noteComputerContact(row: AgentComputerRow, now = new Date()): Promise<AgentComputerRow> {
+  if (row.status !== "awake") return row;
+  const recovering = !row.lastResumedAt && row.lastContactAt != null;
+  const updated = await activePersistence.updateByAgent(row.userId, row.agentId, {
+    lastContactAt: now,
+    ...(recovering ? { lastResumedAt: now } : {}),
+  });
+  if (recovering && row.lastContactAt) {
+    const minutes = Math.max(0, Math.round((now.getTime() - row.lastContactAt.getTime()) / 60_000));
+    await audit(row.userId, row.agentId, "host_reachable", "sweep", { minutes });
+  }
+  return updated;
+}
+
+/** Monday 00:00 UTC of the week `at` falls in: where the weekly allowance starts. */
+export function weekStartUtc(at: Date): Date {
+  const day = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day;
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * One metered interval cut at every Monday 00:00 UTC it runs across. Each
+ * piece is booked to the week it starts in and keyed on its own start, so a
+ * retried settlement of the same interval recomputes the same pieces (only the
+ * last one can lengthen). The pieces add up to `seconds`.
+ */
+export function splitUsageAtWeeks(startedAt: Date, seconds: number): Array<{ startedAt: Date; seconds: number }> {
+  const pieces: Array<{ startedAt: Date; seconds: number }> = [];
+  let start = startedAt.getTime();
+  let left = Math.max(0, Math.floor(seconds));
+  while (left > 0) {
+    const nextWeek = weekStartUtc(new Date(start)).getTime() + WEEK_MS;
+    const toBoundary = Math.floor((nextWeek - start) / 1000);
+    if (toBoundary >= left) {
+      pieces.push({ startedAt: new Date(start), seconds: left });
+      break;
+    }
+    if (toBoundary > 0) pieces.push({ startedAt: new Date(start), seconds: toBoundary });
+    left -= toBoundary;
+    start = nextWeek;
+  }
+  return pieces;
+}
+
+/** Seconds of open (not yet metered) awake time on one row. */
+function accruedSeconds(row: AgentComputerRow, now: Date, from?: Date): number {
+  if (!row.lastResumedAt) return 0;
+  const start = Math.max(row.lastResumedAt.getTime(), from?.getTime() ?? -Infinity);
+  return Math.max(0, Math.floor(((row.billingStoppedAt ?? now).getTime() - start) / 1000));
+}
+
+/**
+ * This week's computer time for the account: the intervals metered this week
+ * (an interval that ran across Monday 00:00 UTC was split there, so only this
+ * week's share counts) plus this week's share of the open interval of every
+ * computer awake right now.
+ */
+export async function computerWeekUsageSeconds(userId: string, now = new Date()): Promise<number> {
+  const weekStart = weekStartUtc(now);
+  const [metered, open] = await Promise.all([
+    activePersistence.sumUsageSeconds(userId, weekStart),
+    activePersistence.listAccruingForUser(userId),
+  ]);
+  return metered + open.reduce((sum, row) => sum + accruedSeconds(row, now, weekStart), 0);
+}
+
+/** The allowance refusal, or null while the account has time left this week. */
+export async function computerAllowanceRefusal(
+  userId: string,
+  weeklyMinutes: number,
+  now = new Date(),
+): Promise<ComputerAccessError | null> {
+  const used = await computerWeekUsageSeconds(userId, now);
+  return used >= weeklyMinutes * 60 ? new ComputerAccessError("allowance_exhausted", allowanceSentence(weeklyMinutes)) : null;
+}
+
+/**
+ * Why this account may not keep a computer awake: its access (without the host
+ * check: a host that does not answer is not a reason to sleep an entitled
+ * account's computer), then the weekly allowance, then the account's spend
+ * windows (only when computer time has a price, and only on the database).
+ */
+async function computerUsageRefusal(userId: string, agentId: string, now: Date): Promise<ComputerError | null> {
+  const access = await computerAccessFor(userId, { checkAvailable: false });
+  if (!access.ok) return computerAccessError(access);
+  const allowance = await computerAllowanceRefusal(userId, access.caps.weeklyMinutes, now);
+  if (allowance) return allowance;
   if (activePersistence !== prismaPersistence || computerCostMicroUsdPerSecond() <= 0) return null;
   const row = await activePersistence.findByAgent(userId, agentId);
-  const seconds = row?.lastResumedAt ? Math.max(0, Math.floor(((row.billingStoppedAt ?? now).getTime() - row.lastResumedAt.getTime()) / 1000)) : 0;
+  const seconds = row ? accruedSeconds(row, now) : 0;
   const [{ getUserPlan }, { checkUsageWindows }] = await Promise.all([import("@/lib/usage"), import("@/lib/spend")]);
   const windows = await checkUsageWindows(userId, await getUserPlan(userId), null, undefined, {
     pendingMicroUsd: seconds * computerCostMicroUsdPerSecond(), now,
   });
-  return !windows.allowed && windows.bound !== null ? windowLimitMessage(windows.bound, windows.resetsAtMs) : null;
+  return !windows.allowed && windows.bound !== null ? new ComputerError(windowLimitMessage(windows.bound, windows.resetsAtMs)) : null;
+}
+
+/**
+ * Throws (and audits) the refusal a wake would meet: access, then the
+ * allowance and spend. For a route that answers before the wake itself runs
+ * in the background, so the person hears "no" instead of "waking up".
+ */
+export async function assertComputerMayWake(userId: string, agentId: string, caller: ComputerCaller = {}): Promise<void> {
+  const access = await computerAccessFor(userId);
+  if (!access.ok) throw await refused(userId, agentId, computerAccessError(access, caller.agentName), caller.actor);
+  const usage = await computerUsageRefusal(userId, agentId, new Date());
+  if (usage) throw await refused(userId, agentId, usage, caller.actor);
+}
+
+/**
+ * The sentence for {@link computerUsageRefusal}, or null. The name the sweep
+ * already calls: access, then the allowance, then spend, with no early return
+ * when computer time is free and none for the in-memory store.
+ */
+export async function computerUsageBudgetRefusal(userId: string, agentId: string, now = new Date()): Promise<string | null> {
+  const refusal = await computerUsageRefusal(userId, agentId, now);
+  // The account could not be read this tick: not a reason to put an entitled
+  // account's computer to sleep. The next sweep asks again.
+  if (refusal && isTransientRefusal(refusal)) return null;
+  return refusal?.message ?? null;
+}
+
+/**
+ * A refusal that says nothing about the account: its plan could not be read
+ * (the access check without the host check answers `unavailable` only then).
+ * A wake is still refused; a running computer is not put to sleep for it.
+ */
+function isTransientRefusal(err: ComputerError): boolean {
+  return err instanceof ComputerAccessError && err.code === "unavailable";
 }
 
 export async function ensureAwake(
   userId: string,
   agentId: string,
-  opts?: { touchView?: boolean; autoEnable?: boolean }
+  opts?: ComputerCaller & {
+    touchView?: boolean;
+    autoEnable?: boolean;
+    /** Who the wake is for, in the audit: a run, the person, or a view. */
+    by?: "run" | "person" | "view";
+  }
 ): Promise<{
   row: AgentComputerRow;
   handle: ComputerHandle;
@@ -1075,40 +1724,47 @@ export async function ensureAwake(
   provider: ComputerProvider;
 }> {
   const provider = computerProvider();
-  if (!provider || !(await isAgentComputerConfigured())) {
-    throw new ComputerError("Agent computers are not configured on this server.");
-  }
+  const access = await computerAccessFor(userId);
+  if (!access.ok) throw await refused(userId, agentId, computerAccessError(access, opts?.agentName), opts?.actor);
+  if (!provider) throw await refused(userId, agentId, new ComputerAccessError("server_off", COMPUTER_ACCESS_COPY.serverOff), opts?.actor);
 
-  const budgetRefusal = await computerUsageBudgetRefusal(userId, agentId);
-  if (budgetRefusal) throw new ComputerError(budgetRefusal);
+  const usageRefusal = await computerUsageRefusal(userId, agentId, new Date());
+  if (usageRefusal) throw await refused(userId, agentId, usageRefusal, opts?.actor);
 
   let row = await activePersistence.findByAgent(userId, agentId);
   if (!row) {
     if (opts?.autoEnable) {
-      row = await enableComputer(userId, agentId);
+      row = await enableComputer(userId, agentId, { actor: opts.actor, agentName: opts.agentName });
     } else {
       throw new ComputerError("This agent does not have a computer enabled yet.");
     }
   }
 
   // The sweeper claimed it and is pausing or stopping it right now. Wait for
-  // that to land rather than racing `docker stop` with `docker start`.
-  if (row.status === "stopping") {
-    const deadline = Date.now() + 30_000;
-    while (row && row.status === "stopping" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 500));
-      row = await activePersistence.findByAgent(userId, agentId);
-    }
-    if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
-  }
+  // that to land rather than racing `docker stop` with `docker start`. A sleep
+  // held for the host (`billingStoppedAt` set) does not land until a pass
+  // reaches the host, so it is finished here (a claim) instead of waited for.
+  if (row.status === "stopping" || row.billingStoppedAt) row = await waitOutSleep(userId, agentId, row, opts?.actor);
 
   if (row.creationToken || !row.containerRef || !row.secrets) row = await ensureComputerCreated(userId, agentId, provider);
   let handle = decodeHandle(row.containerRef, agentId);
   let secrets = decodeSecrets(row.secrets);
   const counted = (ON_STATUSES as readonly string[]).includes(row.status);
+  let woke = false;
 
   try {
     let liveState = await provider.state(handle);
+    // D16: a container made from another image than the current tag's is
+    // recreated on its volumes, so an image rebuild (a Chromium security fix)
+    // reaches it. Only one that is asleep: recreating a resting one would
+    // throw away the pages it has open.
+    let rebuilt = false;
+    if (liveState === "exited" && (await provider.isOutdated?.(handle).catch(() => false))) {
+      await provider.destroy(handle, { removeVolume: false });
+      liveState = "missing";
+      rebuilt = true;
+      await audit(userId, agentId, "rebuilt", opts?.actor);
+    }
     if (liveState === "missing") {
       // Recreated on the same named volume if it still exists. The token is new:
       // the old one belonged to a container that is gone.
@@ -1117,7 +1773,9 @@ export async function ensureAwake(
       handle = decodeHandle(row.containerRef, agentId);
       secrets = decodeSecrets(row.secrets);
       await recordComputerEvent(userId, agentId, "computer_recreated",
-        "Its computer was lost and has been replaced; sign-ins may be gone.");
+        rebuilt
+          ? "Its computer was rebuilt on an updated system image; its files were kept."
+          : "Its computer was lost and has been replaced; sign-ins may be gone.");
       liveState = await provider.state(handle);
     }
 
@@ -1125,10 +1783,12 @@ export async function ensureAwake(
       // A resting computer already counts against the caps.
       if (!counted) await checkAwakeCaps(userId, agentId);
       await provider.unpause(handle);
+      woke = true;
     } else if (liveState !== "running") {
       if (!counted || row.status === "stopping") await checkAwakeCaps(userId, agentId);
       await activePersistence.updateByAgent(userId, agentId, { status: "starting", lastError: null });
       await provider.start(handle);
+      woke = true;
     }
 
     // Idempotent; covers a container restarted behind Juno's back, whose gate
@@ -1136,10 +1796,44 @@ export async function ensureAwake(
     await provider.provisionCdpToken(handle, secrets.cdpToken);
   } catch (err) {
     const message = publicComputerMessage(err);
-    await activePersistence
-      .updateByAgent(userId, agentId, { status: "error", lastError: message })
-      .catch(() => undefined);
+    // A host that cannot be reached says nothing about the computer: the row
+    // is left as it was (never marked as an error, never recreated), and the
+    // sweep settles its metering at the last contact (S3.3).
+    if (!isHostUnreachable(err)) {
+      await activePersistence
+        .updateByAgent(userId, agentId, { status: "error", lastError: message })
+        .catch(() => undefined);
+    }
     throw err instanceof ComputerError ? err : new ComputerError(message);
+  }
+
+  if (woke) await checkWokenComputer(userId, agentId, handle, provider, opts?.actor);
+  if (row.takeoverBy == null && row.takeoverUntil == null) {
+    // The safety net for a thaw a hand back could not finish: no take over
+    // window is open or left over, so nothing of the agent's should still be
+    // stopped. Idempotent. `row` was read before the slow work above, so the
+    // thaw is tied to its take over epoch: one that opened since (a person
+    // who took control while this wake ran) keeps the agent frozen.
+    await thawAgentOutsideTakeover({ userId, agentId, handle, provider, epoch: row.takeoverEpoch ?? 0, actor: opts?.actor });
+  } else if (!takeoverActive(row, new Date())) {
+    // A window that ran out but was never settled: the person's control
+    // password still works and their heartbeat could still renew it, so the
+    // agent is never thawed around it. It is settled first through the one
+    // release path (close by CAS, end the person's session by rotating the
+    // passwords, then thaw, D3). The computer is running now, whatever the
+    // row said before the wake.
+    await settleLapsedTakeover({ ...row, status: "awake" }, new Date()).catch((error: unknown) => {
+      console.error("[agent-computer] lapsed take over could not be settled at wake", { agentId, error: String(error) });
+    });
+    const settled = await activePersistence.findByAgent(userId, agentId);
+    if (!settled) throw new ComputerError("This agent does not have a computer enabled yet.");
+    // The release could only end the person's session by putting the
+    // computer to sleep: it is not running, so this wake did not succeed.
+    if ((await provider.state(handle).catch(() => "missing" as const)) !== "running") {
+      throw new ComputerError(COMPUTER_NOT_RESPONDING);
+    }
+    row = settled;
+    secrets = decodeSecrets(settled.secrets);
   }
 
   const now = new Date();
@@ -1149,11 +1843,74 @@ export async function ensureAwake(
     status: "awake",
     lastActiveAt: now,
     lastResumedAt: wasAwake ? row.lastResumedAt : now,
+    lastContactAt: now,
     ...(opts?.touchView ? { lastViewedAt: now } : {}),
     diskMb,
     lastError: null,
   });
+  if (woke) await audit(userId, agentId, "woke", opts?.actor, opts?.by ? { by: opts.by } : undefined);
   return { row, handle, secrets, provider };
+}
+
+/**
+ * What every wake checks once the computer is up: how old its image is
+ * (audited, never refused), and Chromium's sandbox together with the agent's
+ * namespace ban (D13). A computer whose agent could create a user namespace is
+ * put back to sleep and the wake is refused.
+ */
+async function checkWokenComputer(
+  userId: string,
+  agentId: string,
+  handle: ComputerHandle,
+  provider: ComputerProvider,
+  actor: ComputerAuditActor | undefined,
+): Promise<void> {
+  const image = await provider.imageInfo?.().catch(() => null);
+  const built = image ? Date.parse(image.createdAt) : NaN;
+  if (Number.isFinite(built)) {
+    const days = Math.floor((Date.now() - built) / 86_400_000);
+    if (days > env.agentComputer.maxImageAgeDays) await audit(userId, agentId, "image_stale", actor, { days });
+  }
+  if (!hasPrimitive(provider, "browserSandbox")) return;
+  let state: "on" | "off" | "unknown";
+  try {
+    state = await provider.browserSandbox(handle);
+    await audit(userId, agentId, "browser_sandbox", actor, { state });
+  } catch (error) {
+    // A host that stopped answering is not a failed safety check.
+    if (isHostUnreachable(error)) throw error;
+    await audit(userId, agentId, "sandbox_check_failed", actor);
+    await sleepComputer(userId, agentId, { reason: "sandbox", actor }).catch(() => undefined);
+    await activePersistence.updateByAgent(userId, agentId, { lastError: WAKE_REFUSED_SANDBOX }).catch(() => undefined);
+    throw new ComputerError(WAKE_REFUSED_SANDBOX);
+  }
+  // Owner decision 8: AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX=1 refuses a
+  // computer whose Chromium runs without its own sandbox ("unknown": the gate
+  // has not recorded one, so it is not known to be on either).
+  if (env.agentComputer.requireBrowserSandbox && state !== "on") {
+    await audit(userId, agentId, "refused", actor, { reason: "browser_sandbox_required", state });
+    await sleepComputer(userId, agentId, { reason: "sandbox", actor }).catch(() => undefined);
+    await activePersistence.updateByAgent(userId, agentId, { lastError: WAKE_REFUSED_SANDBOX_REQUIRED }).catch(() => undefined);
+    throw new ComputerError(WAKE_REFUSED_SANDBOX_REQUIRED);
+  }
+}
+
+/**
+ * Whether a provider has one of the take-over and image primitives. The
+ * interface requires them since S3; the store still checks at run time, so a
+ * provider that lacks one (a test's fake standing in for an older one) is
+ * audited (`freeze_unavailable`) rather than crashing a take over.
+ */
+function hasPrimitive(
+  provider: ComputerProvider,
+  name: "freezeAgent" | "thawAgent" | "browserSandbox" | "isOutdated" | "imageInfo"
+): boolean {
+  return typeof (provider as Partial<ComputerProvider>)[name] === "function";
+}
+
+/** Whether an error is the computer layer saying the host (or Docker) could not be reached. */
+export function isHostUnreachable(error: unknown): boolean {
+  return error instanceof ComputerError && error.message === COMPUTER_UNREACHABLE;
 }
 
 /** An AgentEvent from the computer layer; never carries ids, addresses or secrets. */
@@ -1176,7 +1933,7 @@ export interface IdleClaim {
 export async function restComputer(
   userId: string,
   agentId: string,
-  opts?: { now?: Date; ifIdle?: IdleClaim }
+  opts?: { now?: Date; ifIdle?: IdleClaim; actor?: ComputerAuditActor }
 ): Promise<AgentComputerRow | null> {
   const provider = computerProvider();
   const row = await activePersistence.findByAgent(userId, agentId);
@@ -1201,6 +1958,17 @@ export async function restComputer(
       liveState = "paused";
     }
   } catch (err) {
+    if (isHostUnreachable(err)) {
+      // A host that cannot be reached says nothing about the computer (S3.3):
+      // the idle claim's "stopping" is put back, so the sweep keeps checking
+      // this row, and its metering stops at the last contact. At the first
+      // pass that reaches the host, metering resumes and the idle rules apply
+      // again; it is never marked as an error.
+      const actor = opts?.actor ?? (opts?.ifIdle ? "sweep" : undefined);
+      if (opts?.ifIdle) await activePersistence.updateByAgent(userId, agentId, { status: row.status }).catch(() => undefined);
+      await settleComputerOutage(row, now, actor ?? "system").catch(() => false);
+      throw err;
+    }
     await activePersistence
       .updateByAgent(userId, agentId, { status: "error", lastError: publicComputerMessage(err) })
       .catch(() => undefined);
@@ -1222,18 +1990,39 @@ export async function restComputer(
     });
   }
 
-  return activePersistence.updateByAgent(userId, agentId, {
+  const rested = await activePersistence.updateByAgent(userId, agentId, {
     status: liveState === "paused" ? "resting" : "asleep",
     streamOn: false,
     lastResumedAt: null,
     activeSeconds: row.activeSeconds + elapsedSeconds,
   });
+  await audit(userId, agentId, "rested", opts?.actor ?? (opts?.ifIdle ? "sweep" : undefined));
+  return rested;
 }
+
+/** Why a computer was put to sleep, in the audit (§4.4). */
+export type ComputerSleepReason =
+  | "idle"
+  | "person"
+  | "allowance"
+  | "budget"
+  | "access"
+  | "disk"
+  | "run_end"
+  | "rotate_failed"
+  | "sandbox";
 
 export async function sleepComputer(
   userId: string,
   agentId: string,
-  opts?: { now?: Date; ifIdle?: IdleClaim }
+  opts?: {
+    now?: Date;
+    ifIdle?: IdleClaim;
+    reason?: ComputerSleepReason;
+    actor?: ComputerAuditActor;
+    /** finishHeldSleep's: the end the held sleep was pinned at, kept if the host is still gone. */
+    heldEnd?: Date;
+  }
 ): Promise<AgentComputerRow | null> {
   const provider = computerProvider();
   const row = await activePersistence.findByAgent(userId, agentId);
@@ -1265,6 +2054,15 @@ export async function sleepComputer(
       await provider.stop(handle);
     }
   } catch (err) {
+    if (isHostUnreachable(err)) {
+      // The computer may still be running on a host that cannot be reached:
+      // never an error, never asleep. The sleep is held for the host and the
+      // sweep finishes it once the host answers (holdSleepForHost).
+      await holdSleepForHost(row, now, opts?.actor ?? (opts?.ifIdle ? "sweep" : undefined), opts?.heldEnd).catch((error: unknown) => {
+        console.error("[agent-computer] a sleep could not be held for the host", { agentId, error: String(error) });
+      });
+      throw err;
+    }
     await activePersistence
       .updateByAgent(userId, agentId, { status: "error", lastError: publicComputerMessage(err) })
       .catch(() => undefined);
@@ -1289,7 +2087,7 @@ export async function sleepComputer(
     });
   }
 
-  return activePersistence.updateByAgent(userId, agentId, {
+  const slept = await activePersistence.updateByAgent(userId, agentId, {
     status: "asleep",
     billingStoppedAt: null,
     streamOn: false,
@@ -1298,6 +2096,9 @@ export async function sleepComputer(
     leaseExpiresAt: null,
     activeSeconds: row.activeSeconds + elapsedSeconds,
   });
+  const reason = opts?.reason ?? (opts?.ifIdle ? "idle" : undefined);
+  await audit(userId, agentId, "slept", opts?.actor ?? (opts?.ifIdle ? "sweep" : undefined), reason ? { reason } : undefined);
+  return slept;
 }
 
 /** Said when the person resets a computer a task is still using. */
@@ -1306,18 +2107,34 @@ export const RESET_WHILE_LEASED_MESSAGE = "A task is using it. Stop it first.";
 export async function resetComputer(
   userId: string,
   agentId: string,
-  now = new Date()
+  now = new Date(),
+  caller: ComputerCaller = {}
 ): Promise<AgentComputerRow> {
   const provider = computerProvider();
-  if (!provider) {
-    throw new ComputerError("Agent computers are not configured on this server.");
-  }
+  // A reset creates a new computer, so it is gated like one.
+  const access = await computerAccessFor(userId);
+  if (!access.ok) throw await refused(userId, agentId, computerAccessError(access, caller.agentName), caller.actor);
+  if (!provider) throw await refused(userId, agentId, new ComputerAccessError("server_off", COMPUTER_ACCESS_COPY.serverOff), caller.actor);
 
   const existing = await activePersistence.findByAgent(userId, agentId);
   // Destroying the container under a running task would land its next action
   // in a fresh desktop; the task is stopped first, by the person.
   if (existing?.leaseRunId && existing.leaseExpiresAt && existing.leaseExpiresAt.getTime() > now.getTime()) {
     throw new ComputerError(RESET_WHILE_LEASED_MESSAGE);
+  }
+  // An agent with no computer gets its first one here, so the reset takes a
+  // slot under the plan's cap exactly as an enable does, under the same
+  // per-account lock; at the cap nothing is created.
+  let claimed: "created" | "exists" | null = null;
+  if (!existing) {
+    const verdict = await activePersistence.claimEnableSlot(
+      userId,
+      agentId,
+      access.caps.maxEnabled,
+      newComputerRowData(userId, agentId, provider.name, now),
+    );
+    if (verdict === "cap") throw await refused(userId, agentId, enabledCapError(access.caps.maxEnabled, caller), caller.actor);
+    claimed = verdict;
   }
 
   // The awake time up to now is billed before anything is destroyed: a failed
@@ -1347,7 +2164,7 @@ export async function resetComputer(
   const newHandle = await provider.create({ agentId, userId, cdpToken });
   const activeSeconds = (existing?.activeSeconds ?? 0) + elapsedSeconds;
 
-  return activePersistence.upsertByAgent(
+  const resetRow = await activePersistence.upsertByAgent(
     userId,
     agentId,
     {
@@ -1385,15 +2202,35 @@ export async function resetComputer(
       ...takeoverClosed(),
     }
   );
+  if (claimed === "created") await audit(userId, agentId, "enabled", caller.actor);
+  await audit(userId, agentId, "reset", caller.actor);
+  return resetRow;
 }
 
 export async function disableComputer(
   userId: string,
-  agentId: string
+  agentId: string,
+  caller: ComputerCaller = {},
+  now = new Date()
 ): Promise<void> {
   const provider = computerProvider();
   const existing = await activePersistence.findByAgent(userId, agentId);
   let failure: unknown = null;
+  // The open awake interval is metered before the row goes (it used to be
+  // dropped). Never a gate: deleting reduces use, so a ledger that does not
+  // answer is logged and the delete goes on.
+  const openSeconds = existing ? accruedSeconds(existing, now) : 0;
+  if (existing?.lastResumedAt && openSeconds > 0) {
+    await billComputerSeconds({
+      userId,
+      agentId,
+      seconds: openSeconds,
+      runId: existing.leaseRunId,
+      since: existing.lastResumedAt,
+    }).catch((error: unknown) => {
+      console.error("[agent-computer] usage at delete could not be recorded", { agentId, error: String(error) });
+    });
+  }
   if (existing && provider) {
     const handle = decodeHandle(existing.containerRef, agentId);
     await provider.destroy(handle, { removeVolume: true }).catch((error: unknown) => {
@@ -1402,6 +2239,7 @@ export async function disableComputer(
   }
   posterCache.delete(agentId);
   await activePersistence.deleteByAgent(userId, agentId);
+  if (existing) await audit(userId, agentId, "disabled", caller.actor);
   // The row goes either way (the person turned the computer off). A container
   // or volume left behind has no row now, and the sweep's orphan check removes
   // it; the caller still hears that the teardown did not finish.
@@ -1441,15 +2279,19 @@ export async function renewComputerLease(
   ttlMs = 120_000,
   now = new Date()
 ): Promise<boolean> {
-  const refusal = await computerUsageBudgetRefusal(userId, agentId, now);
-  if (refusal) {
+  const refusal = await computerUsageRefusal(userId, agentId, now);
+  // A refusal that says nothing about the account (it could not be read this
+  // tick) skips the check: the lease is renewed and the next tick asks again.
+  if (refusal && !isTransientRefusal(refusal)) {
     // Only the owner being renewed can put it to sleep. A late heartbeat from
     // an old task must not stop the task that has since taken the lease.
     if (await activePersistence.releaseLeaseCas(userId, agentId, runId, now, true)) {
+      const code = refusalReason(refusal);
+      const reason: ComputerSleepReason = code === "allowance_exhausted" ? "allowance" : code === "budget" ? "budget" : "access";
       try {
-        await sleepComputer(userId, agentId, { now });
+        await sleepComputer(userId, agentId, { now, reason, actor: "runner" });
       } finally {
-        await activePersistence.updateByAgent(userId, agentId, { lastError: refusal });
+        await activePersistence.updateByAgent(userId, agentId, { lastError: refusal.message });
       }
     }
     return false;
@@ -1467,8 +2309,22 @@ export async function releaseComputerLease(
   return activePersistence.releaseLeaseCas(userId, agentId, runId, now);
 }
 
+/**
+ * What the computer's network allows (pipe-v4: no DNS in the computer, S2.1),
+ * so the model picks tools that work instead of debugging a lookup failure.
+ */
+export const COMPUTER_NETWORK_SENTENCE =
+  "Your computer reaches the web only through a proxy: tools that use HTTP_PROXY and HTTPS_PROXY work (curl, pip, npm, git over https, Python's urllib, the browser), and tools that look up names themselves (ssh, raw sockets, Node's built-in fetch) cannot reach the Internet.";
+
+/**
+ * Files in and out (S5.2, S5.3): where the person's uploads land, and how to
+ * hand a file back. The person sees the shell's output as it runs, read-only.
+ */
+export const COMPUTER_FILES_SENTENCE =
+  "Files the person adds to your computer arrive in /home/agent/work/inbox. To hand the person a file you made there, publish it with `computer_files` (action publish): it appears with this task's results as a download, exactly as it is. `computer_files` reads and writes any bytes with encoding base64.";
+
 export const YOUR_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen and your shell's output. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_FILES_SENTENCE + " " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
 
 /**
  * The same section for a run nobody started (a schedule or a trigger): there
@@ -1478,11 +2334,34 @@ export const YOUR_COMPUTER_PROMPT_SECTION =
  * happens to look (docs/rea/designs/computer-use.md, unattended runs).
  */
 export const UNATTENDED_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_FILES_SENTENCE + " " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
 
-/** The computer section for a run, by whether a person started it. */
-export function computerPromptSection(input: { attended: boolean }): string {
-  return input.attended ? YOUR_COMPUTER_PROMPT_SECTION : UNATTENDED_COMPUTER_PROMPT_SECTION;
+/** The pixel-tools sentence, which a model without vision is never given (it has no pixel tools). */
+const PIXEL_TOOLS_SENTENCE = "Use the `computer_*` pixel tools only for things the page tools can't reach. ";
+const ATTENDED_ASKS_SENTENCE = "Running a command or typing text asks the person every time, so prefer the page tools.";
+
+/**
+ * The computer section for a run: by whether a person started it, whether the
+ * model can see the screen (pixel tools are offered only to models with
+ * vision), and the agent's policy (under `ask` the computer is off until a
+ * computer tool starts it, and the browser tool is a temporary one until then).
+ * With no options beyond `attended` it is today's section, word for word.
+ */
+export function computerPromptSection(input: {
+  attended: boolean;
+  vision?: boolean;
+  policy?: "ask" | "allowed";
+}): string {
+  let base = input.attended ? YOUR_COMPUTER_PROMPT_SECTION : UNATTENDED_COMPUTER_PROMPT_SECTION;
+  if (input.vision === false) {
+    base = base
+      .replace(PIXEL_TOOLS_SENTENCE, "")
+      .replace(ATTENDED_ASKS_SENTENCE, "Running a command asks the person every time, so prefer the page tools.");
+  }
+  if (input.policy !== "ask") return base;
+  const lines = [PROMPT_ASK_LINES, PROMPT_ASK_BROWSER_LINE];
+  if (!input.attended) lines.push(PROMPT_ASK_UNATTENDED_LINE);
+  return `${lines.join(" ")} ${base}`;
 }
 
 export const BUSY_COMPUTER_FALLBACK_NOTE =
@@ -1520,85 +2399,218 @@ export type RunComputerAttachment =
     }
   | {
       attached: false;
-      fallbackReason: "not_enabled" | "busy" | "unavailable";
+      /**
+       * `policy_off`: the person switched the computer off for tasks.
+       * `needs_approval`: the policy is `ask` and this start was not approved.
+       * `refused`: access, the weekly allowance or the computer cap said no
+       * (`refusal` says which); it holds for the rest of the run.
+       */
+      fallbackReason: "not_enabled" | "busy" | "unavailable" | "policy_off" | "needs_approval" | "refused";
       note: string | null;
+      refusal?: ComputerRefusalCode | "budget";
     };
 
+export type AttachedRunComputer = Extract<RunComputerAttachment, { attached: true }>;
+
+/** A stored policy, read safely: anything that is not one of the three is `off`. */
+export function parseComputerPolicy(raw: unknown): ComputerPolicyValue {
+  return raw === "ask" || raw === "allowed" || raw === "off" ? raw : "off";
+}
+
+/** The agent's policy as stored right now (never cached), or `off` when the agent is gone. */
+export async function readAgentComputerPolicy(userId: string, agentId: string): Promise<ComputerPolicyValue> {
+  const agent = await activePersistence.readAgentForComputer(userId, agentId);
+  return agent ? parseComputerPolicy(agent.computerPolicy) : "off";
+}
+
+/** The agent's name and policy, for the panel and the chat tools. */
+export function readAgentForComputer(userId: string, agentId: string): Promise<AgentForComputer | null> {
+  return activePersistence.readAgentForComputer(userId, agentId);
+}
+
+/** Writes the policy; returns the one it replaced, or null when there is no such agent. */
+export function writeAgentComputerPolicy(userId: string, agentId: string, policy: ComputerPolicyValue): Promise<string | null> {
+  return activePersistence.writeAgentComputerPolicy(userId, agentId, policy);
+}
+
+export type RunComputerPlan =
+  | { kind: "none"; note: string | null }
+  | {
+      kind: "lazy";
+      /** The policy the run began with. `start` never trusts it. */
+      policy: "ask" | "allowed";
+      agentId: string;
+      agentName: string;
+      promptSection: string;
+      /** The policy as stored now (re-read every call, never cached). */
+      currentPolicy(): Promise<ComputerPolicyValue>;
+      /**
+       * Re-reads the policy first (off: refuse with policy_off), then access,
+       * allowance, creation (enabled cap), disk, lease, wake. The attachment,
+       * once made, is memoized per run; the policy check is not.
+       */
+      start(how: { approvedStart: boolean }): Promise<RunComputerAttachment>;
+    };
+
+/**
+ * What a Work run may do with its agent's computer (§S1.5). Nothing is woken
+ * here: the computer starts on the first computer tool call, through `start`.
+ * `none` when there is no agent, it runs on a Mac, its policy is `off`, or the
+ * account has no access (the prompt then says nothing, exactly as today when
+ * computers are off; when the host cannot be reached, it says so).
+ */
+export async function prepareRunComputer(input: {
+  userId: string;
+  agentId: string | null | undefined;
+  runId: string;
+  attended: boolean;
+  vision: boolean;
+  renewIntervalMs?: number;
+}): Promise<RunComputerPlan> {
+  const agentId = input.agentId;
+  if (!agentId) return { kind: "none", note: null };
+  const agent = await activePersistence.readAgentForComputer(input.userId, agentId);
+  if (!agent || agent.executionTarget === "mac") return { kind: "none", note: null };
+  const policy = parseComputerPolicy(agent.computerPolicy);
+  if (policy === "off") return { kind: "none", note: null };
+  const access = await computerAccessFor(input.userId);
+  if (!access.ok) return { kind: "none", note: access.reason === "unavailable" ? COMPUTER_UNAVAILABLE_NOTE : null };
+
+  const userId = input.userId;
+  let attachment: AttachedRunComputer | null = null;
+  let starting: Promise<RunComputerAttachment> | null = null;
+
+  const attach = async (): Promise<RunComputerAttachment> => {
+    const caller = { actor: "runner" as const, agentName: agent.name };
+    let existing = await activePersistence.findByAgent(userId, agentId);
+    if (!existing) {
+      try {
+        existing = await enableComputer(userId, agentId, caller);
+      } catch (error) {
+        return startFailure(error);
+      }
+    }
+    if (overDiskQuota(existing)) {
+      return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
+    }
+    // A sleep held for the host keeps the row "stopping", where no lease can
+    // be taken: it is finished first, by this run's claim or by the sweep's
+    // that it waits for (or, while the host is still gone, the run hears that
+    // the computer can't be reached, not that it is busy).
+    if (existing.billingStoppedAt) {
+      try {
+        existing = await waitOutSleep(userId, agentId, existing, "runner");
+      } catch (error) {
+        return startFailure(error);
+      }
+    }
+    const lease = await acquireComputerLease(userId, agentId, input.runId);
+    if (!lease.acquired) {
+      return { attached: false, fallbackReason: "busy", note: BUSY_COMPUTER_FALLBACK_NOTE };
+    }
+    try {
+      const awake = await ensureAwake(userId, agentId, { ...caller, by: "run" });
+      // Measured again on the way up: a computer that filled since the last sweep.
+      if (overDiskQuota(awake.row)) {
+        await releaseComputerLease(userId, agentId, input.runId).catch(() => {});
+        return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
+      }
+      const renewMs = input.renewIntervalMs ?? 40_000;
+      let renewing = false;
+      const timer = setInterval(() => {
+        if (renewing) return;
+        renewing = true;
+        void renewComputerLease(userId, agentId, input.runId)
+          .catch((error: unknown) => console.error("[agent-computer] lease or budget check failed", { agentId, error: String(error) }))
+          .finally(() => { renewing = false; });
+      }, renewMs);
+      timer.unref?.();
+
+      let released = false;
+      await audit(userId, agentId, "started", "runner", { by: "run", runId: input.runId });
+      return {
+        attached: true,
+        agentId,
+        row: awake.row,
+        handle: awake.handle,
+        secrets: awake.secrets,
+        provider: awake.provider,
+        promptSection: computerPromptSection({ attended: input.attended, vision: input.vision, policy }),
+        async release() {
+          if (released) return;
+          released = true;
+          clearInterval(timer);
+          await settleRunComputerBilling(userId, agentId, input.runId).catch((error: unknown) => {
+            console.error("[agent-computer] usage settlement failed", { agentId, error: String(error) });
+          });
+          await releaseComputerLease(userId, agentId, input.runId).catch(() => {});
+        },
+      };
+    } catch (error) {
+      await releaseComputerLease(userId, agentId, input.runId).catch(() => {});
+      return startFailure(error);
+    }
+  };
+
+  return {
+    kind: "lazy",
+    policy,
+    agentId,
+    agentName: agent.name,
+    promptSection: computerPromptSection({ attended: input.attended, vision: input.vision, policy }),
+    currentPolicy: () => readAgentComputerPolicy(userId, agentId),
+    async start(how) {
+      // Consent can be withdrawn mid-run: read every time, approved or not.
+      const now = await readAgentComputerPolicy(userId, agentId);
+      if (now === "off") {
+        await audit(userId, agentId, "refused", "runner", { reason: "policy_off", runId: input.runId });
+        return { attached: false, fallbackReason: "policy_off", note: POLICY_OFF_RESULT, refusal: "policy_off" };
+      }
+      if (attachment) return attachment;
+      if (now === "ask" && !how.approvedStart) {
+        return { attached: false, fallbackReason: "needs_approval", note: POLICY_NOW_ASK_RESULT };
+      }
+      starting ??= attach().finally(() => {
+        starting = null;
+      });
+      const result = await starting;
+      if (result.attached) attachment = result;
+      return result;
+    },
+  };
+}
+
+/** A start that failed, as the run hears it: a refusal holds for the run, anything else is the computer not answering. */
+function startFailure(error: unknown): RunComputerAttachment {
+  if (error instanceof ComputerAccessError) {
+    return { attached: false, fallbackReason: "refused", note: error.message, refusal: error.code };
+  }
+  if (error instanceof ComputerError) {
+    return { attached: false, fallbackReason: "unavailable", note: error.message };
+  }
+  return { attached: false, fallbackReason: "unavailable", note: COMPUTER_UNREACHABLE_NOTE };
+}
+
+/** Said when starting failed for a reason that is not a sentence of its own. */
+const COMPUTER_UNREACHABLE_NOTE = "Your computer could not be started right now; work without it for this step.";
+
+/**
+ * An eager attach, for callers that want the computer at once: the lazy start
+ * with no approval. Under `ask` nothing starts (`not_enabled`, no note).
+ */
 export async function resolveRunComputerSession(input: {
   userId: string;
   agentId: string | null | undefined;
   runId: string;
   renewIntervalMs?: number;
 }): Promise<RunComputerAttachment> {
-  if (!input.agentId) {
+  const plan = await prepareRunComputer({ ...input, attended: true, vision: true });
+  if (plan.kind === "none") return { attached: false, fallbackReason: "not_enabled", note: plan.note };
+  const result = await plan.start({ approvedStart: false });
+  if (!result.attached && result.fallbackReason === "needs_approval") {
     return { attached: false, fallbackReason: "not_enabled", note: null };
   }
-  if (!(await isAgentComputerConfigured())) {
-    return { attached: false, fallbackReason: "not_enabled", note: null };
-  }
-  const existing = await activePersistence.findByAgent(input.userId, input.agentId);
-  if (!existing) {
-    return { attached: false, fallbackReason: "not_enabled", note: null };
-  }
-  if (overDiskQuota(existing)) {
-    return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
-  }
-
-  const lease = await acquireComputerLease(input.userId, input.agentId, input.runId);
-  if (!lease.acquired) {
-    return {
-      attached: false,
-      fallbackReason: "busy",
-      note: BUSY_COMPUTER_FALLBACK_NOTE,
-    };
-  }
-
-  const agentId = input.agentId;
-  try {
-    const awake = await ensureAwake(input.userId, agentId);
-    // Measured again on the way up: a computer that filled since the last sweep.
-    if (overDiskQuota(awake.row)) {
-      await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
-      return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
-    }
-    const renewMs = input.renewIntervalMs ?? 40_000;
-    let renewing = false;
-    const timer = setInterval(() => {
-      if (renewing) return;
-      renewing = true;
-      void renewComputerLease(input.userId, agentId, input.runId)
-        .catch((error: unknown) => console.error("[agent-computer] lease or budget check failed", { agentId, error: String(error) }))
-        .finally(() => { renewing = false; });
-    }, renewMs);
-    timer.unref?.();
-
-    let released = false;
-    return {
-      attached: true,
-      agentId,
-      row: awake.row,
-      handle: awake.handle,
-      secrets: awake.secrets,
-      provider: awake.provider,
-      promptSection: YOUR_COMPUTER_PROMPT_SECTION,
-      async release() {
-        if (released) return;
-        released = true;
-        clearInterval(timer);
-        await settleRunComputerBilling(input.userId, agentId, input.runId).catch((error: unknown) => {
-          console.error("[agent-computer] usage settlement failed", { agentId, error: String(error) });
-        });
-        await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
-      },
-    };
-  } catch {
-    await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
-    return {
-      attached: false,
-      fallbackReason: "unavailable",
-      note: BUSY_COMPUTER_FALLBACK_NOTE,
-    };
-  }
+  return result;
 }
 
 export class AsleepComputerError extends Error {
@@ -1672,8 +2684,199 @@ export async function computerTakeoverFence(
   now = new Date(),
   runId?: string,
 ): Promise<{ reason: string | null; epoch: number }> {
-  const row = await activePersistence.findByAgent(userId, agentId);
+  let row = await activePersistence.findByAgent(userId, agentId);
+  // A take over whose window ran out is released (the person's VNC session
+  // ended, the agent's processes thawed) before the agent acts again.
+  if (row && takeoverLapsed(row, now)) {
+    await settleLapsedTakeover(row, now).catch(() => false);
+    row = await activePersistence.findByAgent(userId, agentId);
+  }
   return { reason: fenceRefusal(row, now, runId), epoch: row?.takeoverEpoch ?? 0 };
+}
+
+/** A window someone opened and nobody closed, now run out. */
+function takeoverLapsed(row: AgentComputerRow, now: Date): boolean {
+  return Boolean(row.takeoverBy && row.takeoverUntil && row.takeoverUntil.getTime() <= now.getTime());
+}
+
+/** A take over window is open, or ran out and was never closed: the person may still hold control. */
+function takeoverWindowExists(row: AgentComputerRow): boolean {
+  return row.takeoverBy != null || row.takeoverUntil != null;
+}
+
+/** The control password a row's secrets hold, or null when they cannot be read. */
+function controlPasswordOf(row: AgentComputerRow): string | null {
+  try {
+    return decodeSecrets(row.secrets).vncControlPassword ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every thaw goes through here (D3), so a thaw decided on a row read before
+ * slow provider work can never resume the agent under a take over that opened
+ * meanwhile. `epoch` is the take over epoch of the row the caller decided on.
+ *
+ * 1. The row is read again just before the thaw. A window that is open (or
+ *    left over), or an epoch that moved, means a take over started since the
+ *    caller's read: nothing is thawed. That take over's own release thaws once
+ *    it has ended the person's session.
+ * 2. The row is read again after the thaw. A take over that opened while the
+ *    thaw was in flight froze the agent first and the thaw undid it, so the
+ *    agent is frozen again (audited `refrozen`; `freeze_failed` when that
+ *    fails).
+ * 3. If that take over was handed back while it was being frozen again, its
+ *    release may have thawed before the new freeze landed. Only when its
+ *    session is already over (the control password rotated, the stream
+ *    stopped, or the computer asleep) is the agent thawed again, once, through
+ *    this same path; otherwise the release's own thaw is still to come.
+ */
+async function thawAgentOutsideTakeover(
+  input: {
+    userId: string;
+    agentId: string;
+    handle: ComputerHandle;
+    provider: ComputerProvider;
+    epoch: number;
+    actor: ComputerAuditActor | undefined;
+  },
+  depth = 0,
+): Promise<void> {
+  const { userId, agentId, handle, provider, actor } = input;
+  if (!hasPrimitive(provider, "thawAgent")) return;
+  const before = await activePersistence.findByAgent(userId, agentId);
+  if (!before || takeoverWindowExists(before) || (before.takeoverEpoch ?? 0) !== input.epoch) return;
+  await provider.thawAgent(handle).catch(() => audit(userId, agentId, "thaw_failed", actor));
+
+  const after = await activePersistence.findByAgent(userId, agentId);
+  if (!after || !takeoverWindowExists(after)) return;
+  if (!hasPrimitive(provider, "freezeAgent")) {
+    await audit(userId, agentId, "freeze_unavailable", actor);
+    return;
+  }
+  try {
+    await provider.freezeAgent(handle);
+    await audit(userId, agentId, "refrozen", actor);
+  } catch {
+    await audit(userId, agentId, "freeze_failed", actor);
+    return;
+  }
+
+  if (depth > 0) return;
+  const settled = await activePersistence.findByAgent(userId, agentId);
+  if (!settled || takeoverWindowExists(settled) || settled.status !== "awake") return;
+  const sessionOver = !settled.streamOn || controlPasswordOf(settled) !== controlPasswordOf(after);
+  if (sessionOver) {
+    await thawAgentOutsideTakeover({ ...input, epoch: settled.takeoverEpoch ?? 0 }, depth + 1);
+  }
+}
+
+/** How a take over ended, in the audit. */
+type ReleaseVia = "web" | "app" | "access_lost" | "lapse";
+
+/**
+ * The one way a take over ends: at Hand back, when it lapses, and when the
+ * person's account loses access while they hold control. Always in this order
+ * (D3): (1) close the window; (2) end the person's VNC session, by rotating the
+ * passwords (which restarts x11vnc and drops every client), else by stopping
+ * the stream, else by putting the computer to sleep; (3) only after one of
+ * those worked, thaw the agent. So the agent never runs again while the person
+ * who held control can still type.
+ *
+ * Returns false when a lapse was already settled by someone else (the CAS).
+ */
+async function releaseTakeover(
+  row: AgentComputerRow,
+  via: ReleaseVia,
+  actor: ComputerAuditActor,
+  now = new Date(),
+): Promise<boolean> {
+  const { userId, agentId } = row;
+  // 1. Close the window.
+  if (via === "lapse") {
+    if (!row.takeoverUntil || !(await activePersistence.closeLapsedTakeoverCas(userId, agentId, row.takeoverUntil))) return false;
+  } else {
+    await activePersistence.updateByAgent(userId, agentId, takeoverClosed());
+  }
+
+  // 2. End the person's VNC session. A computer that is not awake has none:
+  // resting and sleeping both stop the stream first.
+  const provider = computerProvider();
+  let sessionEnded = row.status !== "awake";
+  let slept = false;
+  if (provider && row.status === "awake") {
+    const handle = decodeHandle(row.containerRef, agentId);
+    try {
+      const secrets = decodeSecrets(row.secrets);
+      const rotated = await ensureStream({ handle, provider, rotatePasswords: true });
+      await activePersistence.updateByAgent(userId, agentId, {
+        streamOn: true,
+        lastViewedAt: now,
+        lastActiveAt: now,
+        secrets: encodeSecrets({
+          cdpToken: secrets.cdpToken,
+          vncControlPassword: rotated.controlPassword,
+          vncViewPassword: rotated.viewPassword,
+        }),
+      });
+      sessionEnded = true;
+    } catch {
+      await audit(userId, agentId, "rotate_failed", actor);
+      try {
+        await provider.stopVnc(handle);
+        await activePersistence.updateByAgent(userId, agentId, { streamOn: false, lastViewedAt: now });
+        sessionEnded = true;
+      } catch {
+        try {
+          // Sleep ends every process in the computer, the person's session too.
+          await sleepComputer(userId, agentId, { now, reason: "rotate_failed", actor });
+          sessionEnded = true;
+          slept = true;
+        } catch {
+          sessionEnded = false;
+        }
+      }
+    }
+    // 3. Thaw, only once the session is gone, and never under a take over
+    // another client opened while the passwords rotated (it froze the agent).
+    if (sessionEnded && !slept) {
+      await thawAgentOutsideTakeover({ userId, agentId, handle, provider, epoch: row.takeoverEpoch ?? 0, actor });
+    }
+  } else {
+    await activePersistence.updateByAgent(userId, agentId, { lastViewedAt: now }).catch(() => undefined);
+  }
+
+  // 4. Audit (a second Hand back for a window already closed records nothing).
+  if (via === "lapse") {
+    await audit(userId, agentId, "takeover_lapsed", actor);
+  } else if (row.takeoverBy != null || row.takeoverUntil != null) {
+    const heldSeconds = row.takeoverStartedAt ? Math.max(0, Math.round((now.getTime() - row.takeoverStartedAt.getTime()) / 1000)) : undefined;
+    await audit(userId, agentId, "takeover_handed_back", actor, { via, ...(heldSeconds !== undefined ? { heldSeconds } : {}) });
+  }
+  return sessionEnded;
+}
+
+async function settleLapsedTakeover(row: AgentComputerRow, now: Date): Promise<boolean> {
+  return releaseTakeover(row, "lapse", "system", now);
+}
+
+/**
+ * Releases every take over whose window ran out and nobody closed (§S1.6).
+ * Called from the Work runner's tick, and by the fence when it reads one.
+ * Returns how many it settled.
+ */
+export async function settleLapsedTakeovers(now = new Date()): Promise<number> {
+  const rows = await activePersistence.findLapsedTakeoversUnguarded(now);
+  let settled = 0;
+  for (const row of rows) {
+    try {
+      if (await releaseTakeover(row, "lapse", "runner", now)) settled++;
+    } catch (error) {
+      console.error("[agent-computer] lapsed take over could not be settled", { agentId: row.agentId, error: String(error) });
+    }
+  }
+  return settled;
 }
 
 /**
@@ -1710,6 +2913,8 @@ export async function openComputerViewSession(
     fallbackOrigin?: string;
     /** The native device session asking, when an app asks; binds a handoff link to it. */
     deviceSessionId?: string | null;
+    actor?: ComputerAuditActor;
+    agentName?: string | null;
   }
 ): Promise<
   | {
@@ -1718,12 +2923,23 @@ export async function openComputerViewSession(
       relayUrl: string;
       token: string;
       password: string;
+      /**
+       * For a new take over: whether the agent's processes were paused (`ok`),
+       * could not be (`failed`: the person still gets control, and is told), or
+       * the provider cannot pause them (`unavailable`). Absent otherwise.
+       */
+      freeze?: "ok" | "failed" | "unavailable";
     }
   | {
       kind: "handoff";
       url: string;
     }
 > {
+  const actor = opts?.actor ?? (opts?.deviceSessionId ? "app" : "web");
+  // First, so no app link is ever minted for an account that may not use it.
+  const access = await computerAccessFor(userId);
+  if (!access.ok) throw await refused(userId, agentId, computerAccessError(access, opts?.agentName), actor);
+
   const existing = await activePersistence.findByAgent(userId, agentId);
   if (!existing || (existing.status !== "awake" && existing.status !== "resting")) {
     throw new AsleepComputerError();
@@ -1759,7 +2975,7 @@ export async function openComputerViewSession(
     };
   }
 
-  const awake = await ensureAwake(userId, agentId, { touchView: true });
+  const awake = await ensureAwake(userId, agentId, { touchView: true, by: "view", actor, agentName: opts?.agentName });
   const existingControl = awake.secrets.vncControlPassword;
   const existingView = awake.secrets.vncViewPassword;
   // The row can say the stream is on while x11vnc is gone (the container was
@@ -1797,25 +3013,49 @@ export async function openComputerViewSession(
     }),
   });
 
+  // A remote host's VNC tunnel (a fresh single-use ticket for this session)
+  // makes a version 2 token with the ticket sealed in it; Docker, version 1.
   const { token } = mintViewToken({
     agentId,
     userId,
     host: stream.endpoints.vncHost,
     port: stream.endpoints.vncPort,
     mode,
+    ...(stream.endpoints.vncTunnel ? { tunnel: stream.endpoints.vncTunnel } : {}),
   });
 
   // Control is exclusive: from here until Hand back (or a lapsed window) the
   // agent's computer tools refuse.
+  let freeze: "ok" | "failed" | "unavailable" | undefined;
   if (mode === "control") {
     const holder = takeoverHolder(opts?.deviceSessionId ?? null);
+    const epochBefore = (await activePersistence.findByAgent(userId, agentId))?.takeoverEpoch ?? 0;
     await holdComputerTakeover(userId, agentId, holder, now);
     // Waking the computer and starting the stream take a while. Another
     // client that took control meanwhile keeps it (extending a live takeover
     // never changes its holder), and this one gets its sentence, not the
     // control password.
-    const conflict = takeoverConflict(await activePersistence.findByAgent(userId, agentId), holder, new Date());
+    const held = await activePersistence.findByAgent(userId, agentId);
+    const conflict = takeoverConflict(held, holder, new Date());
     if (conflict) throw new TakeoverHeldElsewhereError(conflict);
+    // A new take over (the epoch moved) stops what the agent is running, so
+    // an in-flight command or a typer cannot act under the person (D3). A
+    // failure never withholds control: the person must get it, and is told.
+    if ((held?.takeoverEpoch ?? 0) !== epochBefore) {
+      await audit(userId, agentId, "takeover_started", actor);
+      if (!hasPrimitive(awake.provider, "freezeAgent")) {
+        freeze = "unavailable";
+        await audit(userId, agentId, "freeze_unavailable", actor);
+      } else {
+        try {
+          await awake.provider.freezeAgent(awake.handle);
+          freeze = "ok";
+        } catch {
+          freeze = "failed";
+          await audit(userId, agentId, "freeze_failed", actor);
+        }
+      }
+    }
   }
 
   return {
@@ -1824,13 +3064,14 @@ export async function openComputerViewSession(
     relayUrl: resolveComputerRelayUrl(opts?.fallbackOrigin),
     token,
     password: mode === "control" ? stream.controlPassword : stream.viewPassword,
+    ...(freeze ? { freeze } : {}),
   };
 }
 
 export async function heartbeatComputerViewSession(
   userId: string,
   agentId: string,
-  input: { mode: "watch" | "control"; ended?: boolean; deviceSessionId?: string | null }
+  input: { mode: "watch" | "control"; ended?: boolean; deviceSessionId?: string | null; actor?: ComputerAuditActor; agentName?: string | null }
 ): Promise<PublicAgentComputerState> {
   const existing = await activePersistence.findByAgent(userId, agentId);
   if (!existing) {
@@ -1838,15 +3079,39 @@ export async function heartbeatComputerViewSession(
   }
 
   const now = new Date();
-  // A control heartbeat keeps the takeover; Hand back (`ended`) releases it
-  // before anything else, so the agent can carry on even if rotating the
-  // passwords below fails.
-  // It only keeps one going: opening the control session starts a takeover,
-  // so a heartbeat that was in flight when the person pressed Hand back (the
-  // takeover is closed, `takeoverUntil` is null) must not open a new one and
-  // stop the agent again. A window that lapsed (a slow network) is still the
-  // same holder's, and is renewed.
+  const actor = input.actor ?? (input.deviceSessionId ? "app" : "web");
   const holder = takeoverHolder(input.deviceSessionId ?? null);
+
+  // A heartbeat keeps a view (and a control one its take over) only while the
+  // account may still use the computer (§S1.3, watch and control). A control
+  // beat that lost access hands control back through the same release path as
+  // Hand back; either one is answered 403 with the sentence and does not
+  // refresh the view, so lost access never keeps a computer awake until the
+  // next sweep. Hand back (`ended`) is never refused.
+  if (!input.ended) {
+    const access = await computerAccessFor(userId, { checkAvailable: false });
+    if (!access.ok) {
+      // `unavailable` here means the account could not be read: the beat is
+      // refused (nothing is renewed, so a long outage still lapses the take
+      // over) but control is not taken away for it.
+      if (
+        access.reason !== "unavailable" &&
+        input.mode === "control" &&
+        existing.takeoverUntil != null &&
+        (existing.takeoverBy ?? holder) === holder
+      ) {
+        await releaseTakeover(existing, "access_lost", actor, now);
+      }
+      throw computerAccessError(access, input.agentName);
+    }
+  }
+
+  // A control heartbeat keeps the takeover. It only keeps one going: opening
+  // the control session starts a takeover, so a heartbeat that was in flight
+  // when the person pressed Hand back (the takeover is closed, `takeoverUntil`
+  // is null) must not open a new one and stop the agent again. A window that
+  // lapsed (a slow network) is still the same holder's, and is renewed until
+  // the lapse is settled; once it is, the window is closed and stays closed.
   const keepsItsTakeover = existing.takeoverUntil != null && (existing.takeoverBy ?? holder) === holder;
   if (input.mode === "control" && !input.ended && keepsItsTakeover) {
     await activePersistence.updateByAgent(userId, agentId, takeoverOpened({ state: existing, by: holder, now }));
@@ -1854,43 +3119,15 @@ export async function heartbeatComputerViewSession(
   // Only the client that holds the takeover can hand it back. Another tab or
   // device signed in to the same account cannot end someone's control session
   // and let the agent resume while they are still typing.
-  const releasable = takeoverReleasableBy(existing, takeoverHolder(input.deviceSessionId ?? null), now);
+  const releasable = takeoverReleasableBy(existing, holder, now);
   if (input.ended && input.mode === "control" && !releasable) {
     await activePersistence.updateByAgent(userId, agentId, { lastViewedAt: now });
     return getPublicComputerState(userId, agentId);
   }
   if (input.ended && input.mode === "control") {
-    await activePersistence.updateByAgent(userId, agentId, takeoverClosed());
-    const provider = computerProvider();
-    if (provider && existing.status === "awake") {
-      try {
-        const handle = decodeHandle(existing.containerRef, agentId);
-        const secrets = decodeSecrets(existing.secrets);
-        const rotated = await ensureStream({
-          handle,
-          provider,
-          rotatePasswords: true,
-        });
-        await activePersistence.updateByAgent(userId, agentId, {
-          streamOn: true,
-          lastViewedAt: now,
-          lastActiveAt: now,
-          secrets: encodeSecrets({
-            cdpToken: secrets.cdpToken,
-            vncControlPassword: rotated.controlPassword,
-            vncViewPassword: rotated.viewPassword,
-          }),
-        });
-      } catch {
-        await activePersistence.updateByAgent(userId, agentId, {
-          lastViewedAt: now,
-        });
-      }
-    } else {
-      await activePersistence.updateByAgent(userId, agentId, {
-        lastViewedAt: now,
-      });
-    }
+    // Hand back is never gated: it returns control. Close, end the person's
+    // session, then thaw (releaseTakeover).
+    await releaseTakeover(existing, actor === "app" ? "app" : "web", actor, now);
   } else {
     await activePersistence.updateByAgent(userId, agentId, {
       lastViewedAt: now,
@@ -1915,7 +3152,8 @@ export async function listOrDownloadComputerFiles(
   userId: string,
   agentId: string,
   rawPath = "/home/agent/work",
-  download = false
+  download = false,
+  caller: ComputerCaller = {}
 ): Promise<
   | {
       kind: "directory";
@@ -1930,12 +3168,18 @@ export async function listOrDownloadComputerFiles(
       bytes: Buffer;
     }
 > {
+  // Access first: an account that may not use the computer is told so, not
+  // asked to wake a computer it cannot wake. Downloads are not an exception
+  // (an export for downgraded accounts is an owner decision).
+  const access = await computerAccessFor(userId);
+  if (!access.ok) throw await refused(userId, agentId, computerAccessError(access, caller.agentName), caller.actor ?? "web");
   const existing = await activePersistence.findByAgent(userId, agentId);
   if (!existing || (existing.status !== "awake" && existing.status !== "resting")) {
+    // Never woken from here: the person wakes it.
     throw new AsleepComputerError();
   }
 
-  const awake = await ensureAwake(userId, agentId);
+  const awake = await ensureAwake(userId, agentId, { actor: caller.actor ?? "web", agentName: caller.agentName });
   const targetInput = rawPath.trim() || "/home/agent/work";
   // Resolved inside the container by argv (no shell, no login profile the
   // agent could have edited to forge the answer), then checked again here.

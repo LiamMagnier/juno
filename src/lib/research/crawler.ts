@@ -9,6 +9,7 @@
 import type { ExtractOptions, ExtractOutcome, ExtractResult } from "@/lib/search/search-engine";
 import { isDisallowedAddress, isDisallowedHost } from "@/lib/search/url-safety";
 import { htmlToCleanTextAsync } from "@/lib/web/html-text";
+import { BROWSER_SIGNAL_HANDLING } from "@/lib/work/browser";
 import type { Browser, Route } from "@playwright/test";
 
 // The shell heuristic lives with the other page signals now, where the
@@ -177,6 +178,9 @@ export async function renderHeadlessPage(
           "--disable-setuid-sandbox",
           "--disable-gpu",
         ],
+        // Playwright's own signal handlers would exit juno-sweepers (130) on a
+        // stop mid-crawl, before its loops' drains (src/lib/work/browser.ts).
+        ...BROWSER_SIGNAL_HANDLING,
       });
     } catch (error) {
       if (browserIsMissing(error)) headlessUnavailable = "no headless browser binary is installed in this build";

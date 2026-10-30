@@ -26,6 +26,8 @@ mod._load = function (request: string, parent: unknown, isMain: boolean) {
       recordAgentEvent: async () => undefined,
     };
   }
+  // The route's per-minute ceiling lives in Postgres; never reached here.
+  if (request === "@/lib/rate-limit") return { rateLimit: async () => ({ success: true, remaining: 100, resetAt: new Date() }) };
   return origLoad.call(this, request, parent, isMain);
 };
 
@@ -57,6 +59,8 @@ describe("Files: the transport reads what the route answers", () => {
   beforeEach(async () => {
     process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-auth-secret-32-bytes-minimum-length!!";
     process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    // Open to every plan that includes computers (src/lib/computer/access.ts); an account the in-memory store does not know reads as the owner's.
+    process.env.AGENT_COMPUTER_ROLLOUT = "plans";
     resetComputerProviderCache();
     fakeComputerProvider.reset();
     memDb = store.createInMemoryComputerPersistence();

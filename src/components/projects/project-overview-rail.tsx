@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { summaryExcerpt, type SummaryData } from "@/components/memory/memory-model";
 import { formatBytes, cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import "@/components/projects/projects.css";
 
@@ -38,6 +39,8 @@ export interface RailProjectMemory {
 /** How many rows a rail section shows before it defers to its full tab. */
 const FILE_PREVIEW = 4;
 const MEMORY_PREVIEW = 3;
+/** About two lines of a fact at the rail's width. */
+const FACT_CHARS = 96;
 
 /**
  * The Overview page's right-hand rail: what this project knows, in three
@@ -127,7 +130,9 @@ export function ProjectOverviewRail({
     // 16px inset (frame + the rows' own 12px).
     <aside
       aria-label="About this project"
-      className={cn("pj pj-card nest-card nest-p-1 overflow-hidden [animation-delay:80ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in", className)}
+      className={cn("pj pj-card nest-card nest-p-1 overflow-hidden [animation-fill-mode:backwards] motion-safe:animate-rise-in", className)}
+      // Two steps of the shared stagger: the beat after the column beside it.
+      style={staggerDelay(2)}
     >
       {/* A band, not a picture. At 16/7 the cover was 133px on a 304px rail,
           which put Instructions that far below the composer it is supposed to
@@ -170,7 +175,10 @@ export function ProjectOverviewRail({
               onClick={onEditInstructions}
               className="-mx-3 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
             >
-              <p className="line-clamp-4 whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground/80">
+              {/* `pre-line`, not `pre-wrap`: it keeps the prompt's line breaks
+                  but not a trailing space at the clamp, which drew the
+                  ellipsis a space away from its word ("Atlas for …"). */}
+              <p className="line-clamp-4 whitespace-pre-line break-words text-ui leading-relaxed text-foreground">
                 {instructions}
               </p>
               <p className="pj-annot mt-2">
@@ -246,7 +254,7 @@ export function ProjectOverviewRail({
                       <span className="block truncate text-ui font-medium text-foreground">
                         {file.fileName}
                       </span>
-                      <span className="pj-annot block">
+                      <span className="pj-annot block group-hover/file:text-muted-on-fill">
                         {formatBytes(file.size)}
                       </span>
                     </a>
@@ -324,7 +332,7 @@ export function ProjectOverviewRail({
                   onClick={onManageMemory}
                   className="-mx-3 mb-2 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                 >
-                  <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground/85">
+                  <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground">
                     {memorySummary}
                   </p>
                   <p className="pj-annot mt-1.5">
@@ -336,11 +344,15 @@ export function ProjectOverviewRail({
                 <ul className="space-y-1.5">
                   {memoryFacts.slice(0, MEMORY_PREVIEW).map((fact) => (
                     <li key={fact.id} className="flex gap-2 text-caption leading-relaxed text-muted-foreground">
-                      <span aria-hidden="true" className="select-none text-muted-foreground/50">
+                      <span aria-hidden="true" className="select-none text-ink-tertiary">
                         ·
                       </span>
-                      <span className="min-w-0 flex-1 truncate" title={fact.content}>
-                        {fact.content}
+                      {/* Whole words, cut in script: a CSS ellipsis cut the
+                          fact mid-word on one line ("…cite the published
+                          m…"), which is less than a reader needs to know
+                          what was remembered. */}
+                      <span className="min-w-0 flex-1 text-pretty break-words" title={fact.content}>
+                        {wordExcerpt(fact.content, FACT_CHARS)}
                       </span>
                     </li>
                   ))}
@@ -454,4 +466,15 @@ function RailMore({ onClick, children }: { onClick: () => void; children: React.
 
 function plural(n: number, noun: string) {
   return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** At most `max` characters, ending on a whole word, with the ellipsis set
+ *  against it (no space before it, no trailing punctuation under it). */
+export function wordExcerpt(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const span = flat.slice(0, max + 1);
+  const space = span.lastIndexOf(" ");
+  const head = space > max * 0.6 ? span.slice(0, space) : flat.slice(0, max);
+  return `${head.replace(/[\s,.;:!?–—-]+$/u, "")}…`;
 }

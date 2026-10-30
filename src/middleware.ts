@@ -72,6 +72,7 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
     csp = buildCsp({
       nonce,
       relayUrl: process.env.NEXT_PUBLIC_VOICE_RELAY_URL || process.env.VOICE_RELAY_URL,
+      computerRelayUrl: process.env.COMPUTER_VIEW_RELAY_URL,
       sandboxOrigin: sandboxOrigin(),
     });
     // Next reads the nonce off the REQUEST header to stamp its own script tags.

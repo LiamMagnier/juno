@@ -272,10 +272,11 @@ For each new variable:
 | `COMPUTER_MIN_FREE_MEMORY_MB` | `1024` | host free memory required to start or wake a computer |
 | `COMPUTER_MIN_FREE_DISK_GB` | `10` | host free disk required to start or wake a computer |
 | `COMPUTER_MAX_RUNNING_PER_USER` | `2` | computers on (awake, waking or resting) per account |
-| `COMPUTER_MAX_RUNNING_TOTAL` | `4` | computers on, across the whole server |
+| `COMPUTER_MAX_RUNNING_TOTAL` | `6` | computers on, across the whole server |
 | `COMPUTER_IDLE_PAUSE_SECONDS` | `180` | idle time before an awake computer rests (`docker pause`) |
 | `COMPUTER_IDLE_STOP_MINUTES` | `30` | resting time before it sleeps (`docker stop`) |
-| `COMPUTER_RETENTION_DAYS` | `30` | a computer asleep this long is destroyed (logins and files lost) |
+| `AGENT_COMPUTER_RETENTION_ENFORCE` | empty (off) | exactly `1` turns retention on; an owner decision that needs a notice to users first (OPERATIONS.md §3) |
+| `AGENT_COMPUTER_RETENTION_DAYS` | empty | with the switch on, a computer asleep this many days (a whole number, at least 7) is deleted with its sign-ins and files. The old `COMPUTER_RETENTION_DAYS` is ignored |
 | `COMPUTER_COST_MICRO_USD_PER_SECOND` | `0` | set above 0 to count computer time in the usage windows |
 | `RELAY_COMPUTER_CIDR` | `172.30.0.0/24` | relay only: container addresses the live-view relay may connect to |
 

@@ -219,7 +219,12 @@ export async function acceptTurn({
     const clientRequestId = input.clientRequestId!;
     const clientMessageId = input.clientMessageId!;
     const requestHash = firstSubmissionHash!;
-    const proposedGenerationId = crypto.randomUUID();
+    // The caller's own generation id when it named one, as the legacy path
+    // uses it: a Stop pressed while the turn is still in admission is recorded
+    // under that id (chat/stop-generation.ts), and the generation must register
+    // under the same one to find it. A repeat of this submission never reaches
+    // here — admission answers it from the receipt, whose id it keeps.
+    const proposedGenerationId = input.generationId ?? crypto.randomUUID();
     try {
       const acceptance = await prisma.$transaction(async (tx) => {
         let acceptedConversation = conversation;
@@ -260,10 +265,13 @@ export async function acceptTurn({
 
         const period = currentPeriod();
         const monthlyLimit = PLANS[plan].monthlyMessages;
-        await tx.usage.upsert({
-          where: { userId_period: { userId: user.id, period } },
-          create: { userId: user.id, period, messageCount: 0 },
-          update: {},
+        // INSERT … ON CONFLICT DO NOTHING, as consumeMessage does (lib/usage.ts):
+        // Prisma runs an upsert on this compound key as find-then-create, and
+        // the loser of two first turns of a period (two tabs) would fail the
+        // whole transaction on the unique key.
+        await tx.usage.createMany({
+          data: [{ userId: user.id, period, messageCount: 0 }],
+          skipDuplicates: true,
         });
         let quota: Awaited<ReturnType<typeof consumeMessage>>;
         if (monthlyLimit == null) {

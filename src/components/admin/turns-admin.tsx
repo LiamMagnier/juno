@@ -1,6 +1,6 @@
 import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import type { TurnTrace } from "@/lib/chat/turn/trace";
+import type { LatencyPercentiles, TurnLatencySummary, TurnTrace } from "@/lib/chat/turn/trace";
 import type { ModelPerformanceSnapshot } from "@/lib/observability";
 
 /*
@@ -10,8 +10,8 @@ import type { ModelPerformanceSnapshot } from "@/lib/observability";
  * reads it row by row, and because the trace holds no content to show.
  */
 
-function ms(value: number | null): string {
-  if (value === null) return "—";
+function ms(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
   return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(1)}s`;
 }
 
@@ -43,8 +43,9 @@ function TurnRow({ trace }: { trace: TurnTrace }) {
           <span className="text-muted-foreground"> · {trace.finishReason ?? "—"}</span>
         </span>
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
-          {new Date(trace.startedAt).toLocaleTimeString("en-GB")} · {ms(trace.latency.totalMs)} total · first token{" "}
-          {ms(trace.latency.ttftMs)}
+          {new Date(trace.startedAt).toLocaleTimeString("en-GB")} · {ms(trace.latency.totalMs)} total · prep{" "}
+          {ms(trace.latency.serverPrepMs)} · first token {ms(trace.latency.ttftMs)}
+          {typeof trace.latency.requestTtftMs === "number" ? ` (${ms(trace.latency.requestTtftMs)} from request)` : ""}
         </span>
       </div>
       <div className="font-mono text-caption text-muted-foreground">
@@ -71,7 +72,7 @@ function TurnRow({ trace }: { trace: TurnTrace }) {
             .join(" · ")}
         </div>
       )}
-      <div className="font-mono text-caption text-muted-foreground/70">
+      <div className="font-mono text-caption text-muted-foreground">
         run {trace.runId}
         {trace.requestId ? ` · request ${trace.requestId}` : ""} · account {trace.accountId}
         {trace.conversationId ? ` · chat ${trace.conversationId}` : ""}
@@ -80,7 +81,20 @@ function TurnRow({ trace }: { trace: TurnTrace }) {
   );
 }
 
-export function TurnsAdmin({ traces, models }: { traces: TurnTrace[]; models: ModelPerformanceSnapshot[] }) {
+function percentileLine(label: string, value: LatencyPercentiles | null | undefined): string {
+  return value ? `${label} p50 ${ms(value.p50)} · p95 ${ms(value.p95)} (${value.n})` : `${label} —`;
+}
+
+export function TurnsAdmin({
+  traces,
+  models,
+  latency,
+}: {
+  traces: TurnTrace[];
+  models: ModelPerformanceSnapshot[];
+  /** p50/p95 over this process's recent turns (trace-sink.ts, `turnLatencySummary`). */
+  latency?: TurnLatencySummary;
+}) {
   return (
     <AppPage measure="wide" contentClassName="flex flex-col gap-8">
       <AppPageHeader
@@ -90,6 +104,23 @@ export function TurnsAdmin({ traces, models }: { traces: TurnTrace[]; models: Mo
         lede="Recent chat turns on this server process, as their redacted traces. No message text is recorded."
         actions={<AdminNav current="turns" />}
       />
+
+      {latency && (
+        <section aria-labelledby="latency-heading" className="grid gap-2">
+          <h2 id="latency-heading" className="font-mono text-caption uppercase tracking-wide text-muted-foreground">
+            Before the first token
+          </h2>
+          <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            {percentileLine("server prep", latency.serverPrepMs)} ·{" "}
+            {percentileLine("first token from request", latency.requestTtftMs)} ·{" "}
+            {percentileLine("first token from turn start", latency.ttftMs)}
+          </p>
+          <p className="text-caption text-muted-foreground">
+            Prep runs from the request reaching the chat route to the provider request (connectors included). Recent
+            turns on this process only; the week-long numbers are in the chat.turn log lines.
+          </p>
+        </section>
+      )}
 
       <section aria-labelledby="models-heading" className="grid gap-2">
         <h2 id="models-heading" className="font-mono text-caption uppercase tracking-wide text-muted-foreground">

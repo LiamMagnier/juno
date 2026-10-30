@@ -25,7 +25,7 @@
 
 import * as React from "react";
 import type { AgentAvatar } from "@/lib/agents/avatar";
-import { AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/domain";
+import { AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/state-labels";
 import { reducedMotionAt } from "@/lib/motion-preference";
 import { cn } from "@/lib/utils";
 import { NO_EXTRAS, drawFace, sizeClass, type FaceFrame, type FaceSpec } from "./face-geometry";
@@ -59,7 +59,11 @@ export interface AgentFaceProps {
   /**
    * The state's still frame and nothing else, as under reduced motion: no
    * clock, no pointer. For a second copy of a face that is alive elsewhere on
-   * the page (the Orbit roster under the stage), so only one copy moves.
+   * the page (the Orbit roster under the stage), so only one copy moves. A
+   * face that has been live keeps its element and its rig when it turns
+   * still: the rig holds it (it eases into the still frame from where it is,
+   * a blink under way finishing first), and lets it go again, never a swap of
+   * element and never a cut.
    */
   still?: boolean;
   /**
@@ -107,21 +111,27 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
   const config = React.useMemo<FaceConfig>(() => {
     const spec: FaceSpec = { shape: avatar.shape, eyes: avatar.eyes, size: sizeClass(px), px };
     const identity = faceIdentity({ shape: avatar.shape, tone: avatar.tone, eyes: avatar.eyes, mark: avatar.mark });
-    return { spec, mark: avatar.mark, identity, live, look: live && look, direct };
+    return { spec, mark: avatar.mark, identity, live, look: live && look, direct, still };
     // sizeKey stands for sizeClass(px), which is a fresh object each call.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avatar.shape, avatar.tone, avatar.eyes, avatar.mark, px, sizeKey, live, look, direct]);
+  }, [avatar.shape, avatar.tone, avatar.eyes, avatar.mark, px, sizeKey, live, look, direct, still]);
 
-  // The first frame, kept for the element's life: the server's picture, and
-  // the props React compares against, so it never writes over the rig.
-  const [initial] = React.useState<FaceFrame>(() => drawFace(config.spec, stillFor(config, state), NO_EXTRAS, ids));
-  // The state the first frame draws: the paint keys off the state as drawn
-  // (data-drawn), which the rig moves on when its pose does.
-  const [initialState] = React.useState<AgentState>(state);
-  // A still face is drawn by React from its props, every render.
+  // A face the rig moves: once it has been live (at mount, or later), its
+  // element carries a rig for the rest of its life, and turning still only
+  // holds it (FaceConfig.still). Its first frame, drawn once from the state it
+  // had then, is the server's picture and the props React compares against,
+  // so React never writes over the rig; `state` is the state that frame draws
+  // (the paint keys off the state as drawn, data-drawn, which the rig moves on
+  // when its pose does).
+  const [rigFrom, setRigFrom] = React.useState<{ frame: FaceFrame; state: AgentState } | null>(() =>
+    still ? null : { frame: drawFace(config.spec, stillFor(config, state), NO_EXTRAS, ids), state },
+  );
+  if (!still && !rigFrom) setRigFrom({ frame: drawFace(config.spec, stillFor(config, state), NO_EXTRAS, ids), state });
+  const rigged = rigFrom !== null;
+  // A face never live is drawn by React from its props, every render.
   const stillFrame = React.useMemo(
-    () => (still ? drawFace(config.spec, stillFor(config, state, pose), NO_EXTRAS, ids) : null),
-    [still, config, state, ids, pose],
+    () => (rigged ? null : drawFace(config.spec, stillFor(config, state, pose), NO_EXTRAS, ids)),
+    [rigged, config, state, ids, pose],
   );
   const ref = React.useRef<SVGSVGElement | null>(null);
   const rig = React.useRef<FaceRigHandle | null>(null);
@@ -131,7 +141,7 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
 
   useIsomorphicLayoutEffect(() => {
     const el = ref.current;
-    if (!el || still) return;
+    if (!el || !rigged) return;
     const handle = attachFaceRig(el, config, stateRef.current, ids);
     rig.current = handle;
     attached.current = config;
@@ -139,24 +149,25 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
       handle.release();
       rig.current = null;
     };
-    // Attached once per element (the svg is keyed on `still`); state and config reach it below.
+    // Attached once per element (the svg is keyed on `rigged`); state and config (still among it) reach it below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [still]);
+  }, [rigged]);
 
-  // A still face swaps frames with the reduced-motion cross-fade; with motion
-  // allowed its paint transitions carry the swap, so a roster copy never dips.
+  // A face never live swaps frames with the reduced-motion cross-fade; with
+  // motion allowed its paint transitions carry the swap, so a roster copy
+  // never dips. (A rigged face held still crosses over on the rig.)
   const shownState = React.useRef(state);
   useIsomorphicLayoutEffect(() => {
     if (shownState.current === state) return;
     shownState.current = state;
     rig.current?.setState(state);
     const el = ref.current;
-    if (still && el && reducedMotionAt(el)) {
+    if (!rigged && el && reducedMotionAt(el)) {
       el.removeAttribute("data-swap");
       void el.getBoundingClientRect();
       el.setAttribute("data-swap", "");
     }
-  }, [state, still]);
+  }, [state, rigged]);
 
   useIsomorphicLayoutEffect(() => {
     if (attached.current === config) return;
@@ -164,10 +175,10 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
     rig.current?.configure(config);
   }, [config]);
 
-  const f = stillFrame ?? initial;
+  const f: FaceFrame = rigFrom ? rigFrom.frame : (stillFrame as FaceFrame);
   return (
     <svg
-      key={still ? "still" : "live"}
+      key={rigged ? "live" : "still"}
       ref={ref}
       viewBox="-32 -32 64 64"
       width={px}
@@ -177,7 +188,7 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
       aria-hidden={label ? undefined : true}
       focusable="false"
       data-state={state}
-      data-drawn={still ? state : initialState}
+      data-drawn={rigFrom ? rigFrom.state : state}
       className={cn("agent-face shrink-0", className)}
       style={{ "--face-tone": `var(--agent-${avatar.tone})` } as React.CSSProperties}
     >

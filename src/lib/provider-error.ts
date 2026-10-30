@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { ChatErrorClass } from "@/types/chat";
 
 /**
  * One place that decides what a provider failure *means*.
@@ -40,8 +41,9 @@ export interface NormalizedProviderError {
   retryable: boolean;
   /**
    * True when the fault is with *Juno's* provider account rather than with the
-   * user's request. They are still shown honestly to the customer, but without
-   * leaking credentials, account identifiers, or a raw provider response.
+   * user's request. The customer reads that the model is temporarily
+   * unavailable — never the account's funding or key state, credentials,
+   * account identifiers, or a raw provider response.
    */
   accountFault: boolean;
   /** Safe to render to a customer. */
@@ -172,6 +174,126 @@ export function classifyProviderError(err: unknown): {
   return { class: "unknown", status, raw };
 }
 
+/**
+ * A 403 whose wording names no account fault.
+ *
+ * `classifyProviderError` calls every 403 `auth`. That is right for the health
+ * probe, which asks the lab's cheapest model with the platform key, so a
+ * refusal there is the account's. It is wrong for a live turn: a 403 on one
+ * model can concern that model alone (OpenAI's organisation verification for a
+ * single model, DashScope's `AccessDenied.Unpurchased`, Google's
+ * `PERMISSION_DENIED` on a preview id). The Work runtime keeps its `forbidden`
+ * out of health for the same reason (`classForWorkFailure`), and the live
+ * chat feed asks the probe instead of marking the lab down
+ * (provider-health-policy.ts, `liveFaultVerdict`).
+ *
+ * Wording that names the key or the funding still counts as the account: an
+ * unfunded xAI team answers 403 with a sentence BILLING already classes as
+ * `billing`, and a rejected key says so in words AUTH matches.
+ */
+export function isBareForbidden(fault: { class: ProviderErrorClass; status: number | null; raw: string }): boolean {
+  return fault.class === "auth" && fault.status === 403 && !AUTH.test(fault.raw) && !BILLING.test(fault.raw);
+}
+
+/**
+ * Marks an error as thrown by a model call itself.
+ *
+ * A turn's catch also receives errors that never came from the lab: the
+ * research leg, an artifact step, anything else the turn awaited. Some carry
+ * an HTTP status and words the classifier reads as `auth` or `billing` (a
+ * search API's 401, a sentence that says "insufficient"), and provider health
+ * must not take a lab down for them. `streamChat` (src/lib/llm.ts) marks what
+ * its provider adapters throw, the one place every chat, private chat and
+ * background model call passes through, and the live feed
+ * (provider-health.ts, `noteLiveProviderFault`) reads only marked errors.
+ * Tool failures do not reach that catch: the tool loop answers them as tool
+ * results (src/lib/tools/dispatch.ts).
+ *
+ * A registered symbol, so a second copy of this module (Next's separate
+ * module graphs) reads the same mark. A primitive or frozen error cannot be
+ * marked, and is then not fed: the safe direction.
+ */
+const MODEL_CALL_ERROR = Symbol.for("juno.provider-error.model-call");
+
+export function markModelCallError(err: unknown): void {
+  if (!err || typeof err !== "object") return;
+  try {
+    Object.defineProperty(err, MODEL_CALL_ERROR, { value: true, enumerable: false, configurable: true });
+  } catch {
+    // Frozen or exotic: left unmarked, so it says nothing about the lab.
+  }
+}
+
+export function isModelCallError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as Record<symbol, unknown>)[MODEL_CALL_ERROR] === true;
+}
+
+/**
+ * Marks an error thrown while OPENING a model call's first request: the await
+ * on the SDK's `create` (or Gemini's request), which settles when the response
+ * headers arrive. What it throws is an HTTP status the provider answered with
+ * instead of a stream, or a connection that never got a response. Nothing was
+ * streamed, so nothing was served.
+ *
+ * Errors raised while READING an accepted stream are never marked: a socket
+ * dropped after the provider's 200 (undici's "terminated"), an SSE error
+ * event. By then the provider had accepted the request and started work, and
+ * its opening events (Anthropic's `message_start` usage, the Responses
+ * `response.created`) stay inside the adapter, so "the adapter yielded
+ * nothing" cannot tell the two apart. The retry before the first byte
+ * (src/lib/chat/turn/pre-stream-retry.ts) asks for this mark.
+ *
+ * Only the first request of a call is marked: a later tool round follows a
+ * round the provider served. `adapterRetried` says the adapter itself already
+ * sent the request a second time (Anthropic's fast-mode fallback), so the
+ * same model is not asked a third time.
+ */
+const REQUEST_REJECTED = Symbol.for("juno.provider-error.request-rejected");
+
+export function markRequestRejected(err: unknown, options: { adapterRetried?: boolean } = {}): void {
+  if (!err || typeof err !== "object") return;
+  try {
+    Object.defineProperty(err, REQUEST_REJECTED, {
+      value: { adapterRetried: options.adapterRetried === true },
+      enumerable: false,
+      configurable: true,
+    });
+  } catch {
+    // Frozen or exotic: left unmarked, so it is never retried.
+  }
+}
+
+/** The mark `markRequestRejected` left, or null when the error came from anywhere else. */
+export function requestRejection(err: unknown): { adapterRetried: boolean } | null {
+  if (!err || typeof err !== "object") return null;
+  const mark = (err as Record<symbol, unknown>)[REQUEST_REJECTED];
+  return mark && typeof mark === "object" ? { adapterRetried: (mark as { adapterRetried?: unknown }).adapterRetried === true } : null;
+}
+
+/**
+ * True when the provider's words say a safety or content-policy check refused
+ * the request, whatever the status. `classifyProviderError` reads a 403 as
+ * `auth` before it reads the wording, which is right for the health probe and
+ * wrong for a decision to send the same prompt somewhere else: a lab that
+ * answers its safety refusal with a 403 must not have the prompt shopped to
+ * another lab.
+ */
+export function isSafetyRefusal(err: unknown): boolean {
+  return FILTER.test(extract(err).raw);
+}
+
+/**
+ * The class an error frame carries (chat wire 1.1, `ChatErrorClass`): this
+ * module's class, except that `auth` and `billing` are one, `account`. Both
+ * are the platform's own provider account, and the sentence already hides
+ * which (`normalizeProviderError`); a precise class on the frame would tell
+ * anyone reading the stream that the platform ran out of credit. The precise
+ * class stays in the operator's log, the health verdict and the alert.
+ */
+export function wireErrorClass(klass: ProviderErrorClass): ChatErrorClass {
+  return klass === "auth" || klass === "billing" ? "account" : klass;
+}
+
 const RETRYABLE: Record<ProviderErrorClass, boolean> = {
   auth: false,
   billing: false,
@@ -245,11 +367,32 @@ export function normalizeProviderError(err: unknown, subject?: ErrorSubject): No
 
   let userMessage: string;
   switch (klass) {
+    /*
+     * ONE NEUTRAL SENTENCE FOR BOTH ACCOUNT FAULTS.
+     *
+     * These were two precise sentences — "its API connection is not configured
+     * correctly" and "its API credits or provider quota are exhausted". Both
+     * are about the deployment's own provider account, which the reader cannot
+     * fix and should not be told about: the second announced the platform's
+     * funding state to every paid account on 2026-10-26. The reader needs to
+     * know two things, that this model will not answer now and what to do
+     * instead, and the error card now offers the alternative as one click.
+     * The precise class still reaches the operator (`operatorMessage`, the
+     * `[provider] account fault` log line and the health alert) and the
+     * client (`errorClass` on the error frame).
+     *
+     * Every key this module classifies is the platform's: chat never runs on
+     * a person's own key (Code v2's own-key engine reports its failures
+     * itself), so there is no own-key case here to keep precise.
+     *
+     * Distinct from `capacity`'s sentence on purpose: the release smoke
+     * (scripts/production-smoke.mjs, PROVIDER_ACCOUNT_FAILURE) still tells an
+     * account fault from a release fault by the copy when a frame has no
+     * `errorClass`.
+     */
     case "auth":
-      userMessage = `${who} cannot be used right now because its API connection is not configured correctly. Choose another model.`;
-      break;
     case "billing":
-      userMessage = `${who} cannot respond because its API credits or provider quota are exhausted. Choose another model while service is restored.`;
+      userMessage = `${who} is temporarily unavailable. Choose another model, or try again later.`;
       break;
     case "rate_limit":
       /*

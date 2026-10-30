@@ -24,6 +24,7 @@ export function AgentPresence({
   className,
   gaze = false,
   direct = false,
+  still = false,
   transitionName,
 }: {
   avatar: AgentAvatar;
@@ -40,6 +41,12 @@ export function AgentPresence({
   gaze?: boolean;
   /** A preview a person drives: each state change plays at once, without the smoothing (agent-face.tsx). */
   direct?: boolean;
+  /**
+   * Held still while a larger copy of the same agent is alive elsewhere on the
+   * screen: the same face, on the same element, eases into its still frame and
+   * stops, and lives again when let go (agent-face.tsx `still`).
+   */
+  still?: boolean;
   /** A view-transition name, so the face carries across a navigation. */
   transitionName?: string;
 }) {
@@ -49,7 +56,7 @@ export function AgentPresence({
       className={cn("agent-presence", className)}
       style={{ width: size, height: size, viewTransitionName: transitionName } as React.CSSProperties}
     >
-      <AgentFace avatar={avatar} state={state} size={size} name={name} live look={gaze} direct={direct} />
+      <AgentFace avatar={avatar} state={state} size={size} name={name} live look={gaze} direct={direct} still={still} />
     </span>
   );
 }

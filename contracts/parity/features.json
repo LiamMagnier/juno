@@ -816,6 +816,10 @@
         },
         "/api/agents/[id]/computer/heartbeat": "native",
         "/api/agents/[id]/computer/poster": "native",
+        "/api/agents/[id]/computer/shell": {
+          "status": "planned",
+          "note": "The agent's shell output for one of its Work runs, read after a cursor; the web computer pane's terminal polls it."
+        },
         "/api/agents/[id]/computer/view": "native",
         "/api/computer-view/session": {
           "status": "web-only",

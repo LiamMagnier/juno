@@ -249,7 +249,7 @@ function DeckPreview({ title, type }: { title: string; type: string }) {
 function SourcePreview({ source }: { source: string }) {
   return (
     <Miniature>
-      <pre className="absolute inset-0 overflow-hidden whitespace-pre px-[20px] pt-[20px] font-mono text-foreground/70 [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" style={{ fontSize: 11.5, lineHeight: "17px" }}>
+      <pre className="absolute inset-0 overflow-hidden whitespace-pre px-[20px] pt-[20px] font-mono text-muted-foreground [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" style={{ fontSize: 11.5, lineHeight: "17px" }}>
         {source.split("\n").slice(0, 12).join("\n")}
       </pre>
     </Miniature>
@@ -265,13 +265,17 @@ function svgDataUrl(source: string): string | null {
 /** A file that is not a picture: its rendered first page when the server made one, else its words on a page. */
 function FilePagePreview({ file, type }: { file: LibraryItem; type: string }) {
   const preview = useFilePreview(file, true);
+  // A page rendering that will not load (its object is gone, the renderer
+  // failed) falls back to the words-on-a-page miniature below instead of the
+  // browser's broken-image glyph.
+  const [pageFailed, setPageFailed] = React.useState(false);
   const title = file.fileName.replace(/\.[a-z0-9]{1,6}$/i, "");
-  if (preview?.thumbnailUrl) {
+  if (preview?.thumbnailUrl && !pageFailed) {
     return (
       <Miniature>
         <div className="absolute inset-x-6 top-6 bottom-0 overflow-hidden rounded-t-sm bg-background shadow-[0_0_0_1px_hsl(var(--border)/0.7)]">
           {/* eslint-disable-next-line @next/next/no-img-element -- a bounded JPEG of the first page, from our own route */}
-          <img src={preview.thumbnailUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover object-top" />
+          <img src={preview.thumbnailUrl} alt="" loading="lazy" decoding="async" onError={() => setPageFailed(true)} className="size-full object-cover object-top" />
         </div>
       </Miniature>
     );
@@ -315,10 +319,10 @@ function MadeBy({ entry, size = 16, comma = false, compact = false }: { entry: L
   const agent = entry.made?.agent;
   if (!agent) return null;
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground/100">
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
       <AgentFace avatar={normalizeAgentAvatar(agent.avatar, agent.id)} size={size} />
       {/* `compact`: on a phone's two-column grid the face alone says who; the name returns at 40rem. */}
-      <span className={cn("truncate text-foreground/80", compact && "hidden @[40rem]/page:inline")}>
+      <span className={cn("truncate text-foreground", compact && "hidden @[40rem]/page:inline")}>
         {agent.name}
         {comma ? "," : ""}
       </span>
@@ -352,7 +356,7 @@ export function EntryProblem({ entry, className }: { entry: LibraryEntry; classN
   return (
     <span className={cn("grid grid-cols-[16px_minmax(0,1fr)] items-start gap-2 text-caption text-muted-foreground", className)}>
       <AlertCircle className="mt-px size-4 text-muted-foreground" aria-hidden="true" />
-      <span className="line-clamp-2 text-foreground/75">{problem}</span>
+      <span className="line-clamp-2 text-muted-foreground">{problem}</span>
     </span>
   );
 }
@@ -361,6 +365,26 @@ export interface FileActions {
   onRename: (item: LibraryItem) => void;
   onVersions: (item: LibraryItem) => void;
   onDelete: (item: LibraryItem) => void;
+  /**
+   * Look at an uploaded file in place (library-quick-look.tsx). Optional: a
+   * caller without it keeps the plain link, which opens a picture in a new tab
+   * and downloads anything else.
+   */
+  onPreview?: (item: LibraryItem) => void;
+}
+
+/**
+ * The click handler for a link that opens an uploaded file: a plain click
+ * previews it in place, while a modified or middle click keeps the link's
+ * own behaviour (new tab, download), so nothing anyone relied on went away.
+ */
+export function previewOnClick(file: LibraryItem | undefined, onPreview: FileActions["onPreview"]) {
+  if (!file || !onPreview) return undefined;
+  return (event: React.MouseEvent) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onPreview(file);
+  };
 }
 
 /** The one menu an item has: what you can do with it, by what it really is. */
@@ -450,6 +474,7 @@ const PREVIEW =
 export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: FileActions }) {
   const when = libraryWhen(entry.at);
   const external = Boolean(entry.file || entry.made?.kind === "deliverable");
+  const preview = previewOnClick(entry.file, actions.onPreview);
   return (
     /*
      * ONE CARD PER ITEM (owner: "the way the name, date and icons are placed
@@ -464,15 +489,19 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
         href={entry.href}
         {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
         aria-label={`Open ${entry.title}, ${entry.type}, ${when}`}
+        aria-haspopup={preview ? "dialog" : undefined}
+        onClick={preview}
         className="absolute inset-0 z-[1] rounded-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
       <div className={PREVIEW}>
         <EntryPreview entry={entry} />
       </div>
+      {/* An opaque plate on the page ground, not frosted glass: chrome over
+          content is opaque (spec D15), and a picture under it stays a picture. */}
       <EntryMenu
         entry={entry}
         actions={actions}
-        className="absolute right-3 top-3 z-[2] rounded-control bg-background/85 opacity-0 shadow-[0_0_0_1px_hsl(var(--foreground)/0.08)] backdrop-blur-md transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 [&:has([data-state=open])]:opacity-100"
+        className="absolute right-3 top-3 z-[2] rounded-control bg-background opacity-0 shadow-[0_0_0_1px_hsl(var(--foreground)/0.08)] transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 coarse:opacity-100 [&:has([data-state=open])]:opacity-100"
       />
       <div className="flex min-w-0 flex-col gap-0.5 px-2 pb-2 pt-2.5">
         <span className="truncate text-ui font-medium leading-5 tracking-[-0.006em] text-foreground">{entry.title}</span>
@@ -482,7 +511,7 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
           <span className={cn("min-w-0 truncate", !entry.made?.agent && "hidden @[40rem]/page:inline")}>
             {entry.made?.agent ? <MadeBy entry={entry} size={14} compact /> : entry.type}
           </span>
-          <span aria-hidden="true" className={cn("text-muted-foreground/60", !entry.made?.agent && "hidden @[40rem]/page:inline")}>·</span>
+          <span aria-hidden="true" className={cn("text-ink-tertiary", !entry.made?.agent && "hidden @[40rem]/page:inline")}>·</span>
           <span className="shrink-0 tabular-nums">{when}</span>
           <span className="relative z-[2] ml-auto opacity-0 transition-opacity duration-fast ease-out-soft group-hover/tile:opacity-100 focus-within:opacity-100 coarse:opacity-100">
             <ChatLink entry={entry} />
@@ -494,22 +523,89 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
 }
 
 /**
+ * Said once to a screen reader: set a tick after mount, so a row that is born
+ * failed (a refused type, a file over the plan's limit) is announced too. A
+ * live region only speaks about content that CHANGES inside it.
+ */
+function useLateAnnouncement(text: string) {
+  const [said, setSaid] = React.useState("");
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setSaid(text), 60);
+    return () => window.clearTimeout(timer);
+  }, [text]);
+  return said;
+}
+
+/** Bytes all sent, the server storing them: a Cancel then would only stop the browser listening. */
+function uploadSettling(upload: LibraryUpload) {
+  return upload.status === "uploading" && upload.progress >= 100;
+}
+
+/** A verb on an upload's meta line: drawn 24px tall on the 20px line, 44 under a finger (hit-44). */
+const UPLOAD_VERB = "-my-0.5 h-6 gap-1 px-1.5 text-caption coarse:h-6";
+
+/** The way out of a failed or unwanted upload, as words: the same pair in the grid and the list. */
+function UploadVerbs({ upload, onRetry, onDismiss }: { upload: LibraryUpload; onRetry: () => void; onDismiss: () => void }) {
+  if (upload.status !== "failed") return null;
+  return (
+    <>
+      {upload.retryable !== false ? (
+        <Button variant="ghost" size="sm" onClick={onRetry} className={cn(UPLOAD_VERB, "-ml-1.5 text-foreground")}>
+          <RotateCcw className="size-3" aria-hidden="true" />
+          Try again
+        </Button>
+      ) : null}
+      <Button variant="ghost" size="sm" onClick={onDismiss} aria-label={`Remove ${upload.fileName} from this list`} className={cn(UPLOAD_VERB, "text-muted-foreground", upload.retryable === false && "-ml-1.5")}>
+        Remove
+      </Button>
+    </>
+  );
+}
+
+/** Cancel, while the bytes are still moving: an opaque plate where a finished tile keeps its menu. */
+function CancelUpload({ upload, onDismiss, className }: { upload: LibraryUpload; onDismiss: () => void; className?: string }) {
+  if (upload.status !== "uploading" || uploadSettling(upload)) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label={`Cancel uploading ${upload.fileName}`} className={cn("text-muted-foreground hover:text-foreground", className)}>
+          <X className="size-4" aria-hidden="true" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Cancel upload</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
  * A file on its way up, in the grid: the same card at the same size as every
- * other tile, its name, and its progress or the way out of a failure on the
- * tile's one meta line (no problem paragraph on a tile; the reason rides the
- * line's title and the list view still says it in full).
+ * other tile (owner: same-size tiles, a fixed two-line meta). While it moves,
+ * the well shows the file and a progress line, and the plate in the corner
+ * cancels it. If it fails, the WELL says so and why, in words: the reason
+ * used to ride a tooltip, which a finger never sees, and the meta line cut
+ * "Didn't upload" to "D…" on a phone. The meta line keeps only the verbs.
  */
 export function UploadTile({ upload, onRetry, onDismiss }: { upload: LibraryUpload; onRetry: () => void; onDismiss: () => void }) {
   const failed = upload.status === "failed";
+  const reason = upload.error ?? "This file didn’t upload.";
+  const said = useLateAnnouncement(failed ? `${upload.fileName} didn’t upload. ${reason}` : "");
   return (
-    <div className={cn(TILE, "hover:translate-y-0 hover:shadow-none active:scale-100")} aria-live="polite">
+    <div className={cn(TILE, "hover:translate-y-0 hover:shadow-none active:scale-100")}>
+      <span className="sr-only" aria-live="polite">{said}</span>
       <div className={cn(PREVIEW, "bg-muted dark:bg-card")}>
-        {upload.previewUrl ? (
+        {failed ? (
+          // No picture behind the words: a failed image drops its preview.
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-4 text-center">
+            <AlertCircle className="mb-0.5 size-4 text-muted-foreground" aria-hidden="true" />
+            <span className="text-ui font-medium text-foreground">Didn’t upload</span>
+            <span className="line-clamp-3 max-w-[30ch] text-caption text-muted-foreground">{reason}</span>
+          </span>
+        ) : upload.previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- a local object URL of the file being uploaded
           <img src={upload.previewUrl} alt="" className="size-full object-cover opacity-60" />
         ) : (
           <span className="absolute inset-0 grid place-items-center">
-            <TypeGlyph type={upload.kind === "IMAGE" ? "Image" : "File"} className="size-5 text-muted-foreground/70" />
+            <TypeGlyph type={upload.kind === "IMAGE" ? "Image" : "File"} className="size-5 text-ink-tertiary" />
           </span>
         )}
         {!failed ? (
@@ -518,31 +614,84 @@ export function UploadTile({ upload, onRetry, onDismiss }: { upload: LibraryUplo
           </span>
         ) : null}
       </div>
+      <span className="absolute right-3 top-3 z-[2] rounded-control bg-background shadow-[0_0_0_1px_hsl(var(--foreground)/0.08)] empty:hidden">
+        <CancelUpload upload={upload} onDismiss={onDismiss} />
+      </span>
       <div className="flex min-w-0 flex-col gap-0.5 px-2 pb-2 pt-2.5">
-        <span className="truncate text-ui font-medium leading-5 tracking-[-0.006em] text-foreground">{upload.fileName}</span>
+        <span className="truncate text-ui font-medium leading-5 tracking-[-0.006em] text-foreground" title={upload.fileName}>
+          {upload.fileName}
+        </span>
         {failed ? (
-          <span className="flex h-5 min-w-0 items-center gap-2 text-caption text-muted-foreground" title={upload.error ?? "This file didn’t upload."}>
-            <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="sr-only">{upload.error ?? "This file didn’t upload."}</span>
-            <span aria-hidden="true" className="truncate">Didn’t upload</span>
-            <span className="ml-auto flex shrink-0 items-center gap-2">
-              {upload.retryable !== false ? (
-                <button type="button" onClick={onRetry} className="inline-flex items-center gap-1 rounded-control font-medium text-foreground hover:underline hover:underline-offset-[3px]">
-                  <RotateCcw className="size-3" aria-hidden="true" />
-                  Try again
-                </button>
-              ) : null}
-              <button type="button" onClick={onDismiss} aria-label="Dismiss" className="grid size-5 place-items-center rounded-control text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </span>
+          <span className="flex h-5 min-w-0 items-center gap-2">
+            <UploadVerbs upload={upload} onRetry={onRetry} onDismiss={onDismiss} />
           </span>
         ) : (
           <span className="flex h-5 items-center text-caption tabular-nums text-muted-foreground">
-            {upload.progress >= 100 ? "Saving…" : `Uploading, ${Math.round(upload.progress)}%`}
+            {uploadSettling(upload) ? "Saving…" : `Uploading, ${Math.round(upload.progress)}%`}
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A file on its way up, in the list: the same row template as every entry,
+ * so its name stands in the names' column, with what is happening on a second
+ * line under it: the progress, or the reason it failed and the way out.
+ * Cancel sits where a finished row keeps its menu.
+ */
+export function UploadRow({ upload, onRetry, onDismiss }: { upload: LibraryUpload; onRetry: () => void; onDismiss: () => void }) {
+  const failed = upload.status === "failed";
+  const reason = upload.error ?? "This file didn’t upload.";
+  const said = useLateAnnouncement(failed ? `${upload.fileName} didn’t upload. ${reason}` : "");
+  return (
+    <div
+      role="row"
+      aria-busy={!failed}
+      className={cn(LIBRARY_ROW_GRID, "min-h-14 rounded-control px-2.5 py-2 text-caption text-muted-foreground [&+*]:shadow-[0_-1px_0_hsl(var(--foreground)/0.07)]")}
+    >
+      <span role="cell" className="flex min-w-0 items-center gap-3">
+        <span className="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-control bg-foreground/[0.04] shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.06)] dark:bg-white/[0.04]">
+          {failed ? (
+            <AlertCircle className="size-4 text-muted-foreground" aria-hidden="true" />
+          ) : upload.previewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- a local object URL of the file being uploaded
+            <img src={upload.previewUrl} alt="" className="absolute inset-0 size-full object-cover" />
+          ) : (
+            <TypeGlyph type={upload.kind === "IMAGE" ? "Image" : "File"} className="size-4" />
+          )}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-ui leading-5 text-foreground" translate="no" title={upload.fileName}>
+            {upload.fileName}
+          </span>
+          <span className="sr-only" aria-live="polite">{said}</span>
+          {failed ? (
+            <>
+              <span className="text-pretty">{reason}</span>
+              <span className="mt-0.5 flex items-center gap-3">
+                <UploadVerbs upload={upload} onRetry={onRetry} onDismiss={onDismiss} />
+              </span>
+            </>
+          ) : (
+            <span className="flex items-center gap-2.5 tabular-nums">
+              <span className="h-0.5 w-full max-w-40 overflow-hidden rounded-full bg-foreground/10" aria-hidden="true">
+                <span className="block h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft" style={{ width: `${upload.progress}%` }} />
+              </span>
+              <span className="shrink-0">{uploadSettling(upload) ? "Saving…" : `${Math.round(upload.progress)}%`}</span>
+            </span>
+          )}
+        </span>
+      </span>
+      <span role="cell" className="hidden truncate @[48rem]/page:block">{kindLabel({ fileName: upload.fileName, kind: upload.kind })}</span>
+      <span role="cell" className="hidden min-w-0 @[48rem]/page:block">You</span>
+      <span role="cell" className="hidden min-w-0 @[48rem]/page:block" />
+      <span role="cell" className="text-right tabular-nums" />
+      <span role="cell" className="hidden text-right tabular-nums @[48rem]/page:block">{formatBytes(upload.size)}</span>
+      <span role="cell" className="flex justify-end">
+        <CancelUpload upload={upload} onDismiss={onDismiss} />
+      </span>
     </div>
   );
 }
@@ -572,6 +721,7 @@ export function LibraryRowHead() {
 
 export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: FileActions }) {
   const external = Boolean(entry.file || entry.made?.kind === "deliverable");
+  const preview = previewOnClick(entry.file, actions.onPreview);
   return (
     <div
       role="row"
@@ -588,6 +738,9 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
           <a
             href={entry.href}
             {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+            aria-haspopup={preview ? "dialog" : undefined}
+            onClick={preview}
+            title={entry.title}
             className="truncate text-ui leading-5 text-foreground underline-offset-[3px] hover:underline hover:decoration-border"
           >
             {entry.title}
@@ -604,7 +757,7 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
             Open the chat
           </Link>
         ) : (
-          <span className="text-muted-foreground/80">{entry.file ? "Uploaded" : "No chat"}</span>
+          <span>{entry.file ? "Uploaded" : "No chat"}</span>
         )}
       </span>
       <span role="cell" className="text-right tabular-nums">{libraryWhen(entry.at)}</span>

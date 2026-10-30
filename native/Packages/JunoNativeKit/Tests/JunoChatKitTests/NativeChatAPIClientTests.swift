@@ -157,6 +157,64 @@ final class NativeChatAPIClientTests: XCTestCase {
         XCTAssertNil(completed.cacheHitRate)
     }
 
+    /// Chat wire 1.1 (contracts/chat/error-frame.fixtures.json): the error frame
+    /// names the provider failure's class and offers one other model. Read
+    /// lossily, so a 1.0 frame — and a malformed hint — still fail the turn with
+    /// its sentence.
+    func testAnErrorFrameOfEitherWireVersionFailsTheTurnWithItsSentence() async throws {
+        let body = """
+        data: {"type":"error","message":"Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.","finishReason":"error","errorClass":"account","retryable":false,"suggestedModelId":"google:gemini-3.5-flash-lite","suggestedModelName":"Gemini 3.5 Flash-Lite","userMessageId":"m_1","generationId":"g_1"}
+
+        """
+        let legacy = """
+        data: {"type":"error","message":"Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.","finishReason":"error"}
+
+        """
+        let malformed = """
+        data: {"type":"error","message":"Gemini 3.8 Flash has hit its rate limit.","finishReason":"error","errorClass":"rate_limit","retryAfterSeconds":"soon"}
+
+        """
+        let streamer = ChatQueueStreamer(responses: [streamResponse(body), streamResponse(legacy), streamResponse(malformed)])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        var lasts: [NativeChatServerEvent] = []
+        for _ in 0..<3 {
+            let stream = try await client.generationEvents(
+                NativeChatGenerationRequest(
+                    conversationID: "conv_12345678",
+                    modelID: "qwen:qwen3.8-flash",
+                    reasoningEffort: .high,
+                    generationID: "juno-native-generation-1"
+                ),
+                for: accountID
+            )
+            var events: [NativeChatServerEvent] = []
+            for try await event in stream { events.append(event) }
+            lasts.append(try XCTUnwrap(events.last))
+        }
+
+        guard case .failed(let message, let reason, _, _, let recovery) = lasts[0] else {
+            return XCTFail("Expected the 1.1 error frame to fail the turn")
+        }
+        XCTAssertEqual(message, "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.")
+        XCTAssertEqual(reason, .error)
+        XCTAssertEqual(recovery?.errorClass, "account")
+        XCTAssertEqual(recovery?.retryable, false)
+        XCTAssertEqual(recovery?.suggestedModelID, "google:gemini-3.5-flash-lite")
+        XCTAssertEqual(recovery?.suggestedModelName, "Gemini 3.5 Flash-Lite")
+
+        guard case .failed(_, _, _, _, let none) = lasts[1] else {
+            return XCTFail("Expected the 1.0 error frame to fail the turn")
+        }
+        XCTAssertNil(none, "a 1.0 frame carries no recovery")
+
+        guard case .failed(let sentence, _, _, _, let partial) = lasts[2] else {
+            return XCTFail("A malformed hint must not cost the sentence")
+        }
+        XCTAssertEqual(sentence, "Gemini 3.8 Flash has hit its rate limit.")
+        XCTAssertEqual(partial?.errorClass, "rate_limit")
+        XCTAssertNil(partial?.retryAfterSeconds)
+    }
+
     func testStreamWithoutTerminalFrameRequiresSyncRecoveryInsteadOfRepost() async throws {
         let streamer = ChatQueueStreamer(responses: [streamResponse(
             "data: {\"type\":\"delta\",\"text\":\"Partial\"}\n\n"
@@ -205,6 +263,65 @@ final class NativeChatAPIClientTests: XCTestCase {
                 )
             )
         }
+    }
+
+    /// A deploy's drain refuses `POST /api/chat` before reading it. The store
+    /// sends the same request again on exactly this error (and never treats it
+    /// as a dropped stream to recover); any other 503 is not a drain.
+    func testDrainRefusalIsTypedAsServerDraining() async throws {
+        let streamer = ChatQueueStreamer(responses: [
+            streamResponse(
+                #"{"error":"Alevr is restarting. Please try again in a moment.","code":"SERVER_DRAINING","retryable":true}"#,
+                statusCode: 503
+            ),
+            streamResponse(
+                #"{"error":"No model is available for Auto right now.","code":"AUTO_NO_ELIGIBLE_MODEL"}"#,
+                statusCode: 503
+            ),
+            // The proxy's own page once the draining process has exited.
+            streamResponse("<html><body>502 Bad Gateway</body></html>", statusCode: 502),
+        ])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        let request = NativeChatGenerationRequest(
+            conversationID: "conv_12345678",
+            modelID: "openai:gpt-5",
+            reasoningEffort: nil,
+            generationID: "juno-native-generation-drain"
+        )
+
+        do {
+            _ = try await client.generationEvents(request, for: accountID)
+            XCTFail("Expected the drain refusal")
+        } catch {
+            let drain = try XCTUnwrap(error as? NativeChatAPIError)
+            XCTAssertTrue(drain.isServerDraining)
+            XCTAssertEqual(
+                drain,
+                .server(
+                    statusCode: 503,
+                    code: "SERVER_DRAINING",
+                    message: "Alevr is restarting. Please try again in a moment.",
+                    retryable: true
+                )
+            )
+        }
+        do {
+            _ = try await client.generationEvents(request, for: accountID)
+            XCTFail("Expected the other 503")
+        } catch {
+            XCTAssertEqual((error as? NativeChatAPIError)?.isServerDraining, false)
+            XCTAssertEqual((error as? NativeChatAPIError)?.isGatewayRefusal, false)
+        }
+        do {
+            _ = try await client.generationEvents(request, for: accountID)
+            XCTFail("Expected the proxy's 502")
+        } catch {
+            let proxy = try XCTUnwrap(error as? NativeChatAPIError)
+            XCTAssertTrue(proxy.isGatewayRefusal)
+            XCTAssertFalse(proxy.isServerDraining)
+        }
+        XCTAssertFalse(NativeChatAPIError.streamEndedWithoutTerminalEvent.isServerDraining)
+        XCTAssertEqual(NativeChatAPIError.drainRetryAfterSeconds, 5)
     }
 
     func testChatApprovalStreamRecoveryAndDigestBoundDecision() async throws {

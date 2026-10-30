@@ -108,6 +108,8 @@ import { effectiveHostState } from "@/app/api/work/protocol";
 import { Prisma, type Plan } from "@prisma/client";
 import { readCloudWorkAvailability } from "@/lib/work/executor-heartbeat";
 import { plannerCloudAvailability } from "@/lib/work/executor-presence";
+import { installWorkerProcessGuard, registerWorkerDrain } from "@/lib/worker-process";
+import { LOOP_STALE_AFTER_MS, workerLoops } from "@/lib/worker-watchdog-rules";
 
 /** How often to look for due schedules. Well under the shortest cadence a user
  *  can express (`hourly`), and short enough that `MISSED_RUN_GRACE_MS` is never
@@ -1238,6 +1240,19 @@ async function tick(): Promise<void> {
 async function main(): Promise<void> {
   log("started", { scheduler: SCHEDULER_ID, tickMs: TICK_MS });
 
+  // An unhandled rejection is logged and the loop keeps going; an uncaught
+  // exception stops it after the tick in hand and exits non-zero for PM2
+  // (src/lib/worker-process.ts). Inside juno-sweepers the first loop to start
+  // installed the handlers; this registers the drain. Every finished tick is
+  // a beat the process's watchdog reads (src/lib/worker-watchdog.ts).
+  installWorkerProcessGuard();
+  let inTick: Promise<void> | null = null;
+  registerWorkerDrain("work-scheduler", async () => {
+    stopping = true;
+    await inTick?.catch(() => undefined);
+  });
+  workerLoops.register("work-scheduler", LOOP_STALE_AFTER_MS["work-scheduler"]);
+
   const shutdown = (signal: string) => {
     if (stopping) return;
     stopping = true;
@@ -1248,17 +1263,31 @@ async function main(): Promise<void> {
 
   while (!stopping) {
     try {
-      await tick();
+      inTick = tick();
+      await inTick;
     } catch (error) {
       // One bad tick must not end the scheduler: the next one may well succeed,
       // and a scheduler that exits on a transient database error takes every
       // schedule in the deployment with it.
       log("tick failed", { error: String(error) });
+    } finally {
+      inTick = null;
+      workerLoops.beat("work-scheduler");
     }
     await new Promise((resolve) => setTimeout(resolve, TICK_MS));
   }
 
   log("stopped");
+}
+
+/**
+ * Starts the scheduler's loop in this process. What juno-sweepers calls
+ * (scripts/sweepers.ts): importing this file starts nothing, because the line
+ * at the bottom runs `main` only when this file is the script node was asked
+ * to run, and inside juno-sweepers it never is.
+ */
+export function startWorkScheduler(): Promise<void> {
+  return main();
 }
 
 export { tick as schedulerTick, dispatchOne as dispatchSchedule, findDueSchedules };

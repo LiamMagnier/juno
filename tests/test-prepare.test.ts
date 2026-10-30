@@ -54,7 +54,8 @@ test("a runner install counts as current only when its stamp matches the lockfil
 });
 
 test("it prepares exactly the runner packages the suites import", () => {
-  assert.deepEqual(RUNNER_PACKAGES, ["runner/agent-core", "runner/env-server"]);
+  assert.deepEqual(RUNNER_PACKAGES, ["runner/agent-core", "runner/env-server", "relay"]);
+  assert.match(readFileSync(path.join(ROOT, "relay/package.json"), "utf8"), /"ws":/);
   // The two import paths behind the AUDIT's local-only failures.
   assert.match(readFileSync(path.join(ROOT, "runner/env-server/package.json"), "utf8"), /"ws":/);
   assert.equal(JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")).dependencies.ws, undefined, "ws is not a root dependency");

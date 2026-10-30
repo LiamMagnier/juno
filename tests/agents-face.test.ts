@@ -36,6 +36,7 @@ import {
   frontPose,
   gateAt,
   nextChange,
+  noticeJoins,
   poseAt,
   rebaseSegment,
   restExtras,
@@ -434,6 +435,63 @@ test("…and at no moment of a wait or a block, at any size, keeps less than 0.7
   }
 });
 
+test("…and out of the dots into needs you the notch never bites an eye nor shoves the pair: every 240 fps frame, both sides, every body, the tall cut, several seeds", () => {
+  // A head coming home from the dots is still turned ~70° 0.2 s in, its near
+  // eye at the body's edge: a ball popping then bit that eye (the edge holds
+  // the eyes' push at nothing) and, once the eye came clear, the whole push
+  // landed in one frame (1.8 px at 48 px, 4.3 px at 160 px).
+  // 240 fps: at 120 a one-frame shove at 96 px sits within 2.5 times the frames either side of it.
+  const FPS = 240;
+  const bites: string[] = [];
+  const jumps: string[] = [];
+  let changes = 0;
+  let notched = 0;
+  for (const px of [20, 28, 48, 96, 160]) {
+    const pxR = pxPerR(px, sizeClass(px));
+    for (const shape of AGENT_SHAPES) {
+      const s = spec(shape, px, "tall");
+      for (const id of [107, 101]) {
+        for (const [n, seed] of [3, 11, 29, 47].entries()) {
+          const ctx = faceCtx(s, "none", seed, false, id);
+          // In thinking for a beat (turned partway, the dots not yet formed: the head comes home on this
+          // copy's own beat, needsYouLag), just into the dots, a while, or long settled in them.
+          const thinking: Segment = { state: "thinking", at: 1, snap: snapshot({ state: "idle", at: -60, snap: null }, 1, ctx) };
+          const Tc = 1 + [0.2, 0.45, 1.0, 2.5][n];
+          for (const to of ["waiting", "blocked"] as const) {
+            const seg: Segment = { state: to, at: Tc, snap: snapshot(thinking, Tc, ctx) };
+            const what = `${px}px ${shape}/tall side ${ctx.side} seed ${seed}, thinking→${to}`;
+            changes++;
+            const centres: Array<Array<[number, number] | null>> = [];
+            // Until the ball has popped and settled (0.5 + 0.65 s).
+            for (let i = 0; i <= 1.15 * FPS; i++) {
+              const frame = drawFace(s, poseAt(seg, Tc + i / FPS, ctx), NO_EXTRAS, ids);
+              const gap = notchClearance(frame);
+              if (Number.isFinite(gap)) {
+                notched++;
+                if (gap * pxR < 0.75) bites.push(`${what} +${((1000 * i) / FPS).toFixed(0)} ms: ${(gap * pxR).toFixed(2)} px between an eye and the notch`);
+              }
+              centres.push(screenEyes(frame, px).map((e) => (e ? ([e.x, e.y] as [number, number]) : null)));
+            }
+            for (const k of [0, 1]) {
+              const steps = centres.map((f, i) => (i && f[k] && centres[i - 1][k] ? Math.hypot(f[k]![0] - centres[i - 1][k]![0], f[k]![1] - centres[i - 1][k]![1]) : null));
+              for (let i = 1; i < steps.length; i++) {
+                const v = steps[i];
+                if (v == null || v < Math.max(0.3, px / 300)) continue;
+                const around = [i - 3, i - 2, i - 1, i + 1, i + 2, i + 3].map((j) => steps[j]).filter((x): x is number => x != null);
+                const most = around.length ? Math.max(...around) : 0;
+                if (v > 2.5 * most) jumps.push(`${what}: e${k} moves ${v.toFixed(2)} px in one frame at +${((1000 * i) / FPS).toFixed(0)} ms (${most.toFixed(2)} a frame either side)`);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(changes >= 720 && notched > 50000, `${changes} changes, ${notched} frames with a notch`);
+  assert.equal(bites.length, 0, `${bites.length} frames bite an eye:\n${bites.slice(0, 10).join("\n")}`);
+  assert.equal(jumps.length, 0, `${jumps.length} one-frame shoves of the pair:\n${jumps.slice(0, 10).join("\n")}`);
+});
+
 test("halo's face sits in the broad lower half of its gumdrop, inside the body", () => {
   const halo = bodyOf("halo");
   assert.ok(halo.seat.oy > 0.05, "the eyes sit below the centre, where the gumdrop is wide");
@@ -640,9 +698,11 @@ test("rest is event driven: a settled face asks for no frames until its next bli
   const waiting: Segment = { state: "waiting", at: 0, snap: null };
   const w = faceCtx(s, "none", 7, false);
   const near = (a: number, b: number, what: string) => assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a} ≠ ${b}`);
-  near(nextChange(waiting, 3.6, w, poseAt(waiting, 3.6, w)), 5.8, "a wait wakes for its next look at the badge");
+  // Each copy looks a beat of its own late (0 to 120 ms: needs you never runs in lockstep).
+  const beat = nextChange(waiting, 3.6, w, poseAt(waiting, 3.6, w)) - 5.8;
+  assert.ok(beat >= 0 && beat <= 0.12, `a wait wakes for its next look at the badge, ${beat.toFixed(3)} s after the house beat`);
   near(nextChange(waiting, 21, w, poseAt(waiting, 21, w)), 21, "and moves while it looks");
-  near(nextChange(waiting, 30, w, poseAt(waiting, 30, w)), 36.4, "then every 16 s");
+  near(nextChange(waiting, 30, w, poseAt(waiting, 30, w)), 36.4 + beat, "then every 16 s");
   const working: Segment = { state: "working", at: 0, snap: null };
   assert.equal(nextChange(working, 30, w, poseAt(working, 30, w)), 30, "working always moves");
 });
@@ -1646,15 +1706,38 @@ function pauseGlyph(eyes: ReturnType<typeof screenEyes>) {
   return Math.min(a.long, b.long) / Math.max(a.long, b.long) >= 0.85 && Math.min(a.short, b.short) / Math.max(a.short, b.short) >= 0.7;
 }
 
+/**
+ * …and the same glyph rolled: a pair of parallel bars alike in width (the far
+ * eye under 5% narrower: no turn on a sphere to read), standing square to the
+ * line between them (shear under 2°) and leaning under 14°. Rolled to a lean
+ * floor and nothing else, the tall cut read as ⏸ tipped over.
+ */
+function rolledPause(eyes: ReturnType<typeof screenEyes>) {
+  const [a0, b0] = eyes;
+  if (!a0 || !b0 || a0.long < 1.5 * a0.short || b0.long < 1.5 * b0.short || Math.abs(a0.lean - b0.lean) >= 6) return false;
+  const [a, b] = a0.x < b0.x ? [a0, b0] : [b0, a0];
+  const lean = (a.lean + b.lean) / 2;
+  const shear = lean + (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+  const wide = Math.min(a.short, b.short) / Math.max(a.short, b.short);
+  return Math.min(a.long, b.long) / Math.max(a.long, b.long) >= 0.85 && wide > 0.95 && Math.abs(shear) < 2 && Math.abs(lean) < 14;
+}
+
 test("no pair of eyes is ever the pause glyph (⏸): every long cut leans, at every size, in every still, swatch and live frame", () => {
   // Identities that rest each way round.
   const SIDES = [107, 101];
   assert.deepEqual(SIDES.map((id) => faceCtx(spec("orb", 96), "none", 0, false, id).side), [1, -1]);
   const seen: string[] = [];
   let frames = 0;
+  let tall = 0;
   const check = (what: string, s: FaceSpec, P: Pose, X: FaceExtras = NO_EXTRAS) => {
     frames++;
-    if (pauseGlyph(screenEyes(drawFace(s, P, X, ids), s.px))) seen.push(what);
+    const E = screenEyes(drawFace(s, P, X, ids), s.px);
+    if (pauseGlyph(E)) seen.push(what);
+    // The tall cut from 44 px, where it is long enough to read as a bar: never ⏸ rolled either.
+    if (s.eyes === "tall" && s.px >= 44) {
+      tall++;
+      if (rolledPause(E)) seen.push(`${what} (⏸ rolled)`);
+    }
   };
   // Stills (the server's frame, reduced motion, roster copies) and the eye pickers' front swatch.
   for (const state of AGENT_STATES) {
@@ -1693,7 +1776,26 @@ test("no pair of eyes is ever the pause glyph (⏸): every long cut leans, at ev
       }
     }
   }
-  assert.ok(frames > 20000, `${frames} frames checked`);
+  // The tall cut from 44 px on every body, live in every state from rest, both sides, 6 s at 10 fps
+  // (blinks aside): where a pose faces you, the rolled ⏸ check above sees it on each body's own seat.
+  for (const state of AGENT_STATES) {
+    for (const shape of AGENT_SHAPES) {
+      for (const px of [44, 64, 88, 128]) {
+        for (const id of SIDES) {
+          const s = spec(shape, px, "tall");
+          const ctx = faceCtx(s, "none", id + 5, true, id);
+          const seg: Segment = { state, at: 1, snap: snapshot({ state: "idle", at: -60, snap: null }, 1, ctx) };
+          for (let i = 0; i < 60; i++) {
+            const t = 1 + i / 10;
+            const P = poseAt(seg, t, ctx);
+            if (restExtras(ctx, seg, t, P).blink < 0.999) continue;
+            check(`${state} live ${shape}/tall ${px}px id ${id} +${(t - 1).toFixed(1)} s`, s, P);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(frames > 50000 && tall > 30000, `${frames} frames checked, ${tall} of the tall cut from 44 px`);
   assert.equal(seen.length, 0, `${seen.length} of ${frames} frames draw ⏸:\n${seen.slice(0, 10).join("\n")}`);
 });
 
@@ -1726,7 +1828,7 @@ test("the eye pickers draw each cut as eyes on a sphere, every swatch the same w
   }
 });
 
-test("at 20 px done reads from a still: the happy eye bows by 0.8 px or more, wider and thinner than the open eye", () => {
+test("at 20 px done reads from a still: the happy eye bows by 0.9 px or more, wider and thinner than the open eye, and never a stub", () => {
   for (const shape of AGENT_SHAPES) {
     for (const eyes of AGENT_EYES) {
       const s = spec(shape, 20, eyes);
@@ -1752,6 +1854,13 @@ test("at 20 px done reads from a still: the happy eye bows by 0.8 px or more, wi
       assert.ok(bow >= 0.8, `${shape}/${eyes}: the happy eye bows ${bow.toFixed(2)} px`);
       assert.ok(happy.w >= open.w + 0.3, `${shape}/${eyes}: the happy eye is ${happy.w.toFixed(2)} px wide, the open one ${open.w.toFixed(2)}`);
       assert.ok(open.h - thick >= 0.65, `${shape}/${eyes}: the happy eye is ${thick.toFixed(2)} px thick, the open one ${open.h.toFixed(2)} px tall`);
+      // Never a stub: at 1x a capsule under 1.6 times as long as it is thick fills a 3 × 2 pixel square (the
+      // tall cut's drew 2.9 × 2.25 px, a blob), unless the pair has no more room (its eyes 1.25 px apart).
+      const along = (Math.max(...top.map(([x]) => x)) - Math.min(...top.map(([x]) => x))) * k;
+      const [o0, o1] = screenOutlines(frame, 20);
+      const roomy = outlineGap(o0, o1) > 1.4;
+      assert.ok(bow >= 0.89, `${shape}/${eyes}: the happy eye bows ${bow.toFixed(2)} px`);
+      if (roomy) assert.ok(along >= 1.55 * thick, `${shape}/${eyes}: the happy eye is ${along.toFixed(2)} px long and ${thick.toFixed(2)} px thick`);
     }
   }
 });
@@ -2072,7 +2181,41 @@ test("no change of state snaps the pair of eyes or passes through ⏸: each eye'
       }
     }
   }
-  assert.ok(changes > 1000, `${changes} changes sampled`);
+  // Live, with the blinks: every change landing 0, 50 and 100 ms into a scheduled blink, every 120 fps
+  // frame with the rest blinks drawn. Blocked → done in a blink once stood the worried pair upright for
+  // 67 ms: the capsules waited for the blink to reopen, and the worry's lean did not.
+  let live = 0;
+  for (const px of [20, 48, 96, 160]) {
+    for (const eyes of ["soft", "tall"] as const) {
+      for (const id of [107, 101]) {
+        const s = spec("capsule", px, eyes);
+        const ctx = faceCtx(s, "none", id * 3 + 2, true, id);
+        const rest: Segment = { state: "idle", at: -60, snap: null };
+        for (const from of ["idle", "working", "waiting", "listening", "blocked"] as const) {
+          const a: Segment = from === "idle" ? rest : { state: from, at: 1, snap: snapshot(rest, 1, ctx) };
+          let start = -1;
+          for (let t = 4; t < 80 && start < 0; t += 1 / 240) if (restExtras(ctx, a, t).blink < 0.999) start = t;
+          assert.ok(start > 0, `${from} ${px}px blinks at rest`);
+          for (const off of [0, 0.05, 0.1]) {
+            const Tc = start + off;
+            for (const to of AGENT_STATES) {
+              if (to === from) continue;
+              live++;
+              const b: Segment = { state: to, at: Tc, snap: snapshot(a, Tc, ctx) };
+              for (let i = 0; i <= 72; i++) {
+                const t = Tc + i / 120;
+                const P = poseAt(b, t, ctx);
+                if (pauseGlyph(screenEyes(drawFace(s, P, restExtras(ctx, b, t, P), ids), px))) {
+                  glyphs.push(`live ${px}px ${eyes} side ${ctx.side}, ${from}→${to} ${(off * 1000).toFixed(0)} ms into a blink, +${(i / 0.12).toFixed(0)} ms`);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(changes > 1000 && live > 1000, `${changes} changes sampled, ${live} live`);
   assert.equal(snaps.length, 0, `${snaps.length} snaps:\n${snaps.slice(0, 12).join("\n")}`);
   assert.equal(glyphs.length, 0, `${glyphs.length} frames draw ⏸ on the way:\n${glyphs.slice(0, 12).join("\n")}`);
 });
@@ -2184,4 +2327,275 @@ test("Orbit's Needs you card states each fact once: the server's sentence never 
   // The agent's own words, when they add something, still show.
   const own = card("blocked", "failed", "The bank's site asked for a code sent to your phone");
   assert.ok(own.includes("asked for a code"), "an agent's own reason is kept");
+});
+
+/** One curve of blinkCurve, as the runtime's hover notice runs it (0.24 s). */
+const noticeCurve = (x: number) => (x < 0 || x >= 1 ? 1 : x < 0.36 ? 1 - 0.94 * (x / 0.36) ** 2 : x < 0.46 ? 0.06 : 0.06 + 0.94 * outCubicRef((x - 0.46) / 0.54));
+
+test("a hover notice joins a blink under way: never a second curve on an acknowledgement, a carried or a scheduled blink, so the eyes never close twice", () => {
+  // drawFace multiplies the state's blink (blinkMul) by the rest blinks (X.blink): a notice landing in an
+  // acknowledgement multiplied the two curves and the eyes stuttered shut, half open, shut again.
+  const rest: Segment = { state: "idle", at: -60, snap: null };
+  let landed = 0;
+  let joined = 0;
+  const stutters: string[] = [];
+  for (const px of [28, 34, 96]) {
+    for (const to of ["working", "waiting", "listening", "blocked"] as const) {
+      for (const seed of [5, 9]) {
+        const s = spec("orb", px);
+        const ctx = faceCtx(s, "none", seed, true, 107);
+        const Tc = 20;
+        const seg: Segment = { state: to, at: Tc, snap: snapshot(rest, Tc, ctx) };
+        for (let k = 0; k <= 30; k++) {
+          const Tn = Tc + k * 0.01;
+          const P = poseAt(seg, Tn, ctx);
+          // A blink under way, or the state's own still to come (a needs-you face's waits up to 120 ms).
+          const under = restExtras(ctx, seg, Tn, P).blink < 0.999 || Array.from({ length: 7 }, (_, j) => poseAt(seg, Tn + j * 0.02, ctx).blinkMul).some((b) => b < 0.999);
+          const joins = noticeJoins(seg, Tn, ctx);
+          assert.equal(joins, under, `${px}px ${to} +${(k * 10).toFixed(0)} ms: a notice ${joins ? "joins" : "starts"} with ${under ? "a" : "no"} blink under way`);
+          landed++;
+          if (joins) joined++;
+          // The runtime's draw: blinkMul × min(rest blinks, the notice), the notice running only when it starts.
+          let low = Infinity;
+          let high = -Infinity;
+          for (let i = 0; i < 0.6 * 240; i++) {
+            const t = Tc + i / 240;
+            const Q = poseAt(seg, t, ctx);
+            let blink = restExtras(ctx, seg, t, Q).blink;
+            if (!joins && t >= Tn) blink = Math.min(blink, 1 + (noticeCurve((t - Tn) / 0.24) - 1) * Q.blinkW);
+            assert.ok(!(Q.blinkMul < 0.999 && blink < 0.999), `${px}px ${to}: two blink curves multiplied at +${((t - Tc) * 1000).toFixed(0)} ms`);
+            const v = Q.blinkMul * blink;
+            if (v < low) [low, high] = [v, v];
+            high = Math.max(high, v);
+            if (high > low + 0.1 && high < 0.9 && v < high - 0.1) {
+              stutters.push(`${px}px ${to} seed ${seed}: a notice ${(k * 10).toFixed(0)} ms in closes the eyes again at +${((t - Tc) * 1000).toFixed(0)} ms`);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(joined > 100 && joined < landed, `${joined} of ${landed} notices joined a blink`);
+  assert.equal(stutters.length, 0, `${stutters.length} stutters:\n${stutters.slice(0, 8).join("\n")}`);
+  // A notice still running is joined by a second pointer entry, never restarted (its eyes would jump open).
+  const ctx = faceCtx(spec("orb", 96), "none", 5, true, 107);
+  assert.ok(noticeJoins(rest, 30.1, ctx, 30), "a notice under way is joined");
+  assert.ok(!noticeJoins(rest, 30.3, ctx, 30), "a notice that has ended is not");
+});
+
+test("needs you never runs in lockstep: copies handed it in one frame each blink and move a beat of their own apart (up to 120 ms), and the badge comes on at once on every one", () => {
+  const rest: Segment = { state: "idle", at: -60, snap: null };
+  for (const px of [20, 48, 96]) {
+    for (const to of ["waiting", "blocked"] as const) {
+      const s = spec("capsule", px, "tall");
+      const Tc = 30;
+      const runs = [3, 7, 11, 19, 23, 31, 47, 59, 61, 73].map((seed) => {
+        const ctx = faceCtx(s, "none", seed, false, 101);
+        const seg: Segment = { state: to, at: Tc, snap: snapshot(rest, Tc, ctx) };
+        const P0 = poseAt(rest, Tc, ctx);
+        let blinkAt = Infinity;
+        let moveAt = Infinity;
+        const signal: number[] = [];
+        for (let i = 0; i <= 0.6 * 240; i++) {
+          const P = poseAt(seg, Tc + i / 240, ctx);
+          if (blinkAt === Infinity && P.blinkMul < 0.97) blinkAt = (1000 * i) / 240;
+          if (moveAt === Infinity && Math.abs(P.yaw - P0.yaw) + Math.abs(P.pitch - P0.pitch) > 0.3) moveAt = (1000 * i) / 240;
+          // The badge (and, from 48 px, blocked's stalled orbit) is the signal: it never waits.
+          signal.push(P.badgeS + P.ringP + P.ballS + P.ringO);
+        }
+        return { blinkAt, moveAt, signal };
+      });
+      const spread = (k: "blinkAt" | "moveAt") => Math.max(...runs.map((r) => r[k])) - Math.min(...runs.map((r) => r[k]));
+      assert.ok(runs.every((r) => r.blinkAt <= 160 && r.moveAt <= 160), `${px}px →${to}: every copy acknowledges within 160 ms`);
+      assert.ok(spread("blinkAt") >= 50, `${px}px →${to}: blinks begin within ${spread("blinkAt").toFixed(0)} ms of each other`);
+      assert.ok(spread("moveAt") >= 50, `${px}px →${to}: heads move within ${spread("moveAt").toFixed(0)} ms of each other`);
+      assert.ok(new Set(runs.map((r) => Math.round(r.blinkAt))).size >= 6, `${px}px →${to}: blink onsets bunch`);
+      for (const r of runs) r.signal.forEach((v, i) => assert.ok(Math.abs(v - runs[0].signal[i]) < 1e-9, `${px}px →${to}: the badge differs between copies at +${((1000 * i) / 240).toFixed(0)} ms`));
+    }
+  }
+});
+
+test("a preview switching between waiting and blocked at any moment never removes the badge in a frame nor jumps the eyes: the old glyph shrinks away before the new one grows", () => {
+  // Switched before the badge was half grown, it went in one frame (the notch with it) and the eyes, no
+  // longer pushed clear of it, jumped 0.75 px at 20 px.
+  const fails: string[] = [];
+  let switches = 0;
+  for (const px of [20, 28]) {
+    const pxR = pxPerR(px, sizeClass(px));
+    for (const shape of AGENT_SHAPES) {
+      for (const eyes of ["soft", "wide"] as const) {
+        const s = spec(shape, px, eyes);
+        const ctx = faceCtx(s, "none", 5, false, 107);
+        for (const [a, b] of [["waiting", "blocked"], ["blocked", "waiting"]] as const) {
+          for (let k = 1; k <= 9; k++) {
+            const first: Segment = { state: a, at: 10, snap: snapshot({ state: "idle", at: -60, snap: null }, 10, ctx) };
+            const Tb = 10 + k * 0.05;
+            const second: Segment = { state: b, at: Tb, snap: snapshot(first, Tb, ctx) };
+            switches++;
+            const frames = [drawFace(s, poseAt(first, Tb - 1 / 240, ctx), NO_EXTRAS, ids)];
+            for (let i = 0; i <= 0.7 * 240; i++) frames.push(drawFace(s, poseAt(second, Tb + i / 240, ctx), NO_EXTRAS, ids));
+            const what = `${px}px ${shape}/${eyes} ${a}→${b} ${(k * 50).toFixed(0)} ms in`;
+            for (let i = 1; i < frames.length; i++) {
+              const narrows = (num(frames[i - 1].kBadge.width) - num(frames[i].kBadge.width)) * pxR;
+              if (narrows > 0.6) fails.push(`${what}: the notch narrows ${narrows.toFixed(2)} px in one frame at +${((1000 * (i - 1)) / 240).toFixed(0)} ms`);
+            }
+            const E = frames.map((f) => screenEyes(f, px));
+            for (const e of [0, 1]) {
+              const st = E.map((f, i) => (i && f[e] && E[i - 1][e] ? Math.hypot(f[e]!.x - E[i - 1][e]!.x, f[e]!.y - E[i - 1][e]!.y) : null));
+              for (let i = 1; i < st.length; i++) {
+                const v = st[i];
+                if (v == null || v < 0.3) continue;
+                const around = [i - 3, i - 2, i - 1, i + 1, i + 2, i + 3].map((j) => st[j]).filter((x): x is number => x != null);
+                if (v > 2.5 * Math.max(0, ...around)) fails.push(`${what}: e${e} jumps ${v.toFixed(2)} px in one frame`);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  // …and a ball still on its way out on a face coming home from a turn (waiting → thinking → waiting within a
+  // quarter second) shrinks away before the ball pops again: grown back at once, the notch bit the near eye.
+  for (const px of [48, 160]) {
+    const pxR = pxPerR(px, sizeClass(px));
+    for (const shape of AGENT_SHAPES) {
+      for (const id of [107, 101]) {
+        const s = spec(shape, px, "tall");
+        const ctx = faceCtx(s, "none", 5, false, id);
+        for (const d of [0.1, 0.2]) {
+          const wait: Segment = { state: "waiting", at: 10, snap: snapshot({ state: "idle", at: -60, snap: null }, 10, ctx) };
+          const think: Segment = { state: "thinking", at: 11, snap: snapshot(wait, 11, ctx) };
+          const back: Segment = { state: "waiting", at: 11 + d, snap: snapshot(think, 11 + d, ctx) };
+          switches++;
+          for (let i = 0; i < 240; i++) {
+            const gap = notchClearance(drawFace(s, poseAt(back, 11 + d + i / 240, ctx), NO_EXTRAS, ids)) * pxR;
+            if (gap < 0.75) {
+              fails.push(`${px}px ${shape}/tall side ${ctx.side}, waiting → thinking → waiting ${(d * 1000).toFixed(0)} ms: ${gap.toFixed(2)} px round the notch at +${((1000 * i) / 240).toFixed(0)} ms`);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(switches > 600, `${switches} switches`);
+  assert.equal(fails.length, 0, `${fails.length} cuts:\n${fails.slice(0, 10).join("\n")}`);
+});
+
+test("into thinking mid-blink a large face never reopens its eyes on the way round: the blink under way is their ceiling until they are gone", () => {
+  // The turn takes the eyes away; a blink carried on reopened them to full while the head turned (the eyes
+  // came back open for a beat, then vanished round the limb).
+  const rest: Segment = { state: "idle", at: -60, snap: null };
+  const fails: string[] = [];
+  let changes = 0;
+  for (const px of [96, 160]) {
+    for (const eyes of AGENT_EYES) {
+      for (const id of [107, 101]) {
+        const s = spec("tile", px, eyes);
+        const ctx = faceCtx(s, "none", id + 4, true, id);
+        let start = -1;
+        for (let t = 3; t < 60 && start < 0; t += 1 / 240) if (restExtras(ctx, rest, t).blink < 0.999) start = t;
+        for (let k = 0; k < 14; k++) {
+          const Tc = start + (k / 13) * 0.24;
+          const at = openness(ctx, rest, Tc);
+          const seg: Segment = { state: "thinking", at: Tc, snap: snapshot(rest, Tc, ctx) };
+          changes++;
+          for (let i = 0; i < 0.7 * 240; i++) {
+            const t = Tc + i / 240;
+            const frame = drawFace(s, poseAt(seg, t, ctx), NO_EXTRAS, ids);
+            const seen = (["e0", "e1"] as const).some((e) => frame[e].d && Number(frame[e].opacity ?? 1) > 0.05);
+            const v = openness(ctx, seg, t);
+            if (seen && v > at + 0.02) {
+              fails.push(`${px}px ${eyes} side ${ctx.side}, ${(((Tc - start) * 1000) | 0).toString()} ms into a blink: ${at.toFixed(2)} open at the change, ${v.toFixed(2)} at +${((t - Tc) * 1000).toFixed(0)} ms`);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(changes > 200, `${changes} changes`);
+  assert.equal(fails.length, 0, `${fails.length} changes reopen the eyes on the way round:\n${fails.slice(0, 8).join("\n")}`);
+});
+
+test("a face held still (a second copy while a larger one lives) eases into its still frame from where it is: a blink finishes, nothing cuts, then nothing moves; let go, it carries on from there", () => {
+  const rest: Segment = { state: "idle", at: -60, snap: null };
+  const fails: string[] = [];
+  let holds = 0;
+  for (const px of [34, 96]) {
+    for (const id of [107, 101]) {
+      const s = spec("pebble", px, "tall");
+      const live = faceCtx(s, "none", id + 2, true, id);
+      const held = { ...live, live: false };
+      for (const state of AGENT_STATES) {
+        const seg: Segment = state === "idle" ? rest : { state, at: 1, snap: snapshot(rest, 1, live) };
+        // A moment with a scheduled blink under way when the state blinks at rest, else one well settled.
+        let start = 6;
+        for (let t = 4; t < 60; t += 1 / 240) {
+          if (restExtras(live, seg, t).blink < 0.999) {
+            start = t;
+            break;
+          }
+        }
+        for (const off of [0, 0.05, 0.1]) {
+          const Th = start + off;
+          const hold: Segment = { state, at: Th, snap: snapshot(seg, Th, live), hold: true };
+          holds++;
+          const what = `${px}px side ${live.side} ${state}, held ${(off * 1000).toFixed(0)} ms into a blink`;
+          // The live frame before, then every 240 fps frame of the hold.
+          const P0 = poseAt(seg, Th - 1 / 240, live);
+          const frames = [drawFace(s, P0, restExtras(live, seg, Th - 1 / 240, P0), ids)];
+          const open = [P0.blinkMul * restExtras(live, seg, Th - 1 / 240, P0).blink];
+          for (let i = 0; i <= 1.5 * 240; i++) {
+            const P = poseAt(hold, Th + i / 240, held);
+            frames.push(drawFace(s, P, NO_EXTRAS, ids));
+            open.push(P.blinkMul);
+          }
+          for (let i = 1; i < open.length; i++) if (open[i] - open[i - 1] > 0.12) fails.push(`${what}: the eyes open ${(open[i] - open[i - 1]).toFixed(2)} in one frame`);
+          const E = frames.map((f) => screenEyes(f, px));
+          for (const e of [0, 1]) {
+            const st = E.map((f, i) => (i && f[e] && E[i - 1][e] ? Math.hypot(f[e]!.x - E[i - 1][e]!.x, f[e]!.y - E[i - 1][e]!.y) : null));
+            for (let i = 1; i < st.length; i++) {
+              const v = st[i];
+              if (v == null || v < 0.3) continue;
+              const around = [i - 3, i - 2, i - 1, i + 1, i + 2, i + 3].map((j) => st[j]).filter((x): x is number => x != null);
+              if (v > 2.5 * Math.max(0, ...around)) fails.push(`${what}: e${e} jumps ${v.toFixed(2)} px in one frame at +${((1000 * (i - 1)) / 240).toFixed(0)} ms`);
+            }
+          }
+          // Settled on the state's still frame (the frame a still copy draws), and asking for no more frames.
+          const end = Th + 1.5;
+          const Pend = poseAt(hold, end, held);
+          const want = drawFace(s, stillPose(state, faceCtx(s, "none", 0, false, id)), NO_EXTRAS, ids);
+          const got = drawFace(s, Pend, NO_EXTRAS, ids);
+          const [a, b] = [screenEyes(got, px), screenEyes(want, px)];
+          for (const e of [0, 1]) {
+            if (!a[e] !== !b[e] || (a[e] && b[e] && Math.hypot(a[e]!.x - b[e]!.x, a[e]!.y - b[e]!.y) + Math.abs(a[e]!.long - b[e]!.long) > 0.05)) fails.push(`${what}: settles off its still frame`);
+          }
+          if (nextChange(hold, end, held, Pend) !== Infinity) fails.push(`${what}: still asks for frames 1.5 s in`);
+          // Let go: it carries on from the still, the first frame the last held one.
+          const back = rebaseSegment(hold, end, held, live);
+          const first = drawFace(s, poseAt(back, end, live), NO_EXTRAS, ids);
+          if (JSON.stringify(first) !== JSON.stringify(got)) fails.push(`${what}: let go, the first frame is not the held one`);
+        }
+      }
+    }
+  }
+  assert.ok(holds >= 90, `${holds} holds`);
+  assert.equal(fails.length, 0, `${fails.length} cuts:\n${fails.slice(0, 10).join("\n")}`);
+});
+
+test("Orbit's routine times never pad a 12-hour hour: 9:00 AM, never 09:00 AM", async () => {
+  const { formatLocalWhen } = await import("../src/components/agents/agent-bits");
+  const now = new Date(2026, 9, 26, 12, 0);
+  for (const [at, lead] of [
+    [new Date(2026, 9, 26, 15, 5), "today at "],
+    [new Date(2026, 9, 27, 9, 0), "tomorrow at "],
+    [new Date(2026, 9, 28, 9, 0), " at "],
+  ] as const) {
+    const said = formatLocalWhen(at, now);
+    assert.ok(said.includes(lead), `“${said}”`);
+    assert.ok(!/\b0\d:\d\d\s?[AP]M/i.test(said.replace(/\u202f/g, " ")), `“${said}” pads the hour`);
+    assert.ok(/\d{1,2}[:.]\d{2}/.test(said), `“${said}” says the time`);
+  }
 });

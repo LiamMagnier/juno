@@ -11,7 +11,8 @@
 //   - runner/agent-core/dist is build output (gitignored). Three suites import
 //     it by path and failed with "Cannot find module .../dist/work/index.js".
 //   - runner/env-server has its own install; `ws` lives there, not at the root,
-//     so code-v2-env-link failed with "Cannot find module 'ws'".
+//     so code-v2-env-link failed with "Cannot find module 'ws'". relay/ is
+//     the same, for computer-view-token.
 //   - src/lib/i18n-catalog.generated.ts is generated (predev/prebuild make it).
 //   - Node 22 instead of the Node 24 CI and package.json "engines" pin: ESLint's
 //     RuleTester under node:test cancels its own cases on 22 ("test did not
@@ -32,8 +33,12 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
-/** Runner packages with an install of their own, in dependency order. */
-export const RUNNER_PACKAGES = ["runner/agent-core", "runner/env-server"];
+/**
+ * Packages with an install of their own that the suites import, in dependency
+ * order. `relay` is here because tests/computer-view-token.test.ts verifies
+ * tokens with the relay's own reader (relay/src/computer-view.ts, which needs `ws`).
+ */
+export const RUNNER_PACKAGES = ["runner/agent-core", "runner/env-server", "relay"];
 /** Where a successful `npm ci` records which lockfile it installed. */
 export const STAMP_NAME = ".test-prepare-lock.sha256";
 

@@ -167,6 +167,56 @@ if (!URL) {
     assert.ok(a.size >= 1);
   });
 
+  test("the failure-rate alert's count: faults per model in the window, answers shaped by content left out", async () => {
+    const { prisma, recordRoutingOutcome, countRecentTurnOutcomes } = await load();
+    const modelId = `test:failing-${randomUUID().slice(0, 8)}`;
+    const other = `test:healthy-${randomUUID().slice(0, 8)}`;
+    const add = async (over: Record<string, unknown>, minutesAgo = 0) => {
+      const input = base({ modelId, provider: "qwen", ...over });
+      await recordRoutingOutcome(input);
+      if (minutesAgo) {
+        await prisma.routingOutcome.update({
+          where: { messageId: input.messageId },
+          data: { createdAt: new Date(Date.now() - minutesAgo * 60_000) },
+        });
+      }
+    };
+    for (let i = 0; i < 4; i += 1) await add({ completionState: "failed", finishReason: "error" });
+    await add({ completionState: "partial", finishReason: "network_error" });
+    await add({ completionState: "failed", finishReason: "network_error" });
+    // Answers shaped by their content, a stop and a success are turns, not faults.
+    await add({ completionState: "failed", finishReason: "length" });
+    await add({ completionState: "failed", finishReason: "sensitive" });
+    await add({ completionState: "stopped", finishReason: "user_stopped" });
+    await add({ completionState: "completed", finishReason: "stop" });
+    // Outside the window.
+    await add({ completionState: "failed", finishReason: "error" }, 30);
+    await recordRoutingOutcome(base({ modelId: other }));
+
+    const rows = await countRecentTurnOutcomes(new Date(Date.now() - 10 * 60_000));
+    const failing = rows.find((r) => r.modelId === modelId);
+    assert.deepEqual(failing, { modelId, provider: "qwen", total: 10, failed: { error: 4, network_error: 2 } });
+    assert.deepEqual(rows.find((r) => r.modelId === other)?.failed, { error: 0, network_error: 0 });
+
+    // And the watch, end to end on these rows: one mail, then none for the same outage.
+    const { createFailureRateWatch } = await import("@/lib/router/failure-alert");
+    const mails: Array<{ key?: string; title: string }> = [];
+    const watch = createFailureRateWatch({
+      // Only this test's rows, so the other tests' rows cannot change the verdict.
+      readCounts: async (since) => (await countRecentTurnOutcomes(since)).filter((r) => r.modelId === modelId || r.modelId === other),
+      alert: (input) => void mails.push(input),
+      env: {},
+    });
+    const first = await watch.evaluate();
+    // The model breaches (6 of 10); neither class does on its own (4 errors, 2 dropped streams).
+    assert.deepEqual(first.map((g) => g.key), [`model:${modelId}`]);
+    assert.equal(mails.length, 1);
+    assert.equal(mails[0].key, `model:${modelId}`);
+    assert.match(mails[0].title, /^Chat turns failing: 6 of 10 on test:failing-/);
+    assert.deepEqual(await watch.evaluate(), []);
+    assert.equal(mails.length, 1, "the same incident mails once");
+  });
+
   test.after(async () => {
     const { prisma } = await load();
     await prisma.routingOutcome.deleteMany({ where: { modelId: { startsWith: "test:" } } });

@@ -251,12 +251,25 @@ final class DesktopNeedsYouSignals {
             guard let signal = runs.signals[id] else { return nil }
             let title = titles[id].flatMap { $0.isEmpty ? nil : $0 } ?? signal.session.title
             return (
-                MenuItem(conversationID: id, title: title, status: ChatWorkVocabulary.label(signal.status)),
+                MenuItem(conversationID: id, title: title, status: needsYouLabel(signal.status)),
                 signal.session.lastActivityAt
             )
         }
         .sorted { $0.1 > $1.1 }
         .map(\.0)
+    }
+
+    /// The web sidebar's words for a row in Needs you (`askWords`): a run the
+    /// executor parked waiting for the reader is "Waiting for you", and one
+    /// their answer put back in the queue is "Resuming" until an executor
+    /// picks it up. Only rows in Needs you reach here, so a paused run is the
+    /// executor's wait, never one the reader stopped.
+    nonisolated static func needsYouLabel(_ status: JunoWorkStatus) -> String {
+        switch status {
+        case .queued, .preparing: "Resuming"
+        case .paused: "Waiting for you"
+        default: ChatWorkVocabulary.label(status)
+        }
     }
 
     // MARK: - The banner

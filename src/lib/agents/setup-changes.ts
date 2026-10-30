@@ -26,6 +26,7 @@
 import { createHash } from "node:crypto";
 import {
   AGENT_NOTIFY_LEVELS,
+  AGENT_NOTIFY_META,
   AGENT_ROUTINE_CADENCE_LABEL,
   agentModelChoice,
   agentReasoningEffort,
@@ -123,9 +124,9 @@ export type SetupPlanResult = { ok: true; plan: SetupPlan } | { ok: false; reaso
 
 const NOTIFY_RANK: Record<AgentNotifyLevel, number> = { needs_you: 0, results: 1, all: 2 };
 const NOTIFY_LABEL: Record<AgentNotifyLevel, string> = {
-  needs_you: "Only when it needs you",
-  results: "When a task finishes or needs you",
-  all: "Everything, ideas included",
+  needs_you: AGENT_NOTIFY_META.needs_you.label,
+  results: AGENT_NOTIFY_META.results.label,
+  all: AGENT_NOTIFY_META.all.label,
 };
 const MODE_RANK: Record<WorkPermissionPolicy, number> = { conservative: 0, balanced: 1, permissive: 2 };
 

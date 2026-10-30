@@ -179,7 +179,7 @@ public struct NativeAgentProfileView: View {
                 attention(agent)
                 if let detail {
                     ideas(agent, detail.ideas)
-                    goals(agent, detail.goals.filter { $0.status == .active })
+                    goals(agent, detail.goals.filter { $0.status == .active || $0.status == .unverified })
                     routines(agent, detail.routines)
                     notes(agent, detail.notes)
                     uses(agent, detail)
@@ -313,7 +313,14 @@ public struct NativeAgentProfileView: View {
                                         .junoType(.body)
                                         .foregroundStyle(Color.junoForeground)
                                         .fixedSize(horizontal: false, vertical: true)
-                                    if let note = goal.lastCheckInNote, !note.isEmpty {
+                                    // Every step ran, but nothing showed it met: said, as on
+                                    // the web, so it never reads as still being worked on.
+                                    if goal.status == .unverified {
+                                        Text("Every step ran. Check the result.")
+                                            .junoType(.ui)
+                                            .foregroundStyle(Color.junoSecondaryInk)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    } else if let note = goal.lastCheckInNote, !note.isEmpty {
                                         Text(note)
                                             .junoType(.ui)
                                             .foregroundStyle(Color.junoSecondaryInk)

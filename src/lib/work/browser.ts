@@ -286,6 +286,17 @@ export const BROWSER_LAUNCH_ARGS: readonly string[] = [
 ];
 
 /**
+ * Playwright's own process signal handlers, all off. By default a launched
+ * browser installs a SIGINT handler that closes every browser and exits the
+ * whole process with code 130, and SIGTERM and SIGHUP handlers that close
+ * every browser. In the Work runner that ended its graceful shutdown within
+ * milliseconds and dropped every run mid-step. The process that launched the
+ * browser owns its signals; the run's disposer closes the browser, and
+ * Playwright still kills it when the process exits.
+ */
+export const BROWSER_SIGNAL_HANDLING = { handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false } as const;
+
+/**
  * The response headers Chromium is handed, with the browser's own rule intact.
  *
  * Two jobs, both about a response that has been carried across a process
@@ -406,6 +417,7 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       browser = await chromium.launch({
         headless: true,
         args: [...BROWSER_LAUNCH_ARGS],
+        ...BROWSER_SIGNAL_HANDLING,
         env: browserLaunchEnvironment(),
         ...(options.executablePath ? { executablePath: options.executablePath } : {}),
       });

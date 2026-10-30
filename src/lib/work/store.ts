@@ -960,8 +960,27 @@ export interface AppendEventsInput {
  * All of it in one transaction, because the increment and the inserts are the
  * same fact: a reader that saw the new `lastSeq` and then queried the events
  * would otherwise find the run claiming events it cannot yet see.
+ *
+ * Two appends carrying the same key at the same moment (two devices answering
+ * one question) both pass the dedupe read, which runs before the run's row
+ * lock, and the unique index stops the second insert. Its transaction rolls
+ * back whole, `lastSeq` included, so no hole is left; it is then tried again,
+ * and the read now sees the first one's committed row and drops the duplicate
+ * exactly as a sequential retry would — rather than failing the request.
  */
 export async function appendEvents(input: AppendEventsInput): Promise<AppendEventsResult> {
+  const keyed = input.events.some((event) => typeof event.key === "string" && event.key.length > 0);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await appendEventsOnce(input);
+    } catch (error) {
+      const conflict = uniqueConflict(error);
+      if (!keyed || attempt >= 3 || !conflict?.some((field) => field.includes("eventKey"))) throw error;
+    }
+  }
+}
+
+async function appendEventsOnce(input: AppendEventsInput): Promise<AppendEventsResult> {
   return prisma.$transaction(async (tx) => {
     const keyed = input.events.filter(
       (event): event is WorkEventInput & { key: string } =>
@@ -1233,13 +1252,19 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
 
     const run = await tx.workRun.findFirst({
       where: { id: input.runId, userId: input.userId },
-      select: { sessionId: true },
+      select: { sessionId: true, pauseReason: true },
     });
     if (run) {
       // Keep the denormalised session row in the same transaction as the
       // lease release. The status predicate matters: if Resume wins the race
       // after the run update, it changes the session to queued and this update
       // must not put it back into paused attention.
+      //
+      // Only the executor's own wait asks the person for something, so only
+      // it puts the task in Needs you. A run the person paused
+      // (`pauseReason: "user"`) is asking nothing and no answer continues
+      // it: it stays out of Needs you and reads "Paused", as the control
+      // route left it (`statusNeedsAttention("paused")` is false).
       await tx.workSession.updateMany({
         where: {
           id: run.sessionId,
@@ -1248,12 +1273,80 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
         },
         data: {
           status: "paused",
-          needsAttention: true,
+          needsAttention: run.pauseReason === "waiting",
           lastActivityAt: new Date(),
         },
       });
     }
     return true;
+  });
+}
+
+export interface RequeueParkedRunInput {
+  runId: string;
+  userId: string;
+  now?: Date;
+}
+
+export type RequeueParkedRunResult =
+  | { requeued: true; run: WorkRun }
+  /** `run` is the row as it is now, so the caller can say why nothing moved. */
+  | { requeued: false; run: WorkRun | null };
+
+/**
+ * Puts a cloud run that was parked waiting for a person back in the queue,
+ * because the person has now answered or decided.
+ *
+ * Compare-and-set, in one statement: only a `paused` run whose pause is the
+ * executor's wait (`pauseReason: "waiting"`), on the cloud, with no lease,
+ * moves to `queued`. Everything else is left exactly as it is, and that is
+ * what makes this idempotent: a second answer, a retried request, the
+ * decision route and the answer route racing each other, or a person pressing
+ * Resume at the same moment all find the run already `queued` (or further
+ * along) and change nothing. A run the person paused themselves
+ * (`pauseReason: "user"`) is theirs to resume: an answer does not overrule a
+ * pause.
+ *
+ * The session keeps `needsAttention` while the run waits for an executor, so
+ * "Needs you" shows it as resuming rather than dropping it the moment the
+ * person answers; `claimRun` clears it when the run is picked up.
+ */
+export async function requeueParkedRun(input: RequeueParkedRunInput): Promise<RequeueParkedRunResult> {
+  const now = input.now ?? new Date();
+  return prisma.$transaction(async (tx): Promise<RequeueParkedRunResult> => {
+    const moved = await tx.workRun.updateMany({
+      where: {
+        id: input.runId,
+        userId: input.userId,
+        status: "paused",
+        pauseReason: "waiting",
+        effectiveTarget: "cloud",
+        claimedBy: null,
+      },
+      data: {
+        status: "queued",
+        pauseReason: null,
+        claimedBy: null,
+        claimedAt: null,
+        leaseExpiresAt: null,
+      },
+    });
+    const run = await tx.workRun.findFirst({ where: { id: input.runId, userId: input.userId } });
+    if (moved.count !== 1 || !run) return { requeued: false, run };
+
+    // Only while this is the session's newest attempt, as `commitRunEnding`
+    // does: a superseded attempt must not drag its session back to queued.
+    const newer = await tx.workRun.findFirst({
+      where: { sessionId: run.sessionId, userId: input.userId, attempt: { gt: run.attempt } },
+      select: { id: true },
+    });
+    if (!newer) {
+      await tx.workSession.updateMany({
+        where: { id: run.sessionId, userId: input.userId },
+        data: { status: "queued", needsAttention: true, lastActivityAt: now },
+      });
+    }
+    return { requeued: true, run };
   });
 }
 
@@ -1511,7 +1604,8 @@ export const PARKED_ROUTINE_RUN_EXPIRED_DETAIL =
  * routine on the account, indefinitely. Only unattended runs (a schedule or a
  * trigger fired them, `attended: false`) untouched for 24 hours are ended, as
  * `interrupted` with a sentence saying why; a run a person started by hand is
- * left alone.
+ * left alone. Goal steps parked as long are ended as well, with their own
+ * sentence (`expireParkedGoalSteps`), and their ids are returned with the rest.
  */
 export async function expireParkedRoutineRuns(input: { now?: Date; limit?: number } = {}): Promise<string[]> {
   const now = input.now ?? new Date();
@@ -1540,6 +1634,68 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
     }).catch(() => null);
     if (ended?.finished) expired.push(run.id);
   }
+  return [...expired, ...(await expireParkedGoalSteps({ now, cutoff, limit: input.limit ?? 100 }))];
+}
+
+/**
+ * The sentence a goal step parked past `PARKED_ROUTINE_RUN_TTL_MS` ends with.
+ * `src/lib/agents/goal-runner.ts` reads it back to tell a step that waited out
+ * its answer from one that was interrupted, so the goal asks the person instead
+ * of retrying a step that would only stop on the same question again.
+ */
+export const PARKED_GOAL_STEP_EXPIRED_DETAIL =
+  "Stopped after waiting 24 hours for an answer or approval that never came. Nothing more was done; continue the goal when you're ready and this step starts again.";
+
+/**
+ * Ends goal steps parked for an answer for longer than a routine run may be.
+ *
+ * A goal step carries no schedule, so the routine expiry above never reached
+ * it: a step that stopped to ask held its goal "in flight" for ever, and the
+ * goal froze with it. Ended the same way, `interrupted` with a sentence that
+ * says why, through the fenced terminal write (`parkedBefore`), and the owner
+ * is told, as the queued-run expiry tells them (`handOffEndedRunNotices`): a
+ * goal step is an agent's task, so its notice follows the agent's own
+ * "tell me when it's done".
+ */
+async function expireParkedGoalSteps(input: { now: Date; cutoff: Date; limit: number }): Promise<string[]> {
+  const stale = await prismaUnguarded.workRun.findMany({
+    where: {
+      status: "paused",
+      pauseReason: "waiting",
+      scheduleId: null,
+      updatedAt: { lt: input.cutoff },
+      session: { goalId: { not: null } },
+    },
+    select: { id: true, userId: true },
+    orderBy: { updatedAt: "asc" },
+    take: input.limit,
+  });
+  const expired: string[] = [];
+  const toNotify: EndedRunRef[] = [];
+  for (const run of stale) {
+    const ending: FinishRunInput = {
+      runId: run.id,
+      userId: run.userId,
+      reason: "interrupted",
+      detail: PARKED_GOAL_STEP_EXPIRED_DETAIL,
+      parkedBefore: input.cutoff,
+      now: input.now,
+    };
+    const ended = await commitRunEnding(ending).catch(() => null);
+    if (!ended?.finished) continue;
+    expired.push(run.id);
+    toNotify.push({ runId: run.id, userId: run.userId });
+    await settleRunEnding(ending, ended).catch((error: unknown) => {
+      console.error("[work] could not settle the spend of an expired goal step", {
+        runId: run.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+  handOffEndedRunNotices(toNotify, async (run) => {
+    const { deliverRunNotification } = await import("@/lib/work/notify/deliver");
+    await deliverRunNotification(run);
+  });
   return expired;
 }
 

@@ -48,9 +48,11 @@ public enum NativeAgentStatus: String, CaseIterable, Sendable {
     case active, paused
 }
 
-/// `AGENT_GOAL_STATUSES`.
+/// `AGENT_GOAL_ALL_STATUSES`. `unverified` is set only by the server's goal
+/// driver: every step ran, but its success criteria were not shown to be met,
+/// so the person checks the result and marks it achieved or keeps it going.
 public enum NativeAgentGoalStatus: String, CaseIterable, Identifiable, Sendable {
-    case active, paused, achieved, dropped
+    case active, paused, achieved, dropped, unverified
 
     public var id: String { rawValue }
 
@@ -60,6 +62,7 @@ public enum NativeAgentGoalStatus: String, CaseIterable, Identifiable, Sendable 
         case .paused: "Paused"
         case .achieved: "Achieved"
         case .dropped: "Dropped"
+        case .unverified: "Check the result"
         }
     }
 }

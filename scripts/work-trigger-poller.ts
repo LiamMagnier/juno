@@ -133,6 +133,8 @@ import { scheduleRunKindOf } from "@/lib/work/code-routine";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { readCloudWorkAvailability } from "@/lib/work/executor-heartbeat";
 import { plannerCloudAvailability } from "@/lib/work/executor-presence";
+import { installWorkerProcessGuard, registerWorkerDrain } from "@/lib/worker-process";
+import { LOOP_STALE_AFTER_MS, workerLoops } from "@/lib/worker-watchdog-rules";
 
 /**
  * How often to look for triggers whose next poll is due.
@@ -1381,6 +1383,17 @@ async function tick(): Promise<void> {
 async function main(): Promise<void> {
   log("started", { poller: POLLER_ID, tickMs: TICK_MS });
 
+  // As the scheduler does: rejections logged, an uncaught exception drains
+  // and exits non-zero (src/lib/worker-process.ts), and every finished tick
+  // is a beat the process's watchdog reads (src/lib/worker-watchdog.ts).
+  installWorkerProcessGuard();
+  let inTick: Promise<void> | null = null;
+  registerWorkerDrain("work-trigger-poller", async () => {
+    stopping = true;
+    await inTick?.catch(() => undefined);
+  });
+  workerLoops.register("work-trigger-poller", LOOP_STALE_AFTER_MS["work-trigger-poller"]);
+
   const shutdown = (signal: string) => {
     if (stopping) return;
     stopping = true;
@@ -1391,17 +1404,30 @@ async function main(): Promise<void> {
 
   while (!stopping) {
     try {
-      await tick();
+      inTick = tick();
+      await inTick;
     } catch (error) {
       // One bad tick must not end the poller: the next one may well succeed, and
       // a poller that exits on a transient database error takes every event
       // trigger in the deployment with it.
       log("tick failed", { error: String(error) });
+    } finally {
+      inTick = null;
+      workerLoops.beat("work-trigger-poller");
     }
     await new Promise((resolve) => setTimeout(resolve, TICK_MS));
   }
 
   log("stopped");
+}
+
+/**
+ * Starts the poller's loop in this process: what juno-sweepers calls
+ * (scripts/sweepers.ts). Importing this file starts nothing (see the line at
+ * the bottom).
+ */
+export function startTriggerPoller(): Promise<void> {
+  return main();
 }
 
 export { readSource as readTriggerSource, tick as triggerPollerTick, offer as offerTriggerEvent, loadSchedule as loadTriggerSchedule };

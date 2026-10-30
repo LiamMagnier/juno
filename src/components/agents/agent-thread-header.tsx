@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Monitor, MoreHorizontal, Pause, Play, Shapes, User } from "@/components/ui/icons";
-import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { localStateSentence } from "@/components/agents/agent-bits";
@@ -144,8 +143,10 @@ export function AgentThreadHeader({
   const profileOpen = activePanelTab === "profile";
 
   // One live copy of a face per screen: while the profile's face or the empty
-  // thread's greeting (both larger) is up, this one is their still, so two
-  // copies of one agent never blink and glance out of step.
+  // thread's greeting (both larger) is up, this one is held still, so two
+  // copies of one agent never blink and glance out of step. One face, one
+  // element throughout: held, it eases into its still frame from where it is
+  // (a blink under way finishes first), never a swap for another copy.
   const greeting = useGreetingShown(agent.id);
   const faceStill = profileOpen || greeting;
   const { ref: barRef, roomy } = useBarRoom();
@@ -166,13 +167,7 @@ export function AgentThreadHeader({
           aria-label={`${agent.name}. ${workNotice ?? sentence}. Open profile`}
           aria-expanded={profileOpen}
         >
-          {faceStill ? (
-            <span className="agent-presence" style={{ width: 34, height: 34 }}>
-              <AgentFace avatar={agent.avatar} state={state} size={34} still />
-            </span>
-          ) : (
-            <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
-          )}
+          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze still={faceStill} />
           {/* A floor, so the labelled actions beside it never squeeze the
               name and the state sentence out (the face never carries the
               state alone). */}

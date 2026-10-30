@@ -593,11 +593,14 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// card is answered through `/api/approvals/:id`.
     case approval(NativeChatApproval)
     case completed(NativeCompletedChatMessage)
+    /// `recovery` is chat wire 1.1 and defaults to nil, so every 1.0 frame and
+    /// every existing construction still reads the same.
     case failed(
         message: String,
         finishReason: NativeChatFinishReason,
         generationID: String?,
-        userMessageID: String?
+        userMessageID: String?,
+        recovery: NativeChatFailureRecovery? = nil
     )
     /// Media generation moved a stage. Only `/api/generate` sends these.
     case mediaProgress(NativeMediaProgress)
@@ -625,6 +628,40 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// (`/api/chat/stream/{id}?after=seq`). Not a frame of its own.
     case sequence(Int)
     case ping
+}
+
+/// What an `error` frame said can be done about a failed turn (chat wire 1.1,
+/// `ChatErrorRecovery` in src/types/chat.ts). Every field is optional: a 1.0
+/// server sends none of them, and the server sets them only when the turn
+/// failed at its provider.
+public struct NativeChatFailureRecovery: Equatable, Sendable {
+    /// The provider failure's class (`auth`, `billing`, `capacity`, …).
+    public let errorClass: String?
+    public let retryable: Bool?
+    public let retryAfterSeconds: Int?
+    /// One model on a different, healthy lab that does not train on prompts,
+    /// offered as "Answer with <model>". Only an offer: answering with it is
+    /// the reader's explicit choice.
+    public let suggestedModelID: String?
+    public let suggestedModelName: String?
+
+    /// Nil when the frame carried none of it (a 1.0 server, or a failure that
+    /// was not the provider's), so callers can keep `recovery == nil`.
+    public init?(
+        errorClass: String?,
+        retryable: Bool?,
+        retryAfterSeconds: Int?,
+        suggestedModelID: String?,
+        suggestedModelName: String?
+    ) {
+        guard errorClass != nil || retryable != nil || retryAfterSeconds != nil || suggestedModelID != nil
+        else { return nil }
+        self.errorClass = errorClass
+        self.retryable = retryable
+        self.retryAfterSeconds = retryAfterSeconds
+        self.suggestedModelID = suggestedModelID.flatMap { $0.isEmpty ? nil : $0 }
+        self.suggestedModelName = suggestedModelName.flatMap { $0.isEmpty ? nil : $0 }
+    }
 }
 
 /// A text delta's provider-declared phase (the timeline grammar's
@@ -1010,6 +1047,29 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
         default: false
         }
     }
+
+    /// `503 SERVER_DRAINING`: the server is restarting for a deploy and refused
+    /// the request before reading it (src/app/api/chat/route.ts), so nothing
+    /// was accepted and the same request can be sent again. Not a dropped
+    /// stream: there is no saved answer to wait for.
+    public var isServerDraining: Bool {
+        guard case .server(let statusCode, let code, _, _) = self else { return false }
+        return statusCode == 503 && code == "SERVER_DRAINING"
+    }
+
+    /// A 502, 503 or 504 with no error code: the proxy's own page, answered
+    /// while no app process is up (between a drain's old process exiting and
+    /// the new one listening), or an upstream timeout. Never a drain.
+    var isGatewayRefusal: Bool {
+        guard case .server(let statusCode, let code, _, _) = self, code == nil else { return false }
+        return statusCode == 502 || statusCode == 503 || statusCode == 504
+    }
+
+    /// The drain's `Retry-After` (src/lib/shutdown.ts, DRAIN_RETRY_AFTER_SECONDS).
+    public static let drainRetryAfterSeconds: Double = 5
+    /// How many times a drained request is sent again before the turn fails,
+    /// as the web client does (src/lib/chat/send-retry.ts).
+    public static let drainRetryLimit = 5
 }
 
 public protocol NativeChatRequestSending: NativeAuthenticatedRequestSending,
@@ -1685,7 +1745,14 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                     rawValue: envelope.finishReason ?? "error"
                 ) ?? .error,
                 generationID: envelope.generationId,
-                userMessageID: envelope.userMessageId
+                userMessageID: envelope.userMessageId,
+                recovery: NativeChatFailureRecovery(
+                    errorClass: envelope.errorClass,
+                    retryable: envelope.retryable,
+                    retryAfterSeconds: envelope.retryAfterSeconds,
+                    suggestedModelID: envelope.suggestedModelId,
+                    suggestedModelName: envelope.suggestedModelName
+                )
             )
         case "activity":
             guard let event = envelope.event?.activity(parseDate: parseDate) else { return .ping }
@@ -2400,11 +2467,21 @@ private struct EventEnvelopeWire: Decodable {
     /// `handoff` frames only.
     let to: String?
     let runId: String?
+    /// `error` frames, chat wire 1.1 (additive): what kind of provider failure
+    /// ended the turn and the one model offered instead. A 1.0 server sends
+    /// none of them, and every one is read lossily, so neither an old frame
+    /// nor a malformed hint can cost the error's sentence.
+    let errorClass: String?
+    let retryable: Bool?
+    let retryAfterSeconds: Int?
+    let suggestedModelId: String?
+    let suggestedModelName: String?
 
     private enum CodingKeys: String, CodingKey {
         case type, conversationId, userMessageId, title, generationId, text,
              sources, message, event, approval, error, finishReason, stage, pct,
-             artifacts, available, refetch, round, phase, part, to, runId
+             artifacts, available, refetch, round, phase, part, to, runId,
+             errorClass, retryable, retryAfterSeconds, suggestedModelId, suggestedModelName
     }
 
     init(from decoder: any Decoder) throws {
@@ -2437,6 +2514,11 @@ private struct EventEnvelopeWire: Decodable {
         part = try? container.decodeIfPresent(Int.self, forKey: .part)
         to = try? container.decodeIfPresent(String.self, forKey: .to)
         runId = try? container.decodeIfPresent(String.self, forKey: .runId)
+        errorClass = try? container.decodeIfPresent(String.self, forKey: .errorClass)
+        retryable = try? container.decodeIfPresent(Bool.self, forKey: .retryable)
+        retryAfterSeconds = try? container.decodeIfPresent(Int.self, forKey: .retryAfterSeconds)
+        suggestedModelId = try? container.decodeIfPresent(String.self, forKey: .suggestedModelId)
+        suggestedModelName = try? container.decodeIfPresent(String.self, forKey: .suggestedModelName)
     }
 }
 

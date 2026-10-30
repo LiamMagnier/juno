@@ -19,12 +19,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, X } from "@/components/ui/icons";
+import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, Upload, X } from "@/components/ui/icons";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ComputerTerminal } from "@/components/agents/computer-terminal";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import {
+  COMPUTER_INBOX_FOLDER,
   COMPUTER_WORK_FOLDER,
   announceAgentsChanged,
   computerAction,
@@ -32,6 +35,7 @@ import {
   computerHeartbeat,
   fetchComputerFiles,
   readComputerTakeover,
+  uploadComputerFile,
   type ClientAgentComputerFolder,
   type ClientAgentComputerLive,
   type ClientComputerTakeover,
@@ -47,6 +51,7 @@ import {
   type TakeoverPin,
 } from "@/lib/agents/computer-handback";
 import type { ClientAgent } from "@/lib/agents/types";
+import { freezeFailedLine, takeoverInfoLine } from "@/lib/computer/access-copy";
 import { cn } from "@/lib/utils";
 
 const ComputerViewer = nextDynamic(
@@ -119,11 +124,32 @@ export function AgentComputerOverlay({
   const [controlInWindow, setControlInWindow] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
+  // Whether the agent's processes were paused for this take over (the view
+  // route says so for a new one). Only "ok" earns the line that says so.
+  const [freeze, setFreeze] = React.useState<"ok" | "failed" | "unavailable" | null>(null);
 
   const [filesOpen, setFilesOpen] = React.useState(false);
   const [folder, setFolder] = React.useState<ClientAgentComputerFolder | null>(null);
   const [filesError, setFilesError] = React.useState<string | null>(null);
   const [filesLoading, setFilesLoading] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  // Narrow screens show the screen or the terminal, one at a time.
+  const [pane, setPane] = React.useState<"screen" | "terminal">("screen");
+  const addFile = async (file: File) => {
+    setUploading(true);
+    const outcome = await uploadComputerFile(agent.id, file);
+    setUploading(false);
+    if (outcome.kind !== "ok") {
+      toast.error(outcome.message);
+      return;
+    }
+    toast.success(
+      outcome.value.name === file.name
+        ? `Added ${outcome.value.name} to ${agent.name}’s inbox.`
+        : `Added ${file.name} to ${agent.name}’s inbox as ${outcome.value.name}.`
+    );
+    void loadFolder(COMPUTER_INBOX_FOLDER);
+  };
   const loadFolder = async (path?: string) => {
     setFilesLoading(true);
     setFilesError(null);
@@ -157,6 +183,7 @@ export function AgentComputerOverlay({
     setControlConnected(false);
     setControlInWindow(false);
     setNotice(null);
+    setPane("screen");
   }, [open, initialMode, agent.id]);
 
   const inControl = mode === "control" || controlInWindow;
@@ -204,6 +231,7 @@ export function AgentComputerOverlay({
   const takeControl = () => {
     takeover.current = pinTakeover(work.questions);
     setNotice(null);
+    setFreeze(null);
     setControlConnected(false);
     setMode("control");
   };
@@ -329,6 +357,8 @@ export function AgentComputerOverlay({
       : computerStateSentence({ status, agentName: agent.name, restMinutes: computer?.restMinutes, usingNow, opened: true });
   const waking = status === "starting" || status === "resting";
   const posterUrl = computer?.hasPoster ? `/api/agents/${encodeURIComponent(agent.id)}/computer/poster` : null;
+  // The newest task's shell output, read-only, beside the screen (S5.1).
+  const terminalRunId = work.run?.id ?? null;
 
   return (
     <div
@@ -365,58 +395,112 @@ export function AgentComputerOverlay({
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5">
-        <div className="w-full max-w-[min(100%,calc((100dvh-11rem)*1.6))]">
-          <div
-            className={cn(
-              "overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--foreground)/0.35)]",
-              // The ring is the one sign of who drives: it eases between
-              // watching and control on the motion tokens, and snaps when
-              // motion is reduced.
-              "transition-shadow duration-base ease-out-soft motion-reduce:transition-none",
-              mode === "control" ? "ring-2 ring-primary" : "ring-1 ring-border/60"
-            )}
-          >
-            {status === "awake" ? (
-              // One viewer for watching and control: switching swaps the
-              // stream under the last frame instead of remounting it.
-              <ComputerViewer
-                agentId={agent.id}
-                agentName={agent.name}
-                initialMode={mode}
-                mode={mode}
-                inputTools
-                posterUrl={posterUrl}
-                onModeChange={setMode}
-                onConnected={(connected) => {
-                  if (connected === "control") {
-                    setControlConnected(true);
-                    announce("You have control");
-                  } else {
+        <div
+          className={cn(
+            "w-full",
+            // Beside the screen on a wide window, the terminal takes 22rem and
+            // a 1rem gap; the screen keeps its height inside the viewport.
+            terminalRunId
+              ? "max-w-[min(100%,calc((100dvh-14rem)*1.6))] lg:max-w-[min(100%,calc((100dvh-11rem)*1.6+23rem))]"
+              : "max-w-[min(100%,calc((100dvh-11rem)*1.6))]"
+          )}
+        >
+          {terminalRunId ? (
+            <SegmentedControl
+              value={pane}
+              onChange={setPane}
+              options={[
+                { value: "screen", label: "Screen" },
+                { value: "terminal", label: "Terminal" },
+              ]}
+              ariaLabel={`Show ${agent.name}’s screen or terminal`}
+              size="sm"
+              className="mb-3 w-full max-w-[16rem] lg:hidden"
+            />
+          ) : null}
+          <div className="flex gap-4">
+            <div
+              className={cn(
+                "min-w-0 flex-1 overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--foreground)/0.35)]",
+                // On a narrow screen the terminal tab hides the screen without
+                // unmounting it, so the live view stays connected.
+                terminalRunId && pane === "terminal" && "max-lg:hidden",
+                // The ring is the one sign of who drives: it eases between
+                // watching and control on the motion tokens, and snaps when
+                // motion is reduced.
+                "transition-shadow duration-base ease-out-soft motion-reduce:transition-none",
+                mode === "control" ? "ring-2 ring-primary" : "ring-1 ring-border/60"
+              )}
+            >
+              {status === "awake" ? (
+                // One viewer for watching and control: switching swaps the
+                // stream under the last frame instead of remounting it.
+                <ComputerViewer
+                  agentId={agent.id}
+                  agentName={agent.name}
+                  initialMode={mode}
+                  mode={mode}
+                  inputTools
+                  posterUrl={posterUrl}
+                  onModeChange={setMode}
+                  onConnected={(connected) => {
+                    if (connected === "control") {
+                      setControlConnected(true);
+                      announce("You have control");
+                    } else {
+                      setControlConnected(false);
+                    }
+                  }}
+                  onComputer={(next) => {
+                    if (next) setLive(next);
+                  }}
+                  onControlLost={(message) => {
+                    if (handingBack.current) return;
+                    takeover.current = null;
                     setControlConnected(false);
-                  }
-                }}
-                onComputer={(next) => {
-                  if (next) setLive(next);
-                }}
-                onControlLost={(message) => {
-                  if (handingBack.current) return;
-                  takeover.current = null;
-                  setControlConnected(false);
-                  setNotice(message);
-                  announce(message);
-                }}
-              />
-            ) : (
-              <Poster agent={agent} computer={computer} status={status} />
-            )}
+                    setNotice(message);
+                    announce(message);
+                  }}
+                  onFreeze={(next) => {
+                    setFreeze(next);
+                    if (next === "failed") announce(freezeFailedLine(agent.name));
+                  }}
+                />
+              ) : (
+                <Poster agent={agent} computer={computer} status={status} />
+              )}
+            </div>
+            {terminalRunId ? (
+              // The pane fills a box the layout sizes (the screen's row on a wide
+              // window, a fixed height in the narrow tab), and never grows it: a
+              // long output scrolls inside the pane instead of stretching the screen.
+              <div
+                className={cn(
+                  "relative min-w-0 lg:w-[22rem] lg:shrink-0",
+                  // Taller than the screen's 16:10 in the narrow tab: output is read in lines.
+                  pane === "terminal" ? "max-lg:h-[min(60dvh,34rem)] max-lg:flex-1" : "max-lg:hidden"
+                )}
+              >
+                <ComputerTerminal agentId={agent.id} agentName={agent.name} runId={terminalRunId} className="absolute inset-0" />
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4 flex min-h-10 flex-wrap items-center justify-between gap-3">
             {mode === "control" ? (
-              <p className="flex items-center gap-2 text-ui font-medium text-primary">
-                <Hand className="size-4 shrink-0" aria-hidden="true" />
-                {controlConnected ? controlSentence(agent.name) : "Taking control…"}
-              </p>
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-ui font-medium text-primary">
+                  <Hand className="size-4 shrink-0" aria-hidden="true" />
+                  {controlConnected ? controlSentence(agent.name) : "Taking control…"}
+                </p>
+                {/* Said only when it is true: the pause worked, or it did not. */}
+                {controlConnected && freeze === "ok" ? (
+                  <p className="mt-1 text-ui text-muted-foreground">{takeoverInfoLine(agent.name)}</p>
+                ) : null}
+                {freeze === "failed" ? (
+                  <p className="mt-1 text-ui text-destructive-ink">{freezeFailedLine(agent.name)}</p>
+                ) : null}
+              </div>
             ) : controlInWindow ? (
               <p className="flex items-center gap-2 text-ui font-medium text-primary">
                 <Hand className="size-4 shrink-0" aria-hidden="true" />
@@ -459,7 +543,7 @@ export function AgentComputerOverlay({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Files on {agent.name}’s computer</DialogTitle>
-            <DialogDescription>What it saved in its work folder. Open a folder, or download anything you need.</DialogDescription>
+            <DialogDescription>What it saved in its work folder. Open a folder, download anything you need, or add a file for it to use.</DialogDescription>
           </DialogHeader>
           <FilesBrowser
             agentId={agent.id}
@@ -468,6 +552,10 @@ export function AgentComputerOverlay({
             error={filesError}
             onOpenFolder={(path) => void loadFolder(path)}
           />
+          <DialogFooter className="items-center sm:justify-between">
+            <p className="text-caption text-muted-foreground">Files you add go to its inbox folder.</p>
+            <AddFileButton busy={uploading} disabled={status !== "awake" && status !== "resting"} onFile={(file) => void addFile(file)} />
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
@@ -523,6 +611,43 @@ export function AgentComputerOverlay({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * "Add a file": a native file picker behind a button. The file goes to the
+ * computer's ~/work/inbox (the server checks the size, the name and the
+ * plan, and works while the person has control).
+ */
+function AddFileButton({ busy, disabled, onFile }: { busy: boolean; disabled: boolean; onFile: (file: File) => void }) {
+  const input = React.useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) onFile(file);
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5 coarse:min-h-11"
+        loading={busy}
+        disabled={disabled}
+        onClick={() => input.current?.click()}
+      >
+        <Upload className="size-4" aria-hidden="true" />
+        Add a file
+      </Button>
+    </>
   );
 }
 

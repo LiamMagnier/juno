@@ -472,7 +472,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   orbit_agents: {
     id: "orbit_agents",
     name: "Persistent Orbit agents",
-    summary: "Existing identities, tasks, memory, configuration and conversation entry.",
+    summary: "Existing identities, tasks, memory, configuration and conversation entry. Hiring needs a plan with agents (refused with an upgrade answer on Free and Lite); a cloud task can save a note for its agent with `remember`, always held for the person's review before any prompt reads it.",
     status: "beta",
     platforms: ["web", "macos"],
     maturity: surfaces(
@@ -481,7 +481,15 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       implemented("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentsScreen.swift"),
       planned("Native integration and acceptance have not been verified in this audit."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Real workflow, deployment and cross-platform acceptance are pending."] },
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: [
+        "Real workflow, deployment and cross-platform acceptance are pending.",
+        "`remember` has run only against a stand-in model API (tests/orbit-truth-runner.integration.test.ts drives the real cloud executor); a Mac run has no such tool.",
+        "Native follow-ups: the Mac and iPhone apps do not show notes waiting for review (no Keep or Forget there), and still show the hire field to plans without agents (the server refuses with 402).",
+      ],
+    },
   },
   orbit_rooms: {
     id: "orbit_rooms",
@@ -513,7 +521,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   orbit_goals: {
     id: "orbit_goals",
     name: "Orbit goals",
-    summary: "Durable goals (milestones, success criteria, blockers, progress, next action, budget, run bound) advanced one bounded step at a time through ordinary Work tasks; the task board projects the ledger with dependencies, deadlines, leases and stale reclamation.",
+    summary: "Durable goals (milestones, success criteria, blockers, progress, next action, budget, run bound) advanced one bounded step at a time through ordinary Work tasks; met only when the last step's cloud run checks the success criteria with the agent's model and the check passes, otherwise unverified for the person to check; the task board projects the ledger with dependencies, deadlines, leases and stale reclamation.",
     status: "beta",
     platforms: ["web"],
     maturity: surfaces(
@@ -531,6 +539,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       evidence: [],
       blockers: [
         "The goal sweep runs in the agent reflector process; its deployed schedule and a real multi-day goal have not been observed.",
+        "The success-criteria check has run only against a stand-in model API through the real cloud executor (tests/orbit-truth-runner.integration.test.ts); no real model has judged a goal.",
         "Real workflow, deployment and cross-platform acceptance are pending.",
       ],
     },

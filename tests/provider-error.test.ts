@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyProviderError, normalizeProviderError, retryAfterFrom } from "@/lib/provider-error";
+import {
+  classifyProviderError,
+  isBareForbidden,
+  isModelCallError,
+  markModelCallError,
+  normalizeProviderError,
+  retryAfterFrom,
+  wireErrorClass,
+} from "@/lib/provider-error";
 
 /*
  * Fixtures shaped like what each SDK actually throws. The four billing cases
@@ -151,12 +159,39 @@ test("the actionable classes stay specific", () => {
   assert.match(normalizeProviderError(modelGone, "Google").userMessage, /isn't available/i);
 });
 
-test("auth and billing explain their distinct root causes", () => {
-  const a = normalizeProviderError(badKey, "Anthropic · Claude").userMessage;
-  const b = normalizeProviderError(anthropicBilling, "Anthropic · Claude").userMessage;
-  assert.notEqual(a, b);
-  assert.match(a, /API connection/i);
-  assert.match(b, /credits|quota/i);
+test("a platform account fault reads as temporarily unavailable and never reveals the funding or key state", () => {
+  // These used to say "its API connection is not configured correctly" and
+  // "its API credits or provider quota are exhausted" — the second announced
+  // the platform's funding state to every paid account on 2026-10-26.
+  for (const err of [badKey, xaiForbidden, anthropicBilling, openaiNoCredits, deepseekBalance]) {
+    const normalized = normalizeProviderError(err, { model: "Claude Opus", provider: "Anthropic · Claude" });
+    assert.equal(normalized.accountFault, true);
+    assert.equal(
+      normalized.userMessage,
+      "Claude Opus is temporarily unavailable. Choose another model, or try again later."
+    );
+    assert.doesNotMatch(normalized.userMessage, /credit|quota|billing|fund|key|API connection|configured/i);
+  }
+});
+
+test("the precise class still reaches the operator and the error frame", () => {
+  const dead = normalizeProviderError(badKey, { model: "Claude Opus", provider: "Anthropic · Claude" });
+  const dry = normalizeProviderError(anthropicBilling, { model: "Claude Opus", provider: "Anthropic · Claude" });
+  assert.equal(dead.class, "auth");
+  assert.equal(dry.class, "billing");
+  assert.match(dead.operatorMessage, /\bauth\b/);
+  assert.match(dry.operatorMessage, /\bbilling\b/);
+});
+
+test("an account fault and a server error stay worded apart", () => {
+  // The release smoke tells them apart by the sentence when a frame has no
+  // errorClass (scripts/production-smoke.mjs, PROVIDER_ACCOUNT_FAILURE).
+  const account = normalizeProviderError(anthropicBilling, "Qwen3.8 Flash").userMessage;
+  const serverError = { status: 503, error: { message: "Service Unavailable" } };
+  assert.equal(normalizeProviderError(serverError).class, "capacity");
+  const capacity = normalizeProviderError(serverError, "Qwen3.8 Flash").userMessage;
+  assert.notEqual(account, capacity);
+  assert.doesNotMatch(capacity, /Choose another model, or try again later\./);
 });
 
 test("network faults are recognised, including a client abort", () => {
@@ -297,4 +332,42 @@ test("operatorMessage is one greppable line carrying provider, model and status"
     operatorMessage.includes("model not enabled for this account"),
     "and the provider's own words, which are what actually say why",
   );
+});
+
+test("a bare 403 is told apart from a 403 whose words name the key or the funding", () => {
+  // "model not enabled for this account" is one model, not the account: the
+  // live health feed asks the probe instead of marking the lab down.
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "model not enabled for this account" } })), true);
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "The caller does not have permission", status: "PERMISSION_DENIED" } })), true);
+  assert.equal(isBareForbidden(classifyProviderError(Object.assign(new Error("403"), { status: 403 }))), true);
+  // Account-shaped: a rejected key, an unfunded team (xAI answers 403).
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "Incorrect API key provided" } })), false);
+  assert.equal(isBareForbidden(classifyProviderError({ status: 403, error: { message: "The team does not have any credits" } })), false);
+  // Not a 403 at all.
+  assert.equal(isBareForbidden(classifyProviderError({ status: 401, error: { message: "Unauthorized" } })), false);
+  assert.equal(isBareForbidden(classifyProviderError({ status: 402, error: { message: "Payment required" } })), false);
+});
+
+test("only an error marked as the model call's says anything to provider health", () => {
+  const thrown = Object.assign(new Error("401 Unauthorized"), { status: 401 });
+  assert.equal(isModelCallError(thrown), false, "a status alone proves nothing");
+  markModelCallError(thrown);
+  assert.equal(isModelCallError(thrown), true);
+  assert.equal(Object.keys(thrown).includes("status"), true);
+  assert.equal(JSON.stringify(Object.keys(thrown)).includes("model-call"), false, "the mark is not enumerable");
+  // Things that cannot carry the mark stay unmarked: the safe direction.
+  const frozen = Object.freeze({ status: 402 });
+  markModelCallError(frozen);
+  assert.equal(isModelCallError(frozen), false);
+  markModelCallError("402 Payment Required");
+  assert.equal(isModelCallError("402 Payment Required"), false);
+  assert.equal(isModelCallError(null), false);
+});
+
+test("the wire folds both account faults into one class and keeps every other", () => {
+  assert.equal(wireErrorClass("auth"), "account");
+  assert.equal(wireErrorClass("billing"), "account");
+  for (const klass of ["rate_limit", "context", "content_filter", "invalid_request", "capacity", "not_found", "network", "unknown"] as const) {
+    assert.equal(wireErrorClass(klass), klass);
+  }
 });

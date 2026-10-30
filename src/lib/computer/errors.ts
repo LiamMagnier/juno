@@ -54,6 +54,84 @@ export function publicComputerMessage(err: unknown, fallback = COMPUTER_NOT_RESP
 }
 
 /**
+ * Why an account, or this use of a computer, was refused
+ * (docs/design/agents-v2/COMPUTERS_2026-10.md §S1.3). The first five are the
+ * account's access; the rest are limits and the agent's own policy.
+ */
+export type ComputerRefusalCode =
+  | "server_off"
+  | "rollout_off"
+  | "not_in_rollout"
+  | "plan"
+  | "unavailable"
+  | "enabled_cap"
+  | "allowance_exhausted"
+  | "policy_off";
+
+/**
+ * A refusal with its code. The message is a sentence for the person (or the
+ * model, in a tool result); `upgradePlan` is set only for `plan`, and
+ * `maxEnabled` / `weeklyMinutes` carry the numbers a route needs to say the
+ * sentence again with the agent's name in it.
+ */
+export class ComputerAccessError extends ComputerError {
+  readonly code: ComputerRefusalCode;
+  readonly upgradePlan: string | null;
+  readonly maxEnabled: number | null;
+
+  constructor(
+    code: ComputerRefusalCode,
+    message: string,
+    extra: { upgradePlan?: string | null; maxEnabled?: number | null } = {},
+  ) {
+    super(message);
+    this.name = "ComputerAccessError";
+    this.code = code;
+    this.upgradePlan = extra.upgradePlan ?? null;
+    this.maxEnabled = extra.maxEnabled ?? null;
+  }
+}
+
+/** The HTTP status a refusal is answered with (§S1.3). */
+export function computerRefusalStatus(code: ComputerRefusalCode): 403 | 409 | 503 {
+  if (code === "unavailable") return 503;
+  if (code === "enabled_cap" || code === "allowance_exhausted" || code === "policy_off") return 409;
+  return 403;
+}
+
+/**
+ * How a route answers any error from the computer layer: a refusal with its
+ * code and status, the unreachable sentence as a 503, any other
+ * `ComputerError` with its own sentence, and everything else with the fixed
+ * fallback. Never a raw `err.message` (fact 6 in the plan): a non-computer
+ * error can carry a daemon's words, a path or a database detail.
+ *
+ * `reword` lets the caller say a refusal again with the agent's name in it.
+ */
+export function computerErrorBody(
+  err: unknown,
+  opts: { fallbackError?: string; fallbackStatus?: number; reword?: (err: ComputerAccessError) => string | null } = {},
+): { status: number; body: { error: string; message: string; upgradePlan?: string } } {
+  if (err instanceof ComputerAccessError) {
+    const message = opts.reword?.(err) ?? err.message;
+    return {
+      status: computerRefusalStatus(err.code),
+      body: { error: err.code, message, ...(err.upgradePlan ? { upgradePlan: err.upgradePlan } : {}) },
+    };
+  }
+  if (err instanceof ComputerError) {
+    if (err.message === COMPUTER_UNREACHABLE) {
+      return { status: 503, body: { error: "unreachable", message: err.message } };
+    }
+    return { status: opts.fallbackStatus ?? 409, body: { error: opts.fallbackError ?? "computer_error", message: err.message } };
+  }
+  return {
+    status: opts.fallbackStatus ?? 409,
+    body: { error: opts.fallbackError ?? "computer_error", message: COMPUTER_NOT_RESPONDING },
+  };
+}
+
+/**
  * A daemon line that describes Docker itself failing rather than the command
  * the agent ran. `docker exec` writes these to the same stderr as the command,
  * so the shell tool strips them before the model reads the output.

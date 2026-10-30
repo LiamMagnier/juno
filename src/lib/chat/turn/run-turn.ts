@@ -6,7 +6,15 @@ import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
 import { loadOpsTarget } from "./semantic";
 import type { TurnModel } from "./model";
 import { classifyProviderError } from "@/lib/provider-error";
+import { noteLiveProviderFault } from "@/lib/provider-health";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
+import { providerErrorRecovery } from "./failure-recovery";
+import { countingStream, planPreStreamRetry, preStreamRetrySpendRef, retryActivityRows, waitBeforeRetry } from "./pre-stream-retry";
+import { resolveFastMode } from "@/lib/pricing";
+import { supportsProMode } from "@/lib/model-metrics";
+import { providerAdapterFor } from "@/lib/provider-routing";
+import { nativeSearchPolicy, planTurnSearch } from "@/lib/search/alevr/policy";
+import { chatSearchAvailable } from "@/lib/web/search";
 import {
   completionStateFor,
   endingSaysNothingAboutModel,
@@ -70,10 +78,12 @@ import { chatRuntimeToolAllowlist } from "@/lib/chat/tool-policy";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { ActiveConnector } from "@/lib/mcp";
+import { connectorUnavailableRow } from "@/lib/chat/turn-start-facts";
+import type { ConnectorFailure } from "@/types/run";
 import type { ModelInfo } from "@/lib/models";
 import { SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
 import type { ClientArtifact, ReasoningEffort, StreamChunk } from "@/types/chat";
-import type { MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import type { buildSystemPromptSections } from "@/lib/anthropic";
 import { createToolActivity, planTurnHolds, prepareChatArtifactOutput } from "./activity";
@@ -161,6 +171,12 @@ export interface SavedTurnPlan {
   routingWarning: string | null;
   routingReceipt: TurnModel["routingReceipt"];
   routingTelemetryBase: TurnModel["routingTelemetryBase"];
+  /**
+   * Auto's next candidate, for the one retry before the first byte
+   * (pre-stream-retry.ts). Absent or null: an explicit choice, retried only
+   * on the same model.
+   */
+  autoRetry?: TurnModel["autoRetry"];
   turnContext: TurnContext;
   activeConnectors: ActiveConnector[];
   memory: TurnMemory;
@@ -225,8 +241,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     roomSetup,
     roomTurnId,
     roomMessageId,
-    modelInfo,
-    modelId,
+    modelInfo: initialModelInfo,
+    modelId: initialModelId,
     requestedId,
     requestedEffort,
     autoReasoningEffort,
@@ -234,6 +250,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     routingWarning,
     routingReceipt,
     routingTelemetryBase,
+    autoRetry = null,
     turnContext,
     activeConnectors,
     memory: { memoryEnabled, memoryProfile },
@@ -260,6 +277,16 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     baseSystemSections,
     trace,
   } = turn;
+  /*
+   * The model answering this turn. It starts as the one resolveModel chose and
+   * changes at most once: when Auto's pick rejects the request before
+   * streaming anything and the one retry moves to the decision's next
+   * candidate (pre-stream-retry.ts). Everything after that point that prices,
+   * records, names or saves the answer reads these, so it describes the model
+   * that actually answered. An explicit choice never changes them.
+   */
+  let modelInfo = initialModelInfo;
+  let modelId = initialModelId;
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);
@@ -281,7 +308,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
    * hold is settled by `recordSpend` below, which is the one place every
    * streaming path passes through.
    */
-  await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan, period, budget: effective });
+  const initialHold = await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan, period, budget: effective });
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
     userId: user.id,
@@ -359,21 +386,45 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     let traceEnd: TurnTraceFinish | null = null;
     let targetedArtifactContent: string | null = null;
     let spendRecorded = false;
+    /**
+     * The spend hold this turn's charge settles: the generation's own, or —
+     * once the turn has retried before its first byte — attempt 2's, which is
+     * held under its own ref (pre-stream-retry.ts). Released in the `finally`
+     * when nothing was recorded.
+     */
+    let activeSpendRef = generationId;
+    /**
+     * Whether `activeSpendRef` names a hold this turn took. A refused hold
+     * took no headroom, so there is nothing to release before attempt 2.
+     */
+    let activeHoldTaken = initialHold.allowed && initialHold.reservationId !== null;
+    /** 1 once the turn asked again before its first byte (the outcome row's `retryCount`). */
+    let retriesMade = 0;
+    /** The outcome row's model fields, when the retry moved the turn to another model. */
+    let answeringTelemetry: Partial<Pick<typeof routingTelemetryBase, "modelId" | "provider" | "expectedMicroUsd">> = {};
+    /** Auto's effort for the model that answers (the outcome row's `effort`). */
+    let answeringAutoEffort = autoReasoningEffort;
 
     /** Pictures `generate_image` made this turn, linked to the answer when it is saved. */
     const generatedAttachmentIds: string[] = [];
-    const { persistAssistantTurn, sealActivity } = createAssistantTurnWriter({
-      user,
-      conversationId,
-      staleAssistantId,
-      answersMessageId,
-      modelId,
-      acc,
-      activityLog,
-      roomTurnId,
-      routingReceipt,
-      generatedAttachmentIds,
-    });
+    const writerFor = (answeringModelId: string) =>
+      createAssistantTurnWriter({
+        user,
+        conversationId,
+        staleAssistantId,
+        answersMessageId,
+        modelId: answeringModelId,
+        acc,
+        activityLog,
+        roomTurnId,
+        routingReceipt,
+        generatedAttachmentIds,
+      });
+    // Rebuilt for the new model if the retry moves the turn (nothing is
+    // written before the stream, so the swap loses nothing).
+    let turnWriter = writerFor(modelId);
+    const persistAssistantTurn: typeof turnWriter.persistAssistantTurn = (data) => turnWriter.persistAssistantTurn(data);
+    const sealActivity: typeof turnWriter.sealActivity = (assistantId) => turnWriter.sealActivity(assistantId);
     /** Routing telemetry for this turn, filled by whichever terminal path runs. */
     const turnStartedAt = Date.now();
     let turnOutcome: {
@@ -479,6 +530,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       modelInfo,
       autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
     );
+    /** The effort the model call runs at: Auto's for the next candidate after a retry moved the turn. */
+    let answeringEffort = reasoningEffort;
     sendReasoningAndSearch(sendActivity, {
       reasoningEffort,
       auto: isAutoModelId(requestedId),
@@ -535,27 +588,30 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     // Late usage and already accepted provider work are settled separately.
     const synthesisPromptChars = () => promptChars(synthesisSystem, turnHistory);
     let budgetHalted = false;
-    const budgetGuard = createStreamBudgetGuard({
-      ceilingMicroUsd: budget.remainingMicroUsd,
-      rates: () => modelRatesMicroUsdPerToken(modelId, acc.servedFast),
-      inputChars: synthesisPromptChars(),
-      usage: () => ({
-        promptTokens: acc.tokens.promptTokens,
-        completionTokens: acc.tokens.completionTokens,
-        cacheReadTokens: acc.tokens.cacheReadTokens,
-        cacheWriteTokens: acc.tokens.cacheWriteTokens,
-        cacheWrite5mTokens: acc.tokens.cacheWrite5mTokens,
-        cacheWrite1hTokens: acc.tokens.cacheWrite1hTokens,
-        promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
-        outputChars: acc.text.length,
-        reasoningChars: acc.reasoning.length,
-      }),
-      onHalt: () => {
-        budgetHalted = true;
-        sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
-        generationController.abort();
-      },
-    });
+    // Priced on the model that answers: rebuilt if the retry moves the turn.
+    const budgetGuardFor = (model: ModelInfo) =>
+      createStreamBudgetGuard({
+        ceilingMicroUsd: budget.remainingMicroUsd,
+        rates: () => modelRatesMicroUsdPerToken(model.id, acc.servedFast),
+        inputChars: synthesisPromptChars(),
+        usage: () => ({
+          promptTokens: acc.tokens.promptTokens,
+          completionTokens: acc.tokens.completionTokens,
+          cacheReadTokens: acc.tokens.cacheReadTokens,
+          cacheWriteTokens: acc.tokens.cacheWriteTokens,
+          cacheWrite5mTokens: acc.tokens.cacheWrite5mTokens,
+          cacheWrite1hTokens: acc.tokens.cacheWrite1hTokens,
+          promptTokensIncludeCacheRead: model.provider !== "anthropic",
+          outputChars: acc.text.length,
+          reasoningChars: acc.reasoning.length,
+        }),
+        onHalt: () => {
+          budgetHalted = true;
+          sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
+          generationController.abort();
+        },
+      });
+    let budgetGuard = budgetGuardFor(modelInfo);
     const enforceStreamBudget = () => researchNotice ? false : budgetGuard.enforce();
 
     // Declared outside the try because the catch reads `stalled` to tell a
@@ -608,6 +664,169 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       liveTaint: turnTaintReader(alevrSearchTurn?.taint),
     });
 
+    /**
+     * Whether a model can take this turn as it was prepared: the serving
+     * tier, pro mode and search plan resolved for the first model
+     * (turn/capabilities.ts) hold on it unchanged, so moving the prompt
+     * changes nothing the reader or the accumulator was told.
+     */
+    const sameTurnShape = (candidate: ModelInfo): boolean => {
+      if (resolveFastMode(candidate, input) !== useFastMode) return false;
+      if (useProMode && !supportsProMode(candidate)) return false;
+      const search = planTurnSearch({
+        webRequested: useWebSearch || useAlevrSearch,
+        model: candidate,
+        alevrAvailable: chatSearchAvailable(),
+        voice: !!input.voiceMode,
+        private: false,
+        policy: nativeSearchPolicy(),
+      });
+      return search.native === useWebSearch && search.alevr === useAlevrSearch;
+    };
+    /**
+     * THE ONE RETRY BEFORE THE FIRST BYTE (pre-stream-retry.ts).
+     *
+     * True when the turn asks again, after doing everything attempt 2 needs:
+     * attempt 1's hold released and attempt 2's taken under its own ref, the
+     * first fault reported to provider health and Auto's pressure, the model
+     * moved under Auto, the "Retrying…" row sent and the jittered wait
+     * served. False leaves the error to the catch below, as before. Only ever
+     * called for the provider stream, never for a research notice or the
+     * smoke provider.
+     */
+    /** A Stop, a drain, the stall watchdog, the budget guard or a lost lease ended the turn. */
+    const turnEnded = () =>
+      generationController.signal.aborted ||
+      wasGenerationStopped(generationId) ||
+      wasGenerationAbortedForShutdown(generationId) ||
+      stallWatchdog.stalled ||
+      budgetHalted ||
+      receipt.leaseLost;
+    /**
+     * Read after every await of the retry: an ending that lands meanwhile ends
+     * the turn before anything is moved, re-held or announced. The catch
+     * below reads which ending it was from its own flags.
+     */
+    const endedWhileRetrying = () => new DOMException("The turn ended while preparing to retry", "AbortError");
+    const retryBeforeFirstByte = async (err: unknown, attempt: number, received: number): Promise<boolean> => {
+      const failed = modelInfo;
+      const verdict = planPreStreamRetry({
+        err,
+        attempt,
+        received: {
+          events: received,
+          output:
+            acc.text.length > 0 ||
+            acc.reasoning.length > 0 ||
+            acc.currentRound > 0 ||
+            (acc.tokens.promptTokens ?? 0) > 0 ||
+            (acc.tokens.completionTokens ?? 0) > 0,
+        },
+        cancelled: turnEnded(),
+        auto: !!autoRetry,
+        // Gemini's adapter already retried its own transient faults
+        // (gemini-network.ts); asking it a third time is not "one retry".
+        adapterRetries: providerAdapterFor(failed, useProMode, { webSearch: useWebSearch }) === "gemini-native",
+      });
+      if (!verdict.retry) return false;
+      const next =
+        verdict.nextModel && autoRetry
+          ? await autoRetry
+              .next({
+                failed,
+                // A lab's account, or a host that refused the connection,
+                // fails every model on it.
+                avoidProvider: verdict.class === "auth" || verdict.class === "billing" || verdict.class === "network",
+                proMode: useProMode,
+                compatible: sameTurnShape,
+              })
+              // A picker that fails must not replace the provider's error.
+              .catch(() => null)
+          : null;
+      const step = next ? verdict.nextModel : verdict.sameModel;
+      if (!step) return false;
+      /*
+       * The first rejection is evidence however the turn ends: provider
+       * health (an account fault takes the lab down at once) and Auto's
+       * retry pressure read it, exactly as the catch below would have. Fed
+       * once the retry is going ahead, or just before an ending replaces the
+       * provider's error with a Stop; a `return false` leaves it to the catch.
+       */
+      const noteFirstRejection = () => {
+        if (verdict.class === "rate_limit") recordProviderRateLimit(failed.provider);
+        noteLiveProviderFault(failed.provider, err, "chat", { requester: user.id, modelId: failed.id });
+      };
+      if (turnEnded()) {
+        noteFirstRejection();
+        throw endedWhileRetrying();
+      }
+      // Attempt 1 received nothing, so it spent nothing: its hold goes, and
+      // attempt 2 holds its own. A release that did not happen (the database
+      // refused) means no retry: two holds must never be open at once, and
+      // the `finally` releases the one still active. A refused hold for
+      // attempt 2 (the account is at its ceiling) means no retry either; the
+      // turn fails as it would have.
+      if (activeHoldTaken) {
+        const released = await releaseSpend(user.id, activeSpendRef).catch(() => false);
+        if (!released) {
+          console.warn("[chat] not retried: the first attempt's spend hold could not be released", { generationId, conversationId });
+          return false;
+        }
+        activeHoldTaken = false;
+      }
+      const retryRef = preStreamRetrySpendRef(generationId);
+      const hold = await reserveSpend({ userId: user.id, kind: "chat", ref: retryRef, plan, period, budget: effective }).catch(() => null);
+      if (!hold?.allowed) {
+        console.warn("[chat] not retried: the second attempt's spend hold was refused", { generationId, conversationId });
+        return false;
+      }
+      activeSpendRef = retryRef;
+      activeHoldTaken = true;
+      noteFirstRejection();
+      // Nothing about the turn has changed yet: an ending that arrived during
+      // the release or the hold ends it here, and the `finally` releases
+      // attempt 2's hold.
+      if (turnEnded()) throw endedWhileRetrying();
+      if (next) {
+        modelInfo = next.model;
+        modelId = next.model.id;
+        answeringAutoEffort = next.reasoningEffort;
+        answeringEffort = effectiveReasoningEffort(next.model, next.reasoningEffort ?? undefined);
+        // The receipt object the writer saves: the answering model's facts,
+        // and that the router's own pick was rerouted (`unreachable`).
+        if (routingReceipt) Object.assign(routingReceipt, next.receipt);
+        turnWriter = writerFor(next.model.id);
+        budgetGuard = budgetGuardFor(next.model);
+        answeringTelemetry = { modelId: next.model.id, provider: next.model.provider, expectedMicroUsd: next.expectedMicroUsd };
+      }
+      for (const row of retryActivityRows({ failed, next: next?.model ?? null, class: verdict.class, delayMs: step.delayMs })) {
+        sendActivity(row);
+      }
+      console.warn("[chat] retrying before the first byte", {
+        generationId,
+        conversationId,
+        attempt: attempt + 1,
+        from: failed.id,
+        to: modelInfo.id,
+        class: verdict.class,
+        status: verdict.status,
+        delayMs: step.delayMs,
+      });
+      // Our own wait is not provider silence: the watchdog sleeps through it
+      // and then gives attempt 2 a whole startup window.
+      stallWatchdog.pause();
+      await waitBeforeRetry(step.delayMs, generationController.signal);
+      if (turnEnded()) {
+        // A Stop, a drain or a lost lease while waiting: the catch below
+        // reads which from its own flags.
+        throw new DOMException("The turn ended while waiting to retry", "AbortError");
+      }
+      stallWatchdog.resume();
+      retriesMade = 1;
+      trace.noteRetry(next ? { id: next.model.id, provider: next.model.provider } : undefined);
+      return true;
+    };
+
     try {
       /*
        * THE TURN BECAME A RESEARCH RUN (SPEC §9.6.1).
@@ -631,16 +850,21 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         console.info("[chat] research handed off", { generationId, conversationId, runId: handoffRunId });
         return;
       }
-      const modelStream = researchNotice
-        ? streamResearchNotice(researchNotice)
-        : deterministicSmokeProviderEnabled
-        ? streamDeterministicSmokeResponse(
-            input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? "",
-            // Stop aborts this controller; the smoke stream honours it as a
-            // provider does, so the browser journey can test Stop for real.
-            generationController.signal
-          )
-        : streamChat({
+      // A connector dropped while its toolset opened (too slow to answer within
+      // its budget, unreachable, signed out) gets one quiet warning row; the
+      // turn goes on without it. Once per connector, also across a retry.
+      const droppedConnectors = new Set<string>();
+      const reportConnectorStatus = (id: string, state: "ready" | ConnectorFailure) => {
+        if (state === "ready" || droppedConnectors.has(id)) return;
+        droppedConnectors.add(id);
+        const label = activeConnectors.find((connector) => connector.id === id)?.label ?? id;
+        sendActivity(connectorUnavailableRow({ label, reason: state }));
+      };
+      // One provider request for this generation; `attempt` 2 is the retry
+      // before the first byte, which the request meter records as a retry.
+      // Reads the answering model and effort, which that retry may move.
+      const openModelStream = (attempt: number) => streamChat({
+        attempt,
         model: modelInfo,
         onRequestUsage: (usage) => acc.recordRequestUsage(usage),
         system: synthesisSystem,
@@ -650,7 +874,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         // Not tied to req.signal: route changes can drop the browser stream
         // without killing generation; the explicit cancel endpoint aborts this.
         signal: generationController.signal,
-        reasoningEffort,
+        reasoningEffort: answeringEffort,
         webSearch: useWebSearch,
         connectors: activeConnectors,
         // The hosted browser tool only when the user switched web access on.
@@ -681,6 +905,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           generationId,
           conversationId,
         },
+        // The end of the server's preparation (the trace's `serverPrepMs`).
+        onProviderRequest: trace.noteProviderCall,
+        onConnectorStatus: reportConnectorStatus,
         audit: {
           userId: user.id,
           conversationId,
@@ -706,21 +933,51 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             ? [...(toolProviderSessions?.specs ?? []), ...(alevrSearchTurn?.specs ?? [])]
             : undefined,
       });
-      await pumpTurnStream(modelStream, {
-        acc,
-        stallWatchdog,
-        toolWatch,
-        toolActivity,
-        send,
-        sendActivity,
-        enforceStreamBudget,
-        writing: artifactEditTarget
-          ? { title: "Preparing targeted changes", detail: "Building an exact source patch" }
-          : { title: "Writing the answer", detail: "Streaming response text" },
-        forwardDeltas: !artifactEditTarget,
-        onEffect: trace.observe,
-        drainSources: alevrSearchTurn ? () => alevrSearchTurn.drainSources() : undefined,
-      });
+      const pump = (modelStream: AsyncIterable<LlmEvent>) =>
+        pumpTurnStream(modelStream, {
+          acc,
+          stallWatchdog,
+          toolWatch,
+          toolActivity,
+          send,
+          sendActivity,
+          enforceStreamBudget,
+          writing: artifactEditTarget
+            ? { title: "Preparing targeted changes", detail: "Building an exact source patch" }
+            : { title: "Writing the answer", detail: "Streaming response text" },
+          forwardDeltas: !artifactEditTarget,
+          onEffect: trace.observe,
+          drainSources: alevrSearchTurn ? () => alevrSearchTurn.drainSources() : undefined,
+        });
+      if (researchNotice) {
+        await pump(streamResearchNotice(researchNotice));
+      } else if (deterministicSmokeProviderEnabled) {
+        // The smoke provider is this turn's provider: its start ends the
+        // preparation, so the production smoke measures `serverPrepMs` too.
+        trace.noteProviderCall();
+        await pump(
+          streamDeterministicSmokeResponse(
+            input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? "",
+            // Stop aborts this controller; the smoke stream honours it as a
+            // provider does, so the browser journey can test Stop for real.
+            generationController.signal
+          )
+        );
+      } else {
+        // The model call, and at most one more if the provider rejected the
+        // first before anything arrived (`retryBeforeFirstByte`). Counted on
+        // what the stream actually yielded: one event of any kind, and the
+        // error is the turn's.
+        for (let attempt = 1; ; attempt += 1) {
+          const counted = countingStream(openModelStream(attempt));
+          try {
+            await pump(counted.stream);
+            break;
+          } catch (err) {
+            if (!(await retryBeforeFirstByte(err, attempt, counted.received()))) throw err;
+          }
+        }
+      }
       toolWatch.releaseAll();
       // The provider is done. Everything below is Juno's own persistence, and
       // the watchdog only measures provider silence — leaving it armed made a
@@ -944,6 +1201,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         modelId,
         source: legacyClient,
         generationId,
+        reservationRef: activeSpendRef,
         usage: usage,
         acc,
         promptChars: synthesisPromptChars(),
@@ -1015,6 +1273,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           modelId,
           source: legacyClient,
           generationId,
+          reservationRef: activeSpendRef,
           usage: consumedUsage,
           acc,
           promptChars: synthesisPromptChars(),
@@ -1024,12 +1283,22 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         if (turnOutcome && !turnOutcome.persistedPartial) turnOutcome = { ...turnOutcome, costMicroUsd: consumedUsage.costMicroUsd || null };
       };
       if (classifyProviderError(err).class === "rate_limit") recordProviderRateLimit(modelInfo.provider);
+      // A failure the reader or the platform caused says nothing about the
+      // lab; anything else is fed to provider health at once, so the next
+      // turn and Auto see a dead account in seconds rather than at the next
+      // catalog probe (provider-health.ts, `liveFaultVerdict` for the rules).
+      const endedByReaderOrPlatform =
+        cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown || cancellation.leaseLost;
+      if (!endedByReaderOrPlatform && !deterministicSmokeProviderEnabled) {
+        noteLiveProviderFault(modelInfo.provider, err, "chat", { requester: user.id, modelId: modelInfo.id });
+      }
       console.error("[chat] generation error", {
         generationId,
         conversationId,
         provider: modelInfo.provider,
         model: modelInfo.providerModel,
         finishReason: reason,
+        attempt: retriesMade + 1,
         message: err instanceof Error ? err.message : String(err),
       });
 
@@ -1111,6 +1380,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
               modelId,
               source: legacyClient,
               generationId,
+              reservationRef: activeSpendRef,
               usage: partialUsage,
               acc,
               promptChars: synthesisPromptChars(),
@@ -1180,6 +1450,18 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
                   : wasGenerationAbortedForShutdown(generationId)
                     ? SHUTDOWN_USER_MESSAGE
                     : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
+        // Chat wire 1.1: the machine-readable half of the error frame, only
+        // when the message above is the provider's (the last branch).
+        const providerFailed =
+          reason !== "user_stopped" &&
+          !(err instanceof ArtifactVersionConflictError) &&
+          !(err instanceof ArtifactPatchError) &&
+          !(err instanceof ChatArtifactVerificationError) &&
+          !endedByReaderOrPlatform &&
+          !deterministicSmokeProviderEnabled;
+        const recovery = providerFailed
+          ? await providerErrorRecovery(err, { modelInfo, plan, history: modelHistory, requestedId, userId: user.id })
+          : {};
         sendActivity({
           kind: "warning",
           title: finishReasonTitle(reason),
@@ -1199,6 +1481,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           message,
           quota,
           finishReason: reason,
+          ...recovery,
           ...(durableGenerationId
             ? {
                 conversationId,
@@ -1236,11 +1519,13 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         const outcome = turnOutcome;
         void recordRoutingOutcome({
           ...routingTelemetryBase,
+          // The model that answered, when the retry moved the turn to it.
+          ...answeringTelemetry,
           messageId: outcome.messageId,
-          effort: (autoReasoningEffort !== undefined ? autoReasoningEffort : requestedEffort) ?? null,
+          effort: (answeringAutoEffort !== undefined ? answeringAutoEffort : requestedEffort) ?? null,
           ...outcomeTimings(finishedTrace, turnStartedAt),
           toolRounds: acc.currentRound,
-          retryCount: 0,
+          retryCount: retriesMade,
           completionState: completionStateFor(outcome.finishReason, outcome.persistedPartial),
           finishReason: outcome.finishReason,
           costMicroUsd: outcome.costMicroUsd,
@@ -1278,8 +1563,10 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
        * round trip to discover that. Failure is swallowed — the answer has
        * already been delivered, and the sweep remains the backstop.
        */
+      // The hold still open is the latest attempt's: a retried turn already
+      // released attempt 1's before taking attempt 2's.
       if (!spendRecorded) {
-        await releaseSpend(user.id, generationId).catch(() => {});
+        await releaseSpend(user.id, activeSpendRef).catch(() => {});
       }
       // After the terminal frame, before the registry entry goes: a client
       // that reconnects between the two must find the `done`/`error` in the

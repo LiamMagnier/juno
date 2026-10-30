@@ -122,6 +122,14 @@ struct DesktopNeedsYouSignalsTests {
     }
 
     @Test
+    func aParkedRunWaitsForYouAndAnAnsweredOneIsResuming() {
+        #expect(DesktopNeedsYouSignals.needsYouLabel(.paused) == "Waiting for you")
+        #expect(DesktopNeedsYouSignals.needsYouLabel(.queued) == "Resuming")
+        #expect(DesktopNeedsYouSignals.needsYouLabel(.preparing) == "Resuming")
+        #expect(DesktopNeedsYouSignals.needsYouLabel(.waitingApproval) == "Needs approval")
+    }
+
+    @Test
     func theMenuBarCountsEverythingWaitingAndShowsNothingAtZero() {
         #expect(DesktopMenuBarExtraLabel.count(chats: 0, codeSessions: 0) == nil)
         #expect(DesktopMenuBarExtraLabel.count(chats: 2, codeSessions: 0) == "2")

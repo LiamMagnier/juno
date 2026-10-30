@@ -95,12 +95,14 @@ export interface NativeModelCatalogOptions {
   /** The pre-Alevr name of `alevrSearch`, still read. */
   keyedSearchEngine?: boolean;
   /**
-   * The cached provider-health verdict (`providerHealthy` in provider-health.ts).
-   * A model whose lab is failing its probe stays LISTED — removing a whole lab
-   * reads as a bug (model-catalog-api.ts) — but comes back as
-   * `health_check_failed` / `provider_unhealthy`, so every picker shows it
-   * disabled with a reason rather than offering a request that cannot succeed.
-   * Absent = every provider counts as healthy.
+   * The cached provider-health verdict. The native routes pass
+   * `providerAccountUsable` (provider-health.ts), which is false only for an
+   * account fault: the apps load the catalog once per start, so a short hold
+   * for server errors must not strand a lab there. A model whose lab is down
+   * stays LISTED — removing a whole lab reads as a bug (model-catalog-api.ts)
+   * — but comes back as `health_check_failed` / `provider_unhealthy`, so every
+   * picker shows it disabled with a reason rather than offering a request
+   * that cannot succeed. Absent = every provider counts as healthy.
    */
   providerHealthy?: (provider: ModelInfo["provider"]) => boolean;
 }

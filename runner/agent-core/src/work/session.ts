@@ -153,6 +153,63 @@ export const BUDGET_CHECK_INTERVAL_MS = 5_000;
 export const WORK_ASK_TOOL_NAME = 'ask_user';
 
 /**
+ * What a host throws out of `askQuestion` or `requestApproval` to set the run
+ * aside while it waits for a person, after calling `pause()`.
+ *
+ * A park is not a failure. The cloud executor waits a short while for the
+ * answer, then pauses the session and throws this so the tool call unwinds; the
+ * loop answers the call with a stopped result, the transcript stays
+ * well-formed, and the run comes back as `paused` with its checkpoint. Thrown
+ * as a plain `Error`, the same unwinding used to be reported as an `error`
+ * event, so every ordinary "waiting for you" drew a failure row in the
+ * timeline. `drive` recognises this class by name (the host may hold another
+ * copy of the module) and says nothing beyond the `paused` event.
+ */
+export class WorkRunParked extends Error {
+  override readonly name = 'WorkRunParked';
+}
+
+/** Whether a loop error is the host parking the run, anywhere in its cause chain. */
+function isParkSignal(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current instanceof Error; depth += 1) {
+    if (current.name === 'WorkRunParked') return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * The results the loop writes for a tool call that never finished because the
+ * run stopped (src/loop.ts: a throw, an abort, or a call after either). A call
+ * answered with one of these on a paused run is a call the run was parked on.
+ */
+const STOPPED_TOOL_RESULTS: ReadonlySet<string> = new Set([
+  'Stopped before this finished.',
+  'Cancelled.',
+  'Not started — the run stopped first.',
+]);
+
+/** A tool call a paused run stopped on, read from its checkpoint. */
+export interface WorkParkedCall {
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+/**
+ * What the host learned about a parked call while the run was set aside: the
+ * person's answer to a question, or their decision on an approval. It replaces
+ * the call's stopped result, so the model reads it as the call's own result.
+ */
+export interface WorkParkedResolution {
+  content: string;
+  isError: boolean;
+  /** The call was a question and `content` is the person's answer. */
+  answer?: boolean;
+}
+
+/**
  * The tool the model calls to move the plan along.
  *
  * **Why this exists.** `WorkSession.startStep`, `finishStep` and `revisePlan`
@@ -557,6 +614,69 @@ export class WorkAgentSession {
     return session;
   }
 
+  /**
+   * The tool calls a paused run stopped on: the calls in its last assistant
+   * message whose results are still the loop's stopped placeholders.
+   *
+   * Only the trailing exchange. A run parks right after the loop answers the
+   * call it was waiting on, so that call is always in the newest results; an
+   * older stopped call is one the model has already read and moved past, and
+   * rewriting it now would change history it reasoned from.
+   */
+  static parkedToolCalls(checkpoint: Pick<WorkCheckpoint, 'messages'>): WorkParkedCall[] {
+    const messages = checkpoint.messages;
+    const results = messages[messages.length - 1];
+    const asked = messages[messages.length - 2];
+    if (!results || results.role !== 'user' || !asked || asked.role !== 'assistant') return [];
+    const stopped = new Set(
+      results.content
+        .filter(
+          (part): part is Extract<UserContent, { type: 'tool_result' }> =>
+            part.type === 'tool_result' && STOPPED_TOOL_RESULTS.has(part.content),
+        )
+        .map((part) => part.toolCallId),
+    );
+    const calls: WorkParkedCall[] = [];
+    for (const part of asked.content) {
+      if (part.type === 'tool_call' && stopped.has(part.id)) {
+        calls.push({ id: part.id, name: part.name, input: part.input });
+      }
+    }
+    return calls;
+  }
+
+  /**
+   * Gives parked calls what the person said while the run was set aside.
+   *
+   * Called once, after `restore` and before `run`. Each resolution replaces a
+   * stopped result in the trailing exchange (see `parkedToolCalls`) and nothing
+   * else: a call whose result is not a stopped placeholder is left alone, so a
+   * resolution can never overwrite a real result. An answered question counts
+   * as the plan's progress exactly as an answer given in the attended wait
+   * does. The `question_answered` row is already in the log, written by the
+   * route that took the answer, so nothing is emitted here.
+   *
+   * Returns the ids it settled.
+   */
+  settleParkedCalls(resolutions: ReadonlyMap<string, WorkParkedResolution>): string[] {
+    if (resolutions.size === 0) return [];
+    const results = this.messages[this.messages.length - 1];
+    if (!results || results.role !== 'user') return [];
+    const settled: string[] = [];
+    const content = results.content.map((part): UserContent => {
+      if (part.type !== 'tool_result' || !STOPPED_TOOL_RESULTS.has(part.content)) return part;
+      const resolution = resolutions.get(part.toolCallId);
+      if (!resolution) return part;
+      settled.push(part.toolCallId);
+      if (resolution.answer) this.plan.recordAnswer(part.toolCallId);
+      return this.toolResult(part.toolCallId, resolution.content, resolution.isError);
+    });
+    if (settled.length > 0) {
+      this.messages[this.messages.length - 1] = { role: 'user', content };
+    }
+    return settled;
+  }
+
   get usage(): BudgetUsage {
     return this.budget.usage;
   }
@@ -773,8 +893,15 @@ export class WorkAgentSession {
       });
       this.finalText = result.finalText || this.finalText;
     } catch (err) {
-      loopError = err instanceof Error ? err.message : String(err);
-      this.emit({ kind: 'error', message: loopError });
+      if (this.pausedReason !== null && isParkSignal(err)) {
+        // The host set the run aside to wait for a person (`WorkRunParked`).
+        // The `paused` event below says so; an `error` row would read as a
+        // failure on a run that is simply waiting.
+        loopError = null;
+      } else {
+        loopError = err instanceof Error ? err.message : String(err);
+        this.emit({ kind: 'error', message: loopError });
+      }
     } finally {
       clearInterval(ceilings);
     }

@@ -15,6 +15,7 @@
 import { AGENT_STYLE_PROMPT, agentStyle } from "@/lib/agents/domain";
 import { WORK_APPROVAL_MODE_LABEL } from "@/lib/work/domain";
 import { agentApprovalMode } from "@/lib/agents/domain";
+import { GOAL_UNVERIFIED } from "@/lib/agents/goals";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -30,7 +31,12 @@ export interface AgentPromptContext {
   style: string;
   instructions: string;
   approvalMode: string;
-  goals: readonly { title: string; status: string; lastCheckInNote: string | null }[];
+  /**
+   * Active goals, and `unverified` ones (every step ran, the criteria check did
+   * not pass or could not run: src/lib/agents/goals.ts `planGoalCompletion`)
+   * with the line that says why in `nextAction`.
+   */
+  goals: readonly { title: string; status: string; lastCheckInNote: string | null; nextAction?: string | null }[];
   notes: readonly { content: string; source: string }[];
   /** The account's other active agents, so it can name a colleague rather than pretend. */
   teammates: readonly { name: string; role: string }[];
@@ -106,15 +112,39 @@ export function buildAgentPromptBlock(ctx: AgentPromptContext, userName?: string
     );
   }
 
+  // Every step ran but nothing showed the goal met: the agent must not say it
+  // is met when asked, and can say what the check found missing. What the
+  // check said was written by a model reading the runs' results (which can
+  // carry a web page's words), so it is fenced like recent work, as data.
+  const unchecked = ctx.goals.filter((goal) => goal.status === GOAL_UNVERIFIED).slice(0, AGENT_PROMPT_GOALS);
+  if (unchecked.length > 0) {
+    const checks = unchecked
+      .filter((goal) => goal.nextAction?.trim())
+      .map((goal) => `- ${line(goal.title)}: ${line(goal.nextAction!).slice(0, 240)}`)
+      .join("\n");
+    parts.push(
+      [
+        "## Goals waiting for the person to check",
+        "Every step of these ran, but a check of their success criteria did not show them met, or could not be made. Never say one is met: the person marks it met on your profile, or asks you to keep working on it.",
+        ...unchecked.map((goal) => `- ${line(goal.title)}`),
+        ...(checks ? [wrapUntrusted("goal_checks", `<untrusted source="goal_checks">\n${checks}\n</untrusted>`)] : []),
+      ].join("\n")
+    );
+  }
+
   const notes = ctx.notes.slice(0, AGENT_PROMPT_NOTES);
   if (notes.length > 0) {
-    // No untrusted envelope, and that is a property of where notes come from
-    // rather than an oversight: a person writes some, and reflection writes the
-    // rest from inputs the account authored — goals, these notes, and the
-    // titles and statuses of its tasks, never a page a run read
-    // (src/lib/agents/reflect.ts). Enveloping them would switch on the
-    // untrusted-content rule for every turn in the thread, and with it the
-    // approval card in front of every task the agent starts.
+    // No untrusted envelope, and that is a property of where kept notes come
+    // from rather than an oversight: the person writes some; the agent's own
+    // chat saves some with agent_memory, which is refused on any turn that
+    // carries untrusted content; reflection writes some from inputs the
+    // account authored (goals, these notes, the titles and statuses of its
+    // tasks: src/lib/agents/reflect.ts). A note a TASK saves with `remember`
+    // may carry words from a page or an email the task read, so it is stored
+    // `pending` under every memory setting and reaches this list only after
+    // the person has read it and pressed Keep (src/lib/agents/note-review.ts);
+    // every reader here asks for `status: "kept"`. The person's Keep is what
+    // makes it theirs, the same as a note they typed.
     parts.push(
       [
         "## What you know",

@@ -19,7 +19,16 @@ import {
 } from "@/lib/user-mcp";
 import { safeMcpFetch, userMcpUrlProblem } from "@/lib/mcp-safe-fetch";
 import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
-import { flattenToolResult } from "@/lib/tools/connector-tools";
+import { connectFailureOf, flattenToolResult } from "@/lib/tools/connector-tools";
+import {
+  createMcpToolListCache,
+  mcpToolListCacheKey,
+  mcpToolListCacheTtlMs,
+  pickCachedMcpTool,
+  type CachedMcpTool,
+} from "@/lib/tools/mcp-tool-list-cache";
+import { logSync } from "@/lib/logger";
+import type { ConnectorFailure } from "@/types/run";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
@@ -52,6 +61,19 @@ export interface ActiveConnector {
    * fetcher, and the tools they switched off are never offered.
    */
   custom?: { disabledTools: string[] };
+  /**
+   * What this connector's tool list depends on, as a stable string: its
+   * row's `updatedAt`, which moves when the person edits, re-links or
+   * refreshes it. Keys the chat's tool-list cache (src/lib/tools/
+   * mcp-tool-list-cache.ts) so a changed connector is listed afresh; the
+   * headers stand in when it is absent (callers that rebuild a connector).
+   */
+  toolListVersion?: string;
+}
+
+/** A stable version string from the rows a connector's tool list depends on. */
+function toolListVersionOf(...stamps: Array<Date | string | null | undefined>): string {
+  return stamps.map((stamp) => (stamp ? String(new Date(stamp).getTime()) : "-")).join(":");
 }
 
 // Refresh a few minutes before expiry so MCP tokens don't die mid-request.
@@ -158,6 +180,7 @@ export async function getActiveConnectors(
         label: server.name,
         mcpUrl: server.url,
         headers: headersForServer(authHeader),
+        toolListVersion: toolListVersionOf(server.updatedAt),
       });
     }
   }
@@ -179,6 +202,7 @@ export async function getActiveConnectors(
         mcpUrl: connector.url,
         headers: { Authorization: `Bearer ${token}` },
         custom: { disabledTools: connector.disabledTools },
+        toolListVersion: toolListVersionOf(connector.updatedAt, row.updatedAt),
       });
       continue;
     }
@@ -190,6 +214,7 @@ export async function getActiveConnectors(
         label: row.accountLabel ?? slug,
         mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/composio/${encodeURIComponent(slug)}`,
         headers: { Authorization: `Bearer ${mintConnectorToken(userId, row.provider)}` },
+        toolListVersion: toolListVersionOf(row.updatedAt),
       });
       continue;
     }
@@ -210,6 +235,7 @@ export async function getActiveConnectors(
           Authorization: `Bearer ${mintConnectorToken(userId, def.id)}`,
           ...(timeZone ? { [CONNECTOR_TIME_ZONE_HEADER]: timeZone } : {}),
         },
+        toolListVersion: toolListVersionOf(row.updatedAt),
       });
       continue;
     }
@@ -227,7 +253,13 @@ export async function getActiveConnectors(
       }
     }
     if (!token) continue;
-    out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${token}` } });
+    out.push({
+      id: def.id,
+      label: def.label,
+      mcpUrl: def.cfg.mcpUrl,
+      headers: { Authorization: `Bearer ${token}` },
+      toolListVersion: toolListVersionOf(row.updatedAt),
+    });
   }
   return out;
 }
@@ -343,8 +375,131 @@ export interface McpToolset {
 export type { ToolExecuteOptions } from "@/lib/tools/types";
 
 export interface OpenMcpToolsetOptions {
+  /**
+   * Each server's budget for connect + tools/list, in ms. A server that has
+   * not listed its tools by then is dropped from this toolset (reported as
+   * `timeout`) and its connection is closed; the others are not held up.
+   * Absent: no budget of Juno's own (the SDK's 60 s per request still
+   * applies). Chat passes `mcpConnectTimeoutMs()` (5 s); Work passes its own.
+   */
   connectTimeoutMs?: number;
-  onConnectorStatus?: (id: string, state: "ready" | import("@/types/run").ConnectorFailure) => void;
+  /** Once per connector at open: "ready", or why it was dropped. Never on an external abort. */
+  onConnectorStatus?: (id: string, state: "ready" | ConnectorFailure) => void;
+  /**
+   * Cancels the open. Every handshake still in flight stops and its
+   * connection is closed (the transport aborts its requests and its event
+   * stream), and the toolset comes back with no tools. A connection a cached
+   * connector opens later is cancelled by it too.
+   */
+  signal?: AbortSignal;
+  /**
+   * Reuse a recent tools/list answer for this user and connector
+   * (src/lib/tools/mcp-tool-list-cache.ts). A cached connector is not dialled
+   * at open: it connects on the model's first call to one of its tools, under
+   * the same budget. Off unless asked; chat turns ask.
+   */
+  cacheTools?: boolean;
+}
+
+/** The per-process tool-list cache (`OpenMcpToolsetOptions.cacheTools`). */
+const toolListCache = createMcpToolListCache({ ttlMs: () => mcpToolListCacheTtlMs() });
+
+/**
+ * Forget the cached tool lists of a user, or of one of their connectors.
+ * Not needed for a connector edit (its version moves); for a caller that
+ * knows a server's tools changed without its row changing.
+ */
+export function invalidateMcpToolListCache(userId: string, connectorId?: string): number {
+  return toolListCache.invalidate(userId, connectorId);
+}
+
+/** Test seam: an empty tool-list cache. */
+export function resetMcpToolListCacheForTests(): void {
+  toolListCache.clear();
+}
+
+/** `work`, then `AbortError` when `signal` aborts first; a late failure of `work` is swallowed. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  work.catch(() => undefined);
+  const reason = () =>
+    signal.reason instanceof Error || signal.reason instanceof DOMException
+      ? signal.reason
+      : new DOMException("The operation was aborted.", "AbortError");
+  if (signal.aborted) return Promise.reject(reason());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(reason());
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+type McpOpenResult =
+  | { ok: true; client: Client; tools: CachedMcpTool[] }
+  | { ok: false; failure: ConnectorFailure; aborted: boolean };
+
+/**
+ * Connect to one server (and list its tools when `list`), under the budget
+ * and the caller's signal. A failure closes the client, which closes its
+ * transport: the request in flight and any event stream are aborted, so a
+ * server that never answers is not left holding a socket.
+ */
+async function connectMcpServer(
+  c: ActiveConnector,
+  o: { timeoutMs?: number; signal?: AbortSignal; list: boolean }
+): Promise<McpOpenResult> {
+  const budget = new AbortController();
+  let timedOut = false;
+  const timer =
+    o.timeoutMs && o.timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          budget.abort(new DOMException("The MCP server did not answer in time.", "TimeoutError"));
+        }, o.timeoutMs)
+      : null;
+  timer?.unref?.();
+  const onAbort = () => budget.abort(o.signal?.reason);
+  if (o.signal?.aborted) onAbort();
+  else o.signal?.addEventListener("abort", onAbort, { once: true });
+  const request = { signal: budget.signal, ...(o.timeoutMs && o.timeoutMs > 0 ? { timeout: o.timeoutMs } : {}) };
+  let client: Client | null = null;
+  try {
+    // A user MCP server, or a custom connector (`mcp:…`), is a URL somebody
+    // typed into a form. Every request to one, the handshake, tools/list,
+    // each tool call and the SSE stream, goes through the SSRF-safe fetcher.
+    // Built-in and Composio connectors dial hosts Juno chose and keep plain fetch.
+    const userServer = isUserMcpConnectorId(c.id) || isCustomConnectorId(c.id);
+    // Judged again on every dial, a cached connector's first call included.
+    if (userServer && userMcpUrlProblem(c.mcpUrl)) return { ok: false, failure: "misconfigured", aborted: false };
+    const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
+      requestInit: { headers: c.headers },
+      ...(userServer ? { fetch: safeMcpFetch } : {}),
+    });
+    client = new Client({ name: "juno", version: "1.0.0" });
+    await untilAborted(client.connect(transport, request), budget.signal);
+    const tools = o.list
+      ? (await untilAborted(client.listTools(undefined, request), budget.signal)).tools.map((tool) => pickCachedMcpTool(tool))
+      : [];
+    return { ok: true, client, tools };
+  } catch (error) {
+    await client?.close().catch(() => undefined);
+    return {
+      ok: false,
+      failure: connectFailureOf(error, timedOut ? budget.signal : null),
+      aborted: !!o.signal?.aborted,
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+    o.signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 
@@ -448,9 +603,13 @@ export interface McpToolsetContext {
 export async function openMcpToolset(
   active: ActiveConnector[],
   ctx: McpToolsetContext,
-  _opts?: OpenMcpToolsetOptions
+  opts: OpenMcpToolsetOptions = {}
 ): Promise<McpToolset> {
   const clients = new Map<string, Client>();
+  /** Cached connectors, dialled on their first tool call (`clientFor`). */
+  const deferred = new Map<string, { connector: ActiveConnector; cacheKey: string }>();
+  const connecting = new Map<string, Promise<Client | null>>();
+  let closed = false;
   const tools: McpFunctionTool[] = [];
   const routing = new Map<
     string,
@@ -463,66 +622,168 @@ export async function openMcpToolset(
   let callOrdinal = 0;
   const nextCallOrdinal = () => ++callOrdinal;
 
-  await Promise.all(
-    active.map(async (c) => {
-      try {
-        // A user MCP server, or a custom connector (`mcp:…`), is a URL
-        // somebody typed into a form. Every request to one, the handshake,
-        // tools/list, each tool call and the SSE stream, goes through the
-        // SSRF-safe fetcher, and its URL is checked again here because callers
-        // rebuild ActiveConnector from parts (the Work runner does, without
-        // `custom`) and the id is the one thing they all keep. Built-in and
-        // Composio connectors dial hosts Juno chose and keep plain fetch.
-        const userServer = isUserMcpConnectorId(c.id) || isCustomConnectorId(c.id);
-        if (userServer && userMcpUrlProblem(c.mcpUrl)) return;
-        const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
-          requestInit: { headers: c.headers },
-          ...(userServer ? { fetch: safeMcpFetch } : {}),
-        });
-        const client = new Client({ name: "juno", version: "1.0.0" });
-        await client.connect(transport);
-        clients.set(c.id, client);
-        const listed = await client.listTools();
-        const disabled = new Set(c.custom?.disabledTools ?? []);
-        for (const t of listed.tools) {
-          if (disabled.has(t.name)) continue;
-          const fnName = uniqueToolName(`${c.id}${SEP}${t.name}`, (n) => routing.has(n));
-          // A server may send annotations, some of them, or none at all. Keep
-          // only the two booleans we act on, and only when they really are
-          // booleans — `readOnlyHint: "false"` must not read as truthy.
-          const raw = t.annotations as ToolAccessHints | undefined;
-          const annotations: McpToolAnnotations = {};
-          if (typeof raw?.readOnlyHint === "boolean") annotations.readOnlyHint = raw.readOnlyHint;
-          if (typeof raw?.destructiveHint === "boolean") annotations.destructiveHint = raw.destructiveHint;
-          const hasAnnotations = Object.keys(annotations).length > 0;
-          // Classify from the BARE tool name: fnName is prefixed with the
-          // connector id, whose first token would otherwise be what the verb
-          // heuristic reads ("github", "notion" — never a verb).
-          routing.set(fnName, {
-            connectorId: c.id,
-            toolName: t.name,
-            label: c.label,
-            access: classifyToolAccess(t.name, hasAnnotations ? annotations : undefined),
-            // Kept alongside the coarse read/write verdict: the broker's risk
-            // classifier reads the raw hints itself, and needs to be able to
-            // tell "server said nothing" from "server said read-only".
-            ...(hasAnnotations ? { annotations } : {}),
-          });
-          tools.push({
-            type: "function",
-            function: {
-              name: fnName,
-              description: (t.description ? `[${c.label}] ${t.description}` : `[${c.label}] ${t.name}`).slice(0, 1024),
-              parameters: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
-            },
-            ...(hasAnnotations ? { annotations } : {}),
-          });
-        }
-      } catch {
-        // Connector unreachable/unauthorized — skip it; the chat proceeds without it.
+  /*
+   * THE OPEN, BOUNDED. Every server connects and lists at once, each under
+   * its own budget (`connectTimeoutMs`) and the caller's signal, so one slow
+   * server is dropped for this toolset instead of holding the others (and,
+   * in chat, the first token). A chat turn reuses a recent tool list
+   * (`cacheTools`) and dials nobody it has a list for.
+   */
+  const openedAt = Date.now();
+  const outcomes: Array<{ id: string; state: "ready" | ConnectorFailure; cached: boolean }> = [];
+  const report = (id: string, state: "ready" | ConnectorFailure, cached = false) => {
+    outcomes.push({ id, state, cached });
+    try {
+      opts.onConnectorStatus?.(id, state);
+    } catch {
+      // A status listener must never be the reason a connector is lost.
+    }
+  };
+  const seen = new Set<string>();
+  const listings = await Promise.all(
+    active.map(async (c): Promise<{ connector: ActiveConnector; tools: readonly CachedMcpTool[] } | null> => {
+      if (seen.has(c.id)) return null;
+      seen.add(c.id);
+      if (opts.signal?.aborted) return null;
+      // A user MCP server, or a custom connector (`mcp:…`), is a URL somebody
+      // typed into a form: its URL is checked again here because callers
+      // rebuild ActiveConnector from parts (the Work runner does, without
+      // `custom`) and the id is the one thing they all keep.
+      const userServer = isUserMcpConnectorId(c.id) || isCustomConnectorId(c.id);
+      if (userServer && userMcpUrlProblem(c.mcpUrl)) {
+        report(c.id, "misconfigured");
+        return null;
       }
+      const cacheKey = opts.cacheTools
+        ? mcpToolListCacheKey({
+            userId: ctx.userId,
+            connectorId: c.id,
+            mcpUrl: c.mcpUrl,
+            headers: c.headers,
+            version: c.toolListVersion,
+          })
+        : null;
+      const cached = cacheKey ? toolListCache.get(cacheKey) : undefined;
+      if (cacheKey && cached) {
+        deferred.set(c.id, { connector: c, cacheKey });
+        report(c.id, "ready", true);
+        return { connector: c, tools: cached };
+      }
+      const opened = await connectMcpServer(c, { timeoutMs: opts.connectTimeoutMs, signal: opts.signal, list: true });
+      if (!opened.ok) {
+        // Unreachable, unauthorised or too slow: skipped, and the toolset
+        // proceeds without it. An external abort is the caller's to report.
+        if (!opened.aborted) report(c.id, opened.failure);
+        return null;
+      }
+      if (opts.signal?.aborted) {
+        await opened.client.close().catch(() => undefined);
+        return null;
+      }
+      clients.set(c.id, opened.client);
+      if (cacheKey) toolListCache.set(cacheKey, opened.tools);
+      report(c.id, "ready");
+      return { connector: c, tools: opened.tools };
     })
   );
+
+  const aborted = !!opts.signal?.aborted;
+  if (aborted) {
+    // Cancelled while opening: nothing opened is handed back. A connection
+    // that finished in the meantime is closed here, not left to a caller
+    // that has already stopped waiting.
+    closed = true;
+    await Promise.all([...clients.values()].map((client) => client.close().catch(() => undefined)));
+    clients.clear();
+    deferred.clear();
+  }
+  logSync("info", "mcp.open", {
+    surface: ctx.surface ?? "chat",
+    session: ctx.sessionId ?? null,
+    servers: seen.size,
+    ready: outcomes.filter((o) => o.state === "ready").length,
+    cached: outcomes.filter((o) => o.cached).length,
+    dropped: outcomes.filter((o) => o.state !== "ready").map((o) => ({ connector: o.id, reason: o.state })),
+    aborted,
+    ms: Date.now() - openedAt,
+  });
+
+  // Named in connector order once every server has settled, so a collision's
+  // suffix never depends on which server answered first (H7).
+  const settled = aborted
+    ? []
+    : listings
+        .filter((entry): entry is { connector: ActiveConnector; tools: readonly CachedMcpTool[] } => entry !== null)
+        .sort((a, b) => (a.connector.id < b.connector.id ? -1 : a.connector.id > b.connector.id ? 1 : 0));
+  for (const { connector: c, tools: listed } of settled) {
+    const disabled = new Set(c.custom?.disabledTools ?? []);
+    for (const t of listed) {
+      if (disabled.has(t.name)) continue;
+      const fnName = uniqueToolName(`${c.id}${SEP}${t.name}`, (n) => routing.has(n));
+      // A server may send annotations, some of them, or none at all. Keep
+      // only the two booleans we act on, and only when they really are
+      // booleans — `readOnlyHint: "false"` must not read as truthy.
+      const raw = t.annotations as ToolAccessHints | undefined;
+      const annotations: McpToolAnnotations = {};
+      if (typeof raw?.readOnlyHint === "boolean") annotations.readOnlyHint = raw.readOnlyHint;
+      if (typeof raw?.destructiveHint === "boolean") annotations.destructiveHint = raw.destructiveHint;
+      const hasAnnotations = Object.keys(annotations).length > 0;
+      // Classify from the BARE tool name: fnName is prefixed with the
+      // connector id, whose first token would otherwise be what the verb
+      // heuristic reads ("github", "notion" — never a verb).
+      routing.set(fnName, {
+        connectorId: c.id,
+        toolName: t.name,
+        label: c.label,
+        access: classifyToolAccess(t.name, hasAnnotations ? annotations : undefined),
+        // Kept alongside the coarse read/write verdict: the broker's risk
+        // classifier reads the raw hints itself, and needs to be able to
+        // tell "server said nothing" from "server said read-only".
+        ...(hasAnnotations ? { annotations } : {}),
+      });
+      tools.push({
+        type: "function",
+        function: {
+          name: fnName,
+          description: (t.description ? `[${c.label}] ${t.description}` : `[${c.label}] ${t.name}`).slice(0, 1024),
+          parameters: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
+        },
+        ...(hasAnnotations ? { annotations } : {}),
+      });
+    }
+  }
+
+  /**
+   * The connected client for a connector, dialling a cached one on its first
+   * call (under the same budget and the open's signal; one dial shared by
+   * concurrent calls). Null when it cannot be reached: its cached list is
+   * then forgotten, so the next turn lists it afresh or drops it.
+   */
+  const clientFor = async (connectorId: string, signal?: AbortSignal): Promise<Client | null> => {
+    const ready = clients.get(connectorId);
+    if (ready) return ready;
+    const lazy = deferred.get(connectorId);
+    if (!lazy || closed) return null;
+    let pending = connecting.get(connectorId);
+    if (!pending) {
+      pending = connectMcpServer(lazy.connector, { timeoutMs: opts.connectTimeoutMs, signal: opts.signal, list: false }).then(
+        async (opened) => {
+          if (!opened.ok) {
+            toolListCache.delete(lazy.cacheKey);
+            return null;
+          }
+          if (closed) {
+            await opened.client.close().catch(() => undefined);
+            return null;
+          }
+          clients.set(connectorId, opened.client);
+          return opened.client;
+        }
+      );
+      connecting.set(connectorId, pending);
+    }
+    return signal ? untilAborted(pending, signal).catch(() => null) : pending;
+  };
 
   return {
     tools,
@@ -551,7 +812,6 @@ export async function openMcpToolset(
       // audit: this is the model hallucinating a tool, not a call happening.
       // Never dispatched, so there is no duration and the outcome is a refusal.
       if (!route) return toolExecution(toolName, `Unknown tool: ${toolName}`, false);
-      const client = clients.get(route.connectorId);
       const label = `${route.label} · ${route.toolName}`;
 
       const auditId = await recordToolInvocation({
@@ -566,6 +826,9 @@ export async function openMcpToolset(
         status: "executed",
       });
 
+      // Connected at open, or (a cached list) dialled now, before anyone is
+      // asked to approve an action on a server that cannot be reached.
+      const client = await clientFor(route.connectorId, signal);
       if (!client) {
         await settleToolInvocation(auditId, { status: "failed", error: "connector unavailable" });
         return toolExecution(label, `Connector ${route.connectorId} is not available.`, false);
@@ -677,6 +940,8 @@ export async function openMcpToolset(
       };
     },
     async close() {
+      // A cached connector still dialling closes itself on arrival (`closed`).
+      closed = true;
       await Promise.all([...clients.values()].map((c) => c.close().catch(() => {})));
     },
   };

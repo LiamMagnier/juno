@@ -106,6 +106,12 @@ export interface ClientAgent {
   /** The Mac (WorkHost id) a `mac` agent prefers, or null for any switched-on Mac. */
   preferredHostId?: string | null;
   /**
+   * Whether its tasks may use its own computer: `off`, `ask` (the person is
+   * asked before it starts, once per task) or `allowed` (it starts on its
+   * own). Optional for clients written before it; the server always sends it.
+   */
+  computerPolicy?: "off" | "ask" | "allowed";
+  /**
    * Whether a cloud Work executor is running right now (its heartbeat is
    * fresh). False means a cloud task would be refused, so a cloud agent's
    * thread says so instead of looking ready. Optional; absent means unknown.
@@ -206,11 +212,30 @@ export interface ClientAgentDetail {
   agent: ClientAgent;
   goals: ClientAgentGoal[];
   ideas: ClientAgentIdea[];
+  /** The notes it keeps: what its turns and tasks read. */
   notes: ClientAgentNote[];
+  /**
+   * Notes it saved during a task that wait for the person to keep or forget
+   * (src/lib/agents/note-review.ts). Never in `notes`, so a client written
+   * before review shows only what the agent actually uses. Optional for those
+   * clients; the server always sends it.
+   */
+  pendingNotes?: ClientAgentNote[];
   routines: ClientAgentRoutine[];
   tasks: ClientAgentTask[];
   computer?: ClientAgentComputer | null;
   computerConfigured?: boolean;
+  /**
+   * Whether this account may have a computer here, in one line when it may
+   * not (src/lib/computer/access.ts `publicComputerAccess`): the panel says
+   * the sentence instead of hiding the section.
+   */
+  computerAccess?: {
+    ok: boolean;
+    reason: "server_off" | "rollout_off" | "not_in_rollout" | "plan" | "unavailable" | null;
+    message: string | null;
+    upgradePlan: string | null;
+  };
   /** Its own weekly budget as a line (src/lib/budgets.ts): cap, spend this week, when it frees. */
   budget?: BudgetLine | null;
 }
@@ -262,7 +287,13 @@ export function serializeAgent(agent: Agent, derived: AgentDerived): ClientAgent
     memoryAccess: agentMemoryAccessOf((agent as Agent & { memoryAccess?: string }).memoryAccess),
     executionTarget: agentExecutionTarget(agent.executionTarget),
     preferredHostId: agent.preferredHostId ?? null,
+    computerPolicy: computerPolicyOf((agent as Agent & { computerPolicy?: string }).computerPolicy),
   };
+}
+
+/** A stored computer policy as clients read it; anything unknown is `off` (never wider than stored). */
+function computerPolicyOf(raw: string | undefined): "off" | "ask" | "allowed" {
+  return raw === "ask" || raw === "allowed" || raw === "off" ? raw : "off";
 }
 
 export function serializeGoal(goal: AgentGoal): ClientAgentGoal {

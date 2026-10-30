@@ -38,6 +38,11 @@ import {
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
 import type { McpFunctionTool, ToolExecution } from "@/lib/mcp";
+import {
+  COMPUTER_POLICY_LABEL,
+  chatPolicyHeadline,
+  type ComputerPolicyValue,
+} from "@/lib/computer/access-copy";
 type ToolDefinition = McpFunctionTool;
 
 const AGENT_TEMPLATE_IDS = AGENT_TEMPLATES.map((t) => t.id);
@@ -47,6 +52,30 @@ const AGENT_NOTIFY_LABEL: Record<AgentNotifyLevel, string> = {
   results: "When a task finishes or needs you",
   all: "Everything (including ideas)",
 };
+
+/**
+ * Whether an agent's tasks may use its own computer, and whether the first use
+ * in a task asks the person (docs/design/agents-v2/COMPUTERS_2026-10.md §S1.4).
+ * Raising it is put to the person on the approval card; lowering it is not.
+ */
+const COMPUTER_POLICY_PARAMETER = {
+  type: "string",
+  enum: ["off", "ask", "allowed"],
+  description:
+    "Whether this agent's tasks may use its own computer: off, ask (the person is asked before it starts, once per task), or allowed (it starts on its own). Raising it asks the person.",
+} as const;
+
+const COMPUTER_ARGS = ["computer", "computerPolicy"] as const;
+
+function computerPolicyArg(raw: unknown): ComputerPolicyValue | null {
+  return raw === "off" || raw === "ask" || raw === "allowed" ? raw : null;
+}
+
+const COMPUTER_POLICY_RANK: Record<ComputerPolicyValue, number> = { off: 0, ask: 1, allowed: 2 };
+
+function normalizeComputerPolicy(raw: string | null | undefined): ComputerPolicyValue {
+  return computerPolicyArg(raw) ?? "ask";
+}
 
 export const CREATE_AGENT_TOOL_NAME = "create_agent";
 export const UPDATE_AGENT_TOOL_NAME = "update_agent";
@@ -157,6 +186,7 @@ export const CREATE_AGENT_TOOL: ToolDefinition = {
           type: "boolean",
           description: "Whether to give this agent its own persistent computer.",
         },
+        computerPolicy: COMPUTER_POLICY_PARAMETER,
         notify: {
           type: "string",
           enum: [...AGENT_NOTIFY_LEVELS],
@@ -228,6 +258,7 @@ export const UPDATE_AGENT_TOOL: ToolDefinition = {
           enum: ["on", "off", "reset"],
           description: "Turn this agent's persistent cloud computer on, off, or reset it.",
         },
+        computerPolicy: COMPUTER_POLICY_PARAMETER,
       },
     },
   },
@@ -244,7 +275,8 @@ export const AGENT_GOAL_TOOL: ToolDefinition = {
         action: {
           type: "string",
           enum: ["add", "update", "achieve", "pause", "resume", "drop"],
-          description: "What to do with the goal.",
+          description:
+            "What to do with the goal. 'achieve' (or status 'achieved') puts a card to the person, and the goal is marked met only if they confirm it; use it only when they tell you the goal is met, never on your own judgement. A driven goal checks its own success criteria when its last step runs.",
         },
         goalId: { type: "string", description: "ID of the existing goal (optional if title matches an existing goal)." },
         title: { type: "string", description: "Goal title." },
@@ -387,15 +419,16 @@ export function withoutParameters(tool: ToolDefinition, names: readonly string[]
 }
 
 /**
- * The declarations a turn carries. Without agent computers configured on this
- * server, nothing mentions a computer: the UI shows nothing about computers
- * when they are off, and neither does the model's tool list.
+ * The declarations a turn carries. Unless the account may have a computer on
+ * this server (`computerConfigured`: provider, rollout, plan and host all say
+ * yes), nothing mentions a computer: neither `computer` nor `computerPolicy`
+ * is declared, so the model is never offered what the account cannot have.
  */
 export function agentConfigDeclarations(options: { inThread: boolean; computerConfigured: boolean }): {
   create: ToolDefinition;
   update: ToolDefinition;
 } {
-  const computer = options.computerConfigured ? [] : ["computer"];
+  const computer = options.computerConfigured ? [] : [...COMPUTER_ARGS];
   return {
     create: withoutParameters(CREATE_AGENT_TOOL, computer),
     update: withoutParameters(UPDATE_AGENT_TOOL, [...computer, ...(options.inThread ? THREAD_SETUP_PARAMS : [])]),
@@ -413,7 +446,9 @@ export type AgentConfigApprovalRule =
   | "disable_computer"
   | "raise_autonomy"
   | "add_connectors"
-  | "change_model";
+  | "change_model"
+  // Marking a goal met: only the person's press closes a goal from chat.
+  | "agent_goal";
 
 export function isStaleAgentApproval(
   requestedUpdatedAt: Date | string | number | null | undefined,
@@ -440,6 +475,8 @@ export interface AgentSnapshotForConfig {
   reasoningEffort: string | null;
   connectorIds: readonly string[];
   computerEnabled?: boolean;
+  /** off | ask | allowed (Agent.computerPolicy). Absent reads as the default, `ask`. */
+  computerPolicy?: string | null;
 }
 
 const AUTONOMY_RANK: Record<WorkPermissionPolicy, number> = {
@@ -464,6 +501,66 @@ function normalizeStyle(value: string | undefined | null): AgentStyle {
   return "warm";
 }
 
+/** The card a `create_agent` call raises for anything but its computer (a routine, autonomy, apps). */
+function classifyCreateCard(
+  rawArgs: Record<string, unknown>,
+  targetName: string,
+  fallbackTimeZone: string
+): {
+  requiresApproval: boolean;
+  ruleName: AgentConfigApprovalRule | null;
+  headline: string;
+  changes: ClientAgentChangeItem[];
+} {
+  const routine =
+    rawArgs.routine && typeof rawArgs.routine === "object" && !Array.isArray(rawArgs.routine)
+      ? (rawArgs.routine as Record<string, unknown>)
+      : null;
+  if (routine) {
+    const cadence = typeof routine.cadence === "string" ? routine.cadence : "daily";
+    const hour = typeof routine.hour === "number" ? routine.hour : 9;
+    const minute = typeof routine.minute === "number" ? routine.minute : 0;
+    const tz = typeof routine.timezone === "string" && routine.timezone.trim() ? routine.timezone.trim() : fallbackTimeZone;
+    const clock = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} (${tz})`;
+    return {
+      requiresApproval: true,
+      ruleName: "create_routine",
+      headline: `Let ${targetName} run a routine on its own?`,
+      changes: [
+        { label: "Agent", to: targetName },
+        {
+          label: "Routine",
+          to: `${typeof routine.name === "string" ? routine.name : "Scheduled check"} · ${AGENT_ROUTINE_CADENCE_LABEL[cadence as AgentRoutineCadence] ?? cadence} at ${clock}`,
+        },
+      ],
+    };
+  }
+  const requestedAutonomy = rawArgs.approvalMode ?? rawArgs.autonomy;
+  if (requestedAutonomy === "permissive") {
+    return {
+      requiresApproval: true,
+      ruleName: "raise_autonomy",
+      headline: `Let ${targetName} work without asking first?`,
+      changes: [
+        {
+          label: "Autonomy",
+          from: WORK_APPROVAL_MODE_LABEL.balanced,
+          to: WORK_APPROVAL_MODE_LABEL.permissive,
+        },
+      ],
+    };
+  }
+  if (Array.isArray(rawArgs.apps) && rawArgs.apps.length > 0) {
+    return {
+      requiresApproval: true,
+      ruleName: "add_connectors",
+      headline: `Let ${targetName} use ${(rawArgs.apps as string[]).join(", ")}?`,
+      changes: [{ label: "Connected apps", from: "None", to: (rawArgs.apps as string[]).join(", ") }],
+    };
+  }
+  return { requiresApproval: false, ruleName: null, headline: `Hire ${targetName}`, changes: [] };
+}
+
 /**
  * Determines whether a config tool call requires explicit user approval via
  * `requestActionApproval`, and returns the `juno_agents:<rule>` tool name plus
@@ -484,61 +581,28 @@ export function classifyAgentConfigApproval(
     agent?.name || (typeof rawArgs.name === "string" && rawArgs.name.trim() ? rawArgs.name.trim() : "Agent");
 
   if (toolName === CREATE_AGENT_TOOL_NAME) {
-    const routine =
-      rawArgs.routine && typeof rawArgs.routine === "object" && !Array.isArray(rawArgs.routine)
-        ? (rawArgs.routine as Record<string, unknown>)
-        : null;
-    if (routine) {
-      const cadence = typeof routine.cadence === "string" ? routine.cadence : "daily";
-      const hour = typeof routine.hour === "number" ? routine.hour : 9;
-      const minute = typeof routine.minute === "number" ? routine.minute : 0;
-      const tz = typeof routine.timezone === "string" && routine.timezone.trim() ? routine.timezone.trim() : fallbackTimeZone;
-      const clock = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} (${tz})`;
-      return {
-        requiresApproval: true,
-        ruleName: "create_routine",
-        headline: `Let ${targetName} run a routine on its own?`,
-        changes: [
-          { label: "Agent", to: targetName },
-          {
-            label: "Routine",
-            to: `${typeof routine.name === "string" ? routine.name : "Scheduled check"} · ${AGENT_ROUTINE_CADENCE_LABEL[cadence as AgentRoutineCadence] ?? cadence} at ${clock}`,
-          },
-        ],
-      };
+    const card = classifyCreateCard(rawArgs, targetName, fallbackTimeZone);
+    // A computer, or a policy above the default, is on the card whatever else
+    // raised it: the person sees every widening they are agreeing to.
+    const computerChanges: ClientAgentChangeItem[] = [];
+    const wantsComputer =
+      rawArgs.computer === true ||
+      (rawArgs.computer && typeof rawArgs.computer === "object" && (rawArgs.computer as Record<string, unknown>).enabled === true);
+    const createPolicy = wantsComputer ? "allowed" : computerPolicyArg(rawArgs.computerPolicy);
+    if (wantsComputer) computerChanges.push({ label: "Computer", from: "Off", to: "Enabled" });
+    else if (createPolicy && COMPUTER_POLICY_RANK[createPolicy] > COMPUTER_POLICY_RANK.ask) {
+      computerChanges.push({ label: "Computer", from: COMPUTER_POLICY_LABEL.ask, to: COMPUTER_POLICY_LABEL[createPolicy] });
     }
-    const requestedAutonomy = rawArgs.approvalMode ?? rawArgs.autonomy;
-    if (requestedAutonomy === "permissive") {
-      return {
-        requiresApproval: true,
-        ruleName: "raise_autonomy",
-        headline: `Let ${targetName} work without asking first?`,
-        changes: [
-          {
-            label: "Autonomy",
-            from: WORK_APPROVAL_MODE_LABEL.balanced,
-            to: WORK_APPROVAL_MODE_LABEL.permissive,
-          },
-        ],
-      };
-    }
-    if (rawArgs.computer === true || (rawArgs.computer && typeof rawArgs.computer === "object" && (rawArgs.computer as Record<string, unknown>).enabled === true)) {
+    if (card.requiresApproval) return { ...card, changes: [...card.changes, ...computerChanges] };
+    if (computerChanges.length > 0) {
       return {
         requiresApproval: true,
         ruleName: "enable_computer",
-        headline: `Give ${targetName} its own computer?`,
-        changes: [{ label: "Computer", from: "Off", to: "Enabled" }],
+        headline: wantsComputer ? `Give ${targetName} its own computer?` : chatPolicyHeadline(targetName, "allowed"),
+        changes: computerChanges,
       };
     }
-    if (Array.isArray(rawArgs.apps) && rawArgs.apps.length > 0) {
-      return {
-        requiresApproval: true,
-        ruleName: "add_connectors",
-        headline: `Let ${targetName} use ${(rawArgs.apps as string[]).join(", ")}?`,
-        changes: [{ label: "Connected apps", from: "None", to: (rawArgs.apps as string[]).join(", ") }],
-      };
-    }
-    return { requiresApproval: false, ruleName: null, headline: `Hire ${targetName}`, changes: [] };
+    return card;
   }
 
   if (toolName === AGENT_ROUTINE_TOOL_NAME) {
@@ -580,6 +644,23 @@ export function classifyAgentConfigApproval(
     return { requiresApproval: false, ruleName: null, headline: `Update routine`, changes: [] };
   }
 
+  if (toolName === AGENT_GOAL_TOOL_NAME) {
+    // A goal is met only on a criteria check that passed or on the person's
+    // own press (gap 11 of the 2026-10-27 Orbit discovery): from chat, closing
+    // a goal is always put to the person on a card, never the model's call.
+    const action = typeof rawArgs.action === "string" ? rawArgs.action : "add";
+    if (action !== "add" && (action === "achieve" || rawArgs.status === "achieved")) {
+      const title = typeof rawArgs.title === "string" && rawArgs.title.trim() ? rawArgs.title.trim() : null;
+      return {
+        requiresApproval: true,
+        ruleName: "agent_goal",
+        headline: title ? `Mark “${title}” met for ${targetName}?` : `Mark this goal met for ${targetName}?`,
+        changes: [{ label: title ? `Goal: ${title}` : "Goal", from: "Not marked met", to: "Met" }],
+      };
+    }
+    return { requiresApproval: false, ruleName: null, headline: `Update ${targetName}'s goal`, changes: [] };
+  }
+
   if (toolName === UPDATE_AGENT_TOOL_NAME && agent) {
     const computerObj =
       rawArgs.computer && typeof rawArgs.computer === "object" && !Array.isArray(rawArgs.computer)
@@ -596,6 +677,12 @@ export function classifyAgentConfigApproval(
     const enablingComputer = computerMode === "on" && !agent.computerEnabled;
     const resettingComputer = computerMode === "reset";
     const disablingComputer = computerMode === "off" && Boolean(agent.computerEnabled);
+    // `computer: "on"` means its runs use it (policy `allowed`); `off` means none.
+    const prevPolicy = normalizeComputerPolicy(agent.computerPolicy);
+    const requestedPolicy =
+      computerMode === "on" ? "allowed" : computerMode === "off" ? "off" : computerPolicyArg(rawArgs.computerPolicy);
+    const raisingPolicy =
+      requestedPolicy !== null && COMPUTER_POLICY_RANK[requestedPolicy] > COMPUTER_POLICY_RANK[prevPolicy];
 
     const rawAutonomy = typeof rawArgs.approvalMode === "string" ? rawArgs.approvalMode : rawArgs.autonomy;
     const nextMode =
@@ -636,6 +723,15 @@ export function classifyAgentConfigApproval(
       ruleName = "disable_computer";
       headline = `Turn off ${targetName}’s computer? Its sign-ins and files are deleted.`;
       approvalChanges.push({ label: "Computer", from: "Enabled", to: "Off (deletes sign-ins & files)" });
+    } else if (raisingPolicy && requestedPolicy) {
+      // Raising the policy widens what the agent may do on its own: the card.
+      ruleName = "enable_computer";
+      headline = chatPolicyHeadline(targetName, requestedPolicy);
+      approvalChanges.push({
+        label: "Computer",
+        from: COMPUTER_POLICY_LABEL[prevPolicy],
+        to: COMPUTER_POLICY_LABEL[requestedPolicy],
+      });
     }
     if (raisingAutonomy && nextMode) {
       ruleName = ruleName ?? "raise_autonomy";
@@ -796,6 +892,12 @@ export function describeAgentPatchChanges(
         to: nextEnabled ? "Enabled" : "Off",
       });
     }
+  } else {
+    const nextPolicy = computerPolicyArg(rawArgs.computerPolicy);
+    const prevPolicy = normalizeComputerPolicy(before.computerPolicy);
+    if (nextPolicy && nextPolicy !== prevPolicy) {
+      changes.push({ label: "Computer", from: COMPUTER_POLICY_LABEL[prevPolicy], to: COMPUTER_POLICY_LABEL[nextPolicy] });
+    }
   }
   return changes;
 }
@@ -852,10 +954,21 @@ export interface AgentConfigToolsContext {
   onApprovalRequest?: (approval: ClientActionApproval) => void;
   onAgentChange?: (change: ClientAgentChange) => void;
   /**
-   * Whether agent computers are configured on this server. Off, no declaration
-   * mentions a computer and a `computer` argument is refused.
+   * Whether this account may have an agent computer on this server (provider,
+   * rollout, plan and host; src/lib/computer/access.ts). Off, no declaration
+   * mentions a computer and a `computer` or `computerPolicy` argument is refused.
    */
   computerConfigured?: boolean;
+  /** Why not, in the account's own words (the access sentence), when it may not. */
+  computerAccessMessage?: string | null;
+  /**
+   * The plan's refusal to hire, in the words the page uses, when the account's
+   * plan has no agents (src/lib/agents/plan-gate.ts); null or absent when it
+   * may hire. `create_agent` says it before any approval card, so the person
+   * is never asked to approve a hire the plan refuses; `createAgentForUser`
+   * refuses it again either way.
+   */
+  hiringRefusal?: string | null;
 }
 
 function jsonExecution(payload: Record<string, unknown>, extra?: Partial<ToolExecution>): ToolExecution {
@@ -871,6 +984,113 @@ function jsonExecution(payload: Record<string, unknown>, extra?: Partial<ToolExe
     ok,
     ...extra,
   };
+}
+
+/** What the chat tools need of the computer layer, injectable so the failure path is tested without Docker. */
+export interface ChatComputerDeps {
+  enable(userId: string, agentId: string, caller: { actor: "chat"; agentName: string }): Promise<unknown>;
+  disable(userId: string, agentId: string, caller: { actor: "chat"; agentName: string }): Promise<unknown>;
+  reset(userId: string, agentId: string, caller: { actor: "chat"; agentName: string }): Promise<unknown>;
+  setPolicy(userId: string, agentId: string, policy: ComputerPolicyValue, actor: "chat"): Promise<unknown>;
+  /** The sentence a failure may show (`publicComputerMessage`): never a raw error message. */
+  publicMessage(err: unknown): string;
+}
+
+/**
+ * The modules the create and update tools reach, loaded on first use. A test
+ * seam (`setAgentConfigToolModulesForTest`) stands in for them: the tools'
+ * own paths are exercised without a database, which dynamic imports would
+ * otherwise put out of a unit test's reach.
+ */
+interface AgentConfigToolModules {
+  prisma: typeof import("@/lib/prisma");
+  agents: typeof import("@/lib/agents/store");
+  approvals: typeof import("@/lib/action-approval-store");
+  rateLimit: typeof import("@/lib/rate-limit");
+  computerStore: typeof import("@/lib/computer/store");
+  computerPolicy: typeof import("@/lib/computer/policy");
+}
+
+let modulesForTest: Partial<AgentConfigToolModules> | null = null;
+
+/** Test seam: stand-ins for the modules the create and update tools import. Null restores them. */
+export function setAgentConfigToolModulesForTest(modules: Partial<AgentConfigToolModules> | null): void {
+  modulesForTest = modules;
+}
+
+async function toolModule<K extends keyof AgentConfigToolModules>(name: K): Promise<AgentConfigToolModules[K]> {
+  const stand = modulesForTest?.[name];
+  if (stand) return stand as AgentConfigToolModules[K];
+  switch (name) {
+    case "prisma":
+      return (await import("@/lib/prisma")) as AgentConfigToolModules[K];
+    case "agents":
+      return (await import("@/lib/agents/store")) as AgentConfigToolModules[K];
+    case "approvals":
+      return (await import("@/lib/action-approval-store")) as AgentConfigToolModules[K];
+    case "rateLimit":
+      return (await import("@/lib/rate-limit")) as AgentConfigToolModules[K];
+    case "computerStore":
+      return (await import("@/lib/computer/store")) as AgentConfigToolModules[K];
+    default:
+      return (await import("@/lib/computer/policy")) as AgentConfigToolModules[K];
+  }
+}
+
+async function chatComputerDeps(): Promise<ChatComputerDeps> {
+  const [store, policy, errors] = await Promise.all([
+    toolModule("computerStore"),
+    toolModule("computerPolicy"),
+    import("@/lib/computer/errors"),
+  ]);
+  return {
+    enable: (userId, agentId, caller) => store.enableComputer(userId, agentId, caller),
+    disable: (userId, agentId, caller) => store.disableComputer(userId, agentId, caller),
+    reset: (userId, agentId, caller) => store.resetComputer(userId, agentId, new Date(), caller),
+    setPolicy: (userId, agentId, next, actor) => policy.setComputerPolicy(userId, agentId, next, actor),
+    publicMessage: (err) => errors.publicComputerMessage(err),
+  };
+}
+
+/**
+ * Applies a chat tool's computer arguments: `computer: on` gives the agent a
+ * computer and sets its policy to `allowed` (its runs use it), `off` deletes it
+ * and sets `off`, `reset` resets it, and `computerPolicy` sets the policy (the
+ * approval card has already asked for a raise). A failure is reported as
+ * "Computer: Not set up (<the public sentence>)" and `failed`, so the tool says
+ * `partial` instead of "Enabled".
+ */
+export async function applyChatComputerChange(input: {
+  userId: string;
+  agentId: string;
+  agentName: string;
+  mode: "on" | "off" | "reset" | null;
+  policy: ComputerPolicyValue | null;
+  deps: ChatComputerDeps;
+}): Promise<{ changes: ClientAgentChangeItem[]; failed: boolean }> {
+  const caller = { actor: "chat" as const, agentName: input.agentName };
+  const { deps } = input;
+  if (!input.mode && !input.policy) return { changes: [], failed: false };
+  try {
+    if (input.mode === "on") {
+      await deps.enable(input.userId, input.agentId, caller);
+      await deps.setPolicy(input.userId, input.agentId, "allowed", "chat");
+      return { changes: [{ label: "Computer", to: "Enabled" }], failed: false };
+    }
+    if (input.mode === "off") {
+      await deps.disable(input.userId, input.agentId, caller);
+      await deps.setPolicy(input.userId, input.agentId, "off", "chat");
+      return { changes: [{ label: "Computer", to: "Deleted" }], failed: false };
+    }
+    if (input.mode === "reset") {
+      await deps.reset(input.userId, input.agentId, caller);
+      return { changes: [{ label: "Computer", to: "Reset" }], failed: false };
+    }
+    await deps.setPolicy(input.userId, input.agentId, input.policy!, "chat");
+    return { changes: [{ label: "Computer", to: COMPUTER_POLICY_LABEL[input.policy!] }], failed: false };
+  } catch (err) {
+    return { changes: [{ label: "Computer", to: `Not set up (${deps.publicMessage(err)})` }], failed: true };
+  }
 }
 
 export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChatTool[] {
@@ -904,13 +1124,13 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
 
     // Computers are off on this server: nothing about them is offered, and an
     // argument naming one (a model reaching past its declaration) is refused.
-    if (ctx.computerConfigured !== true && rawArgs.computer !== undefined && rawArgs.computer !== null) {
+    if (ctx.computerConfigured !== true && COMPUTER_ARGS.some((name) => rawArgs[name] !== undefined && rawArgs[name] !== null)) {
       return {
         ok: false,
         response: jsonExecution({
           status: "refused",
           reason: "computers_unavailable",
-          message: "Agent computers are not available on this server.",
+          message: ctx.computerAccessMessage || "Agent computers are not available on this server.",
         }),
       };
     }
@@ -978,10 +1198,10 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
     }
 
     const [{ prisma }, agents, approvals, { rateLimit }] = await Promise.all([
-      import("@/lib/prisma"),
-      import("@/lib/agents/store"),
-      import("@/lib/action-approval-store"),
-      import("@/lib/rate-limit"),
+      toolModule("prisma"),
+      toolModule("agents"),
+      toolModule("approvals"),
+      toolModule("rateLimit"),
     ]);
 
     let freshAgent: import("@prisma/client").Agent | null = null;
@@ -1086,6 +1306,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         reasoningEffort: freshAgent.reasoningEffort,
         connectorIds: freshAgent.connectorIds,
         computerEnabled: Boolean(compRow && compRow.status !== "disabled"),
+        computerPolicy: freshAgent.computerPolicy,
       };
     }
 
@@ -1156,6 +1377,10 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
     access: "write",
     execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
       serializeCall(async () => {
+        // A plan without agents: refused in words before any approval card.
+        if (ctx.hiringRefusal) {
+          return jsonExecution({ status: "refused", reason: "plan_locked", message: ctx.hiringRefusal });
+        }
         const check = await guardAndApprove(CREATE_AGENT_TOOL_NAME, rawArgs, signal);
         if (!check.ok) return check.response;
 
@@ -1186,7 +1411,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           });
         }
 
-        const agents = await import("@/lib/agents/store");
+        const agents = await toolModule("agents");
         const created = await agents.createAgentForUser(ctx.user, parsed.data);
         if (created.status !== 201 || !created.value) {
           return jsonExecution({
@@ -1205,11 +1430,20 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           changes.push({ label: "Goal", to: parsed.data.firstGoal });
         }
 
-        if (rawArgs.computer === true || (rawArgs.computer && typeof rawArgs.computer === "object" && (rawArgs.computer as Record<string, unknown>).enabled === true)) {
-          const computer = await import("@/lib/computer/store");
-          await computer.enableComputer(ctx.user.id, created.value.id).catch(() => {});
-          changes.push({ label: "Computer", to: "Enabled" });
-        }
+        // A computer that could not be set up is said so, never "Enabled"
+        // (the failure used to be swallowed); the result is then `partial`.
+        const wantsComputer =
+          rawArgs.computer === true ||
+          (rawArgs.computer && typeof rawArgs.computer === "object" && (rawArgs.computer as Record<string, unknown>).enabled === true);
+        const computerOutcome = await applyChatComputerChange({
+          userId: ctx.user.id,
+          agentId: created.value.id,
+          agentName: created.value.name,
+          mode: wantsComputer ? "on" : null,
+          policy: computerPolicyArg(rawArgs.computerPolicy),
+          deps: await chatComputerDeps(),
+        });
+        changes.push(...computerOutcome.changes);
 
         const routineRaw =
           rawArgs.routine && typeof rawArgs.routine === "object" && !Array.isArray(rawArgs.routine)
@@ -1245,7 +1479,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
 
         return jsonExecution(
           {
-            status: "created",
+            status: computerOutcome.failed ? "partial" : "created",
             agentId: created.value.id,
             name: created.value.name,
             role: created.value.role,
@@ -1267,11 +1501,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         if (!check.ok) return check.response;
         const freshAgent = check.freshAgent!;
 
-        const [{ prisma }, agents, computer] = await Promise.all([
-          import("@/lib/prisma"),
-          import("@/lib/agents/store"),
-          import("@/lib/computer/store"),
-        ]);
+        const [{ prisma }, agents] = await Promise.all([toolModule("prisma"), toolModule("agents")]);
 
         const compRow = await prisma.agentComputer
           .findUnique({ where: { agentId: freshAgent.id, userId: freshAgent.userId }, select: { status: true } })
@@ -1290,6 +1520,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           reasoningEffort: freshAgent.reasoningEffort,
           connectorIds: freshAgent.connectorIds,
           computerEnabled: Boolean(compRow && compRow.status !== "disabled"),
+          computerPolicy: freshAgent.computerPolicy,
         };
 
         const computerObj =
@@ -1375,15 +1606,21 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           updatedName = result.value.name;
         }
 
-        if (computerMode === "on") {
-          await computer.enableComputer(ctx.user.id, freshAgent.id);
-        } else if (computerMode === "off") {
-          await computer.disableComputer(ctx.user.id, freshAgent.id);
-        } else if (computerMode === "reset") {
-          await computer.resetComputer(ctx.user.id, freshAgent.id);
-        }
+        const computerOutcome = await applyChatComputerChange({
+          userId: ctx.user.id,
+          agentId: freshAgent.id,
+          agentName: updatedName,
+          mode: computerMode === "on" || computerMode === "off" || computerMode === "reset" ? computerMode : null,
+          policy: computerPolicyArg(rawArgs.computerPolicy),
+          deps: await chatComputerDeps(),
+        });
 
-        const changes = describeAgentPatchChanges(beforeSnapshot, rawArgs);
+        // What actually happened to the computer replaces the requested diff
+        // line when it failed: never "Enabled" for a computer that is not.
+        const requested = describeAgentPatchChanges(beforeSnapshot, rawArgs);
+        const changes = computerOutcome.failed
+          ? [...requested.filter((item) => item.label !== "Computer"), ...computerOutcome.changes]
+          : requested;
         const change: ClientAgentChange = {
           agentId: freshAgent.id,
           agentName: updatedName,
@@ -1395,7 +1632,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
 
         return jsonExecution(
           {
-            status: "updated",
+            status: computerOutcome.failed ? "partial" : "updated",
             agentId: freshAgent.id,
             ...(eventId ? { eventId } : {}),
             changes: change.changes,

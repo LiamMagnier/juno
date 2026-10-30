@@ -51,8 +51,11 @@ export interface FirstSubmissionPreflightClarification {
 /**
  * Every client-controlled first-turn field that can change the model request,
  * persisted conversation metadata, attachment set, or spend attribution.
- * Idempotency keys and the caller's process-local generationId are deliberately
- * absent: the receipt owns one server-generated generationId.
+ * Idempotency keys and the caller's generationId are deliberately absent: the
+ * receipt owns one generationId — the caller's when the first request named
+ * one, else a server UUID — so a Stop pressed while the turn is still in
+ * admission finds it (chat/turn/accept.ts), and a repeat is answered with that
+ * id whatever id the repeat carries.
  */
 export interface FirstSubmissionHashInput {
   origin?: ChatOrigin;
