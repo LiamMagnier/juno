@@ -78,6 +78,16 @@ export const CONVERSATION_EXPORT_COPY = {
 
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/;
 
+/** HTML comments out, repeated until none is left, so `<!<!---->--` cannot leave one behind. */
+function withoutComments(text: string): string {
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<!--[\s\S]*?-->/g, "");
+  } while (text !== previous);
+  return text;
+}
+
 /**
  * Drops what the transcript never renders from a run of Markdown, fence-aware:
  * HTML comments outside code, and a Live UI fence (an interactive view the
@@ -88,7 +98,7 @@ export function exportableMarkdown(text: string): string {
   const out: string[] = [];
   let prose: string[] = [];
   const flushProse = () => {
-    if (prose.length) out.push(prose.join("\n").replace(/<!--[\s\S]*?-->/g, ""));
+    if (prose.length) out.push(withoutComments(prose.join("\n")));
     prose = [];
   };
   for (let i = 0; i < lines.length; i++) {

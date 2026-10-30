@@ -32,7 +32,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { existsSync, mkdirSync, openSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -286,7 +286,7 @@ if (!url) {
       await new Promise<void>((resolve) => lab.listen(0, "127.0.0.1", resolve));
       const port = (lab.address() as AddressInfo).port;
 
-      const logDir = process.env.ORBIT_E2E_LOG_DIR ?? path.join(tmpdir(), "orbit-truth-e2e-logs");
+      const logDir = process.env.ORBIT_E2E_LOG_DIR ?? mkdtempSync(path.join(tmpdir(), "orbit-truth-e2e-logs-"));
       mkdirSync(logDir, { recursive: true });
       const logFile = path.join(logDir, `runner-${Date.now()}.log`);
       const out = openSync(logFile, "a");

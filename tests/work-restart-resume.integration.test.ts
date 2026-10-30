@@ -188,7 +188,7 @@ if (!url) {
     const { prismaUnguarded: db } = await import("../src/lib/prisma");
     const { SWEEPERS_HEARTBEAT_KEY } = await import("../src/lib/worker-watchdog-rules");
     const { readFileSync } = await import("node:fs");
-    const logDir = process.env.RESTART_E2E_LOG_DIR ?? path.join(tmpdir(), "restart-e2e-logs");
+    const logDir = process.env.RESTART_E2E_LOG_DIR ?? mkdtempSync(path.join(tmpdir(), "restart-e2e-logs-"));
     mkdirSync(logDir, { recursive: true });
 
     /** juno-sweepers' heartbeat row, when it is current. */
@@ -402,7 +402,7 @@ if (!url) {
     await new Promise<void>((resolve) => lab.listen(0, "127.0.0.1", resolve));
     const port = (lab.address() as AddressInfo).port;
 
-    const logDir = process.env.RESTART_E2E_LOG_DIR ?? path.join(tmpdir(), "restart-e2e-logs");
+    const logDir = process.env.RESTART_E2E_LOG_DIR ?? mkdtempSync(path.join(tmpdir(), "restart-e2e-logs-"));
     mkdirSync(logDir, { recursive: true });
     const owner = `restart-e2e-${randomUUID()}`;
     const runners: ChildProcess[] = [];
@@ -534,7 +534,7 @@ if (!url) {
     await new Promise<void>((resolve) => lab.listen(0, "127.0.0.1", resolve));
     const port = (lab.address() as AddressInfo).port;
 
-    const logDir = process.env.RESTART_E2E_LOG_DIR ?? path.join(tmpdir(), "restart-e2e-logs");
+    const logDir = process.env.RESTART_E2E_LOG_DIR ?? mkdtempSync(path.join(tmpdir(), "restart-e2e-logs-"));
     mkdirSync(logDir, { recursive: true });
     const scratch = mkdtempSync(path.join(tmpdir(), "restart-browser-"));
     const sleepBin = ["/bin/sleep", "/usr/bin/sleep"].find((candidate) => existsSync(candidate));
@@ -662,7 +662,7 @@ if (!url) {
     await new Promise<void>((resolve) => standIn.listen(0, "127.0.0.1", resolve));
     const viaStandIn = url.replace(/@([^/:@]+)(?::\d+)?\//, `@127.0.0.1:${(standIn.address() as AddressInfo).port}/`);
 
-    const logDir = process.env.RESTART_E2E_LOG_DIR ?? path.join(tmpdir(), "restart-e2e-logs");
+    const logDir = process.env.RESTART_E2E_LOG_DIR ?? mkdtempSync(path.join(tmpdir(), "restart-e2e-logs-"));
     mkdirSync(logDir, { recursive: true });
     const runners: ChildProcess[] = [];
     const stepWaitMs = 2_000;

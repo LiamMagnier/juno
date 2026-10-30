@@ -251,6 +251,8 @@ test("export turns name the agent, keep file names only, and skip what is never 
 
 test("exportable Markdown keeps code whole and removes only what the page never draws", () => {
   assert.equal(exportableMarkdown("a <!-- note --> b"), "a  b");
+  // A comment split by another cannot survive one pass: none is left behind.
+  assert.equal(exportableMarkdown("a <!<!-- x -->-- y --> b"), "a  b");
   assert.equal(exportableMarkdown("~~~\n<!-- kept -->\n~~~"), "~~~\n<!-- kept -->\n~~~");
   assert.equal(exportableMarkdown("```juno-live\n{}\n```\nafter"), "_Interactive view: open this chat to use it._\nafter");
   // An unclosed fence runs to the end, as Markdown reads it.
