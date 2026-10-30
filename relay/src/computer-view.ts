@@ -1,9 +1,26 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createDecipheriv, createHash, createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import net from "node:net";
 import type { Duplex } from "node:stream";
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { isAllowedRelayOrigin } from "./origin.js";
+
+/*
+ * Two kinds of view token (src/lib/computer/live-view.ts mints both):
+ *   v1, a single-box Docker install: the relay dials the computer's VNC port
+ *       on the computers network itself (`h:p`, RELAY_COMPUTER_CIDR, 5900).
+ *   v2, a separate computer host (COMPUTERS_2026-10.md S3.3, D5): the relay
+ *       opens `<r>/v1/tunnel` on the host, with the single-use ticket the host
+ *       minted for this computer's port 5900 in `X-Juno-Tunnel-Ticket` and no
+ *       subprotocol. The ticket travels sealed in the token (`k`, AES-256-GCM,
+ *       key from AUTH_SECRET, the token's other fields as additional data), so
+ *       the browser holding the token cannot read it and a sealed ticket moved
+ *       into another token does not open. `r` must be one of the exact origins
+ *       in RELAY_COMPUTER_HOSTS: https (wss), or loopback http outside
+ *       production. The relay never holds the host's bearer token; it trusts
+ *       the host's certificate through NODE_EXTRA_CA_CERTS (D18).
+ * Both keep the same single use, per-agent, idle and duration rules.
+ */
 
 export interface ComputerViewTokenPayload {
   v: 1;
@@ -21,8 +38,79 @@ export interface ComputerViewTokenPayload {
   j: string;
 }
 
+/** A version 2 token as the relay holds it once verified: the host origin and the unsealed ticket. */
+export interface ComputerViewTunnelGrant {
+  v: 2;
+  a: string;
+  u: string;
+  m: "watch" | "control";
+  exp: number;
+  j: string;
+  /** The computer host's origin, one of RELAY_COMPUTER_HOSTS. */
+  r: string;
+  /** The host's single-use ticket for port 5900, unsealed. Never logged. */
+  ticket: string;
+}
+
+export type ComputerViewGrant = ComputerViewTokenPayload | ComputerViewTunnelGrant;
+
 /** The subprotocol a viewer offers its token in, so it never sits in a URL or an access log. */
 export const VIEW_TOKEN_PROTOCOL_PREFIX = "juno-view.";
+
+const SIGNING_LABEL = { 1: "juno-computer-view-v1", 2: "juno-computer-view-v2" } as const;
+const TICKET_FORMAT = /^[A-Za-z0-9_-]{43}$/;
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
+/**
+ * A host origin the relay may open tunnels to: an exact origin, https, or
+ * http to a loopback address outside production. Null otherwise.
+ */
+export function normalizeComputerHost(raw: string, nodeEnv = process.env.NODE_ENV ?? "development"): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) return null;
+  if (url.protocol === "https:") return url.origin;
+  if (url.protocol === "http:" && nodeEnv !== "production" && LOOPBACK_HOSTNAMES.has(url.hostname)) return url.origin;
+  return null;
+}
+
+/** RELAY_COMPUTER_HOSTS: comma-separated exact origins; anything else is dropped. */
+export function parseComputerHosts(raw: string | undefined, nodeEnv?: string): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .flatMap((entry) => {
+      const origin = normalizeComputerHost(entry, nodeEnv);
+      return origin ? [origin] : [];
+    });
+}
+
+function viewTokenAad(payload: { a: string; u: string; m: string; exp: number; j: string; r: string }): Buffer {
+  return Buffer.from([2, payload.a, payload.u, payload.m, payload.exp, payload.j, payload.r].join("|"), "utf8");
+}
+
+/** Opens a sealed ticket; null if it was not sealed for exactly these token fields, or is not for port 5900. */
+export function unsealTunnelTicket(sealed: string, aad: Buffer, authSecret: string): string | null {
+  try {
+    const raw = Buffer.from(sealed, "base64url");
+    if (raw.length < 12 + 16 + 2) return null;
+    const key = Buffer.from(hkdfSync("sha256", authSecret, "juno-computer-view-v2", "tunnel-ticket", 32));
+    const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+    decipher.setAAD(aad);
+    decipher.setAuthTag(raw.subarray(raw.length - 16));
+    const plain = Buffer.concat([decipher.update(raw.subarray(12, raw.length - 16)), decipher.final()]).toString("utf8");
+    const parsed = JSON.parse(plain) as { t?: unknown; p?: unknown };
+    if (parsed.p !== 5900 || typeof parsed.t !== "string" || !TICKET_FORMAT.test(parsed.t)) return null;
+    return parsed.t;
+  } catch {
+    return null;
+  }
+}
 
 /** The token a viewer presented: the `juno-view.<token>` subprotocol, else the legacy `?t=`. */
 export function presentedViewToken(req: { url?: string; headers: IncomingMessage["headers"] }): string | null {

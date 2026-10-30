@@ -2126,8 +2126,15 @@ export async function releaseComputerLease(
   return activePersistence.releaseLeaseCas(userId, agentId, runId, now);
 }
 
+/**
+ * What the computer's network allows (pipe-v4: no DNS in the computer, S2.1),
+ * so the model picks tools that work instead of debugging a lookup failure.
+ */
+export const COMPUTER_NETWORK_SENTENCE =
+  "Your computer reaches the web only through a proxy: tools that use HTTP_PROXY and HTTPS_PROXY work (curl, pip, npm, git over https, Python's urllib, the browser), and tools that look up names themselves (ssh, raw sockets, Node's built-in fetch) cannot reach the Internet.";
+
 export const YOUR_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
 
 /**
  * The same section for a run nobody started (a schedule or a trigger): there
@@ -2137,7 +2144,7 @@ export const YOUR_COMPUTER_PROMPT_SECTION =
  * happens to look (docs/rea/designs/computer-use.md, unattended runs).
  */
 export const UNATTENDED_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
 
 /** The pixel-tools sentence, which a model without vision is never given (it has no pixel tools). */
 const PIXEL_TOOLS_SENTENCE = "Use the `computer_*` pixel tools only for things the page tools can't reach. ";

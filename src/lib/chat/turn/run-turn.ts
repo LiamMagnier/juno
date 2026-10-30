@@ -81,7 +81,7 @@ import type { ActiveConnector } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import { SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
 import type { ClientArtifact, ReasoningEffort, StreamChunk } from "@/types/chat";
-import type { MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import type { buildSystemPromptSections } from "@/lib/anthropic";
 import { createToolActivity, planTurnHolds, prepareChatArtifactOutput } from "./activity";
@@ -655,6 +655,131 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       liveTaint: turnTaintReader(alevrSearchTurn?.taint),
     });
 
+    /**
+     * Whether a model can take this turn as it was prepared: the serving
+     * tier, pro mode and search plan resolved for the first model
+     * (turn/capabilities.ts) hold on it unchanged, so moving the prompt
+     * changes nothing the reader or the accumulator was told.
+     */
+    const sameTurnShape = (candidate: ModelInfo): boolean => {
+      if (resolveFastMode(candidate, input) !== useFastMode) return false;
+      if (useProMode && !supportsProMode(candidate)) return false;
+      const search = planTurnSearch({
+        webRequested: useWebSearch || useAlevrSearch,
+        model: candidate,
+        alevrAvailable: chatSearchAvailable(),
+        voice: !!input.voiceMode,
+        private: false,
+        policy: nativeSearchPolicy(),
+      });
+      return search.native === useWebSearch && search.alevr === useAlevrSearch;
+    };
+    /**
+     * THE ONE RETRY BEFORE THE FIRST BYTE (pre-stream-retry.ts).
+     *
+     * True when the turn asks again, after doing everything attempt 2 needs:
+     * attempt 1's hold released and attempt 2's taken under its own ref, the
+     * first fault reported to provider health and Auto's pressure, the model
+     * moved under Auto, the "Retrying…" row sent and the jittered wait
+     * served. False leaves the error to the catch below, as before. Only ever
+     * called for the provider stream, never for a research notice or the
+     * smoke provider.
+     */
+    const retryBeforeFirstByte = async (err: unknown, attempt: number, received: number): Promise<boolean> => {
+      const failed = modelInfo;
+      const verdict = planPreStreamRetry({
+        err,
+        attempt,
+        received: {
+          events: received,
+          output:
+            acc.text.length > 0 ||
+            acc.reasoning.length > 0 ||
+            acc.currentRound > 0 ||
+            (acc.tokens.promptTokens ?? 0) > 0 ||
+            (acc.tokens.completionTokens ?? 0) > 0,
+        },
+        cancelled:
+          generationController.signal.aborted ||
+          wasGenerationStopped(generationId) ||
+          wasGenerationAbortedForShutdown(generationId) ||
+          stallWatchdog.stalled ||
+          budgetHalted ||
+          receipt.leaseLost,
+        auto: !!autoRetry,
+        // Gemini's adapter already retried its own transient faults
+        // (gemini-network.ts); asking it a third time is not "one retry".
+        adapterRetries: providerAdapterFor(failed, useProMode, { webSearch: useWebSearch }) === "gemini-native",
+      });
+      if (!verdict.retry) return false;
+      const next =
+        verdict.nextModel && autoRetry
+          ? await autoRetry.next({
+              failed,
+              // A lab's account, or a host that refused the connection,
+              // fails every model on it.
+              avoidProvider: verdict.class === "auth" || verdict.class === "billing" || verdict.class === "network",
+              proMode: useProMode,
+              compatible: sameTurnShape,
+            })
+          : null;
+      const step = next ? verdict.nextModel : verdict.sameModel;
+      if (!step) return false;
+      // Attempt 1 received nothing, so it spent nothing: its hold goes, and
+      // attempt 2 holds its own. A refused hold (the account is at its
+      // ceiling) means no retry; the turn fails as it would have.
+      await releaseSpend(user.id, activeSpendRef).catch(() => false);
+      const retryRef = `${generationId}:attempt-2`;
+      const hold = await reserveSpend({ userId: user.id, kind: "chat", ref: retryRef, plan, period, budget: effective }).catch(() => null);
+      if (!hold?.allowed) {
+        console.warn("[chat] not retried: the second attempt's spend hold was refused", { generationId, conversationId });
+        return false;
+      }
+      activeSpendRef = retryRef;
+      // The first rejection is evidence however the turn ends: provider
+      // health (an account fault takes the lab down at once) and Auto's
+      // retry pressure read it, exactly as the catch below would have.
+      if (verdict.class === "rate_limit") recordProviderRateLimit(failed.provider);
+      noteLiveProviderFault(failed.provider, err, "chat", { requester: user.id, modelId: failed.id });
+      if (next) {
+        modelInfo = next.model;
+        modelId = next.model.id;
+        answeringAutoEffort = next.reasoningEffort;
+        answeringEffort = effectiveReasoningEffort(next.model, next.reasoningEffort ?? undefined);
+        // The receipt object the writer saves: the answering model's facts,
+        // and that the router's own pick was rerouted (`unreachable`).
+        if (routingReceipt) Object.assign(routingReceipt, next.receipt);
+        turnWriter = writerFor(next.model.id);
+        budgetGuard = budgetGuardFor(next.model);
+        answeringTelemetry = { modelId: next.model.id, provider: next.model.provider, expectedMicroUsd: next.expectedMicroUsd };
+      }
+      for (const row of retryActivityRows({ failed, next: next?.model ?? null, class: verdict.class, delayMs: step.delayMs })) {
+        sendActivity(row);
+      }
+      console.warn("[chat] retrying before the first byte", {
+        generationId,
+        conversationId,
+        attempt: attempt + 1,
+        from: failed.id,
+        to: modelInfo.id,
+        class: verdict.class,
+        status: verdict.status,
+        delayMs: step.delayMs,
+      });
+      // Our own wait is not provider silence: the watchdog sleeps through it
+      // and then gives attempt 2 a whole startup window.
+      stallWatchdog.pause();
+      await waitBeforeRetry(step.delayMs, generationController.signal);
+      if (generationController.signal.aborted) {
+        // A Stop, a drain or a lost lease while waiting: the catch below
+        // reads which from its own flags.
+        throw new DOMException("The turn ended while waiting to retry", "AbortError");
+      }
+      stallWatchdog.resume();
+      retriesMade = 1;
+      return true;
+    };
+
     try {
       /*
        * THE TURN BECAME A RESEARCH RUN (SPEC §9.6.1).
@@ -678,16 +803,11 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         console.info("[chat] research handed off", { generationId, conversationId, runId: handoffRunId });
         return;
       }
-      const modelStream = researchNotice
-        ? streamResearchNotice(researchNotice)
-        : deterministicSmokeProviderEnabled
-        ? streamDeterministicSmokeResponse(
-            input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? "",
-            // Stop aborts this controller; the smoke stream honours it as a
-            // provider does, so the browser journey can test Stop for real.
-            generationController.signal
-          )
-        : streamChat({
+      // One provider request for this generation; `attempt` 2 is the retry
+      // before the first byte, which the request meter records as a retry.
+      // Reads the answering model and effort, which that retry may move.
+      const openModelStream = (attempt: number) => streamChat({
+        attempt,
         model: modelInfo,
         system: synthesisSystem,
         systemStablePrefix: baseSystemSections.stable,
@@ -696,7 +816,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         // Not tied to req.signal: route changes can drop the browser stream
         // without killing generation; the explicit cancel endpoint aborts this.
         signal: generationController.signal,
-        reasoningEffort,
+        reasoningEffort: answeringEffort,
         webSearch: useWebSearch,
         connectors: activeConnectors,
         // The hosted browser tool only when the user switched web access on.
@@ -752,21 +872,48 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             ? [...(toolProviderSessions?.specs ?? []), ...(alevrSearchTurn?.specs ?? [])]
             : undefined,
       });
-      await pumpTurnStream(modelStream, {
-        acc,
-        stallWatchdog,
-        toolWatch,
-        toolActivity,
-        send,
-        sendActivity,
-        enforceStreamBudget,
-        writing: artifactEditTarget
-          ? { title: "Preparing targeted changes", detail: "Building an exact source patch" }
-          : { title: "Writing the answer", detail: "Streaming response text" },
-        forwardDeltas: !artifactEditTarget,
-        onEffect: trace.observe,
-        drainSources: alevrSearchTurn ? () => alevrSearchTurn.drainSources() : undefined,
-      });
+      const pump = (modelStream: AsyncIterable<LlmEvent>) =>
+        pumpTurnStream(modelStream, {
+          acc,
+          stallWatchdog,
+          toolWatch,
+          toolActivity,
+          send,
+          sendActivity,
+          enforceStreamBudget,
+          writing: artifactEditTarget
+            ? { title: "Preparing targeted changes", detail: "Building an exact source patch" }
+            : { title: "Writing the answer", detail: "Streaming response text" },
+          forwardDeltas: !artifactEditTarget,
+          onEffect: trace.observe,
+          drainSources: alevrSearchTurn ? () => alevrSearchTurn.drainSources() : undefined,
+        });
+      if (researchNotice) {
+        await pump(streamResearchNotice(researchNotice));
+      } else if (deterministicSmokeProviderEnabled) {
+        await pump(
+          streamDeterministicSmokeResponse(
+            input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? "",
+            // Stop aborts this controller; the smoke stream honours it as a
+            // provider does, so the browser journey can test Stop for real.
+            generationController.signal
+          )
+        );
+      } else {
+        // The model call, and at most one more if the provider rejected the
+        // first before anything arrived (`retryBeforeFirstByte`). Counted on
+        // what the stream actually yielded: one event of any kind, and the
+        // error is the turn's.
+        for (let attempt = 1; ; attempt += 1) {
+          const counted = countingStream(openModelStream(attempt));
+          try {
+            await pump(counted.stream);
+            break;
+          } catch (err) {
+            if (!(await retryBeforeFirstByte(err, attempt, counted.received()))) throw err;
+          }
+        }
+      }
       toolWatch.releaseAll();
       // The provider is done. Everything below is Juno's own persistence, and
       // the watchdog only measures provider silence — leaving it armed made a
@@ -990,6 +1137,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         modelId,
         source: legacyClient,
         generationId,
+        reservationRef: activeSpendRef,
         usage: usage,
         acc,
         promptChars: synthesisPromptChars(),
@@ -1061,6 +1209,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           modelId,
           source: legacyClient,
           generationId,
+          reservationRef: activeSpendRef,
           usage: consumedUsage,
           acc,
           promptChars: synthesisPromptChars(),
@@ -1085,6 +1234,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         provider: modelInfo.provider,
         model: modelInfo.providerModel,
         finishReason: reason,
+        attempt: retriesMade + 1,
         message: err instanceof Error ? err.message : String(err),
       });
 
@@ -1166,6 +1316,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
               modelId,
               source: legacyClient,
               generationId,
+              reservationRef: activeSpendRef,
               usage: partialUsage,
               acc,
               promptChars: synthesisPromptChars(),
@@ -1304,11 +1455,13 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         const outcome = turnOutcome;
         void recordRoutingOutcome({
           ...routingTelemetryBase,
+          // The model that answered, when the retry moved the turn to it.
+          ...answeringTelemetry,
           messageId: outcome.messageId,
-          effort: (autoReasoningEffort !== undefined ? autoReasoningEffort : requestedEffort) ?? null,
+          effort: (answeringAutoEffort !== undefined ? answeringAutoEffort : requestedEffort) ?? null,
           ...outcomeTimings(finishedTrace, turnStartedAt),
           toolRounds: acc.currentRound,
-          retryCount: 0,
+          retryCount: retriesMade,
           completionState: completionStateFor(outcome.finishReason, outcome.persistedPartial),
           finishReason: outcome.finishReason,
           costMicroUsd: outcome.costMicroUsd,
@@ -1346,8 +1499,10 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
        * round trip to discover that. Failure is swallowed — the answer has
        * already been delivered, and the sweep remains the backstop.
        */
+      // The hold still open is the latest attempt's: a retried turn already
+      // released attempt 1's before taking attempt 2's.
       if (!spendRecorded) {
-        await releaseSpend(user.id, generationId).catch(() => {});
+        await releaseSpend(user.id, activeSpendRef).catch(() => {});
       }
       // After the terminal frame, before the registry entry goes: a client
       // that reconnects between the two must find the `done`/`error` in the

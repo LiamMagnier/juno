@@ -3,6 +3,7 @@ import { env } from "@/lib/env";
 import { ComputerError, scrubComputerText } from "./errors";
 import { stopStream } from "./live-view";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
+import { recordComputerAudit } from "./audit";
 import {
   LEGACY_RETENTION_IGNORED,
   computerRetentionPolicy,
@@ -17,8 +18,11 @@ import {
   disableComputer,
   diskFullError,
   getComputerStorePersistence,
+  isHostUnreachable,
+  noteComputerContact,
   overDiskQuota,
   restComputer,
+  settleComputerOutage,
   sleepComputer,
   type AgentComputerRow,
 } from "./store";
@@ -52,7 +56,7 @@ export interface RetentionSweepOptions {
    * for the in-memory store (tests pass their rows). Only read when enforcing.
    */
   listAsleep?: () => Promise<AgentComputerRow[]>;
-  /** Default: one log line. S3 passes recordComputerAudit. */
+  /** Default: the operator audit (recordComputerAudit, `retention_deleted`). */
   audit?: RetentionAuditWriter;
   /** Default: the same path as Delete (disableComputer: the container and both volumes). */
   destroy?: (row: AgentComputerRow) => Promise<void>;
@@ -83,8 +87,9 @@ async function asleepRowsFromDatabase(): Promise<AgentComputerRow[]> {
   return rows as unknown as AgentComputerRow[];
 }
 
-const logRetentionDeletion: RetentionAuditWriter = async ({ agentId, detail }) => {
-  console.warn("[agent-computer] retention deleted a computer", { agentId, days: detail?.days });
+const auditRetentionDeletion: RetentionAuditWriter = async (input) => {
+  console.warn("[agent-computer] retention deleted a computer", { agentId: input.agentId, days: input.detail?.days });
+  await recordComputerAudit(input);
 };
 
 /**
@@ -111,7 +116,7 @@ async function sweepRetention(
   } catch {
     return;
   }
-  const audit = options?.audit ?? logRetentionDeletion;
+  const audit = options?.audit ?? auditRetentionDeletion;
   const destroy = options?.destroy ?? ((row: AgentComputerRow) => disableComputer(row.userId, row.agentId));
   for (const row of retentionCandidates(rows, now, policy)) {
     try {
@@ -175,6 +180,40 @@ async function reapOrphans(
 /** Test seam: forget what earlier sweeps saw. */
 export function resetOrphanTrackingForTest(): void {
   orphanSince.clear();
+  staleImageAudited.clear();
+}
+
+/** The image ids already reported stale today (UTC), so each is audited once a day. */
+const staleImageAudited = new Set<string>();
+
+/**
+ * Image freshness (D16): once a day per host image past
+ * AGENT_COMPUTER_MAX_IMAGE_AGE_DAYS, a log line and an `image_stale` audit on
+ * every computer the pass found awake (the audit needs an owner; a stale image
+ * with nothing awake is logged only). Nothing is refused: rebuilding is the
+ * owner's (deploy/computer-host/setup.sh --rebuild-image, or setup-vm.sh).
+ */
+async function auditStaleImage(
+  provider: NonNullable<ReturnType<typeof computerProvider>>,
+  rows: AgentComputerRow[],
+  summary: SweepSummary,
+  now: Date,
+): Promise<void> {
+  const image = await provider.imageInfo();
+  const built = Date.parse(image.createdAt);
+  if (!Number.isFinite(built)) return;
+  const days = Math.floor((now.getTime() - built) / 86_400_000);
+  if (days <= env.agentComputer.maxImageAgeDays) return;
+  const key = `${image.id}:${now.toISOString().slice(0, 10)}`;
+  if (staleImageAudited.has(key)) return;
+  staleImageAudited.add(key);
+  console.warn("[agent-computer] the computer image is older than AGENT_COMPUTER_MAX_IMAGE_AGE_DAYS; rebuild it", { days });
+  const skipped = new Set(summary.skipped);
+  for (const row of rows) {
+    if (row.status === "awake" && !skipped.has(row.agentId)) {
+      await recordComputerAudit({ userId: row.userId, agentId: row.agentId, kind: "image_stale", actor: "sweep", detail: { days } });
+    }
+  }
 }
 
 function lastMeaningfulTimestamp(row: AgentComputerRow): number {
@@ -198,7 +237,8 @@ interface RowPass {
   summary: SweepSummary;
 }
 
-async function sweepRow(row: AgentComputerRow, pass: RowPass): Promise<void> {
+async function sweepRow(read: AgentComputerRow, pass: RowPass): Promise<void> {
+  let row = read;
   const { provider, persistence, now, nowMs, restThresholdMs, sleepThresholdMs, summary } = pass;
   if (row.creationToken && row.creationExpiresAt && row.creationExpiresAt.getTime() > nowMs) return;
   if (row.billingStoppedAt) {
@@ -214,7 +254,18 @@ async function sweepRow(row: AgentComputerRow, pass: RowPass): Promise<void> {
     return;
   }
   const handle = decodeHandle(row.containerRef, row.agentId);
-  const liveState = await provider.state(handle);
+  let liveState: Awaited<ReturnType<typeof provider.state>>;
+  try {
+    liveState = await provider.state(handle);
+  } catch (error) {
+    // Losing the host (S3.3): an awake computer's open interval is settled at
+    // its last contact and nothing accrues until the host answers again. The
+    // row is otherwise left alone: never missing, never recreated.
+    if (isHostUnreachable(error)) await settleComputerOutage(row, now).catch(() => false);
+    throw error;
+  }
+  // Reached: the contact time moves, and after an outage metering resumes now.
+  row = await noteComputerContact(row, now);
 
   // 1. Reboot / out-of-band stop reconciliation. A computer marked "starting" is mid-wake:
   // `ensureAwake` writes the status before `docker start` returns, so a fresh one is skipped.
@@ -325,7 +376,12 @@ export async function sweepAgentComputers(opts?: {
   };
 
   const provider = computerProvider();
-  if (!provider || !(await isAgentComputerConfigured())) {
+  if (!provider) return summary;
+  // A remote host that does not answer still gets its pass: every awake row's
+  // metering stops at its last contact (state() throws for each), and nothing
+  // is reaped or deleted. A same-host provider that is not set up does nothing.
+  const configured = await isAgentComputerConfigured();
+  if (!configured && provider.name !== "remote") {
     return summary;
   }
 
@@ -358,9 +414,11 @@ export async function sweepAgentComputers(opts?: {
     }
   }
 
-  await sweepRetention(persistence, now, summary, opts?.retention);
-
-  await reapOrphans(provider, persistence, nowMs, summary).catch(() => undefined);
+  if (configured) {
+    await sweepRetention(persistence, now, summary, opts?.retention);
+    await reapOrphans(provider, persistence, nowMs, summary).catch(() => undefined);
+    await auditStaleImage(provider, rows, summary, now).catch(() => undefined);
+  }
 
   // Spent and expired single-use view links (src/lib/computer/handoff.ts).
   if (computerStoreUsesDatabase()) await purgeComputerHandoffs(now).catch(() => 0);

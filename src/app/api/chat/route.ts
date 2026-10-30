@@ -392,6 +392,7 @@ async function handleChat(req: Request) {
       routingWarning: model.routingWarning,
       routingReceipt: model.routingReceipt,
       routingTelemetryBase: model.routingTelemetryBase,
+      autoRetry: model.autoRetry,
       turnContext,
       activeConnectors,
       memory,
