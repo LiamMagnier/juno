@@ -99,7 +99,7 @@ function ClampedBlock({ text, maxLines }: { text: string; maxLines: number }) {
       <pre
         translate="no"
         data-no-auto-translate
-        className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-secondary px-2.5 py-2 font-mono text-caption text-foreground/85"
+        className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-secondary px-2.5 py-2 font-mono text-caption text-foreground/85"
       >
         {all ? text : head}
       </pre>
@@ -130,7 +130,7 @@ function ExternalRow({ url, title }: { url: string; title?: string }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-ui transition-colors duration-fast ease-out-soft hover:bg-accent"
+      className="flex min-w-0 items-center gap-2 rounded-control px-1.5 py-1 text-ui transition-colors duration-fast ease-out-soft hover:bg-accent"
     >
       <SourceFavicon url={url} variant="cluster" className="size-4" />
       {title ? (
@@ -282,7 +282,7 @@ function ApprovalSubject({
           aria-expanded={reviewOpen}
           aria-controls={reviewOpen ? reviewId : undefined}
           onClick={onToggleReview}
-          className="-mx-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption font-medium text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+          className="-mx-1.5 inline-flex items-center gap-1 rounded-control px-1.5 py-0.5 text-caption font-medium text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
         >
           <ChevronRight
             aria-hidden="true"
@@ -294,7 +294,7 @@ function ApprovalSubject({
           <Phrase text={summary.reviewLabel} />
         </button>
         <Collapse open={reviewOpen}>
-          <div id={reviewId} className="mt-1 flex flex-col gap-1.5 rounded-md bg-secondary px-2.5 py-2">
+          <div id={reviewId} className="mt-1 flex flex-col gap-1.5 rounded-control bg-secondary px-2.5 py-2">
             {summary.risk ? (
               <p className="text-caption text-muted-foreground">
                 <Phrase text={summary.risk.detail} />

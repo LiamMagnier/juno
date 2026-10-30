@@ -375,7 +375,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
                 setAnswers((prev) => prev.map((a, k) => (k === current ? i : a)));
               }}
               className={cn(
-                "group/opt grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-3 rounded-xl border px-3 py-3 text-left transition-[background-color,border-color,opacity,transform,box-shadow] duration-base ease-out-soft active:scale-[0.99] motion-reduce:transition-none coarse:min-h-11",
+                "group/opt grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-3 rounded-card border px-3 py-3 text-left transition-[background-color,border-color,opacity,transform,box-shadow] duration-base ease-out-soft active:scale-[0.99] motion-reduce:transition-none coarse:min-h-11",
                 state === "idle" && "border-border/70 bg-card hover:border-[hsl(var(--live,var(--primary))/0.45)] hover:shadow-[0_0_0_3px_hsl(var(--live,var(--primary))/0.08)]",
                 state === "right" && "border-success/50 bg-success/[0.07]",
                 state === "wrong" && "border-destructive/45 bg-destructive/[0.06] motion-safe:animate-nudge",
@@ -551,7 +551,7 @@ export function LiveExercise({ exercise, interp, onPrompt }: { exercise: Exercis
   };
 
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 bg-foreground/[0.02] p-4 sm:p-5">
+    <section aria-label={title} className="flex min-w-0 flex-col gap-3 rounded-panel border border-border/70 bg-foreground/[0.02] p-4 sm:p-5">
       <div className="flex items-baseline justify-between gap-4">
         <p className="min-w-0 text-body font-medium text-foreground">{title}</p>
         {exercise.tag ? <span className="shrink-0 text-caption text-muted-foreground">{interp(exercise.tag)}</span> : null}

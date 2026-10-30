@@ -1483,7 +1483,7 @@ export const MessageItem = React.memo(function MessageItem({
                 {canContinue && (
                   // Carry on from here, not "again": the refresh arrow is
                   // Retry, and this keeps the answer and writes past its end.
-                  <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
+                  <Button type="button" variant="outline" size="xs" onClick={onContinue}>
                     <CornerDownRight className="size-3.5" /> Continue
                   </Button>
                 )}
@@ -1492,7 +1492,7 @@ export const MessageItem = React.memo(function MessageItem({
                     same shape and place as Continue, which wins when the
                     finish reason allows writing past the kept text. */}
                 {message.error && onRegenerate && isLast && !busy && !canContinue && (
-                  <Button type="button" variant="outline" size="sm" onClick={() => onRegenerate()} className="h-7 gap-1.5">
+                  <Button type="button" variant="outline" size="xs" onClick={() => onRegenerate()}>
                     <ActionIcons.refresh className="size-3.5" /> Try again
                   </Button>
                 )}

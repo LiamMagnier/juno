@@ -373,7 +373,7 @@ export function ComposerArmedMark({
       type="button"
       onClick={onOpen}
       aria-label={openLabel}
-      className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="inline-flex min-w-0 items-center gap-1.5 rounded-control py-0.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <span className={cn("truncate", labelClassName)}>{label}</span>
       {detail && (
@@ -389,7 +389,7 @@ export function ComposerArmedMark({
   return (
     <span
       className={cn(
-        "group/armed inline-flex min-w-0 items-center gap-1 rounded-md bg-accent pl-1 align-baseline font-medium text-foreground",
+        "group/armed inline-flex min-w-0 items-center gap-1 rounded-control bg-accent pl-1 align-baseline font-medium text-foreground",
         "motion-safe:animate-pop-in",
       )}
     >

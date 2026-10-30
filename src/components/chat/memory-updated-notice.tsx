@@ -45,7 +45,7 @@ export const MEMORY_NOTICE_MS = 6000;
 const EXIT_MS = 180;
 
 const actionClass =
-  "inline-flex h-7 items-center gap-1 rounded-md px-2 font-sans text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-9";
+  "inline-flex h-7 items-center gap-1 rounded-control px-2 font-sans text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-9";
 
 /**
  * The fact, short enough for two lines of the notice, cut only between words.
@@ -127,7 +127,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false);
       }}
       className={cn(
-        "pointer-events-auto relative isolate flex w-max max-w-[min(40rem,calc(100vw-2rem))] items-center gap-3 overflow-hidden rounded-2xl border border-border/70 bg-popover py-2 pl-2 pr-1.5 shadow-glass",
+        "pointer-events-auto relative isolate flex w-max max-w-[min(40rem,calc(100vw-2rem))] items-center gap-3 overflow-hidden rounded-panel border border-border/70 bg-popover py-2 pl-2 pr-1.5 shadow-glass",
         leaving
           ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]"
           : "motion-safe:animate-rise-in",
@@ -138,7 +138,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
       <span
         aria-hidden="true"
         className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-xl transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft motion-reduce:transition-none",
           allUndone ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary-ink",
         )}
       >

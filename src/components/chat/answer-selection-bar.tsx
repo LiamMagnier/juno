@@ -33,9 +33,9 @@ export const SELECTION_BAR_LABEL = {
   hint: "Selection actions are available. Press Tab to reach them.",
 } as const;
 
-// The canvas and document viewer's key, verbatim: `rounded-control` (8) seated
-// 4px inside the bar's `rounded-card` (12), 44px tall on touch.
-const ACTION = "h-7 gap-1.5 rounded-control px-2.5 coarse:h-11 coarse:px-3.5";
+// The document viewer's key: Button's `xs` rung (28px, `rounded-control` (8)
+// seated 4px inside the bar's `rounded-card` (12)), 44px tall on touch.
+const ACTION = "coarse:h-11 coarse:px-3.5";
 
 const HIGHLIGHT = "juno-quote";
 const HIGHLIGHT_STYLE_ID = "juno-quote-highlight-style";
@@ -409,7 +409,7 @@ function AnswerSelectionBarImpl({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="xs"
               onClick={key.onClick}
               // Roving tabindex: the bar is one Tab stop, arrows move inside it.
               tabIndex={i === 0 ? 0 : -1}

@@ -410,7 +410,7 @@ export function ActivityTimeline({
           aria-controls={inlineOpen ? inlineDomId : undefined}
           aria-label={label}
           className={cn(
-            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md px-2 text-left",
+            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-control px-2 text-left",
             "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none coarse:min-h-11",
             (inlineOpen || open) && "bg-accent",
             hasLiveBlocks || inlineOpen ? "mb-0.5" : "mb-1.5"
@@ -450,7 +450,7 @@ export function ActivityTimeline({
           aria-controls={inlineOpen ? inlineDomId : undefined}
           aria-label={label}
           className={cn(
-            "group/thought -ml-2 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md pl-2 pr-1.5 text-left text-nav text-muted-foreground",
+            "group/thought -ml-2 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-control pl-2 pr-1.5 text-left text-nav text-muted-foreground",
             "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-11",
             inlineOpen ? "mb-0.5" : "mb-1.5",
             (inlineOpen || open) && "bg-accent text-foreground"

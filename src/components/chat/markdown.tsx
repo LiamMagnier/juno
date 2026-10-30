@@ -900,7 +900,7 @@ function GuardedImage({
       referrerPolicy="no-referrer"
       title={alt || undefined}
       data-image-link=""
-      className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
+      className="inline-flex max-w-full items-center gap-1 rounded-control border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
     >
       <PhraseWithArgs spec={{ parts: [{ phrase: MARKDOWN_COPY.imageFrom }, { kind: "domain", value: decision.host }] }} />
     </a>
