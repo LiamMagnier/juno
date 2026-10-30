@@ -73,6 +73,14 @@ RUN chmod 0644 /etc/chromium/policies/managed/juno.json /opt/juno/cdp-gate.py /o
  && chmod 0755 /opt/juno/entrypoint.sh /opt/juno/agent-exec \
  && chown -R root:root /opt/juno
 
+# No DNS in a computer (pipe-v4): names resolve at the egress proxy, never here.
+# A lookup reads /etc/hosts and stops, so it fails at once. Sent to Docker's
+# resolver instead, it met firewall.sh's port-53 REJECT, whose ICMP replies the
+# kernel rate-limits (net.ipv4.icmp_ratelimit), and a tool then waited out the
+# resolver's 2-second timeout, sometimes twice.
+RUN sed -i -E 's/^hosts:.*/hosts:          files/' /etc/nsswitch.conf \
+ && grep -qx 'hosts: *files' /etc/nsswitch.conf
+
 LABEL juno.security="pipe-v4"
 USER 1001
 WORKDIR /home/browser
