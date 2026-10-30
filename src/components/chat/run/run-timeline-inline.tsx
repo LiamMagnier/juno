@@ -39,7 +39,7 @@ function ReasoningItem({ text }: { text: string }) {
   return (
     <div className="min-w-0">
       {headline ? (
-        <p lang="" translate="no" data-no-auto-translate className="text-ui font-medium text-foreground/90">
+        <p lang="" translate="no" data-no-auto-translate className="text-ui font-medium text-foreground">
           {headline}
         </p>
       ) : null}

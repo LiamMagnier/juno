@@ -91,8 +91,8 @@ function M2() {
                     style={{ left: anchor.left, top: anchor.top, zIndex: 30, transformOrigin: "0 0" }}
                     initial={{ opacity: 0, y: 4, scale: 0.985 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, transition: { duration: 0.1, ease: "linear" } }}
-                    transition={{ duration: 0.14, ease: EASE }}
+                    exit={{ opacity: 0, transition: { duration: 0.12, ease: "linear" } }}
+                    transition={{ duration: 0.16, ease: EASE }}
                   >
                     <AtPalette
                       query={query}
@@ -152,8 +152,8 @@ function M3() {
                   style={{ left: anchor.left, top: anchor.top, zIndex: 30, transformOrigin: `${anchor.ox}px 0px` }}
                   initial={{ opacity: 0, scale: 0.96, y: -4 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.1, ease: "linear" } }}
-                  transition={{ duration: 0.18, ease: EASE }}
+                  exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.12, ease: "linear" } }}
+                  transition={{ duration: 0.16, ease: EASE }}
                 >
                   <TokenPanel app="stripe" className="!static" />
                 </motion.div>
@@ -193,7 +193,7 @@ function M4() {
                 exit={{ opacity: 0, transition: { duration: 0.12, ease: "linear" } }}
                 transition={{ duration: 0.2 }}
               >
-                <h2 className="pc-greet !text-[32px]">Good afternoon, Liam</h2>
+                <h2 className="pc-greet pc-fs-32">Good afternoon, Liam</h2>
                 <div className="pc-chips !mb-5 !mt-4">
                   <span className="pc-chip">
                     <Face avatar={MIRA.avatar} presence="waiting" size={18} />
@@ -210,13 +210,13 @@ function M4() {
                 </div>
               </motion.div>
             ) : (
-              <motion.div key="thread" className="flex w-full flex-col" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.2 } }}>
+              <motion.div key="thread" className="flex w-full flex-col" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.22 } }}>
                 <motion.div layoutId="m4-draft" layout="position" transition={t} className="pc-bubble relative !bg-transparent">
                   <motion.span
                     className="pc-m4__bubblebg"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: 0.2, delay: 0.16, ease: "linear" }}
+                    transition={{ duration: 0.22, delay: 0.16, ease: "linear" }}
                   />
                   <span className="relative">
                     <DraftText segs={DRAFT} />
@@ -298,7 +298,7 @@ function M5() {
   return (
     <div className="pc-mstage__top !items-start">
       <div className="w-[560px] max-w-full">
-        <div className="pc-bubble ml-auto w-fit !text-[15px]">Where is renewal risk this quarter?</div>
+        <div className="pc-bubble ml-auto w-fit pc-fs-15">Where is renewal risk this quarter?</div>
         <div className="mt-6 min-h-[180px]">
           <AnimatePresence mode="wait" initial={false}>
             {step < 2 ? (
@@ -357,8 +357,8 @@ function M6() {
                   style={{ right: 58, bottom: 52, zIndex: 30, transformOrigin: "100% 100%" }}
                   initial={{ opacity: 0, y: 4, scale: 0.985 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, transition: { duration: 0.1, ease: "linear" } }}
-                  transition={{ duration: 0.14, ease: EASE }}
+                  exit={{ opacity: 0, transition: { duration: 0.12, ease: "linear" } }}
+                  transition={{ duration: 0.16, ease: EASE }}
                 >
                   <ModelMenu className="!static" selected="auto" hover={active} />
                 </motion.div>
@@ -391,11 +391,11 @@ function M7() {
         <AnimatePresence mode="wait" initial={false}>
           <motion.p
             key={presence + step}
-            className={presence === "waiting" ? "pc-needs !text-[14px]" : "pc-ui pc-muted"}
+            className={presence === "waiting" ? "pc-needs pc-fs-14" : "pc-ui pc-muted"}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.14, ease: "linear" }}
+            transition={{ duration: 0.16, ease: "linear" }}
           >
             {PRESENCE_LABEL[presence]}
           </motion.p>

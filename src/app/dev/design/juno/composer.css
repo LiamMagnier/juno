@@ -78,7 +78,7 @@
   vertical-align: -4px;
   background: var(--ink);
   border-radius: 1px;
-  animation: jn-blink 1.06s steps(1) infinite;
+  animation: jn-blink var(--loop-beat) steps(1) infinite;
 }
 .jn .jn-caret[data-at-start] {
   position: absolute;

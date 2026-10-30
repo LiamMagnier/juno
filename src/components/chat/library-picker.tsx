@@ -220,10 +220,10 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-sm border backdrop-blur-xs transition-colors duration-fast ease-out-soft",
+                        "absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-sm border transition-colors duration-fast ease-out-soft",
                         isSel
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border/80 bg-background/80 text-transparent group-hover:border-foreground/40"
+                          : "border-border/80 bg-background text-transparent group-hover:border-foreground/40"
                       )}
                     >
                       {/* 12px draws the set's bold cut on its own — no

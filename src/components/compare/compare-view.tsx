@@ -466,7 +466,7 @@ export function CompareView() {
                     style={staggerDelay(i, "tight")}
                     className="pressable group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left [animation-fill-mode:backwards] hover:bg-accent active:bg-selected motion-safe:animate-rise-in motion-reduce:active:scale-100"
                   >
-                    <span className="ed-name min-w-0 flex-1 text-foreground/85 transition-colors duration-fast group-hover:text-foreground">
+                    <span className="ed-name min-w-0 flex-1 text-foreground transition-colors duration-fast">
                       {sample}
                     </span>
                     <ArrowRight

@@ -208,7 +208,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
                           <span className="w-5 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">{row.cited}</span>
                           <SourceFavicon url={row.url} variant="list" />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-caption font-medium text-foreground/90">{row.title}</span>
+                            <span className="block truncate text-caption font-medium text-foreground">{row.title}</span>
                             <bdi translate="no" className="block truncate text-caption text-muted-foreground">
                               {row.domain}
                             </bdi>

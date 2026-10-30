@@ -230,7 +230,7 @@ function VersionPager({
   // one pair that stayed mute. (A disabled arrow shows none; Radix cannot hover
   // a pointer-events-none target, and a control that cannot act needs no name.)
   return (
-    <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground">
+    <div className="mr-1 flex items-center font-mono text-label font-normal text-muted-foreground">
       <Tooltip>
         <TooltipTrigger asChild>
           <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
@@ -352,7 +352,7 @@ function TurnMeta({
     </span>
   );
   return (
-    <span className="flex min-w-0 items-center gap-2.5 text-caption text-muted-foreground">
+    <span className="flex min-w-0 items-center gap-2.5 font-sans text-label font-normal text-muted-foreground">
       {modelName &&
         (receipt ? (
           // Its own control, beside (never inside) the numbers' tooltip: one
@@ -428,7 +428,7 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
           <DropdownMenuSubContent className={cn(MENU_W, "max-h-[min(24rem,60vh)]")}>
             {grouped.map(([provider, list]) => (
               <React.Fragment key={provider}>
-                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-caption">
+                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label">
                   <ProviderLogo provider={list[0].provider} className="size-3" />
                   {PROVIDERS[list[0].provider]?.label.split(" · ")[0] ?? provider}
                 </DropdownMenuLabel>
@@ -440,7 +440,7 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
                 ))}
               </React.Fragment>
             ))}
-            {grouped.length === 0 && <p className="px-2 py-3 text-center text-caption text-muted-foreground">No other models available.</p>}
+            {grouped.length === 0 && <p className="px-2 py-3 text-center font-sans text-label font-normal text-muted-foreground">No other models available.</p>}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
@@ -1043,7 +1043,7 @@ export const MessageItem = React.memo(function MessageItem({
                   // A control, so the interface face rather than the mono
                   // metadata voice; a 28px row (44px coarse) so it is a
                   // target rather than a line of type.
-                  className="-mr-1.5 mt-1 inline-flex h-7 items-center rounded-control px-1.5 text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11"
+                  className="-mr-1.5 mt-1 inline-flex h-7 items-center rounded-control px-1.5 font-sans text-label font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11"
                 >
                   {expanded ? "Show less" : lineCountShown ? <>Show more · {lineCount} lines</> : "Show more"}
                 </button>
@@ -1056,7 +1056,7 @@ export const MessageItem = React.memo(function MessageItem({
             this is the one control that gets them to the server. */}
         {!editing && message.unsent && onResend && (
           <div className="mt-1.5 flex items-center gap-2.5">
-            <span className="font-mono text-caption text-destructive">Not sent</span>
+            <span className="font-mono text-label font-normal text-destructive">Not sent</span>
             <Button
               type="button"
               variant="outline"
@@ -1402,7 +1402,7 @@ export const MessageItem = React.memo(function MessageItem({
                     plain small words under it (never a pill). The files
                     themselves carry the machine-readable marking
                     (src/lib/ai-content-marking.ts). */}
-                {generatedMedia && <p className="mb-2 text-caption text-muted-foreground">AI-generated</p>}
+                {generatedMedia && <p className="mb-2 font-sans text-label font-normal text-muted-foreground">AI-generated</p>}
                 </>
               );
             })()}
@@ -1718,12 +1718,12 @@ export const MessageItem = React.memo(function MessageItem({
                             <span className="text-label text-foreground">{receiptSummary(view.routing)}</span>
                           )}
                           {view.routing && view.routing.reasons.length > 0 && (
-                            <span className="text-caption text-muted-foreground">
+                            <span className="font-sans text-label font-normal text-muted-foreground">
                               Selected for {view.routing.reasons.join(", ")}
                             </span>
                           )}
                           {(hasUsage || hasCost) && (
-                            <span className="font-mono text-caption text-muted-foreground">
+                            <span className="font-mono text-label font-normal text-muted-foreground">
                               {hasUsage
                                 ? `${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens (${formatTokens(view.promptTokens ?? 0)} in · ${formatTokens(view.completionTokens ?? 0)} out)`
                                 : ""}

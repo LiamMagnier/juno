@@ -221,7 +221,7 @@ export function LiveSteps({
         >
           <div className="flex flex-col gap-2">
             <h5 className="font-serif text-[1.375rem] font-normal leading-[1.2] tracking-[-0.01em] text-foreground">{step.title}</h5>
-            {step.summary ? <p className="text-body leading-7 text-foreground/85">{interp(step.summary)}</p> : null}
+            {step.summary ? <p className="text-body leading-7 text-foreground">{interp(step.summary)}</p> : null}
           </div>
 
           {step.ui.length ? <div className="flex min-w-0 flex-col gap-5 py-1">{renderUI(step.ui)}</div> : null}
@@ -229,7 +229,7 @@ export function LiveSteps({
           {step.notice ? (
             <p className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2 text-ui leading-6">
               <Eye aria-hidden className="mt-1 size-3.5 text-muted-foreground" />
-              <span className="min-w-0 text-foreground/80">
+              <span className="min-w-0 text-muted-foreground">
                 <span className="font-medium text-foreground">Notice </span>
                 {interp(step.notice)}
               </span>
@@ -238,12 +238,12 @@ export function LiveSteps({
 
           {step.detail ? (
             <Disclosure label="More detail">
-              <p className="whitespace-pre-line border-l border-border pl-4 pt-1 text-ui leading-relaxed text-foreground/85">{interp(step.detail)}</p>
+              <p className="whitespace-pre-line border-l border-border pl-4 pt-1 text-ui leading-relaxed text-foreground">{interp(step.detail)}</p>
             </Disclosure>
           ) : null}
 
           {finished && steps.takeaway ? (
-            <p className="border-l-2 border-primary/70 pl-4 font-serif text-[1.125rem] italic leading-relaxed text-foreground/90 motion-safe:animate-fade-in-up">
+            <p className="border-l-2 border-primary/70 pl-4 font-serif text-[1.125rem] italic leading-relaxed text-foreground motion-safe:animate-fade-in-up">
               {interp(steps.takeaway)}
             </p>
           ) : null}
@@ -406,7 +406,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
 
       {answered ? (
         <div className="flex flex-col gap-3 border-t border-border/50 pt-3 motion-safe:animate-fade-in" aria-live="polite">
-          <p className="text-ui leading-relaxed text-foreground/85">
+          <p className="text-ui leading-relaxed text-foreground">
             <span className={cn("font-medium", right ? "text-success-ink" : "text-destructive-ink")}>{right ? "Correct." : "Not quite."}</span>{" "}
             {interp(q.options[chosen].explanation ?? q.explanation ?? (right ? "" : `The answer is ${q.options[q.answer].label}.`))}
           </p>
@@ -455,7 +455,7 @@ export function LiveCallout({ callout, interp }: { callout: Callout; interp: Int
       <p className="whitespace-pre-line font-serif text-[1.125rem] leading-relaxed text-foreground">{interp(callout.text)}</p>
       {callout.more ? (
         <Disclosure label="Read more">
-          <p className="whitespace-pre-line pt-1 text-ui leading-relaxed text-foreground/85">{interp(callout.more)}</p>
+          <p className="whitespace-pre-line pt-1 text-ui leading-relaxed text-foreground">{interp(callout.more)}</p>
         </Disclosure>
       ) : null}
     </aside>
@@ -508,7 +508,7 @@ type Exercise = Extract<LiveComponent, { type: "exercise" }>;
 function Statement({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return (
-    <p className="min-w-0 whitespace-pre-line text-body leading-relaxed text-foreground/90">
+    <p className="min-w-0 whitespace-pre-line text-body leading-relaxed text-foreground">
       {parts.map((p, i) =>
         p.startsWith("**") && p.endsWith("**") && p.length > 4 ? (
           <strong key={i} className="font-medium text-foreground">
@@ -589,7 +589,7 @@ export function LiveExercise({ exercise, interp, onPrompt }: { exercise: Exercis
             <li key={i} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-baseline gap-2 text-ui text-muted-foreground">
               <Info aria-hidden className="size-3.5 translate-y-0.5" />
               <span>
-                {exercise.hints.length > 1 ? <span className="text-foreground/80">Hint {i + 1}. </span> : null}
+                {exercise.hints.length > 1 ? <span className="text-muted-foreground">Hint {i + 1}. </span> : null}
                 {interp(hint)}
               </span>
             </li>

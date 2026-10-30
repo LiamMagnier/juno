@@ -1023,7 +1023,7 @@ export function ApprovalCard({
           <span aria-hidden="true" className="mt-px flex size-5 shrink-0 items-center justify-center text-muted-foreground">
             {mark}
           </span>
-          <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-foreground/75")}>
+          <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-muted-foreground")}>
             {answerable ? (
               <>
                 <NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}
@@ -1054,13 +1054,13 @@ export function ApprovalCard({
         {payload}
 
         {(!task || answerable) && !agentConfig && (
-          <p className="mt-2.5 text-ui leading-relaxed text-foreground/75">{task ? taskCopy.description : risk.detail}</p>
+          <p className="mt-2.5 text-ui leading-relaxed text-muted-foreground">{task ? taskCopy.description : risk.detail}</p>
         )}
 
         {current.derivedFromUntrusted && (
           // Said in words, beside the payload it is about. The attention ink on
           // the lead only; no tinted box.
-          <p className="mt-2 flex gap-2 text-ui leading-relaxed text-foreground/75">
+          <p className="mt-2 flex gap-2 text-ui leading-relaxed text-muted-foreground">
             <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-[hsl(var(--attention))]" aria-hidden="true" />
             <span>
               <NeedsLead>Check this first.</NeedsLead>{" "}

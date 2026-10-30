@@ -412,7 +412,7 @@ export function Composer({
         { opacity: 0, transform: "scale(0.94)", boxShadow: "inset 0 0 0 1px transparent" },
         { opacity: 1, transform: "scale(1)" },
       ],
-      { duration: 160, delay: 60, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)", fill: "backwards" },
+      { duration: 160, delay: 70, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)", fill: "backwards" },
     );
   });
 
@@ -572,7 +572,7 @@ export function Composer({
     : {
         initial: { opacity: 0, scale: 0.98, y: floatBelow || float?.kind === "model" && !docked ? -4 : 4 },
         animate: { opacity: 1, scale: 1, y: 0 },
-        exit: { opacity: 0, scale: 0.99, transition: { duration: 0.1, ease: EASE_IN } },
+        exit: { opacity: 0, scale: 0.99, transition: { duration: 0.12, ease: EASE_IN } },
       };
 
   const fieldContent = (

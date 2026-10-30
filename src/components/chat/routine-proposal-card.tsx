@@ -269,7 +269,7 @@ export function RoutineProposalCard({
       <p className={cn("flex items-center gap-2 text-ui text-muted-foreground", className)}>
         <Repeat className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">
-          Routine not scheduled: <span className="text-foreground/75">{proposal.name}</span>
+          Routine not scheduled: <span className="text-muted-foreground">{proposal.name}</span>
         </span>
         <button
           type="button"
@@ -277,7 +277,7 @@ export function RoutineProposalCard({
             writeDismissed(proposal.key, false);
             setPhase("open");
           }}
-          className="shrink-0 rounded-control px-1 text-foreground/75 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
+          className="shrink-0 rounded-control px-1 text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
         >
           Show
         </button>
@@ -314,7 +314,7 @@ export function RoutineProposalCard({
           {/* Live only while it is not being edited: the When field's own
               read-back speaks while typing, and both at once read every
               keystroke out twice. */}
-          <p className="mt-px text-ui text-foreground/75" aria-live={editing ? "off" : "polite"}>
+          <p className="mt-px text-ui text-muted-foreground" aria-live={editing ? "off" : "polite"}>
             {scheduled && schedule ? (
               <ScheduledLine schedule={schedule} />
             ) : summary ? (

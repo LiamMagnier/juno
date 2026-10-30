@@ -398,7 +398,7 @@ function SectionHeading({ label, count }: { label: string; count?: number }) {
     <h2 className="mb-2 flex items-baseline gap-2 font-mono text-label text-muted-foreground">
       {label}
       {typeof count === "number" && (
-        <span className="tabular-nums text-muted-foreground/70">{count}</span>
+        <span className="tabular-nums text-muted-foreground">{count}</span>
       )}
     </h2>
   );

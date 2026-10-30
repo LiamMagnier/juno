@@ -272,7 +272,7 @@ function WrittenFileFence({ filename, children }: { filename: string; children: 
   return (
     <p className="my-3 flex min-w-0 items-baseline gap-2 text-caption text-muted-foreground">
       <span className="min-w-0 truncate">
-        <span className="font-mono text-foreground/80">{filename}</span> is in the changes above.
+        <span className="font-mono text-muted-foreground">{filename}</span> is in the changes above.
       </span>
       <button
         type="button"

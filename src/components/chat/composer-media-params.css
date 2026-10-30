@@ -9,11 +9,11 @@
    chosen thing in an open panel. No dots, no badges.
 
    Motion: one ease, the brand's expo-out (cubic-bezier(.16, 1, .3, 1)).
-     thumb / glide   320 / 240ms, transform (+ width), no travel on arrival
-     frame morph     320ms, transform: scale on a non-scaling hairline
+     thumb / glide   slow / base, transform (+ width), no travel on arrival
+     frame morph     slow, transform: scale on a non-scaling hairline
      panel           the `.cmenu` growth from the trigger; construction
                      draws in once (560ms, stroke-dashoffset, 50ms stagger);
-                     tiles rise 4px in a 16ms stagger
+                     tiles rise 4px in the row stagger
    Reduced motion keeps the fades and drops every travel, glide and morph. */
 
 @property --cp-fade-l {
@@ -70,8 +70,8 @@
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--cp-fade-l), #000 calc(100% - var(--cp-fade-r)), transparent 100%);
   mask-image: linear-gradient(to right, transparent 0, #000 var(--cp-fade-l), #000 calc(100% - var(--cp-fade-r)), transparent 100%);
   transition:
-    --cp-fade-l 200ms var(--cp-ease),
-    --cp-fade-r 200ms var(--cp-ease);
+    --cp-fade-l var(--dur-base) var(--cp-ease),
+    --cp-fade-r var(--dur-base) var(--cp-ease);
 }
 .cparams::-webkit-scrollbar {
   display: none;
@@ -113,7 +113,7 @@
 .cparams__chevron {
   margin-left: -1px;
   opacity: 0.6;
-  transition: transform 320ms var(--cp-ease);
+  transition: transform var(--dur-slow) var(--cp-ease);
 }
 .cparams__chip[data-state="open"] .cparams__chevron {
   transform: rotate(180deg);
@@ -151,8 +151,8 @@
   border-radius: 1px;
   color: hsl(var(--foreground) / 0.62);
   transition:
-    width 320ms var(--cp-ease),
-    height 320ms var(--cp-ease);
+    width var(--dur-slow) var(--cp-ease),
+    height var(--dur-slow) var(--cp-ease);
 }
 .cparams__frame--auto {
   border-style: dashed;
@@ -185,8 +185,8 @@
   opacity: 0;
   pointer-events: none;
   transition:
-    transform 320ms var(--cp-ease),
-    width 320ms var(--cp-ease),
+    transform var(--dur-slow) var(--cp-ease),
+    width var(--dur-slow) var(--cp-ease),
     opacity var(--dur-fast) var(--ease-out-soft);
 }
 .cparams__thumb[data-on="true"] {
@@ -208,7 +208,7 @@
   color: var(--cp-sub);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  transition: color 200ms var(--cp-ease);
+  transition: color var(--dur-base) var(--cp-ease);
 }
 @media (hover: hover) and (pointer: fine) {
   .cparams__seg-item:hover {
@@ -245,7 +245,7 @@
   color: currentColor;
 }
 .cparams__sound > svg {
-  transition: opacity 200ms var(--cp-ease);
+  transition: opacity var(--dur-base) var(--cp-ease);
 }
 .cparams__sound::after {
   content: "";
@@ -260,7 +260,7 @@
   /* A gap either side so the stroke reads as cutting the glyph, not as part of it. */
   box-shadow: 0 0 0 1.25px hsl(var(--tray-ground, var(--background)));
   transform: rotate(-45deg) scaleX(0);
-  transition: transform 260ms var(--cp-ease);
+  transition: transform var(--dur-base) var(--cp-ease);
 }
 .cparams__sound[data-on="false"] > svg {
   opacity: 0.72;
@@ -363,7 +363,7 @@
   border-radius: 1px;
   background-color: hsl(var(--presence));
   transform: scaleY(0);
-  transition: transform 240ms var(--cp-ease);
+  transition: transform var(--dur-base) var(--cp-ease);
 }
 .cparams-row[data-state="checked"]::before {
   transform: scaleY(1);
@@ -440,14 +440,14 @@
   vector-effect: non-scaling-stroke;
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 320ms var(--cp-ease);
+  transition: transform var(--dur-slow) var(--cp-ease);
 }
 .cframe__rect[data-auto] {
   stroke-dasharray: 3 3;
   stroke: hsl(var(--foreground) / 0.55);
 }
 .cframe__corner {
-  transition: transform 320ms var(--cp-ease);
+  transition: transform var(--dur-slow) var(--cp-ease);
 }
 .cframe__corner > path {
   fill: none;
@@ -504,9 +504,9 @@
   pointer-events: none;
   opacity: 0;
   transition:
-    transform 240ms var(--cp-ease),
-    width 240ms var(--cp-ease),
-    height 240ms var(--cp-ease),
+    transform var(--dur-base) var(--cp-ease),
+    width var(--dur-base) var(--cp-ease),
+    height var(--dur-base) var(--cp-ease),
     opacity var(--dur-fast) var(--ease-out-soft);
 }
 .dark .cframe__glide {
@@ -541,7 +541,7 @@
   display: block;
   border: 1.25px solid hsl(var(--foreground) / 0.5);
   border-radius: 1.5px;
-  transition: border-color 200ms var(--cp-ease);
+  transition: border-color var(--dur-base) var(--cp-ease);
 }
 .cframe__shape[data-auto] {
   border-style: dashed;
@@ -579,8 +579,8 @@
 @media (prefers-reduced-motion: no-preference) {
   /* The construction draws itself once in dots (DotRings), as the home's does. */
   .cframe[data-state="open"] .cframe__tile {
-    animation: cframe-rise 300ms var(--cp-ease) both;
-    animation-delay: calc(var(--i, 0) * 16ms + 70ms);
+    animation: cframe-rise var(--dur-slow) var(--cp-ease) both;
+    animation-delay: calc(var(--i, 0) * var(--stagger-row) + 70ms);
   }
   .cframe[data-state="open"][data-side="top"] .cframe__tile {
     --cp-rise: -4px;
@@ -687,7 +687,7 @@
   width: 1px;
   height: 5px;
   background-color: hsl(var(--foreground) / 0.16);
-  transition: background-color 200ms var(--cp-ease);
+  transition: background-color var(--dur-base) var(--cp-ease);
 }
 .cparams-length__tick[data-major] {
   height: 9px;

@@ -1189,7 +1189,7 @@ export default async function FileUnderstandingPage() {
             <ol className="mt-3 space-y-1.5">
               {CONTENTS.map((item) => (
                 <li key={item.id} className="flex gap-2.5">
-                  <span className="shrink-0 font-mono text-micro text-muted-foreground/70 tabular-nums">
+                  <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">
                     {item.index}
                   </span>
                   <a

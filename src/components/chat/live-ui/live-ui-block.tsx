@@ -313,7 +313,7 @@ function LiveText({ text, tone }: { text: string; tone: "body" | "muted" | "head
     <p
       className={cn(
         "min-w-0 whitespace-pre-line",
-        tone === "heading" ? "text-body font-medium" : tone === "muted" ? "text-ui text-muted-foreground" : "text-ui leading-relaxed text-foreground/90",
+        tone === "heading" ? "text-body font-medium" : tone === "muted" ? "text-ui text-muted-foreground" : "text-ui leading-relaxed text-foreground",
       )}
     >
       {parts.map((p, i) =>
@@ -387,7 +387,7 @@ function LiveTable({
                       "px-3.5 py-2.5 align-baseline",
                       numeric[ci] && "tabular-nums",
                       lead(ci) && "pr-2 font-medium text-foreground",
-                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground/85",
+                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground",
                       hi(ci) && "bg-[hsl(var(--live)/0.06)] font-medium text-foreground",
                     )}
                   >
@@ -457,7 +457,7 @@ function LiveButton({
 function LiveUIFallback({ source, error }: { source: string; error?: string }) {
   return (
     <div className="live-card my-6 flex flex-col gap-2 p-5">
-      <p className="text-ui text-foreground/85">
+      <p className="text-ui text-foreground">
         This interactive view couldn&apos;t be shown{error ? <span className="text-muted-foreground"> ({error})</span> : null}.
       </p>
       <details className="text-ui text-muted-foreground">

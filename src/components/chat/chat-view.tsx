@@ -2552,7 +2552,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               size="lg"
               aria-label="Share chat"
               onClick={() => setShareOpen(true)}
-              className="text-foreground/75"
+              className="text-muted-foreground"
             >
               {/* The page-header rung (size-5), matching the private-chat
                   toggle beside it; 18px is the sidebar's destination rung. */}
@@ -2672,7 +2672,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                   >
                     {projectMeta.name}
                   </Link>
-                  <span aria-hidden className="shell-title shrink-0 text-muted-foreground/45">/</span>
+                  <span aria-hidden className="shell-title shrink-0 text-ink-tertiary">/</span>
                 </>
               )}
               <h1 className="shell-title min-w-0 flex-1 text-foreground">
@@ -2733,7 +2733,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           )}
         >
           <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
-            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-foreground/80 sm:px-5">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-muted-foreground sm:px-5">
               {forkedFrom ? (
                 <div className="inline-flex min-w-0 items-center gap-2 font-medium">
                   <GitFork className="size-4 shrink-0 text-primary" />
@@ -2749,7 +2749,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                   {/* The private-chat toggle's own mark in its ON cut, so the
                       header and the control that set it name one state with
                       one drawing. It was a hand-drawn ghost on a 48 grid. */}
-                  <EyeOff weight="fill" className="size-4 text-foreground/70" />
+                  <EyeOff weight="fill" className="size-4 text-muted-foreground" />
                   Incognito chat
                 </div>
               )}
@@ -2766,7 +2766,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     // on --dur-press; the stray `active:scale-95` ran the press
                     // at the colour's 120ms, to a deeper scale than any other
                     // control in the header.
-                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
+                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
                     aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
                   >
                     <ActionIcons.dismiss className="size-4" />

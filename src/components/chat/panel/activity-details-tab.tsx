@@ -218,7 +218,7 @@ function MemoryRow({ memory, onForget }: { memory: ClientMemoryReceipt; onForget
   return (
     <li className="flex flex-col gap-1 py-1.5">
       {/* The saved fact is the reader's own content: shown as written. */}
-      <p className="break-words text-ui text-foreground/85" data-no-auto-translate dir="auto">
+      <p className="break-words text-ui text-foreground" data-no-auto-translate dir="auto">
         {memory.content}
       </p>
       <div className="flex flex-wrap gap-x-3 text-caption text-muted-foreground">

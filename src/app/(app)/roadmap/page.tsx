@@ -199,7 +199,7 @@ export default function RoadmapPage() {
                 <Link
                   key={r.id}
                   href={`/roadmap/${r.id}`}
-                  className="text-ui text-foreground/90 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+                  className="text-ui text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline motion-reduce:transition-none"
                 >
                   {r.title} <span className="text-caption text-muted-foreground">· {timeAgo(r.createdAt)}</span>
                 </Link>
@@ -335,7 +335,7 @@ export default function RoadmapPage() {
                   <div key={status} className="flex min-w-0 flex-col">
                     <div className="mb-3 flex items-center gap-2">
                       <span aria-hidden className={cn("size-2 shrink-0 rounded-full", meta.dot)} />
-                      <span className="font-mono text-caption text-foreground/80">{meta.label}</span>
+                      <span className="font-mono text-caption text-muted-foreground">{meta.label}</span>
                       <span className="font-mono text-caption tabular-nums text-muted-foreground">{items.length}</span>
                     </div>
                     <div className="space-y-3">

@@ -120,7 +120,7 @@ function HealthLine({ health }: { health: ClientScheduleHealth }) {
   const hours = expiresIn !== null && expiresIn > 0 ? Math.max(1, Math.round(expiresIn / 3_600_000)) : null;
   return (
     <span className="mt-1.5 block" data-health={health.state}>
-      <span className="flex min-w-0 items-center gap-1.5 text-ui text-foreground/75">
+      <span className="flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
         <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", HEALTH_DOT[health.tone])} />
         <span className={cn("truncate", health.tone === "error" && "text-foreground")}>{health.label}</span>
         {hours !== null && (

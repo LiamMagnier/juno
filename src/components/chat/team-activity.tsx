@@ -30,7 +30,7 @@ export function ActivityLines({ lines, label, className }: { lines: readonly Act
             key={`${line.key}:${line.sentence}`}
             className={cn(
               "flex items-center gap-2 text-ui motion-safe:animate-fade-in",
-              line.tone === "attention" ? "text-[hsl(var(--attention))]" : line.tone === "done" || line.tone === "missed" ? "text-foreground/75" : "text-foreground"
+              line.tone === "attention" ? "text-[hsl(var(--attention))]" : line.tone === "done" || line.tone === "missed" ? "text-muted-foreground" : "text-foreground"
             )}
           >
             <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">

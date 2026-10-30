@@ -709,7 +709,7 @@ html.dark:has(.cv) body {
   transform-origin: center;
 }
 .cv-face__eyes {
-  transition: transform 300ms var(--ease-spring);
+  transition: transform var(--dur-slow) var(--ease-spring);
 }
 .cv-face[data-presence="thinking"] .cv-face__eyes {
   transform: translate(1.3px, -2.3px) scale(0.94);
@@ -725,19 +725,19 @@ html.dark:has(.cv) body {
   transform: translateY(1.6px) scaleY(0.2);
 }
 .cv-face[data-anim="blink"] .cv-face__lids {
-  animation: cv-blink 190ms var(--ease-io);
+  animation: cv-blink var(--dur-base) var(--ease-io);
 }
 .cv-face[data-anim="attend"] .cv-face__all {
-  animation: cv-attend 900ms var(--ease-io);
+  animation: cv-attend var(--dur-emphasis) var(--ease-io);
 }
 .cv-face[data-anim="settle"] .cv-face__all {
-  animation: cv-settle 460ms var(--ease-out);
+  animation: cv-settle var(--dur-emphasis) var(--ease-out);
 }
 .cv-face[data-anim="settle"] .cv-face__lids {
-  animation: cv-blink 190ms var(--ease-io);
+  animation: cv-blink var(--dur-base) var(--ease-io);
 }
 .cv-face[data-anim="glance"] .cv-face__lids {
-  animation: cv-glance 1700ms var(--ease-io);
+  animation: cv-glance var(--dur-emphasis) var(--ease-io);
 }
 @keyframes cv-blink {
   0%,
@@ -802,10 +802,10 @@ html.dark:has(.cv) body {
   fill: currentColor;
 }
 .cv-point[data-state="thinking"] .cv-point__ink {
-  animation: cv-walk 2.4s var(--ease-io) infinite;
+  animation: cv-walk var(--loop) var(--ease-io) infinite;
 }
 .cv-point[data-state="working"] .cv-point__ink {
-  animation: cv-shuttle 1.8s var(--ease-io) infinite;
+  animation: cv-shuttle var(--loop-breathe) var(--ease-io) infinite;
 }
 @keyframes cv-walk {
   0%,
@@ -860,9 +860,9 @@ html.dark:has(.cv) body {
   .cv *,
   .cv *::before,
   .cv *::after {
-    animation-duration: 1ms !important;
+    animation-duration: 0ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
+    transition-duration: 0ms !important;
   }
   .cv .cv-caret,
   .cv .cv-point__ink {
@@ -875,9 +875,9 @@ html.dark:has(.cv) body {
 .cv[data-rm] *,
 .cv[data-rm] *::before,
 .cv[data-rm] *::after {
-  animation-duration: 1ms !important;
+  animation-duration: 0ms !important;
   animation-iteration-count: 1 !important;
-  transition-duration: 1ms !important;
+  transition-duration: 0ms !important;
 }
 .cv[data-rm] .cv-caret,
 .cv[data-rm] .cv-point__ink,

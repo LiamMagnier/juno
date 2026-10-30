@@ -369,7 +369,7 @@ export function ModerationAdmin() {
                             // to ~5.7% on pure black, which is under the card
                             // it sits in.
                             <Collapse open={isExpanded} innerClassName="pt-1">
-                              <p className="rounded-control bg-secondary px-2 py-1 font-mono text-caption text-foreground/85">
+                              <p className="rounded-control bg-secondary px-2 py-1 font-mono text-caption text-foreground">
                                 {f.messagePreview}
                               </p>
                             </Collapse>
@@ -390,7 +390,7 @@ export function ModerationAdmin() {
                                 })
                               }
                               aria-expanded={isExpanded}
-                              className="mt-1 inline-flex items-center gap-1 rounded-sm text-caption font-medium text-foreground/80 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
+                              className="mt-1 inline-flex items-center gap-1 rounded-sm text-caption font-medium text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
                             >
                               {isExpanded ? "Show less" : "Show more"}
                               <ChevronDown

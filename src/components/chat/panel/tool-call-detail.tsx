@@ -99,7 +99,7 @@ function ClampedBlock({ text, maxLines }: { text: string; maxLines: number }) {
       <pre
         translate="no"
         data-no-auto-translate
-        className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-secondary px-2.5 py-2 font-mono text-caption text-foreground/85"
+        className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-secondary px-2.5 py-2 font-mono text-caption text-foreground"
       >
         {all ? text : head}
       </pre>

@@ -246,7 +246,7 @@ export function ComposerClarificationPopover({
             {/* text-micro is the mono eyebrow floor; its 0.02em tracking replaces
                 the hand-tuned 0.16em, which sat above the 0.10em ceiling the type
                 scale documents for caps. */}
-            <span className="font-mono text-micro font-medium text-muted-foreground">
+            <span className="font-mono text-label font-medium text-muted-foreground">
               {multi ? `Question ${index + 1} of ${questions.length}` : "One quick question"}
             </span>
             {pending.result.title ? (
@@ -254,7 +254,7 @@ export function ComposerClarificationPopover({
                 <span aria-hidden className="text-border">
                   ·
                 </span>
-                <span className="truncate text-ui font-medium tracking-[-0.01em] text-foreground/85">
+                <span className="truncate text-ui font-medium tracking-[-0.01em] text-foreground">
                   {pending.result.title}
                 </span>
               </>
@@ -398,7 +398,7 @@ export function ComposerClarificationPopover({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-colors duration-fast ease-out-soft sm:mt-0",
+                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-label font-medium tabular-nums transition-colors duration-fast ease-out-soft sm:mt-0",
                         selected
                           ? "border-foreground bg-foreground text-background"
                           : "border-border/60 bg-transparent text-muted-foreground group-hover/opt:border-foreground/30 group-hover/opt:text-foreground"
@@ -414,7 +414,7 @@ export function ComposerClarificationPopover({
                     <span
                       className={cn(
                         "min-w-0 flex-1 text-body leading-snug tracking-[-0.01em] transition-colors duration-fast ease-out-soft",
-                        selected ? "font-medium text-foreground" : "text-foreground/90"
+                        selected ? "font-medium text-foreground" : "text-foreground"
                       )}
                     >
                       {option}
@@ -439,7 +439,7 @@ export function ComposerClarificationPopover({
             )}
           >
             {/* Same eyebrow voice as the header's — text-micro, one tracking. */}
-            <span className="font-mono text-micro font-medium text-muted-foreground">
+            <span className="font-mono text-label font-medium text-muted-foreground">
               {active.elseLabel || "Or write your own"}
             </span>
             {customIsLong ? (

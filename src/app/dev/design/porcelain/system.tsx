@@ -91,11 +91,11 @@ function Swatch({ v, role, text }: { v: string; role: string; text?: boolean }) 
       <div className="pc-swatch" style={{ background: `var(${v})` }} />
       <p className="pc-small mt-2 truncate">{role}</p>
       <p className="pc-small pc-quiet">
-        <span className="pc-mono !text-[12px]">{info?.hex ?? v}</span>
+        <span className="pc-mono pc-fs-12">{info?.hex ?? v}</span>
         {text && info ? (
           <>
             {"  "}
-            <span className="pc-mono !text-[12px]">
+            <span className="pc-mono pc-fs-12">
               {info.canvas}:1 / {info.surface}:1
             </span>
           </>
@@ -449,7 +449,7 @@ export function SystemScene() {
           {PRESENCE_ORDER.map((p, i) => (
             <span key={p} className="flex flex-col items-center gap-3">
               <Face avatar={CREW[i].avatar} presence={p} size={44} />
-              <span className={p === "waiting" ? "pc-needs !text-[13px]" : "pc-small pc-muted"}>{PRESENCE_LABEL[p]}</span>
+              <span className={p === "waiting" ? "pc-needs pc-fs-13" : "pc-small pc-muted"}>{PRESENCE_LABEL[p]}</span>
             </span>
           ))}
         </div>

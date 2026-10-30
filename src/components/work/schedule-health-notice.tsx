@@ -38,7 +38,7 @@ export function ScheduleHealthNotice({ health, className }: { health: ClientSche
       />
       <div className="min-w-0 flex-1">
         <p className="text-ui font-medium text-foreground">{health.label}</p>
-        {health.detail && <p className="mt-0.5 text-ui leading-relaxed text-foreground/75">{health.detail}</p>}
+        {health.detail && <p className="mt-0.5 text-ui leading-relaxed text-muted-foreground">{health.detail}</p>}
         {fixBelow && <p className="mt-0.5 text-caption text-muted-foreground">Change it below.</p>}
         {expires && !Number.isNaN(expires.getTime()) && (
           <p className="mt-0.5 text-caption text-muted-foreground">

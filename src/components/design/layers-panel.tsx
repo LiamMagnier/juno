@@ -505,7 +505,7 @@ export function LayersPanel({
             }}
             aria-label="Filter layers by name"
             placeholder="Filter"
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-caption outline-none placeholder:text-muted-foreground/70"
+            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-caption outline-none placeholder:text-muted-foreground"
           />
         </label>
       </div>
@@ -628,7 +628,7 @@ export function LayersPanel({
                   nativeHint
                   label={`${node.name} is animated — open the timeline`}
                   onClick={() => onShowMotion?.(id)}
-                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary coarse:size-6"
+                  className="size-4.5 text-muted-foreground hover:bg-primary/10 hover:text-primary coarse:size-6"
                 >
                   {/* The toolbar's Motion film strip, not a pulse line: one
                       concept, one drawing, and the badge is a shortcut to
@@ -641,7 +641,7 @@ export function LayersPanel({
                   nativeHint
                   label={`${node.name} has an interaction — open the prototype panel`}
                   onClick={() => onShowInteractions?.(id)}
-                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary coarse:size-6"
+                  className="size-4.5 text-muted-foreground hover:bg-primary/10 hover:text-primary coarse:size-6"
                 >
                   {/* Raw `Zap`: prototyping, the same bolt design-editor's
                       Prototype tab uses. Not the Juno Work destination. */}
@@ -733,7 +733,7 @@ export function LayersPanel({
                   "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:size-6 coarse:opacity-100",
                   // Disabled (read-only) keeps the same rule: the engaged mark is
                   // the state, and a viewer is owed it at full strength.
-                  node.visible ? "opacity-0 disabled:opacity-0" : "text-foreground/70 opacity-100 disabled:opacity-100"
+                  node.visible ? "opacity-0 disabled:opacity-0" : "text-muted-foreground opacity-100 disabled:opacity-100"
                 )}
               >
                 <IconSwap curve="spring" swapped={!node.visible} from={<Eye className="size-3" />} to={<EyeOff className="size-3" />} />
@@ -747,7 +747,7 @@ export function LayersPanel({
                 aria-pressed={node.locked}
                 className={cn(
                   "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:size-6 coarse:opacity-100",
-                  node.locked ? "text-foreground/70 opacity-100 disabled:opacity-100" : "opacity-0 disabled:opacity-0"
+                  node.locked ? "text-muted-foreground opacity-100 disabled:opacity-100" : "opacity-0 disabled:opacity-0"
                 )}
               >
                 <IconSwap curve="spring" swapped={node.locked} from={<LockOpen className="size-3" />} to={<Lock className="size-3" />} />

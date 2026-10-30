@@ -175,6 +175,14 @@ html:has(.pc) nextjs-portal { display: none; }
 .pc-muted { color: var(--pc-ink-2); }
 .pc-quiet { color: var(--pc-ink-3); }
 .pc-needs { color: var(--pc-amber); font-size: 12.5px; font-weight: 500; line-height: 1.3; }
+/* One-off sizes a specimen sets on top of a ramp class (the porcelain scale
+   lives here, not in the app's text-* rungs). Important, like the utilities
+   they replace, so they also beat the narrow-viewport .pc-greet step. */
+.pc-fs-12 { font-size: 12px !important; }
+.pc-fs-13 { font-size: 13px !important; }
+.pc-fs-14 { font-size: 14px !important; }
+.pc-fs-15 { font-size: 15px !important; }
+.pc-fs-32 { font-size: 32px !important; }
 .pc-num { display: inline-flex; white-space: nowrap; }
 .pc-num__d { display: inline-block; width: 0.6em; text-align: center; }
 .pc-link { color: var(--pc-ink); text-decoration: underline; text-decoration-color: var(--pc-hair-2); text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -383,7 +391,7 @@ html:has(.pc) nextjs-portal { display: none; }
   border-radius: 1px;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .pc-caret[data-blink] { animation: pc-caret 1.06s steps(1) infinite; }
+  .pc-caret[data-blink] { animation: pc-caret var(--loop-beat) steps(1) infinite; }
 }
 @keyframes pc-caret { 50% { opacity: 0; } }
 
@@ -472,7 +480,7 @@ html:has(.pc) nextjs-portal { display: none; }
   color: var(--pc-ink);
   width: 100%;
   text-align: left;
-  transition: background-color 80ms var(--pc-ease);
+  transition: background-color var(--dur-press) var(--pc-ease);
 }
 .pc-opt[data-active] { background: var(--pc-hover); }
 .pc-opt:hover { background: var(--pc-hover); }
@@ -664,9 +672,9 @@ html:has(.pc) nextjs-portal { display: none; }
 
 @media (prefers-reduced-motion: no-preference) {
   .pc-face[data-blink] .pc-face__lids { animation: pc-blink 220ms var(--pc-ease-in-out) 1; }
-  .pc-face[data-react] .pc-face__all { animation: pc-face-settle 420ms var(--pc-ease) 1; }
-  .pc-face[data-presence="waiting"][data-react] .pc-face__all { animation: pc-face-settle 420ms var(--pc-ease) 1, pc-face-attn 1.1s var(--pc-ease-in-out) 480ms 2; }
-  .pc-face[data-presence="working"][data-react] .pc-face__eyes { animation: pc-face-read 1.4s var(--pc-ease-in-out) 1; }
+  .pc-face[data-react] .pc-face__all { animation: pc-face-settle var(--dur-slow) var(--pc-ease) 1; }
+  .pc-face[data-presence="waiting"][data-react] .pc-face__all { animation: pc-face-settle var(--dur-slow) var(--pc-ease) 1, pc-face-attn var(--loop-beat) var(--pc-ease-in-out) var(--dur-emphasis) 2; }
+  .pc-face[data-presence="working"][data-react] .pc-face__eyes { animation: pc-face-read var(--dur-emphasis) var(--pc-ease-in-out) 1; }
 }
 @keyframes pc-blink { 0%, 100% { transform: scaleY(1); } 45%, 55% { transform: scaleY(0.1); } }
 @keyframes pc-face-settle { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: none; } }
@@ -761,7 +769,7 @@ html:has(.pc) nextjs-portal { display: none; }
 .pc[data-theme="dark"] .pc-toast .pc-btn:hover { background: rgb(0 0 0 / 0.08); }
 .pc-skel { border-radius: 6px; background: var(--pc-well); }
 @media (prefers-reduced-motion: no-preference) {
-  .pc-skel { animation: pc-skel 1.6s var(--pc-ease-in-out) infinite; }
+  .pc-skel { animation: pc-skel var(--loop-breathe) var(--pc-ease-in-out) infinite; }
 }
 @keyframes pc-skel { 50% { opacity: 0.55; } }
 .pc-swatch { height: 56px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--pc-hair); }
@@ -781,11 +789,11 @@ html:has(.pc) nextjs-portal { display: none; }
   /* Thinking: the dot makes one orbit, easing out of and back into its home
      at the upper right, rests a beat, and goes again. A spinner never rests;
      this reads as something going round and coming back with a result. */
-  .pc-orbit[data-state="thinking"] .pc-orbit__carrier { animation: pc-orbit 1.7s var(--pc-ease-in-out) infinite; }
+  .pc-orbit[data-state="thinking"] .pc-orbit__carrier { animation: pc-orbit var(--loop-breathe) var(--pc-ease-in-out) infinite; }
   /* Listening: the dot holds at home and swells with the voice. */
-  .pc-orbit[data-state="listening"] .pc-orbit__dot { animation: pc-orbit-listen 1.2s var(--pc-ease-in-out) infinite; }
+  .pc-orbit[data-state="listening"] .pc-orbit__dot { animation: pc-orbit-listen var(--loop-beat) var(--pc-ease-in-out) infinite; }
   /* Speaking: the dot sways a few degrees along the orbit, like a cadence. */
-  .pc-orbit[data-state="speaking"] .pc-orbit__carrier { animation: pc-orbit-speak 0.9s var(--pc-ease-in-out) infinite; }
+  .pc-orbit[data-state="speaking"] .pc-orbit__carrier { animation: pc-orbit-speak var(--loop-beat) var(--pc-ease-in-out) infinite; }
 }
 @media (prefers-reduced-motion: reduce) {
   /* Reduced: a distinct still pose. The dot sits at the bottom of the orbit
@@ -799,7 +807,7 @@ html:has(.pc) nextjs-portal { display: none; }
 
 /* Streaming text: each arriving run fades in. No movement, no per-word bounce. */
 @media (prefers-reduced-motion: no-preference) {
-  .pc-stream-run { animation: pc-stream 260ms var(--pc-ease) both; }
+  .pc-stream-run { animation: pc-stream var(--dur-base) var(--pc-ease) both; }
 }
 @keyframes pc-stream { from { opacity: 0; } to { opacity: 1; } }
 

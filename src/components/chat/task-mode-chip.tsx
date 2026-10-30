@@ -155,10 +155,10 @@ export function TaskModeChip({
           {/* Why the mode in the chip is not the one ticked above. Each reason
               is one whole sentence, so it is translated as one. */}
           {narrowedBy === "project" && (
-            <p className="text-foreground/80">This project’s settings hold its tasks to a stricter mode than the one you picked.</p>
+            <p className="text-muted-foreground">This project’s settings hold its tasks to a stricter mode than the one you picked.</p>
           )}
           {narrowedBy === "agent" && (
-            <p className="text-foreground/80">This agent is set to ask more often, so its tasks follow its setting.</p>
+            <p className="text-muted-foreground">This agent is set to ask more often, so its tasks follow its setting.</p>
           )}
           <p>Sending, publishing, paying and deleting always ask, whichever mode you pick.</p>
         </div>

@@ -534,7 +534,7 @@ export function toRunSteps(events: ResearchEventDTO[], live: boolean): Step[] {
 function StepDuration({ ms }: { ms: number | null }) {
   if (ms === null || ms < 1000) return null;
   return (
-    <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">{formatSpan(ms)}</span>
+    <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{formatSpan(ms)}</span>
   );
 }
 
@@ -569,7 +569,7 @@ function EngineStrip({ engines }: { engines: EngineLine[] }) {
             key={engine.name}
             className={cn(
               "inline-flex items-center gap-1 text-caption tabular-nums",
-              problem ? "text-warning-foreground" : "text-muted-foreground/70"
+              problem ? "text-warning-foreground" : "text-muted-foreground"
             )}
           >
             {problem && <StatusIcons.warning aria-hidden className="size-3 shrink-0" />}
@@ -646,7 +646,7 @@ function NoteRow({ step }: { step: NoteStep & { durationMs: number | null } }) {
         <span
           className={cn(
             "block truncate text-ui",
-            step.tone === "warning" ? "text-warning-foreground" : "text-foreground/80"
+            step.tone === "warning" ? "text-warning-foreground" : "text-muted-foreground"
           )}
         >
           {step.title}
@@ -698,23 +698,20 @@ function WorkerLane({ step, live, model }: { step: WorkerStep & { durationMs: nu
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-baseline gap-2">
-          <span className="min-w-0 truncate text-ui text-foreground/85">{step.objective}</span>
+          <span className="min-w-0 truncate text-ui text-foreground">{step.objective}</span>
           {/* The model this researcher runs on, as the run recorded it. */}
           {model && <span translate="no" className="shrink-0 text-caption text-muted-foreground">{model}</span>}
         </span>
         <span
           key={step.lastAction ?? step.summary ?? "idle"}
-          className={cn(
-            "mt-0.5 block truncate text-caption motion-safe:animate-research-detail-in",
-            working ? "text-foreground/70" : "text-muted-foreground"
-          )}
+          className="mt-0.5 block truncate text-caption text-muted-foreground motion-safe:animate-research-detail-in"
         >
           {step.status === "done"
             ? step.summary || TIMELINE_COPY.workerDone
             : step.lastAction ?? TIMELINE_COPY.workerStarting}
         </span>
       </span>
-      <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">
+      <span className="shrink-0 text-caption tabular-nums text-muted-foreground">
         {step.findings} {step.findings === 1 ? TIMELINE_COPY.oneFinding : TIMELINE_COPY.findings}
       </span>
     </li>
@@ -793,7 +790,7 @@ export function RunTimeline({
         <ChevronDown
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3.5 shrink-0 text-ink-tertiary transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -850,7 +847,7 @@ export function RunTimeline({
                       step's duration used to sit beside it; a note row still
                       carries its duration because a note has no yield. */}
                   {step.results !== null && (
-                    <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">
+                    <span className="shrink-0 text-caption tabular-nums text-muted-foreground">
                       {step.results} {TIMELINE_COPY.results}
                     </span>
                   )}

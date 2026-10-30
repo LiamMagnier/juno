@@ -189,7 +189,7 @@ function SendMoment({ onDone }: { onDone: () => void }) {
         { transform: `translate(${dx}px, ${dy}px)`, backgroundColor: "transparent" },
         { transform: "translate(0, 0)", backgroundColor: "var(--in-fill)" },
       ],
-      { duration: 280, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+      { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
     );
   }, [phase, reduce]);
 
@@ -214,7 +214,7 @@ function SendMoment({ onDone }: { onDone: () => void }) {
         <div className={cn("flex min-h-0 flex-1 flex-col", phase === "home" ? "justify-center" : "justify-start")}>
           <AnimatePresence initial={false}>
             {phase === "home" ? (
-              <motion.h1 key="greet" className="in-t-display mx-auto mb-7 w-[640px] pl-0.5" exit={{ opacity: 0, transition: { duration: 0.14 } }}>
+              <motion.h1 key="greet" className="in-t-display mx-auto mb-7 w-[640px] pl-0.5" exit={{ opacity: 0, transition: { duration: 0.16 } }}>
                 Good afternoon, Liam
               </motion.h1>
             ) : null}

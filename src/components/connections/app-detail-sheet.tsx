@@ -263,7 +263,7 @@ export function AppDetailSheet({
                   target.tools?.length ? (
                     <ul className="flex flex-col gap-1">
                       {target.tools.map((tool) => (
-                        <li key={tool} className="font-mono text-caption text-foreground/80 [overflow-wrap:anywhere]">
+                        <li key={tool} className="font-mono text-caption text-muted-foreground [overflow-wrap:anywhere]">
                           {tool}
                         </li>
                       ))}
@@ -274,7 +274,7 @@ export function AppDetailSheet({
                 ) : target.providerScopes?.length ? (
                   <ul className="flex flex-col gap-1">
                     {target.providerScopes.map((scope) => (
-                      <li key={scope} className="font-mono text-caption text-foreground/80 [overflow-wrap:anywhere]">
+                      <li key={scope} className="font-mono text-caption text-muted-foreground [overflow-wrap:anywhere]">
                         {scope}
                       </li>
                     ))}
