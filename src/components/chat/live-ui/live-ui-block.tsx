@@ -188,15 +188,16 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       const max = scope.evaluate(c.max).value;
       const ratio = typeof v === "number" && typeof max === "number" && max > 0 ? Math.min(1, Math.max(0, v / max)) : 0;
       const shown = typeof v === "number" ? formatter.number(v, c.format ?? "number", { currency: spec.currency }) : LIVE_NULL_TEXT;
+      const label = interpolate(c.label, scope);
       return (
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-ui text-muted-foreground">{interpolate(c.label, scope)}</span>
+            <span className="text-ui text-muted-foreground">{label}</span>
             <span className="text-ui font-medium tabular-nums">{shown}</span>
           </div>
           <div
             role="meter"
-            aria-label={c.label}
+            aria-label={label}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(ratio * 100)}
