@@ -1047,6 +1047,21 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
         default: false
         }
     }
+
+    /// `503 SERVER_DRAINING`: the server is restarting for a deploy and refused
+    /// the request before reading it (src/app/api/chat/route.ts), so nothing
+    /// was accepted and the same request can be sent again. Not a dropped
+    /// stream: there is no saved answer to wait for.
+    public var isServerDraining: Bool {
+        guard case .server(let statusCode, let code, _, _) = self else { return false }
+        return statusCode == 503 && code == "SERVER_DRAINING"
+    }
+
+    /// The drain's `Retry-After` (src/lib/shutdown.ts, DRAIN_RETRY_AFTER_SECONDS).
+    public static let drainRetryAfterSeconds: Double = 5
+    /// How many times a drained request is sent again before the turn fails,
+    /// as the web client does (src/lib/chat/send-retry.ts).
+    public static let drainRetryLimit = 5
 }
 
 public protocol NativeChatRequestSending: NativeAuthenticatedRequestSending,

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { promises as fs, readFileSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import { runDockerBuffer, spawnDockerWithStdin } from "@/lib/docker-cli";
+import { runDockerBuffer, spawnDockerStreaming, spawnDockerWithStdin } from "@/lib/docker-cli";
 import { env } from "@/lib/env";
 import {
   COMPUTER_NOT_RESPONDING,
@@ -18,6 +18,7 @@ import type {
   ComputerHandle,
   ComputerProvider,
   Endpoints,
+  ExecOptions,
   ExecResult,
   Shot,
 } from "./types";
@@ -796,7 +797,7 @@ export class DockerProvider implements ComputerProvider {
   async exec(
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number; cwd?: string }
+    opts?: ExecOptions
   ): Promise<ExecResult> {
     const secs = Math.max(1, Math.min(300, Math.round(opts?.timeoutSeconds ?? 30)));
     // The working directory is an argv element to docker, validated under
@@ -806,13 +807,20 @@ export class DockerProvider implements ComputerProvider {
     // Through the launcher (namespace ban, fixed environment with
     // HOME=/home/agent, refused while frozen), and `bash --noprofile --norc`:
     // no login or rc file the agent can write runs before an approved command.
-    const res = await runDockerText(
-      computerArgv.exec(handle.name, command, secs, workdir),
-      {
-        allowNonZero: true,
-        timeoutMs: (secs + 10) * 1000,
-      }
-    );
+    // Watched (S5.1): the same argv through `spawn`, output handed over as it
+    // arrives; the result is decoded exactly as the buffered call decodes it.
+    const argv = computerArgv.exec(handle.name, command, secs, workdir);
+    const res = opts?.onOutput
+      ? await spawnDockerStreaming(argv, opts.onOutput, { timeoutMs: (secs + 10) * 1000 }).then((streamed) => ({
+          stdout: streamed.stdout.toString("utf8"),
+          stderr: streamed.stderr.toString("utf8"),
+          exitCode: streamed.exitCode,
+          timedOut: streamed.timedOut,
+        }))
+      : await runDockerText(argv, {
+          allowNonZero: true,
+          timeoutMs: (secs + 10) * 1000,
+        });
     return {
       stdout: res.stdout,
       stderr: res.stderr,

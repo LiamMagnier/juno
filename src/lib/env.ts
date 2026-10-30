@@ -329,6 +329,24 @@ export const env = {
       return (process.env.AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX ?? "").trim() === "1";
     },
     /**
+     * The largest file a person can put into the computer's ~/work/inbox
+     * (AGENT_COMPUTER_UPLOAD_MAX_MB, owner to confirm). Never above 25: the
+     * computer host takes request bodies up to 30 MB, and a file goes there
+     * whole.
+     */
+    get uploadMaxMb(): number {
+      return Math.min(25, positiveNumber(process.env.AGENT_COMPUTER_UPLOAD_MAX_MB, 25));
+    },
+    /**
+     * Streamed shell output kept per `computer_shell` call for the terminal
+     * pane, in KB (AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL, owner to confirm).
+     * Between 16 and 4096; the model's own result keeps its 20,000-character
+     * cap per stream whatever this is.
+     */
+    get shellLogKbPerCall(): number {
+      return Math.max(16, Math.min(4096, Math.floor(positiveNumber(process.env.AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL, 512))));
+    },
+    /**
      * Server-only: the relay the computer view uses, read before the voice
      * relay variables (src/lib/computer/live-view.ts), and added to the CSP's
      * connect-src. Lets a demo relay serve the computer view without moving voice.

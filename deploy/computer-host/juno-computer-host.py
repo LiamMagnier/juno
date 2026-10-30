@@ -25,8 +25,19 @@ and the hash is compared with hmac.compare_digest against EVERY stored hash
 (no early exit). The match fixes the request's namespace; every container,
 volume, listing, ticket and tunnel is that namespace's only. tokensFile holds
 [{"id", "sha256", "namespace"}], at most two per namespace (current and next,
-for rotation without a restart); SIGHUP re-reads it. The log names the token
-id, never the token.
+for rotation without a restart); SIGHUP re-reads it. Retiring a token that
+way also drops the tickets minted under it and closes the tunnels opened with
+them (close code 1008), and a ticket request still in flight at that moment
+mints nothing (the token is checked again under the ticket store's lock, and
+again when a ticket is used), so a leaked token keeps nothing open once
+retired. The log names the token id, never the token.
+
+One process holds every tunnel on the host, under the unit's MemoryMax, so a
+command's output is bounded before it is decoded: POST .../exec answers each
+stream as base64 cut at 1 MiB (EXEC_OUTPUT_BYTES, with stdoutTruncated and
+stderrTruncated; the app keeps 20,000 characters), and at most
+maxCommandsPerComputer commands per computer and maxConcurrentCommands on the
+host run at once (429 too_many_commands past either).
 
 Every Docker call goes through the root broker (juno-computer-host-broker.py),
 which imports the single-box broker's validate() and namespace checks: this
@@ -45,6 +56,7 @@ a ticket.
 """
 import asyncio
 import base64
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -82,6 +94,14 @@ TUNNEL_PORTS = (9222, 5900)
 WS_MAX_SIZE = 64 * 1024 * 1024
 MAX_BODY = 30 * 1024 * 1024
 MAX_OUTPUT = 16 * 1024 * 1024
+# What one command's answer carries per stream. The app keeps the first 20,000 characters
+# (MAX_SHELL_OUTPUT_CHARS in runner/agent-core/src/work/computer-tools.ts); 1 MiB is far past that.
+EXEC_OUTPUT_BYTES = 1024 * 1024
+# What a streamed command (POST .../exec with Accept: application/x-ndjson) forwards per stream as it
+# runs: the app keeps at most 4096 KB per call for its terminal pane (AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL),
+# so past this the rest is read and dropped, never sent.
+EXEC_STREAM_BYTES = 4 * 1024 * 1024
+NDJSON = "application/x-ndjson"
 VNC_TUNNEL_SECONDS = 2 * 60 * 60
 
 # The same strings as src/lib/computer/docker.ts (the lockstep test compares the argv).
@@ -114,6 +134,8 @@ DEFAULTS = {
     "tunnelPort": 8751,
     "ticketTtlSeconds": 60,
     "maxTicketsPerComputer": 16,
+    "maxCommandsPerComputer": 4,
+    "maxConcurrentCommands": 24,
     "tokensFile": "/etc/juno/computer-host-tokens.json",
     "brokerPolicy": "/etc/juno/computer-host-broker.json",
     "brokerSocket": "/run/juno-computer-host/broker.sock",
@@ -438,9 +460,12 @@ def load_config(path):
     if config["listen"] not in ("127.0.0.1", "::1"):
         raise SystemExit("juno-computer-host: listen on loopback only; nginx terminates TLS in front of it")
     for key in ("minFreeMemMb", "minFreeDiskMb", "maxRunning", "apiPort", "tunnelPort", "ticketTtlSeconds",
-                "maxTicketsPerComputer", "memoryMb"):
+                "maxTicketsPerComputer", "memoryMb", "maxCommandsPerComputer", "maxConcurrentCommands"):
         if not isinstance(config[key], int) or config[key] < 0:
             raise SystemExit("juno-computer-host: %s must be a non-negative whole number" % key)
+    # Each command in flight holds up to 2 MiB of output; these keep that far under the unit's MemoryMax.
+    if not 1 <= config["maxCommandsPerComputer"] <= 16 or not 1 <= config["maxConcurrentCommands"] <= 64:
+        raise SystemExit("juno-computer-host: maxCommandsPerComputer must be 1 to 16 and maxConcurrentCommands 1 to 64")
     if not 10 <= config["ticketTtlSeconds"] <= 300:
         raise SystemExit("juno-computer-host: ticketTtlSeconds must be between 10 and 300")
     ipaddress.ip_network(config["subnet"])
@@ -477,16 +502,27 @@ class Tokens:
             self.entries = parse_tokens(file.read())
 
     def reload(self):
+        """Re-reads the file. The ids of the tokens it no longer holds (an id whose hash changed counts as
+        retired too), or None when the file is refused and the tokens in force stay as they are."""
         try:
             with open(self.path, encoding="utf-8") as file:
                 entries = parse_tokens(file.read())
         except (OSError, ValueError) as error:
             log(op="reload", status="refused", reason=type(error).__name__)
-            return False
+            return None
         with self.lock:
+            before = {(entry["id"], entry["sha256"]) for entry in self.entries}
             self.entries = entries
-        log(op="reload", status="ok", tokens=len(entries))
-        return True
+        kept = {(entry["id"], entry["sha256"]) for entry in entries}
+        retired = {token_id for token_id, _ in before - kept}
+        log(op="reload", status="ok", tokens=len(entries), retired=len(retired))
+        return retired
+
+    def in_force(self, token_id, sha256=None):
+        """Whether this token (its id and, when given, its hash) is still in the file as last read."""
+        with self.lock:
+            return any(entry["id"] == token_id and (sha256 is None or entry["sha256"] == sha256)
+                       for entry in self.entries)
 
     def match(self, header):
         """The entry the bearer token belongs to, or None. Every stored hash is compared."""
@@ -528,8 +564,11 @@ class Broker:
         else:
             self.transport = {"mode": "socket", "path": config["brokerSocket"]}
 
-    def run(self, argv, namespace, stdin=None, timeout=60):
-        """(exit status, stdout, stderr). Raises Missing, Foreign or BrokerError."""
+    def run(self, argv, namespace, stdin=None, timeout=60, max_output=MAX_OUTPUT, on_output=None):
+        """(exit status, stdout, stderr), each stream cut at max_output bytes: what follows is read and dropped,
+        never held. Raises Missing, Foreign or BrokerError. `on_output(stream, bytes)` (stream "stdout" or
+        "stderr") is called with every frame as the broker relays it, for a streamed command; whatever it
+        raises (ClientGone) ends the call."""
         request = {"argv": argv, "namespace": namespace}
         if stdin is not None:
             request["stdin_b64"] = base64.b64encode(stdin).decode()
@@ -559,20 +598,24 @@ class Broker:
                 header = reader.read(5)
                 if len(header) < 5:
                     if time.monotonic() >= deadline:
-                        raise BrokerTimeout(b"".join(out)[:MAX_OUTPUT], b"".join(err)[:MAX_OUTPUT])
+                        raise BrokerTimeout(b"".join(out), b"".join(err))
                     raise BrokerError("broker closed the connection")
                 kind, length = header[:1], struct.unpack(">I", header[1:])[0]
                 payload = reader.read(length) if length else b""
                 if kind == b"o":
-                    if out_size[0] < MAX_OUTPUT:
-                        out.append(payload)
+                    if out_size[0] < max_output:
+                        out.append(payload[:max_output - out_size[0]])
                     out_size[0] += len(payload)
+                    if on_output is not None and payload:
+                        on_output("stdout", payload)
                 elif kind == b"e":
-                    if out_size[1] < MAX_OUTPUT:
-                        err.append(payload)
+                    if out_size[1] < max_output:
+                        err.append(payload[:max_output - out_size[1]])
                     out_size[1] += len(payload)
+                    if on_output is not None and payload:
+                        on_output("stderr", payload)
                 elif kind == b"x":
-                    return int(payload.decode() or "1"), b"".join(out)[:MAX_OUTPUT], b"".join(err)[:MAX_OUTPUT]
+                    return int(payload.decode() or "1"), b"".join(out), b"".join(err)
                 elif kind == b"r":
                     reason = payload.decode("utf-8", "replace")
                     if reason == "missing":
@@ -584,7 +627,7 @@ class Broker:
                     raise BrokerError("unknown frame")
         except (OSError, ValueError) as error:
             if isinstance(error, socket.timeout) or time.monotonic() >= deadline:
-                raise BrokerTimeout(b"".join(out)[:MAX_OUTPUT], b"".join(err)[:MAX_OUTPUT]) from None
+                raise BrokerTimeout(b"".join(out), b"".join(err)) from None
             raise BrokerError(type(error).__name__) from None
         finally:
             if sock is not None:
@@ -605,6 +648,12 @@ class BrokerTimeout(BrokerError):
 
 class Missing(Exception):
     pass
+
+
+class ClientGone(Exception):
+    """The caller of a streamed command stopped reading. Not an OSError, so Broker.run does not take it for
+    the broker's own failure: it ends the call, the broker's connection closes, and the command keeps its
+    own time limit inside the computer."""
 
 
 class Foreign(Exception):
@@ -628,8 +677,10 @@ MISSING_TEXT = re.compile(r"no such (container|object)", re.IGNORECASE)
 class Tickets:
     """Single use, short lived, bound to one namespace, one container and one port; stored as sha256."""
 
-    def __init__(self, ttl, per_computer):
+    def __init__(self, ttl, per_computer, in_force=None):
         self.ttl, self.per_computer = ttl, per_computer
+        # (token id, sha256) -> whether that token is still in force (Tokens.in_force), or None in a unit test.
+        self.in_force = in_force
         self.lock = threading.Lock()
         self.items = {}
 
@@ -637,16 +688,22 @@ class Tickets:
         for key in [key for key, item in self.items.items() if item["expires"] <= now]:
             del self.items[key]
 
-    def mint(self, namespace, name, port, token_id):
+    def mint(self, namespace, name, port, token_id, token_sha256=None):
         now = time.time()
         with self.lock:
+            # Checked under this lock, which revoke() also takes: a request that authenticated before its token
+            # was retired either finds it retired here, or mints before revoke() runs and is dropped by it.
+            if self.in_force is not None and not self.in_force(token_id, token_sha256):
+                raise Refused(401, "unauthorized")
             self._prune(now)
             outstanding = sum(1 for item in self.items.values() if item["ns"] == namespace and item["name"] == name)
             if outstanding >= self.per_computer:
                 raise Refused(429, "too_many_tickets")
             ticket = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
-            self.items[hashlib.sha256(ticket.encode()).hexdigest()] = {
-                "ns": namespace, "name": name, "port": port, "expires": now + self.ttl, "token": token_id}
+            item = {"ns": namespace, "name": name, "port": port, "expires": now + self.ttl, "token": token_id}
+            if token_sha256 is not None:
+                item["tokenSha256"] = token_sha256
+            self.items[hashlib.sha256(ticket.encode()).hexdigest()] = item
         return ticket, int((now + self.ttl) * 1000)
 
     def consume(self, ticket):
@@ -657,24 +714,58 @@ class Tickets:
             self._prune(time.time())
             return self.items.pop(key, None)
 
+    def revoke(self, token_ids):
+        """Drops every outstanding ticket minted under one of these tokens; how many."""
+        with self.lock:
+            keys = [key for key, item in self.items.items() if item["token"] in token_ids]
+            for key in keys:
+                del self.items[key]
+        return len(keys)
+
 
 # ── The host's operations ─────────────────────────────────────────────────────
 
 
 class Host:
-    def __init__(self, config, broker=None):
+    def __init__(self, config, broker=None, tokens=None):
         self.config = config
         self.broker = broker or Broker(config)
-        self.tickets = Tickets(config["ticketTtlSeconds"], config["maxTicketsPerComputer"])
+        self.tokens = tokens
+        self.tickets = Tickets(config["ticketTtlSeconds"], config["maxTicketsPerComputer"],
+                               tokens.in_force if tokens is not None else None)
+        # Commands in flight per (namespace, computer): exec_slot().
+        self.exec_lock = threading.Lock()
+        self.execs_running = {}
         self.subnet = ipaddress.ip_network(config["subnet"])
         self.gateway = config["gateway"]
+        # Every tunnel from the moment its ticket is consumed until its connection is lost:
+        # protocol -> its record (token id, computer, port). Used on the event loop only.
+        self.tunnels = {}
+
+    def revoke_tokens(self, token_ids):
+        """Retired tokens (SIGHUP): their outstanding tickets are dropped, a tunnel still in its handshake is
+        refused, and every open tunnel is closed with 1008. Runs on the event loop (the signal handler)."""
+        if not token_ids:
+            return 0, 0
+        dropped, closed = self.tickets.revoke(token_ids), 0
+        for protocol, record in list(self.tunnels.items()):
+            if record.get("token") in token_ids and not record.get("revoked"):
+                record["revoked"] = True
+                closed += 1
+                if record.get("open"):
+                    asyncio.ensure_future(protocol.close(1008, "token retired"))
+        log(op="revoke", tokens=len(token_ids), tickets=dropped, tunnels=closed)
+        return dropped, closed
 
     # broker helpers
 
-    def docker(self, argv, ns, stdin=None, timeout=60, allow_nonzero=False):
+    def docker(self, argv, ns, stdin=None, timeout=60, allow_nonzero=False, max_output=None):
         """stdout text of a command that must succeed (or any exit, with allow_nonzero: (code, out, err))."""
         try:
-            code, out, err = self.broker.run(argv, ns, stdin=stdin, timeout=timeout)
+            if max_output is None:
+                code, out, err = self.broker.run(argv, ns, stdin=stdin, timeout=timeout)
+            else:
+                code, out, err = self.broker.run(argv, ns, stdin=stdin, timeout=timeout, max_output=max_output)
         except Missing:
             raise Refused(404, "no_such_container")
         except Foreign:
@@ -914,7 +1005,7 @@ class Host:
             raise Refused(422, "path_refused")
         return resolved
 
-    def exec(self, ns, name, body):
+    def exec(self, ns, name, body, on_output=None):
         command = body.get("command")
         if not isinstance(command, str) or not command or len(command) > 100000:
             raise Refused(400, "bad_command")
@@ -926,7 +1017,9 @@ class Host:
         workdir = self.resolve(ns, name, cwd) if cwd else "/home/agent/work"
         started = time.monotonic()
         try:
-            code, out, err = self.broker.run(Argv.exec(name, command, seconds, workdir), ns, timeout=seconds + 10)
+            # One byte past the cap, so a cut is known; the rest of the output is read and dropped.
+            code, out, err = self.broker.run(Argv.exec(name, command, seconds, workdir), ns, timeout=seconds + 10,
+                                             max_output=EXEC_OUTPUT_BYTES + 1, on_output=on_output)
             timed_out = code in (124, 137)
         except BrokerTimeout as timeout:
             code, out, err, timed_out = 124, timeout.stdout, timeout.stderr, True
@@ -936,8 +1029,35 @@ class Host:
             raise Refused(409, "name_conflict")
         except BrokerError:
             raise Refused(502, "host_error")
-        return {"stdout": out.decode("utf-8", "replace"), "stderr": err.decode("utf-8", "replace"), "exitCode": code,
-                "timedOut": timed_out, "durationMs": int((time.monotonic() - started) * 1000)}
+        # The bytes as they are, base64 (4/3 of the size): JSON's escapes cost six bytes for a control
+        # byte, and the app decodes them as UTF-8 exactly as it does a same-host `docker exec`.
+        return {"stdoutBase64": base64.b64encode(out[:EXEC_OUTPUT_BYTES]).decode("ascii"),
+                "stderrBase64": base64.b64encode(err[:EXEC_OUTPUT_BYTES]).decode("ascii"),
+                "stdoutTruncated": len(out) > EXEC_OUTPUT_BYTES, "stderrTruncated": len(err) > EXEC_OUTPUT_BYTES,
+                "exitCode": code, "timedOut": timed_out, "durationMs": int((time.monotonic() - started) * 1000)}
+
+    @contextlib.contextmanager
+    def exec_slot(self, ns, name):
+        """One of the host's command slots (maxConcurrentCommands) and one of this computer's
+        (maxCommandsPerComputer), or 429 too_many_commands at once. Bounds the output the host holds."""
+        key = (ns, name)
+        with self.exec_lock:
+            per_computer = self.execs_running.get(key, 0)
+            total = sum(self.execs_running.values())
+            if per_computer >= self.config["maxCommandsPerComputer"]:
+                raise Refused(429, "too_many_commands", {"scope": "computer"})
+            if total >= self.config["maxConcurrentCommands"]:
+                raise Refused(429, "too_many_commands", {"scope": "host"})
+            self.execs_running[key] = per_computer + 1
+        try:
+            yield
+        finally:
+            with self.exec_lock:
+                left = self.execs_running.get(key, 1) - 1
+                if left > 0:
+                    self.execs_running[key] = left
+                else:
+                    self.execs_running.pop(key, None)
 
     def list_files(self, ns, name, directory):
         resolved = self.resolve(ns, name, directory or "/home/agent/work")
@@ -976,7 +1096,9 @@ class Host:
 
     def read_file(self, ns, name, raw, max_bytes):
         resolved = self.resolve(ns, name, raw)
-        code, out, _ = self.docker(Argv.read(name, resolved, max_bytes), ns, timeout=60, allow_nonzero=True)
+        # Up to max_bytes (26 MiB), not the default 16 MiB cut: a 20 MiB deliverable is never handed on cut short.
+        code, out, _ = self.docker(Argv.read(name, resolved, max_bytes), ns, timeout=60, allow_nonzero=True,
+                                   max_output=max_bytes)
         if code != 0:
             raise Refused(422, "unreadable")
         return out[:max_bytes]
@@ -1065,13 +1187,13 @@ class Host:
                    if line.strip().startswith("juno-agent-")]
         return {"containers": containers, "volumes": volumes}
 
-    def ticket(self, ns, name, body, token_id):
+    def ticket(self, ns, name, body, token_id, token_sha256=None):
         port = body.get("port")
         if isinstance(port, bool) or port not in TUNNEL_PORTS:
             raise Refused(400, "bad_port")
         if self.state(ns, name) == "missing":
             raise Refused(404, "no_such_container")
-        ticket, expires_at = self.tickets.mint(ns, name, port, token_id)
+        ticket, expires_at = self.tickets.mint(ns, name, port, token_id, token_sha256)
         return {"ticket": ticket, "expiresAt": expires_at}
 
     def address(self, ns, name):
@@ -1151,6 +1273,7 @@ def make_handler(host, tokens):
         def handle_method(self, method):
             started = time.monotonic()
             op, name, token_id, status = "unknown", None, None, 500
+            self.routed = None  # (operation, computer) once route() has parsed them, for a refusal's log line
             try:
                 parts = urlsplit(self.path)
                 path, query = parts.path, parse_qs(parts.query)
@@ -1163,9 +1286,12 @@ def make_handler(host, tokens):
                     status = 401
                     raise Refused(401, "unauthorized")
                 ns, token_id = entry["namespace"], entry["id"]
+                self.token_sha256 = entry["sha256"]
                 op, name, status = self.route(method, path, query, ns, token_id)
             except Refused as refused:
                 status = refused.status
+                if self.routed:
+                    op, name = self.routed
                 body = dict({"error": refused.code}, **refused.extra)
                 try:
                     self.respond(refused.status, body)
@@ -1206,6 +1332,7 @@ def make_handler(host, tokens):
                 raise Refused(404, "not_found")
             name = Host.name_of(match.group(1))
             action = (match.group(2) or "").lstrip("/")
+            self.routed = ((action or "computer").replace("/", "-")[:32], name)  # [a-z/-] only (COMPUTER_ROUTE)
             key = (method, action)
             if key in (("POST", "start"), ("POST", "stop"), ("POST", "pause"), ("POST", "unpause")):
                 self.respond(200, host.lifecycle(ns, name, action))
@@ -1224,7 +1351,14 @@ def make_handler(host, tokens):
             elif key == ("POST", "input"):
                 self.respond(200, host.input(ns, name, self.json_body()))
             elif key == ("POST", "exec"):
-                self.respond(200, host.exec(ns, name, self.json_body()))
+                body = self.json_body()
+                # The slot is held until the answer is written, so the host never holds more than
+                # maxConcurrentCommands answers at once (Host.exec_slot).
+                with host.exec_slot(ns, name):
+                    if NDJSON in (self.headers.get("Accept") or ""):
+                        self.stream_exec(ns, name, body)
+                    else:
+                        self.respond(200, host.exec(ns, name, body))
             elif key == ("GET", "files"):
                 self.respond(200, host.list_files(ns, name, query.get("path", [None])[0]))
             elif key == ("GET", "files/info"):
@@ -1257,10 +1391,72 @@ def make_handler(host, tokens):
             elif key == ("GET", "outdated"):
                 self.respond(200, host.outdated(ns, name))
             elif key == ("POST", "tickets"):
-                self.respond(200, host.ticket(ns, name, self.json_body(), token_id))
+                self.respond(200, host.ticket(ns, name, self.json_body(), token_id, self.token_sha256))
             else:
                 raise Refused(404, "not_found")
             return (action or "computer").replace("/", "-"), name, 200
+
+        def stream_exec(self, ns, name, body):
+            """A command's output as it runs (COMPUTERS_2026-10.md S5.1): NDJSON, one line per piece,
+            {"stream": "stdout"|"stderr", "data_b64": ...}, flushed as the broker relays it, and a last line
+            {"exit", "timedOut", "durationMs", "stdoutTruncated", "stderrTruncated"}. Nothing is sent until
+            the first piece (or the end), so a refusal before the command runs (a refused cwd, a missing
+            container) is still an ordinary status and code. A failure after the first line is a last line
+            {"error": code}. At most EXEC_STREAM_BYTES of each stream is forwarded; the rest is dropped."""
+            state = {"started": False, "sent": {"stdout": 0, "stderr": 0}}
+
+            def chunk(data):
+                try:
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
+                    self.wfile.flush()
+                except OSError:
+                    raise ClientGone() from None
+
+            def start():
+                if state["started"]:
+                    return
+                state["started"] = True
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", NDJSON)
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Accel-Buffering", "no")
+                    self.end_headers()
+                except OSError:
+                    raise ClientGone() from None
+
+            def line(value):
+                start()
+                chunk((json.dumps(value) + "\n").encode())
+
+            def on_output(stream, payload):
+                room = EXEC_STREAM_BYTES - state["sent"][stream]
+                if room <= 0:
+                    return
+                piece = payload[:room]
+                state["sent"][stream] += len(piece)
+                line({"stream": stream, "data_b64": base64.b64encode(piece).decode("ascii")})
+
+            try:
+                result = host.exec(ns, name, body, on_output=on_output)
+            except ClientGone:
+                self.close_connection = True
+                return
+            except Refused as refused:
+                if not state["started"]:
+                    raise
+                result = {"error": refused.code}
+            try:
+                if "error" in result:
+                    line(result)
+                else:
+                    line({"exit": result["exitCode"], "timedOut": result["timedOut"], "durationMs": result["durationMs"],
+                          "stdoutTruncated": result["stdoutTruncated"], "stderrTruncated": result["stderrTruncated"]})
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+            except (ClientGone, OSError):
+                self.close_connection = True
 
         def splice_tunnel(self):
             """Passes a /v1/tunnel upgrade through to the tunnel listener, as nginx does in production."""
@@ -1357,7 +1553,11 @@ def tunnel_server(host, loop_ready=None):
             record = host.tickets.consume(values[0]) if len(values) == 1 else None
             if record is None:
                 return refuse(juno, 401)
+            if host.tokens is not None and not host.tokens.in_force(record["token"], record.get("tokenSha256")):
+                # Minted under a token retired since (a ticket that escaped Tickets.revoke): opens nothing.
+                return refuse(juno, 401, token=record["token"])
             juno.update(name=record["name"], port=record["port"], token=record["token"])
+            host.tunnels[self] = juno  # from here on, retiring its token reaches it (Host.revoke_tokens)
             fields = {"computer": record["name"], "token": record["token"], "port": record["port"]}
             cdp = None
             if record["port"] == 9222:
@@ -1383,9 +1583,13 @@ def tunnel_server(host, loop_ready=None):
                 return refuse(juno, 403 if refused.status_code == 403 else 502, **fields)
             except (OSError, asyncio.TimeoutError, websockets.exceptions.WebSocketException):
                 return refuse(juno, 502, **fields)
+            if juno.get("revoked"):
+                # Its token was retired while the upstream leg opened.
+                return refuse(juno, 401, **fields)
             return None
 
         def connection_lost(self, exc):
+            host.tunnels.pop(self, None)
             # A handshake that failed after the upstream was opened: close it.
             upstream = (self.juno or {}).pop("upstream", None)
             if upstream is not None:
@@ -1445,15 +1649,26 @@ def tunnel_server(host, loop_ready=None):
     async def handler(websocket, path=None):
         juno = websocket.juno or {}
         upstream = juno.pop("upstream", None)
+        juno["open"] = True
         code = 1011
         try:
-            if upstream is not None and juno.get("port") == 9222:
+            if juno.get("revoked"):
+                code = 1008
+                if upstream is not None:
+                    if isinstance(upstream, tuple):
+                        upstream[1].close()
+                    else:
+                        await upstream.close()
+                await websocket.close(1008, "token retired")
+            elif upstream is not None and juno.get("port") == 9222:
                 code = await bridge_cdp(websocket, upstream)
             elif upstream is not None and juno.get("port") == 5900:
                 code = await bridge_vnc(websocket, upstream)
             else:
                 await websocket.close(1011)
         finally:
+            if juno.get("revoked"):
+                code = 1008
             log(op="tunnel", computer=juno.get("name"), token=juno.get("token"), port=juno.get("port"), status=101,
                 close=code, ms=int((time.monotonic() - juno.get("started", time.monotonic())) * 1000))
 
@@ -1488,7 +1703,7 @@ def serve(config_path):
         tokens = Tokens(config["tokensFile"])
     except (OSError, ValueError) as error:
         raise SystemExit("juno-computer-host: the tokens file is unreadable or malformed (%s)" % type(error).__name__)
-    host = Host(config)
+    host = Host(config, tokens=tokens)
     api = ThreadingHTTPServer((config["listen"], config["apiPort"]), make_handler(host, tokens))
     api.daemon_threads = True
     threading.Thread(target=api.serve_forever, daemon=True).start()
@@ -1496,7 +1711,7 @@ def serve(config_path):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     stop = loop.create_future()
-    loop.add_signal_handler(signal.SIGHUP, tokens.reload)
+    loop.add_signal_handler(signal.SIGHUP, lambda: host.revoke_tokens(tokens.reload()))
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: stop.done() or stop.set_result(None))
     server = loop.run_until_complete(tunnel_server(host))

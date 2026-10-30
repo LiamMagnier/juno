@@ -55,6 +55,14 @@ the 10 GB free-disk floor, and up to 10 GB per enabled computer (the quota is me
 enforced by the filesystem). A Linux AMD64 VM in the same region as the web VM (Azure
 Sweden Central today, for latency and EU residency), Debian 12 or Ubuntu 24.04.
 
+The host service itself runs under `MemoryMax=512M` and carries every open tunnel, so a
+command's output is bounded before the service holds it: each answer carries at most 1 MiB
+of each stream (the app keeps 20,000 characters), and at most 4 commands run at once per
+computer and 24 on the host (`maxCommandsPerComputer`, `maxConcurrentCommands` in
+`/etc/juno/computer-host.json`; the next gets `429 too_many_commands`). Measured with a
+fake Docker, eight commands at once that each printed 16 MiB per stream took the service
+from 29 MiB to between 50 and 73 MiB (nine runs).
+
 ## Setting it up, in order
 
 1. **Provision the machine** and give it a DNS name the web VM can resolve (A record to
@@ -84,7 +92,8 @@ Sweden Central today, for latency and EU residency), Debian 12 or Ubuntu 24.04.
    characters): its format is checked, its randomness cannot be.
 5. **Check the address the host sees for the web VM.** From the web VM:
    ```bash
-   curl -fsS -H "Authorization: Bearer $COMPUTER_HOST_TOKEN" https://<host name>/v1/health
+   # the header comes from stdin, so the token never shows in the process list
+   printf 'Authorization: Bearer %s\n' "$COMPUTER_HOST_TOKEN" | curl -fsS -H @- https://<host name>/v1/health
    ```
    Its `source` must equal `--web-ip`. On Azure, outbound traffic may arrive from the web
    VM's public address (SNAT): if `source` differs, re-run setup with `--web-ip <source>`.
@@ -122,7 +131,13 @@ sudo bash deploy/computer-host/setup.sh --retire-token <old id>        # the old
 ```
 
 The host re-reads the file on `SIGHUP` (`systemctl reload juno-computer-host`); setup does
-that for you. The host's log names the token id of every request, never the token.
+that for you. Retiring a token also drops the tunnel tickets minted under it and closes
+every CDP and VNC tunnel opened with them (close code 1008, logged as `op=revoke`), and a
+ticket request already in flight under it mints nothing (the token is checked again when the
+ticket is minted and when it is used), so a leaked token keeps nothing open once it is
+retired: retire the old token only after the
+app, the Work runner and the relay run with the new one. The host's log names the token id
+of every request, never the token.
 
 ## TLS
 
@@ -144,7 +159,10 @@ established traffic, ICMP, SSH from `--ssh-from`, 443 from `--web-ip`, and the c
 own connections to the egress proxy (`br-juno` to 172.30.0.1:3128). Docker's forward and
 NAT rules are left alone; `deploy/agent-computers/firewall.sh` keeps computers off private
 networks, the metadata service and the host itself, and away from DNS. Without
-`--ssh-from`, SSH stays open to everyone (setup warns).
+`--ssh-from`, SSH stays open to everyone (setup warns). Setup loads this table before
+anything else it installs listens (the package's default nginx site on port 80 is
+removed at the same time), so 443 never answers anyone but `--web-ip`, even if setup
+stops halfway.
 
 ## Image freshness
 
@@ -162,8 +180,13 @@ no computer can be woken, viewed or used. On the host, to stop everything at onc
 
 ```bash
 sudo systemctl stop juno-computer-host                                       # no API calls, no tunnels
-sudo docker ps -aq --filter label=app=juno --filter name=juno-agent- | xargs -r docker rm -f
+sudo docker ps -aq --filter label=app=juno --filter name=juno-agent- | sudo xargs -r docker rm -f
 ```
+
+`docker rm -f` goes to Docker directly, around the broker, so the broker does not release
+the computers' addresses from the egress map; the map watcher (`juno-computers-egress-map`
+unit) drops them as each container dies. If that unit is not running, repair the map by
+hand: `sudo /usr/local/sbin/juno-computers-egress-map rebuild`.
 
 Volumes are kept (`docker volume ls -q --filter name=juno-agent-`); a computer is recreated
 on them at its next wake once computers are back on. Removing the volumes deletes every

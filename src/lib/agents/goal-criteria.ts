@@ -17,7 +17,9 @@ import "server-only";
  *      or unchecked. Recording it never changes the run's own outcome: the
  *      step was done either way.
  *   2. The goal driver (src/lib/agents/goal-runner.ts), once every milestone
- *      is marked, reads that verdict (`latestGoalCriteriaCheck`) and applies
+ *      is marked, reads the verdict the step's COMPLETED run recorded
+ *      (`latestGoalCriteriaCheck`: a check an attempt made before it failed,
+ *      was cancelled or ran out of budget is not that run's) and applies
  *      `planGoalCompletion` (src/lib/agents/goals.ts): `achieved` only on a
  *      recorded pass; otherwise `unverified`, "Every step ran. Check the
  *      result.", with the steps' tasks listed on the goal. No verdict at all
@@ -42,6 +44,7 @@ import {
   type GoalCriteriaCheck,
   type GoalStepResult,
 } from "@/lib/agents/goals";
+import { goalCheckTextBounds } from "@/lib/agents/orbit-limits";
 import { notifyUser } from "@/lib/notifications";
 import { agentPath } from "@/lib/notify/paths";
 
@@ -168,7 +171,7 @@ export async function checkGoalAfterFinalStep(input: {
     verdict = await input.check({
       goal: [goal.title, goal.detail].filter((part) => part.trim()).join("\n\n"),
       criteria: parseCriteria(goal.successCriteria),
-      deliverables: composeGoalDeliverables(steps),
+      deliverables: composeGoalDeliverables(steps, goalCheckTextBounds()),
     });
   } catch {
     verdict = null;
@@ -192,22 +195,44 @@ export async function checkGoalAfterFinalStep(input: {
   return check;
 }
 
-/** The verdict the run of this session recorded for this goal, or null when none did. */
+/**
+ * The verdict this session's completed run recorded for this goal, or null
+ * when it recorded none.
+ *
+ * The run's validator checks the criteria after every loop, including an
+ * attempt that then ends failed, cancelled or over budget (the session judges
+ * before it decides how the run ended). So the verdict must come from the
+ * attempt that completed: the session's latest `completed` run, matched by
+ * the `runId` the check recorded. A MET from an earlier attempt never stands
+ * in for a retry that recorded nothing.
+ */
 export async function latestGoalCriteriaCheck(input: {
   userId: string;
   agentId: string;
   goalId: string;
   sessionId: string;
 }): Promise<GoalCriteriaCheck | null> {
+  const completed = await prisma.workRun.findFirst({
+    where: { userId: input.userId, sessionId: input.sessionId, status: "completed" },
+    orderBy: { attempt: "desc" },
+    select: { id: true },
+  });
+  if (!completed) return null;
   const rows = await prisma.agentEvent.findMany({
-    where: { userId: input.userId, agentId: input.agentId, kind: "goal_checked", sessionId: input.sessionId },
+    where: {
+      userId: input.userId,
+      agentId: input.agentId,
+      kind: "goal_checked",
+      sessionId: input.sessionId,
+      detail: { path: ["runId"], equals: completed.id },
+    },
     orderBy: { createdAt: "desc" },
     take: 5,
     select: { detail: true },
   });
   for (const row of rows) {
     const detail = row.detail as Record<string, unknown> | null;
-    if (detail && detail.goalId === input.goalId) return readGoalCriteriaCheck(detail);
+    if (detail && detail.goalId === input.goalId && detail.runId === completed.id) return readGoalCriteriaCheck(detail);
   }
   return null;
 }

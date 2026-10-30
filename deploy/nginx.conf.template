@@ -1,3 +1,36 @@
+# ── "Updating, back in a moment" ────────────────────────────────────────────
+#
+# While a deploy restarts the app, nginx cannot reach it and answers 502. A
+# person loading a page used to get nginx's bare error page and had to guess
+# when to reload. Page navigations now get a small static page that says what
+# is happening and reloads itself every few seconds
+# (deploy/maintenance/updating.html), served with 503 and Retry-After.
+#
+# Only for errors nginx itself produced (proxy_intercept_errors stays off, so
+# a page or route the app answered with an error is passed through as the app
+# wrote it), and only for page navigations: /api/* keeps exactly what it had
+# (its own location below, with no error page), and a non-navigation request
+# under / (an RSC fetch, an image) gets the plain 502 it always got.
+#
+# Install the page once on the VM, from the checkout of this repository:
+#   sudo install -D -m 644 deploy/maintenance/updating.html /var/www/juno-maintenance/updating.html
+# Without it nginx falls back to its plain 502, exactly as before.
+#
+# A navigation: a browser's Sec-Fetch-Mode says so; an older one without
+# Sec-Fetch headers asks for HTML. A Next.js client-side transition carries
+# `RSC: 1` and is never one.
+map "$request_method:$http_sec_fetch_mode:$http_rsc:$http_accept" $juno_page_navigation {
+    default                          0;
+    "~^(GET|HEAD):navigate::"        1;
+    "~^(GET|HEAD):::[^:]*text/html"  1;
+}
+
+# Where `location /` sends an error nginx produced (its error_page below).
+map $juno_page_navigation $juno_unavailable {
+    1        /__juno_updating;
+    default  @juno_bad_gateway;
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -89,6 +122,36 @@ server {
         proxy_busy_buffers_size 32k;
     }
 
+    # The API: the same proxying as `location /` below, directive for
+    # directive, and deliberately no error page. A client of /api/* (the web
+    # app's fetches, the Mac and iPhone apps) reads the app's JSON errors and
+    # must never be handed an HTML page in their place; while the app is down
+    # it gets nginx's plain 502, as it always did, and the clients retry what
+    # is safe to retry (src/lib/chat/send-retry.ts). Keep the two blocks in
+    # step: tests/deploy-maintenance-page.test.ts compares them.
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_hide_header X-Powered-By;
+
+        proxy_request_buffering off;
+
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        chunked_transfer_encoding on;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
@@ -98,7 +161,7 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_cache_bypass $http_upgrade;
-        
+
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -119,6 +182,29 @@ server {
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
         chunked_transfer_encoding on;
+
+        # The app is not answering (a deploy restarting it): a page navigation
+        # gets the "Updating, back in a moment" page, anything else the plain
+        # 502 (see the top of this file).
+        error_page 502 503 504 =503 $juno_unavailable;
+    }
+
+    # The page, for page navigations only, with 503 and Retry-After.
+    location = /__juno_updating {
+        internal;
+        root /var/www/juno-maintenance;
+        add_header Cache-Control "no-store" always;
+        add_header Retry-After "8" always;
+        add_header X-Robots-Tag "noindex" always;
+        add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        # The page not installed: the plain 502, exactly as before.
+        try_files /updating.html @juno_bad_gateway;
+    }
+
+    # nginx's plain 502, headers and all, exactly as before this page existed.
+    location @juno_bad_gateway {
+        return 502;
     }
 }
 

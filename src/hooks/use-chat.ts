@@ -50,6 +50,9 @@ import type {
   TitleSource,
 } from "@/types/chat";
 import { memoryWriteOf } from "@/lib/chat/memory-receipts";
+import { abortableSleep, sendTurn, type SendSafety, type SendVerification } from "@/lib/chat/send-retry";
+import { reportSessionExpired } from "@/lib/chat/session-expired";
+import { promptPlaceholderTitle } from "@/lib/title-ownership";
 
 /**
  * Add an activity event, or update the one already holding its id WHERE IT IS.
@@ -220,6 +223,50 @@ const FIRST_PAGE_LIMIT = 60;
 const branchSwitchFailedMessage = "Couldn’t switch to that version.";
 const regenerateFailedMessage = "Couldn’t regenerate that answer.";
 const unsentAfterMessage = "Resend or copy your unsent message first.";
+/** What a turn that is not a new message says when its send came back 401 (the dialog says the rest). */
+const sessionEndedTurnMessage = "Your session ended. Sign in again to continue.";
+
+/**
+ * Whether a saved follow-up whose POST failed before any response reached the
+ * server after all (lib/chat/send-retry.ts, `verify`): running under this
+ * turn's generation id, or saved as the conversation's newest question. Only
+ * an answer the server gave counts; a check it could not answer is `unknown`,
+ * and nothing is sent again until it can be asked.
+ */
+async function verifyTurnLanded(args: {
+  conversationId: string;
+  generationId: string;
+  /** The question as the transcript shows it, which is what the server stores. */
+  content: string | null;
+  /** User turns this tab already had before the send. */
+  knownUserIds: ReadonlySet<string>;
+}): Promise<SendVerification> {
+  try {
+    const active = await fetch(`/api/chat/stream/active?conversationId=${encodeURIComponent(args.conversationId)}`);
+    // Signed out: a POST is refused before anything is accepted, so sending
+    // again cannot duplicate the turn, and it is what surfaces the expiry.
+    if (active.status === 401) return { state: "absent" };
+    if (active.ok) {
+      const data = (await active.json().catch(() => null)) as { generationId?: unknown } | null;
+      if (data?.generationId === args.generationId) return { state: "landed", running: true, userMessageId: null };
+    } else if (active.status !== 404) {
+      return { state: "unknown" };
+    }
+    if (args.content === null) return { state: "unknown" };
+    const page = await fetch(`/api/conversations/${encodeURIComponent(args.conversationId)}?limit=6`);
+    if (page.status === 401) return { state: "absent" };
+    if (!page.ok) return { state: "unknown" };
+    const payload = (await page.json().catch(() => null)) as { messages?: ClientMessage[] } | null;
+    if (!payload || !Array.isArray(payload.messages)) return { state: "unknown" };
+    const newestUser = [...payload.messages].reverse().find((m) => m.role === "USER");
+    if (newestUser && !args.knownUserIds.has(newestUser.id) && newestUser.content.trim() === args.content.trim()) {
+      return { state: "landed", running: false, userMessageId: newestUser.id };
+    }
+    return { state: "absent" };
+  } catch {
+    return { state: "unknown" };
+  }
+}
 
 export type { LoadOlderRequest } from "@/lib/chat/history-client";
 
@@ -300,6 +347,12 @@ export function useChat(opts: UseChatOptions) {
   /** View detached (new chat / unmount) — abort browser stream without user-stop or error toast. */
   const detachedRef = React.useRef(false);
   const stopFallbackRef = React.useRef<number | null>(null);
+  /**
+   * The turn whose send is waiting to go out again (lib/chat/send-retry.ts),
+   * by its abort controller. Nothing is running on the server for it, so Stop
+   * ends the wait at once instead of waiting on the cancel round trip.
+   */
+  const sendWaitingRef = React.useRef<AbortController | null>(null);
   /*
    * A turn whose stream dropped while the server was still writing it.
    *
@@ -610,6 +663,11 @@ export function useChat(opts: UseChatOptions) {
               // taking the client's guess would 404 on exactly the turns that
               // most need to be resumable.
               if (chunk.generationId) generationId = chunk.generationId;
+              // Stop names the generation by this ref; it must be the server's
+              // id too, or a Stop pressed after meta would cancel nothing.
+              if (chunk.generationId && assistantIdRef.current === assistantTempId) {
+                generationIdRef.current = chunk.generationId;
+              }
               // Only the saved path logs frames. Without this the client would
               // reconnect to an empty log on every private turn.
               resumable = chunk.resumable === true;
@@ -1234,7 +1292,18 @@ export function useChat(opts: UseChatOptions) {
   }, [opts.conversationId]);
 
   const runGeneration = React.useCallback(
-    async (body: Record<string, unknown>, assistantTempId: string, path = "/api/chat") => {
+    async (
+      body: Record<string, unknown>,
+      assistantTempId: string,
+      path = "/api/chat",
+      /**
+       * The user turn this send adds, as the transcript shows it (and the
+       * server stores it); null for a turn that adds none (a regenerate).
+       * Passed in, because the message list the caller just set has not
+       * been committed yet when this starts.
+       */
+      question: string | null = null
+    ) => {
       const controller = new AbortController();
       const generationId = crypto.randomUUID();
       abortRef.current = controller;
@@ -1276,6 +1345,33 @@ export function useChat(opts: UseChatOptions) {
         return true;
       };
 
+      /*
+       * How a repeat of this send is made safe, should the first POST not
+       * reach the server (lib/chat/send-retry.ts). A new saved conversation's
+       * first message carries durable first-submission keys, so the server
+       * answers a repeat with the original outcome; a saved follow-up is sent
+       * again only once the server says it never landed; everything else is
+       * sent again only on a drain, which refuses before reading anything.
+       */
+      const chatSend = path === "/api/chat" && !opts.privateMode && !body.regenerate;
+      const firstSubmission = chatSend && !body.conversationId;
+      const safety: SendSafety = firstSubmission
+        ? "idempotent"
+        : chatSend && typeof body.message === "string"
+          ? "verify"
+          : "drain-only";
+      // The question this send carries, as the transcript shows it — what the
+      // server stores, and what a session that ended gives back.
+      const sentQuestion = body.regenerate ? null : question;
+      /** Verification or a repeat found this turn already on the server. */
+      let landed = false;
+      /**
+       * Every failed attempt so far was a drain, which refuses before reading
+       * the request: a Stop during the wait leaves a turn the server provably
+       * never received, so it is offered as unsent rather than regenerated.
+       */
+      let onlyDrained = true;
+
       try {
         // Let React paint "submitting" / the pending bubbles before a multi-MB
         // JSON.stringify blocks the main thread on long pastes / private history.
@@ -1283,29 +1379,135 @@ export function useChat(opts: UseChatOptions) {
           requestAnimationFrame(() => resolve());
         });
 
-        const res = await fetch(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const conversationAtSend = convoIdRef.current;
+        const knownUserIds = new Set(messagesRef.current.filter((m) => m.role === "USER").map((m) => m.id));
+        const sent = await sendTurn({
+          url: path,
+          // Serialised once: every repeat is byte-identical, which a durable
+          // first submission's receipt requires (its request hash).
           body: JSON.stringify({
             ...body,
             generationId,
+            ...(firstSubmission
+              ? {
+                  clientRequestId: `web-req-${crypto.randomUUID()}`,
+                  clientMessageId: `web-msg-${crypto.randomUUID()}`,
+                }
+              : {}),
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           }),
           signal: controller.signal,
+          safety,
+          verify:
+            safety === "verify" && conversationAtSend
+              ? () =>
+                  verifyTurnLanded({
+                    conversationId: conversationAtSend,
+                    generationId,
+                    content: sentQuestion,
+                    knownUserIds,
+                  })
+              : undefined,
+          // "Reconnecting in 4s", then "Reconnecting…": the same calm line a
+          // dropped stream shows (connection-status.tsx), on this turn's bubble.
+          onWaiting: ({ retryAt, failure }) => {
+            if (failure.kind !== "draining") onlyDrained = false;
+            sendWaitingRef.current = controller;
+            if (generationSeqRef.current === seq) setTurnConnection(assistantTempId, { phase: "reconnecting", retryAt });
+          },
+          onRetrying: () => {
+            sendWaitingRef.current = null;
+            if (generationSeqRef.current === seq) setTurnConnection(assistantTempId, { phase: "reconnecting", retryAt: null });
+          },
+          deps: { fetch: (url, init) => fetch(url, init), sleep: abortableSleep, now: Date.now, random: Math.random },
         });
+        if (sendWaitingRef.current === controller) sendWaitingRef.current = null;
+        if (generationSeqRef.current === seq) setTurnConnection(assistantTempId, undefined);
 
-        if (!res.ok || !res.body) {
-          const data = (await res.json().catch(() => ({}))) as {
-            error?: string | { message?: string };
-            message?: string;
-          };
-          // Machine-readable errors (e.g. 402 budget_exceeded) carry the
-          // human sentence in `message`; plain errors keep it in `error`.
-          const nestedMessage = typeof data.error === "object" && data.error ? data.error.message : undefined;
-          const errorText = typeof data.error === "string" ? data.error : undefined;
-          throw new Error(data.message ?? nestedMessage ?? errorText ?? "Something went wrong.");
+        if (sent.kind === "session-expired") {
+          // The session ended: a dialog says so (session-expired-dialog.tsx)
+          // and the words are kept — never the route's 401 text as the answer.
+          const unsentQuestion = sentQuestion !== null;
+          setMessages((prev) =>
+            unsentQuestion
+              ? prev
+                  .filter((m) => m.id !== assistantTempId)
+                  .map((m) => (m.pending && m.role === "USER" ? { ...m, pending: false, unsent: true } : m))
+              : prev.map((m) =>
+                  m.id === assistantTempId
+                    ? {
+                        ...m,
+                        streaming: false,
+                        error: true,
+                        progress: null,
+                        finishReason: "error" as const,
+                        errorMessage: sessionEndedTurnMessage,
+                        content: m.content || sessionEndedTurnMessage,
+                      }
+                    : m
+                )
+          );
+          if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+          reportSessionExpired({
+            returnTo: `${window.location.pathname}${window.location.search}`,
+            text: unsentQuestion && !opts.privateMode ? sentQuestion : null,
+            conversationId: opts.privateMode ? null : convoIdRef.current,
+            incognito: !!opts.privateMode,
+          });
+          return;
+        }
+        if (sent.kind === "failed") throw new Error(sent.message);
+
+        if (sent.kind === "already-submitted" || sent.kind === "landed") {
+          // An earlier attempt of this very send reached the server: its turn
+          // is read from the generation's log (or, failing that, from the
+          // conversation) instead of being asked for a second time.
+          landed = true;
+          const userMessageId = sent.userMessageId;
+          if (sent.kind === "already-submitted" && convoIdRef.current === null) {
+            convoIdRef.current = sent.conversationId;
+            opts.onMeta?.({
+              conversationId: sent.conversationId,
+              title: promptPlaceholderTitle(sentQuestion ?? ""),
+              titleSource: "default",
+              isNew: true,
+            });
+          }
+          if (userMessageId) {
+            setMessages((prev) =>
+              prev.map((m) => (m.pending && m.role === "USER" ? { ...m, id: userMessageId, pending: false } : m))
+            );
+          }
+          const logGenerationId = sent.kind === "already-submitted" ? sent.generationId : generationId;
+          generationIdRef.current = logGenerationId;
+          if (convoIdRef.current) {
+            markPendingGeneration({
+              conversationId: convoIdRef.current,
+              userMessageId,
+              generationId: logGenerationId,
+              startedAt: Date.now(),
+            });
+          }
+          if (sent.kind === "landed" && !sent.running) {
+            // Saved, but nothing is running under this turn's id: the answer
+            // is in the conversation, or will be, or was lost with a process.
+            void recoverDroppedStream(assistantTempId, userMessageId, seq);
+            return;
+          }
+          setStatus("thinking");
+          await driveReconnect({
+            applier,
+            generationId: logGenerationId,
+            assistantTempId,
+            seq,
+            signal: controller.signal,
+            immediate: true,
+          });
+          return;
         }
 
+        const res = sent.response;
+        if (!res.body) throw new Error("Something went wrong.");
         await readChatStream(res.body, applier.apply);
 
         // Stream ended without a done/error frame — reconnect, recover, or
@@ -1338,7 +1540,12 @@ export function useChat(opts: UseChatOptions) {
         // View moved on (new chat) — abort without error toast.
         if (detachedRef.current) return;
         const stopped = stopRequestedRef.current;
-        if (stopped) {
+        if (stopped && sendWaitingRef.current === controller && onlyDrained && sentQuestion !== null) {
+          // Stopped while waiting out a drain: nothing reached the server, so
+          // there is no answer to call stopped. The question stays, unsent.
+          setMessages((prev) => prev.filter((m) => m.id !== assistantTempId));
+          if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+        } else if (stopped) {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantTempId
@@ -1364,6 +1571,9 @@ export function useChat(opts: UseChatOptions) {
           if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
         }
       } finally {
+        // Ended while waiting to send again (a Stop, or the view moving on).
+        const stoppedInWait = sendWaitingRef.current === controller;
+        if (stoppedInWait) sendWaitingRef.current = null;
         if (stopFallbackRef.current != null) {
           window.clearTimeout(stopFallbackRef.current);
           stopFallbackRef.current = null;
@@ -1381,7 +1591,8 @@ export function useChat(opts: UseChatOptions) {
         // the turn — and there the flag is left off so a retry regenerates
         // rather than risking a duplicate.)
         if (!detachedRef.current) {
-          const orphaned = !applier.metaArrived && !stopRequestedRef.current;
+          const orphaned =
+            !applier.metaArrived && !landed && (!stopRequestedRef.current || (stoppedInWait && onlyDrained && sentQuestion !== null));
           setMessages((prev) =>
             prev.some((m) => m.pending && m.role === "USER")
               ? prev.map((m) =>
@@ -1397,7 +1608,7 @@ export function useChat(opts: UseChatOptions) {
         stopRequestedRef.current = false;
       }
     },
-    [clearReconnect, createStreamApplier, driveReconnect, opts, recoverDroppedStream]
+    [clearReconnect, createStreamApplier, driveReconnect, opts, recoverDroppedStream, setTurnConnection]
   );
 
   const startGeneration = React.useCallback(
@@ -1484,7 +1695,8 @@ export function useChat(opts: UseChatOptions) {
             params: input.mediaParams,
           },
           assistantTempId,
-          "/api/generate"
+          "/api/generate",
+          userMsg.content
         );
         return { accepted: true };
       }
@@ -1537,7 +1749,9 @@ export function useChat(opts: UseChatOptions) {
                 .map((m) => ({ role: m.role, content: m.content }))
             : undefined,
         },
-        assistantTempId
+        assistantTempId,
+        "/api/chat",
+        userMsg.content
       ).catch((err) => {
         // Keep the SPA alive if stringify/fetch throws on huge pastes.
         console.error("[chat] generation failed to start", err);
@@ -1787,7 +2001,8 @@ export function useChat(opts: UseChatOptions) {
           edit: input.edit,
         },
         assistantTempId,
-        "/api/generate"
+        "/api/generate",
+        userMsg.content
       );
       return { accepted: true };
     },
@@ -2178,6 +2393,10 @@ export function useChat(opts: UseChatOptions) {
     const controller = abortRef.current;
     const assistantId = assistantIdRef.current;
     if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+
+    // Waiting to send again: end the wait now. The cancel below still goes
+    // out, so an earlier attempt that did reach the server stops there too.
+    if (sendWaitingRef.current === controller) controller.abort();
 
     if (generationId) {
       fetch("/api/chat/cancel", {

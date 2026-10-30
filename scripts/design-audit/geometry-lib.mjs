@@ -59,6 +59,10 @@ export const DEFAULT_TOLERANCES = Object.freeze({
   sibling: 0.5,
   /** Controls in one row whose heights differ by more than this are inconsistent. */
   rowHeight: 1,
+  /** Side-by-side controls further apart than this are separate rows (clusters). */
+  rowGap: 40,
+  /** How many wrapper levels below a container its row controls may sit. */
+  rowDepth: 5,
   /** Text edges closer than alignMax but further apart than alignMin are a near miss. */
   alignMin: 0.5,
   alignMax: 3,
@@ -71,6 +75,8 @@ export const DEFAULT_TOLERANCES = Object.freeze({
   targetTouch: 44,
   /** Icons larger than this are illustrations, not glyphs. */
   maxIconSize: 64,
+  /** An icon further than this from its text is placed by layout (space-between), not a gap. */
+  maxIconGap: 32,
   /** A percentage radius rung matches within this many percentage points. */
   radiusPercent: 1.5,
 });
@@ -88,6 +94,7 @@ export const VIOLATION_KINDS = [
   "clipped-corner",
   "asymmetric-padding",
   "sibling-padding",
+  "sibling-radius",
   "row-height",
   "text-misalignment",
   "icon-gap",
@@ -100,11 +107,27 @@ export const VIOLATION_LABELS = {
   "clipped-corner": "Corner cut by clip",
   "asymmetric-padding": "Asymmetric padding",
   "sibling-padding": "Sibling padding",
+  "sibling-radius": "Sibling radius",
   "row-height": "Row heights",
   "text-misalignment": "Text edge near miss",
   "icon-gap": "Icon gap",
   "target-size": "Target size",
   "off-scale": "Off scale",
+};
+
+/** Outline colours on the annotated screenshots, with the name the report uses. */
+export const KIND_COLORS = {
+  "nested-radius": ["#e11d48", "rose"],
+  "corner-poke-out": ["#be123c", "crimson"],
+  "clipped-corner": ["#9f1239", "wine"],
+  "asymmetric-padding": ["#d97706", "amber"],
+  "sibling-padding": ["#ca8a04", "mustard"],
+  "sibling-radius": ["#db2777", "pink"],
+  "row-height": ["#7c3aed", "violet"],
+  "text-misalignment": ["#2563eb", "blue"],
+  "icon-gap": ["#0891b2", "cyan"],
+  "target-size": ["#16a34a", "green"],
+  "off-scale": ["#6b7280", "grey"],
 };
 
 export function round2(n) {
@@ -117,6 +140,7 @@ export function half(n) {
 }
 
 export function fmt(n) {
+  if (typeof n === "string") return n; // named rungs: "full", "concentric"
   if (n === null || n === undefined || Number.isNaN(n)) return "-";
   if (n === Infinity) return "full";
   const r = round2(n);
@@ -327,7 +351,7 @@ export function cornerInsets(child, parent) {
  * The inset used is the mean of the two (they are equal when the parent has
  * the same padding on both sides, which the concentric rule assumes).
  */
-export function judgeCorner({ parentRadius, childRadius, dx, dy, parentClips = false, circle = false, tol = DEFAULT_TOLERANCES.nestedRadius, pokeTol = DEFAULT_TOLERANCES.pokeOut }) {
+export function judgeCorner({ parentRadius, childRadius, dx, dy, parentClips = false, parentBorder = [0, 0], circle = false, tol = DEFAULT_TOLERANCES.nestedRadius, pokeTol = DEFAULT_TOLERANCES.pokeOut }) {
   const R = parentRadius;
   const r = childRadius;
   if (R <= 0 || dx < -0.5 || dy < -0.5 || dx >= R || dy >= R) {
@@ -337,17 +361,25 @@ export function judgeCorner({ parentRadius, childRadius, dx, dy, parentClips = f
   const expected = concentricExpected(R, inset);
   const delta = round2(r - expected);
   const poke = cornerPokeOut(R, r, Math.max(0, dx), Math.max(0, dy));
+  // overflow clips at the padding box, whose radius is the outer radius less
+  // the border: a child inset by exactly the border is flush with the clip.
+  const [bx, by] = parentBorder;
+  const cdx = dx - bx;
+  const cdy = dy - by;
+  const flushToClip = parentClips && Math.min(cdx, cdy) <= 0.5;
   let verdict = "ok";
   if (poke > pokeTol) {
     // Flush children of a clipping parent are the normal "image fills the
     // card" pattern: the clip draws the corner. A child inset a little and
     // then cut by the clip ends up with a lopsided corner.
-    if (parentClips) verdict = Math.min(dx, dy) > 0.5 ? "clipped-corner" : "ok";
-    else verdict = "poke-out";
+    if (parentClips) {
+      const clipPoke = cornerPokeOut(Math.max(0, R - Math.max(bx, by)), r, Math.max(0, cdx), Math.max(0, cdy));
+      verdict = !flushToClip && clipPoke > pokeTol ? "clipped-corner" : "ok";
+    } else verdict = "poke-out";
   }
   if (verdict === "ok" && Math.abs(delta) > tol) {
     if (delta > 0 && circle) verdict = "ok"; // avatars and round icon buttons are content shapes
-    else if (!(parentClips && Math.min(dx, dy) <= 0.5 && delta < 0)) verdict = delta > 0 ? "too-round" : "too-sharp";
+    else if (!(flushToClip && delta < 0)) verdict = delta > 0 ? "too-round" : "too-sharp";
   }
   return { applicable: true, inset, expected, delta, poke, verdict };
 }
@@ -492,7 +524,48 @@ export function buildTree(records) {
 }
 
 function isIconRecord(r, tol) {
-  return !!r.icon && r.w <= tol.maxIconSize && r.h <= tol.maxIconSize;
+  // Glyphs are roughly square: a wordmark or a wide mark is not an icon box.
+  return !!r.icon && r.w <= tol.maxIconSize && r.h <= tol.maxIconSize && Math.max(r.w, r.h) <= 1.34 * Math.min(r.w, r.h);
+}
+
+/**
+ * Library and framework wrappers that are not useful as "the component this
+ * element belongs to". The collector skips most of them while walking React's
+ * tree; this list is applied again here so a saved run re-scored later gets
+ * the current list too.
+ */
+export const GENERIC_COMPONENT = /^(.*Slot(\..*)?|SlotClone|Slottable|.*CollectionSlot.*|RovingFocusGroup.*|Primitive(\..*)?|Presence|Portal|DismissableLayer|FocusScope|Popper.*|Menu|MenuSub|DropdownMenu|DropdownMenuSub|Popover|Tooltip|Dialog|AlertDialog|HoverCard|ContextMenu|Collapsible|Sheet|Select|MotionConfig|motion\..*|LinkComponent|Link|(Tooltip|DropdownMenu|Popover|Dialog|AlertDialog|HoverCard|ContextMenu|Collapsible|Sheet)Trigger|.*Provider|.*Context|.*Boundary)$/;
+
+/** Is this inline box part of a sentence? Climb inline ancestors (spans) up to the block holding them. */
+function inRunningText(records, r) {
+  let k = r.p;
+  for (let hops = 0; k >= 0 && hops < 4; hops++) {
+    const a = records[k];
+    if (a.txt) return true;
+    if (!/^inline/.test(a.disp || "")) return false;
+    k = a.p;
+  }
+  return false;
+}
+
+/**
+ * Records with `comp` re-derived against GENERIC_COMPONENT, and `inline` set
+ * on any interactive inline-level box whose parent holds running text (a
+ * citation chip in a sentence is not a standalone control). Inputs are not
+ * mutated.
+ */
+export function normalizeRecords(records) {
+  return records.map((r) => {
+    let next = r;
+    if (r.comp && GENERIC_COMPONENT.test(r.comp)) {
+      const comps = (r.comps || []).filter((n) => !GENERIC_COMPONENT.test(n));
+      next = { ...next, comps };
+      if (comps.length) next.comp = comps[0];
+      else delete next.comp;
+    }
+    if (r.kind && !r.inline && /^inline/.test(r.disp || "") && inRunningText(records, r)) next = { ...next, inline: true };
+    return next;
+  });
 }
 
 function isControl(r) {
@@ -532,8 +605,10 @@ export function measuredValues(r, ctx) {
   // a field) is derived: inset + glyph + gap. The gap is the value to judge.
   const overlay = ctx.overlays?.get(r.i);
   if (overlay) {
-    if (overlay.lead !== null && padSides[3] > 0) add("icon-text-gap", r.x + (bw[3] || 0) + padSides[3] - overlay.lead, { derived: "left padding" });
-    if (overlay.trail !== null && padSides[1] > 0) add("icon-text-gap", overlay.trail - (r.x + r.w - (bw[1] || 0) - padSides[1]), { derived: "right padding" });
+    const leadGap = overlay.lead !== null ? r.x + (bw[3] || 0) + padSides[3] - overlay.lead : null;
+    const trailGap = overlay.trail !== null ? overlay.trail - (r.x + r.w - (bw[1] || 0) - padSides[1]) : null;
+    if (leadGap !== null && padSides[3] > 0 && leadGap >= 0 && leadGap <= tol.maxIconGap) add("icon-text-gap", leadGap, { derived: "left padding" });
+    if (trailGap !== null && padSides[1] > 0 && trailGap >= 0 && trailGap <= tol.maxIconGap) add("icon-text-gap", trailGap, { derived: "right padding" });
   }
   padSides.forEach((v, side) => {
     if (!(v > 0)) return;
@@ -551,7 +626,7 @@ export function measuredValues(r, ctx) {
     if (col !== null && col > 0) vals.push(col);
     for (const v of uniq(vals)) add("gap", v);
   }
-  if (r.ig) for (const v of uniq(r.ig.filter((g) => g !== null && g >= 0))) add("icon-text-gap", v);
+  if (r.ig) for (const v of uniq(r.ig.filter((g) => g !== null && g >= 0 && g <= tol.maxIconGap))) add("icon-text-gap", v);
 
   const eff = effectiveRadii(r.rad || [0, 0, 0, 0], r.w, r.h);
   const radVals = new Map();
@@ -661,12 +736,23 @@ export function checkNestedRadius(records, ctx) {
     if (r.paint === "b" && parent.bg && r.bg === parent.bg) continue;
     const cr = effectiveRadii(r.rad || [0, 0, 0, 0], r.w, r.h);
     const insets = cornerInsets(r, parent);
-    const circle = Math.abs(r.w - r.h) <= 1 && cr.every((v) => isFullRadius(v, r.w, r.h));
+    // Circles (avatars, round icon buttons) and small pills (switches, chips,
+    // badges) have an intrinsic shape: they may be rounder than concentric.
+    const allFull = cr.every((v) => isFullRadius(v, r.w, r.h));
+    const circle = allFull && (Math.abs(r.w - r.h) <= 1 || r.h <= 24);
     let worst = null;
     let any = false;
     let exact = true;
+    const pbw = parent.bw || [0, 0, 0, 0];
+    // [horizontal, vertical] border at each corner: tl, tr, br, bl
+    const cornerBorders = [
+      [pbw[3], pbw[0]],
+      [pbw[1], pbw[0]],
+      [pbw[1], pbw[2]],
+      [pbw[3], pbw[2]],
+    ];
     insets.forEach((ins, corner) => {
-      const j = judgeCorner({ parentRadius: pr[corner], childRadius: cr[corner], dx: ins.dx, dy: ins.dy, parentClips: !!parent.clip, circle, tol: tol.nestedRadius, pokeTol: tol.pokeOut });
+      const j = judgeCorner({ parentRadius: pr[corner], childRadius: cr[corner], dx: ins.dx, dy: ins.dy, parentClips: !!parent.clip, parentBorder: cornerBorders[corner], circle, tol: tol.nestedRadius, pokeTol: tol.pokeOut });
       if (!j.applicable) return;
       any = true;
       if (!(cr[corner] > 0 && Math.abs(j.delta) <= tol.scale)) exact = false;
@@ -719,6 +805,33 @@ function iconish(records, tree, r, tol) {
   return tree.children[r.i].some((k) => isIconRecord(records[k], tol));
 }
 
+/**
+ * An out-of-flow glyph drawn over a control: an icon, an icon button, or a
+ * wrapper holding one (the password field's eye toggle in its positioned
+ * div). Returns the glyph's own box, or null.
+ */
+function overlayGlyph(records, tree, o, tol) {
+  if (inFlow(o)) return null;
+  if (isIconRecord(o, tol)) return o;
+  if (subtreeHasText(records, tree, o)) return null;
+  for (let k = o.i + 1; k <= tree.end[o.i]; k++) if (isIconRecord(records[k], tol)) return records[k];
+  return o.kind === "button" ? o : null;
+}
+
+const squarishBox = (r, max = 32) => r.w <= max && r.h <= max && Math.max(r.w, r.h) <= 1.34 * Math.min(r.w, r.h);
+
+/**
+ * A control's leading or trailing "media": an icon, a small square tile that
+ * paints (avatar, favicon, letter tile) or a stack of such tiles. Padding is
+ * trimmed beside these for the same optical reason as beside an icon.
+ */
+function mediaEdge(records, tree, r, tol) {
+  if (iconish(records, tree, r, tol)) return true;
+  if (squarishBox(r) && (r.paint || r.tag === "img")) return true;
+  const kids = tree.children[r.i].map((k) => records[k]);
+  return r.h <= 32 && kids.length > 0 && kids.every((k) => squarishBox(k));
+}
+
 /** Icons on a control's sides: flow icons (from the collector) and overlay icons drawn over it. */
 function iconSides(records, tree, r, ctx) {
   const tol = ctx.tol;
@@ -730,18 +843,18 @@ function iconSides(records, tree, r, ctx) {
   const kids = tree.children[r.i].map((k) => records[k]);
   const flowKids = kids.filter(inFlow);
   if (flowKids.length >= 2) {
-    if (iconish(records, tree, flowKids[0], tol)) sides.leadFlow = true;
-    if (iconish(records, tree, flowKids[flowKids.length - 1], tol)) sides.trailFlow = true;
+    if (mediaEdge(records, tree, flowKids[0], tol)) sides.leadFlow = true;
+    if (mediaEdge(records, tree, flowKids[flowKids.length - 1], tol)) sides.trailFlow = true;
   }
   // Overlays: absolutely positioned icons (or icon buttons) drawn over the
   // control, as a child or as a sibling (the search glyph over an input).
   const cx = r.x + r.w / 2;
   const siblings = r.p >= 0 ? tree.children[r.p].map((k) => records[k]) : [];
   for (const o of [...kids, ...siblings]) {
-    if (o.i === r.i || inFlow(o)) continue;
-    if (!iconish(records, tree, o, tol) && o.kind !== "button") continue;
-    if (verticalOverlap(o, r) <= 0 || horizontalOverlap(o, r) <= 0) continue;
-    if (o.x + o.w / 2 < cx) sides.leadOverlay = true;
+    if (o.i === r.i) continue;
+    const glyph = overlayGlyph(records, tree, o, tol);
+    if (!glyph || verticalOverlap(glyph, r) <= 0 || horizontalOverlap(glyph, r) <= 0) continue;
+    if (glyph.x + glyph.w / 2 < cx) sides.leadOverlay = true;
     else sides.trailOverlay = true;
   }
   return sides;
@@ -757,10 +870,11 @@ export function overlayIconEdges(records, tree, r, tol = DEFAULT_TOLERANCES) {
   const siblings = r.p >= 0 ? tree.children[r.p].map((k) => records[k]) : [];
   const cx = r.x + r.w / 2;
   for (const o of [...kids, ...siblings]) {
-    if (o.i === r.i || inFlow(o) || !iconish(records, tree, o, tol)) continue;
-    if (verticalOverlap(o, r) <= 0 || horizontalOverlap(o, r) < Math.min(o.w, 4)) continue;
-    if (o.x + o.w / 2 < cx) out.lead = out.lead === null ? o.x + o.w : Math.max(out.lead, o.x + o.w);
-    else out.trail = out.trail === null ? o.x : Math.min(out.trail, o.x);
+    if (o.i === r.i) continue;
+    const g = overlayGlyph(records, tree, o, tol);
+    if (!g || verticalOverlap(g, r) <= 0 || horizontalOverlap(g, r) < Math.min(g.w, 4)) continue;
+    if (g.x + g.w / 2 < cx) out.lead = out.lead === null ? g.x + g.w : Math.max(out.lead, g.x + g.w);
+    else out.trail = out.trail === null ? g.x : Math.min(out.trail, g.x);
   }
   return out;
 }
@@ -775,7 +889,10 @@ export function checkAsymmetry(records, tree, ctx) {
     if (!r.kind || !SYMMETRIC_KINDS.has(r.kind) || r.inline) continue;
     if (!isHeightControl(r, tol) && r.kind !== "input" && r.kind !== "select") continue;
     const [t, rt, b, l] = r.pad;
-    if (r.kind === "link" && !(rt > 0 || l > 0)) continue;
+    // A row link that paints nothing at rest is the text area of a row whose
+    // visible box is its container; its padding split is not what the eye
+    // sees. Links and rows are judged when they paint (the selected row does).
+    if ((r.kind === "link" || r.kind === "row") && !r.paint) continue;
     checked.add(r.i);
     const sides = iconSides(records, tree, r, ctx);
     const dxPad = round2(l - rt);
@@ -836,7 +953,7 @@ function scopeOf(records, r) {
 
 /**
  * Siblings of the same kind (menu items in one menu, rows in one list, cards
- * in one grid) should share their padding. Group by scope + family; report
+ * in one grid) should share their padding and their corner radius. Group by scope + family; report
  * the members that differ from the group's most common padding.
  */
 export function checkSiblingPadding(records, tree, ctx) {
@@ -855,36 +972,68 @@ export function checkSiblingPadding(records, tree, ctx) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
+  // Each group should share one padding and one corner shape; members that
+  // differ from the most common value (ties: the lexically first) are flagged.
+  const commonOf = (members, sig) => {
+    const counts = new Map();
+    for (const m of members) counts.set(sig(m), (counts.get(sig(m)) || 0) + 1);
+    let common = null;
+    let commonCount = -1;
+    for (const [value, count] of [...counts.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      if (count > commonCount) {
+        common = value;
+        commonCount = count;
+      }
+    }
+    return { common, commonCount, distinct: counts.size };
+  };
+  const radiiOf = (m) => effectiveRadii(m.rad || [0, 0, 0, 0], m.w, m.h).map((v) => (isFullRadius(v, m.w, m.h) ? Infinity : v));
   for (const members of groups.values()) {
     if (members.length < 2) continue;
     for (const m of members) checked.add(m.i);
-    const sig = (m) => m.pad.map((v) => half(v)).join(" ");
-    const counts = new Map();
-    for (const m of members) counts.set(sig(m), (counts.get(sig(m)) || 0) + 1);
-    if (counts.size < 2) continue;
-    let common = null;
-    let commonCount = -1;
-    for (const [s, c] of [...counts.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-      if (c > commonCount) {
-        common = s;
-        commonCount = c;
+
+    const padSig = (m) => m.pad.map((v) => half(v)).join(" ");
+    const pad = commonOf(members, padSig);
+    if (pad.distinct > 1) {
+      const reference = members.find((m) => padSig(m) === pad.common);
+      for (const m of members) {
+        if (padSig(m) === pad.common) continue;
+        const magnitude = round2(Math.max(...m.pad.map((v, k) => Math.abs(v - reference.pad[k]))));
+        if (magnitude <= ctx.tol.sibling) continue;
+        findings.push({
+          kind: "sibling-padding",
+          severity: magnitude >= 4 ? 2 : 1,
+          magnitude,
+          message: `padding ${m.pad.map(fmt).join(" ")} where ${pad.commonCount} of ${members.length} siblings use ${reference.pad.map(fmt).join(" ")}`,
+          el: m.i,
+          related: [reference.i],
+          values: { padding: m.pad, common: reference.pad, members: members.length },
+        });
       }
     }
-    const reference = members.find((m) => sig(m) === common);
-    for (const m of members) {
-      if (sig(m) === common) continue;
-      const diffs = m.pad.map((v, k) => Math.abs(v - reference.pad[k]));
-      const magnitude = round2(Math.max(...diffs));
-      if (magnitude <= ctx.tol.sibling) continue;
-      findings.push({
-        kind: "sibling-padding",
-        severity: magnitude >= 4 ? 2 : 1,
-        magnitude,
-        message: `padding ${m.pad.map(fmt).join(" ")} where ${commonCount} of ${members.length} siblings use ${reference.pad.map(fmt).join(" ")}`,
-        el: m.i,
-        related: [reference.i],
-        values: { padding: m.pad, common: reference.pad, members: members.length },
-      });
+
+    const radSig = (m) => radiiOf(m).map((v) => (v === Infinity ? "full" : half(v))).join(" ");
+    const rad = commonOf(members, radSig);
+    if (rad.distinct > 1) {
+      const reference = members.find((m) => radSig(m) === rad.common);
+      const refRadii = radiiOf(reference);
+      for (const m of members) {
+        if (radSig(m) === rad.common) continue;
+        const mine = radiiOf(m);
+        const diffs = mine.map((v, k) => (v === refRadii[k] ? 0 : v === Infinity || refRadii[k] === Infinity ? 8 : Math.abs(v - refRadii[k])));
+        const magnitude = round2(Math.max(...diffs));
+        if (magnitude <= ctx.tol.sibling) continue;
+        const show = (list) => [...new Set(list.map((v) => (v === Infinity ? "full" : fmt(v))))].join("/");
+        findings.push({
+          kind: "sibling-radius",
+          severity: magnitude >= 4 ? 2 : 1,
+          magnitude,
+          message: `radius ${show(mine)} where ${rad.commonCount} of ${members.length} siblings use ${show(refRadii)}`,
+          el: m.i,
+          related: [reference.i],
+          values: { radius: mine.map((v) => (v === Infinity ? "full" : v)), common: refRadii.map((v) => (v === Infinity ? "full" : v)), members: members.length },
+        });
+      }
     }
   }
   return { findings, checked };
@@ -900,16 +1049,22 @@ export function rowItems(records, tree, ctx) {
   for (const r of records) {
     if (r.kind && ROW_KINDS.has(r.kind) && isHeightControl(r, tol)) isCandidate[r.i] = true;
   }
-  // Shells: painted boxes no taller than a control that hold one field, or a set of segments.
+  // Shells: painted boxes no taller than a control that hold one field (plus
+  // at most two glyph buttons: clear, submit) and are mostly that field, or
+  // that hold a set of segments. A toolbar with a field and labelled buttons
+  // is not a shell: its buttons stay in the row check.
+  const hasText = textFlags(records);
   for (const r of records) {
     if (!r.paint || r.h > tol.maxControlHeight || r.kind) continue;
     const desc = [];
     for (let k = r.i + 1; k <= tree.end[r.i]; k++) if (records[k].kind) desc.push(records[k]);
     if (!desc.length) continue;
     const fields = desc.filter((d) => d.kind === "input" || d.kind === "select" || d.kind === "textarea");
+    const others = desc.filter((d) => !fields.includes(d));
+    const fieldShell = fields.length === 1 && fields[0].w >= 0.5 * r.w && others.length <= 2 && others.every((d) => !hasText[d.i]);
     const segments = desc.filter((d) => d.kind === "tab" || d.kind === "radio" || (d.kind === "button" && d.sel !== undefined && d.sel !== null));
     const segmentRole = r.role === "tablist" || r.role === "radiogroup";
-    if ((fields.length === 1 && desc.length - fields.length <= 2) || segmentRole || (segments.length >= 2 && segments.length === desc.length)) {
+    if (fieldShell || segmentRole || (segments.length >= 2 && segments.length === desc.length)) {
       isCandidate[r.i] = true;
       for (const d of desc) isCandidate[d.i] = false;
     }
@@ -937,23 +1092,29 @@ export function checkRowHeights(records, tree, ctx) {
   const tol = ctx.tol;
   const items = rowItems(records, tree, ctx);
   const itemSet = new Set(items.map((r) => r.i));
+  const hasText = textFlags(records);
   const findings = [];
+  const notes = [];
   const checked = new Set();
   const reported = new Set();
-  // Deepest containers first, so a pair is reported where it lives.
-  const containers = records.filter((r) => tree.children[r.i].length >= 2).sort((a, b) => b.i - a.i);
+  const decided = new Set();
+  // Outermost containers first: a control's verdict comes from the widest row
+  // it sits in (the whole composer bar, not a two-button corner of it), and a
+  // control is judged once.
+  const containers = records.filter((r) => tree.children[r.i].length >= 2);
   for (const c of containers) {
     const members = [];
     for (let k = c.i + 1; k <= tree.end[c.i]; k++) {
       if (!itemSet.has(k)) continue;
-      // depth from the container: at most 3 levels down
+      // Controls nest at different depths (a composer's + sits two levels up
+      // from its model chip): look up to rowDepth wrappers down.
       let depth = 0;
       let a = records[k].p;
-      while (a !== c.i && a >= 0 && depth < 4) {
+      while (a !== c.i && a >= 0 && depth <= tol.rowDepth) {
         a = records[a].p;
         depth++;
       }
-      if (a === c.i && depth <= 2) members.push(records[k]);
+      if (a === c.i && depth <= tol.rowDepth) members.push(records[k]);
     }
     if (members.length < 2) continue;
     // Group into visual rows by shared vertical centre.
@@ -964,41 +1125,71 @@ export function checkRowHeights(records, tree, ctx) {
       if (row) row.items.push(m);
       else rows.push({ mid, items: [m] });
     }
+    // A row is a cluster of side-by-side controls: a gap wider than rowGap
+    // starts a new cluster (the + at a composer's far left is not part of the
+    // controls cluster at its right; a sidebar row is not part of the composer).
+    const clusters = [];
     for (const row of rows) {
-      if (row.items.length < 2) continue;
-      // Not wrapped in a column: they must sit side by side.
       const sorted = row.items.slice().sort((a, b) => a.x - b.x || a.i - b.i);
+      let current = [];
+      for (const m of sorted) {
+        const prev = current[current.length - 1];
+        if (prev && m.x - (prev.x + prev.w) > tol.rowGap) {
+          clusters.push(current);
+          current = [];
+        }
+        current.push(m);
+      }
+      clusters.push(current);
+    }
+    for (const sorted of clusters) {
+      if (sorted.length < 2) continue;
+      // Not wrapped in a column: they must sit side by side.
       const sideBySide = sorted.every((m, k) => k === 0 || m.x >= sorted[k - 1].x + sorted[k - 1].w - 1);
       if (!sideBySide) continue;
       for (const m of sorted) checked.add(m.i);
       const heights = sorted.map((m) => half(m.h));
       const distinct = [...new Set(heights)];
       if (distinct.length < 2 || Math.max(...heights) - Math.min(...heights) <= tol.rowHeight) continue;
-      const pairs = [];
-      for (let a = 0; a < sorted.length; a++)
-        for (let b = a + 1; b < sorted.length; b++) {
-          if (Math.abs(sorted[a].h - sorted[b].h) <= tol.rowHeight) continue;
-          const key = `${sorted[a].i}:${sorted[b].i}`;
-          if (!reported.has(key)) pairs.push(key);
+      // One finding per odd control out.
+      const byHeight = new Map();
+      for (const m of sorted) {
+        const k = half(m.h);
+        const e = byHeight.get(k) || { n: 0, w: 0 };
+        e.n++;
+        e.w += m.w;
+        byHeight.set(k, e);
+      }
+      // The row's height is the one that covers the most width (the dominant
+      // controls), then the most controls: three 16px glyph buttons do not
+      // make a 36px field the odd one out.
+      const common = [...byHeight.entries()].sort((a, b) => b[1].w - a[1].w || b[1].n - a[1].n || a[0] - b[0])[0][0];
+      const fresh = sorted.filter((m) => !decided.has(m.i));
+      for (const m of sorted) decided.add(m.i);
+      for (const m of fresh) {
+        if (Math.abs(m.h - common) <= tol.rowHeight || reported.has(m.i)) continue;
+        reported.add(m.i);
+        // A smaller icon-only control beside a wide labelled row (the chevron
+        // or + at a list row's end) is the row's accessory, not its peer.
+        const row = sorted.find((x) => x !== m && x.h > m.h && x.w >= 4 * x.h && hasText[x.i]);
+        if (!hasText[m.i] && row) {
+          notes.push({ kind: "row-height", reason: "icon accessory smaller than the row beside it", el: m.i, values: { height: round2(m.h), row: round2(row.h) } });
+          continue;
         }
-      if (!pairs.length) continue;
-      for (const p of pairs) reported.add(p);
-      const common = modeOf(heights);
-      const off = sorted.filter((m) => Math.abs(m.h - common) > tol.rowHeight);
-      const primary = off.length ? off[0] : sorted[0];
-      const magnitude = round2(Math.max(...heights) - Math.min(...heights));
-      findings.push({
-        kind: "row-height",
-        severity: magnitude >= 4 ? 3 : 2,
-        magnitude,
-        message: `controls in one row at heights ${sorted.map((m) => fmt(m.h)).join(" / ")}`,
-        el: primary.i,
-        related: sorted.filter((m) => m.i !== primary.i).map((m) => m.i),
-        values: { heights: sorted.map((m) => round2(m.h)), common, container: c.i },
-      });
+        const magnitude = round2(Math.abs(m.h - common));
+        findings.push({
+          kind: "row-height",
+          severity: magnitude >= 4 ? 3 : 2,
+          magnitude,
+          message: `${fmt(m.h)} px tall in a row of ${fmt(common)} px controls (${sorted.map((x) => fmt(x.h)).join(" / ")})`,
+          el: m.i,
+          related: sorted.filter((x) => x.i !== m.i).map((x) => x.i),
+          values: { height: round2(m.h), heights: sorted.map((x) => round2(x.h)), common, container: c.i },
+        });
+      }
     }
   }
-  return { findings, checked };
+  return { findings, notes, checked };
 }
 
 function isColumn(kids) {
@@ -1093,7 +1284,7 @@ export function checkIconGaps(records, ctx) {
   for (const r of records) {
     if (!r.ig) continue;
     for (const [side, gap] of [["lead", r.ig[0]], ["trail", r.ig[1]]]) {
-      if (gap === null || gap === undefined || gap < 0) continue;
+      if (gap === null || gap === undefined || gap < 0 || gap > tol.maxIconGap) continue;
       const key = `${side}|${familyKey(r, hasText[r.i])}`;
       if (!families.has(key)) families.set(key, []);
       families.get(key).push({ r, gap });
@@ -1216,7 +1407,8 @@ export function scoreFrom({ scaleTotal, scaleOn, checked, flagged }) {
   };
 }
 
-export function analyzeRoute(records, ctx) {
+export function analyzeRoute(input, ctx) {
+  const records = normalizeRecords(input);
   const tree = buildTree(records);
   const flowChildren = tree.children.map((kids) => kids.filter((k) => inFlow(records[k])).length);
   const nested = checkNestedRadius(records, ctx);
@@ -1268,7 +1460,7 @@ export function analyzeRoute(records, ctx) {
   const targets = checkTargets(records, ctx);
 
   const findings = [...nested.findings, ...asym.findings, ...siblings.findings, ...rows.findings, ...align.findings, ...gaps.findings, ...targets.findings];
-  const notes = [...asym.notes, ...align.notes, ...targets.notes];
+  const notes = [...asym.notes, ...rows.notes, ...align.notes, ...targets.notes];
   const checked = new Set();
   for (const part of [nested, asym, siblings, rows, align, gaps, targets]) for (const i of part.checked) checked.add(i);
   const flaggedSet = new Set(findings.map((f) => f.el));
@@ -1298,14 +1490,27 @@ export function analyzeRoute(records, ctx) {
 /**
  * The offenders to outline on the screenshot: structural findings first
  * (worst first), then off-scale values, one entry per element.
+ *
+ * @param {{ findings: Array<any>, offScaleFindings: Array<any> }} analysis
+ * @param {number} n
+ * @param {Array<any> | null} [records] when given, identical findings on look-alike elements count once
  */
-export function pickOffenders(analysis, n) {
+export function pickOffenders(analysis, n, records = null) {
   const seen = new Set();
+  const seenSig = new Set();
   const out = [];
   for (const f of [...analysis.findings, ...analysis.offScaleFindings]) {
     if (out.length >= n) break;
     if (seen.has(f.el)) continue;
+    // Fifteen identical rows with one identical problem are one offender, and
+    // a component drawn twice (same name, label, text and size) is outlined once.
+    const r = records ? records[f.el] : null;
+    const sig = r ? `${f.kind}|${f.message}|${r.comp || ""}|${r.tag}|${r.role || ""}` : null;
+    const look = r ? `${r.comp || ""}|${r.tag}|${r.role || ""}|${r.label || ""}|${r.text || ""}|${half(r.w)}x${half(r.h)}` : null;
+    if ((sig && seenSig.has(sig)) || (look && seenSig.has(look))) continue;
     seen.add(f.el);
+    if (sig) seenSig.add(sig);
+    if (look) seenSig.add(look);
     out.push(f);
   }
   return out;
@@ -1422,6 +1627,8 @@ export function normalizeRoutes(input) {
   return list.map((entry, k) => {
     const route = typeof entry === "string" ? { path: entry } : { ...entry };
     if (!route.path || !route.path.startsWith("/")) throw new Error(`Route ${k + 1} needs a path that starts with "/"`);
+    checkWhen(route, `Route ${k + 1}`);
+    if (Array.isArray(route.open)) route.open.forEach((step, s) => typeof step === "function" || checkWhen(step, `Route ${k + 1}, open step ${s + 1}`));
     route.name = route.name || route.path;
     let unique = route.name;
     let n = 2;
@@ -1432,6 +1639,30 @@ export function normalizeRoutes(input) {
     route.open = route.open || [];
     return route;
   });
+}
+
+/**
+ * An h1/h2 matching this (case-insensitive) is an error screen, never scored:
+ * Next's own screens, and the product's error boundaries and not-found screens
+ * ("This conversation couldn’t load", "Chat couldn’t start", "This page isn’t here").
+ */
+export const DEFAULT_ERROR_TEXT =
+  "^(Something went wrong|This page could not be found\\.?|Page not found|Application error.*|Unhandled Runtime Error|Build Error|Failed to compile|.*couldn[’']t (load|open|start|be read).*|.*isn[’']t here)$";
+
+const WHEN = new Set(["phone", "desktop"]);
+
+function checkWhen(item, where) {
+  if (item && item.when !== undefined && !WHEN.has(item.when)) throw new Error(`${where}: "when" is "phone" or "desktop", not ${JSON.stringify(item.when)}`);
+}
+
+/**
+ * Whether a route or an open step applies at this viewport: `"when": "phone"`
+ * runs only below 600 px, `"when": "desktop"` only at or above it (a phone
+ * opens the sidebar drawer before it can reach a row menu, a desktop hovers).
+ */
+export function appliesAt(item, phone) {
+  if (!item || typeof item !== "object" || item.when === undefined) return true;
+  return item.when === "phone" ? !!phone : !phone;
 }
 
 export function slugify(name) {

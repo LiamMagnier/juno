@@ -225,7 +225,10 @@ export async function checkGoalCriteria(input: {
   criteria: readonly string[];
   /** What its steps produced, already bounded by the caller. */
   deliverables: string;
+  /** The wait for the verdict; 30 s when absent. The app reads it from env (`AGENT_GOAL_CHECK_TIMEOUT_MS`). */
   timeoutMs?: number;
+  /** The verdict's output bound; 120 tokens when absent (`AGENT_GOAL_CHECK_MAX_TOKENS`). */
+  maxTokens?: number;
 }): Promise<GoalCriteriaVerdict | null> {
   const timeoutMs = input.timeoutMs ?? 30_000;
   const controller = new AbortController();
@@ -267,7 +270,7 @@ export async function checkGoalCriteria(input: {
         },
       ],
       tools: [],
-      maxTokens: 120,
+      maxTokens: input.maxTokens ?? 120,
       signal: controller.signal,
     });
     let text = '';

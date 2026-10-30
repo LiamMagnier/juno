@@ -15,12 +15,14 @@ python3-websockets is 10.4; here run it from a venv:
     /tmp/ws/bin/python -m unittest discover -s tests -p 'test_computer_host.py'
 """
 import asyncio
+import base64
 import hashlib
 import hmac
 import http.client
 from http import HTTPStatus
 import importlib.util
 import json
+import re
 import os
 import signal
 import socket
@@ -173,6 +175,16 @@ elif op == "exec":
     elif "unshare" in command:
         print("unshare: unshare failed: Operation not permitted", file=sys.stderr)
         sys.exit(1)
+    elif command[-1] == "juno-test-flood":
+        # 16 MiB of a control byte and an invalid UTF-8 byte on each stream: six bytes each once JSON-escaped.
+        chunk = b"\x01\xff" * 32768
+        for _ in range(16 * 1024 * 1024 // len(chunk)):
+            sys.stdout.buffer.write(chunk)
+            sys.stderr.buffer.write(chunk)
+    elif command[-1].startswith("juno-test-sleep "):
+        import time
+        time.sleep(float(command[-1].split()[1]))
+        print("slept")
     elif "bash" in command:
         print("ran")
 else:
@@ -209,7 +221,7 @@ def free_port():
 class HostProcess:
     """One host service, on free loopback ports, with a stand-in docker."""
 
-    def __init__(self, ttl=60):
+    def __init__(self, ttl=60, extra_config=None):
         self.dir = tempfile.mkdtemp(prefix="juno-host-test-")
         self.docker = os.path.join(self.dir, "docker")
         with open(self.docker, "w") as file:
@@ -225,6 +237,7 @@ class HostProcess:
                   "subnet": "127.77.0.0/24", "gateway": "127.77.0.1", "minFreeMemMb": 0, "minFreeDiskMb": 0,
                   "maxRunning": 6, "dockerRoot": "/", "ticketTtlSeconds": ttl,
                   "developerBroker": {"policy": self.policy, "docker": self.docker, "egressMap": "none"}}
+        config.update(extra_config or {})
         self.config = os.path.join(self.dir, "config.json")
         write_json(self.config, config)
         self.log_path = os.path.join(self.dir, "host.log")
@@ -471,6 +484,10 @@ class ComputerHostApi(unittest.TestCase):
         self.assertEqual(exec_call[exec_call.index("--workdir") + 1], "/home/agent/work/project")
         self.assertEqual(exec_call[exec_call.index("timeout") + 3], "300", "the command limit is capped at 300 s")
         self.assertEqual(exec_call[-1], "pwd", "the command is the last argv element, never part of a shell line")
+        self.assertEqual(answer["exitCode"], 0)
+        self.assertEqual(base64.b64decode(answer["stdoutBase64"]), b"ran\n")
+        self.assertEqual((answer["stderrBase64"], answer["stdoutTruncated"], answer["stderrTruncated"]), ("", False, False))
+        self.assertNotIn("stdout", answer, "the output travels once, as base64")
 
     def test_logs_carry_no_request_line_path_query_command_content_token_or_password(self):
         self.host.create("logs")
@@ -487,6 +504,153 @@ class ComputerHostApi(unittest.TestCase):
         for leaked in ("zq9", TOKEN_A, ticket["ticket"], "GET /", "HTTP/1.1", "secret-path", "echo"):
             self.assertNotIn(leaked, log)
         self.assertIn("op=exec computer=juno-agent-logs token=a-1 status=200", log)
+
+
+def peak_rss_mb(pid):
+    """VmHWM: the most memory the process has ever held resident, in MiB."""
+    with open("/proc/%d/status" % pid) as file:
+        return int(re.search(r"^VmHWM:\s+(\d+) kB", file.read(), re.M).group(1)) // 1024
+
+
+@unittest.skipUnless(HAVE_WEBSOCKETS, "needs websockets 10.4 to 14.x (python3-websockets, or a venv)")
+@unittest.skipUnless(os.path.exists("/proc/self/status"), "reads VmHWM from /proc")
+class ComputerHostCommandOutput(unittest.TestCase):
+    """One process holds every tunnel on a host, under MemoryMax=512M (setup.sh): a command that prints
+    without end must not grow it. A 16 MiB flood of control and invalid bytes per stream used to become a
+    192 MB JSON answer (six bytes per escaped byte) and +410 MB of host memory per command."""
+
+    def test_a_flooding_command_is_cut_before_it_is_held_and_the_host_stays_small(self):
+        process = HostProcess()
+        try:
+            for agent in ("flood1", "flood2"):
+                process.create(agent)
+                process.request("POST", "/v1/computers/juno-agent-%s/start" % agent)
+            self.assertEqual(process.request("POST", "/v1/computers/juno-agent-flood1/exec", body={"command": "pwd"})[0], 200)
+            base = peak_rss_mb(process.proc.pid)
+
+            status, raw = process.request("POST", "/v1/computers/juno-agent-flood1/exec",
+                                          body={"command": "juno-test-flood", "timeoutSeconds": 120}, raw=True)
+            self.assertEqual(status, 200)
+            self.assertLess(len(raw), 3 * 1024 * 1024, "the answer is about 2.7 MB, not 192 MB")
+            answer = json.loads(raw)
+            expected = (b"\x01\xff" * 32768 * 16)[:1024 * 1024]
+            self.assertEqual(base64.b64decode(answer["stdoutBase64"]), expected, "the first 1 MiB, byte for byte")
+            self.assertEqual(base64.b64decode(answer["stderrBase64"]), expected)
+            self.assertEqual((answer["stdoutTruncated"], answer["stderrTruncated"], answer["exitCode"]), (True, True, 0))
+            one = peak_rss_mb(process.proc.pid) - base
+
+            # Every slot at once: four commands on each of two computers.
+            results = []
+
+            def flood(agent):
+                results.append(process.request("POST", "/v1/computers/juno-agent-%s/exec" % agent,
+                                               body={"command": "juno-test-flood", "timeoutSeconds": 120}, raw=True))
+
+            threads = [threading.Thread(target=flood, args=(agent,)) for agent in ["flood1"] * 4 + ["flood2"] * 4]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(180)
+            self.assertEqual(sorted(status for status, _ in results), [200] * 8)
+            eight = peak_rss_mb(process.proc.pid) - base
+            sys.stderr.write("\n[host memory] base %d MiB, +%d MiB for one flood, +%d MiB for eight at once\n"
+                             % (base, one, eight))
+            self.assertLess(one, 32, "one flooding command adds little to the host")
+            self.assertLess(base + eight, 160, "eight at once keep the host far under its 512M MemoryMax")
+        finally:
+            process.close()
+
+    def test_commands_past_the_computer_or_host_slots_are_refused(self):
+        process = HostProcess(extra_config={"maxCommandsPerComputer": 2, "maxConcurrentCommands": 3})
+        try:
+            for agent in ("slota", "slotb"):
+                process.create(agent)
+                process.request("POST", "/v1/computers/juno-agent-%s/start" % agent)
+            results = {}
+
+            def sleeper(key, agent):
+                results[key] = process.request("POST", "/v1/computers/juno-agent-%s/exec" % agent,
+                                               body={"command": "juno-test-sleep 3", "timeoutSeconds": 30})
+
+            def running():
+                return sum(1 for call in process.calls() if call[-1] == "juno-test-sleep 3")
+
+            threads = [threading.Thread(target=sleeper, args=(key, agent))
+                       for key, agent in (("a1", "slota"), ("a2", "slota"), ("b1", "slotb"))]
+            for thread in threads:
+                thread.start()
+            deadline = time.monotonic() + 10
+            while running() < 3:
+                self.assertLess(time.monotonic(), deadline, "the three commands did not start")
+                time.sleep(0.05)
+            busy = process.request("POST", "/v1/computers/juno-agent-slota/exec", body={"command": "pwd"})
+            full = process.request("POST", "/v1/computers/juno-agent-slotb/exec", body={"command": "pwd"})
+            for thread in threads:
+                thread.join(30)
+            self.assertEqual(busy, (429, {"error": "too_many_commands", "scope": "computer"}), "a third on one computer")
+            self.assertEqual(full, (429, {"error": "too_many_commands", "scope": "host"}), "a fourth on the host")
+            self.assertEqual(sorted(status for status, _ in results.values()), [200, 200, 200])
+            self.assertIn("op=exec computer=juno-agent-slota token=a-1 status=429", process.host_log(),
+                          "a refusal is logged with its operation and computer")
+            # The slots are given back, failures included.
+            self.assertEqual(process.request("POST", "/v1/computers/juno-agent-slota/exec", body={"command": "pwd"})[0], 200)
+            self.assertEqual(process.request("POST", "/v1/computers/juno-agent-slota/exec",
+                                             body={"command": "pwd", "cwd": "/etc"})[0], 422)
+            self.assertEqual(process.request("POST", "/v1/computers/juno-agent-slota/exec", body={"command": "pwd"})[0], 200)
+        finally:
+            process.close()
+
+
+class ComputerHostOutputLimits(unittest.TestCase):
+    """What the host holds of a command's or a file's bytes (no websockets needed)."""
+
+    def test_the_broker_holds_at_most_max_output_bytes_per_stream(self):
+        host = load_host_module()
+        # A stand-in broker child: reads the request, then sends 1.25 MiB per stream in 64 KiB frames and exit 7.
+        script = ("import struct, sys\nsys.stdin.buffer.read()\nout = sys.stdout.buffer\n"
+                  "for kind in (b'o', b'e'):\n    for _ in range(20):\n"
+                  "        out.write(kind + struct.pack('>I', 65536) + bytes([kind[0]]) * 65536)\n"
+                  "out.write(b'x' + struct.pack('>I', 1) + b'7')\nout.flush()\n")
+        broker = host.Broker.__new__(host.Broker)
+        broker.transport = {"mode": "process", "argv": [sys.executable, "-I", "-c", script]}
+        code, out, err = broker.run(["exec"], "alpha", timeout=30, max_output=100_000)
+        self.assertEqual((code, len(out), len(err)), (7, 100_000, 100_000), "cut exactly, the exit status still read")
+        self.assertEqual((out, err), (b"o" * 100_000, b"e" * 100_000))
+        code, out, err = broker.run(["exec"], "alpha", timeout=30)
+        self.assertEqual((len(out), len(err)), (20 * 65536, 20 * 65536), "the default keeps everything under 16 MiB")
+
+    def test_a_file_read_is_cut_at_its_own_limit_not_the_default_16_mib(self):
+        host = load_host_module()
+        seen = []
+
+        class Broker:
+            def run(self, argv, namespace, stdin=None, timeout=60, max_output=host.MAX_OUTPUT):
+                if "realpath" in argv:
+                    return 0, b"/home/agent/work/big.bin\n", b""
+                seen.append(max_output)
+                return 0, b"x" * min(max_output, 21 * 1024 * 1024), b""
+
+        config = dict(host.DEFAULTS, subnet="127.77.0.0/24", gateway="127.77.0.1")
+        data = host.Host(config, broker=Broker()).read_file("alpha", "juno-agent-x", "big.bin", 20 * 1024 * 1024)
+        self.assertEqual(len(data), 20 * 1024 * 1024, "a 20 MiB deliverable arrives whole")
+        self.assertEqual(seen, [20 * 1024 * 1024])
+
+    def test_the_slot_numbers_are_bounded_in_the_config(self):
+        host = load_host_module()
+        directory = tempfile.mkdtemp(prefix="juno-host-config-")
+        try:
+            for extra in ({"maxCommandsPerComputer": 0}, {"maxCommandsPerComputer": 17}, {"maxConcurrentCommands": 65},
+                          {"maxConcurrentCommands": "8"}):
+                with self.subTest(extra=extra):
+                    path = os.path.join(directory, "config.json")
+                    write_json(path, extra)
+                    with self.assertRaises(SystemExit):
+                        host.load_config(path)
+            write_json(os.path.join(directory, "config.json"), {})
+            config = host.load_config(os.path.join(directory, "config.json"))
+            self.assertEqual((config["maxCommandsPerComputer"], config["maxConcurrentCommands"]), (4, 24))
+        finally:
+            subprocess.run(["rm", "-rf", directory])
 
 
 @unittest.skipUnless(HAVE_WEBSOCKETS, "needs websockets 10.4 to 14.x (python3-websockets, or a venv)")
@@ -658,6 +822,65 @@ class ComputerHostTokensAndTickets(unittest.TestCase):
         finally:
             process.close()
 
+    def test_retiring_a_token_drops_its_tickets_and_closes_its_tunnels(self):
+        stubs = StubServers()
+        process = HostProcess()
+        try:
+            for agent, token in (("rot", TOKEN_A2), ("keep", TOKEN_A)):
+                process.create(agent, token=token)
+                process.request("POST", "/v1/computers/juno-agent-%s/start" % agent, token=token)
+
+            def ticket(port, name="juno-agent-rot", token=TOKEN_A2):
+                status, answer = process.request("POST", "/v1/computers/%s/tickets" % name, token=token,
+                                                 body={"port": port})
+                self.assertEqual(status, 200, answer)
+                return answer["ticket"]
+
+            def connect(value, cdp=None):
+                headers = [("X-Juno-Tunnel-Ticket", value)] + ([("X-Juno-Cdp-Token", cdp)] if cdp else [])
+                return ws_client.connect("ws://127.0.0.1:%d/v1/tunnel" % process.tunnel, extra_headers=headers,
+                                         max_size=64 * 1024 * 1024, open_timeout=10)
+
+            async def scenario():
+                cdp = await connect(ticket(9222), cdp="gate-token")
+                vnc = await connect(ticket(5900))
+                banner = await asyncio.wait_for(vnc.recv(), 10)
+                # The same namespace's other token, which stays in force.
+                kept = await connect(ticket(9222, "juno-agent-keep", TOKEN_A), cdp="gate-token")
+                pending = ticket(5900)  # minted under the retired token, not used yet
+                await cdp.send("before")
+                before = await asyncio.wait_for(cdp.recv(), 10)
+
+                process.write_tokens([token_entry(TOKEN_A, "a-1", "alpha"), token_entry(TOKEN_B, "b-1", "beta")])
+                process.proc.send_signal(signal.SIGHUP)
+                await asyncio.wait_for(cdp.wait_closed(), 10)
+                await asyncio.wait_for(vnc.wait_closed(), 10)
+                codes = (cdp.close_code, vnc.close_code)
+                try:
+                    late = await connect(pending)
+                    await late.close()
+                    late_status = 101
+                except websockets.exceptions.InvalidStatusCode as error:
+                    late_status = error.status_code
+                await kept.send("after")
+                after = await asyncio.wait_for(kept.recv(), 10)
+                await kept.close()
+                return banner, before, codes, late_status, after
+
+            banner, before, codes, late_status, after = run(scenario())
+            self.assertEqual(banner, b"RFB 003.008\n")
+            self.assertEqual(before, "before")
+            self.assertEqual(codes, (1008, 1008), "both tunnels opened under the retired token are closed")
+            self.assertEqual(late_status, 401, "a ticket minted under the retired token opens nothing")
+            self.assertEqual(after, "after", "a tunnel under the token still in force is untouched")
+            self.assertEqual(process.request("GET", "/v1/available", token=TOKEN_A2)[0], 401)
+            log_text = process.host_log()
+            self.assertIn("op=revoke tokens=1 tickets=1 tunnels=2", log_text)
+            self.assertNotIn(TOKEN_A2, log_text)
+        finally:
+            process.close()
+            stubs.close()
+
     def test_a_ticket_expires_and_is_bound_to_namespace_container_and_port(self):
         host = load_host_module()
         now = [1000.0]
@@ -676,6 +899,80 @@ class ComputerHostTokensAndTickets(unittest.TestCase):
             with self.assertRaises(host.Refused):
                 tickets.mint("alpha", "juno-agent-a", 5900, "a-1")
             tickets.mint("alpha", "juno-agent-b", 5900, "a-1")  # another computer has its own allowance
+
+    def _host_with_tokens(self, broker):
+        """A Host wired to a real Tokens file holding a-1 and a-2 (alpha), as serve() wires it."""
+        host_module = load_host_module()
+        directory = tempfile.mkdtemp(prefix="juno-host-tokens-")
+        self.addCleanup(subprocess.run, ["rm", "-rf", directory])
+        path = os.path.join(directory, "tokens.json")
+        write_json(path, [token_entry(TOKEN_A, "a-1", "alpha"), token_entry(TOKEN_A2, "a-2", "alpha")])
+        tokens = host_module.Tokens(path)
+        config = dict(host_module.DEFAULTS, subnet="127.77.0.0/24", gateway="127.77.0.1", tunnelPort=free_port())
+        return host_module, host_module.Host(config, broker=broker, tokens=tokens), tokens, path
+
+    def test_a_ticket_request_in_flight_when_its_token_is_retired_mints_nothing(self):
+        entered, release = threading.Event(), threading.Event()
+
+        class SlowBroker:
+            def run(self, argv, namespace, stdin=None, timeout=60):
+                entered.set()  # the request authenticated and is in its state() round trip
+                release.wait(10)
+                return 0, b"running\n", b""
+
+        host_module, host, tokens, path = self._host_with_tokens(SlowBroker())
+        outcome = {}
+
+        def request():
+            try:
+                outcome["ticket"] = host.ticket("alpha", "juno-agent-x", {"port": 9222}, "a-2",
+                                                hashlib.sha256(TOKEN_A2.encode()).hexdigest())
+            except host_module.Refused as refused:
+                outcome["refused"] = (refused.status, refused.code)
+
+        thread = threading.Thread(target=request)
+        thread.start()
+        self.assertTrue(entered.wait(10))
+        write_json(path, [token_entry(TOKEN_A, "a-1", "alpha")])
+        self.assertEqual(host.revoke_tokens(tokens.reload()), (0, 0), "nothing was minted yet")
+        release.set()
+        thread.join(10)
+        self.assertEqual(outcome, {"refused": (401, "unauthorized")}, "the request finished after the retirement")
+        self.assertEqual(host.tickets.items, {})
+        # The token still in force mints as before; a token whose hash changed under the same id does not.
+        minted = host.ticket("alpha", "juno-agent-x", {"port": 9222}, "a-1", hashlib.sha256(TOKEN_A.encode()).hexdigest())
+        self.assertEqual(sorted(minted), ["expiresAt", "ticket"])
+        with self.assertRaises(host_module.Refused):
+            host.ticket("alpha", "juno-agent-x", {"port": 9222}, "a-1", hashlib.sha256(b"old").hexdigest())
+
+    def test_a_ticket_of_a_retired_token_that_escaped_revocation_opens_no_tunnel(self):
+        class Broker:
+            def run(self, argv, namespace, stdin=None, timeout=60):
+                if argv[0] == "inspect" and "IPAddress" in " ".join(argv):
+                    return 0, b"10.9.9.9\n", b""  # outside the subnet: a ticket in force gets as far as 502
+                return 0, b"running\n", b""
+
+        host_module, host, tokens, path = self._host_with_tokens(Broker())
+        retired = host.ticket("alpha", "juno-agent-x", {"port": 5900}, "a-2", hashlib.sha256(TOKEN_A2.encode()).hexdigest())
+        kept = host.ticket("alpha", "juno-agent-x", {"port": 5900}, "a-1", hashlib.sha256(TOKEN_A.encode()).hexdigest())
+        # The file loses a-2 but its ticket is NOT revoked: the race Tickets.mint closes, simulated here.
+        write_json(path, [token_entry(TOKEN_A, "a-1", "alpha")])
+        tokens.reload()
+
+        async def status_of(ticket):
+            server = await host_module.tunnel_server(host)
+            try:
+                await ws_client.connect("ws://127.0.0.1:%d/v1/tunnel" % host.config["tunnelPort"],
+                                        extra_headers=[("X-Juno-Tunnel-Ticket", ticket["ticket"])], open_timeout=10)
+                return 101
+            except websockets.exceptions.InvalidStatusCode as error:
+                return error.status_code
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        self.assertEqual(run(status_of(retired)), 401, "consumed, then refused: its token is no longer in force")
+        self.assertEqual(run(status_of(kept)), 502, "a ticket in force passes the check (and stops at the address)")
 
     def test_the_print_argv_mode_needs_no_config(self):
         out = subprocess.run([sys.executable, str(HOST_PY), "--print-argv", "thaw", '{"name": "juno-agent-a"}'],
@@ -733,6 +1030,55 @@ class ComputerHostScripts(unittest.TestCase):
             with self.subTest(script=script):
                 result = subprocess.run(["bash", "-n", str(ROOT / script)], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_setup_loads_the_firewall_before_anything_listens_on_443(self):
+        text = (ROOT / "deploy/computer-host/setup.sh").read_text()
+        main = text[text.index('echo "==> Packages"'):]  # the setup run, after the maintenance actions
+        firewall = main.index("nft -f /etc/nftables.d-juno-computer-host.conf")
+        for later in ("systemctl enable --now nginx", "systemctl restart juno-computer-host.service",
+                      "systemctl enable --now juno-computer-host-broker.socket", "\ninstall_tls\n",
+                      'bash "$COMPUTERS/setup-vm.sh" --computer-host'):
+            with self.subTest(step=later.strip()):
+                self.assertLess(firewall, main.index(later))
+        self.assertLess(firewall, main.index("rm -f /etc/nginx/sites-enabled/default"),
+                        "the package's default site on port 80 goes with the firewall step")
+        self.assertLess(main.index("apt-get install"), firewall, "nft comes from the packages step")
+
+    def test_no_script_or_guide_puts_a_token_on_a_command_line(self):
+        # Any local user can read another process's argv: tokens go through stdin or a file.
+        on_argv = re.compile(r"""-H\s+["']?Authorization: Bearer \$""")
+        for path in ("deploy/computer-host/setup.sh", "deploy/computer-host/smoke.sh", "deploy/computer-host/README.md",
+                     "deploy/computer-host/local/run-local.sh", "docs/design/agents-v2/OPERATIONS.md"):
+            with self.subTest(path=path):
+                for number, line in enumerate((ROOT / path).read_text().splitlines(), 1):
+                    self.assertIsNone(on_argv.search(line), "%s:%d puts the token on curl's command line" % (path, number))
+        self.assertIn("| curl -fsS -H @-", (ROOT / "deploy/computer-host/setup.sh").read_text())
+
+    def test_no_script_or_guide_passes_a_token_value_to_any_program(self):
+        # Wider than curl: a token value in any program's argv (python3, curl, openssl ...) is readable in
+        # /proc/<pid>/cmdline. A shell variable holding one may only feed the printf builtin (into a pipe)
+        # or a [ -z ] test; files, ids and paths (*_FILE, *_ID, TOKENS) are not values.
+        expansion = re.compile(r"(?<!\\)\$\{?([A-Za-z_]*[Tt][Oo][Kk][Ee][Nn][A-Za-z_]*)")
+        not_a_value = re.compile(r"(?i)(?:_file|_id|tokens)\Z")
+        builtin_before = re.compile(r"""(?:printf\s+'[^']*'\s+"?|\[\s+-[zn]\s+"?)\Z""")
+        paths = ["deploy/computer-host/setup.sh", "deploy/computer-host/smoke.sh", "deploy/computer-host/private-tls.sh",
+                 "deploy/computer-host/local/run-local.sh", "deploy/computer-host/README.md",
+                 "docs/design/agents-v2/OPERATIONS.md"]
+        checked = 0
+        for path in paths:
+            with self.subTest(path=path):
+                for number, line in enumerate((ROOT / path).read_text().splitlines(), 1):
+                    for match in expansion.finditer(line):
+                        if not_a_value.search(match.group(1)):
+                            continue
+                        checked += 1
+                        self.assertRegex(line[:match.start()], builtin_before,
+                                         "%s:%d passes $%s to a program's argv" % (path, number, match.group(1)))
+        self.assertGreaterEqual(checked, 3, "the check found the health-check uses it guards")
+        setup = (ROOT / "deploy/computer-host/setup.sh").read_text()
+        new_token = setup[setup.index("new_token() {"):setup.index("\n}\n", setup.index("new_token() {"))]
+        self.assertIn("secrets.token_hex(32)", new_token, "the token is generated inside python, not in the shell")
+        self.assertNotIn("openssl rand -hex 32", new_token)
 
     def test_the_generated_nftables_accept_the_proxy_and_only_the_web_vm_on_443(self):
         out = subprocess.run(["bash", str(ROOT / "deploy/computer-host/setup.sh"), "--print-nftables", "--web-ip", "10.0.0.4",

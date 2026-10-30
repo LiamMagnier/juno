@@ -1420,9 +1420,11 @@ paths:
       servers: [{ url: /api }]
       operationId: createNativeAgentNote
       description: >-
-        A note never keeps a secret: one that names a password, PIN, code or
-        key with its value is refused with 422 (`note_secret`); a key or token
-        inside a sentence is masked before it is stored.
+        Notes are screened for secrets: one that puts a value beside a
+        password, PIN, code, key or login (in the languages the app ships) is
+        refused with 422 (`note_secret`); a key, token or card number inside a
+        sentence is masked before it is stored. The screen is a rule over
+        words, so a secret phrased another way can get through.
       requestBody:
         required: true
         content:

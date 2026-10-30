@@ -514,20 +514,28 @@ export interface GoalStepResult {
   artifacts: readonly string[];
 }
 
-/** Per step, and in all: the check reads what was produced, not every word of it. */
+/**
+ * Per step, and in all: the check reads what was produced, not every word of
+ * it. The defaults; `AGENT_GOAL_CHECK_STEP_CHARS` and
+ * `AGENT_GOAL_CHECK_TOTAL_CHARS` tune them (src/lib/agents/orbit-limits.ts).
+ */
 export const GOAL_CHECK_STEP_CHARS = 1_500;
 export const GOAL_CHECK_TOTAL_CHARS = 8_000;
 
 /** What the goal's steps produced, bounded, for the criteria check. */
-export function composeGoalDeliverables(steps: readonly GoalStepResult[]): string {
+export function composeGoalDeliverables(
+  steps: readonly GoalStepResult[],
+  bounds: { stepChars: number; totalChars: number } = { stepChars: GOAL_CHECK_STEP_CHARS, totalChars: GOAL_CHECK_TOTAL_CHARS }
+): string {
+  const { stepChars, totalChars } = bounds;
   const blocks = steps.map((step) => {
     const answer = step.answer?.trim() ? step.answer.trim() : "(no written answer)";
-    const clipped = answer.length > GOAL_CHECK_STEP_CHARS ? `${answer.slice(0, GOAL_CHECK_STEP_CHARS - 1)}…` : answer;
+    const clipped = answer.length > stepChars ? `${answer.slice(0, stepChars - 1)}…` : answer;
     const files = step.artifacts.length ? `\nFiles: ${step.artifacts.slice(0, 10).join(", ")}` : "";
     return `## ${step.title}\n${clipped}${files}`;
   });
   const text = blocks.join("\n\n");
-  return text.length > GOAL_CHECK_TOTAL_CHARS ? `${text.slice(0, GOAL_CHECK_TOTAL_CHARS - 1)}…` : text;
+  return text.length > totalChars ? `${text.slice(0, totalChars - 1)}…` : text;
 }
 
 /** Milestones after a step's task completed. */

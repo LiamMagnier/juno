@@ -472,7 +472,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   orbit_agents: {
     id: "orbit_agents",
     name: "Persistent Orbit agents",
-    summary: "Existing identities, tasks, memory, configuration and conversation entry. Hiring needs a plan with agents (refused with an upgrade answer on Free and Lite); a cloud task can save a note for its agent with `remember`, held for the person's review under the default memory grant.",
+    summary: "Existing identities, tasks, memory, configuration and conversation entry. Hiring needs a plan with agents (refused with an upgrade answer on Free and Lite); a cloud task can save a note for its agent with `remember`, always held for the person's review before any prompt reads it.",
     status: "beta",
     platforms: ["web", "macos"],
     maturity: surfaces(
@@ -487,6 +487,7 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       blockers: [
         "Real workflow, deployment and cross-platform acceptance are pending.",
         "`remember` has run only against a stand-in model API (tests/orbit-truth-runner.integration.test.ts drives the real cloud executor); a Mac run has no such tool.",
+        "Native follow-ups: the Mac and iPhone apps do not show notes waiting for review (no Keep or Forget there), and still show the hire field to plans without agents (the server refuses with 402).",
       ],
     },
   },

@@ -12,7 +12,7 @@
 import { BROWSER_NOW_COMPUTER_RESULT, START_DECLINED_RESULT } from "./access-copy";
 import { recordComputerAudit } from "./audit";
 import type { AttachedRunComputer, RunComputerPlan } from "./store";
-import type { ComputerHandle, ComputerProvider, ExecResult } from "./types";
+import type { ComputerHandle, ComputerProvider, ExecOptions, ExecResult } from "./types";
 
 /** Every computer tool the runtime builds (agent-core `REMOTE_TOOL_NAMES`). */
 export const COMPUTER_TOOL_NAMES = [
@@ -50,12 +50,39 @@ export function runComputerShell(
   provider: Pick<ComputerProvider, "exec">,
   handle: ComputerHandle,
   command: string,
-  opts: { timeoutSeconds: number; cwd?: string },
+  opts: { timeoutSeconds: number; cwd?: string; onOutput?: ExecOptions["onOutput"] },
 ): Promise<ExecResult> {
   return provider.exec(handle, command, {
     timeoutSeconds: opts.timeoutSeconds,
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    ...(opts.onOutput ? { onOutput: opts.onOutput } : {}),
   });
+}
+
+/**
+ * `computer_shell` with its output streamed to the person's terminal pane
+ * (S5.1): the command row before it runs, each piece as it arrives, the exit
+ * row after. The log is only watched; the result is the provider's, exactly
+ * as `runComputerShell` returns it, and a log that fails to write changes
+ * nothing about the command.
+ */
+export async function runWatchedComputerShell(
+  provider: Pick<ComputerProvider, "exec">,
+  handle: ComputerHandle,
+  command: string,
+  opts: { timeoutSeconds: number; cwd?: string },
+  log: { call(callId: string, command: string): { append(chunk: { stream: "stdout" | "stderr"; text: string }): void; end(result: { exitCode: number; timedOut: boolean }): Promise<void> } } | null,
+  callId: string | undefined,
+): Promise<ExecResult> {
+  if (!log || !callId) return runComputerShell(provider, handle, command, opts);
+  const call = log.call(callId, command);
+  let result: ExecResult | null = null;
+  try {
+    result = await runComputerShell(provider, handle, command, { ...opts, onOutput: (chunk) => call.append(chunk) });
+    return result;
+  } finally {
+    await call.end(result ? { exitCode: result.exitCode, timedOut: result.timedOut } : { exitCode: -1, timedOut: false });
+  }
 }
 
 /** Mirrors agent-core's `StartState`. */

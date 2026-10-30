@@ -302,6 +302,8 @@ export {
   settleScreen,
   TAKEOVER_OVERLAP_TEXT,
   isSafeComputerWritePath,
+  decodeTextFile,
+  formatFileBytes,
   COMPUTER_START_ACTION,
   COMPUTER_START_DECLINED_TEXT,
   COMPUTER_START_PENDING_TEXT,

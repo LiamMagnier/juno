@@ -1,0 +1,27 @@
+{
+  "comment": "Pass with --scales to override the defaults in geometry-lib.mjs. Any key left out keeps its default; radius defaults to the borderRadius ladder read from tailwind.config.ts (0 and 'full' are always allowed). Tolerances are in px except radiusPercent (percentage points).",
+  "spacing": [0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64],
+  "radius": [0, 2, 4, 6, 8, 10, 12, 14, 16, 26, 28],
+  "radiusPercent": [24],
+  "controlHeight": [24, 28, 32, 36, 40, 44],
+  "iconSize": [12, 14, 16, 18, 20, 24, 32, 40, 48],
+  "tolerances": {
+    "scale": 0.5,
+    "nestedRadius": 2,
+    "pokeOut": 0.75,
+    "symmetry": 0.5,
+    "sibling": 0.5,
+    "rowHeight": 1,
+    "rowGap": 40,
+    "rowDepth": 5,
+    "alignMin": 0.5,
+    "alignMax": 3,
+    "iconGap": 0.5,
+    "maxControlHeight": 56,
+    "targetPointer": 24,
+    "targetTouch": 44,
+    "maxIconSize": 64,
+    "maxIconGap": 32,
+    "radiusPercent": 1.5
+  }
+}

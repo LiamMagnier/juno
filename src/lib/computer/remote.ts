@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { StringDecoder } from "node:string_decoder";
 import sharp from "sharp";
 import { env } from "@/lib/env";
 import { COMPUTER_SAFETY_CHECK_FAILED } from "./docker";
@@ -16,6 +17,7 @@ import type {
   ComputerProvider,
   EndpointPurpose,
   Endpoints,
+  ExecOptions,
   ExecResult,
   Shot,
 } from "./types";
@@ -99,6 +101,65 @@ export function tunnelUrl(origin: string): string {
   return url.toString();
 }
 
+/**
+ * The most a host answer may hold. The largest real ones are a 26 MiB file
+ * read (its own limit, below) and a screenshot; an exec answer is at most two
+ * 1 MiB streams in base64 (EXEC_OUTPUT_BYTES on the host). Read as it arrives
+ * and refused past the limit, so a host that misbehaves cannot make the web
+ * server or the Work runner hold hundreds of megabytes.
+ */
+const MAX_ANSWER_BYTES = 32 * 1024 * 1024;
+const MAX_EXEC_ANSWER_BYTES = 4 * 1024 * 1024;
+/** The host's answer when a computer (or the whole host) already runs as many commands as it allows. */
+export const COMPUTER_TOO_MANY_COMMANDS =
+  "The agent's computer is already running as many commands as it can at once. Try again when one finishes.";
+export const HOST_TOO_MANY_COMMANDS =
+  "The computer host is running as many commands as it can right now. Try again in a moment.";
+
+async function readAnswer(res: Response, maxBytes: number, method: string): Promise<Buffer> {
+  const tooLarge = (size: string) =>
+    new ComputerError(COMPUTER_UNREACHABLE, `computer host ${method} answered ${res.status} with ${size} bytes, over ${maxBytes}`);
+  const declared = Number(res.headers.get("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    throw tooLarge(String(declared));
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge(`more than ${maxBytes}`);
+    }
+    chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+  }
+  return Buffer.concat(chunks, total);
+}
+
+/** The most of each stream a command's result keeps (the host's EXEC_OUTPUT_BYTES). */
+const EXEC_RESULT_BYTES = 1024 * 1024;
+/**
+ * The most a streamed exec answer may carry in all: two streams of at most
+ * 4 MiB each (EXEC_STREAM_BYTES on the host) in base64, with the JSON around
+ * each line. Read as it arrives and refused past it, like every answer.
+ */
+const MAX_STREAMED_EXEC_BYTES = 12 * 1024 * 1024;
+/** One NDJSON line: a 64 KiB piece in base64 is about 87 KiB. */
+const MAX_STREAMED_LINE_CHARS = 256 * 1024;
+
+/** One stream of the host's exec answer: base64 bytes, decoded as UTF-8 like a same-host `docker exec`. */
+function execStream(result: Record<string, unknown>, name: "stdout" | "stderr"): string {
+  const encoded = result[`${name}Base64`];
+  if (typeof encoded === "string") return Buffer.from(encoded, "base64").toString("utf8");
+  const text = result[name];
+  return typeof text === "string" ? text : "";
+}
+
 interface HostAnswer {
   status: number;
   bytes: Buffer;
@@ -108,6 +169,36 @@ interface HostAnswer {
 }
 
 let loggedTokenRefused = false;
+
+/** A whole host answer, with its stable error code (never its body) when it is not a 2xx. */
+function hostAnswer(status: number, bytes: Buffer, method: string): HostAnswer {
+  let code: string | null = null;
+  if (status < 200 || status >= 300) {
+    try {
+      const parsed = JSON.parse(bytes.toString("utf8")) as { error?: unknown };
+      code = typeof parsed.error === "string" && /^[a-z_]{1,40}$/.test(parsed.error) ? parsed.error : null;
+    } catch {
+      code = null;
+    }
+    if (status === 401 && !loggedTokenRefused) {
+      loggedTokenRefused = true;
+      console.error("[agent-computer] the computer host refused this server's token (COMPUTER_HOST_TOKEN)");
+    }
+  }
+  return {
+    status,
+    bytes,
+    code,
+    json<T>() {
+      try {
+        return JSON.parse(bytes.toString("utf8")) as T;
+      } catch {
+        // Something that is not the host answered (a proxy's error page).
+        throw new ComputerError(COMPUTER_UNREACHABLE, `computer host ${method} answered ${status} with no JSON`);
+      }
+    },
+  };
+}
 
 export class RemoteComputerProvider implements ComputerProvider {
   readonly name = "remote" as const;
@@ -132,7 +223,7 @@ export class RemoteComputerProvider implements ComputerProvider {
   private async request(
     method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
-    opts: { query?: Record<string, string>; json?: unknown; body?: Buffer; timeoutMs?: number } = {}
+    opts: { query?: Record<string, string>; json?: unknown; body?: Buffer; timeoutMs?: number; maxBytes?: number } = {}
   ): Promise<HostAnswer> {
     const url = new URL(path, this.origin);
     for (const [key, value] of Object.entries(opts.query ?? {})) url.searchParams.set(key, value);
@@ -159,34 +250,11 @@ export class RemoteComputerProvider implements ComputerProvider {
           redirect: "error",
           cache: "no-store",
         });
-        const bytes = Buffer.from(await res.arrayBuffer());
-        let code: string | null = null;
-        if (!res.ok) {
-          try {
-            const parsed = JSON.parse(bytes.toString("utf8")) as { error?: unknown };
-            code = typeof parsed.error === "string" && /^[a-z_]{1,40}$/.test(parsed.error) ? parsed.error : null;
-          } catch {
-            code = null;
-          }
-          if (res.status === 401 && !loggedTokenRefused) {
-            loggedTokenRefused = true;
-            console.error("[agent-computer] the computer host refused this server's token (COMPUTER_HOST_TOKEN)");
-          }
-        }
-        return {
-          status: res.status,
-          bytes,
-          code,
-          json<T>() {
-            try {
-              return JSON.parse(bytes.toString("utf8")) as T;
-            } catch {
-              // Something that is not the host answered (a proxy's error page).
-              throw new ComputerError(COMPUTER_UNREACHABLE, `computer host ${method} answered ${res.status} with no JSON`);
-            }
-          },
-        };
+        const bytes = await readAnswer(res, opts.maxBytes ?? MAX_ANSWER_BYTES, method);
+        return hostAnswer(res.status, bytes, method);
       } catch (error) {
+        // An answer over its size limit is already this layer's error: never retried.
+        if (error instanceof ComputerError) throw error;
         lastError = error;
         const name = (error as { name?: string } | null)?.name;
         if (name === "TimeoutError" || name === "AbortError") break;
@@ -287,9 +355,26 @@ export class RemoteComputerProvider implements ComputerProvider {
     this.ok(answer, "unpause");
   }
 
-  /** Like Docker's (which ignores the exit status): only a host that cannot be reached at all throws. */
+  /**
+   * Resolves only when the computer is not running. Docker's provider ignores
+   * `docker stop`'s exit status, never a failure to reach Docker; on a remote
+   * host the equivalent of that failure is any answer but the host's own: a
+   * 5xx (nginx while the service restarts, the broker refusing or timing out),
+   * a 401, or a body that is not the host's JSON. Each throws the unreachable
+   * sentence, so the store holds the sleep for the host instead of recording a
+   * computer asleep that is still running. The host's 200 `{ok: false}` (a
+   * nonzero `docker stop`) is checked against state(); a container that does
+   * not exist is stopped.
+   */
   async stop(handle: ComputerHandle): Promise<void> {
-    await this.request("POST", this.computer(handle, "stop"), { timeoutMs: Math.max(this.timeoutMs, 45_000) });
+    const answer = await this.request("POST", this.computer(handle, "stop"), { timeoutMs: Math.max(this.timeoutMs, 45_000) });
+    if (answer.status === 404 && answer.code === "no_such_container") return;
+    const result = this.ok(answer, "stop").json<{ ok?: unknown } | null>();
+    if (result?.ok === true) return;
+    const after = await this.state(handle);
+    if (after === "running" || after === "paused") {
+      throw new ComputerError(COMPUTER_UNREACHABLE, "computer host stop left the computer running");
+    }
   }
 
   async destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void> {
@@ -371,20 +456,160 @@ export class RemoteComputerProvider implements ComputerProvider {
     await this.input(handle, { kind: "drag", ...opts });
   }
 
-  async exec(handle: ComputerHandle, command: string, opts?: { timeoutSeconds?: number; cwd?: string }): Promise<ExecResult> {
+  async exec(handle: ComputerHandle, command: string, opts?: ExecOptions): Promise<ExecResult> {
     const seconds = Math.max(1, Math.min(300, Math.round(opts?.timeoutSeconds ?? 30)));
+    const body = { command, timeoutSeconds: seconds, ...(opts?.cwd ? { cwd: opts.cwd } : {}) };
+    if (opts?.onOutput) return this.execStreamed(handle, body, seconds, opts.onOutput);
     const answer = await this.request("POST", this.computer(handle, "exec"), {
-      json: { command, timeoutSeconds: seconds, ...(opts?.cwd ? { cwd: opts.cwd } : {}) },
+      json: body,
       timeoutMs: (seconds + 20) * 1000,
+      maxBytes: MAX_EXEC_ANSWER_BYTES,
     });
+    return this.execResult(answer);
+  }
+
+  /** A whole (buffered) exec answer, or a refusal before the command ran, as the provider's result or error. */
+  private execResult(answer: HostAnswer): ExecResult {
     if (answer.status === 422) throw this.failure(answer, "exec", COMPUTER_PATH_REFUSED);
-    const result = this.ok(answer, "exec").json<Partial<ExecResult>>();
+    if (answer.status === 429 && answer.code === "too_many_commands") {
+      let scope = "";
+      try {
+        scope = String(answer.json<{ scope?: unknown }>().scope ?? "");
+      } catch {
+        scope = "";
+      }
+      throw this.failure(answer, "exec", scope === "host" ? HOST_TOO_MANY_COMMANDS : COMPUTER_TOO_MANY_COMMANDS);
+    }
+    // stdoutBase64 / stderrBase64: each stream's first 1 MiB, the bytes as the command wrote them.
+    const result = this.ok(answer, "exec").json<Partial<ExecResult> & Record<string, unknown>>();
     return {
-      stdout: typeof result.stdout === "string" ? result.stdout : "",
-      stderr: typeof result.stderr === "string" ? result.stderr : "",
+      stdout: execStream(result, "stdout"),
+      stderr: execStream(result, "stderr"),
       exitCode: typeof result.exitCode === "number" ? result.exitCode : 1,
       timedOut: result.timedOut === true,
       durationMs: typeof result.durationMs === "number" ? result.durationMs : 0,
+    };
+  }
+
+  /**
+   * A watched command (S5.1): `Accept: application/x-ndjson`, and the host
+   * answers one line per piece of output as the command writes it, then a
+   * last line with the exit status. Each piece goes to `onOutput` as it
+   * arrives (decoded as UTF-8 across pieces); the result keeps the first MiB
+   * of each stream, exactly as a buffered answer does. A refusal before the
+   * command ran is an ordinary answer and is mapped as one; a host that does
+   * not stream answers whole, and its output is handed over at the end.
+   */
+  private async execStreamed(
+    handle: ComputerHandle,
+    body: Record<string, unknown>,
+    seconds: number,
+    onOutput: NonNullable<ExecOptions["onOutput"]>
+  ): Promise<ExecResult> {
+    const unreachable = (detail: string) =>
+      new ComputerError(COMPUTER_UNREACHABLE, `computer host exec ${scrubComputerText(detail)}`);
+    const deliver = (stream: "stdout" | "stderr", text: string) => {
+      if (!text) return;
+      try {
+        onOutput({ stream, text });
+      } catch {
+        // Watching a command never fails it.
+      }
+    };
+    let res: Response;
+    try {
+      res = await this.fetchImpl(new URL(this.computer(handle, "exec"), this.origin), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+          Accept: "application/x-ndjson",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout((seconds + 20) * 1000),
+        redirect: "error",
+        cache: "no-store",
+      });
+    } catch (error) {
+      throw unreachable(`failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+    }
+    const type = res.headers.get("content-type") ?? "";
+    if (!res.ok || !type.includes("application/x-ndjson") || !res.body) {
+      const result = this.execResult(hostAnswer(res.status, await readAnswer(res, MAX_EXEC_ANSWER_BYTES, "POST"), "POST"));
+      deliver("stdout", result.stdout);
+      deliver("stderr", result.stderr);
+      return result;
+    }
+
+    const kept = { stdout: [] as Buffer[], stderr: [] as Buffer[] };
+    const keptSize = { stdout: 0, stderr: 0 };
+    const decoders = { stdout: new StringDecoder("utf8"), stderr: new StringDecoder("utf8") };
+    let last: Record<string, unknown> | null = null;
+    const takeLine = (raw: string) => {
+      const line = raw.trim();
+      if (!line) return;
+      let value: Record<string, unknown>;
+      try {
+        value = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        throw unreachable("answered a line that is not JSON");
+      }
+      if (value.stream === "stdout" || value.stream === "stderr") {
+        if (typeof value.data_b64 !== "string") return;
+        const bytes = Buffer.from(value.data_b64, "base64");
+        const stream = value.stream;
+        const room = EXEC_RESULT_BYTES - keptSize[stream];
+        if (room > 0) {
+          const piece = bytes.byteLength > room ? bytes.subarray(0, room) : bytes;
+          kept[stream].push(piece);
+          keptSize[stream] += piece.byteLength;
+        }
+        deliver(stream, decoders[stream].write(bytes));
+        return;
+      }
+      if (typeof value.error === "string") {
+        const code = /^[a-z_]{1,40}$/.test(value.error) ? value.error : "unknown";
+        console.warn("[agent-computer] computer host call failed", { detail: `computer host exec failed mid-answer: ${code}` });
+        throw new ComputerError(COMPUTER_UNREACHABLE, `computer host exec failed mid-answer: ${code}`);
+      }
+      if ("exit" in value) last = value;
+    };
+
+    const reader = res.body.getReader();
+    const text = new TextDecoder("utf-8");
+    let buffered = "";
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_STREAMED_EXEC_BYTES) throw unreachable(`answered more than ${MAX_STREAMED_EXEC_BYTES} bytes`);
+        buffered += text.decode(value, { stream: true });
+        let newline = buffered.indexOf("\n");
+        while (newline >= 0) {
+          takeLine(buffered.slice(0, newline));
+          buffered = buffered.slice(newline + 1);
+          newline = buffered.indexOf("\n");
+        }
+        if (buffered.length > MAX_STREAMED_LINE_CHARS) throw unreachable("answered a line that is too long");
+      }
+      takeLine(buffered + text.decode());
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      if (error instanceof ComputerError) throw error;
+      throw unreachable(`failed while answering: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+    }
+    const final = last as Record<string, unknown> | null;
+    if (!final) throw unreachable("answer ended before the command did");
+    deliver("stdout", decoders.stdout.end());
+    deliver("stderr", decoders.stderr.end());
+    return {
+      stdout: Buffer.concat(kept.stdout, keptSize.stdout).toString("utf8"),
+      stderr: Buffer.concat(kept.stderr, keptSize.stderr).toString("utf8"),
+      exitCode: typeof final.exit === "number" ? final.exit : 1,
+      timedOut: final.timedOut === true,
+      durationMs: typeof final.durationMs === "number" ? final.durationMs : 0,
     };
   }
 
@@ -412,6 +637,7 @@ export class RemoteComputerProvider implements ComputerProvider {
     const answer = await this.request("GET", this.computer(handle, "files/content"), {
       query: { path, maxBytes: String(maxBytes) },
       timeoutMs: Math.max(this.timeoutMs, 70_000),
+      maxBytes: maxBytes + 64 * 1024,
     });
     if (answer.status === 422 && answer.code === "path_refused") throw this.failure(answer, "read", COMPUTER_PATH_REFUSED);
     if (answer.status === 422) throw this.failure(answer, "read", "That file could not be read.");
@@ -503,9 +729,18 @@ export class RemoteComputerProvider implements ComputerProvider {
     );
   }
 
-  /** Like Docker's (which ignores the exit status): only a host that cannot be reached at all throws. */
+  /**
+   * Like Docker's, `pkill`'s exit status is ignored (the host answers 200
+   * whatever it was), and a container that does not exist has no session. Any
+   * other answer (the broker refused or timed out, nginx with no service
+   * behind it) throws the unreachable sentence: ending the person's session is
+   * what a take over's release counts on before it thaws the agent, so a stop
+   * that may not have happened is never reported as done.
+   */
   async stopVnc(handle: ComputerHandle): Promise<void> {
-    await this.request("DELETE", this.computer(handle, "vnc"));
+    const answer = await this.request("DELETE", this.computer(handle, "vnc"));
+    if (answer.status === 404 && answer.code === "no_such_container") return;
+    this.ok(answer, "vnc stop").json<unknown>();
   }
 
   async freezeAgent(handle: ComputerHandle): Promise<void> {

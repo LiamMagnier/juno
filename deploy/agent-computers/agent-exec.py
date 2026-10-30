@@ -67,7 +67,14 @@ ENVIRONMENT = {
 # CLONE_NEWPID, CLONE_NEWNET (linux/sched.h).
 NAMESPACE_FLAGS = (0x00020000, 0x02000000, 0x04000000, 0x08000000, 0x10000000, 0x20000000, 0x40000000)
 EX_FROZEN = 75
-FREEZE_ROUNDS = 10
+# How long the freeze keeps signalling and scanning before it reports a task
+# still running (exit 3). A task with SIGSTOP pending runs no more of its own
+# code, but it shows as stopped only once the scheduler has run it (or its
+# uninterruptible call has returned): on a loaded host (load 11 on 4 vCPUs,
+# tests/computer-real-e2e.test.ts, October 2026) that took longer than the half
+# second (10 rounds of 50 ms) the first version allowed, and a take over told
+# the person the agent could not be paused when it was pausing.
+FREEZE_SECONDS = 3.0
 FREEZE_PAUSE_SECONDS = 0.05
 
 
@@ -122,9 +129,11 @@ def freeze():
     caller (and the namespace's init, which is the browser's). The kernel walks
     the set under the task-list lock; a fork caught in progress hands the
     signal to its child or is restarted. The scan is what this relies on: it
-    repeats until no uid-1000 task outside state T is left, or gives up."""
+    repeats until no uid-1000 task outside state T is left, or gives up after
+    FREEZE_SECONDS."""
     own = os.getpid()
-    for _ in range(FREEZE_ROUNDS):
+    deadline = time.monotonic() + FREEZE_SECONDS
+    while True:
         try:
             os.kill(-1, signal.SIGSTOP)
         except ProcessLookupError:
@@ -133,6 +142,8 @@ def freeze():
         left = agent_tasks_not_stopped(own)
         if not left:
             return 0
+        if time.monotonic() >= deadline:
+            break
     sys.stderr.write("agent-exec: %d task(s) still running after the freeze\n" % len(left))
     return 3
 

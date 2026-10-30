@@ -503,6 +503,89 @@ wait_for_voice_relay_health() {
   fail "Voice relay health verification failed."
 }
 
+# How the two background workers came back, written into the deploy log once
+# the release is live. A warning, never a failure: nothing before this has
+# verified their state in production, and an otherwise healthy release must not
+# roll back over them. Reads PM2 twice, JUNO_WORKER_SETTLE_SECONDS apart (20 by
+# default), so a worker that crash-loops after starting is seen restarting.
+# Prints names, states and counts only: `pm2 jlist` also holds each app's
+# environment, which never reaches the log (not even in an error message: a
+# JSON parse error quotes the text it failed on). Each PM2 read gives up after
+# 30 s, so a hung PM2 daemon cannot hold a deploy whose release is already live.
+report_background_workers() {
+  say "${YELLOW}🔎 Checking the background workers (juno-work, juno-sweepers)...${NC}"
+  WORKER_SETTLE_SECONDS="${JUNO_WORKER_SETTLE_SECONDS:-20}" node -e '
+    const { execFileSync } = require("child_process");
+    const workers = ["juno-work", "juno-sweepers"];
+    const settle = Math.min(300, Math.max(0, Math.round(Number(process.env.WORKER_SETTLE_SECONDS) || 0)));
+    const PM2_TIMEOUT_MS = 30000;
+
+    // Line by line from the end, as pause_background_apps reads it: PM2 can
+    // print a banner line ("[PM2] ...") before the list.
+    function jlist() {
+      const out = execFileSync("pm2", ["jlist"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: PM2_TIMEOUT_MS });
+      for (const line of out.split("\n").reverse()) {
+        let rows;
+        try {
+          rows = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (Array.isArray(rows)) return rows;
+      }
+      const error = new Error("no process list");
+      error.code = "NO_PROCESS_LIST";
+      throw error;
+    }
+    function state(rows, name) {
+      const row = rows.find((candidate) => candidate && candidate.name === name);
+      if (!row) return null;
+      const env = row.pm2_env || {};
+      return {
+        status: String(env.status || row.status || "unknown"),
+        restarts: Number(env.restart_time) || 0,
+        upSeconds: env.pm_uptime ? Math.max(0, Math.round((Date.now() - Number(env.pm_uptime)) / 1000)) : null,
+      };
+    }
+    function warn(text) {
+      console.log(`::warning::${text}`);
+    }
+
+    let before;
+    let after;
+    try {
+      before = jlist();
+      if (settle > 0) execFileSync("sleep", [String(settle)], { stdio: "ignore", timeout: (settle + 5) * 1000 });
+      after = jlist();
+    } catch (error) {
+      // A code or a name only, never the message (see above).
+      const why = String(
+        (error && (error.code || error.signal || (typeof error.status === "number" ? `exit ${error.status}` : error.name))) || "Error"
+      ).replace(/[^A-Za-z0-9_ ]/g, "").slice(0, 40);
+      warn(`Could not read the background workers from PM2 after this deploy (${why}). The release is live; check them with pm2 describe juno-work juno-sweepers.`);
+      process.exit(0);
+    }
+    for (const name of workers) {
+      const was = state(before, name);
+      const now = state(after, name);
+      if (!now) {
+        warn(`Background worker ${name} is not running after this deploy. The release is live; check pm2 describe ${name}.`);
+        continue;
+      }
+      const restarted = was ? Math.max(0, now.restarts - was.restarts) : 0;
+      const up = now.upSeconds === null ? "" : `, up ${now.upSeconds}s`;
+      if (now.status !== "online") {
+        warn(`Background worker ${name} is ${now.status} after this deploy (${now.restarts} restarts in all). The release is live; check pm2 logs ${name}.`);
+      } else if (restarted > 0) {
+        warn(`Background worker ${name} restarted ${restarted} time${restarted === 1 ? "" : "s"} in the ${settle}s after this deploy${up}. The release is live; check pm2 logs ${name}.`);
+      } else {
+        console.log(`Background worker ${name}: online${up}, no restart in the ${settle}s after this deploy.`);
+      }
+    }
+  ' || say "${YELLOW}⚠️ Could not check the background workers; the release is live.${NC}"
+  return 0
+}
+
 prune_old_releases() {
   local releases_dir="$1"
   local current_target="$2"
@@ -861,6 +944,8 @@ main() {
   ROLLBACK_NEEDED=0
   say "${GREEN}✅ Juno release $TARGET_SHA is active at $CURRENT_LINK.${NC}"
   say "${GREEN}↩️ Previous release preserved at $PREVIOUS_LINK ($OLD_CURRENT_TARGET).${NC}"
+  # After the rollback point on purpose: a warning here never fails the deploy.
+  report_background_workers || true
 
   # Prune older releases to keep disk healthy
   prune_old_releases "$RELEASES_DIR" "$RELEASE_DIR" "$OLD_CURRENT_TARGET" "${JUNO_KEEP_RELEASES:-2}"

@@ -265,6 +265,54 @@ final class NativeChatAPIClientTests: XCTestCase {
         }
     }
 
+    /// A deploy's drain refuses `POST /api/chat` before reading it. The store
+    /// sends the same request again on exactly this error (and never treats it
+    /// as a dropped stream to recover); any other 503 is not a drain.
+    func testDrainRefusalIsTypedAsServerDraining() async throws {
+        let streamer = ChatQueueStreamer(responses: [
+            streamResponse(
+                #"{"error":"Alevr is restarting. Please try again in a moment.","code":"SERVER_DRAINING","retryable":true}"#,
+                statusCode: 503
+            ),
+            streamResponse(
+                #"{"error":"No model is available for Auto right now.","code":"AUTO_NO_ELIGIBLE_MODEL"}"#,
+                statusCode: 503
+            ),
+        ])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        let request = NativeChatGenerationRequest(
+            conversationID: "conv_12345678",
+            modelID: "openai:gpt-5",
+            reasoningEffort: nil,
+            generationID: "juno-native-generation-drain"
+        )
+
+        do {
+            _ = try await client.generationEvents(request, for: accountID)
+            XCTFail("Expected the drain refusal")
+        } catch {
+            let drain = try XCTUnwrap(error as? NativeChatAPIError)
+            XCTAssertTrue(drain.isServerDraining)
+            XCTAssertEqual(
+                drain,
+                .server(
+                    statusCode: 503,
+                    code: "SERVER_DRAINING",
+                    message: "Alevr is restarting. Please try again in a moment.",
+                    retryable: true
+                )
+            )
+        }
+        do {
+            _ = try await client.generationEvents(request, for: accountID)
+            XCTFail("Expected the other 503")
+        } catch {
+            XCTAssertEqual((error as? NativeChatAPIError)?.isServerDraining, false)
+        }
+        XCTAssertFalse(NativeChatAPIError.streamEndedWithoutTerminalEvent.isServerDraining)
+        XCTAssertEqual(NativeChatAPIError.drainRetryAfterSeconds, 5)
+    }
+
     func testChatApprovalStreamRecoveryAndDigestBoundDecision() async throws {
         let pending = """
         {"id":"approval_12345678","surface":"chat","sessionId":"generation_12345678","conversationId":"conv_12345678","connectorId":"apple-mail","connectorLabel":"Apple Mail","toolName":"send_message","action":"send_message","riskClass":"external_write","preview":"Apple Mail wants to send a message.","detail":{"to":"person@example.com","subject":"Hello","body":"Safe preview"},"receiptDigest":"digest_12345678","status":"pending","decision":null,"canAllowScope":false,"derivedFromUntrusted":false,"expiresAt":"2026-07-22T00:15:00.000Z","decidedAt":null,"completedAt":null,"createdAt":"2026-07-22T00:00:00.000Z"}

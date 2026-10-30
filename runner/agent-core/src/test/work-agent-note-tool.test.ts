@@ -26,8 +26,13 @@ test('remember is a safe, structured, trusted write of the agent own notes', () 
     trust: 'trusted',
   });
   assert.deepEqual((tool.spec.inputSchema as { required: string[] }).required, ['note']);
-  assert.match(tool.spec.description, /Never a password, code, key or token/);
-  assert.match(tool.spec.description, /may need to keep it/);
+  assert.match(tool.spec.description, /Never a password, code, key, token or login/);
+  assert.match(tool.spec.description, /The person reviews it, and later tasks and chats see it only once they keep it/);
+  const note = (tool.spec.inputSchema as { properties: { note: { description: string } } }).properties.note;
+  assert.match(note.description, /at most 500 characters/, 'the default bound');
+  const bounded = agentNoteTool({ agentName: 'Mira', maxChars: 300, save: async () => ({ ok: true, pending: true, detail: 'x' }) });
+  const boundedNote = (bounded.spec.inputSchema as { properties: { note: { description: string } } }).properties.note;
+  assert.match(boundedNote.description, /at most 300 characters/, 'the executor’s bound, from env');
 });
 
 test('remember passes the note to save and says the result back', async () => {

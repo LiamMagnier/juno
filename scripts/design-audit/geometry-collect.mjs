@@ -30,7 +30,7 @@ export function collectGeometry(opts) {
   const REPLACED = new Set(["IMG", "VIDEO", "CANVAS", "IFRAME", "PICTURE", "OBJECT", "EMBED"]);
   const FIELD_TYPES = new Set(["text", "search", "email", "password", "url", "tel", "number", "date", "datetime-local", "month", "week", "time", "color", ""]);
   const INTERACTIVE_ROLES = new Set(["button", "link", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option", "checkbox", "radio", "switch", "slider", "combobox", "treeitem", "spinbutton", "searchbox", "textbox", "gridcell", "row"]);
-  const GENERIC_COMPONENT = /^(Primitive\..*|Primitive|Slot|SlotClone|Slottable|Presence|Portal|PortalImpl|DismissableLayer|DismissableLayerBranch|FocusScope|FocusGuards|Popper|PopperAnchor|PopperContent|PopperArrow|Collection|CollectionSlot|CollectionItemSlot|CollectionProvider|RovingFocusGroup|RovingFocusGroupImpl|RovingFocusGroupItem|VisuallyHidden|RemoveScroll|SideCar|Combination|Fragment|Suspense|StrictMode|Profiler|SegmentViewNode|InnerLayoutRouter|OuterLayoutRouter|LayoutRouter|RenderFromTemplateContext|ScrollAndFocusHandler|InnerScrollAndFocusHandler|HotReload|AppRouter|Router|ServerRoot|ReactDevOverlay|Anonymous|MenuAnchor|MenuRootContentNonModal|MenuRootContentModal|MenuContentImpl|MenuItemImpl|MenuSubContent|SelectContentImpl|SelectItemImpl|DialogContentImpl|DialogContentModal|DialogContentNonModal|PopoverContentImpl|PopoverContentModal|PopoverContentNonModal|TooltipContentImpl|TooltipContentHoverable|Primitive\.div|_c\d*|.*Provider|.*Context|.*Boundary)$/;
+  const GENERIC_COMPONENT = /^(.*Slot(\..*)?|.*CollectionSlot.*|RovingFocusGroup.*|Primitive\..*|Primitive|Slot|SlotClone|Slottable|Presence|Portal|PortalImpl|DismissableLayer|DismissableLayerBranch|FocusScope|FocusGuards|Popper|PopperAnchor|PopperContent|PopperArrow|Collection|CollectionSlot|CollectionItemSlot|CollectionProvider|RovingFocusGroup|RovingFocusGroupImpl|RovingFocusGroupItem|VisuallyHidden|RemoveScroll|SideCar|Combination|Fragment|Suspense|StrictMode|Profiler|SegmentViewNode|InnerLayoutRouter|OuterLayoutRouter|LayoutRouter|RenderFromTemplateContext|ScrollAndFocusHandler|InnerScrollAndFocusHandler|HotReload|AppRouter|Router|ServerRoot|ReactDevOverlay|Anonymous|MenuAnchor|MenuRootContentNonModal|MenuRootContentModal|MenuContentImpl|MenuItemImpl|MenuSubContent|SelectContentImpl|SelectItemImpl|DialogContentImpl|DialogContentModal|DialogContentNonModal|PopoverContentImpl|PopoverContentModal|PopoverContentNonModal|TooltipContentImpl|TooltipContentHoverable|Primitive\.div|_c\d*|LinkComponent|Link|MotionConfig|motion\..*|(Tooltip|DropdownMenu|Popover|Dialog|AlertDialog|HoverCard|ContextMenu|Collapsible|Sheet)Trigger|Menu|MenuSub|DropdownMenu|DropdownMenuSub|Popover|Tooltip|Dialog|AlertDialog|HoverCard|ContextMenu|Collapsible|Sheet|Select|.*Provider|.*Context|.*Boundary)$/;
 
   // ---- React internals (dev and prod builds both expose them on DOM nodes)
   let fiberKey = null;
@@ -203,8 +203,10 @@ export function collectGeometry(opts) {
     if (role === "textbox" || role === "searchbox" || role === "spinbutton" || el.isContentEditable) return el.isContentEditable && tag !== "INPUT" ? "textarea" : "input";
     return null;
   };
+  // Glyphs are roughly square; a wordmark or a wide illustration is not an icon.
+  const squarish = (w, h) => Math.max(w, h) <= 1.34 * Math.min(w, h);
   const isIconEl = (el, w, h, tag, role) => {
-    if (tag === "svg") return w <= 64 && h <= 64;
+    if (tag === "svg") return w <= 64 && h <= 64 && squarish(w, h);
     if (tag === "IMG") return w <= 48 && h <= 48 && Math.abs(w - h) <= 8;
     if (role === "img") return w <= 48 && h <= 48 && !/\S/.test(el.textContent || "");
     return false;
@@ -300,11 +302,16 @@ export function collectGeometry(opts) {
           }
         }
       }
-      // A link inside running text (WCAG target exception; not a control).
+      // A link or chip inside running text (WCAG target exception; not a control).
       let inline = false;
-      if (kind === "link" && /^inline($|\s)/.test(disp)) {
-        const p = el.parentElement;
-        if (p) for (const n of p.childNodes) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) inline = true;
+      if (kind && /^inline/.test(disp)) {
+        // Climb inline wrappers (spans) to the block that holds the sentence.
+        let p = el.parentElement;
+        for (let hops = 0; p && hops < 4 && !inline; hops++) {
+          for (const n of p.childNodes) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) inline = true;
+          if (!/^inline/.test(getComputedStyle(p).display)) break;
+          p = p.parentElement;
+        }
       }
 
       const rec = {
@@ -378,7 +385,24 @@ export function collectGeometry(opts) {
     for (const child of el.children) visit(child, index, childClip, depth + 1);
   };
 
-  const roots = scopeSelector ? [...document.querySelectorAll(scopeSelector)] : [document.body];
+  // Scope: a selector, or "new" = only the layers an open script added to
+  // <body> (portaled menus, popovers, dialogs), falling back to the page.
+  let roots = [document.body];
+  let scopeUsed = "page";
+  if (scopeSelector === "new") {
+    const base = window.__geometryBase;
+    const fresh = base ? [...document.body.children].filter((c) => !base.has(c) && c.getBoundingClientRect().width > 0) : [];
+    // A portal wrapper can be zero-sized with visible children: keep any new child that has visible content.
+    const visibleFresh = base ? [...document.body.children].filter((c) => !base.has(c) && !SKIP.has(c.tagName) && [...c.querySelectorAll("*")].some((d) => d.getBoundingClientRect().width > 1)) : [];
+    const pick = visibleFresh.length ? visibleFresh : fresh;
+    if (pick.length) {
+      roots = pick;
+      scopeUsed = "new layers";
+    }
+  } else if (scopeSelector) {
+    roots = [...document.querySelectorAll(scopeSelector)];
+    scopeUsed = scopeSelector;
+  }
   for (const root of roots) visit(root, -1, viewportClip, 0);
 
   // ---- Icon-to-text gaps: a flow icon child beside text, on one line.
@@ -470,6 +494,7 @@ export function collectGeometry(opts) {
     title: document.title,
     url: location.href,
     hydrated: !!fiberKey,
+    scope: scopeUsed,
   };
 }
 
@@ -485,20 +510,8 @@ export function drawOverlay(arg) {
   const root = document.createElement("div");
   root.id = "__geometry_overlay";
   root.setAttribute("style", `position:${position};left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483647;`);
-  const COLORS = {
-    "nested-radius": "#e11d48",
-    "corner-poke-out": "#be123c",
-    "clipped-corner": "#9f1239",
-    "asymmetric-padding": "#d97706",
-    "sibling-padding": "#ca8a04",
-    "row-height": "#7c3aed",
-    "text-misalignment": "#2563eb",
-    "icon-gap": "#0891b2",
-    "target-size": "#16a34a",
-    "off-scale": "#6b7280",
-  };
   for (const it of items) {
-    const color = COLORS[it.kind] || "#111";
+    const color = it.color || "#111";
     const [x, y, w, h] = it.rect;
     const box = document.createElement("div");
     box.setAttribute("style", `position:absolute;left:${x - 1}px;top:${y - 1}px;width:${w + 2}px;height:${h + 2}px;outline:2px solid ${color};outline-offset:0;box-sizing:border-box;background:${color}14;`);

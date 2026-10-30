@@ -24,6 +24,15 @@ except ImportError:
     websockets = None
 
 ROOT = Path(__file__).resolve().parents[1]
+# The computer-e2e CI job runs this with websockets 10.4 in a venv and sets this, so
+# a missing library fails the job instead of skipping every test as green. Elsewhere
+# (scripts/local-gates.sh on a machine without websockets) the tests skip, and say so.
+REQUIRED = os.environ.get("JUNO_COMPUTER_PIPE_REQUIRED") == "1"
+
+
+def setUpModule():
+    if REQUIRED and websockets is None:
+        raise AssertionError("JUNO_COMPUTER_PIPE_REQUIRED=1 and this python has no websockets (10.x, as the image installs)")
 
 
 @unittest.skipIf(websockets is None, "requires websockets 10.x (image installs python3-websockets)")

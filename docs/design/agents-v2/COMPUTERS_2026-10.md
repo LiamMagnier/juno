@@ -1500,7 +1500,7 @@ API v1 (JSON unless noted):
 | `PUT /v1/computers/{name}/cdp-token` (raw body) | `provisionCdpToken()`; passed through stdin, never stored or logged |
 | `GET /v1/computers/{name}/screenshot` → `image/png` | `screenshot()`; the app converts to JPEG as today |
 | `POST /v1/computers/{name}/input` `{kind: click\|type\|key\|scroll\|drag, …}` | the five input methods, same validation as `docker.ts` |
-| `POST /v1/computers/{name}/exec` `{command, timeoutSeconds, cwd?}` | `exec()` (S5 adds NDJSON streaming) |
+| `POST /v1/computers/{name}/exec` `{command, timeoutSeconds, cwd?}` → `{stdoutBase64, stderrBase64, stdoutTruncated, stderrTruncated, exitCode, timedOut, durationMs}` | `exec()`: each stream's first 1 MiB as base64 (JSON escapes cost six bytes per control byte); at most 4 at once per computer and 24 per host, else 429 `too_many_commands` (S5 adds NDJSON streaming) |
 | `GET /v1/computers/{name}/files?path=` · `/files/info?path=` · `GET`/`PUT /files/content?path=&maxBytes=` | `listFiles`, `fileInfo`, `readFile`, `writeFile`; realpath as uid 1000 and the same path rules as `docker.ts` (shared fixture `tests/fixtures/computer-paths.json`) |
 | `GET /v1/computers/{name}/disk` | `diskUsageMb()` |
 | `PUT`/`DELETE`/`GET /v1/computers/{name}/vnc` | `startVnc` (passwords in the body, passed through stdin), `stopVnc`, `isVncRunning` |

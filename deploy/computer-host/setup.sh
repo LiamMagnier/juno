@@ -8,7 +8,9 @@
 #        [--tls private|certbot|own] [--certbot-email <e>] [--cert <f> --key <f>] \
 #        [--namespace <ns>] [--ssh-from <cidr>] [--max-running N]
 #
-# What it sets up:
+# What it sets up (the firewall first, so 443 never answers anyone but --web-ip):
+#   - nftables (table inet juno_computer_host): 443 from --web-ip only, SSH from --ssh-from,
+#     the computers' own way to the egress proxy, everything else dropped;
 #   - user juno-computer-host (no login, no docker group, no sudo);
 #   - the shared computer steps of deploy/agent-computers/setup-vm.sh --computer-host:
 #     the juno-computers network (172.30.0.0/24, bridge br-juno, no container-to-container
@@ -23,14 +25,13 @@
 #     destroyed once the host's certificate is signed; or Let's Encrypt with port 80 open
 #     only while a renewal runs; or the owner's own files;
 #   - nginx on 443 in front (path-free logs, the tunnel and exec timeouts);
-#   - nftables (table inet juno_computer_host): 443 from --web-ip only, SSH from --ssh-from,
-#     the computers' own way to the egress proxy, everything else dropped;
 #   - the first token for --namespace (default: prod). Only its sha256 is kept on the
 #     host; the token itself is written once to a root-only file whose path is printed.
 #
 # Maintenance (run on the host, as root):
 #   --add-token --namespace <ns>   a second token for a namespace (rotation; at most two)
-#   --retire-token <id>            stop accepting one (after the web VM has the new one)
+#   --retire-token <id>            stop accepting one (after the web VM has the new one); its
+#                                  tunnel tickets and open tunnels are closed too
 #   --renew-tls                    a new certificate (private: a new CA too)
 #   --rebuild-image                docker build --pull --no-cache, check the label, prune
 #   --rebuild-timer on|off         a weekly --rebuild-image (it pulls Debian packages)
@@ -155,18 +156,24 @@ esac
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo" >&2; exit 1; }
 
 new_token() {  # <namespace>: adds a token, prints the root-only file that holds it
-  local ns="$1" id token file
+  local ns="$1" id file
   id="t$(date -u +%Y%m%d%H%M%S)$(openssl rand -hex 2)"
-  token="$(openssl rand -hex 32)"
-  python3 - "$TOKENS" "$id" "$ns" "$token" <<'PY'
-import hashlib, json, os, sys
-path, token_id, namespace, token = sys.argv[1:]
+  file="/root/juno-computer-host-token-$id.txt"
+  # The token is made, hashed and written inside python: never a shell variable
+  # or a command-line argument (any local user can read /proc/<pid>/cmdline).
+  # The root-only file is written before the hash goes in force.
+  python3 - "$TOKENS" "$id" "$ns" "$file" <<'PY' || return 1
+import hashlib, json, os, secrets, sys
+path, token_id, namespace, out = sys.argv[1:]
 entries = []
 if os.path.exists(path):
     with open(path, encoding="utf-8") as file:
         entries = json.load(file)
 if sum(1 for entry in entries if entry["namespace"] == namespace) >= 2:
     sys.exit("namespace %s already has two tokens: retire one first (--retire-token <id>)" % namespace)
+token = secrets.token_hex(32)  # 32 random bytes, 64 hex: the format the host and the app check
+with os.fdopen(os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as file:
+    file.write(token + "\n")
 entries.append({"id": token_id, "sha256": hashlib.sha256(token.encode()).hexdigest(), "namespace": namespace})
 with open(path + ".part", "w", encoding="utf-8") as file:
     json.dump(entries, file, indent=1)
@@ -174,8 +181,6 @@ os.replace(path + ".part", path)
 PY
   chown root:"$SERVICE_USER" "$TOKENS"
   chmod 0640 "$TOKENS"
-  file="/root/juno-computer-host-token-$id.txt"
-  (umask 077 && printf '%s\n' "$token" > "$file")
   echo "$file"
 }
 
@@ -248,7 +253,7 @@ os.replace(path + ".part", path)
 PY
     chown root:"$SERVICE_USER" "$TOKENS"; chmod 0640 "$TOKENS"
     reload_service
-    echo "Retired $TOKEN_ID; the host no longer accepts it."
+    echo "Retired $TOKEN_ID; the host no longer accepts it, and its tunnel tickets and open tunnels are closed."
     exit 0 ;;
   renew-tls)
     [ -n "$DOMAIN" ] || DOMAIN="$(python3 -c 'import json; print(json.load(open("/etc/juno/computer-host-setup.json"))["domain"])')"
@@ -313,6 +318,20 @@ if not (10, 4) <= version < (15, 0):
 print("    websockets %s" % websockets.__version__)
 PY
 systemctl enable --now docker
+
+# The firewall goes first, before nginx serves 443 or the service starts, so the
+# API is never reachable from anywhere but --web-ip, even if setup stops halfway.
+# The package's default nginx site (port 80, every interface) goes too: only
+# certbot's standalone renewals use port 80, through their own firewall hooks.
+echo "==> Firewall (nftables, input only)"
+[ -n "$SSH_FROM" ] || echo "WARNING: --ssh-from not given; SSH stays open to everyone. Re-run with your admin CIDR." >&2
+print_nftables > /etc/nftables.d-juno-computer-host.conf
+nft list table inet juno_computer_host >/dev/null 2>&1 && nft delete table inet juno_computer_host
+nft -f /etc/nftables.d-juno-computer-host.conf
+grep -q "nftables.d-juno-computer-host.conf" /etc/nftables.conf 2>/dev/null || echo 'include "/etc/nftables.d-juno-computer-host.conf"' >> /etc/nftables.conf
+systemctl enable nftables
+rm -f /etc/nginx/sites-enabled/default
+systemctl reload nginx 2>/dev/null || true
 
 echo "==> User"
 id "$SERVICE_USER" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
@@ -379,7 +398,8 @@ path, max_running, api, tunnel = sys.argv[1:]
 config = {"image": "juno-computer:1", "network": "juno-computers", "subnet": "172.30.0.0/24", "gateway": "172.30.0.1",
           "memoryMb": 2048, "cpus": 2, "minFreeMemMb": 1024, "minFreeDiskMb": 10240, "maxRunning": int(max_running),
           "listen": "127.0.0.1", "apiPort": int(api), "tunnelPort": int(tunnel), "ticketTtlSeconds": 60,
-          "maxTicketsPerComputer": 16, "tokensFile": "/etc/juno/computer-host-tokens.json",
+          "maxTicketsPerComputer": 16, "maxCommandsPerComputer": 4, "maxConcurrentCommands": 24,
+          "tokensFile": "/etc/juno/computer-host-tokens.json",
           "brokerPolicy": "/etc/juno/computer-host-broker.json", "brokerSocket": "/run/juno-computer-host/broker.sock",
           "dockerRoot": "/var/lib/docker", "tlsCertificate": "/etc/juno/computer-host-cert.pem"}
 with open(path, "w", encoding="utf-8") as file:
@@ -448,21 +468,16 @@ nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
-echo "==> Firewall (nftables, input only)"
-[ -n "$SSH_FROM" ] || echo "WARNING: --ssh-from not given; SSH stays open to everyone. Re-run with your admin CIDR." >&2
-print_nftables > /etc/nftables.d-juno-computer-host.conf
-nft list table inet juno_computer_host >/dev/null 2>&1 && nft delete table inet juno_computer_host
-nft -f /etc/nftables.d-juno-computer-host.conf
-grep -q "nftables.d-juno-computer-host.conf" /etc/nftables.conf 2>/dev/null || echo 'include "/etc/nftables.d-juno-computer-host.conf"' >> /etc/nftables.conf
-systemctl enable nftables
-
 echo "==> Health"
+# The token never goes on a command line (any local user can read those in the
+# process list): printf is a shell builtin, and curl reads the header from stdin.
 TOKEN_FOR_CHECK=""
 [ -n "$FIRST_TOKEN_FILE" ] && TOKEN_FOR_CHECK="$(cat "$FIRST_TOKEN_FILE")"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   if [ -z "$TOKEN_FOR_CHECK" ]; then
     systemctl is-active --quiet juno-computer-host.service && { echo "juno-computer-host is running"; break; }
-  elif curl -fsS -H "Authorization: Bearer $TOKEN_FOR_CHECK" "http://127.0.0.1:$API_PORT/v1/available" | grep -q '"ok": true'; then
+  elif printf 'Authorization: Bearer %s\n' "$TOKEN_FOR_CHECK" \
+      | curl -fsS -H @- "http://127.0.0.1:$API_PORT/v1/available" | grep -q '"ok": true'; then
     echo "juno-computer-host is healthy on 127.0.0.1:$API_PORT"
     break
   fi
@@ -480,5 +495,5 @@ echo "  and for the relay: RELAY_COMPUTER_HOSTS=https://$DOMAIN"
 echo "Keep AGENT_COMPUTER_ROLLOUT=allowlist and list the first accounts in AGENT_COMPUTER_ALLOWLIST."
 echo
 echo "Check the address this host sees for the web VM (Azure may SNAT it): from the web VM run"
-echo "  curl -fsS -H \"Authorization: Bearer \$COMPUTER_HOST_TOKEN\" https://$DOMAIN/v1/health"
+echo "  printf 'Authorization: Bearer %s\\n' \"\$COMPUTER_HOST_TOKEN\" | curl -fsS -H @- https://$DOMAIN/v1/health"
 echo "and compare its \"source\" with --web-ip ($WEB_IP). If they differ, re-run with --web-ip <source>."

@@ -12,7 +12,8 @@
  * stand-in for Anthropic's streaming API (the harness of
  * tests/work-park-resume.integration.test.ts), so the wiring is exercised, not
  * read: an agent's run is offered `remember` and a plain run is not; a note
- * the run saves waits for the person and a secret is refused; the run that
+ * the run saves waits for the person, even for an agent granted all of their
+ * memory, and a secret is refused; the run that
  * finishes a goal's last milestone checks the success criteria with the run's
  * own model and records the verdict; the goal driver then makes the goal
  * `achieved` only on MET and `unverified` on NOT MET. No model is called: the
@@ -93,6 +94,8 @@ if (!url) {
       // Two goals whose every step ran: one the check found a gap in, one never checked.
       const finishedGoal = async (title: string, check: { verdict: string; why: string | null } | null) => {
         const session = await db.workSession.create({ data: { userId: owner, agentId, title: `${title}: share`, goal: "Share it", status: "completed" } });
+        // The step's completed run: only its own check counts (`latestGoalCriteriaCheck`).
+        const run = await db.workRun.create({ data: { userId: owner, sessionId: session.id, status: "completed", finishedAt: new Date() } });
         const goal = await db.agentGoal.create({
           data: {
             userId: owner,
@@ -110,7 +113,7 @@ if (!url) {
         });
         await db.workSession.update({ where: { id: session.id }, data: { goalId: goal.id, goalStepKey: "share" } });
         if (check) {
-          await recordAgentEvent({ userId: owner, agentId, kind: "goal_checked", title: "Checked", sessionId: session.id, detail: { goalId: goal.id, ...check } });
+          await recordAgentEvent({ userId: owner, agentId, kind: "goal_checked", title: "Checked", sessionId: session.id, detail: { goalId: goal.id, runId: run.id, ...check } });
         }
         return goal;
       };
@@ -202,7 +205,7 @@ if (!url) {
       const { decryptField } = await import("../src/lib/field-crypto");
 
       type Block = { type: string; text?: string; content?: unknown; tool_use_id?: string; name?: string };
-      type Seen = { kind: "loop" | "judge" | "criteria" | "other"; scenario: string; model: string; tools: string[]; text: string; results: string[] };
+      type Seen = { kind: "loop" | "judge" | "criteria" | "other"; scenario: string; model: string; maxTokens: number; tools: string[]; text: string; results: string[] };
       const seen: Seen[] = [];
       const flat = (value: unknown): string =>
         typeof value === "string" ? value : Array.isArray(value) ? value.map((part) => flat((part as Block).text ?? (part as Block).content ?? "")).join("") : "";
@@ -235,7 +238,7 @@ if (!url) {
             : marker === "other"
               ? "other"
               : "loop";
-        seen.push({ kind, scenario: marker, model: String(body.model), tools, text, results });
+        seen.push({ kind, scenario: marker, model: String(body.model), maxTokens: Number(body.max_tokens), tools, text, results });
         if (kind === "criteria") {
           return { text: marker === "met" ? "MET — the report reached finance and every invoice is matched" : "NOT MET — nothing shows the report reached finance" };
         }
@@ -347,12 +350,12 @@ if (!url) {
       try {
         await db.user.create({ data: { id: owner, email: `${owner}@example.invalid` } });
         await db.subscription.create({ data: { userId: owner, plan: "MAX", status: "ACTIVE", currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000) } });
-        // "Your profile" (the default) asks for review; "Everything" would keep a note at once, never a secret.
+        // A task's note waits for review under every memory setting, "Everything" included; a secret is never kept.
         const mira = await db.agent.create({ data: { userId: owner, name: "Mira", role: "Finance" } });
         const otto = await db.agent.create({ data: { userId: owner, name: "Otto", role: "Finance", memoryAccess: "full" } });
 
-        const met = await queueStep("met", mira.id);
-        const gap = await queueStep("gap", otto.id);
+        const met = await queueStep("met", otto.id);
+        const gap = await queueStep("gap", mira.id);
         const plain = await queueStep("plain", null);
 
         runner = spawn(process.execPath, ["--import", "tsx", "scripts/work-runner.ts"], {
@@ -387,20 +390,20 @@ if (!url) {
         assert.ok(loops("met").length >= 2 && loops("met")[0]!.tools.includes("remember"), "an agent's run has remember");
         assert.ok(loops("plain").length >= 1 && !loops("plain")[0]!.tools.includes("remember"), "a run that is no agent's does not");
 
-        // Under "Your profile" the note waits for the person, encrypted, and the model is told so.
-        const notes = await db.agentNote.findMany({ where: { userId: owner, agentId: mira.id } });
+        // Under "Everything you share with chats" the note still waits for the person, encrypted, and the model is told so.
+        const notes = await db.agentNote.findMany({ where: { userId: owner, agentId: otto.id } });
         assert.equal(notes.length, 1);
         assert.equal(notes[0]!.status, "pending");
         assert.equal(notes[0]!.source, "agent");
         assert.match(notes[0]!.content, /^enc:/);
         assert.equal(decryptField(notes[0]!.content), NOTES.met);
         assert.ok(loops("met").some((call) => call.results.some((result) => /Saved for the person to review/.test(result))), "the tool result says it waits");
-        const learned = await db.agentEvent.findFirstOrThrow({ where: { userId: owner, agentId: mira.id, kind: "note_learned" } });
+        const learned = await db.agentEvent.findFirstOrThrow({ where: { userId: owner, agentId: otto.id, kind: "note_learned" } });
         assert.equal((learned.detail as { runId?: string }).runId, met.runId);
         assert.doesNotMatch(JSON.stringify(learned), /Mondays/, "the log says that it learned, never what");
 
-        // A secret is refused even for an agent that may read everything, and nothing is stored.
-        assert.equal(await db.agentNote.count({ where: { userId: owner, agentId: otto.id } }), 0);
+        // A secret is refused, and nothing is stored.
+        assert.equal(await db.agentNote.count({ where: { userId: owner, agentId: mira.id } }), 0);
         assert.ok(loops("gap").some((call) => call.results.some((result) => /never keep secrets/.test(result))), "the refusal reaches the model");
 
         // The last milestone's run checked the criteria, with the run's own model, over what it produced.
@@ -408,6 +411,7 @@ if (!url) {
         assert.deepEqual(criteria.map((call) => call.scenario).sort(), ["gap", "met"], "one check per goal's last step, none for the plain run");
         for (const call of criteria) {
           assert.equal(call.model, "claude-sonnet-5-5", "the run's own model, never a substitute");
+          assert.equal(call.maxTokens, 120, "the check's output bound (AGENT_GOAL_CHECK_MAX_TOKENS unset: the default)");
           assert.match(call.text, /The report is shared with finance/);
           assert.match(call.text, new RegExp(ANSWERS[call.scenario]!.slice(0, 30)));
         }

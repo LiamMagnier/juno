@@ -39,6 +39,8 @@ class StubHost {
   port = 0;
   calls: string[] = [];
   containers = new Map<string, string>();
+  /** When set, the host answers these lifecycle calls with this status and changes nothing (a broker refusing, or timing out). */
+  failing = new Map<string, number>();
 
   async up(): Promise<void> {
     this.server = createServer((request, response) => {
@@ -70,6 +72,8 @@ class StubHost {
         const [, name, action = ""] = match;
         if (!this.containers.has(name)) return reply(404, { error: "no_such_container" });
         if (action === "state") return reply(200, { state: this.containers.get(name) });
+        const failure = this.failing.get(action);
+        if (failure) return reply(failure, { error: failure === 504 ? "host_timeout" : "host_error" });
         if (action === "start" || action === "unpause") this.containers.set(name, "running");
         if (action === "stop") this.containers.set(name, "exited");
         if (action === "pause") this.containers.set(name, "paused");
@@ -213,5 +217,287 @@ describe("losing the computer host mid-run", () => {
     assert.equal(await store.computerWeekUsageSeconds("pro_1", new Date(back.getTime() + MINUTE)), 5 * 60 + 60);
     assert.ok(!host.calls.some((call) => call === "POST /v1/computers" || call.startsWith("DELETE")), JSON.stringify(host.calls));
     assert.equal(row?.containerRef, containerRef);
+  });
+});
+
+describe("a sleep or rest the host could not carry out", () => {
+  const MINUTE = 60_000;
+  const USER = "pro_2";
+  const AGENT = "agent_2";
+  const NAME = `juno-agent-${AGENT}`;
+  const T = Date.now();
+  const resumedAt = new Date(T - 10 * MINUTE);
+  const contactAt = new Date(T - 4 * MINUTE);
+  const metered = () => memDb.usage.filter((u) => u.agentId === AGENT).reduce((sum, u) => sum + u.seconds, 0);
+  const auditsOf = (kind: string) => memDb.audits.filter((a) => a.agentId === AGENT && a.kind === kind);
+  let containerRef: string | null = null;
+
+  it("wakes a second computer through the host (the setup)", async () => {
+    // The first suite's computer is put to sleep, so these passes see only this one.
+    await store.sleepComputer("pro_1", "agent_1", { now: new Date(T + 60 * MINUTE) });
+    host.failing.clear();
+    memDb.accessUsers.set(USER, { id: USER, email: null, emailVerified: null, plan: "PRO" });
+    access.resetComputerAvailabilityCacheForTest();
+    const awake = await store.ensureAwake(USER, AGENT, { autoEnable: true });
+    containerRef = awake.row.containerRef;
+    assert.equal(host.containers.get(NAME), "running");
+    await memDb.updateByAgent(USER, AGENT, { lastResumedAt: resumedAt, lastContactAt: contactAt, lastActiveAt: new Date(T) });
+    await host.down();
+  });
+
+  it("Sleep during an outage is held: never an error, never asleep, metered to the last contact", async () => {
+    const error = await store.sleepComputer(USER, AGENT, { reason: "person", actor: "web", now: new Date(T) }).then(() => null, (e: unknown) => e);
+    assert.ok(error instanceof errors.ComputerError);
+    assert.equal(error.message, errors.COMPUTER_UNREACHABLE);
+    let row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "stopping", "the computer may still be running on the host");
+    assert.equal(row?.lastError ?? null, null, "never marked as an error");
+    assert.equal(row?.billingStoppedAt?.getTime(), contactAt.getTime(), "the end is pinned at the last contact");
+    assert.equal(row?.lastResumedAt, null, "nothing accrues while the host is gone");
+    assert.equal(row?.containerRef, containerRef);
+    assert.equal(metered(), 6 * 60, "settled exactly up to the last contact");
+    assert.equal(auditsOf("host_unreachable").length, 1);
+    assert.equal(auditsOf("host_unreachable")[0]!.actor, "web");
+    // Still in the sweep's list, and still holding its slot on the caps.
+    assert.ok((await memDb.findAllActiveUnguarded()).some((r) => r.agentId === AGENT));
+    assert.equal(await memDb.countAwakeUser(USER), 1);
+
+    // Pressing Sleep again changes nothing.
+    await assert.rejects(() => store.sleepComputer(USER, AGENT, { reason: "person", actor: "web", now: new Date(T + MINUTE) }), {
+      message: errors.COMPUTER_UNREACHABLE,
+    });
+    row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.billingStoppedAt?.getTime(), contactAt.getTime());
+    assert.equal(metered(), 6 * 60);
+    assert.equal(auditsOf("host_unreachable").length, 1);
+  });
+
+  it("sweeps during the outage keep it held and meter nothing more", async () => {
+    for (const minutes of [30, 90]) {
+      const pass = await sweep.sweepAgentComputers({ now: new Date(T + minutes * MINUTE) });
+      assert.ok(pass.skipped.includes(AGENT), JSON.stringify(pass));
+      assert.ok(!pass.slept.includes(AGENT));
+    }
+    const row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "stopping");
+    assert.equal(row?.billingStoppedAt?.getTime(), contactAt.getTime());
+    assert.equal(metered(), 6 * 60);
+  });
+
+  it("once the host answers, the sweep stops the computer and nothing goes unmetered", async () => {
+    await host.up();
+    host.calls = [];
+    const back = new Date(T + 3 * 60 * MINUTE);
+    const pass = await sweep.sweepAgentComputers({ now: back });
+    assert.ok(pass.slept.includes(AGENT), JSON.stringify(pass));
+    assert.ok(host.calls.includes(`POST /v1/computers/${NAME}/stop`), JSON.stringify(host.calls));
+    assert.equal(host.containers.get(NAME), "exited", "the container is stopped on the host");
+    const row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "asleep");
+    assert.equal(row?.billingStoppedAt, null);
+    assert.equal(row?.lastResumedAt, null);
+    assert.equal(row?.containerRef, containerRef, "never recreated");
+    assert.equal(metered(), 6 * 60, "the interval before the outage, once; the outage itself never");
+    assert.equal(auditsOf("slept").at(-1)?.actor, "sweep");
+    assert.ok(!host.calls.some((call) => call === "POST /v1/computers" || call.startsWith("DELETE")), JSON.stringify(host.calls));
+  });
+
+  it("a stop the host answers with 502 is held the same way, and a run hears unavailable, not busy", async () => {
+    access.resetComputerAvailabilityCacheForTest();
+    await store.ensureAwake(USER, AGENT);
+    assert.equal(host.containers.get(NAME), "running");
+    host.failing.set("stop", 502);
+    await assert.rejects(() => store.sleepComputer(USER, AGENT, { reason: "person", actor: "web" }), { message: errors.COMPUTER_UNREACHABLE });
+    let row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "stopping");
+    assert.ok(row?.billingStoppedAt, "held for the host");
+    assert.equal(host.containers.get(NAME), "running", "the 502 stopped nothing");
+
+    const attempt = await store.resolveRunComputerSession({ userId: USER, agentId: AGENT, runId: "run_held" });
+    assert.equal(attempt.attached, false);
+    assert.ok(!attempt.attached && attempt.fallbackReason === "unavailable", JSON.stringify(attempt));
+    assert.ok(!attempt.attached && attempt.note === errors.COMPUTER_UNREACHABLE);
+    row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.leaseRunId ?? null, null);
+    assert.equal(row?.status, "stopping");
+  });
+
+  it("a wake finishes a held sleep first, then starts the computer", async () => {
+    host.failing.clear();
+    host.calls = [];
+    const before = auditsOf("slept").length;
+    const awake = await store.ensureAwake(USER, AGENT, { by: "person", actor: "web" });
+    assert.equal(awake.row.status, "awake");
+    assert.equal(awake.row.billingStoppedAt ?? null, null);
+    const stop = host.calls.indexOf(`POST /v1/computers/${NAME}/stop`);
+    const start = host.calls.indexOf(`POST /v1/computers/${NAME}/start`);
+    assert.ok(stop >= 0 && start > stop, JSON.stringify(host.calls));
+    assert.equal(auditsOf("slept").length, before + 1);
+    assert.equal(host.containers.get(NAME), "running");
+  });
+
+  it("a rest the host could not carry out puts the idle claim back and settles at the last contact", async () => {
+    const R = T + 5 * 60 * MINUTE;
+    await memDb.updateByAgent(USER, AGENT, {
+      lastResumedAt: new Date(R - 10 * MINUTE),
+      lastContactAt: new Date(R - 2 * MINUTE),
+      lastActiveAt: new Date(R - 5 * MINUTE),
+      lastViewedAt: null,
+    });
+    const before = metered();
+    const unreachableBefore = auditsOf("host_unreachable").length;
+    host.failing.set("pause", 502);
+    const failed = await sweep.sweepAgentComputers({ now: new Date(R) });
+    assert.ok(failed.skipped.includes(AGENT), JSON.stringify(failed));
+    let row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "awake", "the idle claim's stopping is put back, never an error");
+    assert.equal(row?.lastError ?? null, null);
+    assert.equal(row?.lastResumedAt, null, "nothing accrues until the host answers");
+    // The sweep reached the host for state() at R, so that is the last contact.
+    assert.equal(metered() - before, 10 * 60);
+    assert.equal(auditsOf("host_unreachable").length, unreachableBefore + 1);
+    assert.equal(host.containers.get(NAME), "running");
+
+    host.failing.clear();
+    await sweep.sweepAgentComputers({ now: new Date(R + MINUTE) });
+    row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.lastResumedAt?.getTime(), R + MINUTE, "metering resumes at the first contact");
+    const rested = await sweep.sweepAgentComputers({ now: new Date(R + 5 * MINUTE) });
+    assert.ok(rested.rested.includes(AGENT), JSON.stringify(rested));
+    row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "resting");
+    assert.equal(host.containers.get(NAME), "paused");
+    assert.equal(metered() - before, 10 * 60 + 4 * 60);
+  });
+});
+
+describe("finishing a held sleep is a claim", () => {
+  const MINUTE = 60_000;
+  const USER = "pro_3";
+  const AGENT = "agent_3";
+  const NAME = `juno-agent-${AGENT}`;
+  const callsFor = () => host.calls.filter((call) => call.includes(NAME) && !call.endsWith("/state"));
+  const auditsOf = (kind: string) => memDb.audits.filter((a) => a.agentId === AGENT && a.kind === kind);
+
+  async function holdASleep(): Promise<void> {
+    access.resetComputerAvailabilityCacheForTest();
+    await store.ensureAwake(USER, AGENT, { autoEnable: true });
+    assert.equal(host.containers.get(NAME), "running");
+    await host.down();
+    await assert.rejects(() => store.sleepComputer(USER, AGENT, { reason: "person", actor: "web" }), {
+      message: errors.COMPUTER_UNREACHABLE,
+    });
+    const row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "stopping");
+    assert.ok(row?.billingStoppedAt, "held for the host");
+    await host.up();
+    host.calls = [];
+    access.resetComputerAvailabilityCacheForTest();
+  }
+
+  it("a run that finishes the held sleep after the sweep read the row keeps its computer and its lease", async () => {
+    memDb.accessUsers.set(USER, { id: USER, email: null, emailVerified: null, plan: "PRO" });
+    await holdASleep();
+    // The sweep reads its rows; before it reaches this one, a run attaches the
+    // computer (finishing the held sleep and waking it).
+    const original = memDb.findAllActiveUnguarded.bind(memDb);
+    let attachment: Awaited<ReturnType<typeof store.resolveRunComputerSession>> | null = null;
+    memDb.findAllActiveUnguarded = async () => {
+      const rows = await original();
+      attachment = await store.resolveRunComputerSession({ userId: USER, agentId: AGENT, runId: "run_live" });
+      return rows;
+    };
+    let pass: Awaited<ReturnType<typeof sweep.sweepAgentComputers>>;
+    try {
+      pass = await sweep.sweepAgentComputers({ now: new Date() });
+    } finally {
+      memDb.findAllActiveUnguarded = original;
+    }
+    const attached = attachment as Awaited<ReturnType<typeof store.resolveRunComputerSession>> | null;
+    assert.ok(attached?.attached, JSON.stringify(attached));
+    assert.ok(!pass.slept.includes(AGENT), "the sweep's stale read claims nothing");
+    const row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.leaseRunId, "run_live", "the run still holds its lease");
+    assert.equal(row?.status, "awake");
+    assert.equal(host.containers.get(NAME), "running", "the run's computer is still running");
+    const calls = callsFor();
+    assert.equal(calls.filter((call) => call.endsWith("/stop")).length, 1, JSON.stringify(calls));
+    assert.ok(calls.indexOf(`POST /v1/computers/${NAME}/stop`) < calls.indexOf(`POST /v1/computers/${NAME}/start`));
+    if (attached?.attached) await attached.release();
+  });
+
+  it("a wake that loses the claim to the sweep waits for that sleep, then wakes: one stop, metered once", async () => {
+    await store.sleepComputer(USER, AGENT, { actor: "web" });
+    await holdASleep();
+    // A held sleep whose interval is still open (a ledger write that failed after the stop).
+    const end = new Date(Date.now() - MINUTE);
+    const resumed = new Date(end.getTime() - 5 * MINUTE);
+    await memDb.updateByAgent(USER, AGENT, { billingStoppedAt: end, lastResumedAt: resumed });
+    const meteredFrom = () => memDb.usage.filter((u) => u.agentId === AGENT && u.startedAt.getTime() === resumed.getTime());
+    const sleptBefore = auditsOf("slept").length;
+    // The wake reads the held row; the sweep claims and finishes it before the wake's claim lands.
+    const original = memDb.claimHeldSleepCas.bind(memDb);
+    let sweepPass: Awaited<ReturnType<typeof sweep.sweepAgentComputers>> | null = null;
+    let first = true;
+    memDb.claimHeldSleepCas = async (...args: Parameters<typeof original>) => {
+      if (first) {
+        first = false;
+        sweepPass = await sweep.sweepAgentComputers({ now: new Date() });
+      }
+      return original(...args);
+    };
+    let awake: Awaited<ReturnType<typeof store.ensureAwake>>;
+    try {
+      awake = await store.ensureAwake(USER, AGENT, { by: "person", actor: "web" });
+    } finally {
+      memDb.claimHeldSleepCas = original;
+    }
+    const pass = sweepPass as Awaited<ReturnType<typeof sweep.sweepAgentComputers>> | null;
+    assert.ok(pass?.slept.includes(AGENT), JSON.stringify(pass));
+    assert.equal(awake.row.status, "awake");
+    assert.equal(awake.row.billingStoppedAt ?? null, null);
+    assert.equal(host.containers.get(NAME), "running");
+    const calls = callsFor();
+    assert.equal(calls.filter((call) => call.endsWith("/stop")).length, 1, `one finisher stops it: ${JSON.stringify(calls)}`);
+    assert.ok(calls.indexOf(`POST /v1/computers/${NAME}/stop`) < calls.indexOf(`POST /v1/computers/${NAME}/start`));
+    assert.equal(auditsOf("slept").length, sleptBefore + 1, "one sleep, the sweep's");
+    assert.equal(auditsOf("slept").at(-1)?.actor, "sweep");
+    assert.deepEqual(meteredFrom().map((u) => u.seconds), [5 * 60], "the held interval, once, up to its pinned end");
+  });
+
+  it("a wake that lost the host after docker start is put to sleep once past the grace, never left running", async () => {
+    await store.sleepComputer(USER, AGENT, { actor: "web" });
+    assert.equal(host.containers.get(NAME), "exited");
+    host.failing.set("cdp-token", 502);
+    await assert.rejects(() => store.ensureAwake(USER, AGENT, { by: "person", actor: "web" }), { message: errors.COMPUTER_UNREACHABLE });
+    host.failing.clear();
+    let row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "starting");
+    assert.equal(host.containers.get(NAME), "running", "docker start went through");
+    const t = Date.now();
+    const early = await sweep.sweepAgentComputers({ now: new Date(t + MINUTE) });
+    assert.ok(!early.slept.includes(AGENT), "inside the grace a wake may still be finishing");
+    assert.equal(host.containers.get(NAME), "running");
+    const late = await sweep.sweepAgentComputers({ now: new Date(t + 6 * MINUTE) });
+    assert.ok(late.slept.includes(AGENT), JSON.stringify(late));
+    row = await memDb.findByAgent(USER, AGENT);
+    assert.equal(row?.status, "asleep");
+    assert.equal(host.containers.get(NAME), "exited", "its awake slot is given back");
+    assert.equal(auditsOf("slept").at(-1)?.actor, "sweep");
+    // It wakes normally afterwards.
+    access.resetComputerAvailabilityCacheForTest();
+    assert.equal((await store.ensureAwake(USER, AGENT, { by: "person", actor: "web" })).row.status, "awake");
+  });
+
+  it("a sleep that crashed after its claim (stopping, nothing held) is finished past the grace", async () => {
+    assert.equal(host.containers.get(NAME), "running");
+    await memDb.updateByAgent(USER, AGENT, { status: "stopping", leaseRunId: null, leaseExpiresAt: null });
+    const t = Date.now();
+    assert.ok(!(await sweep.sweepAgentComputers({ now: new Date(t + MINUTE) })).slept.includes(AGENT));
+    assert.equal(host.containers.get(NAME), "running");
+    const late = await sweep.sweepAgentComputers({ now: new Date(t + 6 * MINUTE) });
+    assert.ok(late.slept.includes(AGENT), JSON.stringify(late));
+    assert.equal((await memDb.findByAgent(USER, AGENT))?.status, "asleep");
+    assert.equal(host.containers.get(NAME), "exited");
   });
 });

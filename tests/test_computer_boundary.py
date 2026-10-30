@@ -54,16 +54,13 @@ asked and refuses a host that already has a `juno-computers` network:
 JUNO_COMPUTER_TEST_SANDBOX=off runs every computer under Docker's default
 seccomp profile; the default (auto) probes this kernel as setup-vm.sh does.
 Teardown removes what setup added (JUNO_COMPUTER_BOUNDARY_KEEP=1 keeps it to debug).
+The arrangement itself (Host) lives in tests/computer_host_fixture.py, which also
+brings it up and down on its own for tests/computer-real-e2e.test.ts.
 """
-import hashlib
 import importlib.util
-import io
 import json
 import os
 import shutil
-import signal
-import socket
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -71,23 +68,12 @@ import threading
 import time
 import unittest
 import urllib.request
-import zipfile
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "deploy/agent-computers"
 REQUIRED = os.environ.get("JUNO_COMPUTER_DOCKER_TESTS") == "1"
-IMAGE = os.environ.get("JUNO_COMPUTER_IMAGE", "juno-computer:1")
 SLACK = float(os.environ.get("JUNO_COMPUTER_TEST_SLACK") or 1)
-NETWORK = "juno-computers"          # setup-vm.sh and src/lib/env.ts
-SUBNET = "172.30.0.0/24"
-BRIDGE = "br-juno"
-GATEWAY = "172.30.0.1"
-PROXY_PORT = 3128
-FALLBACK_IP_IMAGE = "alpine:3.20"   # only where the host has no iproute2
-LAUNCHER = "/opt/juno/agent-exec"
-SECCOMP_PROFILE = str(DEPLOY / "seccomp-chromium.json")
 DNS_SENTINEL = "192.0.2.53"
 STATE_TMPFS = "/run/juno-state:rw,nosuid,nodev,noexec,size=64k,uid=1001,gid=1001,mode=0755"
 
@@ -101,20 +87,29 @@ def load(name, path):
 
 broker = load("computer_broker", "deploy/agent-computers/docker-broker.py")
 sandbox_probe = load("sandbox_probe", "tests/sandbox_probe.py")
-POLICY = {"image": IMAGE, "network": NETWORK, "maxMemoryMb": 2048, "maxCpus": 2}
-
-# Addresses put on the host's lo for the run. A container's packet to one of them
-# is delivered to the host (INPUT), exactly like a packet to the host's own
-# address: the default bridge accepts it, br-juno must not.
-CANARY_ADDRESSES = ("169.254.170.2", "10.231.0.1", "192.168.231.1")
-# A GLOBAL address on lo, named in /etc/hosts, for the proxy's positive control:
-# the proxy only connects to global addresses, so a local "public host" lets curl,
-# pip, npm, git and Chromium prove they work through it without the Internet.
-# 192.88.99.0/24 is the deprecated 6to4 relay anycast block (RFC 7526): global to
-# Python's ipaddress, used by nothing here. Removed in teardown.
-PUBLIC_CANARY = "192.88.99.80"
-PUBLIC_NAME = "juno-egress-canary.test"
-HOSTS_LINE = "%s %s  # juno computer boundary test" % (PUBLIC_CANARY, PUBLIC_NAME)
+# The host arrangement (network, firewall, proxy, map watcher, canaries) is the
+# fixture's, shared with tests/computer-real-e2e.test.ts: one definition, so both
+# suites test the same arrangement. POLICY is the fixture's dict itself, so the
+# sandbox decision Host.run() writes into it is the one `brokered` validates with.
+fixture = load("computer_host_fixture", "tests/computer_host_fixture.py")
+IMAGE = fixture.IMAGE
+NETWORK = fixture.NETWORK
+SUBNET = fixture.SUBNET
+BRIDGE = fixture.BRIDGE
+GATEWAY = fixture.GATEWAY
+PROXY_PORT = fixture.PROXY_PORT
+LAUNCHER = fixture.LAUNCHER
+SECCOMP_PROFILE = fixture.SECCOMP_PROFILE
+POLICY = fixture.POLICY
+CANARY_ADDRESSES = fixture.CANARY_ADDRESSES
+PUBLIC_CANARY = fixture.PUBLIC_CANARY
+PUBLIC_NAME = fixture.PUBLIC_NAME
+CANARY_BODY = fixture.CANARY_BODY
+docker = fixture.docker
+host_has_internet = fixture.host_has_internet
+canary_wheel = fixture.canary_wheel
+WHEEL_NAME = fixture.WHEEL_NAME
+Host = fixture.Host
 # What the host holds and a computer must never see.
 HOST_SECRET_NAMES = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "DATABASE_URL", "DIRECT_URL",
                      "AUTH_SECRET", "NEXTAUTH_SECRET", "JUNO_CDP_TOKEN", "COMPUTER_VNC_PASSWORD",
@@ -129,17 +124,6 @@ PSEUDO_FILESYSTEMS = {"overlay", "proc", "sysfs", "tmpfs", "devpts", "mqueue", "
 COMPUTER_HOST_MOUNTS = {"/home/agent", "/home/browser", "/etc/hosts", "/etc/hostname", "/etc/resolv.conf"}
 BLOCKED = ("timeout", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH")
 NO_IPV6_ROUTE = ("ENETUNREACH", "EADDRNOTAVAIL", "EAFNOSUPPORT")
-CANARY_BODY = b"juno-boundary-canary"
-# What firewall.sh adds, in the order teardown removes it (the chain last).
-FIREWALL_RULES = [
-    ("iptables", "DOCKER-USER", ["-i", BRIDGE, "-j", "JUNO-COMPUTERS"]),
-    ("iptables", "INPUT", ["-i", BRIDGE, "-d", GATEWAY, "-p", "tcp", "--dport", str(PROXY_PORT), "-j", "ACCEPT"]),
-    ("iptables", "INPUT", ["-i", BRIDGE, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"]),
-    ("iptables", "INPUT", ["-i", BRIDGE, "-j", "DROP"]),
-    ("ip6tables", "DOCKER-USER", ["-i", BRIDGE, "-j", "DROP"]),
-    ("ip6tables", "INPUT", ["-i", BRIDGE, "-j", "DROP"]),
-    ("iptables", "JUNO-COMPUTERS", None),
-]
 # The real broker, with only its two fixed paths pointed at this run's files:
 # the policy, and the address-map helper's map (its argv and checks unchanged).
 BROKER_SHIM = r"""
@@ -155,13 +139,6 @@ sys.exit(broker.run_cli())
 """
 
 
-def docker(*args, check=True, timeout=300, input_text=None):
-    result = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout, input=input_text)
-    if check and result.returncode != 0:
-        raise AssertionError("docker %s failed (%d): %s" % (" ".join(args[:3]), result.returncode, result.stderr.strip()[-800:]))
-    return result
-
-
 def brokered(argv, check=True, timeout=300, input_text=None, background=False):
     """Run docker THROUGH the production broker (validation, namespace check, map hooks)."""
     broker.validate(argv, POLICY)  # fail fast with the broker's own words
@@ -173,39 +150,6 @@ def brokered(argv, check=True, timeout=300, input_text=None, background=False):
     if check and result.returncode != 0:
         raise AssertionError("broker %s failed (%d): %s" % (" ".join(argv[:3]), result.returncode, result.stderr.strip()[-800:]))
     return result
-
-
-def ip(*args, check=True):
-    if shutil.which("ip"):
-        result = subprocess.run(["ip", *args], capture_output=True, text=True)
-    else:
-        result = docker("run", "--rm", "--network", "host", "--cap-add", "NET_ADMIN", FALLBACK_IP_IMAGE, "ip", *args, check=False)
-    if check and result.returncode != 0:
-        raise AssertionError("ip %s: %s" % (" ".join(args), result.stderr.strip()))
-    return result
-
-
-def host_primary_address():
-    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        probe.connect(("192.0.2.1", 9))
-        return probe.getsockname()[0]
-    except OSError:
-        return None
-    finally:
-        probe.close()
-
-
-def host_has_internet():
-    """The host resolves a public name and connects to it: what the proxy itself needs.
-    (A bare connect to a public IP is not enough: some sandboxes accept every
-    outbound TCP connection at a middlebox and resolve nothing.)"""
-    try:
-        address = socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)[0][4]
-        socket.create_connection(address[:2], timeout=4).close()
-        return True
-    except OSError:
-        return False
 
 
 def security_options(policy=None):
@@ -385,283 +329,6 @@ class Computer:
         docker("rm", "-f", self.name, check=False)
         for volume in (self.name + "-browser", self.name):
             docker("volume", "rm", "-f", volume, check=False)
-
-
-class CanaryHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(CANARY_BODY)))
-        self.end_headers()
-        self.wfile.write(CANARY_BODY)
-
-    def log_message(self, *args):
-        pass
-
-
-def canary_wheel():
-    """A minimal wheel with a console script: what pip downloads and installs."""
-    buffer = io.BytesIO()
-    files = {
-        "juno_canary/__init__.py": "def main():\n    print('juno-canary-tool ran')\n",
-        "juno_canary-1.0.dist-info/METADATA": "Metadata-Version: 2.1\nName: juno-canary\nVersion: 1.0\n",
-        "juno_canary-1.0.dist-info/WHEEL": "Wheel-Version: 1.0\nGenerator: juno-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
-        "juno_canary-1.0.dist-info/entry_points.txt": "[console_scripts]\njuno-canary-tool = juno_canary:main\n",
-    }
-    record = []
-    with zipfile.ZipFile(buffer, "w") as wheel:
-        for path, text in files.items():
-            data = text.encode()
-            wheel.writestr(path, data)
-            digest = __import__("base64").urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
-            record.append("%s,sha256=%s,%d" % (path, digest, len(data)))
-        record.append("juno_canary-1.0.dist-info/RECORD,,")
-        wheel.writestr("juno_canary-1.0.dist-info/RECORD", "\n".join(record) + "\n")
-    return buffer.getvalue()
-
-
-WHEEL_NAME = "juno_canary-1.0-py3-none-any.whl"
-
-
-class PublicCanaryHandler(BaseHTTPRequestHandler):
-    """A small "public host": the canary page, a PyPI simple index with one
-    wheel, an npm registry document, a git repository over dumb HTTP, and a
-    large file for the bandwidth budget."""
-
-    def do_GET(self):
-        path = self.path.split("?", 1)[0]
-        wheel = canary_wheel()
-        sha = hashlib.sha256(wheel).hexdigest()
-        tarball_url = "http://%s/npm/juno-canary-1.0.0.tgz" % PUBLIC_NAME
-        routes = {
-            "/": (b"text/plain", CANARY_BODY),
-            "/simple/juno-canary/": (b"text/html", ('<a href="/files/%s#sha256=%s">%s</a>' % (WHEEL_NAME, sha, WHEEL_NAME)).encode()),
-            "/files/" + WHEEL_NAME: (b"application/octet-stream", wheel),
-            "/npm/juno-canary": (b"application/json", json.dumps({
-                "name": "juno-canary", "dist-tags": {"latest": "1.0.0"},
-                "versions": {"1.0.0": {"name": "juno-canary", "version": "1.0.0", "description": "juno canary",
-                                       "dist": {"tarball": tarball_url, "shasum": "0" * 40}}}}).encode()),
-            "/repo.git/info/refs": (b"text/plain", b"1111111111111111111111111111111111111111\trefs/heads/main\n"),
-            "/repo.git/HEAD": (b"text/plain", b"ref: refs/heads/main\n"),
-            "/big": (b"application/octet-stream", b"z" * (2 * 1024 * 1024)),
-        }
-        if path not in routes:
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        kind, body = routes[path]
-        self.send_response(200)
-        self.send_header("Content-Type", kind.decode())
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *args):
-        pass
-
-
-def kernel_allows_the_browser_sandbox():
-    """setup-vm.sh's probe, in a throwaway container of the image: the browser
-    uid may create a user namespace under the permissive profile, and the agent
-    uid through its launcher may not."""
-    def probe(uid, *command):
-        return subprocess.run(["docker", "run", "--rm", "--network", "none", "--user", uid, "--cap-drop", "ALL",
-                               "--security-opt", "no-new-privileges", "--security-opt", "seccomp=" + SECCOMP_PROFILE,
-                               "--read-only", "--entrypoint", command[0], IMAGE, *command[1:]],
-                              capture_output=True, text=True, timeout=120)
-    if probe("1001", "unshare", "--user", "--map-root-user", "true").returncode != 0:
-        return False, "the kernel (or AppArmor) refuses user namespaces in a container"
-    ban = probe("1000", LAUNCHER, "run", "--", "unshare", "-Ur", "true")
-    if ban.returncode == 0:
-        raise AssertionError("the agent created a user namespace through its launcher under the permissive profile")
-    if "Operation not permitted" not in ban.stderr:
-        return False, "the launcher's ban could not be confirmed: " + ban.stderr[-300:]
-    return True, "the kernel allows user namespaces in a container and the launcher's ban holds"
-
-
-class Host:
-    """Everything setUpModule puts on the host, and how to take it off again."""
-
-    def __init__(self):
-        self.undo = []
-        self.proxy = None
-        self.watcher = None
-        self.canary_port = None
-        self.primary = host_primary_address()
-        self.directory = tempfile.mkdtemp(prefix="juno-boundary-")
-        self.map_file = os.path.join(self.directory, "run", "egress-map.json")
-        self.log_file = os.path.join(self.directory, "log", "egress.jsonl")
-        self.state_dir = os.path.join(self.directory, "state")
-        self.policy_file = os.path.join(self.directory, "computer-broker.json")
-        self.ca_file = os.path.join(self.directory, "canary-ca.pem")
-        self.sandbox = False
-        self.sandbox_reason = "off"
-
-    def write_policy(self):
-        with open(self.policy_file, "w") as file:
-            json.dump(POLICY, file)
-
-    def run(self):
-        self.undo.append(lambda: shutil.rmtree(self.directory, ignore_errors=True))
-        os.makedirs(os.path.dirname(self.log_file))
-        os.makedirs(self.state_dir)
-        if docker("network", "inspect", NETWORK, check=False).returncode == 0:
-            raise AssertionError("this host already has a %s network: run the suite on a disposable machine" % NETWORK)
-        # Chromium's sandbox, decided as setup-vm.sh decides it.
-        if os.environ.get("JUNO_COMPUTER_TEST_SANDBOX", "auto") == "auto":
-            self.sandbox, self.sandbox_reason = kernel_allows_the_browser_sandbox()
-        if self.sandbox:
-            POLICY.update({"browserSandbox": True, "seccompProfile": SECCOMP_PROFILE})
-        self.write_policy()
-        # The network, exactly as setup-vm.sh creates it.
-        docker("network", "create", "--driver", "bridge", "--subnet", SUBNET, "-o", "com.docker.network.bridge.name=" + BRIDGE,
-               "-o", "com.docker.network.bridge.enable_icc=false", NETWORK)
-        self.undo.append(lambda: docker("network", "rm", NETWORK, check=False))
-        # The firewall, exactly as installed. Teardown deletes only the rules
-        # firewall.sh added (Docker keeps managing its own around them).
-        added = [rule for rule in FIREWALL_RULES if not self._has_rule(rule)]
-        self.undo.append(lambda: self._remove_rules(added))
-        result = subprocess.run(["bash", str(DEPLOY / "firewall.sh")], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise AssertionError("firewall.sh failed: " + result.stderr[-800:])
-        # The address-map watcher and the egress proxy, the production scripts
-        # with the arguments and environment their units give them.
-        self.watcher = subprocess.Popen([sys.executable, "-I", str(DEPLOY / "egress-map.py"), "watch"],
-                                        env={"PATH": "/usr/bin:/bin", "HOME": "/root", "JUNO_EGRESS_MAP": self.map_file},
-                                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        self.undo.append(self._stop_watcher)
-        deadline = time.monotonic() + 15
-        while not os.path.exists(self.map_file):
-            if time.monotonic() > deadline or self.watcher.poll() is not None:
-                raise AssertionError("the map watcher never wrote the map")
-            time.sleep(0.1)
-        self.start_proxy()
-        self.undo.append(self.stop_proxy)
-        # Canaries: one listener on every host address (a free port), and port 80
-        # on each lo canary address for the proxy (it only forwards 80 and 443).
-        for address in CANARY_ADDRESSES + (PUBLIC_CANARY,):
-            ip("addr", "add", address + "/32", "dev", "lo")
-            self.undo.append(lambda address=address: ip("addr", "del", address + "/32", "dev", "lo", check=False))
-        everywhere = self._serve("0.0.0.0", 0)
-        self.canary_port = everywhere.server_address[1]
-        for address in CANARY_ADDRESSES:
-            self._serve(address, 80)
-        # The local "public host": HTTP on 80, HTTPS on 443 with a certificate
-        # for its name, named in /etc/hosts so the proxy (and only lookups of
-        # that one name) resolve it.
-        self._serve(PUBLIC_CANARY, 80, PublicCanaryHandler)
-        self._serve_tls()
-        with open("/etc/hosts", "a") as hosts:
-            hosts.write("\n" + HOSTS_LINE + "\n")
-        self.undo.append(self._remove_hosts_line)
-
-    def start_proxy(self, max_mb=None):
-        environment = {"PATH": "/usr/bin:/bin", "JUNO_EGRESS_MAP": self.map_file, "JUNO_EGRESS_LOG_FILE": self.log_file,
-                       "JUNO_EGRESS_STATE_DIR": self.state_dir}
-        if max_mb is not None:
-            environment["JUNO_EGRESS_MAX_MB_PER_HOUR"] = str(max_mb)
-        self.proxy = subprocess.Popen([sys.executable, "-I", str(DEPLOY / "egress-proxy.py")], env=environment,
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        self._wait_for_port(GATEWAY, PROXY_PORT)
-
-    def stop_proxy(self):
-        if self.proxy and self.proxy.poll() is None:
-            self.proxy.send_signal(signal.SIGTERM)  # what systemd sends: the budget is saved
-            try:
-                self.proxy.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.proxy.kill()
-                self.proxy.wait()
-
-    def restart_proxy(self, max_mb=None):
-        self.stop_proxy()
-        self.start_proxy(max_mb)
-
-    def log_records(self):
-        try:
-            with open(self.log_file) as file:
-                return [json.loads(line) for line in file if line.strip()]
-        except FileNotFoundError:
-            return []
-
-    def read_map(self):
-        with open(self.map_file) as file:
-            return json.load(file)
-
-    def _stop_watcher(self):
-        if self.watcher and self.watcher.poll() is None:
-            self.watcher.terminate()
-            try:
-                self.watcher.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.watcher.kill()
-
-    def _serve(self, address, port, handler=CanaryHandler):
-        server = ThreadingHTTPServer((address, port), handler)
-        server.daemon_threads = True
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.undo.append(lambda: (server.shutdown(), server.server_close()))
-        return server
-
-    def _serve_tls(self):
-        key = os.path.join(self.directory, "canary-key.pem")
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=" + PUBLIC_NAME,
-                        "-addext", "subjectAltName=DNS:" + PUBLIC_NAME, "-keyout", key, "-out", self.ca_file],
-                       check=True, capture_output=True)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(self.ca_file, key)
-        server = ThreadingHTTPServer((PUBLIC_CANARY, 443), CanaryHandler)
-        server.daemon_threads = True
-        server.socket = context.wrap_socket(server.socket, server_side=True)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.undo.append(lambda: (server.shutdown(), server.server_close()))
-
-    @staticmethod
-    def _remove_hosts_line():
-        with open("/etc/hosts") as hosts:
-            lines = hosts.read().split("\n")
-        kept = [line for line in lines if line != HOSTS_LINE]
-        while len(kept) > 1 and kept[-1] == "" and kept[-2] == "":
-            kept.pop()
-        with open("/etc/hosts", "w") as hosts:
-            hosts.write("\n".join(kept))
-
-    @staticmethod
-    def _wait_for_port(address, port, seconds=15):
-        deadline = time.monotonic() + seconds
-        while True:
-            try:
-                socket.create_connection((address, port), timeout=1).close()
-                return
-            except OSError:
-                if time.monotonic() > deadline:
-                    raise AssertionError("nothing listens on %s:%d" % (address, port))
-                time.sleep(0.2)
-
-    @staticmethod
-    def _has_rule(rule):
-        tool, chain, spec = rule
-        if not shutil.which(tool):
-            return True
-        if spec is None:
-            return subprocess.run([tool, "-S", chain], capture_output=True).returncode == 0
-        return subprocess.run([tool, "-C", chain, *spec], capture_output=True).returncode == 0
-
-    @staticmethod
-    def _remove_rules(rules):
-        for tool, chain, spec in rules:
-            if spec is None:
-                subprocess.run([tool, "-F", chain], capture_output=True)
-                subprocess.run([tool, "-X", chain], capture_output=True)
-            else:
-                subprocess.run([tool, "-D", chain, *spec], capture_output=True)
-
-    def close(self):
-        while self.undo:
-            try:
-                self.undo.pop()()
-            except Exception as error:  # keep undoing the rest
-                print("teardown: %s" % error, file=sys.stderr)
 
 
 HOST = None

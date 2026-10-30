@@ -4,9 +4,11 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  DEFAULT_ERROR_TEXT,
   DEFAULT_TOLERANCES,
   aggregateSite,
   analyzeRoute,
+  appliesAt,
   buildTree,
   checkAlignment,
   checkAsymmetry,
@@ -30,6 +32,7 @@ import {
   measuredValues,
   modeOf,
   nearestRung,
+  normalizeRecords,
   normalizeRoutes,
   overlayIconEdges,
   parseCssVars,
@@ -38,12 +41,14 @@ import {
   parseViewport,
   pickOffenders,
   rankFindings,
+  rowItems,
   scoreFrom,
   slugify,
   spacingExceptionOk,
   textFlags,
 } from "../scripts/design-audit/geometry-lib.mjs";
 import { histogramLine, renderMarkdown } from "../scripts/design-audit/geometry-report.mjs";
+import { groupOffenders, issueKey, issueSignature, scaleUsage } from "../scripts/design-audit/geometry-synthesis.mjs";
 
 // A record with the collector's shape and quiet defaults; tests override what they need.
 // The records and findings are plain JSON from an untyped .mjs module.
@@ -118,9 +123,10 @@ test("parseRadiusLadder reads the real tailwind.config.ts ladder", () => {
   const vars = parseCssVars(fs.readFileSync(path.join(root, "src/app/globals.css"), "utf8"), ["--radius"]);
   const ladder = parseRadiusLadder(tw, vars);
   assert.ok(ladder, "tailwind.config.ts has a borderRadius block");
-  // The ladder moves with the redesign; these rungs are the stable core.
-  for (const rung of [0, 8, 12]) assert.ok(ladder.px.includes(rung), `rung ${rung} in ${ladder.px}`);
-  assert.ok(ladder.px.every((v) => v >= 0 && v < 100));
+  // The rungs themselves move with the redesign: only the shape is pinned here.
+  assert.equal(ladder.px[0], 0);
+  assert.ok(ladder.px.length >= 4, `a ladder, not a value: ${ladder.px}`);
+  assert.ok(ladder.px.every((v, k) => v >= 0 && v < 100 && (k === 0 || v > ladder.px[k - 1])));
 });
 
 test("parseCssVars takes the first declaration", () => {
@@ -143,6 +149,27 @@ test("normalizeRoutes accepts lists, comma strings and JSON, and de-duplicates n
   assert.throws(() => normalizeRoutes(["chat"]));
   assert.equal(slugify("/"), "root");
   assert.equal(slugify("/settings · Account"), "settings-account");
+});
+
+test("routes and open steps marked when: phone or desktop apply only at that width, and bad values are refused", () => {
+  const routes = normalizeRoutes([
+    { path: "/chat", name: "row menu", open: [{ click: "button[aria-label='Open menu']", when: "phone" }, { hover: "[data-row]", when: "desktop" }, { click: "[data-row] button" }] },
+    { path: "/chat", name: "shortcuts", when: "desktop" },
+  ]);
+  const steps = (phone: boolean) => routes[0].open.filter((s: Rec) => appliesAt(s, phone)).map((s: Rec) => s.click || s.hover);
+  assert.deepEqual(steps(true), ["button[aria-label='Open menu']", "[data-row] button"]);
+  assert.deepEqual(steps(false), ["[data-row]", "[data-row] button"]);
+  assert.equal(appliesAt(routes[1], false), true);
+  assert.equal(appliesAt(routes[1], true), false);
+  assert.equal(appliesAt(routes[0], true), true);
+  assert.throws(() => normalizeRoutes([{ path: "/chat", when: "tablet" }]), /"when" is "phone" or "desktop"/);
+  assert.throws(() => normalizeRoutes([{ path: "/chat", open: [{ click: "x", when: "mobile" }] }]), /open step 1/);
+});
+
+test("the default error text catches the product's error boundaries and not-found screens, not real headings", () => {
+  const re = new RegExp(DEFAULT_ERROR_TEXT, "i");
+  for (const t of ["This conversation couldn’t load", "Chat couldn’t start", "Couldn’t open settings", "This document couldn’t be read", "This page isn’t here", "Something went wrong", "Failed to compile"]) assert.ok(re.test(t), t);
+  for (const t of ["Projects", "Good evening, Sam", "Couldn’t be simpler: three ways to plan", "Library", "What isn’t here yet"]) assert.ok(!re.test(t), t);
 });
 
 // ---------------------------------------------------------------------------
@@ -219,6 +246,10 @@ test("judgeCorner classifies too round, too sharp, poke-out, clipped corners and
   assert.equal(judgeCorner({ parentRadius: 12, childRadius: 4, dx: 0, dy: 0 }).verdict, "poke-out");
   assert.equal(judgeCorner({ parentRadius: 12, childRadius: 0, dx: 0, dy: 0, parentClips: true }).verdict, "ok", "flush media in a clipping card");
   assert.equal(judgeCorner({ parentRadius: 12, childRadius: 0, dx: 1, dy: 1, parentClips: true }).verdict, "clipped-corner");
+  // ...unless that 1px is the parent's border: the clip is the padding box, so the child is flush with it.
+  assert.equal(judgeCorner({ parentRadius: 10, childRadius: 0, dx: 1, dy: 1, parentClips: true, parentBorder: [1, 1] }).verdict, "ok");
+  // Further in, the clip barely touches it, but a square corner 3px inside a 10px one is still too sharp.
+  assert.equal(judgeCorner({ parentRadius: 10, childRadius: 0, dx: 3, dy: 3, parentClips: true, parentBorder: [1, 1] }).verdict, "too-sharp");
   assert.equal(judgeCorner({ parentRadius: 12, childRadius: 4, dx: 16, dy: 16 }).applicable, false);
   assert.equal(judgeCorner({ parentRadius: 16, childRadius: 16, dx: 4, dy: 4, circle: true }).verdict, "ok", "avatars are exempt");
 });
@@ -291,6 +322,17 @@ test("checkNestedRadius flags only the menu row whose radius breaks the concentr
   assert.equal(again[0].values.expected, 8);
 });
 
+test("checkNestedRadius lets a small pill (a switch) sit in a corner rounder than concentric", () => {
+  const records = [
+    rec(0, -1, { role: "menu", x: 0, y: 0, w: 288, h: 328, rad: [18, 18, 18, 18], paint: "bs", bg: "white" }),
+    rec(1, 0, { role: "switch", kind: "switch", inter: true, x: 243, y: 295, w: 28, h: 16, rad: [9999, 9999, 9999, 9999], paint: "b", bg: "black" }),
+  ];
+  assert.equal(checkNestedRadius(records, ctx).findings.length, 0);
+  // A 36px-tall pill button in the same spot is a container shape and is judged.
+  records[1] = rec(1, 0, { tag: "button", kind: "button", x: 186, y: 280, w: 90, h: 36, rad: [9999, 9999, 9999, 9999], paint: "b", bg: "black" });
+  assert.equal(checkNestedRadius(records, ctx).findings[0].kind, "nested-radius");
+});
+
 test("checkNestedRadius reports a square header poking out of a rounded, unclipped card", () => {
   const records = [
     rec(0, -1, { x: 0, y: 0, w: 300, h: 200, rad: [16, 16, 16, 16], paint: "r", bg: "white" }),
@@ -303,13 +345,17 @@ test("checkNestedRadius reports a square header poking out of a rounded, unclipp
   assert.equal(checkNestedRadius(records, ctx).findings.length, 0, "a clipping card draws the corner itself");
 });
 
-test("checkSiblingPadding flags the odd menu row out", () => {
+test("checkSiblingPadding flags the odd menu row out, by padding and by radius", () => {
   const records = menuPage();
   const tree = buildTree(records);
   const { findings } = checkSiblingPadding(records, tree, ctx);
-  assert.equal(findings.length, 1);
-  assert.equal(findings[0].el, 3);
-  assert.equal(findings[0].magnitude, 2);
+  assert.deepEqual(
+    findings.map((f: Rec) => `${f.kind}:${f.el}:${f.magnitude}`),
+    ["sibling-padding:3:2", "sibling-radius:2:4"],
+  );
+  // Pills of different widths share the "full" shape.
+  const pills = [rec(0, -1, { disp: "flex" }), ...[60, 90].map((w, k) => rec(k + 1, 0, { tag: "button", kind: "button", inter: true, x: k * 100, w, h: 32, pad: [6, 12, 6, 12], rad: [9999, 9999, 9999, 9999], paint: "b" }))];
+  assert.equal(checkSiblingPadding(pills, buildTree(pills), ctx).findings.length, 0);
 });
 
 test("checkAlignment flags text edges 1-3 px apart in one column, not real indents", () => {
@@ -352,6 +398,48 @@ test("checkAsymmetry exempts optical trims beside icons and flags plain asymmetr
   assert.equal(notes[0].el, 2);
 });
 
+test("checkAsymmetry treats a leading favicon stack like an icon (optical trim)", () => {
+  const records = [
+    rec(0, -1, { w: 400, h: 40, disp: "flex" }),
+    rec(1, 0, { tag: "button", kind: "button", inter: true, x: 0, y: 0, w: 145, h: 28, pad: [0, 10, 0, 4], paint: "r", disp: "inline-flex" }),
+    rec(2, 1, { tag: "span", x: 4, y: 5, w: 42, h: 18, disp: "flex" }),
+    rec(3, 2, { tag: "span", x: 4, y: 5, w: 18, h: 18, paint: "b", txt: true }),
+    rec(4, 2, { tag: "span", x: 16, y: 5, w: 18, h: 18, paint: "b", txt: true }),
+    rec(5, 1, { tag: "span", x: 52, y: 4, w: 51, h: 20, txt: true }),
+  ];
+  const { findings, notes } = checkAsymmetry(records, buildTree(records), ctx);
+  assert.equal(findings.length, 0);
+  assert.equal(notes[0].reason, "optical trim beside an icon");
+});
+
+test("checkAsymmetry accepts room for an eye toggle wrapped in a positioned div", () => {
+  const records = [
+    rec(0, -1, { x: 850, y: 495, w: 400, h: 48, pos: "relative" }),
+    rec(1, 0, { tag: "input", kind: "input", inter: true, x: 850, y: 495, w: 400, h: 48, pad: [12, 44, 12, 14], bw: [1, 1, 1, 1], paint: "rb" }),
+    rec(2, 0, { x: 1216, y: 495, w: 28, h: 48, pos: "absolute", disp: "flex" }),
+    rec(3, 2, { tag: "button", kind: "button", inter: true, x: 1216, y: 505, w: 28, h: 28, pos: "relative" }),
+    rec(4, 3, { tag: "svg", icon: true, x: 1222, y: 511, w: 16, h: 16 }),
+  ];
+  const tree = buildTree(records);
+  const { findings, notes } = checkAsymmetry(records, tree, ctx);
+  assert.equal(findings.length, 0);
+  assert.equal(notes[0].reason, "room for an overlaid icon");
+  assert.deepEqual(overlayIconEdges(records, tree, records[1]), { lead: null, trail: 1222 });
+});
+
+test("checkAsymmetry judges row links only when they paint", () => {
+  const records = [
+    rec(0, -1, { w: 260, h: 64, disp: "flex", fd: "column" }),
+    rec(1, 0, { tag: "a", kind: "link", inter: true, x: 0, y: 0, w: 244, h: 32, pad: [6, 10, 6, 8], txt: true, tl: 8, tr: 120 }),
+    rec(2, 0, { tag: "a", kind: "link", inter: true, x: 0, y: 32, w: 244, h: 32, pad: [6, 10, 6, 8], paint: "b", txt: true, tl: 8, tr: 120 }),
+  ];
+  const { findings } = checkAsymmetry(records, buildTree(records), ctx);
+  assert.deepEqual(
+    findings.map((f: Rec) => f.el),
+    [2],
+  );
+});
+
 test("checkAsymmetry accepts extra padding that makes room for an overlaid input icon", () => {
   const records = [
     rec(0, -1, { w: 300, h: 40, pos: "relative" }),
@@ -378,12 +466,48 @@ test("checkRowHeights compares the outermost control boxes in one row", () => {
   assert.equal(findings[0].el, 3, "the 32px button is the odd one out");
 });
 
+test("checkRowHeights judges a control by the widest row it sits in, once", () => {
+  // A composer bar: + (32), model chip (32), mic (32) and a 36px voice button;
+  // the + and the voice button also share an inner wrapper on their own.
+  const records = [
+    rec(0, -1, { w: 700, h: 40, disp: "flex" }),
+    rec(1, 0, { w: 700, h: 40, disp: "flex" }),
+    rec(2, 1, { tag: "button", kind: "button", inter: true, x: 0, y: 4, w: 32, h: 32, paint: "b" }),
+    rec(3, 1, { tag: "button", kind: "button", inter: true, x: 660, y: 2, w: 36, h: 36, paint: "b" }),
+    rec(4, 0, { tag: "button", kind: "button", inter: true, x: 500, y: 4, w: 92, h: 32, paint: "b" }),
+    rec(5, 0, { tag: "button", kind: "button", inter: true, x: 600, y: 4, w: 32, h: 32, paint: "b" }),
+  ];
+  const { findings } = checkRowHeights(records, buildTree(records), ctx);
+  assert.deepEqual(
+    findings.map((f: Rec) => f.el),
+    [3],
+  );
+  // The + at the far left (500px from the cluster) is not judged against the voice button.
+  assert.ok(!findings.some((f: Rec) => f.el === 2));
+});
+
+test("a painted toolbar holding a field and labelled buttons is not a field shell", () => {
+  const records = [
+    rec(0, -1, { w: 600, h: 48, disp: "flex", paint: "b" }),
+    rec(1, 0, { tag: "input", kind: "input", inter: true, x: 8, y: 6, w: 300, h: 36, paint: "r", bw: [1, 1, 1, 1] }),
+    rec(2, 0, { tag: "button", kind: "button", inter: true, x: 320, y: 8, w: 80, h: 32, paint: "b" }),
+    rec(3, 2, { tag: "span", x: 330, y: 14, w: 40, h: 20, txt: true, tl: 330, tr: 370 }),
+  ];
+  const items = rowItems(records, buildTree(records), ctx).map((r: Rec) => r.i);
+  assert.deepEqual(items, [1, 2]);
+  assert.equal(checkRowHeights(records, buildTree(records), ctx).findings.length, 1);
+});
+
 test("checkIconGaps flags the member of a family with a different icon gap", () => {
   const records = [0, 1, 2, 3].map((k) => rec(k, -1, { tag: "a", kind: "link", comp: "NavItem", ig: [k === 2 ? 10 : 8, null] }));
   const { findings } = checkIconGaps(records, ctx);
   assert.equal(findings.length, 1);
   assert.equal(findings[0].el, 2);
   assert.equal(findings[0].values.common, 8);
+  // A chevron pushed to the far edge (space-between) is layout, not a gap.
+  records.push(rec(4, -1, { tag: "a", kind: "link", comp: "NavItem", ig: [244, null] }));
+  assert.equal(checkIconGaps(records, ctx).findings.length, 1);
+  assert.ok(!measuredValues(records[4], ctx).some((m: Rec) => m.property === "icon-text-gap"));
 });
 
 test("checkTargets uses the hit-tested size, the spacing exception on desktop, and 44px on a phone", () => {
@@ -440,9 +564,52 @@ test("a radius derived by the concentric rule counts as on scale even off the la
   );
 });
 
+test("library wrapper names give way to the product component, and wordmarks are not icons", () => {
+  const records = [
+    rec(0, -1, { tag: "button", comp: "Menu", comps: ["Menu", "UserMenu", "AppSidebar"] }),
+    rec(1, -1, { tag: "svg", icon: true, w: 46, h: 14 }),
+    rec(2, -1, { tag: "svg", icon: true, w: 15, h: 15 }),
+  ];
+  const [first] = normalizeRecords(records);
+  assert.equal(first.comp, "UserMenu");
+  // A citation chip inside a sentence is inline, not a control.
+  const prose = [rec(0, -1, { tag: "p", txt: true }), rec(1, 0, { tag: "button", kind: "button", inter: true, disp: "inline-flex", h: 16.8 })];
+  assert.equal(normalizeRecords(prose)[1].inline, true);
+  // ...also when it is wrapped in a span or two inside the paragraph.
+  const wrapped = [rec(0, -1, { tag: "p", txt: true }), rec(1, 0, { tag: "span", disp: "inline" }), rec(2, 1, { tag: "a", kind: "link", inter: true, disp: "inline-flex" })];
+  assert.equal(normalizeRecords(wrapped)[2].inline, true);
+  const toolbar = [rec(0, -1, { tag: "div", disp: "flex" }), rec(1, 0, { tag: "button", kind: "button", inter: true, disp: "inline-flex" })];
+  assert.equal(normalizeRecords(toolbar)[1].inline, undefined);
+  assert.equal(analyzeRoute(prose, ctx).histograms["control-height"], undefined);
+  assert.equal(records[0].comp, "Menu", "input untouched");
+  const a = analyzeRoute(records, ctx);
+  assert.deepEqual(a.histograms["icon-size"], [[15, 1]]);
+});
+
 test("textFlags marks every ancestor of text, so icon-only and labelled controls are different families", () => {
   const records = [rec(0, -1), rec(1, 0, { tag: "button" }), rec(2, 1, { tag: "span", txt: true }), rec(3, 0, { tag: "button" }), rec(4, 3, { tag: "svg", icon: true })];
   assert.deepEqual(textFlags(records), [true, true, true, false, false]);
+});
+
+test("checkRowHeights treats a small icon-only accessory beside a wide row as a note, not a peer", () => {
+  const records = [
+    rec(0, -1, { w: 240, h: 32, disp: "flex" }),
+    rec(1, 0, { tag: "a", kind: "link", inter: true, x: 0, y: 0, w: 200, h: 32, pad: [6, 8, 6, 8], paint: "b" }),
+    rec(2, 1, { tag: "span", x: 8, y: 6, w: 120, h: 20, txt: true, tl: 8, tr: 128 }),
+    rec(3, 0, { tag: "button", kind: "button", inter: true, x: 210, y: 6, w: 20, h: 20 }),
+    rec(4, 3, { tag: "svg", icon: true, x: 212, y: 8, w: 16, h: 16 }),
+  ];
+  const r = checkRowHeights(records, buildTree(records), ctx);
+  assert.equal(r.findings.length, 0);
+  assert.equal(r.notes.length, 1);
+  assert.equal(r.notes[0].el, 3);
+});
+
+test("pickOffenders keeps one of many identical findings on look-alike elements", () => {
+  const records = [0, 1, 2].map((k) => rec(k, -1, { tag: "a", comp: "Row" }));
+  const findings = records.map((r) => ({ kind: "asymmetric-padding", severity: 1, magnitude: 2, message: "link padding left 8 / right 10", el: r.i }));
+  assert.equal(pickOffenders({ findings, offScaleFindings: [] }, 10, records).length, 1);
+  assert.equal(pickOffenders({ findings, offScaleFindings: [] }, 10).length, 3);
 });
 
 // ---------------------------------------------------------------------------
@@ -458,6 +625,7 @@ test("analyzeRoute is deterministic and scores on-scale values and clean element
   // padding 10 is on the spacing scale; radius 12 on the ladder; 32 control heights on scale.
   assert.equal(a.counts.scaleTotal, a.counts.scaleOn);
   assert.equal(a.counts.byKind["sibling-padding"], 1);
+  assert.equal(a.counts.byKind["sibling-radius"], 1);
   assert.equal(a.counts.byKind["text-misalignment"], 1);
   assert.ok(a.score.score < 100 && a.score.score > 50);
   assert.equal(a.score.scaleShare, 100);
@@ -530,5 +698,71 @@ test("renderMarkdown produces the summary, histograms and per-route sections", (
   assert.match(md, /\*\*Padding/);
   assert.match(md, /### \/menu/);
   assert.match(md, /Sibling padding: 1/);
-  assert.match(histogramLine([[16, 3], [14, 1]], [16]), /`16` ×3 · `14\*` ×1/);
+  assert.match(histogramLine([[16, 3], [14, 1]], new Set([14])), /`16` ×3 · `14\*` ×1/);
+  assert.match(histogramLine([[8, 2], ["full", 5]]), /`full` ×5 · `8` ×2/);
+});
+
+// ---------------------------------------------------------------------------
+// Synthesis across runs
+
+test("scaleUsage splits the values covering 90% of uses from the long tail", () => {
+  const u = scaleUsage([
+    [8, 50],
+    [16, 30],
+    [12, 12],
+    [14, 5],
+    [18, 2],
+    [7.2, 1],
+  ]);
+  assert.equal(u.total, 100);
+  assert.equal(u.distinct, 6);
+  assert.deepEqual(
+    u.head.map(([v]: [number, number]) => v),
+    [8, 16, 12],
+  );
+  assert.deepEqual(
+    u.tail.map(([v]: [number, number]) => v),
+    [14, 18, 7.2],
+  );
+  assert.equal(u.tailUses, 8);
+  assert.equal(u.once, 1);
+});
+
+test("issue signatures drop page coordinates so one component's problem groups across pages", () => {
+  const near = { kind: "text-misalignment", severity: 1, magnitude: 2, message: "text starts +2 px from the edge its column shares (316)", values: {} };
+  const near2 = { ...near, message: "text starts +2 px from the edge its column shares (40)" };
+  assert.equal(issueSignature(near), issueSignature(near2));
+  const off = { kind: "off-scale", severity: 1, magnitude: 2, message: "", values: { property: "padding", value: 14, nearest: 12 } };
+  assert.equal(issueSignature(off), "padding 14 → 12");
+  const target = { kind: "target-size", severity: 3, magnitude: 18, message: "separator target 6×900 under the 24 px pointer minimum", values: {} };
+  assert.equal(issueSignature(target), "target 6×900 under the 24 px pointer minimum");
+  const ref = { i: 1, tag: "div", path: "aside > div", rect: [0, 0, 6, 900], role: "separator", comp: "AppShell" };
+  assert.equal(issueKey(target, ref), "target-size|AppShell|div|separator|target 6×900 under the 24 px pointer minimum");
+});
+
+test("groupOffenders counts a problem once per page, light and dark at one width being one page, and ranks by badness x pages", () => {
+  const ref = (path: string, comp = "SidebarRow") => ({ i: 0, tag: "a", path, rect: [0, 0, 200, 32], comp });
+  const pad = { kind: "off-scale", severity: 1, magnitude: 2, message: "padding 14 is off scale (nearest 12)", values: { property: "padding", value: 14, nearest: 12 }, related: [] };
+  const handle = { kind: "target-size", severity: 3, magnitude: 18, message: "separator target 6×900 under the 24 px pointer minimum", values: {}, related: [] };
+  const origin = (order: number) => ({ order, run: {}, route: {} });
+  const items = [
+    // the row padding on three pages, twice on one page (two rows), and again in the dark run
+    { page: "/chat @ 1440x900", finding: pad, ref: ref("nav > a:nth-of-type(1)"), related: [], origin: origin(1) },
+    { page: "/chat @ 1440x900", finding: pad, ref: ref("nav > a:nth-of-type(2)"), related: [], origin: origin(2) },
+    { page: "/chat @ 1440x900", finding: pad, ref: ref("nav > a:nth-of-type(1)"), related: [], origin: origin(1001) },
+    { page: "/projects @ 1440x900", finding: pad, ref: ref("nav > a:nth-of-type(1)"), related: [], origin: origin(3) },
+    { page: "/chat @ 390x844", finding: pad, ref: ref("nav > a:nth-of-type(1)"), related: [], origin: origin(2001) },
+    // the resize handle on one page
+    { page: "/chat @ 1440x900", finding: handle, ref: { ...ref("aside > div", "AppShell"), role: "separator" }, related: [], origin: origin(4) },
+  ];
+  const groups = groupOffenders(items);
+  assert.equal(groups.length, 2);
+  const [first, second] = groups;
+  assert.equal(first.kind, "target-size");
+  assert.equal(first.impact, 27.5);
+  assert.equal(second.kind, "off-scale");
+  assert.deepEqual(second.pages, ["/chat @ 1440x900", "/chat @ 390x844", "/projects @ 1440x900"]);
+  assert.equal(second.elements, 4);
+  assert.equal(second.impact, 4.5);
+  assert.equal(second.example.origin.order, 1);
 });

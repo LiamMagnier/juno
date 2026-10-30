@@ -681,7 +681,7 @@ describe("agent-computer provider and lifecycle", () => {
         return b.toString("utf8");
       },
       async writeFile(p, content) {
-        await fake.writeFile(handle, p, Buffer.from(content, "utf8"));
+        await fake.writeFile(handle, p, Buffer.from(content));
         bumpEpoch();
       },
     });

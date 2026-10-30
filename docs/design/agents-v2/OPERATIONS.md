@@ -184,6 +184,10 @@ To disable every agent computer at once without redeploying:
    ```bash
    docker ps -aq --filter label=app=juno --filter name=juno-agent- | xargs -r docker rm -f
    ```
+   This goes to Docker directly, around the broker, so the broker does not release the
+   computers' addresses from the egress map; the map watcher (the
+   `juno-computers-egress-map` unit) drops them as each container dies. If that unit is
+   not running, repair the map by hand: `/usr/local/sbin/juno-computers-egress-map rebuild`.
    Volumes are kept (`docker volume ls -q --filter name=juno-agent-` lists them). When
    computers are switched back on, a computer whose container was removed is recreated
    on its volumes at its next wake, with its files and sign-ins. Remove the volumes too
@@ -319,8 +323,9 @@ with sizing and every command, is `deploy/computer-host/README.md`. In short:
    `deploy/ecosystem.config.js` passes it from the release `.env`, and the processes must
    be restarted (a reload of the env file alone is not enough). Keep
    `AGENT_COMPUTER_ROLLOUT=allowlist` (§9).
-3. **Check** from the web VM: `curl -fsS -H "Authorization: Bearer $COMPUTER_HOST_TOKEN"
-   https://<host name>/v1/health`. It reports the image (id, label, build time, age in
+3. **Check** from the web VM: `printf 'Authorization: Bearer %s\n' "$COMPUTER_HOST_TOKEN" |
+   curl -fsS -H @- https://<host name>/v1/health` (the header comes from stdin, so the token
+   never shows in the process list). It reports the image (id, label, build time, age in
    days), how many computers run, the certificate's expiry and the source address it saw
    for the web VM; if that differs from `--web-ip` (Azure may SNAT), re-run setup with it.
 
@@ -331,7 +336,15 @@ What the host enforces, whatever the web VM sends:
   namespace; `SIGHUP` (`systemctl reload juno-computer-host`) re-reads them. The log
   names the token id, never the token. Rotate: `setup.sh --add-token --namespace prod`,
   set the new token on the web VM and restart the app, runner and relay when
-  convenient, then `setup.sh --retire-token <old id>`.
+  convenient, then `setup.sh --retire-token <old id>`. Retiring a token also drops the
+  tunnel tickets minted under it and closes the tunnels opened with them (close code
+  1008, `op=revoke` in the log), and a ticket request in flight at that moment mints
+  nothing, so retire it only once every process runs with the new one.
+- **Commands**: at most 4 at once per computer and 24 on the host
+  (`maxCommandsPerComputer`, `maxConcurrentCommands` in `/etc/juno/computer-host.json`;
+  `429 too_many_commands` past either), each answer carrying at most 1 MiB per stream.
+  The host service also carries every open tunnel under `MemoryMax=512M`; these keep one
+  agent's output from taking it down.
 - **Namespaces**: every container and volume carries `juno.ns=<namespace>`; listings,
   destroy, state, tickets and tunnels see only the token's namespace. One host per
   environment (a staging database restored from production shares agent ids and would
@@ -356,6 +369,16 @@ audited once; nothing is recreated, marked missing or reaped. Tool calls return 
 could not reach the agent's computer right now." and the panel says "Computers on this
 server can't be reached right now." At the first answer afterwards metering resumes and
 `host_reachable` is audited with the outage's minutes.
+
+A Sleep the host cannot carry out (the person's, the allowance's or budget's, the
+sweep's idle sleep) is **held**, never recorded as done: the host may be down, or nginx
+or the broker answered 5xx, and the container may still be running. The row stays
+"Going to sleep" (`stopping`, with `billingStoppedAt` pinned at the last contact), keeps
+its slot on the awake caps, and is metered only up to that contact. The sweep finishes
+the sleep (stop, then asleep) at its first pass that reaches the host; a wake or a task
+that needs the computer before then finishes it first, then starts it. A Rest (pause)
+the host cannot carry out leaves the computer awake with its metering settled the same
+way. Neither is ever marked as an error.
 
 **Maintenance on the host:** `--renew-tls` (a month before the expiry health reports;
 with private TLS it makes a new CA, which the web VM's trust file holds beside the old

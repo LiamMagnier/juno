@@ -214,6 +214,21 @@ export interface ComputerStorePersistence {
     expected: { status: ComputerStatus; lastActiveAt: Date | null; lastViewedAt: Date | null },
     now: Date
   ): Promise<boolean>;
+  /**
+   * The claim on a sleep held for the host (finishHeldSleep): applies only
+   * while the row still holds the pinned end and the open interval that were
+   * read. It turns the row into a plain "stopping" claim with that interval
+   * closed (already metered by the claimant), so exactly one of the sweep, a
+   * wake and a run finishes the sleep, and one that comes later finds nothing
+   * held. Without it the sweep finished, from a stale read, a sleep a run had
+   * already finished, then stopped the computer the run had woken.
+   */
+  claimHeldSleepCas(
+    userId: string,
+    agentId: string,
+    expected: { billingStoppedAt: Date; lastResumedAt: Date | null },
+    activeSeconds: number
+  ): Promise<boolean>;
   /** The agent as the computer layer needs it, or null when it is gone. */
   readAgentForComputer(userId: string, agentId: string): Promise<AgentForComputer | null>;
   /** Writes `Agent.computerPolicy`; returns the value it replaced, or null when there is no such agent. */
@@ -570,6 +585,15 @@ const prismaPersistence: ComputerStorePersistence = {
         OR: [{ leaseRunId: null }, { leaseExpiresAt: null }, { leaseExpiresAt: { lt: now } }],
       },
       data: { status: "stopping", leaseRunId: null, leaseExpiresAt: null },
+    });
+    return updated.count > 0;
+  },
+
+  async claimHeldSleepCas(userId, agentId, expected, activeSeconds) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, billingStoppedAt: expected.billingStoppedAt, lastResumedAt: expected.lastResumedAt },
+      data: { status: "stopping", billingStoppedAt: null, lastResumedAt: null, activeSeconds },
     });
     return updated.count > 0;
   },
@@ -979,6 +1003,25 @@ export function createInMemoryComputerPersistence(): InMemoryComputerPersistence
       });
       return true;
     },
+    async claimHeldSleepCas(userId, agentId, expected, activeSeconds) {
+      const existing = rows.get(agentId);
+      if (!existing || existing.userId !== userId) return false;
+      if (
+        existing.billingStoppedAt?.getTime() !== expected.billingStoppedAt.getTime() ||
+        (existing.lastResumedAt?.getTime() ?? null) !== (expected.lastResumedAt?.getTime() ?? null)
+      ) {
+        return false;
+      }
+      rows.set(agentId, {
+        ...existing,
+        status: "stopping",
+        billingStoppedAt: null,
+        lastResumedAt: null,
+        activeSeconds,
+        updatedAt: new Date(),
+      });
+      return true;
+    },
   };
 }
 
@@ -1382,9 +1425,14 @@ export async function settleRunComputerBilling(
  * billed; `lastResumedAt` is cleared so nothing accrues during the outage; and
  * `host_unreachable` is audited. Once per outage: a second call finds the
  * interval already settled and does nothing. The row is otherwise left alone,
- * never marked missing and never recreated.
+ * never marked missing and never recreated. `actor` is who found the outage:
+ * the sweep, or a sleep or rest that could not reach the host.
  */
-export async function settleComputerOutage(row: AgentComputerRow, now = new Date()): Promise<boolean> {
+export async function settleComputerOutage(
+  row: AgentComputerRow,
+  now = new Date(),
+  actor: ComputerAuditActor = "sweep",
+): Promise<boolean> {
   if (row.status !== "awake" || !row.lastResumedAt) return false;
   const resumedMs = row.lastResumedAt.getTime();
   const contactMs = Math.min(row.lastContactAt?.getTime() ?? resumedMs, now.getTime());
@@ -1402,8 +1450,121 @@ export async function settleComputerOutage(row: AgentComputerRow, now = new Date
     lastResumedAt: null,
     activeSeconds: row.activeSeconds + seconds,
   });
-  await audit(row.userId, row.agentId, "host_unreachable", "sweep");
+  await audit(row.userId, row.agentId, "host_unreachable", actor);
   return true;
+}
+
+/**
+ * A sleep the host could not carry out (S3.3): the computer may still be
+ * running there, so the row is neither marked as an error nor recorded asleep.
+ * It stays "stopping" with `billingStoppedAt` set, which keeps it in the
+ * sweep's list (findAllActiveUnguarded) and on the awake caps, and the sweep
+ * finishes the sleep (stop, then asleep) at its first pass that reaches the
+ * host; a wake or a run that needs the computer first finishes it the same way
+ * (finishHeldSleep). The end of the metered interval is pinned at the last
+ * contact before the ledger call, then the outage is settled there, so nothing
+ * accrues while the host is gone and nothing before it goes unmetered. An
+ * earlier attempt that already pinned the end is kept as it is.
+ */
+async function holdSleepForHost(
+  row: AgentComputerRow,
+  now: Date,
+  actor: ComputerAuditActor | undefined,
+  pinned?: Date
+): Promise<void> {
+  if (row.billingStoppedAt) return;
+  // A held sleep claimed and tried again (finishHeldSleep) keeps the end it was pinned at.
+  let end = pinned ?? now;
+  if (row.lastResumedAt) {
+    const resumedMs = row.lastResumedAt.getTime();
+    const contactMs = row.lastContactAt?.getTime() ?? resumedMs;
+    end = new Date(Math.min(Math.max(contactMs, resumedMs), now.getTime()));
+  }
+  await activePersistence.updateByAgent(row.userId, row.agentId, { status: "stopping", billingStoppedAt: end });
+  await settleComputerOutage(row, now, actor ?? "system").catch((error: unknown) => {
+    // The pinned end keeps the interval for the sleep that finishes later.
+    console.error("[agent-computer] outage settlement failed", { agentId: row.agentId, error: String(error) });
+    return false;
+  });
+}
+
+/**
+ * Finishes a sleep held for the host (holdSleepForHost, or a sleep whose ledger
+ * write failed), as read in `held`. It is a claim, like the idle path's: the
+ * held interval is metered first (idempotent per start, so two claimants
+ * meter it once), then claimHeldSleepCas takes the row only if it still holds
+ * that pinned end, and only the claimant stops the computer. The sweep, a wake
+ * and a run can each find the same held row; whoever comes second, or reads
+ * the row before someone finished the sleep and woke the computer again, gets
+ * false and touches nothing. While the host still does not answer, the sleep
+ * throws the unreachable sentence and the row is held again.
+ */
+export async function finishHeldSleep(
+  held: AgentComputerRow,
+  opts: { now?: Date; actor?: ComputerAuditActor }
+): Promise<boolean> {
+  const end = held.billingStoppedAt;
+  if (!end) return false;
+  let seconds = 0;
+  if (held.lastResumedAt) {
+    seconds = Math.max(0, Math.floor((end.getTime() - held.lastResumedAt.getTime()) / 1000));
+    if (seconds > 0) {
+      await billComputerSeconds({
+        userId: held.userId,
+        agentId: held.agentId,
+        seconds,
+        runId: held.leaseRunId,
+        since: held.lastResumedAt,
+      });
+    }
+  }
+  const claimed = await activePersistence.claimHeldSleepCas(
+    held.userId,
+    held.agentId,
+    { billingStoppedAt: end, lastResumedAt: held.lastResumedAt },
+    held.activeSeconds + seconds,
+  );
+  if (!claimed) return false;
+  await sleepComputer(held.userId, held.agentId, { now: opts.now, actor: opts.actor, heldEnd: end });
+  return true;
+}
+
+/**
+ * A computer is used again only once any sleep in progress has landed: a sleep
+ * held for the host is finished here (finishHeldSleep; this caller's claim, or
+ * someone else's that it then waits for), and a "stopping" claim (the sweep
+ * pausing or stopping it right now) is waited for, up to 30 s, rather than
+ * raced with `docker start`. Throws the unreachable sentence while the host
+ * still does not answer.
+ */
+async function waitOutSleep(
+  userId: string,
+  agentId: string,
+  read: AgentComputerRow,
+  actor: ComputerAuditActor | undefined
+): Promise<AgentComputerRow> {
+  const deadline = Date.now() + 30_000;
+  let row: AgentComputerRow | null = read;
+  while (row && (row.billingStoppedAt || row.status === "stopping")) {
+    if (Date.now() >= deadline) {
+      // A plain claim that never landed is waited for no longer (as before);
+      // a held one is never woken around.
+      if (row.billingStoppedAt) throw new ComputerError(COMPUTER_NOT_RESPONDING);
+      break;
+    }
+    if (row.billingStoppedAt) {
+      try {
+        await finishHeldSleep(row, { actor });
+      } catch (error) {
+        throw error instanceof ComputerError ? error : new ComputerError(publicComputerMessage(error));
+      }
+    } else {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    row = await activePersistence.findByAgent(userId, agentId);
+  }
+  if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
+  return row;
 }
 
 /**
@@ -1580,15 +1741,10 @@ export async function ensureAwake(
   }
 
   // The sweeper claimed it and is pausing or stopping it right now. Wait for
-  // that to land rather than racing `docker stop` with `docker start`.
-  if (row.status === "stopping") {
-    const deadline = Date.now() + 30_000;
-    while (row && row.status === "stopping" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 500));
-      row = await activePersistence.findByAgent(userId, agentId);
-    }
-    if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
-  }
+  // that to land rather than racing `docker stop` with `docker start`. A sleep
+  // held for the host (`billingStoppedAt` set) does not land until a pass
+  // reaches the host, so it is finished here (a claim) instead of waited for.
+  if (row.status === "stopping" || row.billingStoppedAt) row = await waitOutSleep(userId, agentId, row, opts?.actor);
 
   if (row.creationToken || !row.containerRef || !row.secrets) row = await ensureComputerCreated(userId, agentId, provider);
   let handle = decodeHandle(row.containerRef, agentId);
@@ -1802,6 +1958,17 @@ export async function restComputer(
       liveState = "paused";
     }
   } catch (err) {
+    if (isHostUnreachable(err)) {
+      // A host that cannot be reached says nothing about the computer (S3.3):
+      // the idle claim's "stopping" is put back, so the sweep keeps checking
+      // this row, and its metering stops at the last contact. At the first
+      // pass that reaches the host, metering resumes and the idle rules apply
+      // again; it is never marked as an error.
+      const actor = opts?.actor ?? (opts?.ifIdle ? "sweep" : undefined);
+      if (opts?.ifIdle) await activePersistence.updateByAgent(userId, agentId, { status: row.status }).catch(() => undefined);
+      await settleComputerOutage(row, now, actor ?? "system").catch(() => false);
+      throw err;
+    }
     await activePersistence
       .updateByAgent(userId, agentId, { status: "error", lastError: publicComputerMessage(err) })
       .catch(() => undefined);
@@ -1848,7 +2015,14 @@ export type ComputerSleepReason =
 export async function sleepComputer(
   userId: string,
   agentId: string,
-  opts?: { now?: Date; ifIdle?: IdleClaim; reason?: ComputerSleepReason; actor?: ComputerAuditActor }
+  opts?: {
+    now?: Date;
+    ifIdle?: IdleClaim;
+    reason?: ComputerSleepReason;
+    actor?: ComputerAuditActor;
+    /** finishHeldSleep's: the end the held sleep was pinned at, kept if the host is still gone. */
+    heldEnd?: Date;
+  }
 ): Promise<AgentComputerRow | null> {
   const provider = computerProvider();
   const row = await activePersistence.findByAgent(userId, agentId);
@@ -1880,6 +2054,15 @@ export async function sleepComputer(
       await provider.stop(handle);
     }
   } catch (err) {
+    if (isHostUnreachable(err)) {
+      // The computer may still be running on a host that cannot be reached:
+      // never an error, never asleep. The sleep is held for the host and the
+      // sweep finishes it once the host answers (holdSleepForHost).
+      await holdSleepForHost(row, now, opts?.actor ?? (opts?.ifIdle ? "sweep" : undefined), opts?.heldEnd).catch((error: unknown) => {
+        console.error("[agent-computer] a sleep could not be held for the host", { agentId, error: String(error) });
+      });
+      throw err;
+    }
     await activePersistence
       .updateByAgent(userId, agentId, { status: "error", lastError: publicComputerMessage(err) })
       .catch(() => undefined);
@@ -2133,8 +2316,15 @@ export async function releaseComputerLease(
 export const COMPUTER_NETWORK_SENTENCE =
   "Your computer reaches the web only through a proxy: tools that use HTTP_PROXY and HTTPS_PROXY work (curl, pip, npm, git over https, Python's urllib, the browser), and tools that look up names themselves (ssh, raw sockets, Node's built-in fetch) cannot reach the Internet.";
 
+/**
+ * Files in and out (S5.2, S5.3): where the person's uploads land, and how to
+ * hand a file back. The person sees the shell's output as it runs, read-only.
+ */
+export const COMPUTER_FILES_SENTENCE =
+  "Files the person adds to your computer arrive in /home/agent/work/inbox. To hand the person a file you made there, publish it with `computer_files` (action publish): it appears with this task's results as a download, exactly as it is. `computer_files` reads and writes any bytes with encoding base64.";
+
 export const YOUR_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen and your shell's output. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_FILES_SENTENCE + " " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
 
 /**
  * The same section for a run nobody started (a schedule or a trigger): there
@@ -2144,7 +2334,7 @@ export const YOUR_COMPUTER_PROMPT_SECTION =
  * happens to look (docs/rea/designs/computer-use.md, unattended runs).
  */
 export const UNATTENDED_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. " + COMPUTER_FILES_SENTENCE + " " + COMPUTER_NETWORK_SENTENCE + " Stay signed in to sites between tasks: your sign-ins persist. Nobody is watching this run: it was started by a schedule or a trigger. Never ask the person to take over your computer. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, skip that step, leave the page as it is, and list it in your report as left for the person. A step that needs the person's approval may be skipped rather than approved; carry on with what you can do without it. Never ask for a secret in the chat and never type one you were told in the chat.";
 
 /** The pixel-tools sentence, which a model without vision is never given (it has no pixel tools). */
 const PIXEL_TOOLS_SENTENCE = "Use the `computer_*` pixel tools only for things the page tools can't reach. ";
@@ -2302,6 +2492,17 @@ export async function prepareRunComputer(input: {
     }
     if (overDiskQuota(existing)) {
       return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
+    }
+    // A sleep held for the host keeps the row "stopping", where no lease can
+    // be taken: it is finished first, by this run's claim or by the sweep's
+    // that it waits for (or, while the host is still gone, the run hears that
+    // the computer can't be reached, not that it is busy).
+    if (existing.billingStoppedAt) {
+      try {
+        existing = await waitOutSleep(userId, agentId, existing, "runner");
+      } catch (error) {
+        return startFailure(error);
+      }
     }
     const lease = await acquireComputerLease(userId, agentId, input.runId);
     if (!lease.acquired) {

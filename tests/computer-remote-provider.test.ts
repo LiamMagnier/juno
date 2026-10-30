@@ -36,7 +36,7 @@ interface Seen {
   contentType: string | undefined;
   body: Buffer;
 }
-type Answer = { status: number; json?: unknown; bytes?: Buffer; type?: string; hang?: boolean };
+type Answer = { status: number; json?: unknown; bytes?: Buffer; type?: string; hang?: boolean; chunked?: boolean };
 
 let server: Server;
 let origin = "";
@@ -71,6 +71,13 @@ before(async () => {
       const a = answer(s);
       if (a.hang) return; // never answers: the provider's timeout must fire
       const body = a.bytes ?? Buffer.from(JSON.stringify(a.json ?? null));
+      if (a.chunked) {
+        // No Content-Length: the size is known only as the bytes arrive.
+        response.writeHead(a.status, { "Content-Type": a.type ?? "application/json" });
+        for (let at = 0; at < body.length; at += 256 * 1024) response.write(body.subarray(at, at + 256 * 1024));
+        response.end();
+        return;
+      }
       response.writeHead(a.status, { "Content-Type": a.type ?? "application/json", "Content-Length": body.length });
       response.end(body);
     });
@@ -137,7 +144,18 @@ test("every provider method maps to its one host call", async () => {
       method: "POST",
       path: `/v1/computers/${NAME}/exec`,
       body: { command: "ls", timeoutSeconds: 300, cwd: "project" },
-      reply: { status: 200, json: { stdout: "a\n", stderr: "", exitCode: 0, timedOut: false, durationMs: 12 } },
+      reply: {
+        status: 200,
+        json: {
+          stdoutBase64: Buffer.from("a\n").toString("base64"),
+          stderrBase64: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          exitCode: 0,
+          timedOut: false,
+          durationMs: 12,
+        },
+      },
       expect: { stdout: "a\n", stderr: "", exitCode: 0, timedOut: false, durationMs: 12 },
     },
     {
@@ -335,6 +353,45 @@ test("host errors never reach the message", async () => {
   await assert.rejects(() => p.start(HANDLE), { message: remote.HOST_PREFLIGHT_SENTENCES.capacity });
   answers = [() => ({ status: 409, json: { error: "sandbox_check_failed" } })];
   await assert.rejects(() => p.browserSandbox(HANDLE), /failed a safety check/);
+  // Too many commands at once: the computer's own limit, or the host's.
+  answers = [() => ({ status: 429, json: { error: "too_many_commands", scope: "computer" } })];
+  await assert.rejects(() => p.exec(HANDLE, "ls"), { message: remote.COMPUTER_TOO_MANY_COMMANDS });
+  answers = [() => ({ status: 429, json: { error: "too_many_commands", scope: "host" } })];
+  await assert.rejects(() => p.exec(HANDLE, "ls"), { message: remote.HOST_TOO_MANY_COMMANDS });
+});
+
+test("exec decodes the host's base64 bytes as UTF-8, and refuses an answer past its size limit", async () => {
+  const p = provider();
+  // Bytes a JSON string could not carry as they are: a control byte, an invalid byte, a split character.
+  const raw = Buffer.concat([Buffer.from("ok \u0001 "), Buffer.from([0xff]), Buffer.from("é"), Buffer.from("€").subarray(0, 2)]);
+  answers = [() => ({
+    status: 200,
+    json: { stdoutBase64: raw.toString("base64"), stderrBase64: Buffer.from("warn\n").toString("base64"),
+      stdoutTruncated: true, stderrTruncated: false, exitCode: 3, timedOut: false, durationMs: 5 },
+  })];
+  const result = await p.exec(HANDLE, "flood");
+  assert.equal(result.stdout, raw.toString("utf8"), "decoded exactly as the Docker provider decodes docker exec's buffer");
+  assert.equal(result.stderr, "warn\n");
+  assert.equal(result.exitCode, 3);
+  // A host from before the base64 answer: its text fields still read.
+  answers = [() => ({ status: 200, json: { stdout: "old\n", stderr: "", exitCode: 0, timedOut: false, durationMs: 1 } })];
+  assert.equal((await p.exec(HANDLE, "ls")).stdout, "old\n");
+
+  // Past 4 MiB an exec answer is refused unread, whether its length is declared or not.
+  const huge = Buffer.alloc(5 * 1024 * 1024, 0x61);
+  answers = [() => ({ status: 200, bytes: huge })];
+  const declared = await p.exec(HANDLE, "ls").then(() => null, (e: unknown) => e);
+  assert.ok(declared instanceof errors.ComputerError);
+  assert.equal(declared.message, errors.COMPUTER_UNREACHABLE);
+  assert.match(declared.detail, /over 4194304/);
+  answers = [() => ({ status: 200, bytes: huge, chunked: true })];
+  await assert.rejects(() => p.exec(HANDLE, "ls"), (e: unknown) => e instanceof errors.ComputerError && /over 4194304/.test(e.detail));
+  // Refused once, never retried: one request each.
+  assert.equal(seen.filter((s) => s.path.endsWith("/exec")).length, 4);
+  // A file read's limit follows its maxBytes: 5 MiB of file fits a 5 MiB read, and is refused past a 1 MiB one.
+  answers = [() => ({ status: 200, bytes: huge, type: "application/octet-stream" })];
+  assert.equal((await p.readFile(HANDLE, "big.bin", { maxBytes: 5 * 1024 * 1024 + 1 })).byteLength, huge.byteLength);
+  await assert.rejects(() => p.readFile(HANDLE, "big.bin", { maxBytes: 1024 * 1024 }), /could not reach/);
 });
 
 test("state() is missing only on 404 and throws COMPUTER_UNREACHABLE on a transport error, a timeout or a 5xx", async () => {
@@ -386,12 +443,77 @@ test("an idempotent GET is retried once on a transport error, a POST is not", as
   }
 });
 
-test("stop and stopVnc ignore the host's answer like Docker's, but not an unreachable host", async () => {
-  answers = [() => ({ status: 502, json: { error: "host_error" } })];
+test("stop resolves only when the computer is not running; any answer but the host's own is unreachable", async () => {
+  const stopPath = `/v1/computers/${NAME}/stop`;
+  // The host's 200: done. A container that does not exist is not running either.
+  answers = [];
   await provider().stop(HANDLE);
-  await provider().stopVnc(HANDLE);
+  answers = [(s) => (s.path === stopPath ? { status: 404, json: { error: "no_such_container" } } : null)];
+  await provider().stop(HANDLE);
+
+  // nginx while the service restarts, the broker refused or slow, a token the
+  // host no longer takes, a route the host does not know, a proxy's page:
+  // nothing was stopped, so the store must not record the computer asleep.
+  for (const reply of [
+    { status: 502, json: { error: "host_error" } },
+    { status: 504, json: { error: "host_timeout" } },
+    { status: 502, bytes: Buffer.from("<html>502 Bad Gateway</html>"), type: "text/html" },
+    { status: 503, bytes: Buffer.from(""), type: "text/plain" },
+    { status: 401, json: { error: "unauthorized" } },
+    { status: 404, json: { error: "not_found" } },
+    { status: 200, bytes: Buffer.from("<html>ok</html>"), type: "text/html" },
+  ] satisfies Answer[]) {
+    answers = [(s) => (s.path === stopPath ? reply : null)];
+    await assert.rejects(() => provider().stop(HANDLE), (error: unknown) => {
+      assert.ok(error instanceof errors.ComputerError);
+      assert.equal(error.message, errors.COMPUTER_UNREACHABLE);
+      assert.ok(!String(error.message).includes("Bad Gateway"));
+      return true;
+    }, `stop answered ${reply.status}`);
+  }
+
+  // A nonzero `docker stop` (the host's {ok: false}) is checked against state().
+  seen = [];
+  answers = [
+    (s) => (s.path === stopPath ? { status: 200, json: { ok: false } } : null),
+    (s) => (s.path.endsWith("/state") ? { status: 200, json: { state: "exited" } } : null),
+  ];
+  await provider().stop(HANDLE);
+  assert.deepEqual(seen.map((s) => `${s.method} ${s.path}`), [`POST ${stopPath}`, `GET /v1/computers/${NAME}/state`]);
+  answers = [
+    (s) => (s.path === stopPath ? { status: 200, json: { ok: false } } : null),
+    (s) => (s.path.endsWith("/state") ? { status: 404, json: { error: "no_such_container" } } : null),
+  ];
+  await provider().stop(HANDLE);
+  for (const still of ["running", "paused"]) {
+    answers = [
+      (s) => (s.path === stopPath ? { status: 200, json: { ok: false } } : null),
+      (s) => (s.path.endsWith("/state") ? { status: 200, json: { state: still } } : null),
+    ];
+    await assert.rejects(() => provider().stop(HANDLE), { message: errors.COMPUTER_UNREACHABLE });
+  }
+
   const closed = new remote.RemoteComputerProvider({ origin: "http://127.0.0.1:9", token: TOKEN, timeoutMs: 2_000 });
   await assert.rejects(() => closed.stop(HANDLE), { message: errors.COMPUTER_UNREACHABLE });
+});
+
+test("stopVnc ignores pkill's status but never reports a stop the host did not answer", async () => {
+  const vncPath = `/v1/computers/${NAME}/vnc`;
+  answers = [];
+  await provider().stopVnc(HANDLE);
+  answers = [(s) => (s.path === vncPath ? { status: 404, json: { error: "no_such_container" } } : null)];
+  await provider().stopVnc(HANDLE);
+  // A take over's release thaws the agent only once the person's session is
+  // known to be gone, so a 5xx or a proxy page must not read as stopped.
+  for (const reply of [
+    { status: 502, json: { error: "host_error" } },
+    { status: 504, json: { error: "host_timeout" } },
+    { status: 502, bytes: Buffer.from("<html>502 Bad Gateway</html>"), type: "text/html" },
+    { status: 200, bytes: Buffer.from("<html>ok</html>"), type: "text/html" },
+  ] satisfies Answer[]) {
+    answers = [(s) => (s.path === vncPath ? reply : null)];
+    await assert.rejects(() => provider().stopVnc(HANDLE), { message: errors.COMPUTER_UNREACHABLE }, `vnc stop answered ${reply.status}`);
+  }
 });
 
 test("an answer that is not the host's JSON is the unreachable sentence, never a parse error", async () => {

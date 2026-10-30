@@ -2,7 +2,7 @@
  * Geometry audit: the markdown report. Pure: takes the run object the CLI
  * writes to geometry.json and returns markdown.
  */
-import { VIOLATION_KINDS, VIOLATION_LABELS, describe, fmt } from "./geometry-lib.mjs";
+import { KIND_COLORS, VIOLATION_KINDS, VIOLATION_LABELS, describe, fmt } from "./geometry-lib.mjs";
 
 const HIST_ORDER = [
   ["padding", "Padding (per element, distinct sides)"],
@@ -18,22 +18,14 @@ const HIST_ORDER = [
   ["line-height", "Line height"],
 ];
 
-const SCALE_FOR = {
-  padding: "spacing",
-  gap: "spacing",
-  margin: "spacing",
-  "icon-text-gap": "spacing",
-  radius: "radius",
-  "control-height": "controlHeight",
-  "icon-size": "iconSize",
-};
 
 export const KIND_HELP = {
-  "nested-radius": "a painted child whose corner sits inside its rounded parent's curve, with a radius more than the tolerance away from parent radius minus inset (concentric corners). Circles (avatars, round icon buttons) may be rounder.",
+  "nested-radius": "a painted child whose corner sits inside its rounded parent's curve, with a radius more than the tolerance away from parent radius minus inset (concentric corners). Circles (avatars, round icon buttons) and small pills (switches, chips) may be rounder.",
   "corner-poke-out": "a painted child's corner reaches past the curve of a rounded parent that does not clip it, so a square or tighter corner shows outside the parent's shape.",
   "clipped-corner": "a child inset a few px into a rounded parent that clips (overflow hidden): the clip cuts its corner into a lopsided shape. Flush children (media filling a card) are fine.",
-  "asymmetric-padding": "a button, tab, menu row, field or row link whose left/right or top/bottom paddings differ. A smaller padding beside a flow icon (optical trim) and a larger one under an overlaid glyph are allowed and listed as notes.",
+  "asymmetric-padding": "a button, tab, menu row, field, or a row link that paints (the selected row), whose left/right or top/bottom paddings differ. A smaller padding beside a flow icon (optical trim) and a larger one under an overlaid glyph are allowed and listed as notes.",
   "sibling-padding": "siblings of one kind (same tag, role, component, variant, labelled or icon-only) in one menu, list, toolbar or grid that do not share the group's most common padding.",
+  "sibling-radius": "siblings of one kind (grouped as for sibling padding) whose corner radius differs from the group's most common one: a menu row or card drawn with a different corner from its neighbours.",
   "row-height": "controls side by side in one row (outermost boxes: a field's painted shell, a segmented control's track) at different heights.",
   "text-misalignment": "in a column, the first text of a child starting 0.5-3 px from an edge its neighbours share: a near miss, not an indent. Display type pulled to align its ink is a note.",
   "icon-gap": "the gap between a flow icon and its text differs from the one most common in its component family.",
@@ -48,25 +40,20 @@ function cell(s) {
   return String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
-/** "16 ×412 · 8 ×300 · 14* ×20" — off-scale values marked with an asterisk. */
-export function histogramLine(pairs, scale, tol = 0.5, limit = 40) {
+/**
+ * "16 ×412 · 8 ×300 · 14* ×20". `off` is the set of values judged off scale
+ * (from the off-scale findings, so derived values such as a concentric radius
+ * or a padding that lands on the scale with its border are not starred).
+ */
+export function histogramLine(pairs, off = new Set(), limit = 40) {
   const total = pairs.reduce((s, [, c]) => s + c, 0);
   const sorted = pairs.slice().sort((a, b) => b[1] - a[1] || (typeof a[0] === "number" && typeof b[0] === "number" ? a[0] - b[0] : String(a[0]).localeCompare(String(b[0]))));
   const shown = sorted.slice(0, limit);
-  const parts = shown.map(([v, c]) => {
-    const off = scale && typeof v === "number" && !scale.some((r) => Math.abs(r - v) <= tol);
-    return `\`${fmt(v)}${off ? "*" : ""}\` ×${c}`;
-  });
+  const parts = shown.map(([v, c]) => `\`${fmt(v)}${off.has(v) ? "*" : ""}\` ×${c}`);
   const rest = sorted.length - shown.length;
   return `${parts.join(" · ")}${rest > 0 ? ` · … ${rest} more values` : ""} (n=${total}, ${pairs.length} distinct)`;
 }
 
-function scaleOf(run, prop) {
-  const key = SCALE_FOR[prop];
-  if (!key) return null;
-  if (prop === "padding") return null; // padding is judged with its border; the asterisk would mislead
-  return run.meta.scales[key];
-}
 
 function violationTable(byKind) {
   const head = `| ${VIOLATION_KINDS.map((k) => VIOLATION_LABELS[k]).join(" | ")} |`;
@@ -86,15 +73,16 @@ export function renderMarkdown(run, { compare = null, examplesPerKind = 6, offSc
   L.push("Scales checked against:");
   L.push("");
   L.push(`- spacing (padding, gap, margin, icon-to-text gap): ${m.scales.spacing.join(", ")}. A padding passes when it, or it plus that side's border, lands on a rung.`);
-  L.push(`- radius (tailwind.config.ts ladder${m.radiusSource ? `, ${m.radiusSource}` : ""}): ${m.scales.radius.join(", ")}, full${m.scales.radiusPercent?.length ? `, ${m.scales.radiusPercent.map((p) => `${p}%`).join(", ")}` : ""}`);
+  L.push(`- radius (${m.radiusSource || "built-in fallback ladder"}): ${m.scales.radius.join(", ")}, full${m.scales.radiusPercent?.length ? `, ${m.scales.radiusPercent.map((p) => `${p}%`).join(", ")}` : ""}. A radius that is exactly concentric with its rounded parent (parent radius minus inset) is derived from the ladder and counts as on scale.`);
   L.push(`- control heights: ${m.scales.controlHeight.join(", ")} (controls up to ${m.tolerances.maxControlHeight} px tall)`);
   L.push(`- icon boxes: ${m.scales.iconSize.join(", ")}`);
   L.push(`- tolerance ±${m.tolerances.scale} px on every scale; nested radius ±${m.tolerances.nestedRadius} px; near-miss text edges ${m.tolerances.alignMin}–${m.tolerances.alignMax} px; targets ${m.phone ? m.tolerances.targetTouch : m.tolerances.targetPointer} px`);
   L.push("");
 
-  L.push("What each check means:");
+  L.push("What each check means (and its outline colour on the screenshots):");
   L.push("");
-  for (const kind of VIOLATION_KINDS) L.push(`- **${VIOLATION_LABELS[kind]}**: ${KIND_HELP[kind]}`);
+  for (const kind of VIOLATION_KINDS) L.push(`- **${VIOLATION_LABELS[kind]}** (${KIND_COLORS[kind][1]}): ${KIND_HELP[kind]}`);
+  L.push(`- **Off scale** (${KIND_COLORS["off-scale"][1]}): a measured value off its scale; outlined after the structural violations, one per element.`);
   L.push("");
 
   L.push("## Score");
@@ -124,6 +112,10 @@ export function renderMarkdown(run, { compare = null, examplesPerKind = 6, offSc
 
   L.push("## Routes");
   L.push("");
+  if (run.routes.some((r) => r.stillLoading)) {
+    L.push("Routes marked (loading) still showed loading placeholders when measured: their numbers describe the placeholder state. Re-measure them with `--resume --redo @loading`.");
+    L.push("");
+  }
   L.push(`| Route | Score | On scale | Clean | Elements | ${VIOLATION_KINDS.map((k) => VIOLATION_LABELS[k]).join(" | ")} |`);
   L.push(`|---|---:|---:|---:|---:|${VIOLATION_KINDS.map(() => "---:").join("|")}|`);
   for (const r of run.routes) {
@@ -131,7 +123,7 @@ export function renderMarkdown(run, { compare = null, examplesPerKind = 6, offSc
       L.push(`| [${cell(r.name)}](#${r.slug}) | failed | | | | ${VIOLATION_KINDS.map(() => "").join(" | ")} |`);
       continue;
     }
-    L.push(`| [${cell(r.name)}](#${r.slug}) | ${fmt(r.score.score)} | ${pct(r.score.scaleShare)} | ${pct(r.score.cleanShare)} | ${r.elements} | ${VIOLATION_KINDS.map((k) => r.counts.byKind[k] || 0).join(" | ")} |`);
+    L.push(`| [${cell(r.name)}](#${r.slug})${r.stillLoading ? " (loading)" : ""} | ${fmt(r.score.score)} | ${pct(r.score.scaleShare)} | ${pct(r.score.cleanShare)} | ${r.elements} | ${VIOLATION_KINDS.map((k) => r.counts.byKind[k] || 0).join(" | ")} |`);
   }
   L.push("");
 
@@ -142,7 +134,8 @@ export function renderMarkdown(run, { compare = null, examplesPerKind = 6, offSc
   for (const [prop, label] of HIST_ORDER) {
     const pairs = site.histograms[prop];
     if (!pairs || !pairs.length) continue;
-    L.push(`- **${label}**: ${histogramLine(pairs, scaleOf(run, prop), m.tolerances.scale)}`);
+    const off = new Set(site.offScale.filter((o) => o.property === prop).map((o) => o.value));
+    L.push(`- **${label}**: ${histogramLine(pairs, off)}`);
   }
   L.push("");
 
@@ -166,7 +159,7 @@ export function renderMarkdown(run, { compare = null, examplesPerKind = 6, offSc
       L.push("");
       continue;
     }
-    const vpNote = r.viewport && r.viewport !== `${m.viewport.width}x${m.viewport.height}` ? ` · viewport ${r.viewport}` : "";
+    const vpNote = (r.viewport && r.viewport !== `${m.viewport.width}x${m.viewport.height}` ? ` · viewport ${r.viewport}` : "") + (r.scope && r.scope !== "page" ? ` · measured: ${r.scope}` : "");
     L.push(`\`${r.finalPath || r.path}\`${vpNote} · score **${fmt(r.score.score)}** (on scale ${pct(r.score.scaleShare)}, clean ${pct(r.score.cleanShare)}) · ${r.elements} elements${r.truncated ? " (truncated)" : ""}${r.hydrated === false ? " · not hydrated: no component names" : ""}${r.stillLoading ? " · **still showing loading placeholders when measured**" : ""}`);
     L.push("");
     if (r.screenshot) {
@@ -196,8 +189,16 @@ export function renderMarkdown(run, { compare = null, examplesPerKind = 6, offSc
       if (!list) continue;
       L.push(`<details><summary>${VIOLATION_LABELS[kind]}: ${list.length}</summary>`);
       L.push("");
-      for (const v of list.slice(0, examplesPerKind)) L.push(`- ${cell(describe(v.el))}: ${cell(v.message)} · \`${cell(v.el.path)}\``);
-      if (list.length > examplesPerKind) L.push(`- … ${list.length - examplesPerKind} more in geometry.json`);
+      // Identical findings on look-alike elements (every row of a list) are one line with a count.
+      const groups = new Map();
+      for (const v of list) {
+        const key = `${v.message}|${v.el.comp || ""}|${v.el.tag}|${v.el.role || ""}`;
+        if (!groups.has(key)) groups.set(key, { v, n: 0 });
+        groups.get(key).n++;
+      }
+      const lines = [...groups.values()];
+      for (const { v, n } of lines.slice(0, examplesPerKind)) L.push(`- ${cell(describe(v.el))}${n > 1 ? ` and ${n - 1} like it` : ""}: ${cell(v.message)} · \`${cell(v.el.path)}\``);
+      if (lines.length > examplesPerKind) L.push(`- … ${lines.length - examplesPerKind} more in geometry.json`);
       L.push("");
       L.push("</details>");
       L.push("");

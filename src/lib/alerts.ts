@@ -26,6 +26,26 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type AlertSeverity = "warn" | "critical";
 
+/**
+ * The kinds the background workers' watchdogs raise (src/lib/worker-watchdog.ts),
+ * named once so a mute in ALERT_MUTED_KINDS and a grep of the log agree with
+ * the code. Each is mailed (deduplicated per kind:key per hour, like every
+ * kind) and raised at most once an hour while its condition lasts.
+ *
+ *  - `work_executor_stale` (key `cloud`): the cloud Work executor's heartbeat
+ *    lapsed while cloud runs wait for it. Raised by juno-sweepers.
+ *  - `sweeper_stale` (key: the loop's name, or `juno-sweepers` for the whole
+ *    process): a background loop has not finished a tick for longer than it
+ *    ever should. A loop is watched by its own process; the process by
+ *    juno-work.
+ *  - `worker_recovered` (same keys): one of the above is reporting again.
+ */
+export const WORKER_ALERT_KINDS = {
+  executorStale: "work_executor_stale",
+  sweeperStale: "sweeper_stale",
+  recovered: "worker_recovered",
+} as const;
+
 export interface AlertInput {
   /** Stable slug identifying the alert class, e.g. "provider_unhealthy". */
   kind: string;

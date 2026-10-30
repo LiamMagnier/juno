@@ -17,6 +17,7 @@ import {
   decodeHandle,
   disableComputer,
   diskFullError,
+  finishHeldSleep,
   getComputerStorePersistence,
   isHostUnreachable,
   noteComputerContact,
@@ -242,14 +243,18 @@ async function sweepRow(read: AgentComputerRow, pass: RowPass): Promise<void> {
   const { provider, persistence, now, nowMs, restThresholdMs, sleepThresholdMs, summary } = pass;
   if (row.creationToken && row.creationExpiresAt && row.creationExpiresAt.getTime() > nowMs) return;
   if (row.billingStoppedAt) {
-    await sleepComputer(row.userId, row.agentId, { now });
-    summary.slept.push(row.agentId);
+    // A sleep that did not finish: a ledger write that failed after the stop,
+    // or a sleep held while the host could not be reached (S3.3). Finished
+    // here, at the first pass that reaches the host. It is a claim on the row
+    // as this pass read it: a wake or a run that finished it since (and may be
+    // using the computer again) keeps it.
+    if (await finishHeldSleep(row, { now, actor: "sweep" })) summary.slept.push(row.agentId);
     return;
   }
   // Viewing-only computers have no run heartbeat. The sweep covers them as
   // well as a run that stopped renewing; account spend includes accrued time.
   if (row.status === "awake" && await computerUsageBudgetRefusal(row.userId, row.agentId, now)) {
-    await sleepComputer(row.userId, row.agentId, { now });
+    await sleepComputer(row.userId, row.agentId, { now, reason: "budget", actor: "sweep" });
     summary.slept.push(row.agentId);
     return;
   }
@@ -334,6 +339,23 @@ async function sweepRow(read: AgentComputerRow, pass: RowPass): Promise<void> {
   // Pausing or stopping goes through the idle claim: a run that leased and woke the computer
   // after this sweep read the row keeps it.
   const ifIdle = { status: row.status, lastActiveAt: row.lastActiveAt, lastViewedAt: row.lastViewedAt };
+
+  // A wake that lost the host after `docker start` (its token provisioning
+  // or its own answer failed) left the row "starting" with the computer
+  // running: nothing meters it, the idle rules below never see it, and it
+  // holds an awake slot until someone wakes it again. A sleep that crashed
+  // after its claim leaves "stopping" the same way. Past the grace it is put
+  // to sleep through the idle claim, so a wake that wrote the row since keeps
+  // it. Never adopted as awake: that wake's checks (the browser sandbox, the
+  // thaw) did not run.
+  if (
+    (row.status === "starting" || row.status === "stopping") &&
+    (liveState === "running" || liveState === "paused") &&
+    nowMs - row.updatedAt.getTime() >= STARTING_GRACE_MS
+  ) {
+    if (await sleepComputer(row.userId, row.agentId, { now, ifIdle, actor: "sweep" })) summary.slept.push(row.agentId);
+    return;
+  }
   if (liveState === "running" && overDiskQuota({ diskMb: measuredDiskMb })) {
     if (!(await sleepComputer(row.userId, row.agentId, { now, ifIdle }))) return;
     await persistence.updateByAgent(row.userId, row.agentId, {

@@ -129,7 +129,7 @@ async function buildRun(opts: {
         exec: (command, o) => runTools.runComputerShell(attached().provider, attached().handle, command, o),
         listFiles: (dir) => attached().provider.listFiles(attached().handle, dir),
         readFile: async (p, max) => (await attached().provider.readFile(attached().handle, p, { maxBytes: max })).toString("utf8"),
-        writeFile: (p, c) => attached().provider.writeFile(attached().handle, p, c),
+        writeFile: (p, bytes) => attached().provider.writeFile(attached().handle, p, Buffer.from(bytes)),
         settle: false,
       })
       .filter((tool) => runTools.computerToolNamesFor({ vision: opts.vision ?? true }).includes(tool.spec.name))

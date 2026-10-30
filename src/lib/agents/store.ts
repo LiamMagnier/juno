@@ -1978,16 +1978,22 @@ interface DurableGoalData {
   budgetMicroUsd?: number | null;
 }
 
-function durableGoalData(input: DurableGoalInput, existing?: AgentGoal): DurableGoalData {
+/** The milestones a patch leaves, keeping what each one with the same id and title already finished. */
+function patchedMilestones(input: DurableGoalInput, existing?: AgentGoal) {
+  if (input.milestones === undefined) return null;
+  const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
+  return parseMilestones(input.milestones).map((m) => {
+    const before = previous.get(m.id);
+    return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
+  });
+}
+
+function durableGoalData(input: DurableGoalInput, existing?: AgentGoal, status?: string): DurableGoalData {
   const data: DurableGoalData = {};
-  if (input.milestones !== undefined) {
-    const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
-    const milestones = parseMilestones(input.milestones).map((m) => {
-      const before = previous.get(m.id);
-      return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
-    });
+  const milestones = patchedMilestones(input, existing);
+  if (milestones) {
     data.milestones = milestones as unknown as Prisma.InputJsonValue;
-    data.progress = goalProgress(milestones, existing?.status ?? "active");
+    data.progress = goalProgress(milestones, status ?? existing?.status ?? "active");
   }
   if (input.successCriteria !== undefined) data.successCriteria = parseCriteria(input.successCriteria);
   if (input.maxRuns !== undefined) data.maxRuns = input.maxRuns;
@@ -2051,30 +2057,39 @@ export async function updateAgentGoal(
     status: goal.status,
     dueAt: goal.dueAt,
   };
+  // An unverified goal ("Every step ran. Check the result.") given steps it
+  // has not run is no longer that: it goes back to work, so the driver runs
+  // them and the row stops saying every step ran.
+  const reopened =
+    patch.status === undefined &&
+    goal.status === GOAL_UNVERIFIED &&
+    (patchedMilestones(patch, goal)?.some((m) => !m.done) ?? false);
+  const nextStatus = patch.status ?? (reopened ? "active" : undefined);
   const updated = await prisma.agentGoal.update({
     where: { id: goal.id, userId: user.id },
     data: {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
       ...(patch.cadence !== undefined ? { cadence: patch.cadence } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(nextStatus !== undefined ? { status: nextStatus } : {}),
       ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt ? new Date(patch.dueAt) : null } : {}),
-      ...durableGoalData(patch, goal),
+      ...durableGoalData(patch, goal, nextStatus),
       // A goal the person resumes starts clean: whatever stopped it is theirs to have resolved.
-      ...(patch.status === "active" && goal.status !== "active" ? { blockers: [] } : {}),
+      ...(nextStatus === "active" && goal.status !== "active" ? { blockers: [] } : {}),
+      ...(reopened ? { nextAction: "New steps added; back to work on them." } : {}),
     },
   });
   let eventId: string | undefined;
-  if (patch.status && patch.status !== goal.status) {
+  if (nextStatus && nextStatus !== goal.status) {
     const verb =
-      patch.status === "achieved" ? "Achieved" : patch.status === "dropped" ? "Dropped" : patch.status === "paused" ? "Paused" : "Resumed";
+      nextStatus === "achieved" ? "Achieved" : nextStatus === "dropped" ? "Dropped" : nextStatus === "paused" ? "Paused" : "Resumed";
     eventId = await recordAgentEvent({
       userId: user.id,
       agentId: agent.id,
       kind: "goal_updated",
       title: `${verb}: ${updated.title}`,
       detail: {
-        status: patch.status,
+        status: nextStatus,
         before: { __entity: "goal_updated", goalId: goal.id, fields: beforeFields },
         after: { goalId: goal.id, status: updated.status },
       },

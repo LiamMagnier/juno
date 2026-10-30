@@ -239,6 +239,26 @@ module.exports = {
       ...tsxWorker("scripts/work-runner.ts", 448),
       watch: false,
       max_memory_restart: "900M",
+      // Graceful stop for the runs in flight. On SIGINT the runner claims
+      // nothing new, lets each run finish the step it is on and sets it aside
+      // for the next runner, which continues it when its checkpoint shows no
+      // tool call was cut short (src/lib/work/restart-resume-rules.ts). It
+      // waits WORK_SHUTDOWN_STEP_WAIT_MS (45 s) for the step, stops what is
+      // still inside one, takes 8 s to write that down and exits, inside this
+      // window. PM2's default of 1.6 s killed every run mid-step and let its
+      // lease lapse into `interrupted`. deploy.sh's pause_background_apps
+      // waits for this too, so a deploy with a run in flight takes up to a
+      // minute longer. Keep it above the step wait plus 10 s.
+      kill_timeout: 60_000,
+      // The stop signal goes to the runner alone. PM2's default (treekill)
+      // sends it to every descendant at once: the Work browser's Chromium
+      // and the computer tools' `docker exec` clients would be stopped in the
+      // middle of a call while the runner was still letting that step finish
+      // (the browser closed, a command left running in the computer with
+      // "exit 130" reported). The runner closes its own children when its
+      // runs stop, Playwright kills a browser when the runner exits, and
+      // tsx's esbuild service exits when its stdin closes.
+      treekill: false,
       env: {
         ...releaseEnv,
         ...pooledDatabaseEnv("juno-work"),

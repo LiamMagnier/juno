@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
 done
 [ -r "$TOKEN_FILE" ] || { echo "smoke: --token-file must name a readable file holding the token" >&2; exit 2; }
 exec "${JUNO_COMPUTER_HOST_PYTHON:-python3}" -I - "$URL" "$TOKEN_FILE" "$CA" <<'PY'
-import asyncio, json, os, secrets, ssl, sys, time, urllib.error, urllib.request
+import asyncio, base64, json, os, secrets, ssl, sys, time, urllib.error, urllib.request
 
 url, token_file, ca = sys.argv[1:]
 token = open(token_file).read().strip()
@@ -94,7 +94,7 @@ step("start", lambda: expect(*call("POST", "/v1/computers/%s/start" % name)) and
 step("provision the CDP token", lambda: expect(*call("PUT", "/v1/computers/%s/cdp-token" % name, raw=cdp_token.encode())) and None)
 step("state is running", lambda: expect(*call("GET", "/v1/computers/%s/state" % name))["state"] == "running" or (_ for _ in ()).throw(AssertionError("not running")))
 step("CDP through the tunnel", lambda: asyncio.run(tunnel(9222, cdp_token)))
-step("exec", lambda: expect(*call("POST", "/v1/computers/%s/exec" % name, {"command": "echo smoke-ok", "timeoutSeconds": 30}))["stdout"].strip())
+step("exec", lambda: base64.b64decode(expect(*call("POST", "/v1/computers/%s/exec" % name, {"command": "echo smoke-ok", "timeoutSeconds": 30}))["stdoutBase64"]).decode().strip())
 step("file round trip", lambda: (expect(*call("PUT", "/v1/computers/%s/files/content?path=/home/agent/work/smoke.txt" % name, raw=b"smoke-bytes")),
                                  expect(*call("GET", "/v1/computers/%s/files/content?path=/home/agent/work/smoke.txt" % name)))[1].decode())
 step("screenshot", lambda: "%d bytes of PNG" % len(expect(*call("GET", "/v1/computers/%s/screenshot" % name))))

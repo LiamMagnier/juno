@@ -276,7 +276,7 @@ export const AGENT_GOAL_TOOL: ToolDefinition = {
           type: "string",
           enum: ["add", "update", "achieve", "pause", "resume", "drop"],
           description:
-            "What to do with the goal. Use 'achieve' only when the person tells you the goal is met; never on your own judgement. A driven goal checks its own success criteria when its last step runs.",
+            "What to do with the goal. 'achieve' (or status 'achieved') puts a card to the person, and the goal is marked met only if they confirm it; use it only when they tell you the goal is met, never on your own judgement. A driven goal checks its own success criteria when its last step runs.",
         },
         goalId: { type: "string", description: "ID of the existing goal (optional if title matches an existing goal)." },
         title: { type: "string", description: "Goal title." },
@@ -446,7 +446,9 @@ export type AgentConfigApprovalRule =
   | "disable_computer"
   | "raise_autonomy"
   | "add_connectors"
-  | "change_model";
+  | "change_model"
+  // Marking a goal met: only the person's press closes a goal from chat.
+  | "agent_goal";
 
 export function isStaleAgentApproval(
   requestedUpdatedAt: Date | string | number | null | undefined,
@@ -640,6 +642,23 @@ export function classifyAgentConfigApproval(
       };
     }
     return { requiresApproval: false, ruleName: null, headline: `Update routine`, changes: [] };
+  }
+
+  if (toolName === AGENT_GOAL_TOOL_NAME) {
+    // A goal is met only on a criteria check that passed or on the person's
+    // own press (gap 11 of the 2026-10-27 Orbit discovery): from chat, closing
+    // a goal is always put to the person on a card, never the model's call.
+    const action = typeof rawArgs.action === "string" ? rawArgs.action : "add";
+    if (action !== "add" && (action === "achieve" || rawArgs.status === "achieved")) {
+      const title = typeof rawArgs.title === "string" && rawArgs.title.trim() ? rawArgs.title.trim() : null;
+      return {
+        requiresApproval: true,
+        ruleName: "agent_goal",
+        headline: title ? `Mark “${title}” met for ${targetName}?` : `Mark this goal met for ${targetName}?`,
+        changes: [{ label: title ? `Goal: ${title}` : "Goal", from: "Not marked met", to: "Met" }],
+      };
+    }
+    return { requiresApproval: false, ruleName: null, headline: `Update ${targetName}'s goal`, changes: [] };
   }
 
   if (toolName === UPDATE_AGENT_TOOL_NAME && agent) {

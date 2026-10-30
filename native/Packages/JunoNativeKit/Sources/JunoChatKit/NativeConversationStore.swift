@@ -2918,7 +2918,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     conversationID: context.conversationID
                 )
             } else {
-                events = try await chatClient.generationEvents(
+                events = try await drainAwareGenerationEvents(
+                    chatClient: chatClient,
                     NativeChatGenerationRequest(
                         conversationID: context.conversationID,
                         modelID: context.modelID,
@@ -3412,6 +3413,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
 
     private func shouldRecover(_ error: any Error) -> Bool {
         if let error = error as? NativeChatAPIError {
+            // A drain refused the request before reading it: there is no
+            // saved answer to wait for, so it is not a dropped stream.
+            if error.isServerDraining { return false }
             switch error {
             case .streamEndedWithoutTerminalEvent: true
             case .server(_, _, _, let retryable): retryable
@@ -3419,6 +3423,50 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             }
         } else {
             true
+        }
+    }
+
+    /// `POST /api/chat`, sent again while the server drains for a deploy.
+    ///
+    /// A draining server answers `503 SERVER_DRAINING` before it reads the
+    /// request, so nothing was accepted, written or charged, and the same
+    /// request — the same generation id, the user turn already appended — can
+    /// go out again once the replacement process is up. It used to be taken
+    /// for a dropped stream: "reconnecting to saved data", then minutes of
+    /// polling for an answer that was never started. The wait shows the
+    /// "Reconnecting in 5s" line a dropped stream shows; a Stop ends it.
+    private func drainAwareGenerationEvents(
+        chatClient: NativeChatAPIClient,
+        _ request: NativeChatGenerationRequest,
+        for accountID: AccountID
+    ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
+        var retries = 0
+        // However this ends — streaming, a Stop, cancellation or out of
+        // tries — the "Reconnecting" line it raised goes with it.
+        defer { if retries > 0 { chatConnection = nil } }
+        while true {
+            do {
+                let events = try await chatClient.generationEvents(request, for: accountID)
+                if retries > 0 { chatPhase = .submitting }
+                return events
+            } catch let drain as NativeChatAPIError
+                where drain.isServerDraining && retries < NativeChatAPIError.drainRetryLimit
+            {
+                guard chatPhase != .stopping else { throw drain }
+                retries += 1
+                // Jittered, so devices refused together do not return together.
+                let delay = NativeChatAPIError.drainRetryAfterSeconds * Double.random(in: 1...1.3)
+                let deadline = Date().addingTimeInterval(delay)
+                chatPhase = .reconnecting
+                chatErrorDescription = nil
+                chatConnection = TetherView(phase: .reconnecting, retryAt: deadline)
+                while Date() < deadline {
+                    try await Task.sleep(for: .milliseconds(250))
+                    // Stop pressed while waiting: nothing more is sent.
+                    if chatPhase == .stopping { throw drain }
+                }
+                chatConnection = TetherView(phase: .reconnecting, retryAt: nil)
+            }
         }
     }
 

@@ -181,6 +181,7 @@ model User {
   agentComputerHandoffs       AgentComputerHandoff[]
   agentComputerUsage          AgentComputerUsageInterval[]
   agentComputerAudits         AgentComputerAudit[]
+  computerShellOutputs        ComputerShellOutput[]
   agentSetupChanges           AgentSetupChange[]
   agentRoomMembers            AgentRoomMember[]
   agentRoomTurns              AgentRoomTurn[]
@@ -3404,6 +3405,7 @@ model WorkRun {
   io        WorkRunIO[]
   commands  WorkCommand[]
   toolRuns  ToolRun[]
+  computerShellOutputs ComputerShellOutput[]
 
   @@unique([sessionId, attempt])
   @@unique([userId, idempotencyKey])
@@ -4924,6 +4926,30 @@ model AgentComputerUsageInterval {
 
   @@unique([agentId, startedAt])
   @@index([userId, weekStart])
+}
+
+/// Streamed `computer_shell` output, for the read-only terminal pane
+/// (COMPUTERS_2026-10.md S5.1, writer: src/lib/computer/shell-output.ts). Each
+/// call writes a `command` row first and an `exit` row last; `text` is
+/// encryptSecret() of at most 16 KB of plaintext. The model's own result is
+/// unchanged and still lands in the run; this is only what the person watches.
+model ComputerShellOutput {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  runId     String
+  callId    String
+  seq       Int
+  /// command | stdout | stderr | exit
+  stream    String
+  /// encryptSecret(text); at most 16 KB of plaintext per row
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  run       WorkRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, callId, seq])
+  @@index([userId, agentId, createdAt])
 }
 
 /// Operator audit for computers. Identifiers and verdicts only (writer:

@@ -260,12 +260,18 @@ screen over the thread when it has one.
   (which has no such check) leaves it `unverified` for the person, who is
   notified and marks it met or keeps it going. Nothing fails open. The
   agent's own chat lists such a goal apart, as waiting for the person to
-  check, and is told never to call it met.
-- **What an agent learns in a task can stay** (2026-10-28). A cloud task has
-  `remember`, which saves one short note for the agent, at most three per run,
-  encrypted like every note. Under the default memory grant the note waits on
-  the profile until the person keeps it; only an agent granted all of their
-  memory keeps it at once, and a sensitive topic always waits.
+  check, and is told never to call it met; its `agent_goal` *achieve* puts an
+  approval card to the person, so only their press closes a goal from chat.
+  The verdict counts only from the attempt that completed.
+- **What an agent learns in a task can stay** (2026-10-28, tightened
+  2026-10-30). A cloud task has `remember`, which saves one short note for
+  the agent, at most three per run, encrypted like every note. Every such
+  note waits on the profile until the person keeps it, under every memory
+  setting: a task may have read a page or an email, and a kept note reaches
+  the agent's chat and voice prompt as what it knows. Notes are screened for
+  secrets (a value beside a password, code, key or login label in the shipped
+  languages, a login pair, a card number, a credential-shaped word the person
+  typed into the task); the screen is a rule over words, not a guarantee.
 
 **What is deployed vs not (2026-10-28).** Hiring, threads, configuration by
 chat, Work tasks, routines, driven goals, notes and notifications are in the

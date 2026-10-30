@@ -564,6 +564,7 @@ jobs:
             'juno_worker_test:WORKER_TEST_DATABASE_URL:work-workers.integration.test.ts' \
             'juno_coordinator_test:ORBIT_TEST_DATABASE_URL:agent-coordinator-fences.integration.test.ts' \
             'juno_park_resume_test:ORBIT_TEST_DATABASE_URL:work-park-resume.integration.test.ts' \
+            'juno_restart_resume_test:ORBIT_TEST_DATABASE_URL:work-restart-resume.integration.test.ts' \
             'juno_orbit_truth_test:ORBIT_TEST_DATABASE_URL:orbit-truth.integration.test.ts' \
             'juno_orbit_runner_test:ORBIT_TEST_DATABASE_URL:orbit-truth-runner.integration.test.ts' \
             'juno_history_test:HISTORY_TEST_DATABASE_URL:chat-history-paging.integration.test.ts'; do
@@ -696,7 +697,42 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/sandbox-boundary-check.py tests.test_exec_host.RealSandboxBoundary
 
+  # The agent-computer image, built once per run (as setup-vm.sh builds it) and
+  # handed to both real-container computer jobs, so the boundary suite and the
+  # end-to-end suite test the same image.
+  computer-image:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gate-computer-image-${{ github.ref }}
+      cancel-in-progress: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the agent-computer image, as setup-vm.sh does
+        run: docker build --pull -t juno-computer:1 deploy/agent-computers
+
+      # The app refuses any other label (src/lib/computer/docker.ts), so an image
+      # that does not carry it would turn both suites into tests of nothing.
+      - name: The image carries the security label the app requires
+        run: |
+          label=$(docker image inspect --format '{{index .Config.Labels "juno.security"}}' juno-computer:1)
+          required=$(sed -n 's/^export const COMPUTER_IMAGE_SECURITY_LABEL = "\(.*\)";$/\1/p' src/lib/computer/docker.ts)
+          echo "image label: $label, required: $required"
+          [ -n "$required" ] && [ "$label" = "$required" ]
+
+      - name: Save the image
+        run: docker save juno-computer:1 | zstd -T0 -3 -o "$RUNNER_TEMP/juno-computer.tar.zst"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: juno-computer-image
+          path: ${{ runner.temp }}/juno-computer.tar.zst
+          retention-days: 1
+          if-no-files-found: error
+
   computer-boundary:
+    needs: computer-image
     runs-on: ubuntu-latest
     concurrency:
       group: gate-computer-boundary-${{ github.ref }}
@@ -705,8 +741,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build the agent-computer image, as setup-vm.sh does
-        run: docker build --pull -t juno-computer:1 deploy/agent-computers
+      - uses: actions/download-artifact@v4
+        with:
+          name: juno-computer-image
+          path: ${{ runner.temp }}
+
+      - name: Load the agent-computer image the computer-image job built
+        run: zstd -dc "$RUNNER_TEMP/juno-computer.tar.zst" | docker load
 
       # Root: the suite creates the juno-computers network, installs
       # firewall.sh's rules, puts canary addresses on lo and runs the egress
@@ -718,6 +759,124 @@ jobs:
           JUNO_BOUNDARY_REQUIRE_ALL: "1"
           PYTHONDONTWRITEBYTECODE: "1"
         run: sudo -E env "PATH=$PATH" python3 scripts/sandbox-boundary-check.py tests.test_computer_boundary
+
+  # Agent computers end to end, on a real computer, for both providers
+  # (docs/design/agents-v2/COMPUTERS_2026-10.md S4): CDP through the gate,
+  # xdotool on the display, RFB through the relay, pause, stop and start, take
+  # over and hand back, a scripted Work run (no AI model anywhere), an image
+  # rebuild, and, for the remote provider through deploy/computer-host over TLS,
+  # losing the host mid-run. tests/computer-real-e2e.test.ts says what each
+  # test proves; tests/computer_host_fixture.py puts the production network,
+  # firewall and egress proxy on the runner and takes them off again.
+  #
+  # PROMOTION RULE: this job reports but does not gate the deploy. It joins
+  # build-and-deploy.needs only after three consecutive green runs of it in CI
+  # on a pre-flight branch (the lead pushes one). Every test passed three times
+  # in a row on the build machine before the job was written here (logs with
+  # the S4 evidence), but that machine (kernel 6.18 on Firecracker, no AppArmor,
+  # Docker 29.9.2, a locally built Ubuntu variant of the image) does not predict
+  # ubuntu-latest, so local passes alone never make a required job.
+  computer-e2e:
+    needs: computer-image
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gate-computer-e2e-${{ github.ref }}
+      cancel-in-progress: true
+    timeout-minutes: 45
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      # A 2-vCPU, 7 GB runner must pass the provider's preflight, and one
+      # computer at a time is all the suite keeps awake.
+      COMPUTER_MIN_FREE_MEMORY_MB: "512"
+      COMPUTER_MIN_FREE_DISK_GB: "4"
+      COMPUTER_MEMORY_MB: "1024"
+      # Every timed assertion in both suites multiplies by this.
+      JUNO_COMPUTER_TEST_SLACK: "2.5"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # agent-core's dist (the Work loop the suite drives), the i18n catalog.
+      - name: Prepare the unit-test state (npm run test:prepare)
+        run: npm run test:prepare
+
+      # The relay's real upgrade handler serves the live view in the suite.
+      - name: Install relay dependencies
+        run: npm ci --prefix relay
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: juno-computer-image
+          path: ${{ runner.temp }}
+
+      - name: Load the agent-computer image the computer-image job built
+        run: zstd -dc "$RUNNER_TEMP/juno-computer.tar.zst" | docker load
+
+      # ubuntu-latest restricts unprivileged user namespaces through AppArmor;
+      # the build machine has no AppArmor. Pinned here rather than inherited from
+      # whichever runner image ships, so Chromium's own sandbox is decided the
+      # same way every run (the fixture probes it as setup-vm.sh does). Every
+      # sandbox assertion is written per state: a runner where it stays off
+      # still runs the "off" assertions and the launcher's namespace ban.
+      - name: Let containers create user namespaces (Chromium's sandbox)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # websockets 10.4: the computer host's version floor (Debian 12 and
+      # Ubuntu 24.04 ship it), for the host and for the CDP gate's pipe test.
+      - name: Python with websockets 10.4
+        run: |
+          python3 -m venv "$RUNNER_TEMP/host-venv"
+          "$RUNNER_TEMP/host-venv/bin/pip" install --quiet websockets==10.4
+
+      - name: The CDP gate over its private pipe (runs, never skips)
+        env:
+          JUNO_COMPUTER_PIPE_REQUIRED: "1"
+        run: '"$RUNNER_TEMP/host-venv/bin/python" -m unittest discover -s tests -p test_computer_pipe.py -v'
+
+      - name: Put the computers' network, firewall and egress proxy on the runner
+        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py up
+
+      # As root: the suite drives docker through the production broker, which
+      # updates the egress map the fixture's root-owned watcher keeps.
+      - name: End to end, docker provider (single box, through the broker)
+        env:
+          JUNO_COMPUTER_E2E: "1"
+          JUNO_COMPUTER_E2E_PROVIDER: docker
+        run: sudo -E env "PATH=$PATH" npx tsx --test tests/computer-real-e2e.test.ts
+
+      # deploy/computer-host/local/run-local.sh --nginx: TLS through the
+      # generated nginx config with a private name-constrained CA, the
+      # production path. host.env carries NODE_EXTRA_CA_CERTS, which Node only
+      # reads when it starts.
+      - name: Start the computer host (run-local.sh --nginx)
+        env:
+          JUNO_COMPUTER_HOST_PYTHON: ${{ runner.temp }}/host-venv/bin/python
+        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py host-up
+
+      - name: End to end, remote provider (a separate computer host, over TLS)
+        env:
+          JUNO_COMPUTER_E2E: "1"
+          JUNO_COMPUTER_E2E_PROVIDER: remote
+        run: |
+          . /run/juno-computer-fixture/host.env
+          sudo -E env "PATH=$PATH" npx tsx --test tests/computer-real-e2e.test.ts
+
+      - name: Logs of the fixture and the host
+        if: always()
+        run: sudo sh -c 'tail -n 200 /run/juno-computer-fixture/fixture.log /run/juno-computer-fixture/host.log 2>/dev/null' || true
+
+      # Removes the host (and its nginx container), the network, the firewall
+      # rules, the lo addresses and the hosts lines, and fails if any is left.
+      - name: Take the fixture down
+        if: always()
+        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py down
 
   build-and-deploy:
     needs: [test, unit-tests, runner, migrations, exec-boundary, computer-boundary]

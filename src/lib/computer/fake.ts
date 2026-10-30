@@ -2,13 +2,14 @@ import "server-only";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
-import { COMPUTER_PATH_REFUSED, ComputerError } from "./errors";
+import { COMPUTER_NOT_RESPONDING, COMPUTER_PATH_REFUSED, ComputerError } from "./errors";
 import type {
   ComputerFileEntry,
   ComputerHandle,
   ComputerProvider,
   EndpointPurpose,
   Endpoints,
+  ExecOptions,
   ExecResult,
   Shot,
 } from "./types";
@@ -78,10 +79,16 @@ export class FakeProvider implements ComputerProvider {
   public preflightResult: { ok: boolean; reason?: string } = { ok: true };
   public diskUsageByVolume = new Map<string, number>();
   public defaultDiskUsageMb = 42;
+  /**
+   * Answers `exec`. It receives the call's options, `onOutput` included, so a
+   * test can stream output as a real command would (a line a second); when it
+   * streams nothing, the fake hands its result's output over line by line
+   * before returning, as a quick real command would.
+   */
   public execHandler?: (
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number }
+    opts?: ExecOptions
   ) => Promise<ExecResult> | ExecResult;
   /**
    * Frames a test wants the screen to show, by capture number (0-based), in
@@ -383,20 +390,31 @@ export class FakeProvider implements ComputerProvider {
   async exec(
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number; cwd?: string }
+    opts?: ExecOptions
   ): Promise<ExecResult> {
     if (opts?.cwd) normalizeAgentPath(opts.cwd);
-    this.record("exec", handle, command, opts);
-    if (this.execHandler) {
-      return await this.execHandler(handle, command, opts);
+    const { onOutput, ...recorded } = opts ?? {};
+    this.record("exec", handle, command, opts ? recorded : opts);
+    let streamed = false;
+    const watch = onOutput
+      ? (chunk: { stream: "stdout" | "stderr"; text: string }) => {
+          streamed = true;
+          try {
+            onOutput(chunk);
+          } catch {
+            // Watching a command never fails it.
+          }
+        }
+      : undefined;
+    const result: ExecResult = this.execHandler
+      ? await this.execHandler(handle, command, { ...recorded, ...(watch ? { onOutput: watch } : {}) })
+      : { stdout: `${command}\n`, stderr: "", exitCode: 0, timedOut: false, durationMs: 5 };
+    if (watch && !streamed) {
+      for (const stream of ["stdout", "stderr"] as const) {
+        for (const line of result[stream].match(/[^\n]*\n|[^\n]+$/g) ?? []) watch({ stream, text: line });
+      }
     }
-    return {
-      stdout: `${command}\n`,
-      stderr: "",
-      exitCode: 0,
-      timedOut: false,
-      durationMs: 5,
-    };
+    return result;
   }
 
   async listFiles(handle: ComputerHandle, dir = "/home/agent/work"): Promise<ComputerFileEntry[]> {
@@ -458,6 +476,11 @@ export class FakeProvider implements ComputerProvider {
     opts?: { by?: "agent" | "person" }
   ): Promise<void> {
     this.record("writeFile", handle, filePath, { by: opts?.by ?? "agent" });
+    // As the launcher: the agent's own write (`run`) is refused while a take
+    // over holds it frozen; the person's upload (`helper`) is not.
+    if ((opts?.by ?? "agent") === "agent" && this.containers.get(handle.name)?.frozen) {
+      throw new ComputerError(COMPUTER_NOT_RESPONDING, "fake: agent-exec run refused while frozen");
+    }
     const resolved = normalizeAgentPath(filePath);
     let fsMap = this.volumes.get(handle.volume);
     if (!fsMap) {

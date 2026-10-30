@@ -134,13 +134,17 @@ export function buildAgentPromptBlock(ctx: AgentPromptContext, userName?: string
 
   const notes = ctx.notes.slice(0, AGENT_PROMPT_NOTES);
   if (notes.length > 0) {
-    // No untrusted envelope, and that is a property of where notes come from
-    // rather than an oversight: a person writes some, and reflection writes the
-    // rest from inputs the account authored — goals, these notes, and the
-    // titles and statuses of its tasks, never a page a run read
-    // (src/lib/agents/reflect.ts). Enveloping them would switch on the
-    // untrusted-content rule for every turn in the thread, and with it the
-    // approval card in front of every task the agent starts.
+    // No untrusted envelope, and that is a property of where kept notes come
+    // from rather than an oversight: the person writes some; the agent's own
+    // chat saves some with agent_memory, which is refused on any turn that
+    // carries untrusted content; reflection writes some from inputs the
+    // account authored (goals, these notes, the titles and statuses of its
+    // tasks: src/lib/agents/reflect.ts). A note a TASK saves with `remember`
+    // may carry words from a page or an email the task read, so it is stored
+    // `pending` under every memory setting and reaches this list only after
+    // the person has read it and pressed Keep (src/lib/agents/note-review.ts);
+    // every reader here asks for `status: "kept"`. The person's Keep is what
+    // makes it theirs, the same as a note they typed.
     parts.push(
       [
         "## What you know",

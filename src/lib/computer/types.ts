@@ -23,6 +23,22 @@ export interface ExecResult {
   durationMs: number;
 }
 
+/** One piece of a running command's output, decoded as UTF-8 like the final result. */
+export interface ExecOutputChunk {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface ExecOptions {
+  timeoutSeconds?: number;
+  cwd?: string;
+  /**
+   * Called with output as it arrives (never after `exec` settles). A throw is
+   * swallowed: watching a command never fails it.
+   */
+  onOutput?: (chunk: ExecOutputChunk) => void;
+}
+
 export interface Endpoints {
   /** The CDP gate: `ws://<computer>:9222` for Docker, the host's `/v1/tunnel` URL for a remote host. */
   cdpUrl: string;
@@ -100,10 +116,15 @@ export interface ComputerProvider {
     handle: ComputerHandle,
     opts: { x1: number; y1: number; x2: number; y2: number }
   ): Promise<void>;
+  /**
+   * Runs a command as the agent. With `onOutput`, each piece of output is
+   * handed over as the command writes it (S5: the read-only terminal pane);
+   * the returned `ExecResult` is the same either way.
+   */
   exec(
     handle: ComputerHandle,
     command: string,
-    opts?: { timeoutSeconds?: number; cwd?: string }
+    opts?: ExecOptions
   ): Promise<ExecResult>;
   listFiles(handle: ComputerHandle, dir?: string): Promise<ComputerFileEntry[]>;
   readFile(handle: ComputerHandle, path: string, opts?: { maxBytes?: number }): Promise<Buffer>;

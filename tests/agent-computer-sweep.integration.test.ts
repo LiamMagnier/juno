@@ -93,6 +93,27 @@ test("sweeper writes on Postgres: a renewed lease and a changed row are left alo
     assert.ok((await store.listAgentIdsUnguarded()).has(agent.id));
     // Another account cannot act on this computer.
     assert.equal(await store.clearExpiredLeaseCas("someone_else", agent.id, "run_c", later), false);
+
+    // A held sleep is claimed once, and only while it still holds the end and interval that were read
+    // (S3: the sweep and a wake both finish held sleeps).
+    const end = new Date(t0.getTime() - 60_000);
+    const resumed = new Date(t0.getTime() - 360_000);
+    await db.agentComputer.update({
+      where: { agentId: agent.id },
+      data: { status: "stopping", billingStoppedAt: end, lastResumedAt: resumed, activeSeconds: 10 },
+    });
+    assert.equal(await store.claimHeldSleepCas(userId, agent.id, { billingStoppedAt: end, lastResumedAt: null }, 310), false);
+    assert.equal(await store.claimHeldSleepCas("someone_else", agent.id, { billingStoppedAt: end, lastResumedAt: resumed }, 310), false);
+    assert.equal(await store.claimHeldSleepCas(userId, agent.id, { billingStoppedAt: end, lastResumedAt: resumed }, 310), true);
+    const claimed = await db.agentComputer.findUniqueOrThrow({ where: { agentId: agent.id } });
+    assert.deepEqual(
+      [claimed.status, claimed.billingStoppedAt, claimed.lastResumedAt, claimed.activeSeconds],
+      ["stopping", null, null, 310],
+    );
+    assert.equal(await store.claimHeldSleepCas(userId, agent.id, { billingStoppedAt: end, lastResumedAt: resumed }, 310), false, "once");
+    // An interval already closed (lastResumedAt null) is claimed on the end alone.
+    await db.agentComputer.update({ where: { agentId: agent.id }, data: { billingStoppedAt: end } });
+    assert.equal(await store.claimHeldSleepCas(userId, agent.id, { billingStoppedAt: end, lastResumedAt: null }, 310), true);
   } finally {
     await db.user.delete({ where: { id: userId } }).catch(() => undefined);
     await db.$disconnect();

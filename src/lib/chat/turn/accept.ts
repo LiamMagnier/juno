@@ -219,7 +219,12 @@ export async function acceptTurn({
     const clientRequestId = input.clientRequestId!;
     const clientMessageId = input.clientMessageId!;
     const requestHash = firstSubmissionHash!;
-    const proposedGenerationId = crypto.randomUUID();
+    // The caller's own generation id when it named one, as the legacy path
+    // uses it: a Stop pressed while the turn is still in admission is recorded
+    // under that id (chat/stop-generation.ts), and the generation must register
+    // under the same one to find it. A repeat of this submission never reaches
+    // here — admission answers it from the receipt, whose id it keeps.
+    const proposedGenerationId = input.generationId ?? crypto.randomUUID();
     try {
       const acceptance = await prisma.$transaction(async (tx) => {
         let acceptedConversation = conversation;

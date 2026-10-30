@@ -264,8 +264,9 @@ Done:
   for the agent, at most three per run, through `src/lib/agents/run-notes.ts`.
   Under the default memory grant the note is `pending` (`AgentNote.status`,
   migration `20261028120000_agent_note_review`, expand-only) until the person
-  keeps it on the profile (*Keep* / *Forget*); only an agent granted all of
-  the person's memory keeps it at once, and a sensitive topic always waits.
+  keeps it on the profile (*Keep* / *Forget*). (At first an agent granted all
+  of the person's memory kept it at once; since the third pass below, every
+  task note waits.)
   No reader sees a pending note: the chat prompt, the run persona (cloud and
   Mac), reflection and `GET …/notes` read `status: "kept"`. Every note,
   whoever writes it, is screened: a value beside a password, PIN, code or key
@@ -302,6 +303,49 @@ Second pass (2026-10-30, same branch, not deployed):
   *Keep working* (a follow-up milestone dispatched as a real task) and *Keep*.
   Both O2 integration suites run in deploy.yml's isolated-database loop.
 
+Third pass (2026-10-30, after an adversarial check; same branch, not deployed):
+- **A task's note always waits for the person**, under every memory setting.
+  Before, "Everything you share with chats" kept it at once, and a kept note
+  reaches the agent's chat and voice prompt unwrapped, where a page a task
+  read could have planted a standing order (for instance a later brief change
+  on a trusted chat turn, which needs no card). Now the person's Keep is the
+  only way a task's words reach those prompts (`runNoteReview` in
+  `src/lib/agents/note-review.ts`; the comment in `src/lib/agents/prompt.ts`
+  says so).
+- **Only the person closes a goal from chat.** `agent_goal` *achieve* (or
+  status `achieved`) now raises an approval card (`agent_goal` rule, asked
+  under every policy short of block); without the press the goal is
+  unchanged.
+- **Wider secret screen.** Labels in English, French, German, Spanish,
+  Portuguese, Italian and Dutch (pw, passwd, mot de passe, Kennwort,
+  contraseña, senha, door/gate/alarm codes, …), login pairs ("login is jdoe
+  with …"), Luhn-valid card numbers spaced or dashed (masked), and a note that
+  repeats a credential-shaped word the person typed into the task (its
+  request, an answer, an instruction, an approval's reason), or any word with
+  a digit in an answer to a question that asked for a secret, is refused
+  (`personSecretValues`, fed by `personWordsOf` in `run-notes.ts`). It is a
+  rule over words, not a guarantee; the review is the backstop.
+- **The criteria verdict counts only from the attempt that completed**
+  (`latestGoalCriteriaCheck` matches the session's latest completed run's id):
+  a MET recorded by an attempt that then failed or was cancelled no longer
+  stands in for a retry that recorded nothing.
+- Adding undone milestones to an `unverified` goal puts it back to `active`
+  (it no longer says "Every step ran" over steps that did not).
+- The owner-tunable numbers are in env with clamped defaults
+  (`src/lib/agents/orbit-limits.ts`, `.env.example`,
+  `docs/OPEN_DECISIONS.md` §11): `AGENT_RUN_NOTES_PER_RUN`,
+  `AGENT_RUN_NOTE_MAX_CHARS`, `AGENT_GOAL_CHECK_TIMEOUT_MS`,
+  `AGENT_GOAL_CHECK_MAX_TOKENS`, `AGENT_GOAL_CHECK_STEP_CHARS`,
+  `AGENT_GOAL_CHECK_TOTAL_CHARS`.
+
+Native follow-ups (not built; no Swift compiler here):
+- Pending notes: `NativeAgentsClient.detail` does not decode `pendingNotes`,
+  so a note held for review can be seen and kept only on the web for now.
+- Plan gate: the native Agents screen still shows the hire field to Free and
+  Lite accounts; the server's `402 plan_locked` sentence reaches them only
+  after they describe a job. The native screen should show the upgrade card
+  as the web does.
+
 Tests: `tests/orbit-truth.test.ts`, `tests/orbit-truth.integration.test.ts`,
 `tests/orbit-truth-runner.integration.test.ts`,
 `runner/agent-core/src/test/work-judge.test.ts` (criteria cases) and
@@ -314,8 +358,9 @@ Not done or not verified:
   often a real model calls `remember`, and how well a real model's MET/NOT MET
   matches a person's judgement, is unmeasured.
 - Native: the Swift edits are uncompiled here, and the native profile has no
-  *Keep* / *Forget* for pending notes (they never reach native's `notes`) and
-  no *Mark it met* / *Keep working* beyond the existing tap to mark achieved.
+  *Keep* / *Forget* for pending notes (they never reach native's `notes`), no
+  *Mark it met* / *Keep working* beyond the existing tap to mark achieved, and
+  no upgrade card for a plan without agents (see "Native follow-ups" above).
 - The profile was looked at as a static render of the real API's answer with
   the app's CSS (the shared dev server restarted every few minutes under load,
   so the live chat page did not load for a screenshot); the controls'

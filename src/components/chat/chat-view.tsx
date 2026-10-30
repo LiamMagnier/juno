@@ -75,6 +75,7 @@ import { isTerminalStatus } from "@/lib/work/domain";
 import { WORK_SYNC_EVENT } from "@/components/work/work-transport";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
+import { SessionExpiredDialog } from "@/components/chat/session-expired-dialog";
 import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
 import { initialChatModel, mayRedecideInitialModel } from "@/lib/chat/initial-model";
@@ -3040,6 +3041,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       {currentConversationId && (
         <ShareDialog kind="CHAT" conversationId={currentConversationId} open={shareOpen} onOpenChange={setShareOpen} />
       )}
+      {/* A send that came back 401, and the unsent words handed back after sign-in. */}
+      <SessionExpiredDialog />
 
     </div>
     </ThoughtPanelProvider>

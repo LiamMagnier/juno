@@ -110,6 +110,13 @@ all three come from one fact: a Work run outlives the process that started it.
   unanswered question costs a worker until somebody comes back from lunch.
 - **It never restarts a run on its own.** `interrupted` is a terminal state with
   a retry the user chooses, for the reason given at the top of this document.
+  One narrow exception, which repeats nothing: when the runner is asked to stop
+  (a deploy, a PM2 restart), each run it drives finishes the step it is on and
+  is parked (`pauseReason: "server_restart"`), and the next runner continues it
+  only when its checkpoint shows every tool call of that step recorded
+  (`src/lib/work/restart-resume-rules.ts`, `WORK_RESUME_AFTER_RESTART`). A run
+  still inside a step when the wait runs out, or whose step ended on a tool
+  call the stop may have cut short, ends `interrupted`, as before.
 
 The agent runtime itself is `runner/agent-core/src/work` — the budget guard, the
 tool-tier lattice, the plan/progress checker and the untrusted-content scanner.

@@ -349,6 +349,15 @@ owner provisions a machine, runs its `setup.sh` and sets
   request to the host may take (a command adds its own limit of up to 300 s).
 - **Tunnel tickets**: single use, **60 s**, at most **16** outstanding per
   computer (`ticketTtlSeconds`, `maxTicketsPerComputer`).
+- **Commands at once (owner to confirm)**: at most **4** per computer and **24**
+  on the host (`maxCommandsPerComputer`, 1 to 16; `maxConcurrentCommands`, 1 to
+  64); one past either gets "The agent's computer is already running as many
+  commands as it can at once" (or the host's sentence). Each command's answer
+  carries at most **1 MiB** of each stream (the app keeps the first 20,000
+  characters). Together they keep the host service, which also carries every
+  open tunnel, far under its `MemoryMax=512M`: measured with a fake Docker, 8
+  commands at once that each print 16 MiB per stream took the service from 29
+  MiB to between 50 and 73 MiB (nine runs).
 - **Tokens**: at most two per environment namespace at once, rotated with
   `setup.sh --add-token` then `--retire-token`, without a restart. How often to
   rotate, and who holds them, is the owner's. One host per environment.
@@ -368,10 +377,26 @@ owner provisions a machine, runs its `setup.sh` and sets
   time the host answered, and resumes at the next answer; nothing is recreated
   or deleted during the outage.
 
-**Planned numbers that later stages add** (named here so the list is whole;
-none of them is in the code yet, and each stage that builds one updates this
-section): the inbox upload cap `AGENT_COMPUTER_UPLOAD_MAX_MB` (25); the
-streamed shell output kept per call `AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL` (512).
+**Files and the terminal pane** (stage S5; nothing here runs while computers
+are off):
+
+- **`AGENT_COMPUTER_UPLOAD_MAX_MB`, default 25** (owner to confirm; never above
+  25, because the computer host takes request bodies up to 30 MB): the largest
+  file a person can add to the computer's `~/work/inbox`. At most **30 uploads
+  per hour per agent**; a name that is already taken gets " (2)", " (3)" and so
+  on; nothing is added to a computer over its disk quota. Each upload is
+  audited (`file_uploaded`, its size only).
+- **`AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL`, default 512** (owner to confirm; 16
+  to 4096): the shell output kept per `computer_shell` call for the read-only
+  terminal pane, encrypted at rest (`ComputerShellOutput`). Past it the pane
+  says "[output continues; the rest is in the result]". The rows live as long
+  as the run they belong to and go with it; nothing prunes them sooner (owner
+  to confirm whether they should). The model's own result is unchanged (the
+  first 20,000 characters of each stream).
+- **Publishing a computer file as a deliverable**: regular files up to **25
+  MB**, always served as a download (never shown inline), audited
+  (`file_published`, its size only). A published file is not checked by the
+  deliverable validator, and its row says "not confirmed to open".
 
 **Still the owner's** (the plan's section 8): the computer host and its size,
 the price, egress and its log, unattended command grants (default: none),
@@ -384,30 +409,55 @@ promoting the real-container CI job to required.
 
 ## 11. Orbit: what an agent keeps from a task, and when a goal is met (owner to confirm)
 
-Code defaults chosen on 2026-10-28 (package O2). None is commercial; each is a
-product rule the owner may want different. Constants, not env, because they
-are safety bounds rather than tuning: changing one is a one-line edit with
-its test.
+Code defaults chosen on 2026-10-28 and tightened on 2026-10-30 (package O2).
+None is commercial; each is a product rule the owner may want different. The
+numbers are in env with clamped defaults (`src/lib/agents/orbit-limits.ts`,
+listed in `.env.example`); the rules are code, with their tests.
 
-- **Which notes wait for review** (`runNoteReview`, `src/lib/agents/note-review.ts`).
-  A note a cloud task saves with `remember` is kept at once only when the
-  agent's "What it may remember about you" is *Everything you share with
-  chats*; under *Your profile* (the default) and *Its own notes only* it waits
-  for the person's *Keep*. A note touching a sensitive topic always waits.
-  The alternative is to keep notes at once under *Your profile* too, which
-  makes `remember` useful without a review step but lets a task's untrusted
-  reading reach later tasks unreviewed.
-- **Three notes per run** (`MAX_RUN_NOTES_PER_RUN`) and **500 characters per
-  note** (`MAX_RUN_NOTE_CHARS`).
+- **Every note a task saves waits for review** (`runNoteReview`,
+  `src/lib/agents/note-review.ts`). A note a cloud task saves with `remember`
+  is `pending` until the person presses *Keep*, under every "What it may
+  remember about you" setting. Until 2026-10-30 *Everything you share with
+  chats* kept it at once; a review showed why that is unsafe: a kept note is
+  part of the agent's chat and voice prompt ("What you know", outside any
+  untrusted envelope), so a page or an email the task read could plant a
+  standing order, and a later chat turn with no untrusted content in it may
+  change the agent's brief without a card. The alternative (keep at once
+  under *Everything*) trades that risk for a step less; it would need the
+  note fenced as untrusted wherever it is read and the chat turn treated as
+  untrusted when it carries one.
+- **The secret screen** (same file). A note is refused when it puts a value
+  beside a password, PIN, code, key or login label (English, French, German,
+  Spanish, Portuguese, Italian, Dutch), gives a login as a pair, or repeats a
+  credential-shaped word (a digit, a letter, and both cases or a symbol, six
+  characters or more) the person typed into the task, or any word with a
+  digit in an answer to a question that asked for a secret. Card numbers that
+  pass the Luhn check and known key and token formats are masked. Ordinary
+  words the person typed are not blocked (a note may repeat "invoices"). It
+  is a rule over words: a secret phrased another way can get through, and
+  the review above is the backstop.
+- **Only the person closes a goal from chat.** The chat's `agent_goal`
+  *achieve* raises an approval card (rule `juno_agents:agent_goal`, asked
+  under every policy short of block). The alternative, refusing *achieve* in
+  chat and pointing to the profile's *Mark it met*, is stricter and less
+  convenient.
+- **Notes per run and note length**: `AGENT_RUN_NOTES_PER_RUN` (default 3,
+  1–10) and `AGENT_RUN_NOTE_MAX_CHARS` (default 500, 100 to the profile's own
+  1,000).
 - **A goal whose last step ran on a Mac ends `unverified`.** The criteria
   check runs only on the cloud executor; the Mac app has no such check yet,
   so such a goal always asks the person to check the result rather than being
   marked met. Adding the check to the Mac runner would need the Swift side.
-- **The criteria check's bounds**: 30 s and 120 output tokens per check
-  (`checkGoalCriteria`), the steps' results cut to 1,500 characters each and
-  8,000 in all (`GOAL_CHECK_STEP_CHARS`, `GOAL_CHECK_TOTAL_CHARS`). The check
-  is one extra model call on the agent's own model at the end of a goal; it
-  is not metered separately from the run (the same as the run's own judge).
+- **The criteria check's bounds**: `AGENT_GOAL_CHECK_TIMEOUT_MS` (default
+  30,000, 5,000–120,000) and `AGENT_GOAL_CHECK_MAX_TOKENS` (default 120,
+  40–400) per check; the steps' results cut to `AGENT_GOAL_CHECK_STEP_CHARS`
+  each (default 1,500, 300–6,000) and `AGENT_GOAL_CHECK_TOTAL_CHARS` in all
+  (default 8,000, 1,000–32,000). The check is one extra model call on the
+  agent's own model at the end of a goal; it is not metered separately from
+  the run (the same as the run's own judge). The validator also runs it on an
+  attempt that then fails or is cancelled (the session judges before it knows
+  how the run ended); that verdict is never used (only the completed run's
+  counts), but the call is still made.
 
 ---
 
@@ -466,6 +516,145 @@ Also for the owner:
   row. Their run panel's "Model" fact may still name the first pick after Auto
   moves on, because the web panel reads the last "Selected model" row and the
   Swift side was not changed.
+
+---
+
+## 13. Sends that survive a deploy: client bounds, receipts, the nginx page — **owner to confirm**
+
+A turn whose POST meets the deploy's drain (`503 SERVER_DRAINING`), nginx's
+502/504 while the app restarts, or a connection that fails before any response
+is now sent again by the web client when that is provably harmless, with a
+"Reconnecting…" line and Stop ending the wait at once
+(`src/lib/chat/send-retry.ts`, `src/hooks/use-chat.ts`); the Mac and iPhone
+apps re-send on the drain only (`NativeConversationStore.swift`). A 401 on send
+opens "Your session ended" and keeps the unsent words across sign-in
+(`src/components/chat/session-expired-dialog.tsx`).
+
+- **Client bounds (code constants, not env: they ship in the browser bundle
+  and the apps).** Web: at most 6 rounds per send (a POST or a "did it land?"
+  check) within 60 s; `Retry-After` honoured between 1 and 15 s; otherwise
+  2, 4, 8, 10 s; up to +30% jitter. Apps: up to 5 re-sends on a drain, 5 s
+  each plus up to 30% jitter. A deploy whose restart takes longer than that
+  still ends the turn with the drain's own sentence and a Retry send.
+- **Durable receipts for every new web chat.** The web now sends
+  `clientRequestId`/`clientMessageId` on a new saved chat's first message, so
+  each new web chat writes one `ChatFirstSubmissionReceipt` row (before, only
+  native/Quick did). Nothing deletes receipts today; a retention rule is the
+  owner's call. The receipt now generates under the caller's `generationId`
+  when one is sent (`src/lib/chat/turn/accept.ts`), so a Stop pressed before
+  the turn registered reaches it, as it already did on the legacy path.
+- **Saved follow-ups** carry no keys (the server accepts them only on a new
+  chat). After a 502/504 or a failed connection they are re-sent only once
+  the server says the first never landed (no generation running under the
+  turn's id, and the newest question is not this one). A turn still in
+  admission (before its user message is written) at the moment of that check
+  could in principle be sent twice; the check waits 2 s or more first.
+- **The nginx page is not live until an operator installs it.** Production's
+  `/etc/nginx/sites-available/juno` is not generated from the template; the
+  deploy only patches two buffer directives. Applying the new `map`,
+  `location /api/`, `error_page` and the two internal locations, and
+  installing `deploy/maintenance/updating.html` at
+  `/var/www/juno-maintenance/updating.html`, is a manual step (then
+  `sudo nginx -t && sudo systemctl reload nginx`).
+
+---
+
+## 14. Work runs that survive a deploy, worker alerts, and the scheduler inside juno-sweepers — **owner to confirm**
+
+**Runs across a restart of juno-work** (`src/lib/work/restart-resume-rules.ts`,
+`scripts/work-runner.ts`). On SIGINT or SIGTERM (a deploy, a PM2 restart or
+memory limit) the runner claims nothing new and asks each run it is driving to
+stop at its next step boundary: the moment its next model request would go
+out, when every tool call of the step before has returned and is recorded. A
+run that gets there is checkpointed and parked (`paused`,
+`pauseReason: "server_restart"`, lease released, not in Needs you, no
+notification). A run still inside a step when the wait runs out is stopped
+there and ends `interrupted` with its progress kept, as every run did before
+(a tool cut short may already have changed something). A run waiting for a
+person parks as it always has, and their answer requeues it. The next runner
+puts a parked run back in the queue only when the switch below is on and its
+checkpoint shows nothing in flight; otherwise it ends it `interrupted`, its
+progress kept. Its timeline shows "Paused — Stopped between two steps for a
+server restart. Its progress is saved." and then "Resumed — After a server
+restart." The budget, spend and lease rules are those of any resumed run. The
+runner's old rule was that it never restarts a run on its own; this is the one
+exception, and it repeats nothing.
+
+A run that reaches its step boundary right after a tool call the stop may
+have reached is not set aside either: it ends `interrupted` ("…that tool may
+have been cut short…"). That is a call that was running when the stop came
+and then failed, a browser or computer call (they work through processes of
+their own) that was running then, or one of those that started afterwards and
+failed. PM2 signals the runner alone (`treekill: false` on juno-work; its
+default sent the stop to the browser and the `docker exec` clients too), and
+the Work browser no longer installs Playwright's own signal handlers (they
+closed every browser and exited 130 at once), but a host shutdown or a
+terminal's Ctrl-C still reaches every process. If the owner raises the step
+wait without raising `kill_timeout`, the runner shortens the wait to fit
+(`kill_timeout` − 10 s), since PM2 would otherwise kill it mid-drain.
+
+- **`WORK_RESUME_AFTER_RESTART`, default on.** `0` (or `false`, `off`, `no`):
+  a run set aside for a restart ends `interrupted` instead, its progress kept,
+  and the person continues it.
+- **`WORK_SHUTDOWN_STEP_WAIT_MS`, default 45000 (bounded 1 s to 5 min).** How
+  long a run may take to reach the end of its step before it is stopped
+  mid-step. Then 8 s (fixed) to write that down, then the runner exits.
+- **juno-work `kill_timeout`: 60000 (`deploy/ecosystem.config.js`).** Was PM2's
+  default of 1.6 s. Keep it at least 10 s above the step wait. deploy.sh's
+  `pause_background_apps` stops juno-work at the start of every deploy and
+  waits for it, so a deploy with a run in flight takes up to a minute longer.
+
+**Process handlers** (`src/lib/worker-process.ts`). Every tsx worker now logs
+an unhandled rejection and keeps running; an uncaught exception is logged, the
+loops that registered a drain stop at a safe point (juno-work: the shutdown
+above; the scheduler, the trigger poller and the reflector: the tick in hand),
+and the process exits with code 1 for PM2 to restart. The other loops inside
+juno-sweepers (research, dreaming, import recovery, the code-task sweeper) are
+not drained: their work is lease-based and picked up on the next start.
+
+**Operator alerts** (`src/lib/worker-watchdog.ts`, through `alertOperator`:
+mailed to `OWNER_EMAILS`, at most one mail per kind and subject per hour, and
+the watchdogs raise each at most once an hour while it lasts, plus one
+all-clear). Kinds, mutable with `ALERT_MUTED_KINDS`:
+
+- `work_executor_stale:cloud` — raised by juno-sweepers: the executor's
+  heartbeat has lapsed (no beat for over 2 minutes) while at least one cloud
+  run waits for it (queued, or set aside for a restart).
+- `sweeper_stale:<loop>` — raised by juno-sweepers for its own loops: the
+  scheduler and the trigger poller after 10 minutes without a finished tick,
+  the reflector after 45. `sweeper_stale:juno-sweepers` — raised by juno-work
+  when juno-sweepers' own heartbeat (written each minute) is over 5 minutes
+  old, or missing in production.
+- `worker_recovered:<same key>` — the all-clear.
+- Each watcher ignores what it sees for its first 5 minutes up, because a
+  deploy stops and starts both workers. Owner to confirm the thresholds
+  (code constants in `src/lib/worker-watchdog-rules.ts` and
+  `src/lib/work/executor-presence.ts`). Not covered: both workers down at once
+  (nobody is left to tell), and the web process (Next logs its own errors).
+
+**The routine scheduler and the event-trigger poller do not run inside
+juno-sweepers — owner to decide.** `scripts/sweepers.ts` imported both, but
+each starts its loop only when it is the script node was asked to run, and
+inside juno-sweepers it never is (checked locally with tsx on Node 24; not
+verified on the production box). So, unless production runs them some other
+way, routines and event triggers have not been firing, and neither have the
+sweeps their ticks carry. The loops are now started only when
+**`SWEEPERS_RUN_WORK_SCHEDULER=1`** (default off, so this release changes
+nothing in production). Turning it on starts, at once:
+
+- routines firing again: under the default `run_once` policy each routine
+  owed a fire runs one catch-up, under `run_all` up to 25; each is a Work run
+  billed to its account;
+- event triggers polling the connected apps they watch;
+- the checkpoint retention sweep, which **deletes** the stored transcripts of
+  runs that ended more than 7 days ago (`CHECKPOINT_RETENTION_MS`);
+- the queued and parked run expiries, the tool-run sweep, artifact
+  maintenance (dry unless armed) and legacy scheduled-task adoption.
+
+**After a deploy**, deploy.sh now prints how juno-work and juno-sweepers came
+back (online, restarts in the 20 s after, `JUNO_WORKER_SETTLE_SECONDS`) and
+writes a `::warning::` for one that is missing, not online or restarting. It
+never fails the deploy on them.
 
 ---
 
