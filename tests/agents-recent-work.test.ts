@@ -23,6 +23,8 @@ test("every way an attempt can end counts as its task's latest result", () => {
   const context = store.slice(store.indexOf("export async function agentChatContext("));
   const recent = context.slice(context.indexOf("prisma.workSession.findMany({"), context.indexOf("const recentWork ="));
   assert.ok(recent.length > 0, "the recent-work query is where it was");
-  assert.match(recent, /runs: \{(?:\s*\/\/[^\n]*)*\s*where: \{\s*userId: user\.id,\s*status: \{ in: \[\.\.\.WORK_TERMINAL_STATUSES\] \},/);
+  // Comments out first, so the match needs no nested repetition around them.
+  const code = recent.replace(/\/\/[^\n]*/g, "");
+  assert.match(code, /runs: \{\s*where: \{\s*userId: user\.id,\s*status: \{ in: \[\.\.\.WORK_TERMINAL_STATUSES\] \},/);
   assert.match(recent, /orderBy: \{ finishedAt: "desc" \},\s*take: 1,/);
 });
