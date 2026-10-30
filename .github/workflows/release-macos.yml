@@ -50,7 +50,7 @@ jobs:
       # notarized and tagged would be a commit no human ever approved. The
       # sibling iOS workflow already pins `github.sha`; this now matches it.
       - name: Check out the dispatched commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
