@@ -738,7 +738,7 @@ jobs:
       # Already zstd-compressed: stored as it is (compression-level 0). Kept one
       # day; a job re-run after that finds it gone and builds the image itself
       # (the load steps below), so an expired artifact never fails a re-run.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: juno-computer-image
           path: ${{ runner.temp }}/juno-computer.tar.zst
@@ -914,7 +914,7 @@ jobs:
       # names tests, sizes and timings, never a token or a password).
       - name: Keep the suites' evidence of a failed run
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: computer-e2e-evidence
           path: ${{ runner.temp }}/e2e-evidence
