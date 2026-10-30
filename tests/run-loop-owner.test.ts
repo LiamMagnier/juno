@@ -223,7 +223,7 @@ test("the run's working mark is the galaxy, still until it owns the loop", async
   const settled = renderToStaticMarkup(
     React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thought for" }] }], motionKey: "summary:done", live: false }),
   );
-  assert.match(settled, /text-ui font-medium text-foreground\/80 leading-6/);
+  assert.match(settled, /text-ui font-medium text-muted-foreground leading-6/);
 });
 
 test("the favicon stack: one icon per site, first three by appearance, then a count", async () => {
