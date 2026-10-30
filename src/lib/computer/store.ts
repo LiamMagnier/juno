@@ -23,6 +23,7 @@ import {
 import {
   COMPUTER_NOT_RESPONDING,
   COMPUTER_PATH_REFUSED,
+  COMPUTER_UNREACHABLE,
   ComputerAccessError,
   ComputerError,
   isSafeAgentPath,
@@ -53,6 +54,7 @@ import {
   PROMPT_ASK_LINES,
   PROMPT_ASK_UNATTENDED_LINE,
   WAKE_REFUSED_SANDBOX,
+  WAKE_REFUSED_SANDBOX_REQUIRED,
   allowanceSentence,
   enabledCapSentence,
   type ComputerPolicyValue,
@@ -1373,6 +1375,58 @@ export async function settleRunComputerBilling(
   return cost;
 }
 
+/**
+ * The host stopped answering for an awake computer (S3.3, losing the host
+ * mid-run): its open interval is settled up to the last time anything reached
+ * it (`lastContactAt`), metered against the allowance and, at a price above 0,
+ * billed; `lastResumedAt` is cleared so nothing accrues during the outage; and
+ * `host_unreachable` is audited. Once per outage: a second call finds the
+ * interval already settled and does nothing. The row is otherwise left alone,
+ * never marked missing and never recreated.
+ */
+export async function settleComputerOutage(row: AgentComputerRow, now = new Date()): Promise<boolean> {
+  if (row.status !== "awake" || !row.lastResumedAt) return false;
+  const resumedMs = row.lastResumedAt.getTime();
+  const contactMs = Math.min(row.lastContactAt?.getTime() ?? resumedMs, now.getTime());
+  const seconds = Math.max(0, Math.floor((contactMs - resumedMs) / 1000));
+  if (seconds > 0) {
+    await billComputerSeconds({
+      userId: row.userId,
+      agentId: row.agentId,
+      seconds,
+      runId: row.leaseRunId,
+      since: row.lastResumedAt,
+    });
+  }
+  await activePersistence.updateByAgent(row.userId, row.agentId, {
+    lastResumedAt: null,
+    activeSeconds: row.activeSeconds + seconds,
+  });
+  await audit(row.userId, row.agentId, "host_unreachable", "sweep");
+  return true;
+}
+
+/**
+ * The sweep reached an awake computer through its provider: `lastContactAt`
+ * moves to now. After an outage (an awake row whose interval
+ * settleComputerOutage closed), metering resumes from this moment and
+ * `host_reachable` is audited with the outage's minutes. Returns the row as
+ * written, so the rest of the pass compares against it.
+ */
+export async function noteComputerContact(row: AgentComputerRow, now = new Date()): Promise<AgentComputerRow> {
+  if (row.status !== "awake") return row;
+  const recovering = !row.lastResumedAt && row.lastContactAt != null;
+  const updated = await activePersistence.updateByAgent(row.userId, row.agentId, {
+    lastContactAt: now,
+    ...(recovering ? { lastResumedAt: now } : {}),
+  });
+  if (recovering && row.lastContactAt) {
+    const minutes = Math.max(0, Math.round((now.getTime() - row.lastContactAt.getTime()) / 60_000));
+    await audit(row.userId, row.agentId, "host_reachable", "sweep", { minutes });
+  }
+  return updated;
+}
+
 /** Monday 00:00 UTC of the week `at` falls in: where the weekly allowance starts. */
 export function weekStartUtc(at: Date): Date {
   const day = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
@@ -1586,9 +1640,14 @@ export async function ensureAwake(
     await provider.provisionCdpToken(handle, secrets.cdpToken);
   } catch (err) {
     const message = publicComputerMessage(err);
-    await activePersistence
-      .updateByAgent(userId, agentId, { status: "error", lastError: message })
-      .catch(() => undefined);
+    // A host that cannot be reached says nothing about the computer: the row
+    // is left as it was (never marked as an error, never recreated), and the
+    // sweep settles its metering at the last contact (S3.3).
+    if (!isHostUnreachable(err)) {
+      await activePersistence
+        .updateByAgent(userId, agentId, { status: "error", lastError: message })
+        .catch(() => undefined);
+    }
     throw err instanceof ComputerError ? err : new ComputerError(message);
   }
 
@@ -1628,6 +1687,7 @@ export async function ensureAwake(
     status: "awake",
     lastActiveAt: now,
     lastResumedAt: wasAwake ? row.lastResumedAt : now,
+    lastContactAt: now,
     ...(opts?.touchView ? { lastViewedAt: now } : {}),
     diskMb,
     lastError: null,
@@ -1655,16 +1715,46 @@ async function checkWokenComputer(
     const days = Math.floor((Date.now() - built) / 86_400_000);
     if (days > env.agentComputer.maxImageAgeDays) await audit(userId, agentId, "image_stale", actor, { days });
   }
-  if (!provider.browserSandbox) return;
+  if (!hasPrimitive(provider, "browserSandbox")) return;
+  let state: "on" | "off" | "unknown";
   try {
-    const state = await provider.browserSandbox(handle);
+    state = await provider.browserSandbox(handle);
     await audit(userId, agentId, "browser_sandbox", actor, { state });
-  } catch {
+  } catch (error) {
+    // A host that stopped answering is not a failed safety check.
+    if (isHostUnreachable(error)) throw error;
     await audit(userId, agentId, "sandbox_check_failed", actor);
     await sleepComputer(userId, agentId, { reason: "sandbox", actor }).catch(() => undefined);
     await activePersistence.updateByAgent(userId, agentId, { lastError: WAKE_REFUSED_SANDBOX }).catch(() => undefined);
     throw new ComputerError(WAKE_REFUSED_SANDBOX);
   }
+  // Owner decision 8: AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX=1 refuses a
+  // computer whose Chromium runs without its own sandbox ("unknown": the gate
+  // has not recorded one, so it is not known to be on either).
+  if (env.agentComputer.requireBrowserSandbox && state !== "on") {
+    await audit(userId, agentId, "refused", actor, { reason: "browser_sandbox_required", state });
+    await sleepComputer(userId, agentId, { reason: "sandbox", actor }).catch(() => undefined);
+    await activePersistence.updateByAgent(userId, agentId, { lastError: WAKE_REFUSED_SANDBOX_REQUIRED }).catch(() => undefined);
+    throw new ComputerError(WAKE_REFUSED_SANDBOX_REQUIRED);
+  }
+}
+
+/**
+ * Whether a provider has one of the take-over and image primitives. The
+ * interface requires them since S3; the store still checks at run time, so a
+ * provider that lacks one (a test's fake standing in for an older one) is
+ * audited (`freeze_unavailable`) rather than crashing a take over.
+ */
+function hasPrimitive(
+  provider: ComputerProvider,
+  name: "freezeAgent" | "thawAgent" | "browserSandbox" | "isOutdated" | "imageInfo"
+): boolean {
+  return typeof (provider as Partial<ComputerProvider>)[name] === "function";
+}
+
+/** Whether an error is the computer layer saying the host (or Docker) could not be reached. */
+export function isHostUnreachable(error: unknown): boolean {
+  return error instanceof ComputerError && error.message === COMPUTER_UNREACHABLE;
 }
 
 /** An AgentEvent from the computer layer; never carries ids, addresses or secrets. */
@@ -2446,14 +2536,14 @@ async function thawAgentOutsideTakeover(
   depth = 0,
 ): Promise<void> {
   const { userId, agentId, handle, provider, actor } = input;
-  if (!provider.thawAgent) return;
+  if (!hasPrimitive(provider, "thawAgent")) return;
   const before = await activePersistence.findByAgent(userId, agentId);
   if (!before || takeoverWindowExists(before) || (before.takeoverEpoch ?? 0) !== input.epoch) return;
   await provider.thawAgent(handle).catch(() => audit(userId, agentId, "thaw_failed", actor));
 
   const after = await activePersistence.findByAgent(userId, agentId);
   if (!after || !takeoverWindowExists(after)) return;
-  if (!provider.freezeAgent) {
+  if (!hasPrimitive(provider, "freezeAgent")) {
     await audit(userId, agentId, "freeze_unavailable", actor);
     return;
   }
@@ -2715,12 +2805,15 @@ export async function openComputerViewSession(
     }),
   });
 
+  // A remote host's VNC tunnel (a fresh single-use ticket for this session)
+  // makes a version 2 token with the ticket sealed in it; Docker, version 1.
   const { token } = mintViewToken({
     agentId,
     userId,
     host: stream.endpoints.vncHost,
     port: stream.endpoints.vncPort,
     mode,
+    ...(stream.endpoints.vncTunnel ? { tunnel: stream.endpoints.vncTunnel } : {}),
   });
 
   // Control is exclusive: from here until Hand back (or a lapsed window) the
@@ -2742,7 +2835,7 @@ export async function openComputerViewSession(
     // failure never withholds control: the person must get it, and is told.
     if ((held?.takeoverEpoch ?? 0) !== epochBefore) {
       await audit(userId, agentId, "takeover_started", actor);
-      if (!awake.provider.freezeAgent) {
+      if (!hasPrimitive(awake.provider, "freezeAgent")) {
         freeze = "unavailable";
         await audit(userId, agentId, "freeze_unavailable", actor);
       } else {

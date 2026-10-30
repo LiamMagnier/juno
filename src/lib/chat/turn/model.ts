@@ -16,6 +16,7 @@ import { loadRoutingEvidence } from "@/lib/router/telemetry-store";
 import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
 import { loadModelCapabilityMap, modelCanRoute, modelToolCallingVerdict } from "@/lib/model-capability";
+import { supportsProMode } from "@/lib/model-metrics";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { formatClarificationModelMessage } from "@/lib/clarification-wizard";
 import { formatPreflightClarificationModelMessage } from "@/lib/preflight-clarification";
@@ -376,6 +377,17 @@ export async function resolveModel({
   // Persist the user's *selection* on the conversation (keep requested model sticky). The
   // concrete `modelId` is what every generation / message version records.
   const conversationModelId = isAutoModelId(requestedId) ? AUTO_MODEL_ID : requestedId;
+  /**
+   * Auto's next choice for this turn, for the one retry run-turn makes when
+   * the model rejects the request before streaming anything
+   * (src/lib/chat/turn/pre-stream-retry.ts). Null for an explicit choice — a
+   * routing contract, which is only ever retried on the same model — and
+   * under the smoke provider, which calls no model.
+   */
+  const autoRetry: AutoRetryPicker | null =
+    autoDecision && !deterministicSmokeProviderEnabled
+      ? autoRetryPicker({ decision: autoDecision, eligible, capabilityProbes })
+      : null;
 
   return {
     modelInfo,
@@ -389,7 +401,98 @@ export async function resolveModel({
     capabilityProbes,
     routingReceipt,
     routingTelemetryBase,
+    autoRetry,
   };
 }
 
 export type TurnModel = Exclude<Awaited<ReturnType<typeof resolveModel>>, Response>;
+
+/** The model Auto moves a turn to when its pick rejected the request before streaming. */
+export interface AutoRetryCandidate {
+  model: ModelInfo;
+  /** Auto's thinking effort for this model, from the decision's own reading of the prompt. */
+  reasoningEffort: ReturnType<typeof pickAutoReasoningEffort>;
+  /** The receipt the answer is saved with if this model answers ("couldn't be reached, so the next best model answered"). */
+  receipt: RoutingReceipt;
+  /** The decision's expected cost for this model, for the outcome row. */
+  expectedMicroUsd: number | null;
+}
+
+export interface AutoRetryPicker {
+  next(input: {
+    /** The model that rejected the request. */
+    failed: ModelInfo;
+    /** Skip the failed model's whole lab: its account or its host is what failed, not the model. */
+    avoidProvider: boolean;
+    /** Pro mode as the turn resolved it, for the tool-calling verdicts (turn/tools.ts reads it the same way). */
+    proMode: boolean;
+    /** The turn's own shape — serving tier, pro mode, search plan — holds on this model (run-turn). */
+    compatible: (model: ModelInfo) => boolean;
+  }): Promise<AutoRetryCandidate | null>;
+}
+
+const TOOL_VERDICT_RANK = { failed: 0, untested: 1, verified: 2 } as const;
+
+/**
+ * The decision's next ranked candidate that this turn can move to.
+ *
+ * The same gates every Auto substitute in `resolveModel` passes, re-read at
+ * the moment of the retry: one of the decision's own ranked candidates (so the
+ * context, vision, tool and budget filters the router applied hold), plan and
+ * routing eligibility, the account's Auto data boundary and the paid-tier
+ * terms (`eligible`), and a provider currently healthy — after a live account
+ * fault (provider-health.ts) that already excludes the lab that failed.
+ *
+ * Three more, because the turn was prepared for the model that failed and is
+ * not prepared again:
+ *  - its tools were granted on that model's tool-calling evidence
+ *    (turn/tools.ts), so the next model must be at least as proven;
+ *  - under the platform's daily ceiling Auto only ever moves to a model that
+ *    costs no more than the one it replaces (the rule `capacity` reroutes
+ *    follow above);
+ *  - the caller's `compatible` keeps the serving tier, pro mode and search
+ *    plan the turn was set up with.
+ */
+function autoRetryPicker({
+  decision,
+  eligible,
+  capabilityProbes,
+}: {
+  decision: RouteDecision;
+  eligible: (model: ModelInfo) => boolean;
+  capabilityProbes: Awaited<ReturnType<typeof loadModelCapabilityMap>>;
+}): AutoRetryPicker {
+  return {
+    async next({ failed, avoidProvider, proMode, compatible }) {
+      const now = new Date();
+      const floor = TOOL_VERDICT_RANK[modelToolCallingVerdict(failed, capabilityProbes, now, { proMode })];
+      // A failed read fails closed: no dearer model.
+      const capped = await isPlatformBudgetExceeded().catch(() => true);
+      for (const candidate of decision.ranked) {
+        const model = getModel(candidate.modelId);
+        if (!model || model.id === failed.id) continue;
+        if (avoidProvider && model.provider === failed.provider) continue;
+        if (!eligible(model) || !providerHealthy(model.provider as Provider)) continue;
+        if (capped && model.cost > failed.cost) continue;
+        const verdict = modelToolCallingVerdict(model, capabilityProbes, now, { proMode: proMode && supportsProMode(model) });
+        if (TOOL_VERDICT_RANK[verdict] < floor) continue;
+        if (!compatible(model)) continue;
+        const reasoningEffort = pickAutoReasoningEffort(model, decision.complexity);
+        // Back on the router's own pick (it was rerouted before the stream
+        // and is reachable again) is not a reroute.
+        const rerouted = model.id !== decision.model.id;
+        return {
+          model,
+          reasoningEffort,
+          receipt: {
+            ...receiptFromDecision({ ...decision, reasoningEffort: reasoningEffort ?? null }, model.id),
+            rerouted: rerouted ? decision.model.id : null,
+            rerouteReason: rerouted ? "unreachable" : null,
+          },
+          expectedMicroUsd: candidate.expectedTotalMicroUsd ?? null,
+        };
+      }
+      return null;
+    },
+  };
+}

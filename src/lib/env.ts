@@ -307,6 +307,35 @@ export const env = {
     get maxImageAgeDays(): number {
       return positiveNumber(process.env.AGENT_COMPUTER_MAX_IMAGE_AGE_DAYS, 14);
     },
+    /**
+     * A separate computer host (COMPUTER_PROVIDER=remote,
+     * deploy/computer-host/README.md): its `https://` origin. `http://` is
+     * accepted only to 127.0.0.1, ::1 or localhost outside production;
+     * anything else keeps the provider off (src/lib/computer/remote.ts).
+     */
+    get hostUrl(): string {
+      return (process.env.COMPUTER_HOST_URL ?? "").trim();
+    },
+    /** The host's bearer token, as its setup.sh generates it (64 hex or 43+ base64url characters). */
+    get hostToken(): string {
+      return (process.env.COMPUTER_HOST_TOKEN ?? "").trim();
+    },
+    /** Per-request timeout to the host; an exec adds its own command limit. */
+    get hostTimeoutMs(): number {
+      return Math.floor(positiveNumber(process.env.COMPUTER_HOST_TIMEOUT_MS, 30_000));
+    },
+    /** 1: refuse to wake a computer whose Chromium runs without its own sandbox (owner decision 8). */
+    get requireBrowserSandbox(): boolean {
+      return (process.env.AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX ?? "").trim() === "1";
+    },
+    /**
+     * Server-only: the relay the computer view uses, read before the voice
+     * relay variables (src/lib/computer/live-view.ts), and added to the CSP's
+     * connect-src. Lets a demo relay serve the computer view without moving voice.
+     */
+    get viewRelayUrl(): string {
+      return (process.env.COMPUTER_VIEW_RELAY_URL ?? "").trim();
+    },
     get costUsdPerMin(): number {
       if (process.env.COMPUTER_COST_MICRO_USD_PER_SECOND) {
         const micro = Number(process.env.COMPUTER_COST_MICRO_USD_PER_SECOND);

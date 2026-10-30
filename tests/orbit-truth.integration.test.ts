@@ -202,7 +202,7 @@ test("a goal is met only when its final step's run checked its criteria and the 
   const sessionOf = async (goalId: string, stepKey: string) => db.workSession.findFirstOrThrow({ where: { userId: owner, goalId, goalStepKey: stepKey } });
   const latestRun = (sessionId: string) => db.workRun.findFirstOrThrow({ where: { sessionId }, orderBy: { attempt: "desc" } });
   /** Runs a step the way the cloud executor does: validation (with the criteria check), then the finish. */
-  async function runStep(goalId: string, stepKey: string, answer: string, check: criteria.GoalCriteriaChecker, executorId: string) {
+  async function runStep(goalId: string, stepKey: string, answer: string, check: import("../src/lib/agents/goal-criteria").GoalCriteriaChecker, executorId: string) {
     const session = await sessionOf(goalId, stepKey);
     const run = await latestRun(session.id);
     await store.claimRun({ runId: run.id, userId: owner, executorId, now });
@@ -233,7 +233,7 @@ test("a goal is met only when its final step's run checked its criteria and the 
   try {
     await db.user.create({ data: { id: owner, email: `${owner}@example.invalid` } });
     await db.agent.create({ data: { userId: owner, name: "Quill", role: "Writer" } });
-    const never: criteria.GoalCriteriaChecker = async () => {
+    const never: import("../src/lib/agents/goal-criteria").GoalCriteriaChecker = async () => {
       throw new Error("a step that is not the last never checks the goal");
     };
 

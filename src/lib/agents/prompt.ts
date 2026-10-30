@@ -15,6 +15,7 @@
 import { AGENT_STYLE_PROMPT, agentStyle } from "@/lib/agents/domain";
 import { WORK_APPROVAL_MODE_LABEL } from "@/lib/work/domain";
 import { agentApprovalMode } from "@/lib/agents/domain";
+import { GOAL_UNVERIFIED } from "@/lib/agents/goals";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -30,7 +31,12 @@ export interface AgentPromptContext {
   style: string;
   instructions: string;
   approvalMode: string;
-  goals: readonly { title: string; status: string; lastCheckInNote: string | null }[];
+  /**
+   * Active goals, and `unverified` ones (every step ran, the criteria check did
+   * not pass or could not run: src/lib/agents/goals.ts `planGoalCompletion`)
+   * with the line that says why in `nextAction`.
+   */
+  goals: readonly { title: string; status: string; lastCheckInNote: string | null; nextAction?: string | null }[];
   notes: readonly { content: string; source: string }[];
   /** The account's other active agents, so it can name a colleague rather than pretend. */
   teammates: readonly { name: string; role: string }[];
@@ -101,6 +107,21 @@ export function buildAgentPromptBlock(ctx: AgentPromptContext, userName?: string
           goal.lastCheckInNote?.trim()
             ? `- ${line(goal.title)} (last check-in: ${line(goal.lastCheckInNote).slice(0, 240)})`
             : `- ${line(goal.title)}`
+        ),
+      ].join("\n")
+    );
+  }
+
+  // Every step ran but nothing showed the goal met: the agent must not say it
+  // is met when asked, and can say what the check found missing.
+  const unchecked = ctx.goals.filter((goal) => goal.status === GOAL_UNVERIFIED).slice(0, AGENT_PROMPT_GOALS);
+  if (unchecked.length > 0) {
+    parts.push(
+      [
+        "## Goals waiting for the person to check",
+        "Every step of these ran, but a check of their success criteria did not show them met, or could not be made. Never say one is met: the person marks it met on your profile, or asks you to keep working on it.",
+        ...unchecked.map((goal) =>
+          goal.nextAction?.trim() ? `- ${line(goal.title)} (${line(goal.nextAction).slice(0, 240)})` : `- ${line(goal.title)}`
         ),
       ].join("\n")
     );

@@ -15,7 +15,7 @@ import {
   SECRET_FIELD_REFUSAL,
 } from "@/lib/work/browser-page";
 import { computerProvider } from "./provider";
-import type { ComputerHandle, ComputerProvider, ComputerSecrets } from "./types";
+import type { ComputerHandle, ComputerProvider, ComputerSecrets, Endpoints } from "./types";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 25_000;
@@ -69,6 +69,28 @@ export interface PointDescriber {
 
 export interface RemoteAgentBrowser extends WorkBrowser, PointDescriber {
   withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>;
+}
+
+/**
+ * The URL the agent browser connects to. Docker: the gate on the computer's
+ * address, at the gate's one path. A remote host's tunnel (`cdpHeaders` set):
+ * exactly as given, since the host relays the path itself.
+ */
+export function cdpConnectUrl(ep: Pick<Endpoints, "cdpUrl" | "cdpHeaders">): string {
+  if (ep.cdpHeaders) return ep.cdpUrl;
+  const endpoint = new URL(ep.cdpUrl);
+  endpoint.protocol = ["https:", "wss:"].includes(endpoint.protocol) ? "wss:" : "ws:";
+  endpoint.pathname = "/devtools/browser";
+  return endpoint.toString();
+}
+
+/**
+ * The connection's headers: the gate's token always, and a remote host's
+ * tunnel ticket when it has one. No subprotocol is offered either way (the
+ * host selects none, and Playwright offers none).
+ */
+export function cdpConnectHeaders(ep: Pick<Endpoints, "cdpHeaders">, cdpToken: string): Record<string, string> {
+  return { ...(ep.cdpHeaders ?? {}), "X-Juno-Cdp-Token": cdpToken };
 }
 
 /** Whether a browser can describe points (the runner holds it as a plain WorkBrowser). */
@@ -276,13 +298,6 @@ export function connectAgentBrowser(
     }
   }
 
-  function resolveWsEndpoint(baseCdpUrl: string): string {
-    const endpoint = new URL(baseCdpUrl);
-    endpoint.protocol = ["https:", "wss:"].includes(endpoint.protocol) ? "wss:" : "ws:";
-    endpoint.pathname = "/devtools/browser";
-    return endpoint.toString();
-  }
-
   async function ensurePage(): Promise<Page | string> {
     if (page && !page.isClosed()) return page;
     if (unavailable) return unavailable;
@@ -292,13 +307,12 @@ export function connectAgentBrowser(
     }
 
     try {
-      const ep = await provider.endpoints(handle);
-      const wsUrl = await resolveWsEndpoint(ep.cdpUrl);
+      // A new connection asks for its endpoint again: a remote host's tunnel
+      // ticket is single use, so a reconnect gets a fresh one.
+      const ep = await provider.endpoints(handle, { purpose: "cdp" });
       const { chromium } = await import("playwright");
-      browser = await chromium.connectOverCDP(wsUrl, {
-        headers: {
-          "X-Juno-Cdp-Token": secrets.cdpToken,
-        },
+      browser = await chromium.connectOverCDP(cdpConnectUrl(ep), {
+        headers: cdpConnectHeaders(ep, secrets.cdpToken),
         timeout: 15_000,
       });
 

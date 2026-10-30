@@ -120,6 +120,9 @@ export const COMPUTER_UNAVAILABLE_NOTE = "Your computer can't be reached right n
 /** Said when the namespace check at wake failed (D13). */
 export const WAKE_REFUSED_SANDBOX = "This computer failed a safety check, so it was not started.";
 
+/** Said when the owner requires Chromium's own sandbox (AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX=1) and it is off. */
+export const WAKE_REFUSED_SANDBOX_REQUIRED = "This server requires the browser's own sandbox, and this computer can't use it.";
+
 /** The overlay's line once the agent's processes were paused for a take over. */
 export function takeoverInfoLine(agentName: string): string {
   return `${agentName} is paused while you have control. Windows ${agentName} opened itself are closed; its commands carry on when you hand back.`;

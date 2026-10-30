@@ -17,7 +17,7 @@ import "server-only";
 
 import { createAgentTransaction } from "@/lib/agents/creation";
 import type { Agent, AgentGoal, Prisma } from "@prisma/client";
-import { goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
+import { GOAL_UNVERIFIED, goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
 import { prisma } from "@/lib/prisma";
 import { decryptField, encryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
@@ -1867,11 +1867,13 @@ export async function agentChatContext(
   if (!agent) return null;
   const paused = agent.status !== "active";
   const [goals, notes, teammates, routinesCount, recentSessions] = await Promise.all([
+    // Active, and unverified (every step ran, nothing showed it met): the
+    // prompt names those apart so the agent never calls one met.
     prisma.agentGoal.findMany({
-      where: { userId: user.id, agentId, status: "active" },
+      where: { userId: user.id, agentId, status: { in: ["active", GOAL_UNVERIFIED] } },
       orderBy: { createdAt: "asc" },
       take: 8,
-      select: { title: true, status: true, lastCheckInNote: true },
+      select: { title: true, status: true, lastCheckInNote: true, nextAction: true },
     }),
     prisma.agentNote
       .findMany({
@@ -1998,8 +2000,10 @@ export async function createAgentGoal(
   agent: Agent,
   input: { title: string; detail: string; cadence: string; dueAt?: string | null } & DurableGoalInput
 ): Promise<AgentResult> {
+  // Open: still going, paused, or every step ran and it waits for the person
+  // to mark it met or keep it going (`unverified`).
   const count = await prisma.agentGoal.count({
-    where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused"] } },
+    where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused", GOAL_UNVERIFIED] } },
   });
   if (count >= MAX_AGENT_GOALS) {
     return refusal(409, "too_many_goals", `${agent.name} already has ${MAX_AGENT_GOALS} open goals. Finish or drop one first.`);

@@ -24,10 +24,26 @@ export interface ExecResult {
 }
 
 export interface Endpoints {
+  /** The CDP gate: `ws://<computer>:9222` for Docker, the host's `/v1/tunnel` URL for a remote host. */
   cdpUrl: string;
+  /**
+   * Headers the CDP connection must carry besides `X-Juno-Cdp-Token` (a remote
+   * host's single-use tunnel ticket, `X-Juno-Tunnel-Ticket`). When set, the URL
+   * is used exactly as given (no path rewrite) and no subprotocol is offered.
+   */
+  cdpHeaders?: Record<string, string>;
   vncHost: string;
   vncPort: number;
+  /**
+   * A remote host's VNC tunnel: its origin and a single-use 60 s ticket for
+   * port 5900, which the app seals into a version 2 relay token
+   * (src/lib/computer/live-view.ts). Docker leaves it unset (version 1 tokens).
+   */
+  vncTunnel?: { origin: string; ticket: string };
 }
+
+/** What a caller of `endpoints()` needs, so a remote host mints only that one ticket. */
+export type EndpointPurpose = "cdp" | "vnc";
 
 export interface ComputerHandle {
   name: string;
@@ -50,7 +66,7 @@ export interface ComputerFileEntry {
 }
 
 export interface ComputerProvider {
-  readonly name: "docker" | "fake";
+  readonly name: "docker" | "fake" | "remote";
   available(): Promise<{ ok: boolean; reason?: string }>;
   preflight(): Promise<{ ok: boolean; reason?: string }>;
   create(opts: { agentId: string; userId: string; cdpToken: string }): Promise<ComputerHandle>;
@@ -61,7 +77,12 @@ export interface ComputerProvider {
   /** Throws if the container or a volume could not be removed (already gone is fine). */
   destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void>;
   state(handle: ComputerHandle): Promise<"running" | "paused" | "exited" | "missing">;
-  endpoints(handle: ComputerHandle): Promise<Endpoints>;
+  /**
+   * Where the CDP gate and the VNC server are reached. A remote host mints a
+   * single-use tunnel ticket per call (only the one asked for, when `purpose`
+   * is given), so callers ask again for every new connection.
+   */
+  endpoints(handle: ComputerHandle, opts?: { purpose?: EndpointPurpose }): Promise<Endpoints>;
   /** One capture of the whole desktop, in a single exec (capture and read together). */
   screenshot(handle: ComputerHandle): Promise<Shot>;
   click(
@@ -122,22 +143,23 @@ export interface ComputerProvider {
 
   /*
    * The take-over and image primitives (docs/design/agents-v2/COMPUTERS_2026-10.md
-   * §3.2). Optional until every provider implements them (S3 makes them
-   * required); the store calls them with `?.` and audits `freeze_unavailable`
-   * when a provider has no `freezeAgent`.
+   * §3.2). Required since S3: every provider (Docker, the remote host, the
+   * fake) implements them, so none can silently skip a freeze. The store still
+   * checks for them at run time and audits `freeze_unavailable` if one is
+   * missing (a test's fake can hide them to stand in for an older provider).
    */
 
   /** D3: frozen marker, SIGSTOP every uid-1000 task until none runs, cut uid-1000 X clients,
    *  release modifiers and buttons. Throws ComputerError if a task still runs. Idempotent. */
-  freezeAgent?(handle: ComputerHandle): Promise<void>;
+  freezeAgent(handle: ComputerHandle): Promise<void>;
   /** Remove the frozen marker, then SIGCONT every uid-1000 task. Idempotent. */
-  thawAgent?(handle: ComputerHandle): Promise<void>;
+  thawAgent(handle: ComputerHandle): Promise<void>;
   /** "on" only when Chromium runs with its own sandbox AND the agent cannot create a user
    *  namespace (D13); "unknown" when Chromium is not running. Throws ComputerError when the
    *  agent CAN create one; the store then refuses the wake. */
-  browserSandbox?(handle: ComputerHandle): Promise<"on" | "off" | "unknown">;
+  browserSandbox(handle: ComputerHandle): Promise<"on" | "off" | "unknown">;
   /** Whether the container was created from another image than the current tag's (D16). */
-  isOutdated?(handle: ComputerHandle): Promise<boolean>;
+  isOutdated(handle: ComputerHandle): Promise<boolean>;
   /** The current image: its id, security label and build time (health, audit, age check). */
-  imageInfo?(): Promise<{ id: string; label: string; createdAt: string }>;
+  imageInfo(): Promise<{ id: string; label: string; createdAt: string }>;
 }

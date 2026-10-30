@@ -25,6 +25,7 @@ import { computerAccessFor } from "@/lib/computer/access";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
 import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
+import { agentHiringGate } from "@/lib/agents/plan-gate";
 import { parseChatTaskMode } from "@/lib/chat/task-approval-mode";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
@@ -332,6 +333,8 @@ export async function buildNativeTools({
           ...(await computerAccessFor(user.id)
             .then((access) => ({ computerConfigured: access.ok, computerAccessMessage: access.ok ? null : access.message }))
             .catch(() => ({ computerConfigured: false, computerAccessMessage: null }))),
+          // A plan without agents: create_agent says so before any approval card.
+          ...(plan ? { hiringRefusal: agentHiringGate(plan).message } : {}),
         })
       : [];
   // Setup by conversation (src/lib/chat/setup-change-tool.ts): only in a

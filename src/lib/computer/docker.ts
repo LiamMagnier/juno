@@ -131,6 +131,13 @@ export interface DockerCreateArgvOptions {
   network?: string;
   /** Absolute path of the seccomp profile, or null for Docker's default (see computerSeccompProfile). */
   seccompProfile?: string | null;
+  /**
+   * A separate computer host's environment namespace (COMPUTERS_2026-10.md
+   * D17): a fourth label, `juno.ns=<namespace>`, after the owner label. The
+   * host builds this argv itself (deploy/computer-host/juno-computer-host.py);
+   * the single-box provider never passes it.
+   */
+  namespace?: string;
 }
 
 /**
@@ -202,6 +209,7 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     `juno.agent=${opts.agentId}`,
     "--label",
     `juno.user=${opts.userId}`,
+    ...(opts.namespace ? ["--label", `juno.ns=${opts.namespace}`] : []),
     // No `-e JUNO_CDP_TOKEN`: `docker exec` inherits a container's configured
     // env, so the agent's shell (and so the model) could print it with `env`.
     // The token reaches the gate through stdin into tmpfs after every start
@@ -289,6 +297,172 @@ export function isAgentWorkAreaPath(resolved: string): boolean {
   return rest.length > 0 && rest.every((part) => part.length > 0 && !part.startsWith("."));
 }
 
+const PS_FORMAT = '{{.Names}}\t{{.Label "juno.agent"}}\t{{.Label "juno.user"}}\t{{.State}}';
+const PROVISION_TOKEN_SCRIPT =
+  "umask 077 && rm -f /run/juno/cdp-token.part && set -C && cat > /run/juno/cdp-token.part && mv -f /run/juno/cdp-token.part /run/juno/cdp-token";
+const VNC_PASSWORD_SCRIPT = "umask 077 && rm -f /run/juno/vncpass && set -C && cat > /run/juno/vncpass";
+
+/**
+ * Every docker argv a computer is driven with, by operation. The DockerProvider
+ * below sends exactly these through the broker; a separate computer host
+ * (deploy/computer-host/juno-computer-host.py, `--print-argv`) builds the same
+ * argv for the same inputs, with its namespace label and filters where noted,
+ * and tests/computer-host-argv.test.ts holds the two together.
+ */
+export const computerArgv = {
+  volumeCreate(agentId: string, volume: string, namespace?: string): string[] {
+    return [
+      "volume", "create", "--label", "app=juno", "--label", `juno.agent=${agentId}`,
+      ...(namespace ? ["--label", `juno.ns=${namespace}`] : []),
+      volume,
+    ];
+  },
+  create: buildDockerCreateArgv,
+  lifecycle(operation: "start" | "stop" | "pause" | "unpause", name: string): string[] {
+    return [operation, name];
+  },
+  remove(name: string): string[] {
+    return ["rm", "-f", name];
+  },
+  volumeRemove(volume: string): string[] {
+    return ["volume", "rm", "-f", volume];
+  },
+  state(name: string): string[] {
+    return ["inspect", "-f", "{{.State.Status}}", name];
+  },
+  address(name: string, network: string): string[] {
+    return ["inspect", "-f", `{{(index .NetworkSettings.Networks ${JSON.stringify(network)}).IPAddress}}`, name];
+  },
+  containerImage(name: string): string[] {
+    return ["inspect", "-f", "{{.Image}}", name];
+  },
+  imageLabel(image: string): string[] {
+    return ["image", "inspect", "--format", '{{index .Config.Labels "juno.security"}}', image];
+  },
+  imageId(image: string): string[] {
+    return ["image", "inspect", "--format", "{{.Id}}", image];
+  },
+  imageInfo(image: string): string[] {
+    return ["image", "inspect", "--format", IMAGE_INFO_FORMAT, image];
+  },
+  provisionToken(name: string): string[] {
+    return ["exec", "-i", "--user", "1001", name, "sh", "-c", PROVISION_TOKEN_SCRIPT];
+  },
+  tokenPending(name: string): string[] {
+    return ["exec", "--user", "1001", name, "test", "-e", "/run/juno/cdp-token"];
+  },
+  screenshot(name: string): string[] {
+    return screenshotArgv(name);
+  },
+  click(name: string, opts: { x: number; y: number; button?: "left" | "right" | "double" }): string[] {
+    const command = ["xdotool", "mousemove", "--sync", String(Math.round(opts.x)), String(Math.round(opts.y)), "click"];
+    if (opts.button === "double") command.push("--repeat", "2", "1");
+    else if (opts.button === "right") command.push("3");
+    else command.push("1");
+    return agentExecArgv(name, "run", command);
+  },
+  type(name: string, text: string): string[] {
+    return agentExecArgv(name, "run", ["xdotool", "type", "--delay", "12", "--", text]);
+  },
+  key(name: string, keys: string): string[] {
+    return agentExecArgv(name, "run", ["xdotool", "key", "--", ...keySequence(keys)]);
+  },
+  scroll(name: string, opts: { x: number; y: number; dx?: number; dy?: number }): string[] {
+    const dy = opts.dy ?? 0;
+    const repeat = String(Math.max(1, Math.min(20, Math.round(Math.abs(dy || opts.dx || 3)))));
+    const button = dy < 0 ? "4" : "5";
+    return agentExecArgv(name, "run", [
+      "xdotool", "mousemove", String(Math.round(opts.x)), String(Math.round(opts.y)), "click", "--repeat", repeat, button,
+    ]);
+  },
+  drag(name: string, opts: { x1: number; y1: number; x2: number; y2: number }): string[] {
+    return agentExecArgv(name, "run", [
+      "xdotool", "mousemove", String(Math.round(opts.x1)), String(Math.round(opts.y1)), "mousedown", "1",
+      "mousemove", String(Math.round(opts.x2)), String(Math.round(opts.y2)), "mouseup", "1",
+    ]);
+  },
+  /** `seconds` is already clamped (1 to 300); `workdir` is already resolved under /home/agent. */
+  exec(name: string, command: string, seconds: number, workdir: string): string[] {
+    return agentExecArgv(
+      name,
+      "run",
+      ["timeout", "--signal=TERM", "--kill-after=5", String(seconds), "bash", "--noprofile", "--norc", "-c", command],
+      { workdir }
+    );
+  },
+  realpath(name: string, candidate: string): string[] {
+    return agentExecArgv(name, "helper", ["realpath", "-m", "--", candidate]);
+  },
+  list(name: string, dir: string): string[] {
+    return agentExecArgv(name, "helper", ["find", dir, "-maxdepth", "1", "-mindepth", "1", "-printf", "%y\\t%s\\t%T@\\t%p\\n"]);
+  },
+  read(name: string, resolved: string, maxBytes: number): string[] {
+    return agentExecArgv(name, "helper", ["head", "-c", String(maxBytes), "--", resolved]);
+  },
+  mkdir(name: string, dir: string, mode: AgentLauncherMode): string[] {
+    return agentExecArgv(name, mode, ["mkdir", "-p", "--", dir]);
+  },
+  write(name: string, resolved: string, mode: AgentLauncherMode): string[] {
+    return agentExecArgv(name, mode, ["sh", "-c", 'cat > "$1"', "sh", resolved], { interactive: true });
+  },
+  du(name: string): string[] {
+    return agentExecArgv(name, "helper", ["du", "-sm", "/home/agent"]);
+  },
+  stat(name: string, resolved: string): string[] {
+    return agentExecArgv(name, "helper", ["stat", "-c", "%s:%F", "--", resolved]);
+  },
+  vncKill(name: string): string[] {
+    return ["exec", "--user", "1001", name, "pkill", "-x", "x11vnc"];
+  },
+  vncPassword(name: string): string[] {
+    return ["exec", "-i", "--user", "1001", name, "sh", "-c", VNC_PASSWORD_SCRIPT];
+  },
+  /**
+   * `allow` is the only VNC client address (the host side of the computers
+   * network, where the relay or the host's tunnel dials from); null keeps the
+   * macOS development arguments, where Docker's proxy publishes the port.
+   */
+  vncStart(name: string, allow: string | null): string[] {
+    return [
+      "exec", "--user", "1001", "-e", "DISPLAY=:0", name, "x11vnc", "-display", ":0", "-forever", "-shared",
+      "-rfbport", "5900", "-noipv6", ...(allow ? ["-allow", allow] : []), "-passwdfile", "rm:/run/juno/vncpass",
+      "-bg", "-o", "/tmp/x11vnc.log",
+    ];
+  },
+  vncRunning(name: string): string[] {
+    return ["exec", "--user", "1001", name, "pgrep", "-x", "x11vnc"];
+  },
+  listContainers(namespace?: string): string[] {
+    return ["ps", "-a", "--filter", "label=app=juno", ...(namespace ? ["--filter", `label=juno.ns=${namespace}`] : []), "--format", PS_FORMAT];
+  },
+  listVolumes(namespace?: string): string[] {
+    return [
+      "volume", "ls", "--filter", "name=juno-agent-", ...(namespace ? ["--filter", `label=juno.ns=${namespace}`] : []),
+      "--format", "{{.Name}}",
+    ];
+  },
+  freeze(name: string): string[][] {
+    return [
+      ["exec", "--user", "1001", name, "touch", FROZEN_MARKER],
+      ["exec", "--user", "1000", name, AGENT_LAUNCHER, "freeze"],
+      xClientsArgv(name, "close-uid", "1000"),
+      xClientsArgv(name, "release-all"),
+    ];
+  },
+  thaw(name: string): string[][] {
+    return [
+      ["exec", "--user", "1001", name, "rm", "-f", FROZEN_MARKER],
+      ["exec", "--user", "1000", name, AGENT_LAUNCHER, "thaw"],
+    ];
+  },
+  sandboxState(name: string): string[] {
+    return ["exec", "--user", "1001", name, "cat", BROWSER_SANDBOX_STATE];
+  },
+  sandboxProbe(name: string): string[] {
+    return agentExecArgv(name, "helper", ["unshare", "-Ur", "true"]);
+  },
+};
+
 /**
  * A failed `docker` call, as the rest of Juno may see it. The daemon's words
  * name the container and sometimes an address, so they are scrubbed and kept
@@ -314,7 +488,7 @@ export async function resolveContainerPath(
   const candidate = rawPath.startsWith("/")
     ? rawPath
     : path.posix.join("/home/agent/work", rawPath);
-  const { stdout } = await runDockerText(agentExecArgv(handle.name, "helper", ["realpath", "-m", "--", candidate]));
+  const { stdout } = await runDockerText(computerArgv.realpath(handle.name, candidate));
   // realpath runs as an argv (no shell, so no profile the agent could have
   // edited), and its answer is still checked as untrusted text: normalized,
   // no `..`, no newline, under /home/agent.
@@ -337,7 +511,7 @@ export class DockerProvider implements ComputerProvider {
 
   async available(): Promise<{ ok: boolean; reason?: string }> {
     const image = env.agentComputer.image;
-    const res = await runDockerText(["image", "inspect", "--format", '{{index .Config.Labels "juno.security"}}', image], {
+    const res = await runDockerText(computerArgv.imageLabel(image), {
       allowNonZero: true,
       timeoutMs: 8_000,
     });
@@ -434,26 +608,10 @@ export class DockerProvider implements ComputerProvider {
       }
     }
 
-    await runDockerText([
-      "volume",
-      "create",
-      "--label",
-      "app=juno",
-      "--label",
-      `juno.agent=${opts.agentId}`,
-      volume,
-    ]);
-    await runDockerText([
-      "volume",
-      "create",
-      "--label",
-      "app=juno",
-      "--label",
-      `juno.agent=${opts.agentId}`,
-      `${volume}-browser`,
-    ]);
+    await runDockerText(computerArgv.volumeCreate(opts.agentId, volume));
+    await runDockerText(computerArgv.volumeCreate(opts.agentId, `${volume}-browser`));
 
-    const createArgv = buildDockerCreateArgv({
+    const createArgv = computerArgv.create({
       agentId: opts.agentId,
       userId: opts.userId,
     });
@@ -478,22 +636,10 @@ export class DockerProvider implements ComputerProvider {
    * that path, on a start or on an unpause while its processes are alive.
    */
   async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
-    await spawnDockerWithStdin(
-      [
-        "exec",
-        "-i",
-        "--user",
-        "1001",
-        handle.name,
-        "sh",
-        "-c",
-        "umask 077 && rm -f /run/juno/cdp-token.part && set -C && cat > /run/juno/cdp-token.part && mv -f /run/juno/cdp-token.part /run/juno/cdp-token",
-      ],
-      Buffer.from(token, "utf8")
-    );
+    await spawnDockerWithStdin(computerArgv.provisionToken(handle.name), Buffer.from(token, "utf8"));
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const left = await runDockerText(
-        ["exec", "--user", "1001", handle.name, "test", "-e", "/run/juno/cdp-token"],
+        computerArgv.tokenPending(handle.name),
         { allowNonZero: true, timeoutMs: 5_000 }
       );
       if (left.exitCode !== 0) return;
@@ -506,19 +652,19 @@ export class DockerProvider implements ComputerProvider {
     if (!pre.ok) {
       throw new ComputerError(pre.reason ?? "The server cannot start another computer right now.");
     }
-    await runDockerText(["start", handle.name]);
+    await runDockerText(computerArgv.lifecycle("start", handle.name));
   }
 
   async pause(handle: ComputerHandle): Promise<void> {
-    await runDockerText(["pause", handle.name]);
+    await runDockerText(computerArgv.lifecycle("pause", handle.name));
   }
 
   async unpause(handle: ComputerHandle): Promise<void> {
-    await runDockerText(["unpause", handle.name]);
+    await runDockerText(computerArgv.lifecycle("unpause", handle.name));
   }
 
   async stop(handle: ComputerHandle): Promise<void> {
-    await runDockerText(["stop", handle.name], {
+    await runDockerText(computerArgv.lifecycle("stop", handle.name), {
       allowNonZero: true,
       timeoutMs: 30_000,
     });
@@ -534,17 +680,17 @@ export class DockerProvider implements ComputerProvider {
         throw dockerFailure(argv, res.exitCode, res.stderr || res.stdout);
       }
     };
-    await remove(["rm", "-f", handle.name]);
+    await remove(computerArgv.remove(handle.name));
     if (opts?.removeVolume) {
-      await remove(["volume", "rm", "-f", `${handle.volume}-browser`]);
-      await remove(["volume", "rm", "-f", handle.volume]);
+      await remove(computerArgv.volumeRemove(`${handle.volume}-browser`));
+      await remove(computerArgv.volumeRemove(handle.volume));
     }
   }
 
   async state(
     handle: ComputerHandle
   ): Promise<"running" | "paused" | "exited" | "missing"> {
-    const argv = ["inspect", "-f", "{{.State.Status}}", handle.name];
+    const argv = computerArgv.state(handle.name);
     const res = await runDockerText(argv, { allowNonZero: true });
     if (res.exitCode !== 0) {
       // Missing only when Docker says so (the broker's exit 3, or the daemon's
@@ -586,12 +732,7 @@ export class DockerProvider implements ComputerProvider {
       };
     }
 
-    const inspectOut = await runDockerText([
-      "inspect",
-      "-f",
-      `{{(index .NetworkSettings.Networks ${JSON.stringify(env.agentComputer.network)}).IPAddress}}`,
-      handle.name,
-    ]);
+    const inspectOut = await runDockerText(computerArgv.address(handle.name, env.agentComputer.network));
     const ip = inspectOut.stdout.trim();
     if (!ip) {
       throw new ComputerError(COMPUTER_UNREACHABLE, "container has no address on the computers network");
@@ -607,7 +748,7 @@ export class DockerProvider implements ComputerProvider {
     // One exec, not two: a `docker exec` costs tens of milliseconds before it
     // runs anything, and every step now captures at least twice while the
     // screen settles. The script is a constant — nothing is interpolated.
-    const raw = await runDockerBuffer(screenshotArgv(handle.name));
+    const raw = await runDockerBuffer(computerArgv.screenshot(handle.name));
     if (raw.exitCode !== 0 || raw.stdout.byteLength === 0) {
       throw new ComputerError(COMPUTER_NOT_RESPONDING, "screenshot was empty");
     }
@@ -625,62 +766,31 @@ export class DockerProvider implements ComputerProvider {
     handle: ComputerHandle,
     opts: { x: number; y: number; button?: "left" | "right" | "double" }
   ): Promise<void> {
-    const x = String(Math.round(opts.x));
-    const y = String(Math.round(opts.y));
-    const command = ["xdotool", "mousemove", "--sync", x, y, "click"];
-    if (opts.button === "double") {
-      command.push("--repeat", "2", "1");
-    } else if (opts.button === "right") {
-      command.push("3");
-    } else {
-      command.push("1");
-    }
-    await runDockerText(agentExecArgv(handle.name, "run", command));
+    await runDockerText(computerArgv.click(handle.name, opts));
   }
 
   async type(handle: ComputerHandle, text: string): Promise<void> {
-    await runDockerText(agentExecArgv(handle.name, "run", ["xdotool", "type", "--delay", "12", "--", text]));
+    await runDockerText(computerArgv.type(handle.name, text));
   }
 
   async key(handle: ComputerHandle, keys: string): Promise<void> {
     const sequence = keySequence(keys);
     if (sequence.length === 0) throw new ComputerError("Say which key to press.");
-    await runDockerText(agentExecArgv(handle.name, "run", ["xdotool", "key", "--", ...sequence]));
+    await runDockerText(computerArgv.key(handle.name, keys));
   }
 
   async scroll(
     handle: ComputerHandle,
     opts: { x: number; y: number; dx?: number; dy?: number }
   ): Promise<void> {
-    const x = String(Math.round(opts.x));
-    const y = String(Math.round(opts.y));
-    const dy = opts.dy ?? 0;
-    const repeat = String(
-      Math.max(1, Math.min(20, Math.round(Math.abs(dy || opts.dx || 3))))
-    );
-    const button = dy < 0 ? "4" : "5";
-    await runDockerText(agentExecArgv(handle.name, "run", ["xdotool", "mousemove", x, y, "click", "--repeat", repeat, button]));
+    await runDockerText(computerArgv.scroll(handle.name, opts));
   }
 
   async drag(
     handle: ComputerHandle,
     opts: { x1: number; y1: number; x2: number; y2: number }
   ): Promise<void> {
-    await runDockerText(
-      agentExecArgv(handle.name, "run", [
-        "xdotool",
-        "mousemove",
-        String(Math.round(opts.x1)),
-        String(Math.round(opts.y1)),
-        "mousedown",
-        "1",
-        "mousemove",
-        String(Math.round(opts.x2)),
-        String(Math.round(opts.y2)),
-        "mouseup",
-        "1",
-      ])
-    );
+    await runDockerText(computerArgv.drag(handle.name, opts));
   }
 
   async exec(
@@ -697,12 +807,7 @@ export class DockerProvider implements ComputerProvider {
     // HOME=/home/agent, refused while frozen), and `bash --noprofile --norc`:
     // no login or rc file the agent can write runs before an approved command.
     const res = await runDockerText(
-      agentExecArgv(
-        handle.name,
-        "run",
-        ["timeout", "--signal=TERM", "--kill-after=5", String(secs), "bash", "--noprofile", "--norc", "-c", command],
-        { workdir }
-      ),
+      computerArgv.exec(handle.name, command, secs, workdir),
       {
         allowNonZero: true,
         timeoutMs: (secs + 10) * 1000,
@@ -722,19 +827,7 @@ export class DockerProvider implements ComputerProvider {
     dir = "/home/agent/work"
   ): Promise<ComputerFileEntry[]> {
     const resolvedDir = await resolveContainerPath(handle, dir);
-    const res = await runDockerText(
-      agentExecArgv(handle.name, "helper", [
-        "find",
-        resolvedDir,
-        "-maxdepth",
-        "1",
-        "-mindepth",
-        "1",
-        "-printf",
-        "%y\\t%s\\t%T@\\t%p\\n",
-      ]),
-      { allowNonZero: true }
-    );
+    const res = await runDockerText(computerArgv.list(handle.name, resolvedDir), { allowNonZero: true });
     if (res.exitCode !== 0) return [];
     const entries: ComputerFileEntry[] = [];
     for (const line of res.stdout.split("\n")) {
@@ -765,7 +858,7 @@ export class DockerProvider implements ComputerProvider {
     // `head -c` rather than `cat`: a file larger than the cap is cut, not
     // turned into a maxBuffer failure.
     const res = await runDockerBuffer(
-      agentExecArgv(handle.name, "helper", ["head", "-c", String(maxBytes), "--", resolved]),
+      computerArgv.read(handle.name, resolved, maxBytes),
       { maxBuffer: maxBytes + 64 * 1024, timeoutMs: 60_000 }
     );
     if (res.exitCode !== 0) {
@@ -794,17 +887,17 @@ export class DockerProvider implements ComputerProvider {
       throw new Error("Files can only be written under /home/agent/work, and never into a dotfile or dot-folder.");
     }
     const parentDir = path.posix.dirname(resolved);
-    await runDockerText(agentExecArgv(handle.name, mode, ["mkdir", "-p", "--", parentDir]));
+    await runDockerText(computerArgv.mkdir(handle.name, parentDir, mode));
     const buf =
       typeof content === "string"
         ? Buffer.from(content, "utf8")
         : Buffer.from(content);
-    await spawnWithStdin(agentExecArgv(handle.name, mode, ["sh", "-c", 'cat > "$1"', "sh", resolved], { interactive: true }), buf);
+    await spawnWithStdin(computerArgv.write(handle.name, resolved, mode), buf);
   }
 
   async diskUsageMb(handle: ComputerHandle): Promise<number> {
     const res = await runDockerText(
-      agentExecArgv(handle.name, "helper", ["du", "-sm", "/home/agent"]),
+      computerArgv.du(handle.name),
       { allowNonZero: true }
     );
     if (res.exitCode !== 0) return 0;
@@ -825,56 +918,20 @@ export class DockerProvider implements ComputerProvider {
       `${opts.controlPassword}\n__BEGIN_VIEWONLY__\n${opts.viewPassword}\n`,
       "utf8"
     );
-    await runDockerText(
-      ["exec", "--user", "1001", handle.name, "pkill", "-x", "x11vnc"],
-      { allowNonZero: true }
-    );
-    await spawnWithStdin(
-      [
-        "exec",
-        "-i",
-        "--user",
-        "1001",
-        handle.name,
-        "sh",
-        "-c",
-        "umask 077 && rm -f /run/juno/vncpass && set -C && cat > /run/juno/vncpass",
-      ],
-      passFileContent
-    );
-    await runDockerText([
-      "exec",
-      "--user",
-      "1001",
-      "-e",
-      "DISPLAY=:0",
-      handle.name,
-      "x11vnc",
-      "-display",
-      ":0",
-      "-forever",
-      "-shared",
-      "-rfbport",
-      "5900",
-      "-noipv6",
-      // Only the host side of the computers network (the relay dials from
-      // there). The agent's own loopback and address are refused, so its shell
-      // cannot reach the person's session. macOS development publishes the
-      // port through Docker's proxy and keeps the old arguments.
-      ...(process.platform === "linux" ? ["-allow", COMPUTER_NETWORK_GATEWAY] : []),
-      "-passwdfile",
-      "rm:/run/juno/vncpass",
-      "-bg",
-      "-o",
-      "/tmp/x11vnc.log",
-    ]);
+    await runDockerText(computerArgv.vncKill(handle.name), { allowNonZero: true });
+    await spawnWithStdin(computerArgv.vncPassword(handle.name), passFileContent);
+    // Only the host side of the computers network (the relay dials from
+    // there). The agent's own loopback and address are refused, so its shell
+    // cannot reach the person's session. macOS development publishes the
+    // port through Docker's proxy and keeps the old arguments.
+    await runDockerText(computerArgv.vncStart(handle.name, process.platform === "linux" ? COMPUTER_NETWORK_GATEWAY : null));
   }
 
   async isVncRunning(handle: ComputerHandle): Promise<boolean> {
     const res = await runDockerText(
       // As the browser uid, which runs x11vnc: the agent's uid no longer gets
       // any exec that does not start through the launcher.
-      ["exec", "--user", "1001", handle.name, "pgrep", "-x", "x11vnc"],
+      computerArgv.vncRunning(handle.name),
       { allowNonZero: true, timeoutMs: 10_000 }
     );
     return res.exitCode === 0 && res.stdout.trim().length > 0;
@@ -886,7 +943,7 @@ export class DockerProvider implements ComputerProvider {
   ): Promise<{ type: "file" | "dir" | "other"; size: number; path: string } | null> {
     const resolved = await resolveContainerPath(handle, rawPath);
     const res = await runDockerText(
-      agentExecArgv(handle.name, "helper", ["stat", "-c", "%s:%F", "--", resolved]),
+      computerArgv.stat(handle.name, resolved),
       { allowNonZero: true }
     );
     if (res.exitCode !== 0) return null;
@@ -902,14 +959,7 @@ export class DockerProvider implements ComputerProvider {
     containers: Array<{ name: string; agentId: string | null; userId: string | null; state: "running" | "paused" | "exited" }>;
     volumes: string[];
   }> {
-    const ps = await runDockerText([
-      "ps",
-      "-a",
-      "--filter",
-      "label=app=juno",
-      "--format",
-      '{{.Names}}\t{{.Label "juno.agent"}}\t{{.Label "juno.user"}}\t{{.State}}',
-    ]);
+    const ps = await runDockerText(computerArgv.listContainers());
     const containers = ps.stdout
       .split("\n")
       .map((line) => line.trim())
@@ -927,7 +977,7 @@ export class DockerProvider implements ComputerProvider {
           },
         ];
       });
-    const vols = await runDockerText(["volume", "ls", "--filter", "name=juno-agent-", "--format", "{{.Name}}"]);
+    const vols = await runDockerText(computerArgv.listVolumes());
     const volumes = vols.stdout
       .split("\n")
       .map((line) => line.trim())
@@ -936,10 +986,7 @@ export class DockerProvider implements ComputerProvider {
   }
 
   async stopVnc(handle: ComputerHandle): Promise<void> {
-    await runDockerText(
-      ["exec", "--user", "1001", handle.name, "pkill", "-x", "x11vnc"],
-      { allowNonZero: true }
-    );
+    await runDockerText(computerArgv.vncKill(handle.name), { allowNonZero: true });
   }
 
   /**
@@ -959,12 +1006,8 @@ export class DockerProvider implements ComputerProvider {
    * failure is thrown, and the store tells the person.
    */
   async freezeAgent(handle: ComputerHandle): Promise<void> {
-    const steps: Array<{ argv: string[]; what: string }> = [
-      { argv: ["exec", "--user", "1001", handle.name, "touch", FROZEN_MARKER], what: "frozen marker" },
-      { argv: ["exec", "--user", "1000", handle.name, AGENT_LAUNCHER, "freeze"], what: "stop" },
-      { argv: xClientsArgv(handle.name, "close-uid", "1000"), what: "display connections" },
-      { argv: xClientsArgv(handle.name, "release-all"), what: "held keys and buttons" },
-    ];
+    const what = ["frozen marker", "stop", "display connections", "held keys and buttons"];
+    const steps = computerArgv.freeze(handle.name).map((argv, index) => ({ argv, what: what[index] }));
     let failure: ComputerError | null = null;
     for (const step of steps) {
       const res = await runDockerText(step.argv, { allowNonZero: true, timeoutMs: 20_000 });
@@ -980,8 +1023,7 @@ export class DockerProvider implements ComputerProvider {
 
   /** Hand back: the marker goes first, then every uid-1000 process gets SIGCONT. */
   async thawAgent(handle: ComputerHandle): Promise<void> {
-    await runDockerText(["exec", "--user", "1001", handle.name, "rm", "-f", FROZEN_MARKER], { timeoutMs: 20_000 });
-    await runDockerText(["exec", "--user", "1000", handle.name, AGENT_LAUNCHER, "thaw"], { timeoutMs: 20_000 });
+    for (const argv of computerArgv.thaw(handle.name)) await runDockerText(argv, { timeoutMs: 20_000 });
   }
 
   /**
@@ -991,11 +1033,11 @@ export class DockerProvider implements ComputerProvider {
    * when the gate has not recorded anything (Chromium is not running).
    */
   async browserSandbox(handle: ComputerHandle): Promise<"on" | "off" | "unknown"> {
-    const recorded = await runDockerText(["exec", "--user", "1001", handle.name, "cat", BROWSER_SANDBOX_STATE], {
+    const recorded = await runDockerText(computerArgv.sandboxState(handle.name), {
       allowNonZero: true,
       timeoutMs: 10_000,
     });
-    const probe = await runDockerText(agentExecArgv(handle.name, "helper", ["unshare", "-Ur", "true"]), {
+    const probe = await runDockerText(computerArgv.sandboxProbe(handle.name), {
       allowNonZero: true,
       timeoutMs: 15_000,
     });
@@ -1009,8 +1051,8 @@ export class DockerProvider implements ComputerProvider {
 
   /** Whether the container was made from another image than the current tag's (D16). */
   async isOutdated(handle: ComputerHandle): Promise<boolean> {
-    const container = await runDockerText(["inspect", "-f", "{{.Image}}", handle.name], { timeoutMs: 10_000 });
-    const image = await runDockerText(["image", "inspect", "--format", "{{.Id}}", env.agentComputer.image], {
+    const container = await runDockerText(computerArgv.containerImage(handle.name), { timeoutMs: 10_000 });
+    const image = await runDockerText(computerArgv.imageId(env.agentComputer.image), {
       timeoutMs: 10_000,
     });
     const current = image.stdout.trim();
@@ -1020,7 +1062,7 @@ export class DockerProvider implements ComputerProvider {
   /** The current image's id, security label and build time (health, audit, the age check). */
   async imageInfo(): Promise<{ id: string; label: string; createdAt: string }> {
     const res = await runDockerText(
-      ["image", "inspect", "--format", IMAGE_INFO_FORMAT, env.agentComputer.image],
+      computerArgv.imageInfo(env.agentComputer.image),
       { timeoutMs: 10_000 }
     );
     const [id = "", label = "", createdAt = ""] = res.stdout.trim().split("\t");

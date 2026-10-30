@@ -7,6 +7,7 @@ import type {
   ComputerFileEntry,
   ComputerHandle,
   ComputerProvider,
+  EndpointPurpose,
   Endpoints,
   ExecResult,
   Shot,
@@ -57,6 +58,11 @@ function normalizeAgentPath(rawPath: string): string {
     throw new ComputerError(COMPUTER_PATH_REFUSED);
   }
   return resolved;
+}
+
+/** A primitive `withoutMethods` hid: absent at run time, as on an older provider. */
+function hidden<T>(): T {
+  return undefined as unknown as T;
 }
 
 /** The fake's calls a test can hold mid-flight (`holdNext`). */
@@ -160,13 +166,17 @@ export class FakeProvider implements ComputerProvider {
     createdAt: new Date().toISOString(),
   };
 
-  /** Hides the named optional methods (as `undefined`), as an older provider would. */
+  /**
+   * Hides the named primitives (as `undefined`), as an older provider would.
+   * The interface requires them since S3, so a hidden one is typed as present
+   * (a test-only stand-in): the store checks for them at run time anyway.
+   */
   withoutMethods(...names: Array<(typeof FakeProvider.OPTIONAL_METHODS)[number]>): void {
     for (const name of names) this.disabled.add(name);
   }
 
-  get freezeAgent(): ((handle: ComputerHandle) => Promise<void>) | undefined {
-    if (this.disabled.has("freezeAgent")) return undefined;
+  get freezeAgent(): (handle: ComputerHandle) => Promise<void> {
+    if (this.disabled.has("freezeAgent")) return hidden();
     return async (handle: ComputerHandle) => {
       await this.waitIfHeld("freezeAgent");
       this.record("freezeAgent", handle);
@@ -176,8 +186,8 @@ export class FakeProvider implements ComputerProvider {
     };
   }
 
-  get thawAgent(): ((handle: ComputerHandle) => Promise<void>) | undefined {
-    if (this.disabled.has("thawAgent")) return undefined;
+  get thawAgent(): (handle: ComputerHandle) => Promise<void> {
+    if (this.disabled.has("thawAgent")) return hidden();
     return async (handle: ComputerHandle) => {
       await this.waitIfHeld("thawAgent");
       this.record("thawAgent", handle);
@@ -187,8 +197,8 @@ export class FakeProvider implements ComputerProvider {
     };
   }
 
-  get browserSandbox(): ((handle: ComputerHandle) => Promise<"on" | "off" | "unknown">) | undefined {
-    if (this.disabled.has("browserSandbox")) return undefined;
+  get browserSandbox(): (handle: ComputerHandle) => Promise<"on" | "off" | "unknown"> {
+    if (this.disabled.has("browserSandbox")) return hidden();
     return async (handle: ComputerHandle) => {
       this.record("browserSandbox", handle);
       if (this.sandboxError) throw this.sandboxError;
@@ -196,16 +206,16 @@ export class FakeProvider implements ComputerProvider {
     };
   }
 
-  get isOutdated(): ((handle: ComputerHandle) => Promise<boolean>) | undefined {
-    if (this.disabled.has("isOutdated")) return undefined;
+  get isOutdated(): (handle: ComputerHandle) => Promise<boolean> {
+    if (this.disabled.has("isOutdated")) return hidden();
     return async (handle: ComputerHandle) => {
       this.record("isOutdated", handle);
       return this.outdated;
     };
   }
 
-  get imageInfo(): (() => Promise<{ id: string; label: string; createdAt: string }>) | undefined {
-    if (this.disabled.has("imageInfo")) return undefined;
+  get imageInfo(): () => Promise<{ id: string; label: string; createdAt: string }> {
+    if (this.disabled.has("imageInfo")) return hidden();
     return async () => {
       this.record("imageInfo");
       return { ...this.image };
@@ -321,8 +331,8 @@ export class FakeProvider implements ComputerProvider {
     return c.state;
   }
 
-  async endpoints(handle: ComputerHandle): Promise<Endpoints> {
-    this.record("endpoints", handle);
+  async endpoints(handle: ComputerHandle, opts?: { purpose?: EndpointPurpose }): Promise<Endpoints> {
+    this.record("endpoints", handle, opts?.purpose);
     return {
       cdpUrl: "ws://127.0.0.1:9222",
       vncHost: "127.0.0.1",

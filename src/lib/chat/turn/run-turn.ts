@@ -9,6 +9,12 @@ import { classifyProviderError } from "@/lib/provider-error";
 import { noteLiveProviderFault } from "@/lib/provider-health";
 import { recordProviderRateLimit } from "@/lib/router/provider-pressure";
 import { providerErrorRecovery } from "./failure-recovery";
+import { countingStream, planPreStreamRetry, retryActivityRows, waitBeforeRetry } from "./pre-stream-retry";
+import { resolveFastMode } from "@/lib/pricing";
+import { supportsProMode } from "@/lib/model-metrics";
+import { providerAdapterFor } from "@/lib/provider-routing";
+import { nativeSearchPolicy, planTurnSearch } from "@/lib/search/alevr/policy";
+import { chatSearchAvailable } from "@/lib/web/search";
 import {
   completionStateFor,
   endingSaysNothingAboutModel,
@@ -163,6 +169,12 @@ export interface SavedTurnPlan {
   routingWarning: string | null;
   routingReceipt: TurnModel["routingReceipt"];
   routingTelemetryBase: TurnModel["routingTelemetryBase"];
+  /**
+   * Auto's next candidate, for the one retry before the first byte
+   * (pre-stream-retry.ts). Absent or null: an explicit choice, retried only
+   * on the same model.
+   */
+  autoRetry?: TurnModel["autoRetry"];
   turnContext: TurnContext;
   activeConnectors: ActiveConnector[];
   memory: TurnMemory;
@@ -227,8 +239,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     roomSetup,
     roomTurnId,
     roomMessageId,
-    modelInfo,
-    modelId,
+    modelInfo: initialModelInfo,
+    modelId: initialModelId,
     requestedId,
     requestedEffort,
     autoReasoningEffort,
@@ -236,6 +248,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     routingWarning,
     routingReceipt,
     routingTelemetryBase,
+    autoRetry = null,
     turnContext,
     activeConnectors,
     memory: { memoryEnabled, memoryProfile },
@@ -262,6 +275,16 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     baseSystemSections,
     trace,
   } = turn;
+  /*
+   * The model answering this turn. It starts as the one resolveModel chose and
+   * changes at most once: when Auto's pick rejects the request before
+   * streaming anything and the one retry moves to the decision's next
+   * candidate (pre-stream-retry.ts). Everything after that point that prices,
+   * records, names or saves the answer reads these, so it describes the model
+   * that actually answered. An explicit choice never changes them.
+   */
+  let modelInfo = initialModelInfo;
+  let modelId = initialModelId;
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);
@@ -361,21 +384,40 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     let traceEnd: TurnTraceFinish | null = null;
     let targetedArtifactContent: string | null = null;
     let spendRecorded = false;
+    /**
+     * The spend hold this turn's charge settles: the generation's own, or —
+     * once the turn has retried before its first byte — attempt 2's, which is
+     * held under its own ref (pre-stream-retry.ts). Released in the `finally`
+     * when nothing was recorded.
+     */
+    let activeSpendRef = generationId;
+    /** 1 once the turn asked again before its first byte (the outcome row's `retryCount`). */
+    let retriesMade = 0;
+    /** The outcome row's model fields, when the retry moved the turn to another model. */
+    let answeringTelemetry: Partial<Pick<typeof routingTelemetryBase, "modelId" | "provider" | "expectedMicroUsd">> = {};
+    /** Auto's effort for the model that answers (the outcome row's `effort`). */
+    let answeringAutoEffort = autoReasoningEffort;
 
     /** Pictures `generate_image` made this turn, linked to the answer when it is saved. */
     const generatedAttachmentIds: string[] = [];
-    const { persistAssistantTurn, sealActivity } = createAssistantTurnWriter({
-      user,
-      conversationId,
-      staleAssistantId,
-      answersMessageId,
-      modelId,
-      acc,
-      activityLog,
-      roomTurnId,
-      routingReceipt,
-      generatedAttachmentIds,
-    });
+    const writerFor = (answeringModelId: string) =>
+      createAssistantTurnWriter({
+        user,
+        conversationId,
+        staleAssistantId,
+        answersMessageId,
+        modelId: answeringModelId,
+        acc,
+        activityLog,
+        roomTurnId,
+        routingReceipt,
+        generatedAttachmentIds,
+      });
+    // Rebuilt for the new model if the retry moves the turn (nothing is
+    // written before the stream, so the swap loses nothing).
+    let turnWriter = writerFor(modelId);
+    const persistAssistantTurn: typeof turnWriter.persistAssistantTurn = (data) => turnWriter.persistAssistantTurn(data);
+    const sealActivity: typeof turnWriter.sealActivity = (assistantId) => turnWriter.sealActivity(assistantId);
     /** Routing telemetry for this turn, filled by whichever terminal path runs. */
     const turnStartedAt = Date.now();
     let turnOutcome: {
@@ -481,6 +523,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       modelInfo,
       autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
     );
+    /** The effort the model call runs at: Auto's for the next candidate after a retry moved the turn. */
+    let answeringEffort = reasoningEffort;
     sendReasoningAndSearch(sendActivity, {
       reasoningEffort,
       auto: isAutoModelId(requestedId),
@@ -538,24 +582,27 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     // would take the user past their remaining plan budget.
     const synthesisPromptChars = () => promptChars(synthesisSystem, turnHistory);
     let budgetHalted = false;
-    const budgetGuard = createStreamBudgetGuard({
-      ceilingMicroUsd: budget.remainingMicroUsd,
-      rates: modelRatesMicroUsdPerToken(modelId),
-      inputChars: synthesisPromptChars(),
-      usage: () => ({
-        promptTokens: acc.tokens.promptTokens,
-        completionTokens: acc.tokens.completionTokens,
-        cacheReadTokens: acc.tokens.cacheReadTokens,
-        promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
-        outputChars: acc.text.length,
-        reasoningChars: acc.reasoning.length,
-      }),
-      onHalt: () => {
-        budgetHalted = true;
-        sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
-        generationController.abort();
-      },
-    });
+    // Priced on the model that answers: rebuilt if the retry moves the turn.
+    const budgetGuardFor = (model: ModelInfo) =>
+      createStreamBudgetGuard({
+        ceilingMicroUsd: budget.remainingMicroUsd,
+        rates: modelRatesMicroUsdPerToken(model.id),
+        inputChars: synthesisPromptChars(),
+        usage: () => ({
+          promptTokens: acc.tokens.promptTokens,
+          completionTokens: acc.tokens.completionTokens,
+          cacheReadTokens: acc.tokens.cacheReadTokens,
+          promptTokensIncludeCacheRead: model.provider !== "anthropic",
+          outputChars: acc.text.length,
+          reasoningChars: acc.reasoning.length,
+        }),
+        onHalt: () => {
+          budgetHalted = true;
+          sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
+          generationController.abort();
+        },
+      });
+    let budgetGuard = budgetGuardFor(modelInfo);
     const enforceStreamBudget = () => researchNotice ? false : budgetGuard.enforce();
 
     // Declared outside the try because the catch reads `stalled` to tell a

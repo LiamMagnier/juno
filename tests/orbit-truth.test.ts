@@ -87,16 +87,18 @@ const AGENT = {
 } as unknown as ClientAgent;
 
 test("Agents home on a plan without agents: one upgrade card, never the hire field; kept agents still listed", async () => {
-  const { AgentsHome } = await import("@/components/agents/agents-home");
+  const home = await import("@/components/agents/agents-home");
+  // Its props parameter is optional (`= {}`), which createElement's overloads cannot infer from.
+  const AgentsHome = home.AgentsHome as (props: NonNullable<Parameters<typeof home.AgentsHome>[0]>) => React.ReactElement;
   const router = { push() {}, replace() {}, prefetch() {}, refresh() {}, back() {}, forward() {} };
   const withRouter = (el: React.ReactElement) => renderToStaticMarkup(React.createElement(AppRouterContext.Provider, { value: router as never }, el));
-  const empty = withRouter(React.createElement(AgentsHome, { initialAgents: [], plan: "FREE" }));
+  const empty = withRouter(React.createElement(AgentsHome, { initialAgents: [] as ClientAgent[], plan: "FREE" as const }));
   assert.match(empty, /Agents are included from Pro/);
   assert.match(empty, /You’re on Free/);
   assert.match(empty, /href="\/upgrade"/);
   assert.doesNotMatch(empty, /<textarea/, "no field whose agent would have every task refused");
 
-  const kept = withRouter(React.createElement(AgentsHome, { initialAgents: [AGENT], plan: "LITE" }));
+  const kept = withRouter(React.createElement(AgentsHome, { initialAgents: [AGENT], plan: "LITE" as const }));
   assert.match(kept, /Mira/, "an agent kept from before the downgrade is still there");
   assert.match(kept, /New agents are included from Pro/);
   assert.match(kept, /Your agents are kept with everything they did/);
@@ -348,4 +350,95 @@ test("an unverified goal says every step ran, links what each step produced, and
   assert.match(html, /href="\/work\/sess_b"/);
   assert.match(html, />Mark it met</);
   assert.match(html, />Keep working</);
+});
+
+// ---------------------------------------------------------------------------
+// Hiring by chat on a plan without agents; an unverified goal in the agent's
+// chat context; the native profile's line (run 2 of O2)
+// ---------------------------------------------------------------------------
+
+test("create_agent on a plan without agents is refused in words before any approval card or write", async () => {
+  const tools = await import("@/lib/chat/agent-config-tools");
+  const touched: string[] = [];
+  const trap = (name: string) =>
+    new Proxy({}, {
+      get(_target, key) {
+        if (key === "then") return undefined;
+        touched.push(`${name}.${String(key)}`);
+        throw new Error(`${name} was touched before the plan refusal`);
+      },
+    });
+  tools.setAgentConfigToolModulesForTest({ agents: trap("agents"), approvals: trap("approvals"), prisma: trap("prisma") } as never);
+  try {
+    const approvals: unknown[] = [];
+    const set = tools.createAgentConfigTools({
+      user: { id: "u1" },
+      conversation: { id: "c1", projectId: null },
+      agent: null,
+      userMessageId: "m1",
+      untrustedContent: false,
+      generationId: "g1",
+      onApprovalRequest: (approval) => approvals.push(approval),
+      hiringRefusal: "Agents are included from Pro, and this account is on Free, so no agent was created. Upgrade to hire one. Agents you already have are kept.",
+    });
+    const create = set.find((tool) => tool.tool.function.name === "create_agent");
+    assert.ok(create, "the tool is still declared, so the model can say why");
+    // A routine would ask for approval first on a plan that has agents.
+    const result = await create.execute({ name: "Wren", role: "Inbox", routine: { cadence: "daily", hour: 8 } });
+    assert.equal(result.ok, false);
+    const body = JSON.parse(result.text) as { status: string; reason: string; message: string };
+    assert.deepEqual([body.status, body.reason], ["refused", "plan_locked"]);
+    assert.match(body.message, /included from Pro/);
+    assert.deepEqual(approvals, [], "no approval card for a hire the plan refuses");
+    assert.deepEqual(touched, [], "nothing was read or written");
+  } finally {
+    tools.setAgentConfigToolModulesForTest(null);
+  }
+  // The chat turn hands the plan's sentence to the tools.
+  assert.match(source("src/lib/chat/turn/tools.ts"), /\.\.\.\(plan \? \{ hiringRefusal: agentHiringGate\(plan\)\.message \} : \{\}\)/);
+});
+
+test("an unverified goal reaches the agent's chat apart, so it never calls one met", async () => {
+  const { buildAgentPromptBlock } = await import("@/lib/agents/prompt");
+  const base = {
+    name: "Quill",
+    role: "Writer",
+    style: "",
+    instructions: "Writes the monthly post and keeps the blog tidy for the team.",
+    approvalMode: "balanced",
+    notes: [],
+    teammates: [],
+    taskHandoff: false,
+  };
+  const block = buildAgentPromptBlock({
+    ...base,
+    goals: [
+      { title: "Weekly digest", status: "active", lastCheckInNote: null },
+      {
+        title: "October post",
+        status: "unverified",
+        lastCheckInNote: null,
+        nextAction: "Every step ran. Check the result. A check against its criteria found a gap: Nothing shows it is live.",
+      },
+    ],
+  });
+  assert.match(block, /## Goals you are working towards\n- Weekly digest/);
+  assert.doesNotMatch(block.split("## Goals waiting for the person to check")[0]!, /October post/, "not listed as a goal it is working towards");
+  assert.match(block, /## Goals waiting for the person to check\n[^\n]*Never say one is met[^\n]*\n- October post \(Every step ran\. Check the result\. A check against its criteria found a gap: Nothing shows it is live\.\)/);
+  // No unverified goal, no such section: every other agent's prompt is unchanged.
+  assert.doesNotMatch(buildAgentPromptBlock({ ...base, goals: [{ title: "Weekly digest", status: "active", lastCheckInNote: null }] }), /waiting for the person to check/);
+  // The chat context reads them; an unverified goal still counts as open against the goal cap.
+  const store = source("src/lib/agents/store.ts");
+  assert.match(store, /where: \{ userId: user\.id, agentId, status: \{ in: \["active", GOAL_UNVERIFIED\] \} \},[\s\S]{0,120}select: \{ title: true, status: true, lastCheckInNote: true, nextAction: true \}/);
+  assert.match(store, /status: \{ in: \["active", "paused", GOAL_UNVERIFIED\] \}/);
+});
+
+test("the native profile says every step ran for an unverified goal, as the web does", async () => {
+  const { GOAL_UNVERIFIED_LINE } = await import("@/lib/agents/goals");
+  const swift = source("native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentProfile.swift");
+  assert.match(swift, new RegExp(`if goal\\.status == \\.unverified \\{\\s*Text\\("${GOAL_UNVERIFIED_LINE.replace(/\./g, "\\.")}"\\)`));
+  // The contract documents the hire refusal and the keep action the apps can send.
+  const openapi = source("contracts/openapi/juno-native-v1.yaml");
+  assert.match(openapi, /operationId: hireNativeAgent[\s\S]*?'402': \{ \$ref: '#\/components\/responses\/GeneralRouteError' \}[\s\S]*?\/agents\/\{agentId\}:/);
+  assert.match(openapi, /operationId: updateNativeAgentNote[\s\S]*?properties: \{ action: \{ type: string, enum: \[keep\] \} \}/);
 });

@@ -22,6 +22,12 @@ export function recordTurnSpend(input: {
   modelId: string;
   source: ReturnType<typeof legacyChatClientForOrigin>;
   generationId: string;
+  /**
+   * The hold this charge settles, when it is not the generation's own: a turn
+   * retried before its first byte holds attempt 2 under its own ref
+   * (run-turn, pre-stream-retry.ts). Absent: the generation id.
+   */
+  reservationRef?: string;
   usage: ReturnType<typeof buildUsage>;
   acc: GenerationAccumulator;
   promptChars: number;
@@ -33,7 +39,7 @@ export function recordTurnSpend(input: {
     model: input.modelId,
     kind: "chat",
     source: input.source,
-    ref: input.generationId,
+    ref: input.reservationRef ?? input.generationId,
     promptTokens: usage.billedPromptTokens,
     completionTokens: usage.output || undefined,
     reasoningTokens: acc.tokens.reasoningTokens || undefined,

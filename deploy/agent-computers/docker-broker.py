@@ -20,6 +20,17 @@ pipe-v4 (docs/design/agents-v2/COMPUTERS_2026-10.md S2):
   - a container that does not exist is exit 3 and "missing" on stderr; any
     other inspect failure is exit 1, so a daemon hiccup never looks like a
     missing computer (which the app would recreate).
+
+Two entry points share `prepare()` (validate, then the namespace checks) and
+`dispatch()` (the egress-map hooks around start, stop and remove):
+  - this file's own CLI, the sudo broker of a single-box install, where the
+    app user runs `sudo -n juno-computer-docker-broker <argv>`;
+  - deploy/computer-host/juno-computer-host-broker.py, the socket broker of a
+    separate computer host (COMPUTERS_2026-10.md S3, D6), which imports this
+    file and calls both with the request's namespace. In that host mode every
+    container and both volumes carry a fourth label, `juno.ns=<namespace>`; the
+    listings are filtered by it; every operation on a name checks it; and the
+    owner label is a user reference (`u_` + 32 hex), never a user id.
 """
 import json
 import os
@@ -44,9 +55,29 @@ EXIT_MISSING = 3
 IMAGE_FORMATS = ('{{index .Config.Labels "juno.security"}}', "{{.Id}}",
                  '{{.Id}}\t{{index .Config.Labels "juno.security"}}\t{{.Created}}')
 # The provider's two listing calls, exactly (src/lib/computer/docker.ts listOwned).
-PS_ARGV = ["ps", "-a", "--filter", "label=app=juno", "--format",
-           '{{.Names}}\t{{.Label "juno.agent"}}\t{{.Label "juno.user"}}\t{{.State}}']
+PS_FORMAT = '{{.Names}}\t{{.Label "juno.agent"}}\t{{.Label "juno.user"}}\t{{.State}}'
+PS_ARGV = ["ps", "-a", "--filter", "label=app=juno", "--format", PS_FORMAT]
 VOLUME_LS_ARGV = ["volume", "ls", "--filter", "name=juno-agent-", "--format", "{{.Name}}"]
+# Host mode (a computer host serving one or more environments, D17).
+NAMESPACE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}\Z")
+USER_REF = re.compile(r"u_[0-9a-f]{32}\Z")
+EXIT_FOREIGN = 4
+# How many computers of every namespace are running: the host's own capacity
+# check (maxRunning). Container ids only.
+RUNNING_COUNT_ARGV = ["ps", "-q", "--filter", "label=app=juno", "--filter", "status=running"]
+
+
+class Foreign(Exception):
+    """The container or volume exists, but belongs to another namespace (or none)."""
+
+
+def host_ps_argv(namespace):
+    return ["ps", "-a", "--filter", "label=app=juno", "--filter", "label=juno.ns=" + namespace, "--format", PS_FORMAT]
+
+
+def host_volume_ls_argv(namespace):
+    return ["volume", "ls", "--filter", "name=juno-agent-", "--filter", "label=juno.ns=" + namespace,
+            "--format", "{{.Name}}"]
 
 
 def agent_workdir(value):
@@ -85,18 +116,34 @@ def launcher_command(command):
     raise ValueError("Unknown agent launcher mode")
 
 
-def validate(argv, policy):
+def validate(argv, policy, namespace=None):
+    """The docker argv, checked against the policy. Returns the container name
+    the operation acts on (its namespace is checked next), or None.
+
+    `namespace` is given only by the computer host's broker (host mode): the
+    create, volume-create and listing shapes then carry `juno.ns=<namespace>`,
+    and the unfiltered listings of a single-box install are refused."""
     if not argv:
         raise ValueError("Missing operation")
+    host = namespace is not None
+    if host and not (isinstance(namespace, str) and NAMESPACE.fullmatch(namespace)):
+        raise ValueError("Invalid namespace")
     operation = argv[0]
     if operation == "image" and len(argv) == 5 and argv[1:3] == ["inspect", "--format"] and argv[3] in IMAGE_FORMATS \
             and argv[4] == policy["image"]:
         return None
-    if argv == PS_ARGV or argv == VOLUME_LS_ARGV:
+    if not host and (argv == PS_ARGV or argv == VOLUME_LS_ARGV):
         return None
-    if operation == "volume" and len(argv) == 7 and argv[1:3] == ["create", "--label"] and argv[3] == "app=juno" and argv[4] == "--label":
-        # The agent's home and browser-profile volumes, labelled with their agent.
-        label, name = argv[5], argv[6]
+    if host and argv in (host_ps_argv(namespace), host_volume_ls_argv(namespace), RUNNING_COUNT_ARGV):
+        return None
+    volume_create_len = 9 if host else 7
+    if operation == "volume" and len(argv) == volume_create_len and argv[1:3] == ["create", "--label"] \
+            and argv[3] == "app=juno" and argv[4] == "--label":
+        # The agent's home and browser-profile volumes, labelled with their agent
+        # (and, on a computer host, with the namespace).
+        label, name = argv[5], argv[-1]
+        if host and argv[6:8] != ["--label", "juno.ns=" + namespace]:
+            raise ValueError("Volume namespace label is missing")
         agent = label.removeprefix("juno.agent=")
         if label.startswith("juno.agent=") and AGENT_ID.fullmatch(agent) and name in ("juno-agent-" + agent, "juno-agent-" + agent + "-browser"):
             return None
@@ -174,7 +221,10 @@ def validate(argv, policy):
         if len(cpu) != 1 or not 0 < float(cpu[0]) <= policy["maxCpus"]:
             raise ValueError("Invalid CPU limit")
         labels = flags.get("--label", [])
-        if len(labels) != 3 or labels[0] != "app=juno" or labels[1] != "juno.agent=" + name.removeprefix("juno-agent-") or not re.fullmatch(r"juno.user=[A-Za-z0-9_-]{1,120}", labels[2]):
+        if len(labels) != (4 if host else 3) or labels[0] != "app=juno" or labels[1] != "juno.agent=" + name.removeprefix("juno-agent-") or not re.fullmatch(r"juno.user=[A-Za-z0-9_-]{1,120}", labels[2]):
+            raise ValueError("Invalid ownership labels")
+        # A computer host never learns a user id: the owner label is a hash.
+        if host and (not USER_REF.fullmatch(labels[2].removeprefix("juno.user=")) or labels[3] != "juno.ns=" + namespace):
             raise ValueError("Invalid ownership labels")
         return None
     raise ValueError("Operation is not permitted")
@@ -185,21 +235,71 @@ class Missing(Exception):
 
 
 ENVIRONMENT = {"PATH": "/usr/bin:/bin", "HOME": "/root"}
+MISSING_TEXT = re.compile(r"no such (container|object|volume)", re.IGNORECASE)
 
 
-def check_namespace(target):
+def check_namespace(target, namespace=None, docker=None, environment=None):
     """Fails closed: a container that cannot be inspected is refused rather
     than operated on unchecked. Missing (exit 3) and every other failure
     (exit 1) are told apart, so the provider never recreates a computer
-    because the daemon hiccuped."""
-    inspected = subprocess.run([DOCKER, "inspect", "--type", "container", "-f", '{{index .Config.Labels "app"}}', target],
-                               env=ENVIRONMENT, capture_output=True, text=True)
+    because the daemon hiccuped. In host mode the container must also carry
+    the request's namespace label; another namespace's is Foreign."""
+    label_format = '{{index .Config.Labels "app"}}'
+    if namespace is not None:
+        label_format += '\t{{index .Config.Labels "juno.ns"}}'
+    inspected = subprocess.run([docker or DOCKER, "inspect", "--type", "container", "-f", label_format, target],
+                               env=environment or ENVIRONMENT, capture_output=True, text=True)
     if inspected.returncode != 0:
-        if re.search(r"no such (container|object)", inspected.stderr, re.IGNORECASE):
+        if MISSING_TEXT.search(inspected.stderr):
             raise Missing()
         raise ValueError("Container could not be inspected")
-    if inspected.stdout.strip() != "juno":
+    labels = inspected.stdout.strip("\n").split("\t")
+    if labels[0].strip() != "juno":
         raise ValueError("Container is outside the Juno namespace")
+    if namespace is not None and (len(labels) != 2 or labels[1].strip() != namespace):
+        raise Foreign()
+
+
+def check_volume_namespace(volume, namespace, docker=None, environment=None, missing_ok=True):
+    """Host mode: a volume operated on must carry `app=juno` and this
+    namespace. A volume that does not exist is fine when `missing_ok` (a
+    create makes it, a remove has nothing to do); one of another namespace,
+    or of none, is Foreign, so one environment can never mount or delete
+    another's files."""
+    inspected = subprocess.run([docker or DOCKER, "volume", "inspect", "-f",
+                                '{{index .Labels "app"}}\t{{index .Labels "juno.ns"}}', volume],
+                               env=environment or ENVIRONMENT, capture_output=True, text=True)
+    if inspected.returncode != 0:
+        if MISSING_TEXT.search(inspected.stderr):
+            if missing_ok:
+                return
+            raise Missing()
+        raise ValueError("Volume could not be inspected")
+    labels = inspected.stdout.strip("\n").split("\t")
+    if len(labels) != 2 or labels[0].strip() != "juno" or labels[1].strip() != namespace:
+        raise Foreign()
+
+
+def prepare(argv, policy, namespace=None, docker=None, environment=None):
+    """Everything that must hold before docker runs: the argv shape, then the
+    namespace of the container (and, on a computer host, of the volumes) it
+    acts on. Raises Missing, Foreign or ValueError."""
+    target = validate(argv, policy, namespace)
+    if target:
+        check_namespace(target, namespace, docker, environment)
+    if namespace is None:
+        return
+    if argv[:2] == ["volume", "create"]:
+        check_volume_namespace(argv[-1], namespace, docker, environment, missing_ok=True)
+    elif argv[:3] == ["volume", "rm", "-f"]:
+        check_volume_namespace(argv[3], namespace, docker, environment, missing_ok=True)
+    elif argv[0] == "create":
+        # Both volumes must exist and be this namespace's before a container
+        # mounts them (Docker would otherwise create unlabelled ones, or mount
+        # another environment's).
+        name = argv[argv.index("--name") + 1]
+        for volume in (name, name + "-browser"):
+            check_volume_namespace(volume, namespace, docker, environment, missing_ok=False)
 
 
 def egress_map(*arguments):
@@ -215,27 +315,35 @@ def run_docker(argv):
     return subprocess.run([DOCKER] + argv, env=ENVIRONMENT).returncode
 
 
-def dispatch(argv):
+def dispatch(argv, run=None, hooks=None):
     """start, stop and rm -f run as a child between address-map updates (D19);
-    everything else replaces this process with docker, as before."""
+    everything else replaces this process with docker, as before.
+
+    The computer host's broker passes `run` (runs docker, relaying its output,
+    and returns the exit status; never replaces the process) and `hooks` (the
+    address-map helper as that host has it installed); the CLI passes neither."""
     operation = argv[0]
+    mapper = hooks or egress_map
+    runner = run or run_docker
     if operation == "start":
         # A computer that stopped on its own must not leave its address to the
         # next computer that gets it: rebuild before, or refuse to start.
-        if not egress_map("rebuild"):
+        if not mapper("rebuild"):
             raise ValueError("The egress address map could not be updated")
-        code = run_docker(argv)
-        if not egress_map("rebuild"):
+        code = runner(argv)
+        if not mapper("rebuild"):
             print("computer broker: the egress address map was not rebuilt after start", file=sys.stderr)
         return code
     if operation in ("stop", "rm"):
         name = argv[-1]
-        if not egress_map("release", name):
+        if not mapper("release", name):
             print("computer broker: the egress address map could not release the computer", file=sys.stderr)
-        code = run_docker(argv)
-        if not egress_map("rebuild"):
+        code = runner(argv)
+        if not mapper("rebuild"):
             print("computer broker: the egress address map was not rebuilt", file=sys.stderr)
         return code
+    if run is not None:
+        return run(argv)
     os.execve(DOCKER, [DOCKER] + argv, ENVIRONMENT)
     return 1  # not reached
 
@@ -246,9 +354,7 @@ def main():
     with open(CONFIG, encoding="utf-8") as file:
         policy = json.load(file)
     argv = sys.argv[1:]
-    target = validate(argv, policy)
-    if target:
-        check_namespace(target)
+    prepare(argv, policy)
     return dispatch(argv)
 
 
@@ -259,6 +365,9 @@ def run_cli():
     except Missing:
         print("computer broker refused request: missing (No such container)", file=sys.stderr)
         return EXIT_MISSING
+    except Foreign:  # host mode only; the CLI never passes a namespace
+        print("computer broker refused request: foreign", file=sys.stderr)
+        return EXIT_FOREIGN
     except (ValueError, IndexError, KeyError, OSError) as error:
         print("computer broker refused request: " + str(error), file=sys.stderr)
         return 1

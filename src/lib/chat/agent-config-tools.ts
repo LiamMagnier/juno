@@ -942,6 +942,14 @@ export interface AgentConfigToolsContext {
   computerConfigured?: boolean;
   /** Why not, in the account's own words (the access sentence), when it may not. */
   computerAccessMessage?: string | null;
+  /**
+   * The plan's refusal to hire, in the words the page uses, when the account's
+   * plan has no agents (src/lib/agents/plan-gate.ts); null or absent when it
+   * may hire. `create_agent` says it before any approval card, so the person
+   * is never asked to approve a hire the plan refuses; `createAgentForUser`
+   * refuses it again either way.
+   */
+  hiringRefusal?: string | null;
 }
 
 function jsonExecution(payload: Record<string, unknown>, extra?: Partial<ToolExecution>): ToolExecution {
@@ -1350,6 +1358,10 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
     access: "write",
     execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
       serializeCall(async () => {
+        // A plan without agents: refused in words before any approval card.
+        if (ctx.hiringRefusal) {
+          return jsonExecution({ status: "refused", reason: "plan_locked", message: ctx.hiringRefusal });
+        }
         const check = await guardAndApprove(CREATE_AGENT_TOOL_NAME, rawArgs, signal);
         if (!check.ok) return check.response;
 

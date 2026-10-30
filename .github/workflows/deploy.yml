@@ -564,6 +564,8 @@ jobs:
             'juno_worker_test:WORKER_TEST_DATABASE_URL:work-workers.integration.test.ts' \
             'juno_coordinator_test:ORBIT_TEST_DATABASE_URL:agent-coordinator-fences.integration.test.ts' \
             'juno_park_resume_test:ORBIT_TEST_DATABASE_URL:work-park-resume.integration.test.ts' \
+            'juno_orbit_truth_test:ORBIT_TEST_DATABASE_URL:orbit-truth.integration.test.ts' \
+            'juno_orbit_runner_test:ORBIT_TEST_DATABASE_URL:orbit-truth-runner.integration.test.ts' \
             'juno_history_test:HISTORY_TEST_DATABASE_URL:chat-history-paging.integration.test.ts'; do
             IFS=: read -r database fixture_env suite <<< "$fixture"
             psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $database"
