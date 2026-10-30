@@ -4,7 +4,7 @@ import { FlatCompat } from "@eslint/eslintrc";
 
 import designSystem from "./eslint-rules/design-system.mjs";
 import { loadEnforce } from "./eslint-rules/enforce.mjs";
-import { wave2Configs } from "./eslint-rules/wave2.mjs";
+import { DEFAULT_HEX_ALLOW, wave2Configs } from "./eslint-rules/wave2.mjs";
 import noArbitraryText from "./eslint-rules/no-arbitrary-text.js";
 import noRawReducedMotion from "./eslint-rules/no-raw-reduced-motion.mjs";
 import noCodename from "./eslint-rules/no-codename.js";
@@ -249,6 +249,27 @@ const config = [
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   ...wave2Configs({ enforce }),
+  (() => {
+    /*
+     * Where presence may still be typed as hex, with the reason. The first four
+     * are the places tests/presence-token.test.ts registers; the dev pair is
+     * the same two cases inside the galleries. Scoped to these files only, so
+     * no enforce glob is downgraded.
+     */
+    const PRESENCE_HEX_ALLOWED = {
+      "src/lib/sketch/sketch-core.ts": "the Blue pen in the sketch palette: drawing content, not interface",
+      "src/components/chat/sketch/sketch.css": "the hue wheel and the caret on the always-white paper",
+      "src/components/home/alv-base.css": "the sign-in panel's forced-dark deep ground",
+      "src/components/home/dot-construction.css": "the forced-dark deep ground (.alv-deep)",
+      "src/app/dev/ascii/ascii.css": "the gallery's forced-dark sign-in panel copies",
+      "src/app/dev/design/juno/tokens.css": "the .jn gallery's own token source, which defines its --presence",
+    };
+    const paths = Object.keys(PRESENCE_HEX_ALLOWED);
+    return {
+      files: paths.map((path) => (path.endsWith(".css") ? `${path}/*.js` : path)),
+      rules: { "wave2/no-raw-presence-hex": ["warn", { allow: [...DEFAULT_HEX_ALLOW, ...paths] }] },
+    };
+  })(),
 ];
 
 export default config;

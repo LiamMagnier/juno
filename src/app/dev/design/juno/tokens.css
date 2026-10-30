@@ -102,7 +102,7 @@
   /* The keyboard focus indicator: one 2 px ring hugging the edge (no gap, no
      second line), in the presence ink mixed a little toward the panel so it is
      restrained but still 3:1 or more against every plane (light 4.4:1, dark 6.1:1). */
-  --focus-ring: light-dark(color-mix(in oklab, #2d49c9 82%, #fbfbfc), color-mix(in oklab, #97a6e6 86%, #18191b));
+  --focus-ring: light-dark(color-mix(in oklab, var(--presence) 82%, var(--ground)), color-mix(in oklab, var(--presence) 86%, var(--ground)));
 
   /* Attention: the words that say someone needs you. Nowhere else. Dark is a
      quieter honey at regular weight (light text on charcoal reads heavier), so
