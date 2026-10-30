@@ -76,6 +76,7 @@ import { PLANS } from "@/lib/plans";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
 import { admissionVerdict } from "@/lib/metering/unit-prices";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
@@ -988,6 +989,37 @@ async function offer(
     return "settled";
   }
 
+  const idempotencyKey = triggerRunIdempotencyKey(
+    trigger.id,
+    verdict.eventKey,
+    context.now,
+    trigger.dedupeWindowSec
+  );
+
+  // A paused agent's routine does not fire, whatever arrived: the person can
+  // switch a routine back on in Automations while its agent stays paused, and
+  // `enabled` is all the sweep tests. The scheduler's rule and sentence
+  // (`pausedAgentRunRefusal`), read fresh, and recorded as every other skip
+  // here is: a marker run under this event's key, the event settled.
+  const pausedAgent = pausedAgentRunRefusal(
+    schedule.session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: schedule.session.agentId, userId: schedule.userId, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (pausedAgent) {
+    await recordMarkerRun({
+      schedule,
+      idempotencyKey,
+      reason: "superseded",
+      explanation: pausedAgent.message,
+    });
+    log("skipped", { triggerId: trigger.id, cause: "agent_paused", why: pausedAgent.message });
+    return "settled";
+  }
+
   const runConfig = parseScheduleRunConfig(schedule.runConfig);
   const [inFlightForSchedule, inFlightForUser] = await Promise.all([
     prisma.workRun.count({
@@ -1031,13 +1063,6 @@ async function offer(
     cloudAvailable: plannerCloudAvailability(await readCloudWorkAvailability()),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
-
-  const idempotencyKey = triggerRunIdempotencyKey(
-    trigger.id,
-    verdict.eventKey,
-    context.now,
-    trigger.dedupeWindowSec
-  );
 
   if (decision.outcome === "wait") {
     log("held", {

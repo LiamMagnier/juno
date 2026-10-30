@@ -58,6 +58,22 @@ if (!url) {
       assert.equal((await db.workSchedule.findUniqueOrThrow({ where: { id: blocked.id } })).nextRunAt?.toISOString(), "2026-10-19T17:00:00.000Z");
       assert.equal((await db.workRun.findFirstOrThrow({ where: { scheduleId: blocked.id } })).terminalReason, "budget_exceeded");
 
+      // A routine switched back on while its agent is paused: skipped without
+      // a run, recorded, advanced, released.
+      const scout = await db.agent.create({ data: { userId, name: "Scout", status: "paused" } });
+      const owned = await schedule("Paused agent");
+      await db.workSession.update({ where: { id: owned.sessionId }, data: { agentId: scout.id } });
+      await scheduler.dispatchSchedule(await db.workSchedule.findUniqueOrThrow({ where: { id: owned.id }, include: { session: true } }), now, limits(100));
+      saved = await db.workSchedule.findUniqueOrThrow({ where: { id: owned.id } });
+      assert.equal(saved.nextRunAt?.toISOString(), "2026-10-19T17:00:00.000Z");
+      assert.equal(saved.lockedUntil, null);
+      assert.equal(saved.lastRunAt, null, "a skipped fire is not a run");
+      const skippedRuns = await db.workRun.findMany({ where: { scheduleId: owned.id } });
+      assert.equal(skippedRuns.length, 1, "only the marker");
+      assert.equal(skippedRuns[0]!.terminalReason, "superseded");
+      assert.equal(skippedRuns[0]!.effectiveTarget, null, "nothing ran anywhere");
+      assert.match(skippedRuns[0]!.terminalDetail ?? "", /^Scout is paused\./);
+
       const deleted = await schedule("Deleted task", true);
       assert.ok(!(await scheduler.findDueSchedules(now, 100)).some((row) => row.id === deleted.id));
       assert.equal(await poller.loadTriggerSchedule(deleted.id, userId), null);

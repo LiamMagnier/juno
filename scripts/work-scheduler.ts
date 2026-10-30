@@ -64,6 +64,7 @@ import { getUserPlan } from "@/lib/usage";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { recordAgentEvent } from "@/lib/agents/store";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import {
   WorkSpendAdmissionError,
@@ -688,6 +689,62 @@ async function dispatchOne(
     return;
   }
 
+  /**
+   * The next fire, taken across every trigger rather than from the one that
+   * owned this fire.
+   *
+   * The planner reasons about a single spec, which is right for enumerating a
+   * backlog and wrong for the column: a schedule that fires daily at 08:00 AND
+   * every Monday at 17:00 has one `nextRunAt`, and writing the daily trigger's
+   * answer into it would drop every Monday evening.
+   */
+  const advanced = (): Date | null => nextFireForTriggers(triggers, schedule.timezone, now);
+
+  /**
+   * A paused agent's routine does not fire.
+   *
+   * Pausing an agent switches its routines off (`updateAgentForUser`), but the
+   * person can switch one back on from Automations while the agent is still
+   * paused, and `enabled` is all the sweep and the claim test. Asked here, once
+   * the fire is known to be owed and before anything is planned, read or
+   * started, with the dispatcher's own rule and sentence
+   * (`pausedAgentRunRefusal`), read fresh: a resume made a second ago counts.
+   * Recorded as every other skip is — advanced past the fire, the lease
+   * released, a marker run in the routine's history — so a routine that has not
+   * run all week says why. `superseded`, as a fire the person's own missed-run
+   * policy dropped: the person paused the agent, and nothing here needs them.
+   */
+  const pausedAgent = pausedAgentRunRefusal(
+    schedule.session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: schedule.session.agentId, userId: schedule.userId, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (pausedAgent) {
+    await prisma.workSchedule.updateMany({
+      where: { id: schedule.id, userId: schedule.userId },
+      data: { nextRunAt: advanced(), lockedUntil: null },
+    });
+    await recordMarkerRun({
+      scheduleId: schedule.id,
+      sessionId: schedule.sessionId,
+      userId: schedule.userId,
+      fireAt: dueAt,
+      requestedTarget: schedule.target,
+      reason: "superseded",
+      explanation: pausedAgent.message,
+    });
+    log("skipped", {
+      scheduleId: schedule.id,
+      cause: "agent_paused",
+      agentId: schedule.session.agentId,
+      why: pausedAgent.message,
+    });
+    return;
+  }
+
   const runKind = scheduleRunKindOf(schedule.runKind);
   if (runKind === null) {
     // A routine whose kind this build has never heard of, which means a newer
@@ -795,17 +852,6 @@ async function dispatchOne(
     cloudAvailable: isCode || plannerCloudAvailability(await readCloudWorkAvailability()),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
-
-  /**
-   * The next fire, taken across every trigger rather than from the one that
-   * owned this fire.
-   *
-   * The planner reasons about a single spec, which is right for enumerating a
-   * backlog and wrong for the column: a schedule that fires daily at 08:00 AND
-   * every Monday at 17:00 has one `nextRunAt`, and writing the daily trigger's
-   * answer into it would drop every Monday evening.
-   */
-  const advanced = (): Date | null => nextFireForTriggers(triggers, schedule.timezone, now);
 
   switch (decision.outcome) {
     case "dispatch": {

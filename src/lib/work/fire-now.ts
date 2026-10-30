@@ -14,6 +14,7 @@ import {
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { checkUsageWindows } from "@/lib/spend";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { windowLimitMessage, type UsageWindowName } from "@/lib/spend-ceiling";
 import { createRun, recordRunInputsFromGrants } from "@/lib/work/store";
 import {
@@ -83,6 +84,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export const FIRE_REFUSALS = [
   /** The routine is paused. */
   "paused",
+  /** The agent that owns the routine is paused: it starts nothing until it resumes. */
+  "agent_paused",
   /** This routine already has as many runs going as it allows. */
   "already_running",
   /** A newer deployment's routine, which this build must not guess at. */
@@ -175,6 +178,25 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
       outcome: "refused",
       reason: "paused",
       message: "This routine is paused, so nothing starts it until you resume it.",
+    };
+  }
+
+  // A paused agent starts nothing, its routines included: the routine can be
+  // switched back on in Automations while the agent stays paused. The
+  // dispatcher's rule and sentence, read fresh.
+  const pausedAgent = pausedAgentRunRefusal(
+    schedule.session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: schedule.session.agentId, userId, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (pausedAgent) {
+    return {
+      outcome: "refused",
+      reason: "agent_paused",
+      message: pausedAgent.message,
     };
   }
 
