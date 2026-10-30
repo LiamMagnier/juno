@@ -17,8 +17,9 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 
 // The keys are `rounded-control` (8) seated 4px inside a `rounded-card` (12)
 // bar: 12 − 4 = 8. The bars were the 14px `menu` rung at the same 4px inset,
-// which left every key 2px too square for the corner around it.
-const ACTION = "h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5";
+// which left every key 2px too square for the corner around it. Button's `xs`
+// rung is the key (28px, 40px on touch); this only widens it under a thumb.
+const ACTION = "coarse:px-3.5";
 
 export function SelectionActions({
   onAsk,
@@ -49,21 +50,21 @@ export function SelectionActions({
         className,
       )}
     >
-      <Button type="button" variant="ghost" size="sm" onClick={onAsk} className={ACTION}>
+      <Button type="button" variant="ghost" size="xs" onClick={onAsk} className={ACTION}>
         <MessageCircleQuestion className="size-3.5" aria-hidden />
         {`Ask ${PRODUCT_NAME}`}
       </Button>
       {onExplain && (
         <>
           <span aria-hidden className="h-4 w-px bg-border/70" />
-          <Button type="button" variant="ghost" size="sm" onClick={onExplain} className={ACTION}>
+          <Button type="button" variant="ghost" size="xs" onClick={onExplain} className={ACTION}>
             <Info className="size-3.5" aria-hidden />
             Explain
           </Button>
         </>
       )}
       <span aria-hidden className="h-4 w-px bg-border/70" />
-      <Button type="button" variant="ghost" size="sm" onClick={onCopy} className={cn(ACTION, "px-2")} aria-label="Copy">
+      <Button type="button" variant="ghost" size="xs" onClick={onCopy} className={cn(ACTION, "px-2")} aria-label="Copy">
         <ActionIcons.copy className="size-3.5" aria-hidden />
       </Button>
     </div>
@@ -185,7 +186,7 @@ export function AreaActions({
       style={{ top, left: rect.x + rect.w / 2 }}
       className="surface-float overlay-glass absolute z-toolbar flex -translate-x-1/2 items-center gap-0.5 whitespace-nowrap rounded-card p-1 motion-safe:animate-pop-in"
     >
-      <Button type="button" variant="ghost" size="sm" onClick={onAsk} disabled={busy} className={ACTION}>
+      <Button type="button" variant="ghost" size="xs" onClick={onAsk} disabled={busy} className={ACTION}>
         {busy ? (
           <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
         ) : (
@@ -194,10 +195,10 @@ export function AreaActions({
         Ask about this area
       </Button>
       <span aria-hidden className="h-4 w-px bg-border/70" />
-      <Button type="button" variant="ghost" size="sm" onClick={onCopy} disabled={busy} className={cn(ACTION, "px-2")} aria-label="Copy area as image">
+      <Button type="button" variant="ghost" size="xs" onClick={onCopy} disabled={busy} className={cn(ACTION, "px-2")} aria-label="Copy area as image">
         <ActionIcons.copy className="size-3.5" aria-hidden />
       </Button>
-      <Button type="button" variant="ghost" size="sm" onClick={onDismiss} className={cn(ACTION, "px-2")} aria-label="Clear area">
+      <Button type="button" variant="ghost" size="xs" onClick={onDismiss} className={cn(ACTION, "px-2")} aria-label="Clear area">
         <ActionIcons.dismiss className="size-3.5" aria-hidden />
       </Button>
     </div>
