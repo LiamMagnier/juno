@@ -127,3 +127,21 @@ test("an IP address is refused as the host name, by private-tls.sh and by setup.
   assert.ok(check < setup.indexOf('[ "$(id -u)" -eq 0 ]'), "before the root check");
   assert.ok(check < setup.indexOf('echo "==> Packages"'), "before anything is installed");
 });
+
+test("--renew-tls renews the kind of certificate setup installed unless --tls says otherwise", () => {
+  // `--tls own` and `--tls private` both serve $TLS_DIR/cert.pem. `--renew-tls`
+  // alone used to mean private whatever setup had installed, so on a host with
+  // the owner's own certificate it wrote a private CA's certificate over the
+  // file nginx serves, and the web VM, which never trusted that CA, lost the
+  // host. setup.sh records the kind in computer-host-setup.json; renewal reads
+  // it back. (The action needs root, so it is pinned as source.)
+  const setup = readFileSync(path.join(ROOT, "deploy/computer-host/setup.sh"), "utf8");
+  assert.match(setup, /--tls\) TLS="\$2"; TLS_GIVEN=1; shift 2 ;;/);
+  assert.match(setup, /json\.dump\(\{"domain": sys\.argv\[1\], "tls": sys\.argv\[2\], "namespace": sys\.argv\[3\]\}, file\)/);
+  const renew = setup.slice(setup.indexOf("  renew-tls)\n"), setup.indexOf("  rebuild-image) rebuild_image"));
+  assert.ok(renew.length > 0, "the renew-tls action is where it was");
+  const recorded = renew.indexOf('[ "$TLS_GIVEN" = 1 ] || TLS="$(python3 -c');
+  assert.ok(recorded >= 0, "renewal reads the recorded kind when --tls is not given");
+  assert.match(renew.slice(recorded), /^[^\n]*computer-host-setup\.json"\)\)\["tls"\]/);
+  assert.ok(recorded < renew.indexOf("install_tls"), "before the certificate is made");
+});
