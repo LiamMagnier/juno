@@ -61,6 +61,7 @@ import subprocess
 import sys
 import threading
 import time
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -846,12 +847,17 @@ class Host:
         if not token or len(token) > 512:
             raise Refused(400, "bad_token")
         self.docker(Argv.provision_token(name), ns, stdin=token, timeout=15)
-        for _ in range(25):
+        # Until the gate has taken the token it refuses every connection, and on
+        # a first boot Chromium can take well over ten seconds to answer the
+        # gate. Waited on by the clock, not by a number of tries: a check costs
+        # a broker round trip here.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
             code, _, _ = self.docker(Argv.token_pending(name), ns, timeout=5, allow_nonzero=True)
             if code != 0:
-                break
+                return {"ok": True, "taken": True}
             time.sleep(0.2)
-        return {"ok": True}
+        return {"ok": True, "taken": False}
 
     def screenshot(self, ns, name):
         code, out, _ = self.docker(Argv.screenshot(name), ns, timeout=30, allow_nonzero=True)
@@ -1323,57 +1329,73 @@ def make_handler(host, tokens):
 def tunnel_server(host, loop_ready=None):
     """The asyncio websockets listener: a ticket in X-Juno-Tunnel-Ticket, no subprotocol, 9222 or 5900 only."""
     import websockets
+    import websockets.exceptions
     import websockets.legacy.client as ws_client
     import websockets.legacy.server as ws_server
-    from websockets.exceptions import ConnectionClosed
+    from websockets.exceptions import ConnectionClosed, InvalidStatusCode
 
     version = tuple(int(part) for part in websockets.__version__.split(".")[:2])
     if not (10, 4) <= version < (15, 0):
         raise SystemExit("juno-computer-host: websockets %s is outside [10.4, 15)" % websockets.__version__)
 
+    def refuse(juno, status, **fields):
+        juno["status"] = status
+        log(op="tunnel", status=status, **fields)
+        return HTTPStatus(status), [("Content-Length", "0"), ("Connection", "close")], b""
+
     class TunnelProtocol(ws_server.WebSocketServerProtocol):
+        """Checks the ticket, resolves the container and opens the upstream leg
+        BEFORE the 101, so a caller whose ticket, computer or gate token is
+        refused gets an HTTP status, never an open socket that goes nowhere."""
         juno = None
 
         async def process_request(self, path, request_headers):
-            self.juno = {"started": time.monotonic(), "status": 101}
+            self.juno = juno = {"started": time.monotonic(), "status": 101}
             if urlsplit(path).path != "/v1/tunnel":
-                self.juno["status"] = 404
-                return 404, [], b""
+                return refuse(juno, 404)
             values = request_headers.get_all("X-Juno-Tunnel-Ticket")
             record = host.tickets.consume(values[0]) if len(values) == 1 else None
             if record is None:
-                self.juno["status"] = 401
-                log(op="tunnel", status=401)
-                return 401, [], b""
-            self.juno.update(name=record["name"], port=record["port"], token=record["token"])
+                return refuse(juno, 401)
+            juno.update(name=record["name"], port=record["port"], token=record["token"])
+            fields = {"computer": record["name"], "token": record["token"], "port": record["port"]}
             cdp = None
             if record["port"] == 9222:
                 tokens_ = request_headers.get_all("X-Juno-Cdp-Token")
                 if len(tokens_) != 1 or not tokens_[0] or len(tokens_[0]) > 512:
-                    self.juno["status"] = 400
-                    log(op="tunnel", computer=record["name"], token=record["token"], status=400)
-                    return 400, [], b""
+                    return refuse(juno, 400, **fields)
                 cdp = tokens_[0]
             loop = asyncio.get_running_loop()
             try:
                 address = await loop.run_in_executor(None, host.address, record["ns"], record["name"])
             except Refused as refused:
-                self.juno["status"] = refused.status
-                log(op="tunnel", computer=record["name"], token=record["token"], status=refused.status)
-                return refused.status, [], b""
-            self.juno.update(address=address, cdp=cdp)
+                return refuse(juno, refused.status, **fields)
+            try:
+                if cdp is not None:
+                    juno["upstream"] = await ws_client.connect(
+                        "ws://%s:9222/devtools/browser" % address, extra_headers=[("X-Juno-Cdp-Token", cdp)],
+                        max_size=WS_MAX_SIZE, max_queue=32, ping_interval=30, ping_timeout=30, open_timeout=15,
+                        compression=None)
+                else:
+                    juno["upstream"] = await asyncio.wait_for(asyncio.open_connection(address, 5900), 15)
+            except InvalidStatusCode as refused:
+                # The gate refused the caller's CDP token (403), or is busy with another client.
+                return refuse(juno, 403 if refused.status_code == 403 else 502, **fields)
+            except (OSError, asyncio.TimeoutError, websockets.exceptions.WebSocketException):
+                return refuse(juno, 502, **fields)
             return None
 
-    async def bridge_cdp(websocket, juno):
-        uri = "ws://%s:9222/devtools/browser" % juno["address"]
-        try:
-            upstream = await ws_client.connect(uri, extra_headers=[("X-Juno-Cdp-Token", juno["cdp"])], max_size=WS_MAX_SIZE,
-                                               max_queue=32, ping_interval=30, ping_timeout=30, open_timeout=15,
-                                               compression=None)
-        except Exception:
-            await websocket.close(1011, "gate")
-            return 1011
+        def connection_lost(self, exc):
+            # A handshake that failed after the upstream was opened: close it.
+            upstream = (self.juno or {}).pop("upstream", None)
+            if upstream is not None:
+                if isinstance(upstream, tuple):
+                    upstream[1].close()
+                else:
+                    asyncio.ensure_future(upstream.close())
+            super().connection_lost(exc)
 
+    async def bridge_cdp(websocket, upstream):
         async def pump(source, target):
             try:
                 async for message in source:
@@ -1389,12 +1411,8 @@ def tunnel_server(host, loop_ready=None):
         await websocket.close()
         return 1000
 
-    async def bridge_vnc(websocket, juno):
-        try:
-            reader, writer = await asyncio.wait_for(asyncio.open_connection(juno["address"], 5900), 15)
-        except Exception:
-            await websocket.close(1011, "vnc")
-            return 1011
+    async def bridge_vnc(websocket, upstream):
+        reader, writer = upstream
 
         async def to_tcp():
             try:
@@ -1426,12 +1444,15 @@ def tunnel_server(host, loop_ready=None):
 
     async def handler(websocket, path=None):
         juno = websocket.juno or {}
+        upstream = juno.pop("upstream", None)
         code = 1011
         try:
-            if juno.get("port") == 9222:
-                code = await bridge_cdp(websocket, juno)
-            elif juno.get("port") == 5900:
-                code = await bridge_vnc(websocket, juno)
+            if upstream is not None and juno.get("port") == 9222:
+                code = await bridge_cdp(websocket, upstream)
+            elif upstream is not None and juno.get("port") == 5900:
+                code = await bridge_vnc(websocket, upstream)
+            else:
+                await websocket.close(1011)
         finally:
             log(op="tunnel", computer=juno.get("name"), token=juno.get("token"), port=juno.get("port"), status=101,
                 close=code, ms=int((time.monotonic() - juno.get("started", time.monotonic())) * 1000))

@@ -451,7 +451,15 @@ export class RemoteComputerProvider implements ComputerProvider {
   }
 
   async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
-    this.ok(await this.request("PUT", this.computer(handle, "cdp-token"), { body: Buffer.from(token, "utf8") }), "token");
+    // The host waits (up to 30 s) until the gate has taken the token, so the
+    // first browser connection after a wake is not refused.
+    this.ok(
+      await this.request("PUT", this.computer(handle, "cdp-token"), {
+        body: Buffer.from(token, "utf8"),
+        timeoutMs: Math.max(this.timeoutMs, 45_000),
+      }),
+      "token"
+    );
   }
 
   async isVncRunning(handle: ComputerHandle): Promise<boolean> {

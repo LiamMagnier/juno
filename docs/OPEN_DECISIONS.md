@@ -370,6 +370,54 @@ its test.
 
 ---
 
+## 12. Retry before the first byte: one switch and one number — **owner to confirm**
+
+A saved chat turn whose provider rejects the first request before anything
+arrives (an HTTP status, or a connection refused, reset or unresolvable, with
+zero events and zero usage received) now asks once more
+(`src/lib/chat/turn/pre-stream-retry.ts`, wired in `run-turn.ts`). An
+explicit choice is asked again on the same model, and only for a rate limit,
+a server error or a failed connection. Auto moves to the decision's next
+ranked healthy candidate, which clears the same plan, capability and data-use
+terms, also after an account fault or a model the lab no longer serves. Never
+after a single event or token, never for a safety refusal, an oversize prompt
+or a malformed request, never after a Stop, a drain, the watchdog or the
+budget guard, and never twice. Attempt 1's spend hold is released and attempt
+2 takes its own (`<generationId>:attempt-2`). If that hold is refused, there
+is no retry. The reader sees a "Retrying…" row. Both settings are in env,
+with defaults and clamps:
+
+- **`CHAT_PRESTREAM_RETRY`, default on.** `off` (or `0`, `false`, `no`) turns
+  the retry off everywhere. The turn then fails on the first rejection, as
+  before this change.
+- **`CHAT_PRESTREAM_RETRY_MAX_WAIT_MS`, default 8000 (bounded 0 to 15000).**
+  The longest wait before the second attempt. Without a stated wait, the same
+  model is asked again after a jittered 0.4–1.2 s, and another model under
+  Auto after 0.2–0.6 s. A wait the provider names (`retry-after`,
+  `retry-after-ms`, "retry in Ns") is honoured up to this bound. When the
+  provider asks for longer, the same model is not retried: the error card
+  shows the wait instead. Auto may still move on to another model.
+
+Also for the owner:
+
+- **Cost.** A retried turn makes one more provider request. It is billed to
+  the reader only for what that request serves: attempt 1 received nothing,
+  so nothing was recorded for it. A provider *may* still bill the platform
+  for a request whose connection was reset after it was sent. That is the one
+  case the zero-events rule cannot see, and it is why timeouts are never
+  retried.
+- **Auto may answer on a different lab after an account fault.** This is
+  the in-turn failover the discovery asked for (gap 1e). The receipt says
+  "Auto's first choice couldn't be reached, so the next best model answered".
+  An explicit choice is never moved.
+- **Not covered:** private chats (`private-turn.ts`) and Work runs still fail
+  on the first rejection. The native apps show the row as an ordinary model
+  row. Their run panel's "Model" fact may still name the first pick after Auto
+  moves on, because the web panel reads the last "Selected model" row and the
+  Swift side was not changed.
+
+---
+
 ## Not a decision — a known scaling limit (review item 39)
 
 Recorded here so it is not rediscovered as a bug.

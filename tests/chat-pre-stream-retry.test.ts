@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { buildRun } from "@/components/chat/thought-process-model";
+import { createRequestMeter, type ProviderRequestRecord } from "@/lib/llm/request-meter";
+import { createPrefixTracker } from "@/lib/llm/prefix-diagnostic";
+import { getModel } from "@/lib/models";
 import { markModelCallError } from "@/lib/provider-error";
 import {
   DEFAULT_PRE_STREAM_RETRY_TUNABLES,
@@ -314,4 +318,32 @@ test("the run panel's Model fact names the model that answered after Auto moved 
   assert.equal(same.facts.find((fact) => fact.label === "Model")?.value, selected.detail, "the same model still answers");
   // The retry row is not a warning: the finished run is not marked as cut short or failed.
   assert.equal(same.steps.some((step) => step.failed), false);
+});
+
+test("attempt 2 is metered as a retry: run-turn passes the attempt, streamChat hands it to the request meter", () => {
+  const records: ProviderRequestRecord[] = [];
+  const model = getModel("qwen:qwen3.8-flash");
+  assert.ok(model, "a catalogue model to meter");
+  const tracker = createPrefixTracker();
+  for (const attempt of [undefined, 1, 2]) {
+    const meter = createRequestMeter(
+      { model, role: "chat", cacheKey: "conv-retry", attempt },
+      { sink: (record) => records.push(record), tracker, now: () => 1_000 },
+    );
+    // A rejected request: begun, ended with no usage and not ok.
+    meter.begin({ wire: "compat", round: 0, body: { model: model.providerModel, messages: [] } }).end(null, { ok: false });
+  }
+  assert.deepEqual(
+    records.map((record) => [record.attempt, record.retry, record.ok, record.usageReported]),
+    [
+      [1, false, false, false],
+      [1, false, false, false],
+      [2, true, false, false],
+    ],
+  );
+  // The wiring between the two, as written: the turn opens each attempt with
+  // its number, and streamChat passes it to the meter untouched.
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+  assert.match(read("src/lib/chat/turn/run-turn.ts"), /const openModelStream = \(attempt: number\) => streamChat\(\{\s*attempt,/);
+  assert.match(read("src/lib/llm.ts"), /createRequestMeter\(\s*\{[\s\S]*?attempt: opts\.attempt,/);
 });
