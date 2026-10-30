@@ -98,6 +98,8 @@ const ALLOWED: Record<string, Category> = {
 
   "src/lib/alerts.ts#lastMailedAt": "per-process",
   "src/lib/computer/store.ts#posterCache": "per-process",
+  // Freezes in flight in this process: its own agent launches wait for them.
+  "src/lib/computer/docker.ts#freezing": "per-process",
   "src/lib/computer/sweep.ts#orphanSince": "per-process",
   // Log-once dedupe for the sweeper: a second process logs the same line once more.
   "src/lib/computer/sweep.ts#unreachableRows": "per-process",
