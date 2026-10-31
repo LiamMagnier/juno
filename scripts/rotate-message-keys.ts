@@ -385,6 +385,28 @@ async function main(): Promise<void> {
     write: (id, value) => prismaUnguarded.shareRecipient.update({ where: { id }, data: { email: value } }),
   });
 
+  // What artifacts' own code saved for each viewer (window.alevr.storage,
+  // src/lib/artifact-ai/storage.ts). Born sealed. The row has a compound key,
+  // so the pass's cursor is that key as JSON.
+  type StorageKey = { artifactId: string; userId: string; key: string };
+  const storageKey = (id: string): StorageKey => {
+    const [artifactId, userId, key] = JSON.parse(id) as [string, string, string];
+    return { artifactId, userId, key };
+  };
+  await rotateTextColumn("ArtifactStorageEntry.value", tally, {
+    page: async (cursor) => {
+      const rows = await prismaUnguarded.artifactStorageEntry.findMany({
+        take: BATCH,
+        ...(cursor ? { skip: 1, cursor: { artifactId_userId_key: storageKey(cursor) } } : {}),
+        orderBy: [{ artifactId: "asc" }, { userId: "asc" }, { key: "asc" }],
+        select: { artifactId: true, userId: true, key: true, value: true },
+      });
+      return rows.map((r) => ({ id: JSON.stringify([r.artifactId, r.userId, r.key]), value: r.value }));
+    },
+    write: (id, value) =>
+      prismaUnguarded.artifactStorageEntry.update({ where: { artifactId_userId_key: storageKey(id) }, data: { value } }),
+  });
+
   if (tally.failed === 0) clearCursor();
 
   console.log(

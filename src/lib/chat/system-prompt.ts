@@ -129,6 +129,18 @@ export interface SystemPromptOptions {
 export const CODE_RUN_RULE = `# Runnable code
 Code blocks in the chat have a Run button for JavaScript, TypeScript, Python and SQL, which run in the reader's browser (SQL on SQLite, seeded with a sample of Oracle's HR schema: employees, departments, jobs, regions, dual). Always tag a fence with its language, and when an example is meant to be tried, make it complete and print its result (a final print or SELECT) so Run shows something.`;
 
+/**
+ * `window.alevr` in a REACT or HTML artifact (src/lib/artifact-ai/protocol.ts):
+ * a model call and per-person storage, on the reader's own account. The web's
+ * canvas, chat card, artifact page and scripted shared pages carry the bridge;
+ * installed apps do not, so markdown-only clients drop the rule with the
+ * semantic types (MARKDOWN_ONLY_ARTIFACTS).
+ */
+export const ARTIFACT_AI_RULE = `- Apps that think or remember: a REACT or HTML artifact can call a model and keep data through \`window.alevr\`, on the reader's own account.
+  - \`await window.alevr.complete({ prompt, system, maxTokens })\` resolves to the reply text (\`system\` and \`maxTokens\`, at most 4096, are optional). Pass \`onText: (chunk) => …\` to show it as it streams, or iterate \`for await (const chunk of window.alevr.stream({ prompt }))\`. Each call stands alone: put everything the model needs, earlier turns of a chat included, in the prompt. When the app will parse the reply, ask for JSON only and JSON.parse it inside try/catch.
+  - \`await window.alevr.storage.get(key)\` (null when unset), \`.set(key, value)\` (any JSON value, up to 5 MB each and 20 MB per app), \`.delete(key)\` and \`.list(prefix)\` keep data for this app and this person across reloads. Use it instead of localStorage, which does not persist here.
+  - Any call can be refused (signed out, usage limit, the reader said no): call it inside try/catch, show error.message briefly, and keep the rest of the app working. Check that \`window.alevr\` exists first. Use it only when the app genuinely needs a model or saved data.`;
+
 /** Added only when this server has the hosted sandbox (src/lib/exec/config.ts). */
 export const CODE_RUN_SANDBOX_LINE = `C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl and Bash blocks run too, in a sandbox with no network; give them a main function where the language needs one.`;
 
@@ -384,6 +396,7 @@ EDITING one of these later: never re-emit it. Use <juno:artifact-ops identifier=
 A short free-form note or an explainer the user only reads is still a MARKDOWN artifact.
 - Diagrams: a document can carry them inline. Use a fenced \`\`\`mermaid block for a flow, process, timeline, sequence, mind map or org chart wherever a picture explains faster than prose; it renders as a real diagram in the canvas.
 - Interactive: when the user would want to DO something with the content (a calculator, a chart to hover, a filterable table, a quiz, a map, a planner), make a REACT or HTML artifact instead of a document; it runs live in the canvas.
+${ARTIFACT_AI_RULE}
 - Images: only use an image URL you actually saw in this conversation (in a web search result, a page you fetched, or a file the user shared). NEVER invent or guess an image URL (no made-up Unsplash or stock links); a guessed URL shows up as a broken image. If you have no real image, leave it out or describe what would go there in words.
 You write the content; the USER picks the download format. Never say you attached a file, exported anything, or generated a .docx/.xlsx/.pptx.`
     );
@@ -504,6 +517,8 @@ const MARKDOWN_ONLY_ARTIFACTS: ReadonlyArray<readonly [string, string]> = [
   [`\n\n${CODE_RUN_RULE}\n${CODE_RUN_SANDBOX_LINE}`, ""],
   [`\n\n${CODE_RUN_RULE}`, ""],
   [`\n${DOCUMENT_INTERACTIVE_RULE}`, ""],
+  // Installed apps run artifacts without the `window.alevr` bridge.
+  [`\n${ARTIFACT_AI_RULE}`, ""],
   // Installed apps draw Live UI in the transcript, not yet inside artifacts.
   [
     "\nViews also work inside artifacts: a \`\`\`live-ui fence in a MARKDOWN artifact, or an \"interactive\" block (its \"view\" is this same JSON) in a DOCUMENT.",

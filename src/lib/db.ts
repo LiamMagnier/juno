@@ -165,6 +165,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // The canvas's unsaved source edits (G12): one person's work in progress,
   // read and written only by that person (src/lib/artifact-canvas-draft.ts).
   ["ArtifactCanvasDraft", "userId"],
+  // What an artifact's own code saved (window.alevr.storage): scoped to the
+  // VIEWER, who on a shared link is not the artifact's owner. An unscoped read
+  // would hand one visitor another's saved data (src/lib/artifact-ai/storage-store.ts).
+  ["ArtifactStorageEntry", "userId"],
   ["ArtifactPublication", "userId"],
   ["ScheduledTask", "userId"],
   ["ModerationFlag", "userId"],

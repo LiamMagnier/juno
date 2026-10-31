@@ -188,7 +188,11 @@ export default async function SharePage({
   // whose document the page never shows): src/lib/share-copy.ts. Not from a
   // share with specific people, which is view-only for them.
   const copyable = !!artifact && !subject.restricted && sharedTypeCopyable(artifact.type);
-  const signedIn = copyable ? !!(await getCurrentUser().catch(() => null)) : false;
+  // Also read when the page runs the artifact's scripts: an app's AI and saved
+  // data run on the visitor's own account, so who is looking decides whether
+  // the viewer asks or points to sign-in (SharedArtifactViewer).
+  const scripted = !!artifact && publicShareProfile() === "public";
+  const signedIn = copyable || scripted ? !!(await getCurrentUser().catch(() => null)) : false;
   const askCopy = copyable && (await searchParams)?.copy === "1";
 
   return (
@@ -253,6 +257,7 @@ export default async function SharePage({
               content={artifact.type === "DESIGN" ? "" : artifact.content}
               version={artifact.version}
               posterUrl={artifact.type === "DESIGN" ? sharedDesignPosterUrl(token) : undefined}
+              signedIn={signedIn}
             />
           </AppPage>
         ) : null}

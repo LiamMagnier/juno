@@ -126,6 +126,7 @@ function RuntimePreview({
   mode,
   onStatus,
   onConsole,
+  artifactId,
 }: {
   type: ArtifactType;
   content: string;
@@ -134,6 +135,8 @@ function RuntimePreview({
   mode: ReturnType<typeof runtimeFor>["mode"];
   onStatus: (status: RunStatus) => void;
   onConsole?: (entry: ConsoleEntry) => void;
+  /** The saved artifact, once it has one: its `window.alevr` runs against it. */
+  artifactId?: string | null;
 }) {
   if (type === "MARKDOWN") {
     return (
@@ -157,6 +160,7 @@ function RuntimePreview({
       mode={mode}
       onConsole={onConsole}
       onStatus={onStatus}
+      runtimeTarget={artifactId ? { artifactId } : null}
     />
   );
 }
@@ -666,6 +670,7 @@ export function ArtifactInlineCard({
                     mode={rt.mode}
                     onStatus={setRunStatus}
                     onConsole={handleConsole}
+                    artifactId={artifactId}
                   />
                 </div>
               </div>
@@ -708,6 +713,7 @@ export function ArtifactInlineCard({
                   mode={rt.mode}
                   onStatus={setRunStatus}
                   onConsole={handleConsole}
+                  artifactId={artifactId}
                 />
               </div>
             </div>

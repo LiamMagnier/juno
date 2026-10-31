@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-383 routes: 230 native, 77 planned, 58 web only, 18 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+385 routes: 230 native, 79 planned, 58 web only, 18 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 9 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
 | [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
@@ -255,6 +255,8 @@ Design is a type of artifact (register #73).
 | `/api/artifacts/[id]/restore` | POST | Native | JunoChatKit | Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync. |
 | `/api/artifacts/[id]/versions` | GET | Native | JunoChatKit | Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time. |
 | `/api/artifacts/[id]/versions/[version]` | GET | Native | JunoChatKit | One version's body: restoring a version older than the synced window fetches it here first. |
+| `/api/artifact-runtime/complete` | POST | Planned |  | window.alevr.complete in an HTML or React artifact: the web's sandbox bridge (src/lib/artifact-ai/bridge-host.ts) calls it for the canvas, the chat card, /a/{id} and scripted shared pages, billed to the viewer. The Mac and iPhone run artifact previews without the bridge, so an app there gets no window.alevr yet (the system prompt teaches it to web turns only). |
+| `/api/artifact-runtime/storage` | POST | Planned |  | window.alevr.storage (get, set, delete, list) for the same artifacts: JSON values per artifact and per viewer, encrypted at rest. Native previews have no bridge yet, as above. |
 | `/api/design` | POST | Native | JunoDesktop |  |
 | `/api/design/[artifactId]` | GET | Web only |  | The Mac reads a design's document from its artifact and hands it to the hosted editor. |
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |

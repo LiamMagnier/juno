@@ -533,6 +533,23 @@ fullscreen, Office export (for Markdown artifacts), and share. It hosts:
   `contentWindow`; the shell accepts a document only from its parent at the app's
   origin. `tests/sandbox-origin*.test.ts` fail if a preview ever inherits the app
   policy again.
+- **`window.alevr`** (`src/lib/artifact-ai/`) — apps that call a model and keep data.
+  An HTML or React preview gets `alevr.complete({ prompt, system?, maxTokens? })`
+  (full text, or streamed through `onText` / `alevr.stream`) and
+  `alevr.storage.get/set/delete/list` (JSON values per artifact **and per viewer**,
+  encrypted at rest; 5 MB a value, 20 MB and 1,000 keys per artifact, 100 MB per
+  viewer). The frame holds no credential: it posts to its parent on a per-frame
+  channel (`src/lib/sandbox/alevr-bridge.ts`), and the parent (`bridge-host.ts`)
+  checks source, channel and shape, then calls `POST /api/artifact-runtime/complete`
+  (NDJSON) or `/storage` with its own session. The routes resolve the artifact as the
+  viewer's own (by id) or through a live share/publication token (only while shared
+  previews run scripts), rate-limit per viewer and per linked artifact, and bill
+  **the viewer, never the owner**: the viewer's background model under their provider
+  policy, `admitMeteredCall` + `reserveSpend` before the call, the stream budget
+  guard during it, one `utility` ledger row per attempt, request-meter role
+  `artifact`. On a shared page the visitor is asked once per page view before the
+  first call; signed-out visitors are pointed to sign-in. The web system prompt
+  teaches the API (`ARTIFACT_AI_RULE`); installed apps have no bridge yet.
 - **`CodeSurface`** — a flat, line-numbered code editor/viewer with theme-aware
   `highlight.js` highlighting.
 
@@ -2354,7 +2371,8 @@ A Postgres fixed-window limiter (`RateLimit` table, atomic upsert — safe acros
 instances). IP extraction does **not** trust the left-most `X-Forwarded-For`. Notable
 limits (per-user unless noted): chat 30/60 s, clarify 60/60 s, follow-ups 30/60 s, agent
 proxy 120/60 s, cloud tasks 10/60 s, upload 60/h, generate 30/h, avatar 20/h, import
-10/h, export 5/h, account-delete 3/h, roadmap create 8/h; auth routes are IP + global
+10/h, export 5/h, account-delete 3/h, roadmap create 8/h, artifact AI 30/60 s + 600/day
+(+ 200/day per shared artifact), artifact storage 1200 reads + 300 writes/60 s; auth routes are IP + global
 scoped (register 5/h per IP + 200/h global; password-reset buckets; i18n 4000/h global +
 200/h per IP). Over limit → **429**.
 

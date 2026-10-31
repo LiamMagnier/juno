@@ -184,7 +184,13 @@ export function ArtifactReadView({
               </div>
             </div>
           ) : (
-            <SandboxFrame type={type} content={content} language={language} mode={rt.mode} />
+            <SandboxFrame
+              type={type}
+              content={content}
+              language={language}
+              mode={rt.mode}
+              runtimeTarget={{ artifactId: id }}
+            />
           )
         ) : (
           <CodeSurface
