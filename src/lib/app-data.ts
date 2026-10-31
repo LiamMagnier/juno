@@ -21,6 +21,7 @@ import { isOwnerEmail } from "@/lib/owner";
 import { PLANS } from "@/lib/plans";
 import { codeAccessFor } from "@/lib/code-v2/code-access";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
+import { normalizeCharacteristics } from "@/lib/characteristics";
 import { AUTO_LOCALE } from "@/lib/i18n";
 import {
   normalizeBackgroundProviderPolicy,
@@ -151,6 +152,9 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // Free starts on its own default (GPT-6 Luna) until the account chooses.
     defaultModel: defaultModelFor(plan, settings?.defaultModel),
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // TEXT columns read through the guard: an unknown level shows as Default,
+    // which is also what the prompt builder makes of it.
+    ...normalizeCharacteristics(settings),
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",
     uiLocale: settings?.uiLocale ?? AUTO_LOCALE,

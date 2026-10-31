@@ -544,6 +544,16 @@ model Settings {
   // "concise", "socratic"…). Layered UNDER customInstructions so a user's own
   // instructions always win.
   personality                String   @default("default")
+  // Tone characteristics (src/lib/characteristics.ts): "less" | "default" |
+  // "more" each, layered on the personality and under customInstructions.
+  // One column apiece so a client's patch writes one without reading the
+  // rest; TEXT so a new level is a rollback-safe change, and an unknown value
+  // reads as "default", which puts nothing in the prompt.
+  toneWarmth                 String   @default("default")
+  toneEnthusiasm             String   @default("default")
+  toneFormatting             String   @default("default")
+  toneEmoji                  String   @default("default")
+  toneConciseness            String   @default("default")
   memoryEnabled              Boolean  @default(true)
   // Sensitive topics this account has opted INTO remembering — health,
   // ethnicity, religion, politics, sexuality, finances (see

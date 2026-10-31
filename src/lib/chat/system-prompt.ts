@@ -5,6 +5,7 @@
  * from any runtime. The Anthropic adapter re-exports it for its callers.
  */
 import { personalitySystemPrompt } from "@/lib/personalities";
+import { characteristicsSystemPrompt, type CharacteristicKey } from "@/lib/characteristics";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ROUTINE_SECTION, ROUTINE_UNAVAILABLE_LINE } from "@/lib/tools/specs/propose-routine.prompt";
@@ -16,6 +17,11 @@ export interface SystemPromptOptions {
   customInstructions?: string;
   /** Response-style preset id (see lib/personalities); "default" injects nothing. */
   personality?: string;
+  /**
+   * The account's tone characteristics (lib/characteristics), usually the
+   * settings row itself. All at "default" (or absent) injects nothing.
+   */
+  characteristics?: Partial<Record<CharacteristicKey, unknown>> | null;
   responseLanguage?: string;
   memories?: string[];
   /** Consolidated, deduped memory profile (Markdown). Preferred over `memories`. */
@@ -455,6 +461,13 @@ What you remember — the summary below and any notes added to a message — is 
   const personality = opts.personality ? personalitySystemPrompt(opts.personality) : null;
   if (personality) {
     variable.push(`# Response style\n${personality}`);
+  }
+
+  // Characteristics sit between the two: finer than the preset, so they win
+  // over it, and still below what the user wrote in their own words.
+  const characteristics = characteristicsSystemPrompt(opts.characteristics, { voiceMode: opts.voiceMode });
+  if (characteristics) {
+    variable.push(characteristics);
   }
 
   if (opts.customInstructions && opts.customInstructions.trim()) {

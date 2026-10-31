@@ -617,7 +617,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
-| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
+| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. The tone characteristics (Warm, Enthusiastic, Headers & lists, Emoji, Concise) are web-first: /api/settings and the v1 settings record and settings.update patch carry them (toneWarmth … toneConciseness), and the native panes do not draw them yet. |
 | `/profile` | Native | Native | NativeProfileView (DesktopProfileScreen from the account menu's Profile row; JunoMobileProfileView under Settings › Account) |  |
 
 | Route | Methods | Status | Called from | Note |

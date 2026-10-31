@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { ChoiceMenu } from "@/components/settings/choice-menu";
 import { useSaveStates } from "@/components/settings/save-status";
@@ -16,7 +17,14 @@ import { CustomizeSection, customizeEnterClass, customizeFieldClass } from "@/co
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
+import {
+  CHARACTERISTICS,
+  normalizeCharacteristics,
+  type CharacteristicKey,
+  type CharacteristicLevel,
+} from "@/lib/characteristics";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { ClientSettings } from "@/types/app";
 
 /** Reply languages, stored by their English name, which is what the prompt builder reads. */
 const LANGUAGES: { value: string; label: string }[] = [
@@ -32,6 +40,13 @@ const LANGUAGES: { value: string; label: string }[] = [
   { value: "Chinese", label: "Chinese" },
   { value: "Hindi", label: "Hindi" },
   { value: "Arabic", label: "Arabic" },
+];
+
+/** Every characteristic offers the same three steps; Default injects nothing. */
+const LEVEL_OPTIONS: readonly SegmentedOption<CharacteristicLevel>[] = [
+  { value: "less", label: "Less" },
+  { value: "default", label: "Default" },
+  { value: "more", label: "More" },
 ];
 
 /**
@@ -57,6 +72,16 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
     () => PERSONALITIES.map((p) => ({ value: p.id, label: p.label, description: p.description })),
     []
   );
+
+  // Each characteristic is its own settings field, so two quick changes to
+  // different rows are two independent writes (and two rollbacks).
+  const characteristics = normalizeCharacteristics(settings);
+  const saveCharacteristic = (key: CharacteristicKey, level: CharacteristicLevel) => {
+    if (characteristics[key] === level) return;
+    const patch: Partial<Pick<ClientSettings, CharacteristicKey>> = {};
+    patch[key] = level;
+    void saves.track(key, () => save(patch));
+  };
 
   const [name, setName] = React.useState(user.name ?? "");
   // The name last sent, so the unmount flush below does not send it again
@@ -222,6 +247,31 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
             </div>
           </div>
 
+          <div className="mt-6 border-t border-foreground/[0.06] pt-6">
+            <p className="text-ui font-medium text-foreground">Characteristics</p>
+            <p className="text-ui text-muted-foreground">Tune the personality’s tone. Default leaves it as it is.</p>
+            <div className="mt-4 space-y-3">
+              {CHARACTERISTICS.map((c) => (
+                <div key={c.key} className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-ui text-foreground">{c.label}</p>
+                    <p className="text-caption text-muted-foreground">{c.description}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <SaveStatus state={saves.status(c.key)} />
+                    <SegmentedControl
+                      ariaLabel={c.label}
+                      size="sm"
+                      value={characteristics[c.key]}
+                      onChange={(level) => saveCharacteristic(c.key, level)}
+                      options={LEVEL_OPTIONS}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-foreground/[0.06] pt-6">
             <div>
               <p className="text-ui font-medium text-foreground">Response language</p>
@@ -336,6 +386,27 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
             </Select>
           }
         />
+      </SettingsGroup>
+
+      <SettingsGroup title="Characteristics" description="Tune the personality’s tone. Your custom instructions still take priority.">
+        {CHARACTERISTICS.map((c) => (
+          <SettingRow
+            key={c.key}
+            label={c.label}
+            description={c.description}
+            wide
+            status={saves.status(c.key)}
+            control={
+              <SegmentedControl
+                ariaLabel={c.label}
+                value={characteristics[c.key]}
+                onChange={(level) => saveCharacteristic(c.key, level)}
+                options={LEVEL_OPTIONS}
+                className="w-full @[34rem]/pane:w-auto"
+              />
+            }
+          />
+        ))}
       </SettingsGroup>
     </>
   );

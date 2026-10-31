@@ -1188,7 +1188,7 @@
           "mac": "native",
           "ios": "native",
           "screen": "Settings › Personalization (DesktopSettingsPersonalizationPane)",
-          "note": "The web's Customize › Instructions tab renders the same personalization section as Settings."
+          "note": "The web's Customize › Instructions tab renders the same personalization section as Settings. The tone characteristics (Warm, Enthusiastic, Headers & lists, Emoji, Concise) are web-first: /api/settings and the v1 settings record and settings.update patch carry them (toneWarmth … toneConciseness), and the native panes do not draw them yet."
         },
         "/profile": {
           "mac": "native",

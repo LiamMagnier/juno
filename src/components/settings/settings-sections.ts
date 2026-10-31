@@ -83,7 +83,7 @@ export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
   general:
     "language interface locale appearance theme light dark system mode dark mode light mode accent color colour text size font chat font serif mono width transcript motion animation reduce reading wrap long code lines keyboard shortcuts keys hotkeys send enter return capabilities",
   notifications: "notify notification alert sound sounds chime email budget digest background reply push browser",
-  personalization: "name nickname call you instructions custom instructions personality style tone response language about you",
+  personalization: "name nickname call you instructions custom instructions personality style tone response language about you characteristics warm warmth enthusiastic enthusiasm emoji headers lists formatting concise brief",
   memory: "memory remember saved memories forget sensitive health money learn background conversations message each other cross capabilities",
   models: "model default model auto favourite favorite fast mode pinned thinking effort web search labs train training",
   connectors: "apps connectors integrations mcp permissions github google lockdown approval actions",
