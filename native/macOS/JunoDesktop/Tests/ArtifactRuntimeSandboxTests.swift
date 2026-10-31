@@ -258,8 +258,12 @@ struct ArtifactRuntimeSandboxTests {
         return value as? String ?? ""
     }
 
+    /// 30 s, not 10: a TSX document first compiles with the bundled Babel
+    /// inside a fresh WebView, and on a cold CI Mac that alone has run past
+    /// 10 s (aTSXComponentCompilesItsTypesAway, main 6ede82e, passed on rerun).
+    /// A condition that holds returns at once, so only a slow runner waits.
     private func waitUntil(
-        timeout: TimeInterval = 10,
+        timeout: TimeInterval = 30,
         _ condition: () async -> Bool
     ) async throws {
         let start = Date()
