@@ -4,6 +4,8 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import type { PDFDocumentProxy } from "unpdf/pdfjs";
 import { Button } from "@/components/ui/button";
+import { CloseButton } from "@/components/ui/dialog";
+import { useModalLayer } from "@/components/ui/modal-layer";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { ChevronDown, ChevronUp, Crop, Maximize2, Minimize2, TextSearch } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -363,6 +365,11 @@ export function DocumentViewer({
 }: DocumentViewerProps) {
   const kind: ViewerKind = viewerKindOf(attachment);
   const rootRef = React.useRef<HTMLDivElement>(null);
+  // Fullscreen is this same element grown over the window (so the open file,
+  // its page and its find state survive the switch), and it is modal there:
+  // the app behind is inert, scroll stays in the viewer, and focus goes back
+  // where it was when it leaves (modal-layer.ts).
+  useModalLayer(rootRef, !!fullscreen);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const pdf = usePdf(attachment, kind === "pdf");
   const [pageMeta, setPageMeta] = React.useState<string | null>(null);
@@ -522,8 +529,12 @@ export function DocumentViewer({
       role={fullscreen ? "dialog" : "complementary"}
       aria-modal={fullscreen || undefined}
       aria-label={`${attachment.fileName} — viewer`}
+      tabIndex={fullscreen ? -1 : undefined}
       onKeyDown={onKeyDown}
-      className={cn("flex h-full min-h-0 flex-col bg-background", fullscreen && "fixed inset-0 z-modal motion-safe:animate-fade-in")}
+      className={cn(
+        "flex h-full min-h-0 flex-col bg-background outline-none",
+        fullscreen && "fixed inset-0 z-modal overflow-hidden motion-safe:animate-fade-in",
+      )}
     >
       <header className="flex items-center gap-2 border-b border-border/60 bg-card py-2 pl-3 pr-2">
         <FilePreview
@@ -598,9 +609,7 @@ export function DocumentViewer({
         )}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close file" className="text-muted-foreground hover:text-foreground">
-              <ActionIcons.dismiss className="size-4" aria-hidden />
-            </Button>
+            <CloseButton size="md" label="Close file" onClick={onClose} />
           </TooltipTrigger>
           <TooltipContent>Close</TooltipContent>
         </Tooltip>
