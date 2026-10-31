@@ -170,7 +170,8 @@ export function ProjectSheet({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         {...contentProps}
-        className={cn("pj nest-panel nest-p-1.5 flex max-w-md flex-col gap-0 overflow-hidden p-1.5 sm:p-1.5", className)}
+        bare
+        className={cn("pj nest-panel nest-p-1.5 flex max-w-md flex-col gap-0 overflow-hidden p-1.5", className)}
       >
         <div className={cn("pj-sheet flex min-h-0 flex-1 flex-col rounded-inner", pageClassName)}>
           <div className="shrink-0 px-5 pb-4 pr-14 pt-5">

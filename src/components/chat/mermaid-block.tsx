@@ -12,7 +12,7 @@ import {
 } from "@/components/canvas/sandbox-frame";
 import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { IconSwap } from "@/components/ui/icon-swap";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogCloseButton, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /*
@@ -223,8 +223,13 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
         <div aria-hidden="true" className="skeleton m-3 h-32 rounded-control" />
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-[min(96vw,72rem)] max-w-none bg-card p-0">
-          <DialogTitle className="border-b border-border/60 px-5 py-3 text-ui font-medium">Diagram</DialogTitle>
+        <DialogContent bare hideClose className="w-[min(96vw,72rem)] max-w-none">
+          {/* The bar holds the ✕ in its own row, so the button sits on the
+              title's line instead of overlapping the bar's hairline. */}
+          <div className="flex items-center gap-2 border-b border-border/60 py-2 pl-5 pr-2">
+            <DialogTitle className="min-w-0 flex-1 truncate text-ui font-medium">Diagram</DialogTitle>
+            <DialogCloseButton className="static" />
+          </div>
           <div className="max-h-[80vh] overflow-auto px-2 pb-2">
             {largeDoc ? <DiagramFrame doc={largeDoc} maxHeight={4000} /> : null}
           </div>

@@ -827,8 +827,9 @@ export function ThoughtProcessPanel({
           eaten the header's content rather than sitting above it. The
           hairline appears only once the content scrolls under it. */}
       <header
-        // In a sheet the header is also the drag handle (bottom-sheet.tsx).
-        data-sheet-drag={sheet ? "" : undefined}
+        // In a sheet the header is also where a mouse or pen can pull it
+        // down (a finger can pull from anywhere; sheet-gesture.ts).
+        data-sheet-handle={sheet ? "" : undefined}
         className={cn(
           "flex min-h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 transition-colors duration-base",
           // A sheet starts well below the notch; only the dock can be the top surface.

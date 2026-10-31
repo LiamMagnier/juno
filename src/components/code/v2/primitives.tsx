@@ -6,6 +6,7 @@
  * narrow), menus with submenu panes, the segmented control, keycaps.
  */
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { Icon } from "@/components/ui/juno-icons";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -99,10 +100,71 @@ export function useDismiss(open: boolean, onClose: () => void, ignore?: React.Re
   return ref;
 }
 
+/** The gaps the CSS used to draw: above the anchor, below it (`.down`), and to the window's edge. */
+const POP_GAP_UP = 8;
+const POP_GAP_DOWN = 6;
+const POP_MARGIN = 8;
+const POP_MAX = 480;
+/** Below this width the popover is a bottom sheet (code-v2.css), placed by CSS alone. */
+const POP_SHEET_MAX = 760;
+
+/**
+ * Where the panel goes, from the box it used to be positioned against: above
+ * it (or below for `down`), aligned to its left or right edge plus `offset`,
+ * flipped to the other side when the preferred one cannot hold it and the
+ * other has more room, held inside the window, and given the height the
+ * chosen side has. Pure, so the placement is tested.
+ */
+export function placeComposerPopover({
+  anchor,
+  viewport,
+  natural,
+  width,
+  align,
+  offset,
+  down,
+}: {
+  anchor: { top: number; bottom: number; left: number; right: number };
+  viewport: { width: number; height: number };
+  natural: number;
+  width: number;
+  align: "left" | "right";
+  offset: number;
+  down: boolean;
+}): { down: boolean; style: React.CSSProperties } {
+  const above = anchor.top - POP_GAP_UP - POP_MARGIN;
+  const below = viewport.height - anchor.bottom - POP_GAP_DOWN - POP_MARGIN;
+  const want = Math.min(natural, POP_MAX);
+  let flip = down;
+  if (!down && want > above && below > above) flip = true;
+  if (down && want > below && above > below) flip = false;
+  const room = Math.max(0, flip ? below : above);
+  const style: React.CSSProperties = { position: "fixed", width, maxHeight: Math.min(POP_MAX, room) };
+  if (flip) style.top = anchor.bottom + POP_GAP_DOWN;
+  else style.bottom = viewport.height - anchor.top + POP_GAP_UP;
+  const maxStart = Math.max(POP_MARGIN, viewport.width - POP_MARGIN - width);
+  if (align === "right") {
+    style.right = Math.min(maxStart, Math.max(POP_MARGIN, viewport.width - anchor.right + offset));
+  } else {
+    style.left = Math.min(maxStart, Math.max(POP_MARGIN, anchor.left + offset));
+  }
+  return { down: flip, style };
+}
+
 /**
  * A popover anchored to the composer (DESIGN §5.8–5.11): above it, aligned
  * left or right with an offset. Below 761 px it becomes a bottom sheet with a
  * grabber and a scrim (CSS), dismissed by a downward drag.
+ *
+ * PORTALLED. It used to be an absolutely positioned child of whatever it was
+ * anchored to, so it was clipped by any scrolling ancestor and stacked inside
+ * the composer's own stacking context, where the dock or the transcript could
+ * cover it. It now renders into the workspace root (`.cv2`, so its scoped
+ * styles and tokens still apply) at the `--z-popper` rung, placed against the
+ * same box the CSS used (a hidden marker left in place), flipped to the other
+ * side when there is no room, and kept inside the window. Focus moves into it
+ * when it opens from the keyboard's trigger (a portalled menu is otherwise
+ * past the end of the tab order) and goes back to the trigger when it closes.
  */
 export function ComposerPopover({
   open,
@@ -139,31 +201,109 @@ export function ComposerPopover({
   // the panel data-gesture="gone", which turns the exit animation off (the
   // finger already moved it away); presence's fallback then unmounts it.
   const scrimRef = React.useRef<HTMLDivElement>(null);
-  const swipeRef = useSwipeDismiss({ axis: "y", sign: 1, enabled: () => window.innerWidth <= 760, scrimRef, onDismiss: onClose });
-  const panelRef = useMergedRef<HTMLDivElement>(ref, swipeRef);
-  if (!presence.mounted) return null;
+  const swipeRef = useSwipeDismiss({ axis: "y", sign: 1, enabled: () => window.innerWidth <= POP_SHEET_MAX, scrimRef, onDismiss: onClose });
+  const panelEl = React.useRef<HTMLDivElement | null>(null);
+  const panelRef = useMergedRef<HTMLDivElement>(ref, swipeRef, panelEl);
+  // Left in place: the box the panel used to be positioned against.
+  const markerRef = React.useRef<HTMLSpanElement>(null);
+  const [host, setHost] = React.useState<HTMLElement | null>(null);
+  const [place, setPlace] = React.useState<{ down: boolean; style: React.CSSProperties } | null>(null);
+  const mounted = presence.mounted;
+
+  const measure = React.useCallback(() => {
+    const marker = markerRef.current;
+    const panel = panelEl.current;
+    if (!marker || !panel) return;
+    if (window.innerWidth <= POP_SHEET_MAX) {
+      // A bottom sheet: code-v2.css places it.
+      setPlace({ down: !!down, style: {} });
+      return;
+    }
+    const box = marker.getBoundingClientRect();
+    setPlace(
+      placeComposerPopover({
+        anchor: box,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        natural: panel.scrollHeight,
+        width,
+        align,
+        offset,
+        down: !!down,
+      }),
+    );
+  }, [align, down, offset, width]);
+
+  React.useLayoutEffect(() => {
+    if (!mounted) {
+      setPlace(null);
+      return;
+    }
+    setHost(markerRef.current?.closest<HTMLElement>(".cv2") ?? document.body);
+  }, [mounted]);
+
+  React.useLayoutEffect(() => {
+    if (!mounted || !host) return;
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [host, measure, mounted]);
+
+  // Into the panel on open (unless something inside already took focus, e.g.
+  // a search field), back to the opener on close.
+  React.useEffect(() => {
+    if (!open || !host) return;
+    const panel = panelEl.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (panel && !panel.contains(document.activeElement)) {
+      // The menu itself (its arrow keys are on it), or the panel: never a
+      // field, which would raise the phone's keyboard over the sheet.
+      (panel.querySelector<HTMLElement>("[role=menu]") ?? panel).focus({ preventScroll: true });
+    }
+    return () => {
+      const now = document.activeElement;
+      const lost = !now || now === document.body || (panel?.contains(now) ?? false);
+      if (lost && opener && opener.isConnected && !panel?.contains(opener)) opener.focus({ preventScroll: true });
+    };
+  }, [host, open]);
+
   const state = presence.closing ? "closed" : "open";
+  const flipped = place ? place.down : !!down;
   return (
     <>
-      <div ref={scrimRef} data-swipe-scrim="" className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
-      <div
-        ref={panelRef}
-        data-swipe-panel=""
-        role={role}
-        aria-label={label}
-        data-state={state}
-        inert={presence.closing}
-        onAnimationEnd={presence.onAnimationEnd}
-        className={cn("cv2-pop", down && "down", className)}
-        style={{
-          width,
-          ...(align === "right" ? { right: offset } : { left: offset }),
-          ["--cv2-origin" as string]: align === "right" ? "bottom right" : "bottom left",
-        }}
-      >
-        <div className="cv2-pop-grab" data-sheet-handle="" />
-        {children}
-      </div>
+      <span ref={markerRef} aria-hidden className="cv2-pop-marker" />
+      {mounted && host
+        ? createPortal(
+            <>
+              <div ref={scrimRef} data-swipe-scrim="" className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
+              <div
+                ref={panelRef}
+                data-swipe-panel=""
+                role={role}
+                aria-label={label}
+                tabIndex={-1}
+                data-state={state}
+                inert={presence.closing}
+                onAnimationEnd={presence.onAnimationEnd}
+                className={cn("cv2-pop", flipped && "down", className)}
+                style={{
+                  width,
+                  ...place?.style,
+                  // Hidden for the one layout pass before it is measured.
+                  ...(place ? null : { visibility: "hidden" as const }),
+                  ["--cv2-origin" as string]: align === "right" ? "bottom right" : "bottom left",
+                }}
+              >
+                <div className="cv2-pop-grab" data-sheet-handle="" />
+                {children}
+              </div>
+            </>,
+            host,
+          )
+        : null}
     </>
   );
 }

@@ -4,15 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   githubSourceKey,
   sourceLabel,
@@ -228,32 +220,29 @@ export function RemoveSourceDialog({
   }, [source]);
   const count = shown?.skills.length ?? 0;
   return (
-    <Dialog open={source !== null} onOpenChange={(open) => (!open && !busy ? onCancel() : undefined)}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>
-            Remove <span translate="no">{shown ? sourceLabel(shown) : ""}</span>?
-          </DialogTitle>
-          <DialogDescription>
-            {count === 1 ? (
-              `Its skill is removed from ${PRODUCT_NAME}.`
-            ) : (
-              <>
-                Its <span className="tabular-nums">{count}</span>{` skills are removed from ${PRODUCT_NAME}.`}
-              </>
-            )}{" "}
-            Chats that used them keep their history.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={onConfirm} loading={busy}>
-            Remove
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={source !== null}
+      onOpenChange={(open) => (!open ? onCancel() : undefined)}
+      busy={busy}
+      title={
+        <>
+          Remove <span translate="no">{shown ? sourceLabel(shown) : ""}</span>?
+        </>
+      }
+      description={
+        <>
+          {count === 1 ? (
+            `Its skill is removed from ${PRODUCT_NAME}.`
+          ) : (
+            <>
+              Its <span className="tabular-nums">{count}</span>{` skills are removed from ${PRODUCT_NAME}.`}
+            </>
+          )}{" "}
+          Chats that used them keep their history.
+        </>
+      }
+      confirmLabel="Remove"
+      onConfirm={onConfirm}
+    />
   );
 }

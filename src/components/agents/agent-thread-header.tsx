@@ -11,14 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Monitor, MoreHorizontal, Pause, Play, Shapes, User } from "@/components/ui/icons";
 import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
@@ -276,31 +269,17 @@ export function AgentThreadHeader({
 
       <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} />
 
-      <Dialog open={confirmRetire} onOpenChange={setConfirmRetire}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Retire {agent.name}?</DialogTitle>
-            <DialogDescription>
-              {`Its routines and tasks stop and it leaves ${BRAND.orbit.label}. This conversation stays in your history.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmRetire(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                setConfirmRetire(false);
-                void handleRetire();
-              }}
-            >
-              Retire
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmRetire}
+        onOpenChange={setConfirmRetire}
+        title={`Retire ${agent.name}?`}
+        description={`Its routines and tasks stop and it leaves ${BRAND.orbit.label}. This conversation stays in your history.`}
+        confirmLabel="Retire"
+        onConfirm={() => {
+          setConfirmRetire(false);
+          void handleRetire();
+        }}
+      />
     </div>
   );
 }

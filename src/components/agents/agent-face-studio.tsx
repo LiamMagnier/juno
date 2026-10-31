@@ -137,7 +137,8 @@ export function AgentFaceStudio({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-[52rem] gap-0 overflow-hidden p-0 sm:p-0"
+        bare
+        className="max-w-[52rem] gap-0 overflow-hidden"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           nameRef.current?.focus({ preventScroll: true });

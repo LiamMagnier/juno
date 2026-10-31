@@ -256,27 +256,27 @@ function PaletteShell({
         // `transform`, so it can no longer cancel it. The palette is not centred
         // vertically, so it has to switch that property off outright.
         //
-        // The 180/120 tier stays: Cmd+K is keyboard-initiated and opened dozens of
-        // times a day, so it is rightly the fastest overlay in the product. Only the
-        // `!` goes, now that DialogContent no longer ships a competing
-        // tailwindcss-animate chain for it to beat.
+        // Its own entrance (below: the base rung, 220, in; the fast rung, 120,
+        // out): Cmd+K is keyboard-initiated and opened dozens of times a day, so
+        // it leaves faster than a dialog. No `!` on it, now that DialogContent no
+        // longer ships a competing tailwindcss-animate chain for it to beat.
         // The window material is the popover's, OPAQUE (FLAT_UI.md, spec D15:
         // no backdrop-filter in product chrome). It was `bg-popover/88` under a
         // 20px blur, so the page behind ghosted through the results and the
         // reader's own chat titles sat on a moving smear. Cut with a 1px
         // hairline at foreground 10% rather than the border token, the
         // homepage's product-window finish.
-        // `sm:p-0` is load-bearing: DialogContent ships `sm:p-6`, which `p-0`
-        // alone does not cancel, so the list sat 24px inside the shell and its
-        // rows were not concentric with it. Now the list's `p-2` (8) inside the
-        // shell's `rounded-panel` (16) holds `rounded-control` (8) rows.
+        // `bare`: the palette lays out its own shell, so DialogContent draws
+        // no padding (it used to ship `sm:p-6`, which `p-0` alone did not
+        // cancel, and the list sat 24px inside the shell). The list's `p-2` (8)
+        // inside the shell's `rounded-panel` (16) holds `rounded-control` (8) rows.
         // Entrance: the shared pop-in keyframe on the homepage curve
         // (expo out), from 0.97 and 6px above, origin at the top edge, where the
         // window hangs from, on the `base` rung (220ms) — it was a 260ms
         // literal, off the duration ladder. The 0.97 start is written behind
         // `motion-safe:` so reduced motion's own scale token still wins; the
         // travel already rides `--motion-shift`, so that leaves a plain fade.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-foreground/10 bg-popover p-0 motion-safe:[--motion-scale-from:0.97] [--pop-shift:-6px] sm:p-0 data-[state=open]:[animation:pop-in_var(--dur-base)_var(--ease-out-expo)_both] data-[state=closed]:animate-pop-out dark:border-white/10"
+        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-foreground/10 bg-popover motion-safe:[--motion-scale-from:0.97] [--pop-shift:-6px] data-[state=open]:[animation:pop-in_var(--dur-base)_var(--ease-out-expo)_both] data-[state=closed]:animate-pop-out dark:border-white/10"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();
@@ -286,9 +286,9 @@ function PaletteShell({
         <DialogTitle className="sr-only">{ariaLabel}</DialogTitle>
 
         {/* Search — the palette's one input, given real presence rather than
-            the density of a list row: `body-lg` (17px) on a 60px band, which
-            is the size the thing you are typing into should be when it is the
-            only field on a 560px overlay. It was `body` (15px), the same rung
+            the density of a list row: `body-lg` (17px) on a 56px band (64 on
+            touch), which is the size the thing you are typing into should be
+            when it is the only field on a 640px overlay. It was `body` (15px), the same rung
             as the results under it, so the field read as the first row of the
             list rather than as the control that drives it. */}
         <div className="flex h-14 items-center gap-3 border-b border-foreground/[0.07] px-4 coarse:h-16 dark:border-white/[0.07]">
@@ -496,7 +496,7 @@ function PaletteShell({
                           anything — both true, and both bought at the price of
                           a list of the reader's own chats looking like a
                           console. Ten rows meant ten bordered plates stacked
-                          down a 560px overlay, which is the single thing that
+                          down a 640px overlay, which is the single thing that
                           made this surface read as heavy.
                           The anchor survives: the glyph still sits in a fixed
                           `size-5` slot, so every title lands on one text edge
@@ -1139,7 +1139,7 @@ function SearchPalette() {
       hint="Try fewer words, or widen the filters above."
     />
   ) : (
-    // The one sentence on an otherwise empty 560px overlay, so it is
+    // The one sentence on an otherwise empty 640px overlay, so it is
     // foreground ink at the reading rung rather than a muted line: at
     // `text-body text-muted-foreground` the prompt that tells you what this
     // surface can find was quieter than the placeholder in the field above it.
@@ -1192,7 +1192,7 @@ function SearchPalette() {
  * then six actions (new chat, new code session, search, the sidebar, the
  * inbox, settings). It used to open on twenty-four commands — "New routine",
  * "Open pull requests", "Roadmap…" — before the first chat, so the one thing
- * a person most often opens it for was below the fold of a 560px overlay.
+ * a person most often opens it for was below the fold of the overlay.
  * Every other destination, the code sessions, the projects, the agents and
  * the rest of Settings are still here and one word away: a typed query
  * searches all of them, best match first.

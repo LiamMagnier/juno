@@ -7,14 +7,7 @@ import { toast } from "sonner";
 import { History, Loader2, Play } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
@@ -361,26 +354,15 @@ export default function AutomationPage() {
         )}
       </section>
 
-      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete “{schedule.name}”?</DialogTitle>
-            <DialogDescription>
-              Fires that have not started are cancelled. A run already under way carries on to the
-              end: deleting a schedule stops it starting anything new, and cannot reach into work
-              that has begun. The tasks it has already produced stay where they are.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmingDelete(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void destroy()} disabled={busy}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        busy={busy}
+        title={`Delete “${schedule.name}”?`}
+        description="Fires that have not started are cancelled. A run already under way carries on to the end: deleting a schedule stops it starting anything new, and cannot reach into work that has begun. The tasks it has already produced stay where they are."
+        confirmLabel="Delete"
+        onConfirm={() => void destroy()}
+      />
     </ScheduleFrame>
   );
 }

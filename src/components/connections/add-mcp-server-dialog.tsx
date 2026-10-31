@@ -1,30 +1,29 @@
 "use client";
 
 import * as React from "react";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { motion } from "framer-motion";
 import { KeyRound, Link2, Plug, Search } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { DialogCloseButton, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
+import { Dialog, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import type { UserMcpServerStatus } from "@/components/connections/types";
-import { ease, transition, duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * Add (or edit) a user-registered remote MCP server: name, Streamable HTTP
  * URL, optional Authorization header. Test runs a real MCP handshake and lists
  * the tools it finds; Save persists the row.
  *
- * Motion: the panel is the skill-dialog-shell recipe with the DRAWER curve
- * (ease.drawer) rather than the modal spring, per
- * docs/design/PREMIUM_REWORK_PASS.md W1. Test uses the galaxy (a live status
- * orb), never a bare spinner.
+ * The house dialog (ui/dialog.tsx): its radius, its modal-in / modal-out pair
+ * (so it now leaves the way it came, where a framer exit with no
+ * AnimatePresence cut it to nothing while the scrim was still fading), focus
+ * return to the opener and, on a phone, the bottom sheet. `bare`, because the
+ * panel is its own layout: a header with the ✕ in its row, a scrolling form,
+ * and the actions pinned under it. Test uses the galaxy (a live status orb),
+ * never a bare spinner.
  */
 
 type TestState = "idle" | "testing" | "ok" | "error";
@@ -41,7 +40,6 @@ export function AddMcpServerDialog({
   /** Non-null when renaming / re-pointing an existing row. */
   editing?: UserMcpServerStatus | null;
 }) {
-  const reduce = useReducedMotion() ?? false;
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [authHeader, setAuthHeader] = React.useState("");
@@ -140,178 +138,165 @@ export function AddMcpServerDialog({
   const busy = testState === "testing" || saving;
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogPortal>
-        <DialogOverlay />
-        <DialogPrimitive.Content asChild>
-          <motion.div
-            initial={{ opacity: 0, y: reduce ? 0 : 12, scale: reduce ? 1 : 0.98 }}
-            animate={{
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              transition: { duration: duration.base, ease: ease.drawer },
-            }}
-            exit={{ opacity: 0, y: reduce ? 0 : 8, scale: reduce ? 1 : 0.98, transition: transition.exit }}
-            style={{ borderRadius: 20 }}
-            className="surface-float fixed left-[50%] top-[50%] z-modal flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md flex-col overflow-hidden rounded-panel outline-none [translate:-50%_-50%]"
-          >
-            <div className="flex items-start gap-3 border-b border-border/60 p-5 pb-4">
-              <span className="surface-inset flex size-10 shrink-0 items-center justify-center rounded-field text-muted-foreground">
-                <Plug className="size-5" />
+    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
+      <DialogContent bare hideClose className="flex max-w-md flex-col gap-0 overflow-hidden">
+        <div className="flex shrink-0 items-start gap-3 border-b border-border/60 p-5 pb-4">
+          <span className="surface-inset flex size-10 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+            <Plug className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1 pr-8">
+            <DialogTitle>
+              {isEdit ? "Edit MCP server" : "Add MCP server"}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-ui">
+              {`Point ${PRODUCT_NAME} at a remote MCP server. ${PRODUCT_NAME} stores any Authorization header encrypted and never shows it again.`}
+            </DialogDescription>
+          </div>
+          <DialogCloseButton className="static -mr-1 -mt-1.5 shrink-0 coarse:-mt-2.5" />
+        </div>
+
+        <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
+          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain p-5">
+          <div className="grid gap-1.5">
+            <Label htmlFor="user-mcp-name">Name</Label>
+            <Input
+              id="user-mcp-name"
+              placeholder="Linear"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={busy}
+              maxLength={80}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="user-mcp-url">Server URL</Label>
+            <Input
+              id="user-mcp-url"
+              type="url"
+              placeholder="https://mcp.example.com/mcp"
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                // A new URL is a new endpoint: the last test is no longer
+                // evidence about it.
+                if (testState !== "testing") setTestState("idle");
+                setTestError(null);
+                setTestTools([]);
+              }}
+              disabled={busy}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="text-caption text-muted-foreground">https anywhere, or http on localhost for development.</p>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="user-mcp-auth">
+              <span className="inline-flex items-center gap-1.5">
+                <KeyRound className="size-3.5 text-muted-foreground" />
+                Authorization header
               </span>
-              <div className="min-w-0 flex-1 pr-8">
-                <DialogPrimitive.Title className="text-heading">
-                  {isEdit ? "Edit MCP server" : "Add MCP server"}
-                </DialogPrimitive.Title>
-                <DialogPrimitive.Description className="mt-1 text-ui text-muted-foreground">
-                  {`Point ${PRODUCT_NAME} at a remote MCP server. ${PRODUCT_NAME} stores any Authorization header encrypted and never shows it again.`}
-                </DialogPrimitive.Description>
-              </div>
-              <DialogCloseButton className="static shrink-0" />
+            </Label>
+            <Input
+              id="user-mcp-auth"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={
+                isEdit && editing?.hasAuthHeader ? "Stored header kept unless you type" : "Bearer … (optional)"
+              }
+              value={authHeader}
+              onChange={(e) => {
+                setAuthHeader(e.target.value);
+                setClearAuth(false);
+                setTestState("idle");
+                setTestError(null);
+              }}
+              disabled={busy}
+            />
+            <p className="text-caption text-muted-foreground">
+              {isEdit && editing?.hasAuthHeader && !clearAuth
+                ? "Leave blank to keep the stored credential."
+                : "Leave blank for a server that needs no credential."}
+            </p>
+            {isEdit && editing?.hasAuthHeader && (
+              <Button type="button" variant="ghost" size="sm" className="justify-self-start" disabled={busy}
+                onClick={() => {
+                  setClearAuth(!clearAuth);
+                  setAuthHeader("");
+                  setTestState("idle");
+                  setTestError(null);
+                }}>
+                {clearAuth ? "Keep stored credential" : "Remove stored credential"}
+              </Button>
+            )}
+          </div>
+
+          <div className="surface-inset rounded-field p-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void runTest()}
+                disabled={busy || !url.trim()}
+              >
+                <Search className="size-3.5" />
+                Test connection
+              </Button>
+              <TestStatus state={testState} error={testError} />
             </div>
-
-            <form onSubmit={save} className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5">
-              <div className="grid gap-1.5">
-                <Label htmlFor="user-mcp-name">Name</Label>
-                <Input
-                  id="user-mcp-name"
-                  placeholder="Linear"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={busy}
-                  maxLength={80}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="user-mcp-url">Server URL</Label>
-                <Input
-                  id="user-mcp-url"
-                  type="url"
-                  placeholder="https://mcp.example.com/mcp"
-                  value={url}
-                  onChange={(e) => {
-                    setUrl(e.target.value);
-                    // A new URL is a new endpoint: the last test is no longer
-                    // evidence about it.
-                    if (testState !== "testing") setTestState("idle");
-                    setTestError(null);
-                    setTestTools([]);
-                  }}
-                  disabled={busy}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <p className="text-caption text-muted-foreground">https anywhere, or http on localhost for development.</p>
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="user-mcp-auth">
-                  <span className="inline-flex items-center gap-1.5">
-                    <KeyRound className="size-3.5 text-muted-foreground" />
-                    Authorization header
-                  </span>
-                </Label>
-                <Input
-                  id="user-mcp-auth"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={
-                    isEdit && editing?.hasAuthHeader ? "Stored header kept unless you type" : "Bearer … (optional)"
-                  }
-                  value={authHeader}
-                  onChange={(e) => {
-                    setAuthHeader(e.target.value);
-                    setClearAuth(false);
-                    setTestState("idle");
-                    setTestError(null);
-                  }}
-                  disabled={busy}
-                />
-                <p className="text-caption text-muted-foreground">
-                  {isEdit && editing?.hasAuthHeader && !clearAuth
-                    ? "Leave blank to keep the stored credential."
-                    : "Leave blank for a server that needs no credential."}
-                </p>
-                {isEdit && editing?.hasAuthHeader && (
-                  <Button type="button" variant="ghost" size="sm" className="justify-self-start" disabled={busy}
-                    onClick={() => {
-                      setClearAuth(!clearAuth);
-                      setAuthHeader("");
-                      setTestState("idle");
-                      setTestError(null);
-                    }}>
-                    {clearAuth ? "Keep stored credential" : "Remove stored credential"}
-                  </Button>
+            {testState === "ok" && (
+              <div className="mt-3 border-t border-border/60 pt-3">
+                {testTools.length === 0 ? (
+                  <p className="text-caption text-muted-foreground">Connected, but this server offers no tools.</p>
+                ) : (
+                  <>
+                    <p className="text-caption text-muted-foreground">
+                      {testTools.length} {testTools.length === 1 ? "tool" : "tools"} found
+                    </p>
+                    <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                      {testTools.slice(0, 24).map((tool) => (
+                        <li
+                          key={tool}
+                          className="rounded-control bg-muted px-2 py-0.5 font-mono text-micro text-muted-foreground"
+                        >
+                          {tool}
+                        </li>
+                      ))}
+                      {testTools.length > 24 && (
+                        <li className="text-micro text-muted-foreground">+{testTools.length - 24} more</li>
+                      )}
+                    </ul>
+                  </>
                 )}
               </div>
+            )}
+          </div>
 
-              <div className="surface-inset rounded-field p-3.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void runTest()}
-                    disabled={busy || !url.trim()}
-                  >
-                    <Search className="size-3.5" />
-                    Test connection
-                  </Button>
-                  <TestStatus state={testState} error={testError} />
-                </div>
-                {testState === "ok" && (
-                  <div className="mt-3 border-t border-border/60 pt-3">
-                    {testTools.length === 0 ? (
-                      <p className="text-caption text-muted-foreground">Connected, but this server offers no tools.</p>
-                    ) : (
-                      <>
-                        <p className="text-caption text-muted-foreground">
-                          {testTools.length} {testTools.length === 1 ? "tool" : "tools"} found
-                        </p>
-                        <ul className="mt-1.5 flex flex-wrap gap-1.5">
-                          {testTools.slice(0, 24).map((tool) => (
-                            <li
-                              key={tool}
-                              className="rounded-control bg-muted px-2 py-0.5 font-mono text-micro text-muted-foreground"
-                            >
-                              {tool}
-                            </li>
-                          ))}
-                          {testTools.length > 24 && (
-                            <li className="text-micro text-muted-foreground">+{testTools.length - 24} more</li>
-                          )}
-                        </ul>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+          {saveError && (
+            <p
+              role="alert"
+              className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-ui text-destructive motion-safe:animate-fade-in"
+            >
+              <StatusIcons.error className="mt-0.5 size-4 shrink-0" />
+              {saveError}
+            </p>
+          )}
 
-              {saveError && (
-                <p
-                  role="alert"
-                  className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-ui text-destructive motion-safe:animate-fade-in"
-                >
-                  <StatusIcons.error className="mt-0.5 size-4 shrink-0" />
-                  {saveError}
-                </p>
-              )}
-
-              <div className="mt-auto flex justify-end gap-2 border-t border-border/60 pt-4">
-                <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={!canSave}>
-                  <Link2 className="size-4" />
-                  {saving ? "Saving…" : isEdit ? "Save changes" : "Add server"}
-                </Button>
-              </div>
-            </form>
-          </motion.div>
-        </DialogPrimitive.Content>
-      </DialogPortal>
-    </DialogPrimitive.Root>
+          </div>
+          {/* Pinned under the scrolling fields: the actions never scroll away. */}
+          <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 px-5 py-4">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSave}>
+              <Link2 className="size-4" />
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Add server"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

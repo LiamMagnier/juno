@@ -11,14 +11,7 @@ import { IconSwap } from "@/components/ui/icon-swap";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -378,26 +371,19 @@ export default function AssistantsPage() {
         }}
       />
 
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete assistant?</DialogTitle>
-            <DialogDescription>
-              {deleteTarget
-                ? `${deleteTarget.name} will be removed from your assistant library. Existing chats are not deleted.`
-                : "This assistant will be removed from your library."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void deleteAssistant()} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete assistant"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        busy={deleting}
+        title="Delete assistant?"
+        description={
+          deleteTarget
+            ? `${deleteTarget.name} will be removed from your assistant library. Existing chats are not deleted.`
+            : "This assistant will be removed from your library."
+        }
+        confirmLabel="Delete assistant"
+        onConfirm={() => void deleteAssistant()}
+      />
     </AppPage>
   );
 }

@@ -7,12 +7,14 @@ import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogCloseButton,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -199,15 +201,6 @@ export function AgentComputerOverlay({
     else onClose();
   }, [inControl, onClose]);
 
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || confirmClose || confirmReset || filesOpen) return;
-      requestClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, requestClose, confirmClose, confirmReset, filesOpen]);
 
   // A resting computer opens instantly; waking it is the point of opening the view.
   React.useEffect(() => {
@@ -355,8 +348,6 @@ export function AgentComputerOverlay({
       });
   };
 
-  if (!open) return null;
-
   const usingNow = computer?.usingNow?.summary ?? null;
   const heldElsewhere = !inControl ? holderSentence(takeoverState) : null;
   const caption = inControl
@@ -370,24 +361,32 @@ export function AgentComputerOverlay({
   const terminalRunId = work.run?.id ?? null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${agent.name}’s computer`}
-      className="fixed inset-0 z-modal flex flex-col bg-background motion-safe:animate-in motion-safe:fade-in duration-base"
-    >
+    // The house dialog, full screen: focus is trapped in the view and handed
+    // back to whatever opened it, the page behind is scroll-locked, and it
+    // fades out the way it faded in. Escape and the ✕ both go through
+    // onOpenChange, so closing while in control always asks first; Radix gives
+    // Escape to the top layer, so an open menu or confirm closes before the
+    // view does (a window listener used to skip the confirms but not the menu).
+    <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
+      <DialogContent
+        bare
+        hideClose
+        sheet={false}
+        aria-describedby={undefined}
+        className="inset-0 left-0 top-0 flex h-dvh max-h-none w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 bg-background [translate:none] data-[state=open]:animate-fade-in data-[state=closed]:animate-[fade-out_var(--dur-exit)_var(--ease-in)_both]"
+      >
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
       <div className="flex shrink-0 items-center gap-3 px-5 py-4">
         <AgentPresence avatar={agent.avatar} state={agent.state} size={28} haloScale={1.8} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-ui font-medium text-foreground">{agent.name}’s computer</p>
+          <DialogTitle className="truncate text-ui font-medium text-foreground">{agent.name}’s computer</DialogTitle>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" size="icon-sm" variant="ghost" aria-label="Computer options" className="text-muted-foreground coarse:size-11">
-              <MoreHorizontal className="size-[1.125rem]" aria-hidden="true" />
+              <MoreHorizontal className="size-4" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -398,9 +397,7 @@ export function AgentComputerOverlay({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Close" onClick={requestClose} className="text-muted-foreground coarse:size-11">
-          <X className="size-[1.125rem]" aria-hidden="true" />
-        </Button>
+        <DialogCloseButton size="md" className="static" />
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5">
@@ -430,7 +427,9 @@ export function AgentComputerOverlay({
           <div className="flex gap-4">
             <div
               className={cn(
-                "min-w-0 flex-1 overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--foreground)/0.35)]",
+                // Cut from --shadow-ink, never --foreground: a foreground-tinted
+                // shadow is a light glow on the dark theme.
+                "min-w-0 flex-1 overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--shadow-ink)/0.35)]",
                 // On a narrow screen the terminal tab hides the screen without
                 // unmounting it, so the live view stays connected.
                 terminalRunId && pane === "terminal" && "max-lg:hidden",
@@ -599,59 +598,35 @@ export function AgentComputerOverlay({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Hand back to {agent.name}?</DialogTitle>
-            <DialogDescription>
-              You have control of {agent.name}’s computer. It waits until you hand back.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmClose(false)}>
-              Keep control
-            </Button>
-            <Button
-              type="button"
-              loading={busy === "handback"}
-              onClick={() => {
-                void handBack().then((done) => {
-                  setConfirmClose(false);
-                  if (done) onClose();
-                });
-              }}
-            >
-              Hand back
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reset {agent.name}’s computer?</DialogTitle>
-            <DialogDescription>
-              Everything it signed in to and every file on it is deleted, and it starts again with a clean desktop.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmReset(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                setConfirmReset(false);
-                void run("reset");
-              }}
-            >
-              Reset
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        tone="default"
+        busy={busy === "handback"}
+        title={`Hand back to ${agent.name}?`}
+        description={`You have control of ${agent.name}’s computer. It waits until you hand back.`}
+        cancelLabel="Keep control"
+        confirmLabel="Hand back"
+        onConfirm={() => {
+          void handBack().then((done) => {
+            setConfirmClose(false);
+            if (done) onClose();
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={confirmReset}
+        onOpenChange={setConfirmReset}
+        title={`Reset ${agent.name}’s computer?`}
+        description="Everything it signed in to and every file on it is deleted, and it starts again with a clean desktop."
+        confirmLabel="Reset"
+        onConfirm={() => {
+          setConfirmReset(false);
+          void run("reset");
+        }}
+      />
+      </DialogContent>
+    </Dialog>
   );
 }
 

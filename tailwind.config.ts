@@ -933,9 +933,10 @@ const config: Config = {
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
-        // Enter on the SPRING at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
-        // with a ~2% overrun, so a menu settles into place rather than stopping
-        // on it. The exit reverses faster on the accelerate, as leaving should.
+        // Enter on --ease-spring at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
+        // on a curve with no overrun (cubic-bezier(.22,1,.36,1) never passes 1),
+        // so a menu decelerates into place. The exit reverses faster on the
+        // accelerate, as leaving should.
         "pop-in": "pop-in var(--dur-base) var(--ease-spring) both",
         "pop-out": "pop-out var(--dur-fast) var(--ease-in) both",
         // Dialogs: the same spring pop, one exit rung slower because a dialog

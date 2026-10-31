@@ -616,8 +616,10 @@ function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: Pre
       <DialogContent
         // A preview is the one dialog in Work whose content is the point, so it
         // takes the width and the height rather than the `max-w-lg` default —
-        // and it does not scroll, because the frame inside it does.
-        className="h-[min(48rem,calc(100dvh-2rem))] max-w-5xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+        // and it does not scroll, because the frame inside it does. `bare`
+        // with the house inset: its rows are its own (header, then the frame).
+        bare
+        className="h-[min(48rem,calc(100dvh-2rem))] max-w-5xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-5 sm:p-6"
       >
         <DialogHeader>
           {/* pr-10 so a long site name never runs under the close button. */}
@@ -773,7 +775,8 @@ function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: P
         // layout and deserves the width; a report is prose, and prose set to
         // 64rem is a measure nobody can read a paragraph across. This one
         // scrolls, because there is no frame inside it to do the scrolling.
-        className="h-[min(48rem,calc(100dvh-2rem))] max-w-3xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+        bare
+        className="h-[min(48rem,calc(100dvh-2rem))] max-w-3xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-5 sm:p-6"
       >
         <DialogHeader>
           {/* pr-10 so a long report title never runs under the close button. */}

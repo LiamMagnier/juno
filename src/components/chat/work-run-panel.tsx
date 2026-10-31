@@ -481,7 +481,8 @@ function TaskQuestion({
               </button>
             )}
           </div>
-          <div className="mt-2 flex justify-end">
+          {/* Start-aligned, where every other decision in the transcript keeps its verb (decision.tsx). */}
+          <div className="mt-2 flex">
             <VerbButton
               label="Continue"
               armed={choice !== null && !busy}

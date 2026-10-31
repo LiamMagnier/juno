@@ -1040,7 +1040,7 @@ export function ApprovalCard({
       data-answerable={answerable ? "" : undefined}
       className={cn(
         // `@container`: the argument rows lay out by the card's own width.
-        // A flat tone step, radius 12, no border, no shadow, no warning wash
+        // A flat tone step, radius 10 (the field rung), no border, no shadow, no warning wash
         // (INTERACTION_SPEC T6, critique 1): the attention words in the title
         // are what make it stand out from the prose, not a tinted box.
         "@container w-full rounded-field bg-muted contrast-more:border contrast-more:border-border",
