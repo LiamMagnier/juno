@@ -866,6 +866,18 @@
         "/api/agents/rooms/[conversationId]": {
           "status": "planned",
           "note": "A room's members, turn plan and handoffs. The apps draw the replies without the room's bylines yet."
+        },
+        "/api/channels/imessage": {
+          "status": "planned",
+          "note": "Whether the server offers texting agents by iMessage, and the account's linked number (last four digits only); DELETE unlinks. Web Settings › Devices first; the apps link nothing yet, and texts reach the agent the same either way."
+        },
+        "/api/channels/imessage/link": {
+          "status": "planned",
+          "note": "Texts a six-digit code to the number being linked. Web Settings first."
+        },
+        "/api/channels/imessage/verify": {
+          "status": "planned",
+          "note": "Reads the code back to finish the link. Web Settings first."
         }
       }
     },
@@ -1390,6 +1402,10 @@
         "/api/code/tasks/[id]/runner-context": {
           "status": "internal",
           "note": "Served once to the GitHub Actions runner (OIDC only)."
+        },
+        "/api/channels/sendblue/webhook": {
+          "status": "internal",
+          "note": "Sendblue's receive webhook for iMessage, authenticated by the sb-signing-secret header (docs/design/agents-v2/ENABLE_IMESSAGE.md)."
         },
         "/api/csp-report": {
           "status": "internal",
