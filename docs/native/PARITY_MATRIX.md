@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-377 routes: 230 native, 72 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+378 routes: 230 native, 72 planned, 58 web only, 18 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -50,7 +50,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
-| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 12 |
+| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 13 |
 | [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
@@ -728,6 +728,7 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/stripe/webhook` | POST | Internal |  | Stripe's signed events. |
 | `/api/v1/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications (the v1 alias). |
 | `/api/voice/spend` | POST | Internal |  | The voice relay reports what a live call has cost. |
+| `/api/voice/tools` | GET, POST | Internal |  | The voice relay lists a call's tools and runs one on Juno, under its own callback token; no client calls it. A card the call raises is answered by the signed-in client through /api/approvals/[id]. |
 | `/api/work/schedules/[id]/fire` | POST | Internal |  | Fired from outside Juno with the automation's own token. |
 
 <a id="cross-conversation"></a>

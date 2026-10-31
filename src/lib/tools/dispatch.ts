@@ -566,7 +566,9 @@ async function execute(
 
         const authorization = await ctx.ports.authorizeExternalAction({
           userId: context.userId ?? "",
-          surface: "chat",
+          // The surface that is acting names itself on the receipt (a voice
+          // call says "voice"); a turn that does not say is chat, as before.
+          surface: typeof context.surface === "string" && context.surface ? context.surface : "chat",
           sessionId: context.generationId ?? "",
           conversationId: context.conversationId ?? null,
           projectId: context.projectId ?? null,

@@ -1456,6 +1456,10 @@
           "status": "internal",
           "note": "The voice relay reports what a live call has cost."
         },
+        "/api/voice/tools": {
+          "status": "internal",
+          "note": "The voice relay lists a call's tools and runs one on Juno, under its own callback token; no client calls it. A card the call raises is answered by the signed-in client through /api/approvals/[id]."
+        },
         "/api/work/schedules/[id]/fire": {
           "status": "internal",
           "note": "Fired from outside Juno with the automation's own token."
