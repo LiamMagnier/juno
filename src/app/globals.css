@@ -144,7 +144,7 @@
        `text-muted-foreground` onto it. */
     --icon-muted: 220 5% 25%;
 
-    --accent: 210.000 6.667% 94.118%;
+    --accent: 216 8% 94.5%;
     --accent-foreground: 216.000 9.091% 10.784%;
 
     /* THE ON TONE: a control that is selected, pressed or held, one rung past
@@ -674,7 +674,7 @@
     /* The out-of-flow rung — popovers, dialogs, toasts, tooltips, sheets. A
        crisp contact shadow, a long soft throw pulled in by negative spread so
        it never smears across the page, and the rim light along the top edge. */
-    --shadow-float: 0 0 0 1px hsl(var(--shadow-ink) / 0.03), 0 4px 12px -2px hsl(var(--shadow-ink) / 0.06), 0 24px 56px -16px hsl(var(--shadow-ink) / 0.22);
+    --shadow-float: 0 0 0 1px hsl(var(--shadow-ink) / 0.04), 0 2px 6px -1px hsl(var(--shadow-ink) / 0.06), 0 16px 40px -12px hsl(var(--shadow-ink) / 0.18);
 
     /* The legacy elevation ladder. `soft` and `lift` are the in-flow rungs a
        call site reaches for when it wants "a little" rather than the full raised
@@ -688,7 +688,7 @@
        elements, a colored halo for the primary, and an inset "well" alias for
        recessed inputs. Tuned separately for light/dark below. */
     --sheen: 0 0% 100% / 0.55;
-    --hairline: 48 12% 18% / 0.06;
+    --hairline: 216 9% 11% / 0.07;
     --shadow-pop: 0 1px 2px hsl(var(--shadow-ink) / 0.06);
 
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
@@ -696,7 +696,7 @@
        behind. It is a near-black with a faint warm cast (hue 48, the same
        family as --hairline); the shadows moved to graphite with the
        refoundation and this did not, so tune it here if the two should meet. */
-    --scrim: 48 12% 8% / 0.26;
+    --scrim: 216 12% 6% / 0.30;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
        up its answer instead of picking a number.
@@ -811,7 +811,7 @@
     --muted-foreground: 222.857 3.415% 59.804%;
     --icon-muted: 223 5% 78%;
 
-    --accent: 225.000 4.255% 18.431%;
+    --accent: 225 5% 20%;
     --accent-foreground: 220.000 6.977% 91.569%;
 
     /* The on tone, the other way up: on charcoal a state rises toward the
@@ -935,20 +935,20 @@
        Same geometry as light otherwise; the inks are the only difference. */
     --shadow-raised: 0 1px 2px hsl(0 0% 0% / 0.25);
     --shadow-raised-lg: 0 1px 2px hsl(0 0% 0% / 0.25), 0 8px 20px -8px hsl(0 0% 0% / 0.5);
-    --shadow-float: 0 0 0 1px hsl(45 20% 96% / 0.05), 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
+    --shadow-float: 0 0 0 1px hsl(220 7% 96% / 0.07), 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
     --shadow-glass: 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
 
     /* The sheen is a warm near-white kept low: over charcoal it is light along
        an edge, and it is the one cue that survives no matter what is behind
        the panel. */
     --sheen: 45 20% 96% / 0.07;
-    --hairline: 45 14% 94% / 0.08;
+    --hairline: 220 7% 92% / 0.08;
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
 
     /* The modal dim. Pure black, heavier than light's: dimming a 9% ground
        needs opacity to do all of the work, because the overlay filters
        nothing (no backdrop blur in product chrome, spec D15). */
-    --scrim: 0 0% 0% / 0.55;
+    --scrim: 0 0% 0% / 0.50;
 
     /* Design-canvas selection chrome — lifted like every other state colour,
        because a 1px stroke on #000 dies at light-theme lightness. */

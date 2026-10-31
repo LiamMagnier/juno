@@ -49,7 +49,6 @@ const RADIUS_TOKENS = {
   "8px": "control",
   "10px": "field",
   "12px": "card",
-  "14px": "menu",
   "16px": "panel",
   "28px": "stage",
   inherit: "inherit",
@@ -57,7 +56,7 @@ const RADIUS_TOKENS = {
 
 const SCALE_HELP =
   "micro 2 · sm 4 · xs 6 · control 8 (md) · field 10 · card 12 · popover 12 · " +
-  "surface 12 · lg 12 · composer-control 14 · menu 14 · composer-action 16 · panel 16 · " +
+  "surface 12 · lg 12 · menu 12 · composer-control 14 · composer-action 16 · panel 16 · " +
   "composer 26 · stage 28 (marketing only) · full · logo (24%)";
 
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
@@ -256,7 +255,7 @@ export const RADIUS_PX = {
   // The one user bubble (wave 2 D6): card radius with an 8px end-end tuck.
   bubble: 12,
   "bubble-tuck": 8,
-  menu: 14,
+  menu: 12,
   panel: 16,
   composer: 26,
   stage: 28,
@@ -280,7 +279,6 @@ export const PX_TO_TOKEN = {
   8: "control",
   10: "field",
   12: "card",
-  14: "menu",
   16: "panel",
   26: "composer",
   28: "stage",
@@ -299,9 +297,9 @@ export const COMPONENT_RADIUS = {
   DialogContent: 16, // dialog.tsx — rounded-panel
   SheetContent: 16, // sheet.tsx — rounded-r-panel
   PopoverContent: 12, // popover.tsx — rounded-popover
-  SelectContent: 14, // select.tsx — rounded-menu (menu-recipe.ts)
-  DropdownMenuContent: 14, // dropdown-menu.tsx — rounded-menu (menu-recipe.ts)
-  DropdownMenuSubContent: 14, // dropdown-menu.tsx — rounded-menu (menu-recipe.ts)
+  SelectContent: 12, // select.tsx — rounded-menu (menu-recipe.ts)
+  DropdownMenuContent: 12, // dropdown-menu.tsx — rounded-menu (menu-recipe.ts)
+  DropdownMenuSubContent: 12, // dropdown-menu.tsx — rounded-menu (menu-recipe.ts)
   TooltipContent: 8, // tooltip.tsx — rounded-control
 };
 

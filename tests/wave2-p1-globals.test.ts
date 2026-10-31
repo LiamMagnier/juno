@@ -40,13 +40,16 @@ test("the wave 2 colour roles carry the spec's values (§3.1)", () => {
     assert.equal(dark.get(name), darkValue, `dark --${name}`);
   }
   assert.equal(root.get("destructive"), "356 72% 42%");
-  // --input and --attention keep their values; --hairline and --scrim are unchanged (S2).
+  // --input and --attention keep their values. --hairline and --scrim were
+  // unchanged at S2; the approved Graphite direction (2026-10-31,
+  // docs/design/direction-2026-11/DIRECTION.md §2.1) moved them into the cool
+  // graphite family and to the measured 30 / 50 scrim.
   assert.equal(root.get("input"), "214.286 2.979% 53.922%");
   assert.equal(root.get("attention"), "34.161 91.946% 29.216%");
-  assert.equal(root.get("hairline"), "48 12% 18% / 0.06");
-  assert.equal(root.get("scrim"), "48 12% 8% / 0.26");
-  assert.equal(dark.get("hairline"), "45 14% 94% / 0.08");
-  assert.equal(dark.get("scrim"), "0 0% 0% / 0.55");
+  assert.equal(root.get("hairline"), "216 9% 11% / 0.07");
+  assert.equal(root.get("scrim"), "216 12% 6% / 0.30");
+  assert.equal(dark.get("hairline"), "220 7% 92% / 0.08");
+  assert.equal(dark.get("scrim"), "0 0% 0% / 0.50");
 });
 
 test("status consumers read role tokens, so a needs-you decision (S1) is one mapping", () => {

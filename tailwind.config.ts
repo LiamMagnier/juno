@@ -226,7 +226,7 @@ const config: Config = {
         // thumbs, icon tiles, inline notes, the dashed box a short empty state
         // sits in.
         field: "10px",
-        menu: "14px", // dropdown / select / tabs shells
+        menu: "12px", // dropdown / select / tabs shells (Graphite: 12 with a 6px inset, rows 6)
         card: "12px", // cards, toasts, tiles
         popover: "12px", // alias of card — popovers, transcripts
         surface: "12px", // alias of card — in-flow panels and section wells
@@ -267,15 +267,15 @@ const config: Config = {
         // parent's padding, read off the two custom properties the parent sets
         // with `nest-<rung>` and `nest-p-<step>` (the plugin below):
         //
-        //   <div class="nest-menu nest-p-1.5">        14px shell, 6px inset
-        //     <div class="rounded-inner">…</div>      → 8px, by construction
+        //   <div class="nest-menu nest-p-1.5">        12px shell, 6px inset
+        //     <div class="rounded-inner">…</div>      → 6px, by construction
         //
         // Move the shell a rung or change its padding and the child follows —
         // the arithmetic lives in one place instead of in a comment beside every
-        // nested box. The fallbacks are the menu recipe's own numbers (14 − 6 =
-        // 8), so a row rendered outside any `nest-*` parent is still a control.
+        // nested box. The fallbacks are the menu recipe's own numbers (12 − 6 =
+        // 6), so a row rendered outside any `nest-*` parent is still a control.
         // A calc, not px, so the native token mirror skips it (it reads px only).
-        inner: "max(0px, calc(var(--r-outer, 14px) - var(--pad, 6px)))",
+        inner: "max(0px, calc(var(--r-outer, 12px) - var(--pad, 6px)))",
       },
       boxShadow: {
         // The Soft UI depth kit (globals.css `--shadow-*`, per theme). Prefer the
@@ -548,7 +548,7 @@ const config: Config = {
          * read. 1.5, not body's 1.6: rows and chips are usually one line tall,
          * and their rhythm comes from the row grid, not from leading.
          */
-        ui: ["0.8125rem", { lineHeight: "1.5" }],
+        ui: ["0.84375rem", { lineHeight: "1.25rem" }],
         // All metadata and section headings (spec §3.5): JetBrains Mono 500,
         // sentence case, tabular figures. globals.css gives `.text-label` the
         // mono face and tabular-nums at zero specificity (`:where`), so an

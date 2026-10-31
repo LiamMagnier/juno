@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 91e861b0073c3c49
+// tokens-digest: ed5b95b9a124e8c1
 //
 
 import CoreGraphics
@@ -59,10 +59,10 @@ public struct JunoGeneratedAccentPalette: Hashable, Sendable {
 public enum JunoGeneratedColors {
     /// `--accent`
     public static let accent = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.9373, 0.9412, 0.9451),
-        dark: JunoColorToken(unchecked: 0.1765, 0.1804, 0.1922),
-        highContrastLight: JunoColorToken(unchecked: 0.9373, 0.9412, 0.9451),
-        highContrastDark: JunoColorToken(unchecked: 0.1765, 0.1804, 0.1922)
+        light: JunoColorToken(unchecked: 0.9406, 0.9441, 0.9494),
+        dark: JunoColorToken(unchecked: 0.19, 0.195, 0.21),
+        highContrastLight: JunoColorToken(unchecked: 0.9406, 0.9441, 0.9494),
+        highContrastDark: JunoColorToken(unchecked: 0.19, 0.195, 0.21)
     )
 
     /// `--accent-foreground`
@@ -395,8 +395,8 @@ public enum JunoGeneratedColors {
 
     /// `--hairline`
     public static let hairline = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.2016, 0.193, 0.1584, 0.06),
-        dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316, 0.08),
+        light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199, 0.07),
+        dark: JunoColorToken(unchecked: 0.9144, 0.9181, 0.9256, 0.08),
         highContrastLight: JunoColorToken(unchecked: 0.4465, 0.4622, 0.4935),
         highContrastDark: JunoColorToken(unchecked: 0.5008, 0.5104, 0.5392)
     )
@@ -539,10 +539,10 @@ public enum JunoGeneratedColors {
 
     /// `--scrim`
     public static let scrim = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.0896, 0.0858, 0.0704, 0.26),
-        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.55),
-        highContrastLight: JunoColorToken(unchecked: 0.0896, 0.0858, 0.0704, 0.26),
-        highContrastDark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.55)
+        light: JunoColorToken(unchecked: 0.0528, 0.0586, 0.0672, 0.3),
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.5),
+        highContrastLight: JunoColorToken(unchecked: 0.0528, 0.0586, 0.0672, 0.3),
+        highContrastDark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.5)
     )
 
     /// `--secondary`
@@ -1059,11 +1059,11 @@ public enum JunoGeneratedRadius {
     public static let control: CGFloat = 8.0
     public static let bubbleTuck: CGFloat = 8.0
     public static let field: CGFloat = 10.0
+    public static let menu: CGFloat = 12.0
     public static let card: CGFloat = 12.0
     public static let popover: CGFloat = 12.0
     public static let surface: CGFloat = 12.0
     public static let bubble: CGFloat = 12.0
-    public static let menu: CGFloat = 14.0
     public static let composerControl: CGFloat = 14.0
     public static let panel: CGFloat = 16.0
     public static let composerAction: CGFloat = 16.0
@@ -1114,7 +1114,7 @@ public enum JunoGeneratedType {
     /// `text-nav`
     public static let nav = JunoGeneratedTypeRung(minSize: 14.0, maxSize: 14.0, fluidIntercept: 14.0, fluidSlope: 0.0, lineHeight: 1.428571, tracking: 0.0, weight: nil)
     /// `text-ui`
-    public static let ui = JunoGeneratedTypeRung(minSize: 13.0, maxSize: 13.0, fluidIntercept: 13.0, fluidSlope: 0.0, lineHeight: 1.5, tracking: 0.0, weight: nil)
+    public static let ui = JunoGeneratedTypeRung(minSize: 13.5, maxSize: 13.5, fluidIntercept: 13.5, fluidSlope: 0.0, lineHeight: 1.481481, tracking: 0.0, weight: nil)
     /// `text-label`
     public static let label = JunoGeneratedTypeRung(minSize: 12.0, maxSize: 12.0, fluidIntercept: 12.0, fluidSlope: 0.0, lineHeight: 1.4, tracking: 0.01, weight: 500)
     /// `text-caption`
