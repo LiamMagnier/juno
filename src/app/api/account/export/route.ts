@@ -301,7 +301,7 @@ export async function GET(req: Request) {
       },
       shares: {
         orderBy: { createdAt: "asc" },
-        select: { token: true, snapshotAt: true, views: true, revokedAt: true, takenDownAt: true, createdAt: true },
+        select: { token: true, audience: true, snapshotAt: true, views: true, revokedAt: true, takenDownAt: true, createdAt: true },
       },
       proposals: {
         orderBy: { createdAt: "asc" },

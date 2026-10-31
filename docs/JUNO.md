@@ -2428,7 +2428,15 @@ pointer**: the public `share/[token]` page (`force-dynamic`, `noindex`) renders 
 content that existed at `snapshotAt`, so later messages/versions stay private. The token
 is 24 random bytes (base64url), the only capability; revocation is a tombstone that 404s
 the page from the next request; creating a share reuses the newest active link for a
-target rather than orphaning snapshots.
+target rather than orphaning snapshots. **Specific people** (`/api/share/people`,
+`/people/[id]`; `src/lib/share-people-core.ts`): the Share dialog's default. The same
+snapshot as a `Share` with `audience: PEOPLE`, whose token opens nothing alone — the page
+shows it only to its owner and to a signed-in account whose *verified* email is on its
+`ShareRecipient` rows (an HMAC lookup; the address is sealed). Recipients get an email,
+read view-only, and are told the same thing whether or not they have an account; the owner
+sees who has access, removes a person, or revokes it like a link. Invitations are bounded
+(20 a request, 50 a share, 40 new addresses an hour and 150 a day per owner, 5 a day to
+any one address).
 
 **Scheduled tasks, retired.** Juno had two answers to "run this for me later" and
 now has one. A `ScheduledTask` was a recurring **prompt** answered by `streamChat`,
@@ -2706,8 +2714,9 @@ fields `parentSessionId`/`createsNewSession`/`origin`/`idempotencyKey`, dispatch
 AES-256-GCM ciphertext over a JSON map under the connector keyring, with `envVarNames`
 in the clear so a list can describe it without a decryption key).
 
-**Sharing / tasks / roadmap / prompts.** `Share` (`ShareKind` CHAT|ARTIFACT, token,
-`snapshotAt`, `revokedAt`, views). `ScheduledTask` (`TaskCadence`) + `ScheduledTaskRun`.
+**Sharing / tasks / roadmap / prompts.** `Share` (`ShareKind` CHAT|ARTIFACT,
+`ShareAudience` LINK|PEOPLE, token, `snapshotAt`, `revokedAt`, views) + `ShareRecipient`
+(owner-scoped; `emailHash` HMAC, `email` sealed). `ScheduledTask` (`TaskCadence`) + `ScheduledTaskRun`.
 `FeatureRequest` (`FeatureStatus`, `FeatureCategory`) + `FeatureVote` +
 `FeatureComment` + `FeatureStatusEvent`. `SavedPrompt`.
 
