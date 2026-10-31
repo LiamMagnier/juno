@@ -88,7 +88,7 @@ export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
   models: "model default model auto favourite favorite fast mode pinned thinking effort web search labs train training",
   connectors: "apps connectors integrations mcp permissions github google lockdown approval actions",
   voice: "voice read aloud speech dictation tts sound sounds chime chimes call calls",
-  devices: "devices mac macs computer host permissions remote pair paired unpair QR iPhone browser revoke access",
+  devices: "devices mac macs computer host permissions remote pair paired unpair QR iPhone browser revoke access imessage text texts sms phone number",
   account: "profile picture photo avatar name username handle email password security two-step 2fa mfa two-factor authentication sign out log out logout delete account sessions",
   data: "export import data privacy shared links delete conversations delete chats delete all archive chatgpt claude",
   billing: "plan upgrade downgrade billing usage spend limit invoice invoices receipt receipts refund refunds vat tax subscription cancel subscription budget ceiling cap payment method card pro invite invites friend friends referral referrals refer reward rewards invitation invitations",

@@ -93,24 +93,38 @@ Done:
     not an HMAC (docs.sendblue.com/guides/chat-sdk-adapter/). This needs one more
     env var: `CHANNEL_SENDBLUE_WEBHOOK_SECRET`.
 
-Next:
-- `src/lib/channels/`:
-  - a provider interface;
-  - a Sendblue provider;
-  - the Mac relay stub and its documented protocol;
-  - a fake provider for tests.
-- Env getters in `src/lib/env.ts`, `.env.example` and `docs/JUNO.md` §19.
-- Link and verify routes, with the code sent by iMessage.
-- A webhook route with:
-  - timing-safe secret check;
-  - replay protection (handle dedupe and a `date_sent` window);
-  - a rate limit per number;
-  - unknown numbers ignored.
-- A headless agent reply through `runUtilityPrompt`, with @Name targeting, mirrored
-  into the agent's thread.
-- Approval notices sent as texts with a link, through a small hook in `notifyUser`.
-  A text reply never approves anything.
-- Tests with the fake provider.
+Built 2026-10-30 on `feat/imessage`, off until all four `CHANNEL_SENDBLUE_*` are set
+(owner runbook: `docs/design/agents-v2/ENABLE_IMESSAGE.md`):
+- `src/lib/channels/`: the provider interface (`types.ts`), Sendblue (`sendblue.ts`),
+  the Mac relay stub with its protocol (`mac-relay.ts`, never selected), a fake for
+  tests (`fake.ts`), the gate and the answer (`inbound.ts`), linking (`link.ts`),
+  approval notices (`notice.ts`), the headless reply (`reply.ts`, `reply-prompt.ts`),
+  the webhook as a function (`webhook.ts`) and the Prisma half (`store.ts`).
+- Env getters `env.channels.sendblue` and `isIMessageConfigured()`, `.env.example`,
+  `docs/JUNO.md` §19.
+- Routes: `GET`/`DELETE /api/channels/imessage`, `POST /api/channels/imessage/link`
+  (code texted, only its HMAC stored, bound to account and number), `POST
+  /api/channels/imessage/verify` (five tries, ten minutes), and `POST
+  /api/channels/sendblue/webhook` (constant-time `sb-signing-secret` check before the body
+  is read; line check; 5-minute `date_sent` window; 20 texts per 10 minutes per number;
+  handle ledger; unknown and pending numbers ignored with no reply). Classified in
+  `contracts/parity/features.json`.
+- The answer: @Name targeting (`findAddressedMembers`), else the link's default, else the
+  first active agent; a `runUtilityPrompt` walk on the agent's prompt block and thread with
+  no tools; both turns mirrored into the agent's thread (idempotent `clientId`); a
+  `channel_message` event with no content.
+- Approval notices: `notifyUser` texts `work_approval` / `code_approval` (actionable,
+  needs-you, with a path) lazily and unawaited: who is waiting and a link, never what.
+  Nothing on the inbound path can approve.
+- Settings › Devices › iMessage (`src/components/settings/sections/imessage.tsx`).
+- `ChannelLink.phone` sealed with `encryptField`, re-sealed by
+  `scripts/rotate-message-keys.ts`, listed in `SECURITY.md`.
+- Tests: `tests/imessage-channel.test.ts`, `tests/imessage-channel-store.test.ts`.
+
+Still to do:
+- Run it against a real Sendblue line (ENABLE_IMESSAGE.md §5); no test reaches Sendblue.
+- The Mac relay's server routes and Mac half (protocol in `mac-relay.ts`).
+- A default-agent picker in Settings, and the native apps' link screen.
 
 ## 3. One-time payment cards
 
