@@ -146,7 +146,7 @@ test("a chat names its thread for its calls, kept across reconnects and retries,
   assert.match(hook, /setPersonaOn\(msg\.persona === true\);/);
   assert.match(hook, /start\(undefined, undefined, \{ memory: memoryRef\.current, conversationId: conversationRef\.current \}\)/);
   const chat = src("src/components/chat/chat-view.tsx");
-  assert.match(chat, /privateMode \? undefined : \{ memory: \{ projectId: activeProjectId \}, conversationId: currentConversationId \?\? null \}/);
+  assert.match(chat, /privateMode\s*\?\s*undefined\s*:\s*\{\s*memory: chatMemoryOffRef\.current \? null : \{ projectId: activeProjectId \},\s*conversationId: currentConversationId \?\? null,\s*\}/);
   // The call (drawn into the composer) names the agent only once the relay
   // confirms the call is it.
   assert.match(chat, /voiceCallParts\(\{ voice: realtimeVoice, onClose: closeVoice, speakerName: agent\?\.name \}\)/);

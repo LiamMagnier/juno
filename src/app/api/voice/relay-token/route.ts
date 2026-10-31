@@ -58,6 +58,10 @@ function resolveVoiceRelayURL(): string | null {
  * relay asks for that agent's persona with it (src/app/api/voice/persona). A
  * lookup that fails signs no claim rather than failing the call: the call is
  * then Juno, as it was before the claim existed.
+ *
+ * The call's conversation also keeps memory out when it is a chat with
+ * "Memory off for this chat" (src/lib/chat/memory-off.ts): asked for or not,
+ * such a call's token carries no memory claim, so the relay never asks.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -81,6 +85,7 @@ export async function GET(req: Request) {
     // — a project chat reading account memory is the leak isolation prevents.
     memory = null;
   }
+  if (memory && (await chatKeepsMemoryOut(user.id, parseVoiceConversationRequest(params)))) memory = null;
   const agentId = await threadAgent(user.id, parseVoiceConversationRequest(params));
   const token = signState(
     JSON.stringify({
@@ -126,5 +131,24 @@ async function threadAgent(userId: string, conversationId: string | null): Promi
     return agent?.id ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Whether the call's chat, if it is this person's, is set to "Memory off for
+ * this chat". Asked only when the call asked for memory. A lookup that throws
+ * signs no memory claim: unlike a persona, memory a call should not have had
+ * is not something to fall back to.
+ */
+async function chatKeepsMemoryOut(userId: string, conversationId: string | null): Promise<boolean> {
+  if (!conversationId) return false;
+  try {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+      select: { memoryOff: true },
+    });
+    return conversation?.memoryOff === true;
+  } catch {
+    return true;
   }
 }

@@ -3774,7 +3774,13 @@ components:
         operation:
           type: object
           description: >-
-            Strict operation union implemented by the server. project.update accepts
+            Strict operation union implemented by the server. conversation.create
+            and conversation.update (in its `patch`) accept an optional boolean
+            memoryOff, "Memory off for this chat": the chat's turns read no
+            memory and save or forget nothing, and the background reader skips
+            it. Setting it back to false (memory on again) also marks what was
+            said meanwhile as read, so it is never learned from; the
+            conversation sync entity reports it as memoryOff. project.update accepts
             entityId plus optional name, instructions, starred and workDefaults
             fields. workDefaults is the Work bundle a task filed in the project
             inherits (target, preferredHostId, model, reasoningEffort, budget,

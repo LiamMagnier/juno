@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-379 routes: 230 native, 74 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+380 routes: 230 native, 75 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -34,7 +34,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 14 | 1 | 0 | 0 |
+| [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
 | [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
@@ -283,6 +283,7 @@ Design is a type of artifact (register #73).
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
 | `/api/memory/topics` | GET, POST | Planned |  | Topics Alevr does not remember (“anything about my divorce”), listed and added from Excluded topics on the web's Memory page. A topic is a SUPPRESSION row, so the apps already list it from /api/memory and lift it with DELETE /api/memory/[id]; adding one (which retires every fact on the topic) has no native control yet. |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/memory` | GET, PATCH | Planned |  | “Memory off for this chat” (src/lib/chat/memory-off.ts), the web's composer + Memory switch and the chat's More menu. The apps already read the switch (`memoryOff` on the conversation sync entity and on GET /api/conversations/[id]) and can set it through sync (`memoryOff` on conversation.create and conversation.update, the same writer as this route); they draw no control for it yet. The server holds every turn to it whatever the client shows. |
 | `/api/memory/skill-candidates` | GET | Native | JunoChatKit |  |
 | `/api/memory/skill-candidates/[id]` | POST | Native | JunoChatKit |  |
 

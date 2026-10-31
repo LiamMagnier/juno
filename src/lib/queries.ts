@@ -77,6 +77,7 @@ export async function listConversations(
       folderId: true,
       projectId: true,
       activeConnectors: true,
+      memoryOff: true,
       archivedAt: true,
       lastMessageAt: true,
       createdAt: true,

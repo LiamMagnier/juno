@@ -1533,10 +1533,18 @@ export async function extractConversationMemory(opts: {
       model: true,
       projectId: true,
       lastMessageAt: true,
+      memoryOff: true,
       memory: { select: { processedAt: true, factCount: true, digest: true } },
     },
   });
   if (!convo) return { created: 0, chunksProcessed: 0, done: true };
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts): not one message
+  // read, and no mark moved either — turning memory back on covers the chat
+  // as read at that moment (memory-off-store.ts), which is what keeps this
+  // stretch unread for good. Checked here, at the one reader every path goes
+  // through (a turn's after-hook, a voice transcript, the backfill), so a
+  // caller that forgot the switch cannot read past it.
+  if (convo.memoryOff) return { created: 0, chunksProcessed: 0, done: true };
 
   const since = convo.memory?.processedAt;
   // Message bodies are encrypted at rest — decrypt at the read boundary.
@@ -1761,6 +1769,8 @@ export async function queueRereads(userId: string, limit: number): Promise<numbe
         userId,
         extractorVersion: { lt: EXTRACTOR_VERSION },
         OR: [{ digest: { not: null } }, { factCount: { gt: 0 } }],
+        // A chat with memory off for itself is not read again, by any reader.
+        conversation: { memoryOff: false },
       },
       orderBy: { updatedAt: "desc" },
       take: limit * 4,
@@ -1859,10 +1869,15 @@ export async function reconcileMemoryTimeline(
 // Backfill (resumable background job)
 // ---------------------------------------------------------------------------
 
-/** Conversations whose messages aren't fully distilled into memory yet. */
+/**
+ * Conversations whose messages aren't fully distilled into memory yet. A chat
+ * with memory off for itself (src/lib/chat/memory-off.ts) is never one: it
+ * has nothing the backfill may read, so it is neither read nor counted as
+ * left to read — "Learn from past chats" would otherwise never finish.
+ */
 export async function pendingBackfill(userId: string): Promise<string[]> {
   const convos = await prisma.conversation.findMany({
-    where: { userId },
+    where: { userId, memoryOff: false },
     orderBy: { lastMessageAt: "desc" },
     select: { id: true, lastMessageAt: true, memory: { select: { processedAt: true } } },
   });

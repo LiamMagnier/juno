@@ -3,9 +3,11 @@
 import * as React from "react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -17,6 +19,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { ActionIcons } from "@/lib/app-icons";
+import { MEMORY_OFF_COPY } from "@/lib/chat/memory-off";
 
 /*
  * Export, from the conversation's own menu (spec §6.15): Copy as Markdown,
@@ -97,8 +100,20 @@ export function ExportChatMenuSection() {
   );
 }
 
-/** The header's More button (desktop): the conversation's own menu. */
-export function ConversationMoreMenu({ onExport }: { onExport: (kind: ChatExportKind) => void }) {
+/**
+ * The header's More button (desktop): the conversation's own menu. Export,
+ * and — given `memory` — the chat's "Memory off for this chat"
+ * (src/lib/chat/memory-off.ts), the same switch as the composer's + Memory
+ * row read the other way round: ticked here means kept out. A checkbox row
+ * that keeps the menu open, so the tick visibly lands where it was pressed.
+ */
+export function ConversationMoreMenu({
+  onExport,
+  memory,
+}: {
+  onExport: (kind: ChatExportKind) => void;
+  memory?: { off: boolean; onChange: (off: boolean) => void };
+}) {
   return (
     <DropdownMenu>
       <Tooltip>
@@ -119,6 +134,18 @@ export function ConversationMoreMenu({ onExport }: { onExport: (kind: ChatExport
       <DropdownMenuContent align="end" className={MENU_W}>
         <DropdownMenuLabel>{CHAT_EXPORT_COPY.heading}</DropdownMenuLabel>
         <ChatExportItems onSelect={onExport} />
+        {memory && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={memory.off}
+              onCheckedChange={(checked) => memory.onChange(checked === true)}
+              onSelect={(event) => event.preventDefault()}
+            >
+              {MEMORY_OFF_COPY.menuLabel}
+            </DropdownMenuCheckboxItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

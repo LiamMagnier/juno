@@ -981,6 +981,16 @@ async function projectSource(
 }
 
 /**
+ * The chat a task was started from, for its "Memory off for this chat"
+ * (src/lib/chat/memory-off.ts): a task is that chat's work, and keeps the
+ * chat's switch (`workMemoryEnabled`). Null for a run no chat started.
+ */
+async function startedFrom(userId: string, conversationId: string | null): Promise<{ memoryOff: boolean } | null> {
+  if (!conversationId) return null;
+  return prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { memoryOff: true } });
+}
+
+/**
  * What Juno remembers about the user, as one more source for the run.
  *
  * The same profile a chat turn reads — `getMemoryProfile`, ranked against the
@@ -1005,9 +1015,10 @@ async function memorySource(input: {
   conversationProvider: string;
   /** The Orbit agent this task runs as: its memory grant narrows what the run reads. */
   agentId: string | null;
+  conversationId: string | null;
 }): Promise<UntrustedSource | null> {
   try {
-    const [settings, agent] = await Promise.all([
+    const [settings, agent, conversation] = await Promise.all([
       prisma.settings.findUnique({ where: { userId: input.userId }, select: { memoryEnabled: true } }),
       input.agentId
         ? prisma.agent.findFirst({
@@ -1015,8 +1026,9 @@ async function memorySource(input: {
             select: { id: true, memoryAccess: true },
           })
         : Promise.resolve(null),
+      startedFrom(input.userId, input.conversationId),
     ]);
-    if (!workMemoryEnabled(settings)) return null;
+    if (!workMemoryEnabled(settings, conversation)) return null;
     const profile = await getMemoryProfile(input.userId, {
       projectId: input.projectId,
       query: input.goal,
@@ -1066,7 +1078,7 @@ async function openingContext(input: {
   runId: string;
   userId: string;
   sessionId: string;
-  session: { goal: string; projectId: string | null; agentId?: string | null };
+  session: { goal: string; projectId: string | null; agentId?: string | null; conversationId?: string | null };
   /** The files the skill in force brought, or empty when no skill is in force. */
   skillResources: readonly SkillRunResource[];
   runtime: WorkRuntime;
@@ -1113,6 +1125,7 @@ async function openingContext(input: {
     goal: input.session.goal,
     conversationProvider: input.provider,
     agentId: input.session.agentId ?? null,
+    conversationId: input.session.conversationId ?? null,
   });
   if (memory) sources.push(memory);
   sources.push(...(await attachedSources(input.runId, input.userId, input.skillResources)));
