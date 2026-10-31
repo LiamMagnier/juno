@@ -259,7 +259,7 @@ function ItemName({ item, className, onPreview }: { item: LibraryItem; className
       // back, so the row keeps its rhythm; `relative` lifts it over the
       // caption it now overlaps, so that strip opens the file too. A ::before
       // pad (`hit-44`) would be clipped by `truncate`.
-      className={cn(shared, "text-foreground underline-offset-4 hover:underline coarse:relative coarse:-my-3 coarse:py-3")}
+      className={cn(shared, "text-foreground underline-offset-4 hover:underline coarse:relative coarse:-my-3 coarse:min-h-11 coarse:py-3")}
     >
       {item.fileName}
     </a>

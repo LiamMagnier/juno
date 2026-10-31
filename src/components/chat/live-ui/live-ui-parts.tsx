@@ -249,7 +249,7 @@ export function LiveStops({ stops }: { stops: Stops }) {
           target="_blank"
           rel="noopener noreferrer nofollow"
           referrerPolicy="no-referrer"
-          className="inline-flex w-fit items-center gap-1.5 text-ui text-foreground underline-offset-4 hover:underline"
+          className="relative inline-flex w-fit items-center gap-1.5 text-ui text-foreground underline-offset-4 hit-44 hover:underline"
         >
           Open the whole route
           <ExternalLink className="size-3.5" aria-hidden />
@@ -289,7 +289,7 @@ export function LiveChecklist({
                 role="checkbox"
                 aria-checked={on}
                 onClick={() => onToggle(i)}
-                className="flex w-full min-w-0 items-start gap-3 rounded-card px-2 py-2 text-left transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
+                className="flex w-full min-w-0 items-start gap-3 rounded-card px-2 py-2 text-left coarse:py-3 transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
               >
                 <span
                   aria-hidden
