@@ -161,7 +161,7 @@ final class WorkScreenFloorTests: XCTestCase {
         let question = try await firstPending(approvals)
         XCTAssertEqual(question.risk, .irreversible, "never coverable by a policy or an always-allow")
         XCTAssertTrue(question.summary.hasPrefix("Click the “Send” button in Notes."), question.summary)
-        XCTAssertTrue(question.summary.contains("This looks like a “send” control, so Alevr always asks, even in Full access."), question.summary)
+        XCTAssertTrue(question.summary.contains("This looks like a “send” control, so Alevr asks first."), question.summary)
         var calls = await driver.recorder.calls
         XCTAssertFalse(calls.contains { $0.hasPrefix("click") }, "nothing is clicked while the question is open")
 

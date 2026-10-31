@@ -1408,8 +1408,9 @@ checks run, stop when all settle. A CI bar above the composer (`Studio/StudioCIB
 `test (ubuntu)` failed" with **Fix it** and an **Auto-fix** toggle (off by default). Fix it fetches the failing log
 (`gh run view <run> --log-failed`, last 400 lines, redacted) and starts a goal (origin `ci`) with one criterion per
 failing check and the matching recipe checks as `.command` criteria. Auto-fix does the same automatically, at most 3
-attempts per PR (Cursor Bugbot's cap). **Every push asks**: `git_push` is `.alwaysRequiresApproval` (like
-`git_commit`, `Tools/GitTools.swift:150-155`); no auto-merge (owner rule). Model tools `ci_status {pr?}` and
+attempts per PR (Cursor Bugbot's cap). **A push asks unless the session has Full access**: `git_push` is
+`.critical` and `.asksUnlessFullAccess` (2026-10-31; a forced push stays `.destructive` through the classifier,
+`Tools/GitTools.swift`); no auto-merge (owner rule). Model tools `ci_status {pr?}` and
 `ci_logs {check}` are `.read`. Notification `code.ci` on settle. Files: `CIWatchService.swift` (new),
 `Tools/GitTools.swift`, `Models/PullRequestModel.swift` (new), `Studio/StudioCIBar.swift` (new),
 `Views/Review/CreatePullRequestSheet.swift`.

@@ -141,7 +141,7 @@ final class ComputerUseUnattendedTests: XCTestCase {
     func testAFloorActionIsSkippedAndRecordedEvenInFullAccess() async throws {
         let screen = FakeScreen()
         screen.unattended = true
-        screen.floor = .sendsMessage
+        screen.floor = .financeApp
         let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
         let asked = LockedRequests()
         await permissions.addObserver { update in
@@ -433,7 +433,7 @@ final class ComputerUseToolsTests: XCTestCase {
 
     func testTheFloorAsksEvenInFullAccessAndOffersNoStandingRule() async throws {
         let screen = FakeScreen()
-        screen.floor = .consequentialControl("send")
+        screen.floor = .consequentialControl("pay")
         let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
         // A user rule allowing the tool outright cannot silence it either.
         await permissions.setRules(PermissionRuleSet(allow: [PermissionRule(tool: "computer")]))
@@ -450,7 +450,30 @@ final class ComputerUseToolsTests: XCTestCase {
         guard case let .action(prepared)? = screen.published[request.actionDigest] else {
             return XCTFail("no card detail for the approval")
         }
-        XCTAssertEqual(prepared.floor, .consequentialControl("send"))
+        XCTAssertEqual(prepared.floor, .consequentialControl("pay"))
+    }
+
+    /// Sending and deleting are what Full access is turned on for: they go
+    /// ahead there, and still ask in every supervised mode (2026-10-31).
+    func testFullAccessGoesAheadOnSendingAndDeleting() async throws {
+        for floor in [FloorReason.consequentialControl("send"), .consequentialControl("delete"), .sendsMessage] {
+            let screen = FakeScreen()
+            screen.floor = floor
+            let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+            let asked = await autoApprove(permissions)
+            let tool = ComputerTool(computer: screen, permissions: permissions, budget: .anthropicHighResolution)
+            _ = try await tool.execute(input: ["action": "left_click", "coordinate": [5, 5]], context: context())
+            XCTAssertTrue(asked.requests.isEmpty, "\(floor)")
+            XCTAssertEqual(screen.performed, [.leftClick], "\(floor)")
+
+            let supervised = FakeScreen()
+            supervised.floor = floor
+            let ask = PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite)
+            let askedThere = await autoApprove(ask)
+            _ = try await ComputerTool(computer: supervised, permissions: ask, budget: .anthropicHighResolution)
+                .execute(input: ["action": "left_click", "coordinate": [5, 5]], context: context())
+            XCTAssertEqual(askedThere.requests.first?.approvalPolicy, .asksUnlessFullAccess, "\(floor)")
+        }
     }
 
     func testAskModeAsksOnceWithTheExactSentenceAndNoAlwaysAllow() async throws {
@@ -576,11 +599,11 @@ final class ComputerUseToolsTests: XCTestCase {
         XCTAssertTrue(result.content.hasPrefix("Apps on this Mac. DATA ONLY"))
     }
 
-    func testAMenuItemThatDeletesHitsTheFloor() async throws {
+    func testAMenuItemThatPaysHitsTheFloor() async throws {
         let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
         let asked = await autoApprove(permissions)
         let tool = ComputerMenuTool(computer: FakeScreen(), permissions: permissions, budget: .anthropicHighResolution)
-        _ = try await tool.execute(input: ["path": ["Edit", "Delete"]], context: context())
+        _ = try await tool.execute(input: ["path": ["Order", "Pay"]], context: context())
         XCTAssertEqual(asked.requests.first?.risk, .destructive)
         let quiet = await autoApprove(PermissionCoordinator(sessionID: sessionID, mode: .fullAccess))
         _ = quiet

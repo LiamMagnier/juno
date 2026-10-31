@@ -20,10 +20,12 @@ public enum FloorReason: Hashable, Codable, Sendable {
     /// The sentence on the approval card.
     public var explanation: String {
         switch self {
+        case let .consequentialControl(word) where Self.isWaivable(word):
+            "This looks like a “\(word)” control, so \(ScreenControlBrand.productName) asks first."
         case let .consequentialControl(word):
             "This looks like a “\(word)” control, so \(ScreenControlBrand.productName) always asks, even in Full access."
         case .sendsMessage:
-            "Return here sends what was typed, so \(ScreenControlBrand.productName) always asks, even in Full access."
+            "Return here sends what was typed, so \(ScreenControlBrand.productName) asks first."
         case .financeApp:
             "This is a finance app, so \(ScreenControlBrand.productName) always asks."
         case .credentialText:
@@ -34,12 +36,32 @@ public enum FloorReason: Hashable, Codable, Sendable {
             "This text moves to another control with Tab and then presses it, so \(ScreenControlBrand.productName) always asks, even in Full access."
         }
     }
+
+    /// Whether Full access in Code goes ahead without asking (2026-10-31).
+    ///
+    /// Sending, posting, sharing and deleting are what the reader turns Full
+    /// access on to have done, and asking before each one made the mode ask
+    /// every few steps. Money, signing in, granting or installing, finance
+    /// apps, System Settings, credentials and a press nobody looked at still
+    /// ask in every mode. Work keeps its own policy and does not read this.
+    public var waivedByFullAccess: Bool {
+        switch self {
+        case let .consequentialControl(word): Self.isWaivable(word)
+        case .sendsMessage: true
+        case .financeApp, .credentialText, .systemSettings, .pressAfterTab: false
+        }
+    }
+
+    static func isWaivable(_ word: String) -> Bool {
+        ConsequentialActionFloor.waivableWords.contains(word)
+    }
 }
 
 /// The always-confirm floor (CODE_AGENT_SPEC §3.3).
 ///
-/// These actions ask in every mode, Full access included, and can never be
-/// saved as an Always-allow rule. The floor is a rule, not the model's
+/// These actions ask in every mode and can never be saved as an Always-allow
+/// rule; in Code, Full access goes ahead on the ones `FloorReason.waivedByFullAccess`
+/// names (sending and deleting). The floor is a rule, not the model's
 /// judgement: it reads the target the service hit-tested, not what the model
 /// says it is clicking (§3.8 rule 3).
 public enum ConsequentialActionFloor {
@@ -52,11 +74,14 @@ public enum ConsequentialActionFloor {
         "check out", "transfer", "delete", "remove", "erase", "sign in", "log in", "login",
         "sign up", "accept", "agree", "allow", "install", "confirm", "place order", "pay now",
         "subscribe", "unsubscribe", "trash", "empty trash", "share", "reply", "forward",
+        // Matched as whole words, so "pay" does not cover "Send payment", which
+        // Full access would otherwise read as sending (2026-10-31).
+        "payment",
         // French (the owner's Mac)
         "envoyer", "soumettre", "publier", "poster", "acheter", "payer", "commander", "transferer",
         "virement", "supprimer", "effacer", "retirer", "se connecter", "connexion", "accepter",
         "j'accepte", "autoriser", "installer", "confirmer", "valider", "partager", "repondre",
-        "transferer", "s'abonner", "vider la corbeille", "mettre a la corbeille",
+        "transferer", "s'abonner", "vider la corbeille", "mettre a la corbeille", "paiement",
         // German
         "senden", "absenden", "kaufen", "bezahlen", "bestellen", "loschen", "entfernen", "anmelden",
         "akzeptieren", "zustimmen", "erlauben", "installieren", "bestatigen",
@@ -195,16 +220,26 @@ public enum ConsequentialActionFloor {
         }
     }
 
+    /// The floor words Full access waives: sending and deleting, never paying
+    /// or granting. A subset of `words`.
+    static let waivableWords: Set<String> = [
+        "send", "submit", "post", "publish", "delete", "remove", "erase", "trash",
+        "share", "reply", "forward",
+        "envoyer", "soumettre", "publier", "poster", "supprimer", "effacer", "retirer",
+        "partager", "repondre", "mettre a la corbeille",
+    ]
+
+    /// `words` with every word Full access does NOT waive first, so a control
+    /// titled “Send and pay” is reported as “pay” and keeps asking.
+    static let wordsByPrecedence: [String] =
+        words.filter { !waivableWords.contains($0) } + words.filter { waivableWords.contains($0) }
+
     /// The first floor word any of `texts` contains as whole words.
     public static func matchingWord(in texts: [String]) -> String? {
-        for text in texts {
-            let tokens = tokenize(text)
-            guard !tokens.isEmpty else { continue }
-            let joined = " " + tokens.joined(separator: " ") + " "
-            for word in words {
-                let needle = " " + tokenize(word).joined(separator: " ") + " "
-                if joined.contains(needle) { return word }
-            }
+        let joinedTexts = texts.map(tokenize).filter { !$0.isEmpty }.map { " " + $0.joined(separator: " ") + " " }
+        for word in wordsByPrecedence {
+            let needle = " " + tokenize(word).joined(separator: " ") + " "
+            if joinedTexts.contains(where: { $0.contains(needle) }) { return word }
         }
         return nil
     }

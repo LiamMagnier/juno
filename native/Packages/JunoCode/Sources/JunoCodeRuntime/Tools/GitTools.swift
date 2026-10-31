@@ -185,10 +185,11 @@ public struct GitCommitTool: CodeTool {
 
 // MARK: - Shipping (Lane E, CODE_AGENT_SPEC §5.3)
 
-/// Pushes the current branch. Every push asks: the tool reaches another host,
-/// so it is `.destructive` and pinned to `.alwaysRequiresApproval` — no mode,
-/// allow rule, hook, goal or task grant lets it through without the reader
-/// seeing this exact push, and "Always allow" is never offered for it.
+/// Pushes the current branch, never forced. It asks in every mode below Full
+/// access and goes ahead in Full access (2026-10-31): `git push` through
+/// `run_command` was already `critical` and ran unasked there, so pinning the
+/// dedicated tool only made the mode ask on the step the reader turned it on
+/// for. A forced push stays `destructive` through the classifier.
 ///
 /// The input names the target, so the approval is bound to it: a push whose
 /// branch or remote changed between the approval and the run is refused.
@@ -201,7 +202,7 @@ public struct GitPushTool: CodeTool {
 
     public let name = "git_push"
     public let description =
-        "Push the current branch to its remote, never forced. Name the branch and the remote it pushes to (from git_status). Every push asks the reader, in every permission mode."
+        "Push the current branch to its remote, never forced. Name the branch and the remote it pushes to (from git_status). Asks the reader unless the session has Full access."
     public var inputSchema: JSONValue {
         [
             "type": "object",
@@ -213,9 +214,9 @@ public struct GitPushTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .destructive }
+    public func assessRisk(input: JSONValue) -> ActionRisk { .critical }
 
-    public var approvalPolicy: ApprovalPolicy { .alwaysRequiresApproval }
+    public var approvalPolicy: ApprovalPolicy { .asksUnlessFullAccess }
 
     public func summary(input: JSONValue) -> String {
         "Push \(input["branch"]?.stringValue ?? "?") to \(input["remote"]?.stringValue ?? "?")"

@@ -35,7 +35,12 @@ final class CodeV2TeamTests: XCTestCase {
         XCTAssertTrue(routing.workers?.allSatisfy { $0.model == "google:gemini-3.8-flash" } ?? false)
         XCTAssertEqual(routing.reviewer, gpt)
         XCTAssertNil(routing.explorer)
-        XCTAssertEqual(routing.budget?.maxUsd, CodeV2RoleDraft.defaultBudgetUsd)
+        // No fixed per-run cap: a team run is bounded by the account's spend
+        // ceiling, not a $4 constant that stopped sub-agents mid-task.
+        XCTAssertNil(routing.budget, "a team run carries no fixed per-run cap")
+        var capped = draft
+        capped.budgetUsd = 12.5
+        XCTAssertEqual(capped.routing.budget?.maxUsd, 12.5, "a cap the reader sets is kept")
 
         draft.setSelection(CodeV2.ModelSelection(instanceId: "alevr", model: "anthropic:claude-haiku-4-5"), for: .explorer)
         XCTAssertEqual(draft.routing.explorer?.model, "anthropic:claude-haiku-4-5")

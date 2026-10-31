@@ -307,8 +307,16 @@ struct ScreenActionRunner: Sendable {
 
     /// One approval, with the whole card, bound to the frame.
     func approve(_ prepared: PreparedScreenAction, toolName: String, input: JSONValue, sessionID: String) async throws {
-        let risk: ActionRisk = prepared.floor == nil ? .critical : .destructive
-        let policy: ApprovalPolicy = prepared.floor == nil ? .byRisk : .alwaysRequiresApproval
+        // Sending and deleting ask below Full access and go ahead in it; the
+        // rest of the floor (money, signing in, System Settings, credentials)
+        // asks in every mode.
+        let waived = prepared.floor?.waivedByFullAccess ?? false
+        let risk: ActionRisk = prepared.floor == nil || waived ? .critical : .destructive
+        let policy: ApprovalPolicy = switch (prepared.floor, waived) {
+        case (nil, _): .byRisk
+        case (_, true): .asksUnlessFullAccess
+        case (_, false): .alwaysRequiresApproval
+        }
         // Nobody is there to answer a card in an unattended run.
         if let skipped = await ScreenUnattendedRule.skip(
             computer: computer, permissions: permissions, sessionID: sessionID,

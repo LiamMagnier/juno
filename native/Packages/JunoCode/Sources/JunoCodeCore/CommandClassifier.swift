@@ -46,7 +46,7 @@ public struct CommandClassifier: Sendable {
         var worstReason = "Command execution."
 
         for segment in Self.segments(from: tokens) {
-            switch Self.classifySegment(segment) {
+            switch Self.classifySegment(segment, depth: depth) {
             case let .forbidden(reason):
                 return .forbidden(reason: reason)
             case let .permitted(risk, reason):
@@ -191,7 +191,7 @@ public struct CommandClassifier: Sendable {
         return result
     }
 
-    private static func classifySegment(_ segment: [ShellToken]) -> CommandVerdict {
+    private static func classifySegment(_ segment: [ShellToken], depth: Int) -> CommandVerdict {
         let redirectTargets = segment.filter { $0.kind == .redirect }.map(\.text)
         if redirectTargets.contains(where: \.isEmpty) {
             return .forbidden(reason: "Redirection is missing a target.")
@@ -291,6 +291,15 @@ public struct CommandClassifier: Sendable {
             verdict = classifyFind(arguments: arguments)
         case "rg", "grep", "egrep", "fgrep":
             verdict = classifySearch(program: program, arguments: arguments)
+        case "gh" where isReadOnlyGitHubQuery(arguments):
+            // Looking at a pull request, a run or an issue reads from GitHub
+            // and changes nothing there: network, so `critical`, not the
+            // infrastructure tier `gh` otherwise shares with `terraform`.
+            verdict = .permitted(risk: .critical, reason: "Reads from GitHub.")
+        case "open" where opensOnlyLoopbackURLs(arguments):
+            // `open http://localhost:3000` shows the dev server in a browser.
+            // Any other target (an app, a file, a remote URL) stays system-facing.
+            verdict = .permitted(risk: .critical, reason: "Opens a local page in the browser.")
         case "chmod", "chown", "chgrp", "chflags":
             verdict = .permitted(
                 risk: .destructive,
@@ -298,29 +307,39 @@ public struct CommandClassifier: Sendable {
             )
         case "kill", "killall", "pkill":
             // The target is a process on the user's Mac, chosen by name or pid;
-            // nothing scopes it to this workspace.
-            verdict = .permitted(risk: .destructive, reason: "Process termination.")
+            // nothing scopes it to this workspace. What this session started
+            // has a scoped way out that Full access runs unasked: `shell_kill`
+            // stops a background shell and its process group by id. A pid
+            // check here could not cover `kill $(lsof -ti:3000)`, whose target
+            // is only known once it runs, so the reason names the tool instead.
+            verdict = .permitted(
+                risk: .destructive,
+                reason: "Process termination. To stop a process this session started, use shell_kill with its shell id instead."
+            )
         case let executable where interpreterPrograms.contains(executable):
             // Running the project's own tests and scripts. Arbitrary code, but
             // code from the folder the session was granted — which is precisely
             // what `critical` means and why full access proceeds.
             //
-            // An INLINE program breaks that assumption. `python3 -c "…"`,
-            // `node -e "…"`, `bash -c "…"` run code the model wrote, not code
-            // from the granted folder, and the string is opaque to every rule in
-            // this file: an `rm -rf /`, a `chmod`, a `curl | sh` inside it is
-            // never seen. So it is not ordinary development — it escapes the
-            // workspace boundary, which is the definition of `destructive`.
+            // An INLINE program is code the model wrote rather than code from
+            // the granted folder. It used to be `destructive`, which asks in
+            // every mode, and `node -e`/`python3 -c` are among the commands an
+            // agent runs most: Full access asked on nearly every turn
+            // (2026-10-31). It bought little, since the same code written to
+            // `scripts/x.py` and run is `critical` and runs unasked.
             //
-            // This is load-bearing beyond the risk ladder: the macOS entitlements
-            // file justifies disabling the App Sandbox on the soundness of this
-            // classifier, and an unread `-c` string is the one input it cannot
-            // reason about at all.
+            // A shell's `-c` string is a command line, so it is classified like
+            // one and the worse verdict wins: `bash -c 'npm test'` is ordinary,
+            // `bash -c 'rm -rf ~'` is still refused. Other interpreters'
+            // strings are opaque here and rate as the script they stand in for.
             if hasInlineProgramArgument(program: executable, arguments: arguments) {
-                verdict = .permitted(
-                    risk: .destructive,
-                    reason: "'\(program)' runs an inline program this classifier cannot inspect."
-                )
+                verdict = shellPrograms.contains(executable)
+                    ? classifyShellInline(program: program, arguments: arguments, depth: depth)
+                    : .permitted(
+                        risk: .critical,
+                        reason: "'\(program)' runs an inline program, like a script in the workspace."
+                    )
+                if case .forbidden = verdict { return verdict }
             } else {
                 verdict = .permitted(
                     risk: .critical,
@@ -747,6 +766,75 @@ public struct CommandClassifier: Sendable {
             }
         }
         return false
+    }
+
+    /// A shell started with `-c`: its command string, classified as a line in
+    /// its own right, never better than `critical` because it is still code
+    /// the model composed. A string that cannot be found is refused review
+    /// the old way: `destructive`.
+    private static func classifyShellInline(program: String, arguments: [String], depth: Int) -> CommandVerdict {
+        let opaque = CommandVerdict.permitted(
+            risk: .destructive,
+            reason: "'\(program)' runs an inline program this classifier cannot inspect."
+        )
+        guard depth < ShellSegments.maximumNesting else {
+            return .forbidden(reason: "Command nests shells too deeply to inspect.")
+        }
+        guard let inner = shellInlineProgram(arguments) else { return opaque }
+        switch CommandClassifier().classify(inner, depth: depth + 1) {
+        case let .forbidden(reason):
+            return .forbidden(reason: reason)
+        case let .permitted(risk, reason):
+            return risk > .critical
+                ? .permitted(risk: risk, reason: reason)
+                : .permitted(risk: .critical, reason: "'\(program) -c' runs: \(reason)")
+        }
+    }
+
+    /// The command string a shell's `-c` (or `--command`) takes: the first
+    /// operand after the flag, or the value of `--command=…`.
+    private static func shellInlineProgram(_ arguments: [String]) -> String? {
+        for (index, argument) in arguments.enumerated() {
+            if argument.hasPrefix("--command=") {
+                return String(argument.dropFirst("--command=".count))
+            }
+            let isInlineFlag = argument == "-c" || argument == "--command"
+                || (argument.hasPrefix("-") && !argument.hasPrefix("--") && argument.count > 2
+                    && argument.dropFirst().allSatisfy(\.isLetter) && argument.contains("c"))
+            guard isInlineFlag else { continue }
+            return arguments[(index + 1)...].first { !$0.hasPrefix("-") }
+        }
+        return nil
+    }
+
+    /// `gh` subcommands that only read: `gh pr view 12`, `gh run list`,
+    /// `gh issue status`, `gh search code …`. `gh api` is absent because it
+    /// can send any method.
+    private static func isReadOnlyGitHubQuery(_ arguments: [String]) -> Bool {
+        let operands = arguments.filter { !$0.hasPrefix("-") }
+        guard let group = operands.first else { return false }
+        if group == "search" { return true }
+        if group == "status" { return operands.count == 1 }
+        guard operands.count >= 2, readOnlyGitHubGroups.contains(group) else { return false }
+        return readOnlyGitHubVerbs.contains(operands[1])
+    }
+
+    private static let readOnlyGitHubGroups: Set<String> = [
+        "pr", "issue", "run", "workflow", "repo", "release", "auth", "label", "cache", "ruleset",
+    ]
+    private static let readOnlyGitHubVerbs: Set<String> = ["view", "list", "status", "diff", "checks"]
+
+    /// `open` handed only http(s) URLs on this machine's loopback.
+    private static func opensOnlyLoopbackURLs(_ arguments: [String]) -> Bool {
+        guard !arguments.isEmpty else { return false }
+        return arguments.allSatisfy { argument in
+            guard let url = URL(string: argument),
+                  let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  let host = url.host?.lowercased()
+            else { return false }
+            return ["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"].contains(host)
+                || host.hasSuffix(".localhost")
+        }
     }
 
     private static let interpreterPrograms: Set<String> = [

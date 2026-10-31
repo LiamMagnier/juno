@@ -205,7 +205,6 @@ extension CodeV2RoleDraft {
                 workerCount = 2
             }
             preset = .planBuildVerify
-            if budgetUsd == nil { budgetUsd = Self.defaultBudgetUsd }
         }
     }
 
