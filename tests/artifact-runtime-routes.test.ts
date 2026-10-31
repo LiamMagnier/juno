@@ -140,6 +140,10 @@ try {
   loader._load = originalLoad;
 }
 
+// The routes are the feature; they run with ARTIFACT_AI_ENABLED on except in
+// the test that shows them off.
+process.env.ARTIFACT_AI_ENABLED = "1";
+
 function post(body: unknown): Request {
   return new Request("http://localhost/api/artifact-runtime/x", {
     method: "POST",
@@ -156,6 +160,23 @@ function reset(as: typeof viewer) {
   billed.length = 0;
   accessLookups.length = 0;
 }
+
+test("with ARTIFACT_AI_ENABLED off (the default) both routes refuse before anything is looked up, stored or spent", async () => {
+  reset({ id: "viewer-off", email: "viewer-off@example.test" });
+  delete process.env.ARTIFACT_AI_ENABLED;
+  try {
+    const res = await completeRoute.POST(post({ target: { shareToken: TOKEN }, prompt: "hi" }));
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).code, "not_enabled");
+    const stored = await storageRoute.POST(post({ target: { shareToken: TOKEN }, op: "set", key: "k", value: 1 }));
+    assert.equal(stored.status, 404);
+    assert.deepEqual(accessLookups, []);
+    assert.deepEqual(admitted, []);
+    assert.deepEqual(billed, []);
+  } finally {
+    process.env.ARTIFACT_AI_ENABLED = "1";
+  }
+});
 
 test("a signed-out visitor is refused before anything is looked up or spent", async () => {
   reset(null);

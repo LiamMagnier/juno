@@ -2825,8 +2825,10 @@ function ComposerImpl({
    * only say "connect it first". `connectors` is the account's live list,
    * reconciled each time this menu opens.
    */
-  const driveConnected = connectors.some((connector) => connector.id === "google-drive");
-  const oneDriveConnected = connectors.some((connector) => connector.id === "microsoft-365");
+  // And only while the server has the picker on (CLOUD_ATTACH_ENABLED).
+  const cloudAttachOn = features.cloudAttach === true;
+  const driveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "google-drive");
+  const oneDriveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "microsoft-365");
 
   const plusSections: PlusMenuSection[] = voiceActive
     ? [

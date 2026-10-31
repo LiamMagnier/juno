@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit } from "@/lib/rate-limit";
+import { isVoiceToolsEnabled } from "@/lib/env";
 import { VOICE_TOOLS_AUDIENCE } from "@/lib/voice-tools";
 import { listVoiceTools, loadVoiceCall, runVoiceToolCall, voiceToolCaller, type VoiceToolFrame } from "@/lib/voice-tools-server";
 
@@ -25,7 +26,15 @@ export const maxDuration = 300;
  * object per line: `approval` when the call starts waiting on the person, then
  * one `result`. The stream exists so the card can go up while the broker
  * waits; nothing in it is a credential.
+ *
+ * Off unless VOICE_TOOLS_ENABLED=1 (src/lib/env.ts): the relay token then
+ * grants no tools, and both methods here answer 404 `not_enabled` before
+ * reading anything, whatever token comes with them.
  */
+
+function voiceToolsOff(): NextResponse {
+  return NextResponse.json({ error: "Voice tools are not turned on for this server.", code: "not_enabled" }, { status: 404 });
+}
 
 /** Calls one person's voice sessions may run per minute, all sessions together. */
 const CALLS_PER_MINUTE = 30;
@@ -40,6 +49,7 @@ const callSchema = z.object({
 const CALL_MAX_MS = 240_000;
 
 export async function GET(req: Request) {
+  if (!isVoiceToolsEnabled()) return voiceToolsOff();
   const caller = voiceToolCaller(req.headers.get("authorization"), VOICE_TOOLS_AUDIENCE);
   if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const call = await loadVoiceCall(caller);
@@ -48,6 +58,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (!isVoiceToolsEnabled()) return voiceToolsOff();
   const caller = voiceToolCaller(req.headers.get("authorization"), VOICE_TOOLS_AUDIENCE);
   if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = callSchema.safeParse(await req.json().catch(() => null));

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
+import { isChatMemoryOffEnabled } from "@/lib/env";
 import { extractConversationMemory, maybeConsolidate, maybeConsolidateProject } from "@/lib/memory";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 
@@ -116,6 +117,8 @@ export async function POST(req: Request) {
   const parsed = inputSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid voice transcript" }, { status: 400 });
   const input = parsed.data;
+  // Saved only while the switch may be set (CHAT_MEMORY_OFF_ENABLED, src/lib/env.ts).
+  const saveMemoryOff = input.memoryOff === true && isChatMemoryOffEnabled();
 
   // Fast idempotent path for explicit retries/navigation races.
   const alreadySaved = await serializeSavedSession(user.id, input.sessionId);
@@ -145,10 +148,10 @@ export async function POST(req: Request) {
             titleSource: "default",
             projectId,
             activeConnectors: [...new Set(input.connectors ?? [])],
-            ...(input.memoryOff ? { memoryOff: true } : {}),
+            ...(saveMemoryOff ? { memoryOff: true } : {}),
           },
         });
-      } else if (input.memoryOff && !conversation.memoryOff) {
+      } else if (saveMemoryOff && !conversation.memoryOff) {
         await tx.conversation.updateMany({ where: { id: conversation.id, userId: user.id }, data: { memoryOff: true } });
       }
 

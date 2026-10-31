@@ -16,6 +16,7 @@ import { noteLiveProviderFault } from "@/lib/provider-health";
 import { checkBudget, releaseSpend, reserveSpend, modelRatesMicroUsdPerToken, type billingPeriodFor } from "@/lib/spend";
 import { createSseSender, SSE_HEADERS } from "@/lib/chat-stream";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
+import { isToneCharacteristicsEnabled } from "@/lib/env";
 import { resolveFastMode } from "@/lib/pricing";
 import { supportsProMode } from "@/lib/model-metrics";
 import { buildUsage } from "@/lib/chat-usage";
@@ -146,7 +147,8 @@ export async function runPrivateTurn({
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
     // The row itself: the builder reads only the tone* columns, leniently.
-    characteristics: settings,
+    // Only while the server has them on (TONE_CHARACTERISTICS_ENABLED).
+    characteristics: isToneCharacteristicsEnabled() ? settings : null,
     responseLanguage: settings?.responseLanguage ?? "auto",
     memories: [],
     memoryEnabled: false,

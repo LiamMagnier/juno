@@ -407,6 +407,49 @@ export const env = {
     },
   },
 
+  /*
+   * Features merged before their review (integration PR 2026-10-31). Each is
+   * off unless its variable is exactly "1": its routes refuse, its prompt
+   * text is left out and its controls are not drawn, so merging it changes
+   * nothing a person can see until the owner turns it on.
+   */
+  /** Share a chat or artifact with specific people by email (src/lib/share-people-core.ts). SHARE_PEOPLE_ENABLED. */
+  sharePeople: {
+    get enabled(): boolean {
+      return (process.env.SHARE_PEOPLE_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** "Memory off for this chat" (src/lib/chat/memory-off.ts): the switch can be set. CHAT_MEMORY_OFF_ENABLED. */
+  chatMemoryOff: {
+    get enabled(): boolean {
+      return (process.env.CHAT_MEMORY_OFF_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** Attach from Google Drive / OneDrive in the composer (src/lib/cloud-files). CLOUD_ATTACH_ENABLED. */
+  cloudAttach: {
+    get enabled(): boolean {
+      return (process.env.CLOUD_ATTACH_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** The chat's tools and connectors during a voice call (src/lib/voice-tools.ts). VOICE_TOOLS_ENABLED. */
+  voiceTools: {
+    get enabled(): boolean {
+      return (process.env.VOICE_TOOLS_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** Tone characteristics in Personalization (src/lib/characteristics.ts). TONE_CHARACTERISTICS_ENABLED. */
+  toneCharacteristics: {
+    get enabled(): boolean {
+      return (process.env.TONE_CHARACTERISTICS_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** AI-powered artifacts: `window.alevr.complete` and `.storage` (src/lib/artifact-ai). ARTIFACT_AI_ENABLED. */
+  artifactAi: {
+    get enabled(): boolean {
+      return (process.env.ARTIFACT_AI_ENABLED ?? "").trim() === "1";
+    },
+  },
+
   // Agent payments (src/lib/payments, docs/design/agents-v2/ENABLE_PAYMENTS.md):
   // one-time cards an agent asks for. Off unless all three STRIPE_ISSUING_*
   // values are set (or, outside production only, the test provider is asked
@@ -534,4 +577,38 @@ export function activeTtsProvider(): TtsProvider | null {
 /** Agent payment cards: Stripe Issuing fully configured, or the dev-only test provider asked for. */
 export function isAgentPaymentsConfigured(): boolean {
   return arePaymentsConfigured(process.env);
+}
+
+/** Sharing with specific people may be created (SHARE_PEOPLE_ENABLED=1). Existing people shares stay restricted either way. */
+export function isSharePeopleEnabled(): boolean {
+  return env.sharePeople.enabled;
+}
+
+/**
+ * "Memory off for this chat" may be switched (CHAT_MEMORY_OFF_ENABLED=1). A
+ * chat already saved with memory off keeps memory out either way: the switch
+ * only ever narrows, so turning the flag off never lets memory back in.
+ */
+export function isChatMemoryOffEnabled(): boolean {
+  return env.chatMemoryOff.enabled;
+}
+
+/** The composer's Add from Google Drive / OneDrive and its routes (CLOUD_ATTACH_ENABLED=1). */
+export function isCloudAttachEnabled(): boolean {
+  return env.cloudAttach.enabled;
+}
+
+/** A voice call may be lent the chat's tools (VOICE_TOOLS_ENABLED=1). */
+export function isVoiceToolsEnabled(): boolean {
+  return env.voiceTools.enabled;
+}
+
+/** The five tone characteristics are drawn, saved and read into the prompt (TONE_CHARACTERISTICS_ENABLED=1). */
+export function isToneCharacteristicsEnabled(): boolean {
+  return env.toneCharacteristics.enabled;
+}
+
+/** Artifacts get `window.alevr` (model calls and per-viewer storage), and the prompt teaches it (ARTIFACT_AI_ENABLED=1). */
+export function isArtifactAiEnabled(): boolean {
+  return env.artifactAi.enabled;
 }

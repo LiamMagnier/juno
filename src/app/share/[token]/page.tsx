@@ -12,8 +12,9 @@ import { sharedTypeCopyable } from "@/lib/share-copy";
 import { getCurrentUser } from "@/lib/session";
 import { ShareGone } from "@/components/share/share-gone";
 import { ShareRestricted, type ShareRestrictedState } from "@/components/share/share-restricted";
-import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
+import { AlevrBridgeProvider, SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { publicShareProfile } from "@/lib/sandbox-policy";
+import { isArtifactAiEnabled } from "@/lib/env";
 import { sharedDesignPosterUrl } from "@/lib/design/poster-url";
 import {
   countShareView,
@@ -191,7 +192,9 @@ export default async function SharePage({
   // Also read when the page runs the artifact's scripts: an app's AI and saved
   // data run on the visitor's own account, so who is looking decides whether
   // the viewer asks or points to sign-in (SharedArtifactViewer).
-  const scripted = !!artifact && publicShareProfile() === "public";
+  // Only while the server has AI-powered artifacts on (ARTIFACT_AI_ENABLED).
+  const alevrOn = isArtifactAiEnabled();
+  const scripted = alevrOn && !!artifact && publicShareProfile() === "public";
   const signedIn = copyable || scripted ? !!(await getCurrentUser().catch(() => null)) : false;
   const askCopy = copyable && (await searchParams)?.copy === "1";
 
@@ -224,6 +227,7 @@ export default async function SharePage({
 
       <main className={cn("alevr-share-main min-h-0 flex-1", artifact && "flex flex-col")}>
         <SandboxProfileProvider profile={publicShareProfile()}>
+        <AlevrBridgeProvider enabled={alevrOn}>
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
           <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="alevr-shared-prose">
@@ -261,6 +265,7 @@ export default async function SharePage({
             />
           </AppPage>
         ) : null}
+        </AlevrBridgeProvider>
         </SandboxProfileProvider>
       </main>
 

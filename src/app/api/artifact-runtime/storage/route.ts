@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
+import { isArtifactAiEnabled } from "@/lib/env";
 import {
   STORAGE_MAX_KEY_CHARS,
   STORAGE_MAX_VALUE_BYTES,
@@ -46,6 +47,11 @@ function fail(status: number, code: string, error: string) {
 }
 
 export async function POST(req: Request) {
+  // AI-powered artifacts are unreviewed and off unless ARTIFACT_AI_ENABLED=1
+  // (src/lib/env.ts): nothing is read, stored or spent, whoever asks.
+  if (!isArtifactAiEnabled()) {
+    return NextResponse.json({ error: "AI-powered artifacts are not turned on for this server.", code: "not_enabled" }, { status: 404 });
+  }
   const user = await getCurrentUser();
   if (!user) return fail(401, "sign_in_required", "Sign in to use this app's saved data. It is kept on your own account.");
 

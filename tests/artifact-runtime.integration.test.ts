@@ -38,10 +38,11 @@ if (!DB_URL || !canMockModules) {
   delete process.env.DATA_ENCRYPTION_KEYRING;
   process.env.AUTH_SECRET ??= "artifact-runtime-test-secret";
   process.env.JUNO_PREVIEW_ORIGIN_PUBLIC = "1";
+  process.env.ARTIFACT_AI_ENABLED = "1";
   delete process.env.OWNER_EMAILS;
 
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
-  let signedIn: { id: string; email: string; name: string } | null = null;
+  let signedIn: { id: string; email: string; name: string | null } | null = null;
 
   test("stand in for the session", async () => {
     mock.module("@/lib/session", {

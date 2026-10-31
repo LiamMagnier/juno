@@ -13,7 +13,7 @@ import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
 import { SENSITIVE_TOPICS, revokedSensitiveTopics } from "@/lib/memory-sensitive";
 import { AUTO_PREFERENCES } from "@/lib/router/decide";
 import { AUTO_DATA_BOUNDARIES } from "@/lib/router/data-policy";
-import { activeTtsProvider } from "@/lib/env";
+import { activeTtsProvider, isToneCharacteristicsEnabled } from "@/lib/env";
 
 const schema = z.object({
   // The display name — what the sidebar and the greeting call you. Lives on
@@ -197,7 +197,8 @@ export async function PATCH(req: Request) {
       ...(d.accent ? { accent: d.accent } : {}),
       ...(d.defaultModel ? { defaultModel: d.defaultModel } : {}),
       ...(d.personality ? { personality: d.personality } : {}),
-      ...characteristicsPatch(d),
+      // Saved only while the server has them on (TONE_CHARACTERISTICS_ENABLED).
+      ...(isToneCharacteristicsEnabled() ? characteristicsPatch(d) : {}),
       ...(d.customInstructions !== undefined ? { customInstructions: d.customInstructions } : {}),
       ...(d.responseLanguage !== undefined ? { responseLanguage: d.responseLanguage } : {}),
       ...(uiLocale !== undefined ? { uiLocale } : {}),

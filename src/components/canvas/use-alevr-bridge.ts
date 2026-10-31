@@ -14,6 +14,7 @@ import { runtimeTargetKey, type AlevrRuntimeTarget } from "@/lib/artifact-ai/pro
  * page that was replaced stops spending.
  */
 export function useAlevrBridge({
+  enabled = true,
   frameRef,
   channel,
   target,
@@ -21,6 +22,8 @@ export function useAlevrBridge({
   runNonce,
   askConsent,
 }: {
+  /** Off (ARTIFACT_AI_ENABLED is not on here), no host is made and no message is read. */
+  enabled?: boolean;
   frameRef: React.RefObject<HTMLIFrameElement | null>;
   channel: string;
   target: AlevrRuntimeTarget | null | undefined;
@@ -44,6 +47,7 @@ export function useAlevrBridge({
   }, [targetKey]);
 
   React.useEffect(() => {
+    if (!enabled) return;
     const host = createAlevrBridgeHost({
       channel,
       target: stableTarget,
@@ -64,5 +68,5 @@ export function useAlevrBridge({
     };
     // `documentHtml` and `runNonce` are not read inside: they are what makes the
     // previous document's calls end when the frame is given a new one.
-  }, [channel, stableTarget, documentHtml, runNonce, hasConsentStep, frameRef]);
+  }, [enabled, channel, stableTarget, documentHtml, runNonce, hasConsentStep, frameRef]);
 }

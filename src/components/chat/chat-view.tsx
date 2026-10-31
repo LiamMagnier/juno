@@ -233,6 +233,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setComposerPrefs,
     models,
     spend,
+    features,
   } = useApp();
   const router = useRouter();
   const pathname = usePathname();
@@ -679,9 +680,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const knownMemoryOff = currentConversationId
     ? conversations.find((c) => c.id === currentConversationId)?.memoryOff
     : undefined;
+  // Only while the server lets the switch be set (CHAT_MEMORY_OFF_ENABLED):
+  // off, nothing is read or drawn and the + Memory row is the account's again.
+  const chatMemoryAvailable = features.chatMemoryOff === true && !privateMode;
   const chatMemorySwitch = useConversationMemory(
-    privateMode ? null : currentConversationId,
-    !privateMode,
+    chatMemoryAvailable ? currentConversationId : null,
+    chatMemoryAvailable,
     knownMemoryOff,
     // The id arrived while this view's route names no chat: it made it.
     conversationId === null,
@@ -693,7 +697,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   }, [chatMemoryOff]);
   const chatMemory = React.useMemo(
     () =>
-      privateMode
+      !chatMemoryAvailable
         ? undefined
         : {
             off: chatMemoryOff,
@@ -704,7 +708,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               if (currentConversationId) updateConversation(currentConversationId, { memoryOff: off });
             },
           },
-    [privateMode, chatMemoryOff, changeChatMemorySwitch, currentConversationId, updateConversation],
+    [chatMemoryAvailable, chatMemoryOff, changeChatMemorySwitch, currentConversationId, updateConversation],
   );
 
   // A room: who answers each message, and the bounded follow-up turns the

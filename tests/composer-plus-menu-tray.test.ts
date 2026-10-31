@@ -54,10 +54,12 @@ test("the tray offers the same three panels the + menu would have", () => {
   assert.match(media, /panel="project"/);
 });
 
-test("Add from Google Drive / OneDrive are drawn only while that drive is connected", () => {
+test("Add from Google Drive / OneDrive are drawn only while that drive is connected and CLOUD_ATTACH_ENABLED is on", () => {
   const sections = plusSections();
-  assert.match(COMPOSER, /const driveConnected = connectors\.some\(\(connector\) => connector\.id === "google-drive"\);/);
-  assert.match(COMPOSER, /const oneDriveConnected = connectors\.some\(\(connector\) => connector\.id === "microsoft-365"\);/);
+  // Off (the default), neither row is drawn whatever is connected.
+  assert.match(COMPOSER, /const cloudAttachOn = features\.cloudAttach === true;/);
+  assert.match(COMPOSER, /const driveConnected = cloudAttachOn && connectors\.some\(\(connector\) => connector\.id === "google-drive"\);/);
+  assert.match(COMPOSER, /const oneDriveConnected = cloudAttachOn && connectors\.some\(\(connector\) => connector\.id === "microsoft-365"\);/);
   assert.match(sections, /\.\.\.\(driveConnected\s*\?\s*\[\s*\{\s*kind: "action" as const,\s*id: "google-drive"/);
   assert.match(sections, /\.\.\.\(oneDriveConnected\s*\?\s*\[\s*\{\s*kind: "action" as const,\s*id: "onedrive"/);
   // One picker, told which drive; it files the import in this chat, like an upload.

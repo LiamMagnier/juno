@@ -7,7 +7,17 @@ import { listConversations } from "@/lib/queries";
 import { getQuota, planFromAccount } from "@/lib/usage";
 import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor, periodCreditMicroUsd } from "@/lib/spend";
 import { effectiveBudget, windowBaseMicroUsd } from "@/lib/spend-ceiling";
-import { isStripeConfigured, isStorageAvailable, isServerTtsConfigured, activeTtsProvider } from "@/lib/env";
+import {
+  isStripeConfigured,
+  isStorageAvailable,
+  isServerTtsConfigured,
+  activeTtsProvider,
+  isArtifactAiEnabled,
+  isChatMemoryOffEnabled,
+  isCloudAttachEnabled,
+  isSharePeopleEnabled,
+  isToneCharacteristicsEnabled,
+} from "@/lib/env";
 import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
@@ -251,6 +261,12 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       providers: configuredProviders(),
       ...(codeAccess?.allowed ? { codeOpen: true } : {}),
       isOwner: isOwnerEmail(user.email),
+      // Merged before review, off until the owner sets each flag (src/lib/env.ts).
+      sharePeople: isSharePeopleEnabled(),
+      chatMemoryOff: isChatMemoryOffEnabled(),
+      cloudAttach: isCloudAttachEnabled(),
+      toneCharacteristics: isToneCharacteristicsEnabled(),
+      artifactAi: isArtifactAiEnabled(),
     },
   };
 }

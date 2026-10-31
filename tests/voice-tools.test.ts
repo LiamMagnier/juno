@@ -348,12 +348,13 @@ test("tools are asked for by the chat, never assumed, and incognito never asks",
     timeZone: "Europe/Amsterdam",
   });
   const token = src("src/app/api/voice/relay-token/route.ts");
-  assert.match(token, /const tools = parseVoiceToolsRequest\(params\);/);
+  // Only while the server has voice tools on (VOICE_TOOLS_ENABLED).
+  assert.match(token, /const tools = isVoiceToolsEnabled\(\) \? parseVoiceToolsRequest\(params\) : null;/);
   // The conversation is named only once it is shown to be this person's.
   assert.match(token, /\.\.\.\(conversation \? \{ cid: conversation\.id \} : \{\}\)/);
   assert.match(token, /where: \{ id: conversationId, userId \},\s+select: \{ id: true \},/);
   const chat = src("src/components/chat/chat-view.tsx");
-  assert.match(chat, /privateMode \? undefined : \{[^}]*\}, conversationId: currentConversationId \?\? null, tools: \{ connectorIds: enabledConnectors \} \}/);
+  assert.match(chat, /privateMode\s*\?\s*undefined\s*:\s*\{[^}]*\},\s*conversationId: currentConversationId \?\? null,\s*tools: \{ connectorIds: enabledConnectors \},?\s*\}/);
 });
 
 // The fixtures behind the routes.
@@ -434,6 +435,23 @@ const request = (path: string, token: string | null, body?: unknown) =>
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), "Content-Type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+
+// The route tests below run with the switch on; the first shows it off.
+process.env.VOICE_TOOLS_ENABLED = "1";
+
+test("with VOICE_TOOLS_ENABLED off (the default) nothing is listed or run, whatever the token", async () => {
+  delete process.env.VOICE_TOOLS_ENABLED;
+  try {
+    const token = mint(claims("juno.voice.tools"));
+    const listed = await toolsRoute.GET(request("/api/voice/tools", token));
+    assert.equal(listed.status, 404);
+    assert.equal(((await listed.json()) as { code: string }).code, "not_enabled");
+    const ran = await toolsRoute.POST(request("/api/voice/tools", token, { callId: "off", name: "gcal__create_event", arguments: "{}" }));
+    assert.equal(ran.status, 404);
+  } finally {
+    process.env.VOICE_TOOLS_ENABLED = "1";
+  }
+});
 
 test("only the relay's tools token lists a call's tools", async () => {
   const refused = [

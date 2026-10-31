@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
+import { readFileSync } from "node:fs";
 import type { Plan } from "@prisma/client";
 import type { ModelInfo } from "@/lib/models";
 import type { RecordSpendInput } from "@/lib/spend";
@@ -832,7 +833,8 @@ test("storage caps: a value, an artifact's bytes and keys, and a viewer's whole 
 // ── The prompt ──────────────────────────────────────────────────────────────
 
 test("the web prompt teaches window.alevr; a native client's never mentions it", () => {
-  const base = { memories: [], memoryEnabled: false, canvas: true, customInstructions: "", personality: "default", responseLanguage: "auto" };
+  // `artifactAi` is the web with ARTIFACT_AI_ENABLED on (src/lib/chat/turn/prompt.ts).
+  const base = { memories: [], memoryEnabled: false, canvas: true, customInstructions: "", personality: "default", responseLanguage: "auto", artifactAi: true };
   const web = buildSystemPromptSections({ ...base, semanticArtifacts: true } as never).stable;
   const native = buildSystemPromptSections({ ...base, semanticArtifacts: false } as never).stable;
   assert.match(web, /window\.alevr\.complete\(\{ prompt, system, maxTokens \}\)/);
@@ -841,6 +843,18 @@ test("the web prompt teaches window.alevr; a native client's never mentions it",
   assert.doesNotMatch(native, /alevr/);
   const noCanvas = buildSystemPromptSections({ ...base, canvas: false } as never).stable;
   assert.doesNotMatch(noCanvas, /alevr/);
+});
+
+test("with ARTIFACT_AI_ENABLED off (the default) no prompt teaches window.alevr", () => {
+  const base = { memories: [], memoryEnabled: false, canvas: true, customInstructions: "", personality: "default", responseLanguage: "auto" };
+  for (const opts of [{ ...base, semanticArtifacts: true }, { ...base, semanticArtifacts: true, artifactAi: false }]) {
+    const web = buildSystemPromptSections(opts as never).stable;
+    assert.doesNotMatch(web, /alevr\./, JSON.stringify(opts));
+    // The rest of the artifact section is untouched.
+    assert.match(web, /Interactive: when the user would want to DO something with the content/);
+  }
+  const turn = readFileSync(new URL("../src/lib/chat/turn/prompt.ts", import.meta.url), "utf8");
+  assert.match(turn, /artifactAi: isArtifactAiEnabled\(\) && legacyChatClientForOrigin\(input\) === "web",/);
 });
 
 test("every write of ArtifactStorageEntry.value is the sealed text, and production seals with encryptField", async () => {

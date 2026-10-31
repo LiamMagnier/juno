@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { setConversationMemoryOff, type MemoryOffDb } from "@/lib/chat/memory-off-store";
+import { isChatMemoryOffEnabled } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,10 @@ export const dynamic = "force-dynamic";
  * nothing is written. Turning memory back on covers what was said meanwhile as
  * read (memory-off-store.ts). The apps save the same value through the sync
  * mutation `conversation.update`, which goes through the same writer.
+ *
+ * Switching is off unless CHAT_MEMORY_OFF_ENABLED=1 (src/lib/env.ts): PATCH
+ * then answers 404 `not_enabled` and writes nothing. GET still answers, and a
+ * chat saved with memory off keeps memory out either way.
  */
 
 async function accountMemory(userId: string): Promise<boolean> {
@@ -49,6 +54,9 @@ const patchSchema = z.object({ memoryOff: z.boolean() }).strict();
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isChatMemoryOffEnabled()) {
+    return NextResponse.json({ error: "Memory off for a chat is not turned on for this server.", code: "not_enabled" }, { status: 404 });
+  }
   const { id } = await params;
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });

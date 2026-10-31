@@ -128,6 +128,34 @@ function reset() {
   lastToken = null;
 }
 
+// The switch can be set only while CHAT_MEMORY_OFF_ENABLED is "1"; the tests
+// below run with it on, the first one shows it off.
+process.env.CHAT_MEMORY_OFF_ENABLED = "1";
+
+test("with CHAT_MEMORY_OFF_ENABLED off (the default), PATCH writes nothing, and a chat already kept out stays out", async () => {
+  reset();
+  signedIn = { id: OWNER };
+  delete process.env.CHAT_MEMORY_OFF_ENABLED;
+  try {
+    const refused = await route.PATCH(patch({ memoryOff: true }), params(CHAT));
+    assert.equal(refused.status, 404);
+    assert.equal(((await refused.json()) as { code: string }).code, "not_enabled");
+    assert.equal(rows[0].memoryOff, false, "nothing is written");
+    // A chat saved with memory off (while the flag was on) keeps memory out:
+    // turning the flag off never lets memory back in.
+    rows[0].memoryOff = true;
+    assert.equal((await route.PATCH(patch({ memoryOff: false }), params(CHAT))).status, 404);
+    assert.equal(rows[0].memoryOff, true);
+    assert.deepEqual(await (await route.GET(new Request("http://x"), params(CHAT))).json(), { memoryOff: true, accountMemory: true });
+    process.env.VOICE_RELAY_URL = "ws://127.0.0.1:9";
+    await relayToken.GET(new Request(`http://x/api/voice/relay-token?memory=1&conversationId=${CHAT}`));
+    assert.equal(JSON.parse(lastToken!).mem, undefined);
+    assert.equal(coverWrites.length, 0);
+  } finally {
+    process.env.CHAT_MEMORY_OFF_ENABLED = "1";
+  }
+});
+
 test("the toggle API is owner-scoped: signed out, someone else's chat or a Code session is refused, and nothing is written", async () => {
   reset();
   signedIn = null;
@@ -198,4 +226,26 @@ test("a voice call in a chat with memory off carries no memory claim, even when 
   signedIn = { id: STRANGER };
   await call(CHAT);
   assert.equal(JSON.parse(lastToken!).mem, 1);
+});
+
+test("a call is lent the chat's tools only while VOICE_TOOLS_ENABLED is on", async () => {
+  reset();
+  signedIn = { id: OWNER };
+  process.env.VOICE_RELAY_URL = "ws://127.0.0.1:9";
+  const call = () => relayToken.GET(new Request(`http://x/api/voice/relay-token?tools=1&connectors=gcal&conversationId=${CHAT}`));
+  delete process.env.VOICE_TOOLS_ENABLED;
+  assert.equal((await call()).status, 200);
+  const off = JSON.parse(lastToken!) as Record<string, unknown>;
+  assert.equal(off.tl, undefined, "off (the default): no tools claim");
+  assert.equal(off.cx, undefined);
+  process.env.VOICE_TOOLS_ENABLED = "1";
+  try {
+    assert.equal((await call()).status, 200);
+    const on = JSON.parse(lastToken!) as Record<string, unknown>;
+    assert.equal(on.tl, 1);
+    assert.equal(on.cid, CHAT);
+    assert.deepEqual(on.cx, ["gcal"]);
+  } finally {
+    delete process.env.VOICE_TOOLS_ENABLED;
+  }
 });

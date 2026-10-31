@@ -4,7 +4,7 @@ import * as React from "react";
 import type { ArtifactType } from "@/lib/message-content";
 import { runtimeFor, type RunMode } from "@/lib/artifact-runtime";
 import { SANDBOX_FLAGS, sandboxPolicyMeta, type SandboxProfile } from "@/lib/sandbox-policy";
-import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
+import { SandboxDocumentFrame, useAlevrBridgeEnabled, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { designPosterUrl } from "@/lib/design/poster-url";
 import { alevrBridgeScript } from "@/lib/sandbox/alevr-bridge";
 import { newBridgeChannel, type AlevrRuntimeTarget } from "@/lib/artifact-ai/protocol";
@@ -864,13 +864,18 @@ export function SandboxFrame({
   const profile = useSandboxProfile();
   // One channel per frame, written into its document's bridge and nowhere else.
   const [bridgeChannel] = React.useState(newBridgeChannel);
+  // `window.alevr` only where the server has it on (ARTIFACT_AI_ENABLED, read
+  // through AlevrBridgeProvider): off, the document carries no bridge script
+  // and nothing listens for one, as before the bridge existed.
+  const alevrOn = useAlevrBridgeEnabled();
   const appearanceKey = consoleAppearance ? `${consoleAppearance.inline}:${consoleAppearance.theme}` : "";
   const doc = React.useMemo(
-    () => buildSandboxDoc(type, content, language, profile, consoleAppearance, { channel: bridgeChannel }),
+    () => buildSandboxDoc(type, content, language, profile, consoleAppearance, alevrOn ? { channel: bridgeChannel } : undefined),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value, not identity
-    [type, content, language, profile, appearanceKey, bridgeChannel]
+    [type, content, language, profile, appearanceKey, bridgeChannel, alevrOn]
   );
   useAlevrBridge({
+    enabled: alevrOn,
     frameRef: iframeRef,
     channel: bridgeChannel,
     target: runtimeTarget,

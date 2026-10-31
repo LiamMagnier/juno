@@ -160,13 +160,15 @@ test("every surface that carries settings carries all five columns", () => {
   }
   // The PATCH body and the sync patch share one validator; import validates too.
   assert.match(route, /\.\.\.CHARACTERISTIC_PATCH_FIELDS/);
-  assert.match(route, /\.\.\.characteristicsPatch\(d\)/);
+  // Saved only while TONE_CHARACTERISTICS_ENABLED is on.
+  assert.match(route, /\.\.\.\(isToneCharacteristicsEnabled\(\) \? characteristicsPatch\(d\) : \{\}\)/);
   assert.match(source("src/lib/sync-mutations.ts"), /\.\.\.CHARACTERISTIC_PATCH_FIELDS/);
   assert.match(source("src/lib/sync-entities.ts"), /\.\.\.normalizeCharacteristics\(row\)/);
   assert.match(source("src/app/api/import/route.ts"), /enumValue\(raw\[key\], CHARACTERISTIC_LEVELS\)/);
-  // Both chat paths hand the row to the prompt builder, private chats included.
+  // Both chat paths hand the row to the prompt builder, private chats
+  // included, while TONE_CHARACTERISTICS_ENABLED is on; off, they hand nothing.
   for (const file of ["src/lib/chat/turn/prompt.ts", "src/lib/chat/turn/private-turn.ts"]) {
-    assert.match(source(file), /characteristics: settings,/, file);
+    assert.match(source(file), /characteristics: isToneCharacteristicsEnabled\(\) \? settings : null,/, file);
   }
 });
 
@@ -174,8 +176,12 @@ test("the settings page draws one Less / Default / More control per characterist
   const page = source("src/components/settings/sections/personalization.tsx");
   assert.match(page, /import \{ SegmentedControl, type SegmentedOption \} from "@\/components\/ui\/segmented-control"/);
   assert.match(page, /\{ value: "less", label: "Less" \},\s*\{ value: "default", label: "Default" \},\s*\{ value: "more", label: "More" \}/);
-  // Both the Settings pane and the Customize page render the list.
+  // Both the Settings pane and the Customize page render the list, each only
+  // while the server has the characteristics on (TONE_CHARACTERISTICS_ENABLED).
   assert.equal(page.match(/CHARACTERISTICS\.map\(\(c\) =>/g)?.length, 2);
+  assert.match(page, /const toneOn = features\.toneCharacteristics === true;/);
+  assert.equal(page.match(/\{toneOn && \(/g)?.length, 2);
+  assert.match(source("src/lib/app-data.ts"), /toneCharacteristics: isToneCharacteristicsEnabled\(\),/);
   // One field per write, tracked under its own key.
   assert.match(page, /saves\.track\(key, \(\) => save\(patch\)\)/);
 });

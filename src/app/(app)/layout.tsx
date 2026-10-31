@@ -5,6 +5,7 @@ import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import { PageRoot } from "@/components/app/page-root";
 import { SettingsModalLazy } from "@/components/settings/settings-modal-lazy";
+import { AlevrBridgeProvider } from "@/components/canvas/sandbox-document-frame";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             any of five sources happened to be doing. It belongs to voice, and to
             the content column voice runs in, so it is mounted inside <main> by
             `AppShell`. */}
-        <AppShell>{children}</AppShell>
-        <SettingsModalLazy />
+        {/* `window.alevr` in app previews, only while ARTIFACT_AI_ENABLED is on. */}
+        <AlevrBridgeProvider enabled={bootstrap.features.artifactAi === true}>
+          <AppShell>{children}</AppShell>
+          <SettingsModalLazy />
+        </AlevrBridgeProvider>
       </AppProvider>
     </PageRoot>
   );

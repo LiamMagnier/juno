@@ -63,7 +63,10 @@ const LEVEL_OPTIONS: readonly SegmentedOption<CharacteristicLevel>[] = [
  */
 export function PersonalizationSection({ variant = "settings" }: { variant?: "settings" | "page" } = {}) {
   const router = useRouter();
-  const { user, settings } = useApp();
+  const { user, settings, features } = useApp();
+  // The tone characteristics are drawn only while the server has them on
+  // (TONE_CHARACTERISTICS_ENABLED, src/lib/env.ts).
+  const toneOn = features.toneCharacteristics === true;
   const save = useSettingsSave();
   const saves = useSaveStates();
 
@@ -247,6 +250,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
             </div>
           </div>
 
+          {toneOn && (
           <div className="mt-6 border-t border-foreground/[0.06] pt-6">
             <p className="text-ui font-medium text-foreground">Characteristics</p>
             <p className="text-ui text-muted-foreground">Tune the personality’s tone. Default leaves it as it is.</p>
@@ -271,6 +275,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
               ))}
             </div>
           </div>
+          )}
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-foreground/[0.06] pt-6">
             <div>
@@ -388,6 +393,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
         />
       </SettingsGroup>
 
+      {toneOn && (
       <SettingsGroup title="Characteristics" description="Tune the personality’s tone. Your custom instructions still take priority.">
         {CHARACTERISTICS.map((c) => (
           <SettingRow
@@ -408,6 +414,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
           />
         ))}
       </SettingsGroup>
+      )}
     </>
   );
 }

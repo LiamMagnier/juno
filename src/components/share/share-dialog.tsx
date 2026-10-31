@@ -15,6 +15,7 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmente
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Failure, LinkField, Loading, formatShareDate as formatDate } from "@/components/share/share-dialog-parts";
 import { SharePeoplePanel } from "@/components/share/share-people-panel";
+import { useOptionalApp } from "@/components/app/app-provider";
 import {
   publicationSummary,
   publishTargetValue,
@@ -390,8 +391,11 @@ export function ShareDialog({
   initialAudience?: ShareAudienceChoice;
 }) {
   // Only a conversation the server holds can be shared with people: its page is
-  // built from the server's own messages.
-  const peopleAllowed = !transcript;
+  // built from the server's own messages. And only while this server has
+  // sharing with people switched on (SHARE_PEOPLE_ENABLED, src/lib/env.ts):
+  // off, this is the link and publish dialog it was before.
+  const peopleOn = useOptionalApp()?.features.sharePeople === true;
+  const peopleAllowed = peopleOn && !transcript;
   const start: ShareAudienceChoice = peopleAllowed ? (initialAudience ?? "people") : "link";
   const [audience, setAudience] = React.useState<ShareAudienceChoice>(start);
   // Each opening starts from its first choice again, not from where the last one was left.
@@ -404,7 +408,7 @@ export function ShareDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{title ?? (kind === "CHAT" ? "Share this chat" : "Share this artifact")}</DialogTitle>
+          <DialogTitle>{title ?? (kind === "CHAT" ? "Share this chat" : peopleAllowed ? "Share this artifact" : "Publish this artifact")}</DialogTitle>
           {/* A caller's description is about its link (a Code session's), so it
               stands in for the link's sentence only. */}
           <DialogDescription>{(audience === "link" && description) || shareDialogDescription(kind, audience)}</DialogDescription>

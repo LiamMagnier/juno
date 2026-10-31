@@ -25,6 +25,8 @@ if (!DB_URL) {
   process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   delete process.env.DATA_ENCRYPTION_KEYRING;
   process.env.AUTH_SECRET ??= "memory-off-local-test";
+  // The suite is the switch itself, so it runs with the switch available.
+  process.env.CHAT_MEMORY_OFF_ENABLED = "1";
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   let signedIn: { id: string } | null = null;
   mock.module("@/lib/session", { namedExports: { getCurrentUser: async () => signedIn, requireUser: async () => signedIn } });

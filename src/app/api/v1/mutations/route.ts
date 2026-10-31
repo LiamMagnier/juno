@@ -13,6 +13,7 @@ import { invalidateSummariesForDeletedConversations, summaryInvalidations } from
 import { deleteMemoryEntries, settleRewrittenFact, writeManualFact } from "@/lib/memory";
 import { artifactsFollowConversationProject, keepArtifactAttachments } from "@/lib/artifact-follow";
 import { setConversationMemoryOff } from "@/lib/chat/memory-off-store";
+import { isChatMemoryOffEnabled } from "@/lib/env";
 
 export const runtime = "nodejs";
 
@@ -101,7 +102,7 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         ...(op.kind ? { kind: op.kind } : {}),
         ...(op.model ? { model: op.model } : {}),
         ...(op.projectId ? { projectId: op.projectId } : {}),
-        ...(op.memoryOff ? { memoryOff: true } : {}),
+        ...(op.memoryOff && isChatMemoryOffEnabled() ? { memoryOff: true } : {}),
       } });
       return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "conversation", row.id) } };
     }
@@ -120,7 +121,10 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       // "Memory off for this chat" is not a plain column write: turning it
       // back on also covers the chat as read (memory-off-store.ts), so it goes
       // through the writer the web's toggle uses, not the spread below.
-      const { memoryOff, ...fields } = op.patch;
+      // Only while the switch may be set (CHAT_MEMORY_OFF_ENABLED): otherwise
+      // the field is dropped and the rest of the patch applies as before.
+      const { memoryOff: askedMemoryOff, ...fields } = op.patch;
+      const memoryOff = isChatMemoryOffEnabled() ? askedMemoryOff : undefined;
       const before = fields.projectId !== undefined
         ? await tx.conversation.findFirst({ where: { id: op.entityId, userId: accountId }, select: { projectId: true } })
         : null;

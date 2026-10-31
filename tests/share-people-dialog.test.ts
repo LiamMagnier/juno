@@ -78,8 +78,20 @@ test("the dialog offers Specific people and Anyone with the link, starting on Sp
   assert.match(source, /audience === "people" \? \(\s*<SharePeoplePanel key="people" target=\{target\} open=\{open\} \/>/);
   assert.match(source, /<ChatLinkPanel key="link" conversationId=\{conversationId\}/);
   assert.match(source, /<PublishPanel key="link" artifactId=\{artifactId\}/);
-  // A conversation whose transcript the server does not hold shares by link only.
-  assert.match(source, /const peopleAllowed = !transcript;/);
+  // A conversation whose transcript the server does not hold shares by link
+  // only, and so does every target while SHARE_PEOPLE_ENABLED is off.
+  assert.match(source, /const peopleOn = useOptionalApp\(\)\?\.features\.sharePeople === true;/);
+  assert.match(source, /const peopleAllowed = peopleOn && !transcript;/);
+});
+
+test("with sharing with people off, the dialog is the link and publish dialog it was", () => {
+  const source = read("src/components/share/share-dialog.tsx");
+  // The choice and the people panel are both behind peopleAllowed.
+  assert.match(source, /\{peopleAllowed && target && \(\s*<SegmentedControl/);
+  assert.match(source, /\{peopleAllowed && target && audience === "people" \? \(/);
+  // An artifact keeps its old title, and the bootstrap sends the server's flag.
+  assert.match(source, /peopleAllowed \? "Share this artifact" : "Publish this artifact"/);
+  assert.match(read("src/lib/app-data.ts"), /sharePeople: isSharePeopleEnabled\(\),/);
 });
 
 test("the description says what each choice does, for a chat and for an artifact", () => {

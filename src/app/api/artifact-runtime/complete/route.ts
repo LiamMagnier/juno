@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
+import { isArtifactAiEnabled } from "@/lib/env";
 import { getUserPlan } from "@/lib/usage";
 import {
   COMPLETE_DEFAULT_MAX_TOKENS,
@@ -57,6 +58,11 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  // AI-powered artifacts are unreviewed and off unless ARTIFACT_AI_ENABLED=1
+  // (src/lib/env.ts): nothing is read, stored or spent, whoever asks.
+  if (!isArtifactAiEnabled()) {
+    return NextResponse.json({ error: "AI-powered artifacts are not turned on for this server.", code: "not_enabled" }, { status: 404 });
+  }
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Sign in to use this app's AI. It runs on your own account.", code: "sign_in_required" }, { status: 401 });

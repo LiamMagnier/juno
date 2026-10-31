@@ -6,6 +6,7 @@ import { checkProjectAccess } from "@/lib/project-collaboration";
 import { parseVoiceMemoryRequest } from "@/lib/voice-memory";
 import { parseVoiceConversationRequest } from "@/lib/voice-persona";
 import { parseVoiceToolsRequest } from "@/lib/voice-tools";
+import { isVoiceToolsEnabled } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -69,7 +70,8 @@ function resolveVoiceRelayURL(): string | null {
  * {"tl": 1} with the conversation, once it is shown to be this person's, and
  * the requested connector ids. Nothing in the claim is a credential: the relay
  * carries it back to `/api/voice/tools`, which reads the account's own rows and
- * the chat's entitlement table before it lists or runs anything.
+ * the chat's entitlement table before it lists or runs anything. Only while
+ * VOICE_TOOLS_ENABLED=1 (src/lib/env.ts); off, no call is lent tools.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -95,7 +97,9 @@ export async function GET(req: Request) {
   }
   if (memory && (await chatKeepsMemoryOut(user.id, parseVoiceConversationRequest(params)))) memory = null;
   const agentId = await threadAgent(user.id, parseVoiceConversationRequest(params));
-  const tools = parseVoiceToolsRequest(params);
+  // Lent only while the server has voice tools on (VOICE_TOOLS_ENABLED): off,
+  // a chat's `?tools=1` signs nothing and the call has no tools, as before.
+  const tools = isVoiceToolsEnabled() ? parseVoiceToolsRequest(params) : null;
   const conversation = tools ? await ownConversation(user.id, parseVoiceConversationRequest(params)) : null;
   const token = signState(
     JSON.stringify({

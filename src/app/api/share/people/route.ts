@@ -5,6 +5,7 @@ import { serializeShare, ShareNeedsTranscriptError, ShareTakenDownError, ShareTr
 import { addPeopleToShare, sharePeopleFor } from "@/lib/share-people";
 import type { ShareTarget } from "@/lib/share-people-core";
 import { artifactWriteLimited } from "@/lib/artifact-rate-limit";
+import { isSharePeopleEnabled } from "@/lib/env";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,12 @@ export const runtime = "nodejs";
  * Nothing in either answer depends on whether an address has an account: the
  * list is the addresses the owner typed, and every refusal is about the
  * request (an address that is not one, too many at once, too many today).
+ *
+ * Off unless SHARE_PEOPLE_ENABLED=1 (src/lib/env.ts): then POST makes nothing
+ * and answers 404 `not_enabled`. Reading a target's people share and removing
+ * someone from it (DELETE /api/share/people/{id}) still work, so a share made
+ * while it was on can always be narrowed; the share page keeps every people
+ * share restricted to its people whatever the flag says.
  */
 
 const ID = z.string().cuid();
@@ -57,6 +64,9 @@ const addSchema = z
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isSharePeopleEnabled()) {
+    return NextResponse.json({ error: "Sharing with specific people is not turned on for this server.", code: "not_enabled" }, { status: 404 });
+  }
   // Making a people share is a publish-sized write, on the same budget as a
   // link; the invitations themselves have their own, tighter limits.
   const limited = await artifactWriteLimited(user, "publish");

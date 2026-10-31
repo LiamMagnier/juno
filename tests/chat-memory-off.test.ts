@@ -184,10 +184,20 @@ test("the wire: a send can switch a new chat's memory off, and a retry must agre
   assert.equal(hashFirstSubmission({ ...base, memoryOff: false }), hashFirstSubmission(base));
   assert.notEqual(hashFirstSubmission({ ...base, memoryOff: true }), hashFirstSubmission(base));
 
-  // acceptTurn saves it on the conversation before the turn reads memory.
+  // acceptTurn saves it on the conversation before the turn reads memory,
+  // only while the server lets the switch be set (CHAT_MEMORY_OFF_ENABLED).
   const accept = read("../src/lib/chat/turn/accept.ts");
-  assert.equal(accept.match(/\.\.\.\(input\.memoryOff \? \{ memoryOff: true \} : \{\}\),/g)?.length, 2, "both creation paths");
-  assert.match(accept, /if \(input\.memoryOff && !conversation\.memoryOff\) \{/);
+  assert.match(accept, /const saveMemoryOff = input\.memoryOff === true && isChatMemoryOffEnabled\(\);/);
+  assert.equal(accept.match(/\.\.\.\(saveMemoryOff \? \{ memoryOff: true \} : \{\}\),/g)?.length, 2, "both creation paths");
+  assert.match(accept, /if \(saveMemoryOff && !conversation\.memoryOff\) \{/);
+  assert.doesNotMatch(accept, /input\.memoryOff \?/, "no path saves it without the flag");
+  // The voice transcript and the apps' sync are held to the same flag.
+  const transcript = read("../src/app/api/voice/transcript/route.ts");
+  assert.match(transcript, /const saveMemoryOff = input\.memoryOff === true && isChatMemoryOffEnabled\(\);/);
+  assert.doesNotMatch(transcript, /input\.memoryOff \?|input\.memoryOff &&/);
+  const mutations = read("../src/app/api/v1/mutations/route.ts");
+  assert.match(mutations, /op\.memoryOff && isChatMemoryOffEnabled\(\) \? \{ memoryOff: true \} : \{\}/);
+  assert.match(mutations, /const memoryOff = isChatMemoryOffEnabled\(\) \? askedMemoryOff : undefined;/);
 
   // The apps: created with it, and toggled through sync.
   assert.ok(mutationOperationSchema.safeParse({ type: "conversation.create", memoryOff: true }).success);

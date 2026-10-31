@@ -330,8 +330,30 @@ test("the page reads verification and the address from the account row, never fr
   assert.equal((await people.resolvePeopleShare(token))?.access.state, "denied");
 });
 
-test("POST /api/share/people: signed out, bad addresses, too many today, and the shape the dialog reads", async () => {
+test("POST /api/share/people makes nothing while SHARE_PEOPLE_ENABLED is off (the default)", async () => {
   reset();
+  delete process.env.SHARE_PEOPLE_ENABLED;
+  const off = await peopleRoute.POST(post({ kind: "CHAT", conversationId: CONV, emails: ["grace@example.test"] }));
+  assert.equal(off.status, 404);
+  assert.equal(((await off.json()) as { code: string }).code, "not_enabled");
+  assert.equal(db.shares.length, 0, "no share is made");
+  assert.equal(db.recipients.length, 0, "nobody is added");
+  assert.equal(mail.length, 0, "and nobody is emailed");
+  // Any value but exactly "1" is still off.
+  process.env.SHARE_PEOPLE_ENABLED = "true";
+  try {
+    assert.equal((await peopleRoute.POST(post({ kind: "CHAT", conversationId: CONV, emails: ["grace@example.test"] }))).status, 404);
+  } finally {
+    delete process.env.SHARE_PEOPLE_ENABLED;
+  }
+});
+
+test("POST /api/share/people: signed out, bad addresses, too many today, and the shape the dialog reads", async (t) => {
+  reset();
+  process.env.SHARE_PEOPLE_ENABLED = "1";
+  t.after(() => {
+    delete process.env.SHARE_PEOPLE_ENABLED;
+  });
   sessionUser = null;
   assert.equal((await peopleRoute.POST(post({ kind: "CHAT", conversationId: CONV, emails: ["grace@example.test"] }))).status, 401);
   sessionUser = { id: OWNER, email: "ada@owner.test" };

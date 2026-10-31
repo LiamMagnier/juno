@@ -119,6 +119,12 @@ export interface SystemPromptOptions {
   liveUiDo?: boolean;
   /** The client shows Run on code blocks (the web; native builds with `code_run`). */
   codeRun?: boolean;
+  /**
+   * Artifacts on this client get `window.alevr` (ARTIFACT_AI_RULE): the web,
+   * while the server has ARTIFACT_AI_ENABLED on. Anything else leaves the rule
+   * out, so a model is never taught a bridge the preview does not carry.
+   */
+  artifactAi?: boolean;
 }
 
 /**
@@ -499,7 +505,10 @@ If you ran code or a script this turn, say what it found, never the code, a comm
     );
   }
 
-  const stable = parts.join("\n\n");
+  const joined = parts.join("\n\n");
+  // The `window.alevr` rule rides inside the artifacts section; it stays only
+  // where the preview carries the bridge (`artifactAi`).
+  const stable = opts.artifactAi === true ? joined : joined.replace(`\n${ARTIFACT_AI_RULE}`, "");
   return {
     stable: opts.semanticArtifacts === false ? markdownOnlyArtifacts(stable) : stable,
     variable: variable.join("\n\n"),
