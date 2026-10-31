@@ -3,8 +3,13 @@
 import { SemanticArtifactView } from "@/components/semantic/semantic-artifact-view";
 import type { SemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import * as React from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { ConsentAnswer } from "@/lib/artifact-ai/bridge-host";
 import { Markdown } from "@/components/chat/markdown";
 import { CodeSurface } from "@/components/canvas/code-surface";
 import { SandboxFrame, rendersStatically } from "@/components/canvas/sandbox-frame";
@@ -25,6 +30,13 @@ import { cn } from "@/lib/utils";
  * stored form is a DesignDocument, and a Code tab of that JSON — every inline
  * image a wall of base64 — was the whole of what a visitor used to get (X-20).
  * It shows the server's drawing of its first page instead.
+ *
+ * AN APP THAT USES AI OR SAVES DATA (`window.alevr`, src/lib/artifact-ai) runs
+ * on the VISITOR's account here, never the author's, and only once the visitor
+ * says so: the first call asks, once per page view, and a "Not now" stands
+ * until the page is reloaded. A visitor who is not signed in is not asked at
+ * all — the calls are refused and the tab row says signing in turns them on.
+ * None of this applies while shared previews run no scripts (`static`).
  */
 
 // The framing card: the same `surface-raised-lg` panel every centred card in
@@ -38,11 +50,17 @@ export function SharedArtifactViewer({
   content,
   version,
   posterUrl,
+  signedIn,
 }: {
   type: ArtifactType;
   language?: string | null;
   content: string;
   version: number;
+  /**
+   * Whether the visitor is signed in, which decides how an app's first AI or
+   * storage call is answered (above). Unknown (the dev gallery) asks.
+   */
+  signedIn?: boolean;
   /**
    * Where a shared design's picture is. The share page may pass it; when it
    * does not, it is the poster beside the page this viewer is mounted on,
@@ -63,6 +81,21 @@ export function SharedArtifactViewer({
   // Console runtimes (JS/Python) aren't executed on public pages — code only.
   const hasPreview = isMarkdown || (rt.mode === "web" && !previewOff);
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");
+
+  const linkToken = typeof params?.token === "string" ? params.token : null;
+  const [consent, setConsent] = React.useState<{ resolve: (answer: ConsentAnswer) => void } | null>(null);
+  const [signInHint, setSignInHint] = React.useState(false);
+  const askRuntimeConsent = React.useCallback((): Promise<ConsentAnswer> => {
+    if (signedIn === false) {
+      setSignInHint(true);
+      return Promise.resolve("sign_in");
+    }
+    return new Promise<ConsentAnswer>((resolve) => setConsent({ resolve }));
+  }, [signedIn]);
+  const answerConsent = (answer: ConsentAnswer) => {
+    consent?.resolve(answer);
+    setConsent(null);
+  };
 
   if (rt.mode === "semantic") {
     // A shared workbook, document or deck reads as itself, never as its JSON.
@@ -92,6 +125,17 @@ export function SharedArtifactViewer({
             Live previews are off on shared links for now.
           </span>
         )}
+        {signInHint && linkToken && (
+          <span className="min-w-0 truncate text-caption text-muted-foreground">
+            <Link
+              href={`/sign-in?callbackUrl=${encodeURIComponent(`/share/${linkToken}`)}`}
+              className="text-foreground underline underline-offset-2"
+            >
+              Sign in
+            </Link>{" "}
+            to use this app&rsquo;s AI and saved data.
+          </span>
+        )}
         <KindLabel label={rt.label} version={version} />
       </div>
 
@@ -107,7 +151,14 @@ export function SharedArtifactViewer({
               </div>
             </div>
           ) : (
-            <SandboxFrame type={type} content={content} language={language} mode={rt.mode} />
+            <SandboxFrame
+              type={type}
+              content={content}
+              language={language}
+              mode={rt.mode}
+              runtimeTarget={linkToken ? { shareToken: linkToken } : null}
+              askRuntimeConsent={askRuntimeConsent}
+            />
           )}
         </TabsContent>
       )}
@@ -115,6 +166,23 @@ export function SharedArtifactViewer({
       <TabsContent value="code" className={PANEL}>
         <CodeSurface value={content} language={rt.lang || language} readOnly wrap={isMarkdown} ariaLabel="Artifact source" />
       </TabsContent>
+
+      <Dialog open={consent !== null} onOpenChange={(open) => !open && answerConsent("denied")}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Let this app use AI?</DialogTitle>
+            <DialogDescription>
+              {`It runs on your ${PRODUCT_NAME} account and counts toward your usage, and what it saves is kept on your account for you alone. The person who shared it pays nothing and sees none of it.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => answerConsent("denied")}>
+              Not now
+            </Button>
+            <Button onClick={() => answerConsent("granted")}>Allow</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 }

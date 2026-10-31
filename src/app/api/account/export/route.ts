@@ -29,6 +29,13 @@ const MAX_ARTIFACT_VERSION_CHARS = 50_000_000;
 const ARTIFACT_VERSION_PAGE = 200;
 
 /**
+ * What artifacts' own code saved for this person (`window.alevr.storage`,
+ * src/lib/artifact-ai/storage.ts): up to 100 MB an account, so it is read in
+ * pages and stops at a character budget of its own, said in the export.
+ */
+const MAX_APP_STORAGE_CHARS = 25_000_000;
+
+/**
  * RFC 4180 quoting, plus CSV-injection neutralization: a leading =, +, -, @,
  * tab or CR is prefixed with a single quote so spreadsheet apps do not evaluate
  * attacker-influenceable message text as a formula (CWE-1236).
@@ -419,6 +426,37 @@ export async function GET(req: Request) {
     }
   }
 
+  // Every store this person has, including those of shared apps they used:
+  // the rows are theirs (scoped on userId), whoever made the artifact.
+  const appStorage: Array<{ artifactId: string; key: string; value: string | null; bytes: number; updatedAt: Date }> = [];
+  let appStorageTruncated = false;
+  {
+    let exportedChars = 0;
+    let cursor: { artifactId: string; key: string } | null = null;
+    appStorageRows: for (;;) {
+      const page: Array<{ artifactId: string; key: string; value: string; bytes: number; updatedAt: Date }> =
+        await prisma.artifactStorageEntry.findMany({
+          where: { userId: user.id },
+          orderBy: [{ artifactId: "asc" }, { key: "asc" }],
+          ...(cursor ? { cursor: { artifactId_userId_key: { artifactId: cursor.artifactId, userId: user.id, key: cursor.key } }, skip: 1 } : {}),
+          take: ARTIFACT_VERSION_PAGE,
+          select: { artifactId: true, key: true, value: true, bytes: true, updatedAt: true },
+        });
+      for (const row of page) {
+        if (exportedChars + row.bytes > MAX_APP_STORAGE_CHARS) {
+          appStorageTruncated = true;
+          break appStorageRows;
+        }
+        exportedChars += row.bytes;
+        // The value's JSON text, decrypted: the export hands the person their data.
+        appStorage.push({ ...row, value: decryptField(row.value) });
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      const last = page[page.length - 1];
+      cursor = { artifactId: last.artifactId, key: last.key };
+    }
+  }
+
   const truncated = rawMessages.length > MAX_MESSAGE_ROWS;
   const messages = (truncated ? rawMessages.slice(0, MAX_MESSAGE_ROWS) : rawMessages).map((m) => ({
     ...m,
@@ -677,6 +715,13 @@ export async function GET(req: Request) {
         shareLinks: shares,
         suggestions: proposals.map((proposal) => ({ ...proposal, payload: suggestionBodies.get(proposal.id) ?? null })),
       })),
+    },
+    appStorage: {
+      truncated: appStorageTruncated,
+      ...(appStorageTruncated
+        ? { truncationNote: `App storage is capped at ${MAX_APP_STORAGE_CHARS.toLocaleString("en-US")} bytes in an export; the rest stays in your account.` }
+        : {}),
+      items: appStorage,
     },
     conversations: conversations.map((c) => ({
       id: c.id,

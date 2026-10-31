@@ -113,6 +113,7 @@ model User {
   artifacts                   Artifact[]
   artifactDrafts              ArtifactDraft[]
   artifactCanvasDrafts        ArtifactCanvasDraft[]
+  artifactStorageEntries      ArtifactStorageEntry[]
   artifactPublications        ArtifactPublication[]
   scheduledTasks              ScheduledTask[]
   voiceTranscriptSessions     VoiceTranscriptSession[]
@@ -1492,6 +1493,7 @@ model Artifact {
   shares       Share[]
   draft        ArtifactDraft?
   canvasDrafts ArtifactCanvasDraft[]
+  storage      ArtifactStorageEntry[]
   proposals    ArtifactProposal[]
   publications ArtifactPublication[]
 
@@ -1575,6 +1577,29 @@ model ArtifactCanvasDraft {
 
   @@id([artifactId, userId])
   @@index([userId, updatedAt])
+}
+
+/// What an artifact's own code keeps, for one viewer (`window.alevr.storage`,
+/// src/lib/artifact-ai/storage.ts). Scoped per artifact AND per viewer: on a
+/// shared or published link each signed-in visitor has a store of their own
+/// that the owner never reads. `value` is encryptField() ciphertext of the
+/// value's JSON text; `bytes` is the plaintext UTF-8 size of key + value, the
+/// figure the caps are counted in (20 MB per artifact, 100 MB per viewer).
+/// Never synced, shared, exported with the artifact or shown to the model.
+model ArtifactStorageEntry {
+  artifactId String
+  userId     String
+  key        String
+  value      String   @db.Text
+  bytes      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([artifactId, userId, key])
+  @@index([userId])
 }
 
 /// Juno's work that is not (yet) a version: a model re-emit held back because

@@ -1486,6 +1486,9 @@ export function CanvasPanel({
                       onInspectExit={exitInspect}
                       onConsole={onConsole}
                       onStatus={handleRunStatus}
+                      // The app's `window.alevr` (AI and saved data) runs on
+                      // the owner's account, against this artifact.
+                      runtimeTarget={{ artifactId: artifact.id }}
                     />
                     </div>
                   </div>

@@ -391,6 +391,14 @@
           "swift": "NativeArtifactAPIClient.versionContent in JunoChatKit/NativeArtifactLifecycle.swift",
           "note": "One version's body: restoring a version older than the synced window fetches it here first."
         },
+        "/api/artifact-runtime/complete": {
+          "status": "planned",
+          "note": "window.alevr.complete in an HTML or React artifact: the web's sandbox bridge (src/lib/artifact-ai/bridge-host.ts) calls it for the canvas, the chat card, /a/{id} and scripted shared pages, billed to the viewer. The Mac and iPhone run artifact previews without the bridge, so an app there gets no window.alevr yet (the system prompt teaches it to web turns only)."
+        },
+        "/api/artifact-runtime/storage": {
+          "status": "planned",
+          "note": "window.alevr.storage (get, set, delete, list) for the same artifacts: JSON values per artifact and per viewer, encrypted at rest. Native previews have no bridge yet, as above."
+        },
         "/api/design": "native",
         "/api/design/[artifactId]": {
           "status": "web-only",

@@ -6,6 +6,10 @@ import { runtimeFor, type RunMode } from "@/lib/artifact-runtime";
 import { SANDBOX_FLAGS, sandboxPolicyMeta, type SandboxProfile } from "@/lib/sandbox-policy";
 import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { designPosterUrl } from "@/lib/design/poster-url";
+import { alevrBridgeScript } from "@/lib/sandbox/alevr-bridge";
+import { newBridgeChannel, type AlevrRuntimeTarget } from "@/lib/artifact-ai/protocol";
+import type { ConsentAnswer } from "@/lib/artifact-ai/bridge-host";
+import { useAlevrBridge } from "@/components/canvas/use-alevr-bridge";
 import {
   BABEL_CDN,
   CONSOLE_SIZE_MESSAGE,
@@ -365,8 +369,8 @@ const STATUS_LITE = `<script>
  * the charset declaration when there is one, because that one is required to
  * fall inside the document's first 1024 bytes and this policy is ~450 of them.
  */
-function insertPolicy(doc: string, profile: SandboxProfile): string {
-  const meta = sandboxPolicyMeta(profile);
+function insertPolicy(doc: string, profile: SandboxProfile, after = ""): string {
+  const meta = sandboxPolicyMeta(profile) + after;
   const charset = doc.match(/<meta[^>]+charset[^>]*>/i);
   if (charset && charset.index !== undefined) {
     const at = charset.index + charset[0].length;
@@ -380,12 +384,18 @@ function insertPolicy(doc: string, profile: SandboxProfile): string {
   return meta + doc;
 }
 
-/** Inject the console bridge (early) + inspector (late) into a web document. */
-function withChrome(doc: string, profile: SandboxProfile, statusLite = false): string {
+/**
+ * Inject the console bridge (early) + inspector (late) into a web document.
+ *
+ * With `bridgeChannel`, an app document (HTML, React) also gets `window.alevr`
+ * (src/lib/sandbox/alevr-bridge.ts), placed straight after the policy meta so
+ * it exists before any script the author put in the head.
+ */
+function withChrome(doc: string, profile: SandboxProfile, statusLite = false, bridgeChannel?: string): string {
   // Shim first (before console bridge), so storage/history are safe before any
   // artifact or bridge code runs.
   const chrome = SANDBOX_SHIM + (statusLite ? STATUS_LITE : "") + CONSOLE_BRIDGE + LINK_BRIDGE;
-  const withPolicy = insertPolicy(doc, profile);
+  const withPolicy = insertPolicy(doc, profile, bridgeChannel ? alevrBridgeScript(bridgeChannel) : "");
   const head = withPolicy.indexOf("</head>");
   const out =
     head !== -1
@@ -745,7 +755,9 @@ export function buildSandboxDoc(
   content: string,
   language?: string | null,
   profile: SandboxProfile = "private",
-  appearance?: ConsoleAppearance
+  appearance?: ConsoleAppearance,
+  /** The frame's `window.alevr` channel (SandboxFrame mints one per frame). Absent: no bridge. */
+  bridge?: { channel: string }
 ): string {
   const rt = runtimeFor(type, language);
   // Before the static branch too: its fallback sets the source in a <pre>,
@@ -763,9 +775,9 @@ export function buildSandboxDoc(
   switch (rt.lang) {
     case "tsx":
     case "jsx":
-      return withChrome(reactDoc(content), profile);
+      return withChrome(reactDoc(content), profile, false, bridge?.channel);
     case "html":
-      return withChrome(htmlDoc(content), profile, true);
+      return withChrome(htmlDoc(content), profile, true, bridge?.channel);
     case "svg":
       return withChrome(svgDoc(content), profile, true);
     case "css":
@@ -811,6 +823,8 @@ export function SandboxFrame({
   className,
   artifactId,
   version,
+  runtimeTarget,
+  askRuntimeConsent,
 }: {
   type: ArtifactType;
   content: string;
@@ -833,15 +847,37 @@ export function SandboxFrame({
   /** The inline console's content height, as the document reports it. */
   onConsoleSize?: (height: number) => void;
   className?: string;
+  /**
+   * Which saved artifact an HTML or React preview's `window.alevr` calls are
+   * about (src/lib/artifact-ai/protocol.ts): its id on the owner's own
+   * surfaces, its link token on a shared page. Absent: the preview still has
+   * `window.alevr`, and every call answers "unavailable".
+   */
+  runtimeTarget?: AlevrRuntimeTarget | null;
+  /**
+   * A shared page's question to its visitor before the artifact's first call
+   * leaves the page (SharedArtifactViewer). Absent on the owner's surfaces.
+   */
+  askRuntimeConsent?: () => Promise<ConsentAnswer>;
 }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const profile = useSandboxProfile();
+  // One channel per frame, written into its document's bridge and nowhere else.
+  const [bridgeChannel] = React.useState(newBridgeChannel);
   const appearanceKey = consoleAppearance ? `${consoleAppearance.inline}:${consoleAppearance.theme}` : "";
   const doc = React.useMemo(
-    () => buildSandboxDoc(type, content, language, profile, consoleAppearance),
+    () => buildSandboxDoc(type, content, language, profile, consoleAppearance, { channel: bridgeChannel }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value, not identity
-    [type, content, language, profile, appearanceKey]
+    [type, content, language, profile, appearanceKey, bridgeChannel]
   );
+  useAlevrBridge({
+    frameRef: iframeRef,
+    channel: bridgeChannel,
+    target: runtimeTarget,
+    documentHtml: doc,
+    runNonce,
+    askConsent: askRuntimeConsent,
+  });
 
   const postInspect = React.useCallback((on: boolean) => {
     iframeRef.current?.contentWindow?.postMessage({ type: "juno:inspect", on }, "*");

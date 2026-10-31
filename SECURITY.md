@@ -140,6 +140,7 @@ columns, and nothing else — read the code, not this list, if they disagree
 | `ChannelLink.phone` | A phone number linked for iMessage. Looked up by `ChannelLink.phoneHash`, an HMAC of the number (`domainMac`), and decrypted only to send to it; responses carry the last four digits. The link code is never stored, only its HMAC (`codeHash`), until the link is verified | `field-crypto.ts` (`encryptField`) |
 | `AgentDemonstration.trace`, `AgentDemonstration.shots` | Teach by demonstration: the redacted trace of what the person did on the agent's computer (pages, element names, the non-secret text they typed) and up to eight low-resolution screenshots. Secrets typed during the recording are never in either; they are placeholders such as `{{password}}` | `field-crypto.ts` (`encryptField`) |
 | `AgentCredential.usernameSealed`, `AgentCredential.passwordSealed`, `AgentCredential.totpSealed` | A site login saved for one agent (username, password, TOTP secret), filled into its computer's browser and never shown to the model (`docs/design/agents-v2/VAULT.md`) | `crypto.ts` (`encryptSecretBound`, bound to owner, agent, row and field) |
+| `ArtifactStorageEntry.value` | What an HTML or React artifact's own code saved with `window.alevr.storage` (the value's JSON text), per artifact and per viewer: a visitor to a shared link has their own rows, which the owner never reads. The key (a name the app's code chose) is stored in clear so `list` can filter by prefix | `field-crypto.ts` (`encryptField`) |
 
 Conversation search is title-only as a direct consequence.
 
