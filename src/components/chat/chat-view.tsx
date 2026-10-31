@@ -2201,7 +2201,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // chat reads (this project's alone, in a project), and none in incognito
       // or in a chat with memory off for itself (the relay token refuses it
       // for a saved one as well). So does the thread: in an agent's, the
-      // server makes the call that agent.
+      // server makes the call that agent. And so do the chat's tools, with the
+      // apps switched on here: the server decides what the call may use and
+      // runs every call (src/lib/voice-tools.ts).
       void realtimeVoice.start(
         undefined,
         history,
@@ -2210,10 +2212,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           : {
               memory: chatMemoryOffRef.current ? null : { projectId: activeProjectId },
               conversationId: currentConversationId ?? null,
+              tools: { connectorIds: enabledConnectors },
             }
       );
     });
-  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, currentConversationId, loadVoice, privateMode, realtimeVoice, voiceSaveError]);
+  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, currentConversationId, enabledConnectors, loadVoice, privateMode, realtimeVoice, voiceSaveError]);
 
   const closeVoice = React.useCallback(() => {
     if (voiceSavingRef.current) return;

@@ -2235,12 +2235,36 @@ by `NEXT_PUBLIC_VOICE_RELAY_URL`.
 > **GDPR note:** selecting Qwen sends user audio to Alibaba Cloud (Singapore). Disclose it
 > in the privacy policy and consider a consent notice when a user picks Qwen.
 
+**Tools and connectors in a call.** A chat's call (not incognito) asks `/api/voice/relay-token`
+for `?tools=1` with the chat's switched-on connectors and the caller's time zone; the token
+signs `{"tl":1}`, the conversation once it is shown to be this person's, and the connector ids.
+The relay then asks `GET /api/voice/tools` (callback audience `juno.voice.tools`) for the call's
+tools: the chat's own entitlement table read for this account, project and conversation
+(`chatToolEntitlements`, narrowed in `src/lib/voice-tools.ts` to web and news search, past
+chats, the clock and the calculator) plus the person's connector tools, described by name,
+description and JSON Schema only. Every call the voice model makes runs **on Juno**
+(`POST /api/voice/tools`) through the chat's dispatcher and approval broker, so the relay never
+holds a connector token and a change asks exactly when a typed turn would. The answer streams:
+an `approval` line when the call starts waiting on the person, then a `result` cut for speech.
+The relay shows compact chips and the chat's own approval card (`tool.activity`) and tells the
+model to ask aloud; the person answers on the card, or — for anything short of deleting, paying
+or touching credentials — with a clear spoken yes or no in a turn that began after the card,
+and not over the model's own voice, so an echo of the model saying "yes" never approves
+(`spokenDecision` in `relay/src/tools.ts`). The relay records no answer: it tells the person's
+own signed-in client what it heard (`tool.spoken`), and the client answers the card through the
+chat's decision route (`POST /api/approvals/[id]`, digest-bound) exactly as a tap would, so a
+decision still reaches Juno only from a signed-in person. No execution tool, `start_task` or page
+reading is ever offered to a call. Gemini Live and the OpenAI Realtime and xAI dialects declare
+the tools; GPT-Live, Qwen and MiniMax do not, and the dock says so (`session.ready.tools: 0`).
+Tool calls are rate-limited to 30 a minute per person, and paid searches are billed like a
+chat turn's.
+
 **Voice about a Work task.** `src/components/work/voice/` opens the *same* session against
 one Work task instead of a chat: `buildWorkVoiceBriefing` turns the task's goal, status,
 plan, open questions, pending approvals and latest activity into the `history` array that
 `session.start` already accepts, and `WorkVoiceButton` mounts it. What that can and cannot
 be is set by the relay, not by the UI: providers are built from `seed.instructions` +
-`seed.transcript` and **no tools**, and `RelaySession` holds a user id and a socket and no
+`seed.transcript` and **no tools** (a Work call never asks for them), and `RelaySession` holds a user id and a socket and no
 database handle — so the voice knows exactly what the briefing said and can do nothing to
 the task. It therefore says so on screen while it is open; spoken words reach the task only
 through the thread's own send path, pressed deliberately; and because the relay seeds

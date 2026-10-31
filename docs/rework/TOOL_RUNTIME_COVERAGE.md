@@ -126,9 +126,12 @@ gallery, which is necessary but is not evidence that a run happened.
 | iOS ChatKit | untested (presentation fixture-tested) | n/a | n/a | n/a |
 <!-- coverage:matrix:end -->
 
-The realtime voice relay has no tool calls at all. Every call's instructions say that it cannot
-run code, make files, browse or use tools, and that it can be done in the chat
-(`relay/src/session.ts`, `VOICE_TOOL_LIMIT`; `relay/tests/voice-tool-limit.test.ts`). Voice-mode
+The realtime voice relay runs no code. A call with no tools says it cannot run code, make files,
+browse or use tools, and that it can be done in the chat (`relay/src/session.ts`,
+`VOICE_TOOL_LIMIT`; `relay/tests/voice-tool-limit.test.ts`). A call in a chat may use the chat's
+search, past-chats, clock, calculator and connector tools, run on Juno through the chat's
+dispatcher and approval broker (`src/lib/voice-tools.ts`, `relay/src/tools.ts`), and is never
+given an execution tool, so it still says it cannot run code (`VOICE_TOOL_LIMIT_WITH_TOOLS`). Voice-mode
 chat turns go through the chat route and can run code there; they speak the outcome, never the
 code or raw output, say one phase for a run longer than four seconds, and name produced files
 once (`src/lib/chat/tool-run-speech.ts`).

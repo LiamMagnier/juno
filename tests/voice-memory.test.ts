@@ -98,13 +98,14 @@ test("the memory route answers only the relay, only for memory, under every chat
 
 test("a chat asks for memory for its calls — its project's — and never in incognito", () => {
   const chat = src("src/components/chat/chat-view.tsx");
-  // The thread rides beside memory (tests/voice-persona.test.ts), under the
-  // same incognito rule: a private chat asks for neither. A chat with memory
-  // off for itself asks for none (src/lib/chat/memory-off.ts) — the relay
+  // The thread rides beside memory (tests/voice-persona.test.ts), and the
+  // chat's tools beside both (tests/voice-tools.test.ts), under the same
+  // incognito rule: a private chat asks for none of them. A chat with memory
+  // off for itself asks for no memory (src/lib/chat/memory-off.ts) — the relay
   // token refuses it for a saved one too (tests/chat-memory-off-route.test.ts).
   assert.match(
     chat,
-    /realtimeVoice\.start\(\s*undefined,\s*history,\s*privateMode\s*\?\s*undefined\s*:\s*\{\s*memory: chatMemoryOffRef\.current \? null : \{ projectId: activeProjectId \},\s*conversationId: currentConversationId \?\? null,\s*\}\s*\)/
+    /realtimeVoice\.start\(\s*undefined,\s*history,\s*privateMode\s*\?\s*undefined\s*:\s*\{\s*memory: chatMemoryOffRef\.current \? null : \{ projectId: activeProjectId \},\s*conversationId: currentConversationId \?\? null,\s*tools: \{ connectorIds: enabledConnectors \},\s*\}\s*\)/
   );
   const hook = src("src/hooks/use-realtime-voice.ts");
   assert.match(hook, /if \(!isReconnect\) memoryRef\.current = opts\?\.memory \?\? null;/);
@@ -146,5 +147,9 @@ test("the relay fetches memory server to server, under a memory-scoped token, on
   assert.match(session, /if \(this\.memory !== undefined\) return;/);
   // A memory fetch that fails is a call without memory, never a failed call.
   assert.match(session, /this\.memory = await fetchMemory\(this\.userId, grant\)\.catch\(\(\) => null\);/);
-  assert.match(src("relay/src/server.ts"), /new RelaySession\(ws, userId, \{ memory: grant\.memory, agentId: grant\.agentId \?\? null \}\)/);
+  // The tools grant rides beside them (relay/tests/voice-tools.test.ts).
+  assert.match(
+    src("relay/src/server.ts"),
+    /new RelaySession\(ws, userId, \{\s+memory: grant\.memory,\s+agentId: grant\.agentId \?\? null,\s+tools: grant\.tools \?\? null,\s+\}\)/
+  );
 });
