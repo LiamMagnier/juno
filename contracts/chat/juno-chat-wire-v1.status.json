@@ -98,6 +98,10 @@
       "status": "planned",
       "note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
     },
+    "request.memoryOff": {
+      "status": "web-only",
+      "note": "“Memory off for this chat” (src/lib/chat/memory-off.ts) chosen before the web's first submission creates the chat. The Swift apps create a conversation through sync before the first turn, so they set it there (`memoryOff` on conversation.create / conversation.update) and never need it on this body; the turn reads it from the conversation either way."
+    },
     "request.localFolder": "native",
     "request.roomTurn": {
       "status": "planned",
