@@ -22,14 +22,14 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-377 routes: 230 native, 72 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+379 routes: 230 native, 74 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 4 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 5 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
@@ -161,6 +161,8 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/share/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/share/copy` | POST | Web only |  | Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws. |
+| `/api/share/people` | GET, POST | Planned |  | Share a chat or artifact with specific people by email (the web Share dialog's default): list who has access and add people. The apps' share sheets make public links only (NativeShareClient); revoking a people share is DELETE /api/share/[id], which they already call. |
+| `/api/share/people/[id]` | DELETE | Planned |  | Remove one person from a share with specific people, from the same web dialog; not in the apps' share sheets yet. |
 | `/api/share/report` | POST | Web only |  | Reporting a shared link happens on the shared page, which only the web draws. |
 
 <a id="search"></a>

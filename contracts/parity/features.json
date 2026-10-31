@@ -201,6 +201,14 @@
           "status": "web-only",
           "note": "Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws."
         },
+        "/api/share/people": {
+          "status": "planned",
+          "note": "Share a chat or artifact with specific people by email (the web Share dialog's default): list who has access and add people. The apps' share sheets make public links only (NativeShareClient); revoking a people share is DELETE /api/share/[id], which they already call."
+        },
+        "/api/share/people/[id]": {
+          "status": "planned",
+          "note": "Remove one person from a share with specific people, from the same web dialog; not in the apps' share sheets yet."
+        },
         "/api/share/report": {
           "status": "web-only",
           "note": "Reporting a shared link happens on the shared page, which only the web draws."

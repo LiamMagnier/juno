@@ -149,6 +149,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // moderation queue, and the cross-user scheduler sweep. Everything else had
   // the userId in hand already and now puts it in the where.
   ["Share", "userId"],
+  // The people a PEOPLE share was sent to. `userId` is the share's OWNER: the
+  // owner lists and removes rows, and the share page's recipient check carries
+  // the owner id of the share it resolved by token (src/lib/share-people.ts),
+  // so no read of this table is ever unscoped.
+  ["ShareRecipient", "userId"],
   // Artifacts own themselves (PRODUCT_REFOUNDATION §10): the chat is a
   // nullable pointer, so the old `conversation: { userId }` join no longer
   // reaches a detached artifact and every read scopes on the artifact's own

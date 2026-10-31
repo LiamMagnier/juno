@@ -1,7 +1,7 @@
 import "server-only";
 import { randomBytes } from "crypto";
 import { cache } from "react";
-import type { Prisma, Share, ShareKind } from "@prisma/client";
+import type { Prisma, Share, ShareAudience, ShareKind } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { decryptJsonField, encryptJsonField } from "@/lib/field-crypto";
 import type { SharedTranscriptEntry } from "@/lib/share-transcript";
@@ -40,11 +40,20 @@ import { ON_ACTIVE_PATH, pathIdsTo, shownLeafId } from "@/lib/chat/branches";
  * Publishing an artifact (a stable URL pinned to a version) is a separate
  * thing: src/lib/artifact-publication.ts. The web no longer makes artifact
  * share links; POST /api/share still does, for the installed apps.
+ *
+ * A share with specific people (`audience: PEOPLE`, src/lib/share-people.ts)
+ * is the same snapshot pointer under a token that opens nothing by itself:
+ * every public lookup below (`peekPublicShare`, `getPublicShare`, and through
+ * them the poster and the copy route) skips it, and the owner's list of links
+ * (`listShares`) does not show it. Only `peekPeopleShare` returns one, for the
+ * share page to check the viewer against its recipients.
  */
 
 export interface ClientShare {
   id: string;
   kind: ShareKind;
+  /** LINK: anyone with the URL. PEOPLE: only the people it was shared with. */
+  audience: ShareAudience;
   token: string;
   url: string;
   title: string;
@@ -59,6 +68,7 @@ export function serializeShare(share: Share): ClientShare {
   return {
     id: share.id,
     kind: share.kind,
+    audience: share.audience,
     token: share.token,
     url: shareUrl(share.token),
     title: share.title,
@@ -132,13 +142,21 @@ async function assertNotTakenDown(where: { userId: string; conversationId?: stri
  * URL and orphan the old snapshot). Returns null when the target doesn't
  * exist or belongs to someone else — callers map that to 404. Throws
  * ShareTakenDownError when a link to the target was taken down.
+ *
+ * `audience` keeps the two kinds of share apart: a target can have a public
+ * link and a share with specific people at once, each reused only as its own
+ * kind, so making one never hands back the other's token. A people share
+ * takes no transcript (the dialog offers it only where the server holds the
+ * conversation).
  */
 export async function createShare(
   userId: string,
   kind: ShareKind,
   targetId: string,
-  options: { transcript?: SharedTranscriptEntry[] } = {},
+  options: { transcript?: SharedTranscriptEntry[]; audience?: ShareAudience } = {},
 ): Promise<Share | null> {
+  const audience = options.audience ?? "LINK";
+  if (audience === "PEOPLE" && options.transcript) throw new ShareTranscriptRefusedError();
   if (kind === "CHAT") {
     const conversation = await prisma.conversation.findFirst({
       where: { id: targetId, userId },
@@ -154,7 +172,7 @@ export async function createShare(
     const transcript = sealed ? ({ enc: sealed.enc } satisfies Prisma.InputJsonObject) : undefined;
 
     const existing = await prisma.share.findFirst({
-      where: { userId, kind, conversationId: targetId, revokedAt: null },
+      where: { userId, kind, conversationId: targetId, audience, revokedAt: null },
       orderBy: { createdAt: "desc" },
     });
     if (existing) {
@@ -174,6 +192,7 @@ export async function createShare(
         token: generateToken(),
         userId,
         kind,
+        audience,
         conversationId: targetId,
         title: conversation.title,
         snapshotAt: new Date(),
@@ -195,7 +214,7 @@ export async function createShare(
   await assertNotTakenDown({ userId, artifactId: targetId });
 
   const existing = await prisma.share.findFirst({
-    where: { userId, kind, artifactId: targetId, revokedAt: null },
+    where: { userId, kind, artifactId: targetId, audience, revokedAt: null },
     orderBy: { createdAt: "desc" },
   });
   if (existing) return existing;
@@ -205,6 +224,7 @@ export async function createShare(
       token: generateToken(),
       userId,
       kind,
+      audience,
       artifactId: targetId,
       title: artifact.title,
       snapshotAt: new Date(),
@@ -230,16 +250,21 @@ export async function revokeShare(userId: string, shareId: string): Promise<bool
  * The user's active shares, newest first. A link Juno took down is not active
  * — it no longer opens — and the owner was told why in a notification
  * (src/lib/share-moderation.ts).
+ *
+ * Links only unless `audience` says otherwise: this is the list the installed
+ * apps and Settings › Shared links read as "public links", and a share with
+ * specific people is not one.
  */
 export async function listShares(
   userId: string,
-  target: { conversationId?: string; artifactId?: string } = {}
+  target: { conversationId?: string; artifactId?: string; audience?: ShareAudience } = {}
 ): Promise<Share[]> {
   return prisma.share.findMany({
     where: {
       userId,
       ...(target.conversationId ? { conversationId: target.conversationId } : {}),
       ...(target.artifactId ? { artifactId: target.artifactId } : {}),
+      audience: target.audience ?? "LINK",
       revokedAt: null,
       takenDownAt: null,
       // A link whose artifact is in Recently deleted is not live; it comes
@@ -285,9 +310,18 @@ const findActiveShare = cache(async (token: string): Promise<Share | null> => {
   return share;
 });
 
+/**
+ * A link share, never a people share: a PEOPLE token is not a capability on
+ * its own. Written as "not PEOPLE" rather than "is LINK" so a row read without
+ * the column (a stand-in in a test) is the link every row was before it.
+ */
+function linkShareOnly(share: Share | null): Share | null {
+  return share && share.audience !== "PEOPLE" ? share : null;
+}
+
 /** Metadata-only lookup — same query as getPublicShare, no view-count side effect. */
 export async function peekPublicShare(token: string): Promise<Share | null> {
-  return findActiveShare(token);
+  return linkShareOnly(await findActiveShare(token));
 }
 
 /**
@@ -295,14 +329,48 @@ export async function peekPublicShare(token: string): Promise<Share | null> {
  * view counter fire-and-forget — analytics must never block or fail a render.
  */
 export async function getPublicShare(token: string): Promise<Share | null> {
-  const share = await findActiveShare(token);
+  const share = linkShareOnly(await findActiveShare(token));
   if (!share) return null;
-  // Unguarded for the same reason as the lookup: the viewer is a member of the
-  // public, and the id being bumped is one this request just resolved by token.
-  void prismaUnguarded.share
-    .update({ where: { id: share.id }, data: { views: { increment: 1 } } })
-    .catch(() => {});
+  countShareView(share.id);
   return share;
+}
+
+/**
+ * A live share with specific people, by token — the same request-cached query
+ * as the public lookup — or null. Says nothing about the viewer: the caller
+ * (src/lib/share-people.ts) decides who may read it, and nothing from it may
+ * be shown before that.
+ */
+export async function peekPeopleShare(token: string): Promise<Share | null> {
+  const share = await findActiveShare(token);
+  return share?.audience === "PEOPLE" ? share : null;
+}
+
+/** Count one view of a share the request already resolved. Fire-and-forget. */
+export function countShareView(shareId: string): void {
+  // Unguarded for the same reason as the lookup: the viewer may be a member of
+  // the public, and the id being bumped is one this request resolved by token.
+  void prismaUnguarded.share
+    .update({ where: { id: shareId }, data: { views: { increment: 1 } } })
+    .catch(() => {});
+}
+
+/**
+ * The target's newest live share of one audience, scoped to its owner: not
+ * revoked and not taken down. Null when there is none. Reads only.
+ */
+export async function findLiveShare(userId: string, kind: ShareKind, targetId: string, audience: ShareAudience): Promise<Share | null> {
+  return prisma.share.findFirst({
+    where: {
+      userId,
+      kind,
+      audience,
+      ...(kind === "CHAT" ? { conversationId: targetId } : { artifactId: targetId }),
+      revokedAt: null,
+      takenDownAt: null,
+    },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 // ——— Snapshot payloads for the public page ———

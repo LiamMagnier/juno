@@ -369,6 +369,22 @@ async function main(): Promise<void> {
     write: (id, value) => prismaUnguarded.channelLink.update({ where: { id }, data: { phone: value } }),
   });
 
+  // An address a chat or artifact was shared with (src/lib/share-people.ts).
+  // Born sealed: every write goes through encryptField; the lookup is the
+  // `emailHash` HMAC beside it, which a key rotation does not touch.
+  await rotateTextColumn("ShareRecipient.email", tally, {
+    page: async (cursor) => {
+      const rows = await prismaUnguarded.shareRecipient.findMany({
+        take: BATCH,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: "asc" },
+        select: { id: true, email: true },
+      });
+      return rows.map((r) => ({ id: r.id, value: r.email }));
+    },
+    write: (id, value) => prismaUnguarded.shareRecipient.update({ where: { id }, data: { email: value } }),
+  });
+
   if (tally.failed === 0) clearCursor();
 
   console.log(
