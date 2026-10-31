@@ -9,6 +9,7 @@ server (watch it, take over), is configured by talking to it, and lives in a con
 | [RULES.md](RULES.md) | The implementer: binding rules, security invariants, gates, traps |
 | [INFRA.md](INFRA.md) | The implementer (and the owner's one-time server setup): agent computers as Docker desktops on the owner's own server, firewall, live-view relay |
 | [BRIEF.md](BRIEF.md) | The implementer: decisions, architecture, phases, final report |
+| [TEACH.md](TEACH.md) | Everyone: teach by demonstration (record a task on the agent's computer, review the skill it drafts), off by default |
 | [PROGRESS.md](PROGRESS.md) | Everyone: the live checklist; resume from here |
 | [PROMPT.md](PROMPT.md) | The owner: the message to paste to the implementer (Gemini 3.8 Flash) |
 

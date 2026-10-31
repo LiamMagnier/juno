@@ -250,6 +250,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // (src/lib/computer/store.ts, audit.ts). Every read is one account's week or log.
   ["AgentComputerUsageInterval", "userId"],
   ["AgentComputerAudit", "userId"],
+  // A task the person showed an agent on its computer (teach by
+  // demonstration, src/lib/teach/). The encrypted, redacted trace of what they
+  // did; every read and write names the person and the agent.
+  ["AgentDemonstration", "userId"],
   // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
   // per-message plan of who answers. A room's membership is a statement about
   // one person's agents, so it is guarded like the agents themselves.

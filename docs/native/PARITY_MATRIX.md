@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-372 routes: 230 native, 68 planned, 58 web only, 16 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+374 routes: 230 native, 70 planned, 58 web only, 16 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 4/4 | 4/4 | 18 | 12 | 1 | 0 |
+| [Agents](#agents) | 4/4 | 4/4 | 18 | 14 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
@@ -467,6 +467,8 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/activity` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/files` | GET, POST | Planned |  | Agent computer file listing and download; web panel disclosure. |
+| `/api/agents/[id]/computer/demonstration` | GET, POST | Planned |  | Teach by demonstration (docs/design/agents-v2/TEACH.md): start and stop recording during a take over, behind AGENT_TEACH_ENABLED; the web computer overlay only for now. |
+| `/api/agents/[id]/computer/demonstration/draft` | POST | Planned |  | Drafts a skill from a recorded demonstration for review on the Teach page; the web computer overlay only for now. |
 | `/api/agents/[id]/computer/heartbeat` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/poster` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/shell` | GET | Planned |  | The agent's shell output for one of its Work runs, read after a cursor; the web computer pane's terminal polls it. |
