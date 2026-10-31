@@ -138,6 +138,7 @@ columns, and nothing else — read the code, not this list, if they disagree
 | `AgentComputer.containerRef`, `AgentComputer.secrets` | Agent computer per-container VNC password, container handle, and CDP authentication token | `crypto.ts` (`encryptSecret`) |
 | `ChannelLink.phone` | A phone number linked for iMessage. Looked up by `ChannelLink.phoneHash`, an HMAC of the number (`domainMac`), and decrypted only to send to it; responses carry the last four digits. The link code is never stored, only its HMAC (`codeHash`), until the link is verified | `field-crypto.ts` (`encryptField`) |
 | `AgentDemonstration.trace`, `AgentDemonstration.shots` | Teach by demonstration: the redacted trace of what the person did on the agent's computer (pages, element names, the non-secret text they typed) and up to eight low-resolution screenshots. Secrets typed during the recording are never in either; they are placeholders such as `{{password}}` | `field-crypto.ts` (`encryptField`) |
+| `AgentCredential.usernameSealed`, `AgentCredential.passwordSealed`, `AgentCredential.totpSealed` | A site login saved for one agent (username, password, TOTP secret), filled into its computer's browser and never shown to the model (`docs/design/agents-v2/VAULT.md`) | `crypto.ts` (`encryptSecretBound`, bound to owner, agent, row and field) |
 
 Conversation search is title-only as a direct consequence.
 

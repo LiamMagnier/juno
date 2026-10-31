@@ -1451,6 +1451,9 @@ export async function retireAgentForUser(user: AgentActor, agentId: string): Pro
   await pauseRoutines(user.id, agent.id);
   const { disableComputer } = await import("@/lib/computer/store");
   await disableComputer(user.id, agent.id).catch(() => {});
+  // Its saved logins go with its computer: nothing could fill them any more
+  // (docs/design/agents-v2/VAULT.md).
+  await prisma.agentCredential.deleteMany({ where: { userId: user.id, agentId: agent.id } }).catch(() => {});
   await prisma.agent.updateMany({
     where: { id: agent.id, userId: user.id },
     data: { deletedAt: new Date(), status: "paused" },

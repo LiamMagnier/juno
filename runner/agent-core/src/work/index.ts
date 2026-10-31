@@ -324,6 +324,15 @@ export {
 } from './computer-tools.js';
 
 export {
+  FILL_LOGIN_ACTION,
+  FILL_LOGIN_TOOL_NAME,
+  computerFillLoginTool,
+  fillLoginSummary,
+  type ComputerFillLoginDeps,
+  type FillLoginCallState,
+} from './computer-login-tool.js';
+
+export {
   SCRIPTED_MODEL_ID,
   SCRIPTED_PROVIDER_ID,
   createScriptedWorkProvider,

@@ -104,6 +104,14 @@ import { readComputerFileForPublish } from "@/lib/computer/files";
 import { computerFileDisposition, formatFileSize } from "@/lib/computer/file-types";
 import { recordComputerAudit } from "@/lib/computer/audit";
 import { sweepAgentComputers } from "@/lib/computer/sweep";
+import { createVaultRunPort, scrubBrowserOutcome, type VaultRunPort } from "@/lib/computer/vault-run";
+import { loginPagePort } from "@/lib/computer/vault-page";
+import {
+  isAgentVaultEnabled,
+  openAgentCredentialForFill,
+  recordAgentCredentialFill,
+  vaultEntriesFor,
+} from "@/lib/computer/vault-store";
 import { SCRIPTED_MODEL_EXPLANATION, scriptedWorkModelFor, scriptedWorkModelSwitchedOn } from "@/lib/dev/scripted-work-model";
 import { loadAgentRunPersona } from "@/lib/agents/run-context";
 import { runAgentNoteDeps } from "@/lib/agents/run-notes";
@@ -1873,6 +1881,46 @@ async function fetchPinnedWebPage(
 }
 
 /**
+ * The agent's saved logins for this run (docs/design/agents-v2/VAULT.md), or
+ * null: the vault is off on this server, or the agent has none. The ids are
+ * the run's own (whose task it is, and the agent it runs as), never the
+ * model's. Values are opened only inside the fill, after its checks.
+ */
+async function prepareRunVault(
+  userId: string,
+  runId: string,
+  lazyComputer: LazyRunComputer<WorkBrowser>,
+): Promise<VaultRunPort | null> {
+  if (!isAgentVaultEnabled()) return null;
+  const agentId = lazyComputer.agentId;
+  return createVaultRunPort({
+    userId,
+    agentId,
+    store: {
+      entries: vaultEntriesFor,
+      open: openAgentCredentialForFill,
+      recordFill: (fill) => recordAgentCredentialFill(fill),
+    },
+    // The computer's own browser, never the temporary one.
+    page: () => loginPagePort(lazyComputer.browser()),
+    currentUrl: () => lazyComputer.browser()?.currentUrl() ?? "",
+    fence: () => computerBlockedReason(userId, agentId, new Date(), runId),
+    audit: (event) =>
+      void recordComputerAudit({
+        userId,
+        agentId,
+        kind: event.kind,
+        actor: "runner",
+        detail: { runId, ...(event.reason ? { reason: event.reason } : {}) },
+      }),
+  }).catch((error: unknown) => {
+    // The ids only: no login is named in the log.
+    log("saved logins unavailable for this run", { runId, error: error instanceof Error ? error.name : "error" });
+    return null;
+  });
+}
+
+/**
  * Everything the run can do, assembled.
  *
  * The shapes come from the runtime and the effects from here, which is the
@@ -1919,6 +1967,12 @@ function buildTools(input: {
    * run is not an agent's.
    */
   agentNote?: Awaited<ReturnType<typeof runAgentNoteDeps>>;
+  /**
+   * The agent's saved logins (docs/design/agents-v2/VAULT.md), or null when
+   * the vault is off, the run has no computer, or the agent has none. Only
+   * then is `computer_fill_login` offered.
+   */
+  vault?: VaultRunPort | null;
 }): WorkToolDefinition[] {
   const { runtime } = input;
   let screenEpochCounter = 0;
@@ -2074,7 +2128,12 @@ function buildTools(input: {
         receiptRef: `work-run:${input.runId}`,
       }),
   });
-  const scrubbed = credentialFill.scrub;
+  // ...and of whatever a saved login typed into the computer's browser
+  // (computer_fill_login), when the vault is on for this run.
+  const vault = input.vault ?? null;
+  const scrubbed: typeof credentialFill.scrub = vault
+    ? (outcome) => scrubBrowserOutcome(credentialFill.scrub(outcome), vault.scrubText)
+    : credentialFill.scrub;
 
   const baseBrowserTool = runtime.browserTool({
     available: () => browser.available(),
@@ -2324,6 +2383,29 @@ function buildTools(input: {
         .map((tool) => runtime.withComputerStart(tool, lazyComputer.gate))
     : [];
 
+  // A saved login, filled into the computer's browser by the platform; the
+  // model names it and is told only whether it worked (vault-run.ts).
+  const fillLoginTools =
+    lazyComputer && vault
+      ? [
+          runtime.withComputerStart(
+            runtime.computerFillLoginTool({
+              description: vault.description,
+              classify: vault.classify,
+              describe: vault.describe,
+              refresh: vault.refresh,
+              fill: async (request) => {
+                const result = await vault.fill(request);
+                if (result.ok) bumpEpoch();
+                return result;
+              },
+              blockedReason: () => computerBlockedReason(input.userId, lazyComputer.agentId, new Date(), input.runId),
+            }),
+            lazyComputer.gate,
+          ),
+        ]
+      : [];
+
   const deliverables = runtime.deliverableTool({
     async create(request) {
       const parsed = deliverableRequestSchema.safeParse({ spec: request.spec });
@@ -2448,6 +2530,7 @@ function buildTools(input: {
     // model that meets it first will drive a browser to read a static page.
     browserTool,
     ...remoteComputerTools,
+    ...fillLoginTools,
     deliverables,
     cloudFiles,
     ...(input.agentNote ? [runtime.agentNoteTool(input.agentNote)] : []),
@@ -3977,6 +4060,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     agentNote: run.session.agentId
       ? await runAgentNoteDeps({ userId: input.userId, agentId: run.session.agentId, runId: input.runId, sessionId: run.sessionId })
       : null,
+    vault: lazyComputer ? await prepareRunVault(input.userId, input.runId, lazyComputer) : null,
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };

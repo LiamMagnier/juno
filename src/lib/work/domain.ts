@@ -831,9 +831,11 @@ export function approvalRuling(input: {
         // (src/lib/computer/access-copy.ts, COMPUTER_START_EXPLANATION).
         input.action === "work.computer.start"
           ? "Starting the agent's computer uses this week's computer time. This agent is set to ask first, so starting asks every time. It approves nothing the computer does afterwards."
-          : input.action.startsWith("work.computer.")
-            ? "This runs a command or types on the computer, which can do anything a program can, so it asks every time. No setting turns this off."
-            : "This reaches beyond what the task was given, or removes something from where you left it.",
+          : input.action === "work.computer.fill_login"
+            ? `This types a login you saved into the site the computer is on, only if it is exactly the site you saved it for. ${PRODUCT_NAME} types it; the model never sees it. You are asked the first time each login is used.`
+            : input.action.startsWith("work.computer.")
+              ? "This runs a command or types on the computer, which can do anything a program can, so it asks every time. No setting turns this off."
+              : "This reaches beyond what the task was given, or removes something from where you left it.",
     };
   }
 
