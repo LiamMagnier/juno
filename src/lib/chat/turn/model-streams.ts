@@ -77,6 +77,9 @@ export async function* streamResearchNotice(text: string): AsyncGenerator<LlmEve
  *                         artifact (SMOKE_ARTIFACT_TITLE, body
  *                         SMOKE_ARTIFACT_BODY), so the artifact parse, verify,
  *                         persist and canvas path runs for real.
+ *   JUNO_E2E_SOURCES      answers SMOKE_SOURCES_TOKEN and reports SMOKE_SOURCES
+ *                         as provider-search sources, so the stored sources
+ *                         and the answer's Sources control render for real.
  *   otherwise             echoes the last JUNO_* token in the prompt (or
  *                         JUNO_E2E_SMOKE_OK) in two chunks — the long-standing
  *                         behaviour chat.spec.ts and regenerate.spec.ts rely on.
@@ -90,6 +93,13 @@ export const SMOKE_ARTIFACT_DIRECTIVE = "JUNO_E2E_ARTIFACT";
 export const SMOKE_ARTIFACT_TOKEN = "JUNO_E2E_ARTIFACT_OK";
 export const SMOKE_ARTIFACT_TITLE = "E2E smoke note";
 export const SMOKE_ARTIFACT_BODY = "JUNO_E2E_ARTIFACT_BODY";
+export const SMOKE_SOURCES_DIRECTIVE = "JUNO_E2E_SOURCES";
+export const SMOKE_SOURCES_TOKEN = "JUNO_E2E_SOURCES_OK";
+/** Two fixed, well-known pages; nothing fetches them. */
+export const SMOKE_SOURCES: ReadonlyArray<{ title: string; url: string; snippet: string }> = [
+  { title: "Example Domain", url: "https://example.com/", snippet: "This domain is for use in documentation examples." },
+  { title: "IANA example domains", url: "https://www.iana.org/help/example-domains", snippet: "Reserved for use in documentation." },
+];
 
 function smokeAbortError(): Error {
   const error = new Error("The smoke stream was stopped (aborted).");
@@ -147,6 +157,15 @@ export async function* streamDeterministicSmokeResponse(
     yield { type: "text", text: answer.slice(0, midpoint) };
     await Promise.resolve();
     yield { type: "text", text: answer.slice(midpoint) };
+    yield { type: "usage", input: Math.max(1, Math.ceil(prompt.length / 4)), output: answer.length };
+    yield { type: "finish", reason: "stop" };
+    return;
+  }
+
+  if (prompt.includes(SMOKE_SOURCES_DIRECTIVE)) {
+    const answer = `Two pages describe the reserved example domains. ${SMOKE_SOURCES_TOKEN}`;
+    yield { type: "text", text: answer };
+    yield { type: "sources", sources: SMOKE_SOURCES.map((source) => ({ ...source })), origin: "provider_search" };
     yield { type: "usage", input: Math.max(1, Math.ceil(prompt.length / 4)), output: answer.length };
     yield { type: "finish", reason: "stop" };
     return;

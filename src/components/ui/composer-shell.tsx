@@ -626,6 +626,16 @@ const FACE_MOTION = {
 };
 
 /**
+ * One face's layer. `pointer-events-none`, so a press always lands on the
+ * button itself: a face that is leaving stays in the DOM until its exit ends,
+ * and a press that began on its glyph and was released after the glyph was
+ * removed had no common target with the release, so the browser dispatched no
+ * click. Typing a message and pressing Send while the voice face was still
+ * fading out did nothing at all, about one time in three.
+ */
+const FACE_LAYER = "pointer-events-none col-start-1 row-start-1 grid place-items-center";
+
+/**
  * The 32px circle. Flat — no raised shadow, no halo — and its face cross-morphs
  * (scale .9→1 + fade over `duration-fast`) between voice, send, stop and a
  * spinner.
@@ -693,15 +703,15 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
         <>
           <AnimatePresence initial={false} mode="sync">
             {face === "busy" ? (
-              <motion.span key="busy" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="busy" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 <Loader2 className="size-4 animate-spin" />
               </motion.span>
             ) : face === "stop" ? (
-              <motion.span key="stop" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="stop" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 <Square className="size-4 fill-current" />
               </motion.span>
             ) : face === "voice" ? (
-              <motion.span key="voice" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="voice" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 {/* The waveform, not a microphone. A mic is the glyph for
                     dictation — which this composer already has, one button to
                     the left — and the two doing different things behind the
@@ -709,7 +719,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
                 <AudioLines className="size-[18px]" />
               </motion.span>
             ) : (
-              <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="send" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 {/* The bold cut: the one glyph on the row set on a solid
                     accent disc, where the regular line thins against the fill
                     — the same weight Claude and ChatGPT give their send arrow. */}

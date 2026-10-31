@@ -311,8 +311,26 @@ function parseBlocks(markdown: string): Block[] {
 type RunStyle = { bold?: boolean; italics?: boolean; code?: boolean };
 type InlineRun = RunStyle & { text: string };
 
-// code span | **bold**/__bold__ | *italic*/_italic_ | [link](url) and ![img](url)
-const INLINE_RE = /(`+)([\s\S]*?)\1|(\*\*|__)([\s\S]+?)\3|(\*|_)([\s\S]+?)\5|!?\[([^\]]*)\]\([^)]*\)/g;
+// code span | **bold** | __bold__ | *italic* | _italic_ | [link](url) and ![img](url)
+//
+// Underscores only emphasise at a word's edge, as in CommonMark (and in the
+// canvas's own Markdown preview): an `_` with a letter or digit on its inner
+// side is part of the word. It used to be emphasis anywhere, so the Word file
+// of a note that said `READER_EDIT_LINE` or `snake_case_name` dropped the
+// underscores and set the middle in italics, changing the reader's words on
+// the way out. Asterisks still emphasise inside a word, as CommonMark allows.
+const WORD_CHAR = String.raw`[\p{L}\p{N}_]`;
+const INLINE_RE = new RegExp(
+  [
+    String.raw`(\x60+)([\s\S]*?)\1`,
+    String.raw`\*\*([\s\S]+?)\*\*`,
+    String.raw`(?<!${WORD_CHAR})__(?!\s)([\s\S]+?)__(?!${WORD_CHAR})`,
+    String.raw`\*([\s\S]+?)\*`,
+    String.raw`(?<!${WORD_CHAR})_(?!\s)([\s\S]+?)_(?!${WORD_CHAR})`,
+    String.raw`!?\[([^\]]*)\]\([^)]*\)`,
+  ].join("|"),
+  "gu"
+);
 
 /** Emphasis can nest, but only so far — a cap keeps adversarial `*_*_*…` bounded. */
 const MAX_INLINE_DEPTH = 6;
@@ -322,18 +340,20 @@ function parseInline(src: string, style: RunStyle = {}, depth = 0): InlineRun[] 
   if (depth >= MAX_INLINE_DEPTH) return [{ ...style, text: src }];
 
   const out: InlineRun[] = [];
-  const re = new RegExp(INLINE_RE.source, "g");
+  const re = new RegExp(INLINE_RE.source, INLINE_RE.flags);
   let last = 0;
   let m: RegExpExecArray | null;
 
   while ((m = re.exec(src)) !== null) {
     if (m.index > last) out.push({ ...style, text: src.slice(last, m.index) });
+    const bold = m[3] ?? m[4];
+    const italic = m[5] ?? m[6];
     if (m[1] !== undefined) {
       out.push({ ...style, code: true, text: m[2].trim() });
-    } else if (m[3] !== undefined) {
-      out.push(...parseInline(m[4], { ...style, bold: true }, depth + 1));
-    } else if (m[5] !== undefined) {
-      out.push(...parseInline(m[6], { ...style, italics: true }, depth + 1));
+    } else if (bold !== undefined) {
+      out.push(...parseInline(bold, { ...style, bold: true }, depth + 1));
+    } else if (italic !== undefined) {
+      out.push(...parseInline(italic, { ...style, italics: true }, depth + 1));
     } else {
       // Links flatten to their label; a .docx hyperlink adds nothing the reader needs.
       out.push(...parseInline(m[7] ?? "", style, depth + 1));

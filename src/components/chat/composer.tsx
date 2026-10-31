@@ -14,6 +14,7 @@ import {
 } from "@/lib/chat/context-draft";
 import { useThreadDraftSync } from "@/lib/sync/thread-draft-client";
 import { submittedDraftIsCurrent, type ComposerSubmission } from "@/lib/chat/composer-submission";
+import { composerPrimaryFace } from "@/lib/chat/composer-primary-face";
 import { createComposerDraftSession, type ComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type LayerSide } from "@/lib/chat/composer-layer-placement";
 import { TIMING } from "@/lib/interaction";
@@ -1457,16 +1458,19 @@ function ComposerImpl({
 
   // The primary button's faces: checking, stop (when busy), voice (when there
   // is nothing to send and a call is available), or send.
-  const primaryFace: "checking" | "stop" | "send" | "voice" =
-    status === "checking"
-      ? "checking"
-      : steerMode && text.trim().length > 0
-        ? "send"
-        : isBusy || standaloneRun
-          ? "stop"
-          : canSend || !voiceAvailable
-            ? "send"
-            : "voice";
+  // A draft that cannot go yet (a file still uploading, a spent quota) keeps
+  // the send face, disabled, rather than handing the slot to voice
+  // (lib/chat/composer-primary-face.ts).
+  const primaryFace = composerPrimaryFace({
+    checking: status === "checking",
+    steerMode,
+    busy: isBusy,
+    standaloneRun,
+    hasText: text.trim().length > 0,
+    hasOtherDraft: uploading || sendAttachments.length > 0 || clarificationAnswers.length > 0,
+    canSend,
+    voiceAvailable,
+  });
   // The effort control the model popover draws under its panes. Absent when
   // Auto picks the depth or the model has a single tier, so the footer only
   // appears when there is a choice to make — which also retires the empty

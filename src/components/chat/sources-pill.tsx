@@ -246,9 +246,12 @@ export function SourcesPill({
         className={cn(
           // 2026-10: the size of the text around it (ChatGPT's "Sources"
           // button): a 28px soft capsule, sans label, small stacked logos.
+          // 40px under a coarse pointer, and `hit-44` pads it to the touch
+          // minimum like the actions row under it (G54); it stopped at 40,
+          // the one control on the turn a finger could miss.
           "group/pill relative z-0 inline-flex h-7 items-center gap-1.5 rounded-full bg-foreground/[0.05] pl-1 pr-2.5 text-ui font-medium text-muted-foreground hover:z-10",
           "transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-foreground/[0.09] hover:text-foreground active:scale-[0.97] motion-reduce:transition-none",
-          "data-[state=on]:bg-foreground/[0.09] data-[state=on]:text-foreground coarse:h-10 coarse:pl-2"
+          "data-[state=on]:bg-foreground/[0.09] data-[state=on]:text-foreground coarse:h-10 coarse:pl-2 hit-44"
         )}
       >
         <span className="flex" aria-hidden="true">

@@ -31,9 +31,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { OFFICE_EXPORT_SAVE_FIRST_NOTE, officeExportOffer } from "@/lib/canvas/office-export-offer";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Markdown } from "@/components/chat/markdown";
@@ -611,6 +613,7 @@ export function CanvasPanel({
   // (or save, or copy) the draft it claims not to show.
   const displayedContent = isLatest && draft != null ? draft : versionContent;
   const dirty = isLatest && draft != null && draft !== versionContent;
+  const officeOffer = officeExportOffer({ formats: officeFormats.length, isLatest, dirty });
 
   /** Save the edit as the next version. True when it landed. */
   const saveEdit = async (force = false): Promise<boolean> => {
@@ -999,16 +1002,18 @@ export function CanvasPanel({
             <DropdownMenuItem onSelect={download}>
               <ActionIcons.download className="size-4" aria-hidden /> Download source
             </DropdownMenuItem>
-            {/* Office export always renders the latest version — don't offer it while an
-                older one is on screen, or the file wouldn't match what you're reading. */}
-            {officeFormats.length > 0 && isLatest && (
+            {/* Office export always renders the latest SAVED version — don't offer it
+                while an older one is on screen, and hold it while an edit is unsaved,
+                or the file wouldn't match what you're reading (office-export-offer.ts). */}
+            {officeOffer !== "none" && (
               <>
                 <DropdownMenuSeparator />
+                {officeOffer === "save-first" && <DropdownMenuLabel>{OFFICE_EXPORT_SAVE_FIRST_NOTE}</DropdownMenuLabel>}
                 {officeFormats.map((f) => {
                   const { label, icon: FormatIcon } = OFFICE_FORMATS[f];
                   const Icon = exportingFormat === f ? Loader2 : FormatIcon;
                   return (
-                    <DropdownMenuItem key={f} disabled={exportingFormat !== null} onSelect={() => downloadOffice(f)}>
+                    <DropdownMenuItem key={f} disabled={exportingFormat !== null || officeOffer !== "ready"} onSelect={() => downloadOffice(f)}>
                       <Icon className={cn("size-4", exportingFormat === f && "motion-safe:animate-spin")} aria-hidden />
                       {label}
                     </DropdownMenuItem>
