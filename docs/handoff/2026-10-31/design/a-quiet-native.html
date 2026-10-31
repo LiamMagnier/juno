@@ -1752,7 +1752,7 @@ function addAttachment(comp) {
 }
 function removeAttachment(comp, el) {
   const box = comp.querySelector('.atts');
-  tween(el, 'opacity', null, '0', MS.fast, EZ.in); const a = isRM() ? null : tween(el, 'transform', 'none', 'scale(.92)', MS.fast, EZ.in);
+  tween(el, 'opacity', null, '0', MS.fast, EZ.in); if (!isRM()) tween(el, 'transform', 'none', 'scale(.92)', MS.fast, EZ.in);
   setTimeout(() => { el.remove(); if (!box.children.length) comp.querySelector('.above').classList.remove('open'); }, D(MS.fast));
 }
 /* window-level drag */

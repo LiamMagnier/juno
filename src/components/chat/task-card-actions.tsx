@@ -128,7 +128,7 @@ export function FinishedTaskActions({
   });
 
   const proposal = React.useMemo(() => {
-    let zone = "UTC";
+    let zone: string;
     try {
       zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     } catch {

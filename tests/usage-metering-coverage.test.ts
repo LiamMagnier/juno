@@ -30,23 +30,31 @@ const PROVIDER_SIGNALS: RegExp[] = [
   /\bnew OpenAI\(/,
   /\bnew Anthropic\(/,
   /\bgetAnthropic\(/,
-  /api\.openai\.com/,
-  /api\.anthropic\.com/,
-  /generativelanguage\.googleapis\.com/,
-  /api\.elevenlabs\.io/,
-  /api\.deepgram\.com/,
-  /api\.tavily\.com/,
-  /api\.search\.brave\.com/,
-  /api\.exa\.ai/,
-  /google\.serper\.dev/,
-  /api\.x\.ai/,
-  /dashscope/,
-  /api\.minimax/,
   // The shared doors. A new caller of any of these is a new paid path.
   /\bstreamChat\(/,
   /\bsearchWithEngineReport\(/,
   /\bexecuteMultiEngineSearch\(/,
   /\bwebSearch\(/,
+];
+
+/**
+ * A paid provider's API host named in the source. Plain substrings, not
+ * patterns: these are looked for anywhere in a file's code, the way a URL or
+ * a base-URL constant would carry them.
+ */
+const PROVIDER_HOSTS: string[] = [
+  "api.openai.com",
+  "api.anthropic.com",
+  "generativelanguage.googleapis.com",
+  "api.elevenlabs.io",
+  "api.deepgram.com",
+  "api.tavily.com",
+  "api.search.brave.com",
+  "api.exa.ai",
+  "google.serper.dev",
+  "api.x.ai",
+  "dashscope",
+  "api.minimax",
 ];
 
 /** file → how its spend reaches the ledger (or why it is the operator's). */
@@ -131,7 +139,7 @@ function providerTouching(): string[] {
   return files
     .filter((file) => {
       const code = stripComments(readFileSync(file, "utf8"));
-      return PROVIDER_SIGNALS.some((re) => re.test(code));
+      return PROVIDER_SIGNALS.some((re) => re.test(code)) || PROVIDER_HOSTS.some((host) => code.includes(host));
     })
     .map((file) => relative(ROOT, file))
     .sort();

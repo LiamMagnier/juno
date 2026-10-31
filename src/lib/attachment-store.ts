@@ -43,7 +43,6 @@ export async function persistAttachment(input: {
 
   const { fileName, kind, storedMime, storedContentType, contentDisposition, extractedText } = planned;
   const key = buildObjectKey(userId, fileName);
-  let transactionCommitted = false;
   let attachment: Attachment;
   try {
     await putObject(key, bytes, storedContentType, contentDisposition);
@@ -81,9 +80,9 @@ export async function persistAttachment(input: {
       });
       return created;
     });
-    transactionCommitted = true;
   } catch (error) {
-    if (!transactionCommitted) await deleteObject(key).catch(() => undefined);
+    // The upload or its rows failed: the stored object belongs to nothing.
+    await deleteObject(key).catch(() => undefined);
     throw error;
   }
 

@@ -32,6 +32,9 @@ import { shareInvitation } from "@/lib/email-templates";
  * dialog is tests/share-people-dialog.test.ts.
  */
 
+/** Every character a RegExp gives meaning to, escaped (backslash included). */
+const escapeRegExp = (value: string) => value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+
 const OWNER = "owner-1";
 const CHAT: ShareTarget = { kind: "CHAT", targetId: "conv-1" };
 
@@ -310,7 +313,7 @@ test("each new address gets one invitation; someone already on the list is not e
   // Stored sealed, looked up by the HMAC of the canonical spelling.
   for (const r of w.recipients) {
     assert.match(r.email, /^enc:test:/);
-    assert.match(r.emailHash, new RegExp(`^mac\\(${RECIPIENT_EMAIL_DOMAIN.replace(/\./g, "\\.")}\\|`));
+    assert.match(r.emailHash, new RegExp(`^mac\\(${escapeRegExp(RECIPIENT_EMAIL_DOMAIN)}\\|`));
   }
 });
 
@@ -422,7 +425,7 @@ test("the invitation names the sender and their address, escapes what they typed
   });
   assert.doesNotMatch(mail.subject, /\n|—/);
   assert.match(mail.subject, /^Ada <b>Lovelace<\/b> CEO shared an artifact with you$/);
-  assert.doesNotMatch(mail.html, /<script>|<b>Lovelace/);
+  assert.doesNotMatch(mail.html, /<script|<b>Lovelace/i);
   assert.match(mail.html, /Q4 &lt;script&gt;plan&lt;\/script&gt;/);
   assert.match(mail.html, /href="https:\/\/alevr.test\/share\/abc\?x=1&amp;y=2"/);
   assert.match(mail.text, /sign in to .+ as grace@example\.test, or create an account with that address/);

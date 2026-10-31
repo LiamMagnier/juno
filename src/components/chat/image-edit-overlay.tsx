@@ -599,7 +599,7 @@ export function ImageEditOverlay({
     e.preventDefault();
     e.stopPropagation();
     const step = e.altKey ? 0.005 : 0.02;
-    let next = region;
+    let next: NonNullable<typeof region>;
     if (e.shiftKey) {
       if (e.key === "ArrowLeft") next = { ...region, w: Math.max(MIN_REGION, region.w - step) };
       else if (e.key === "ArrowRight") next = { ...region, w: Math.min(1 - region.x, region.w + step) };

@@ -82,7 +82,9 @@ test.describe("Turn actions", () => {
           const indicator = await focusIndicator(control);
           expect(indicator.focused, `${name} has keyboard focus`).toBe(true);
           expect(indicator.outline || indicator.ring, `${name} draws a focus outline`).toBe(true);
-          expect(indicator.opacity, `${name} is visible while focused`).toBe(1);
+          // Its reveal is an opacity fade (kept under reduced motion, Tier A):
+          // visible once it lands, not necessarily on the very frame focus arrives.
+          await expect.poll(async () => (await focusIndicator(control)).opacity, { message: `${name} is visible while focused` }).toBe(1);
           order.push(name);
         }
       }
@@ -91,7 +93,7 @@ test.describe("Turn actions", () => {
       // And back: Shift+Tab from More lands on Regenerate, still drawn.
       await page.keyboard.press("Shift+Tab");
       await expect(wanted.get("Regenerate")!).toBeFocused();
-      expect((await focusIndicator(wanted.get("Regenerate")!)).opacity).toBe(1);
+      await expect.poll(async () => (await focusIndicator(wanted.get("Regenerate")!)).opacity).toBe(1);
 
       // Enter on Sources inspects them: the list opens with real links.
       await answer.getByRole("button", { name: /^Sources/ }).focus();

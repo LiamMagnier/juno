@@ -169,7 +169,11 @@ function frameWithBridge(channel = CHANNEL) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   const html = alevrBridgeScript(channel);
-  const body = html.replace(/^<script>/, "").replace(/<\/script>$/, "");
+  // The bridge is exactly one inline script element; run what is inside it.
+  const open = "<script>";
+  const close = "</script>";
+  assert.ok(html.startsWith(open) && html.endsWith(close), "the bridge is one <script> element");
+  const body = html.slice(open.length, html.length - close.length);
   vm.runInContext(body, sandbox);
   const deliver = (data: unknown, source: unknown = parentWindow) => listeners.forEach((fn) => fn({ source, data }));
   const alevr = sandbox.alevr as {

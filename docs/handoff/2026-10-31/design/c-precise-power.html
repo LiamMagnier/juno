@@ -1239,7 +1239,7 @@ function wire(el, depth) {
       if (inTri(pt, a, b, c)) { drawTri(a, b, c); if (!OPEN.grace) OPEN.grace = setTimeout(() => { if (OPEN) { OPEN.grace = 0; closeSub(); } }, 300 * K()); return; }
       clearTimeout(OPEN.grace); OPEN.grace = 0; closeSub(); }
     if (!it || it.classList.contains('dis')) return; if (it === OPEN.sub?.item) { OPEN.anchorPt = pt; return; }
-    if (!it.classList.contains('hl')) { setHL(el, it, false); clearTimeout(OPEN.subTimer); if (it.dataset.sub) OPEN.subTimer = setTimeout(() => { OPEN && OPEN.anchorPt; openSub(it, false); }, 100 * K()); }
+    if (!it.classList.contains('hl')) { setHL(el, it, false); clearTimeout(OPEN.subTimer); if (it.dataset.sub) OPEN.subTimer = setTimeout(() => { openSub(it, false); }, 100 * K()); }
     if (it.dataset.sub) OPEN.anchorPt = pt; });
   el.addEventListener('pointerleave', () => { if (!OPEN) return; if (depth === 0 && !OPEN.sub) setHL(el, null); if (depth === 1) { /* keep */ } });
   el.addEventListener('click', e => { const it = e.target.closest('.mi'); if (it) activate(it, el); });
@@ -1274,7 +1274,7 @@ D.addEventListener('click', e => { const b = e.target.closest('[data-open]'); if
 let tipT = 0, tipEl = null, lastHide = 0;
 D.addEventListener('pointerover', e => { const t = e.target.closest('.panel [aria-label]:is(button,.ib,.cc,.prim,.cchip)'); if (!t || t === tipEl?._for) return; hideTip(); clearTimeout(tipT);
   const show = () => { const host = t.closest('.panel'); if (!host || OPEN) return; const el = D.createElement('div'); el.className = 'tip tipf'; const kmap = { Copy: '⌘C', Send: '↵', Stop: 'esc', 'Add files and tools': '⌘U', Dictate: '⌘D' };
-    el.innerHTML = t.getAttribute('aria-label') + (kmap[t.getAttribute('aria-label')] ? ` <span class="k">${kmap[t.getAttribute('aria-label')]}</span>` : ''); host.appendChild(el); el._for = t;
+    const label = t.getAttribute('aria-label'); el.textContent = label; if (kmap[label]) { const k = D.createElement('span'); k.className = 'k'; k.textContent = kmap[label]; el.append(' ', k); } host.appendChild(el); el._for = t;
     const r = t.getBoundingClientRect(), p = hostRect(host); el.style.left = (r.left - p.left + r.width / 2 - el.offsetWidth / 2) + 'px'; el.style.top = (r.top - p.top - el.offsetHeight - 6) + 'px';
     if (Date.now() - lastHide > 300 * K()) el.classList.add('in'); tipEl = el; };
   if (Date.now() - lastHide < 300 * K()) show(); else tipT = setTimeout(show, 400 * K()); });

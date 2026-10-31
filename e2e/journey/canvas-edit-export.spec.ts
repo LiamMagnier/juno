@@ -25,7 +25,10 @@ async function textOf(download: Download) {
 
 async function wordTextOf(download: Download) {
   const zip = await JSZip.loadAsync(await readFile((await download.path())!));
-  return (await zip.file("word/document.xml")!.async("string")).replace(/<[^>]+>/g, "");
+  // The document's text runs (<w:t>), joined: what Word shows, without
+  // stripping markup out of the XML.
+  const xml = await zip.file("word/document.xml")!.async("string");
+  return [...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((run) => run[1]).join("");
 }
 
 /** The canvas's own More menu (the answer's turn has a "More actions" too). */

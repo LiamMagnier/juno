@@ -581,8 +581,20 @@ function remarkCitations(sourceCount: number) {
  * canvas preview and on its public page. Only a node that is nothing but
  * whole comments goes; one still open (mid-stream) stays text until it closes.
  */
-function isOnlyComments(value: string | undefined): boolean {
-  return !!value && value.includes("<!--") && value.replace(/<!--[\s\S]*?-->/g, "").trim() === "";
+export function isOnlyComments(value: string | undefined): boolean {
+  // Walked, not stripped with a regex: each step must find a whole comment
+  // (`<!--` up to the first `-->` after it) and only whitespace between them,
+  // so nothing a removal could stitch back together ("<!<!---->--") counts.
+  if (!value) return false;
+  let rest = value.trim();
+  if (!rest.startsWith("<!--")) return false;
+  while (rest.length > 0) {
+    if (!rest.startsWith("<!--")) return false;
+    const end = rest.indexOf("-->", 4);
+    if (end < 0) return false;
+    rest = rest.slice(end + 3).trimStart();
+  }
+  return true;
 }
 
 function remarkDropComments() {

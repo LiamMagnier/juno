@@ -32,7 +32,8 @@ const db = {
 const log: Array<{ client: Client; model: string; op: string; where: unknown; data?: unknown }> = [];
 const mail: Array<{ to: string; subject: string }> = [];
 const limits = new Map<string, number>();
-let limitOverride: boolean | null = null;
+/** Set to make every rate-limit check refuse, as a spent budget would. */
+let forceRateLimited = false;
 let sessionUser: { id: string; email: string; name?: string } | null = null;
 let seq = 0;
 
@@ -151,7 +152,7 @@ const stubs: Record<string, unknown> = {
     rateLimit: async ({ key, limit }: { key: string; limit: number }) => {
       const next = (limits.get(key) ?? 0) + 1;
       limits.set(key, next);
-      return { success: limitOverride ?? next <= limit, remaining: 0, resetAt: new Date() };
+      return { success: !forceRateLimited && next <= limit, remaining: 0, resetAt: new Date() };
     },
   },
   "@/lib/session": { getCurrentUser: async () => sessionUser },
@@ -206,7 +207,7 @@ function reset() {
   log.length = 0;
   mail.length = 0;
   limits.clear();
-  limitOverride = null;
+  forceRateLimited = false;
   sessionUser = { id: OWNER, email: "ada@owner.test", name: "Ada" };
   db.users.push(
     { id: OWNER, email: "ada@owner.test", name: "Ada", emailVerified: new Date(), bannedAt: null },
@@ -373,11 +374,11 @@ test("POST /api/share/people: signed out, bad addresses, too many today, and the
   assert.deepEqual(body.people.map((p) => p.email), ["grace@example.test"]);
   assert.equal(body.added, 1);
 
-  limitOverride = false;
+  forceRateLimited = true;
   const limited = await peopleRoute.POST(post({ kind: "CHAT", conversationId: CONV, emails: ["alan@example.test"] }));
   assert.equal(limited.status, 429);
   assert.equal(((await limited.json()) as { code: string }).code, "rate_limited");
-  limitOverride = null;
+  forceRateLimited = false;
 
   const listed = await peopleRoute.GET(new Request(`http://alevr.test/api/share/people?conversationId=${CONV}`));
   const read = (await listed.json()) as { share: { id: string }; people: Array<{ email: string }> };

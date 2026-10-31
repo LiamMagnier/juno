@@ -1526,6 +1526,7 @@ export function AppSidebar({
             </PopoverTrigger>
           </NotificationsPopover>
           )}
+          {/* Only while expanded: the collapsed rail has its own Show sidebar. */}
           {onToggleCollapse && !collapsed && (
             <motion.div layout="position" transition={layoutTransition} className="hidden shrink-0 md:flex">
               <Tooltip>
@@ -1535,14 +1536,14 @@ export function AppSidebar({
                     size="icon-sm"
                     className={cn("jicon-trigger hidden shrink-0 text-muted-foreground hover:text-foreground md:inline-flex", "size-8 coarse:size-11")}
                     onClick={onToggleCollapse}
-                    aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
+                    aria-label="Hide sidebar"
                     aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
                   >
-                    <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
+                    <SidebarMotionIcon kind="panel-close" className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side={collapsed ? "right" : "bottom"} className="flex items-center gap-1.5">
-                  {collapsed ? "Show sidebar" : "Hide sidebar"}
+                <TooltipContent side="bottom" className="flex items-center gap-1.5">
+                  Hide sidebar
                   <Kbd>{chordLabel(`${mod}⇧S`, mod)}</Kbd>
                 </TooltipContent>
               </Tooltip>

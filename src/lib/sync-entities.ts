@@ -760,6 +760,9 @@ export async function listEntityIndex(
   };
 }
 
+/** The loaders by entity type, own entries only (see loadEntities). */
+const LOADERS = new Map<string, EntityLoader>(Object.entries(loaders));
+
 /**
  * Hydrate a batch of entities of one type. Ids resolve in request order;
  * revisions come from EntityRevision (0 for rows that predate change capture).
@@ -767,7 +770,10 @@ export async function listEntityIndex(
  * never existed under this account (or belong to someone else) are omitted.
  */
 export async function loadEntities(accountId: string, type: string, ids: string[]): Promise<EntityEnvelope[]> {
-  const loader = loaders[type];
+  // Looked up in a Map of the table's own entries: a type named after an
+  // Object.prototype member ("constructor", "toString") is unknown, not a
+  // function to call.
+  const loader = LOADERS.get(type);
   if (!loader) throw new Error(`unknown entity type: ${type}`);
   const [data, revisions] = await Promise.all([
     loader(accountId, ids),
