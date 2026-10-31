@@ -176,6 +176,18 @@ with the Swift runtime; each has tests in `src/test/`.
   `interrupted`); the runner never writes it. `tests/work-security.test.ts`
   keeps the two lists equal. Re-apply when re-syncing.
 
+## Saved logins on an agent's computer (October 2026, docs/design/agents-v2/VAULT.md)
+
+- `src/work/computer-login-tool.ts` (new; exported from `src/work/index.ts`):
+  `computer_fill_login`, action `work.computer.fill_login`. The host fills
+  (the web app's `src/lib/computer/vault-*.ts`: origin check, decrypt, CDP
+  `Input.insertText`); this package never sees a value and only decides the
+  approval: `sensitive` for a login never approved, `command` once it was,
+  `safe` for a call the host will refuse. `fill` is told whether this call was
+  put to the person (`approvedNow`). Not in `REMOTE_TOOL_NAMES`: the runner
+  builds it only while the vault is on. `src/test/computer-login-tool.test.ts`
+  covers it. Re-apply when re-syncing.
+
 ## Build
 
 ```sh

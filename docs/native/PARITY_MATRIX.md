@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-368 routes: 230 native, 65 planned, 58 web only, 15 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+370 routes: 230 native, 67 planned, 58 web only, 15 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 4/4 | 4/4 | 18 | 9 | 1 | 0 |
+| [Agents](#agents) | 4/4 | 4/4 | 18 | 11 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
@@ -472,6 +472,8 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/computer/shell` | GET | Planned |  | The agent's shell output for one of its Work runs, read after a cursor; the web computer pane's terminal polls it. |
 | `/api/agents/[id]/computer/view` | POST | Native | JunoWorkKit |  |
 | `/api/computer-view/session` | POST | Web only |  | Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves. |
+| `/api/agents/[id]/credentials` | GET, POST | Planned |  | An agent's saved site logins (labels and sites, never values), off unless AGENT_VAULT_ENABLED=1; the web profile adds and removes them (docs/design/agents-v2/VAULT.md). |
+| `/api/agents/[id]/credentials/[credentialId]` | PATCH, DELETE | Planned |  | Change or remove one saved login of an agent; web profile only for now. |
 | `/api/agents/[id]/duplicate` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals/[goalId]` | PATCH, DELETE | Native | JunoWorkKit |  |

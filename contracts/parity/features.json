@@ -825,6 +825,14 @@
           "status": "web-only",
           "note": "Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves."
         },
+        "/api/agents/[id]/credentials": {
+          "status": "planned",
+          "note": "An agent's saved site logins (labels and sites, never values), off unless AGENT_VAULT_ENABLED=1; the web profile adds and removes them (docs/design/agents-v2/VAULT.md)."
+        },
+        "/api/agents/[id]/credentials/[credentialId]": {
+          "status": "planned",
+          "note": "Change or remove one saved login of an agent; web profile only for now."
+        },
         "/api/agents/[id]/duplicate": "native",
         "/api/agents/[id]/goals": "native",
         "/api/agents/[id]/goals/[goalId]": "native",

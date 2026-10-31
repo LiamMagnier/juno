@@ -182,6 +182,7 @@ model User {
   agentComputerUsage          AgentComputerUsageInterval[]
   agentComputerAudits         AgentComputerAudit[]
   computerShellOutputs        ComputerShellOutput[]
+  agentCredentials            AgentCredential[]
   agentSetupChanges           AgentSetupChange[]
   agentRoomMembers            AgentRoomMember[]
   agentRoomTurns              AgentRoomTurn[]
@@ -4721,6 +4722,7 @@ model Agent {
   events       AgentEvent[]
   computer     AgentComputer?
   setupChanges AgentSetupChange[]
+  credentials  AgentCredential[]
 
   @@index([userId, deletedAt, sortOrder])
 }
@@ -4950,6 +4952,38 @@ model ComputerShellOutput {
 
   @@unique([runId, callId, seq])
   @@index([userId, agentId, createdAt])
+}
+
+/// A site login saved for one agent, filled into its computer's browser by
+/// `computer_fill_login` (docs/design/agents-v2/VAULT.md). Owned by the
+/// person AND the agent: every read names both, and the ciphertexts are bound
+/// to both and to the row (encryptSecretBound, src/lib/computer/vault-store.ts),
+/// so a value copied to another row, agent or account does not open.
+model AgentCredential {
+  id             String    @id @default(cuid())
+  userId         String
+  agentId        String
+  /// The person's name for it, shown on the approval card and to the model.
+  label          String
+  /// scheme://host[:port], normalized (vault-policy.ts). Filled only when the
+  /// browser's top-level origin is exactly this.
+  origin         String
+  /// encryptSecretBound(username)
+  usernameSealed String    @db.Text
+  /// encryptSecretBound(password)
+  passwordSealed String    @db.Text
+  /// encryptSecretBound(base32 TOTP secret), or null without two-step codes
+  totpSealed     String?   @db.Text
+  /// When the person first approved a fill of this login. Null asks again.
+  approvedAt     DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, label])
+  @@index([userId, agentId])
 }
 
 /// Operator audit for computers. Identifiers and verdicts only (writer:

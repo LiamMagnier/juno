@@ -14,6 +14,7 @@
 import { prismaUnguarded } from "@/lib/db";
 import { isBoundSealedWithPrimary, isSealedWithPrimary, reencryptSecret, reencryptSecretBound } from "@/lib/crypto";
 import { credentialContext } from "@/lib/secrets/store";
+import { agentCredentialContext } from "@/lib/computer/vault-policy";
 
 const DRY = process.argv.includes("--dry") || process.argv.includes("--dry-run");
 
@@ -135,12 +136,48 @@ async function rotateSecretCredentials(): Promise<Tally> {
   return { changed, failed };
 }
 
+/**
+ * Agents' saved logins (docs/design/agents-v2/VAULT.md): each of the three
+ * values is sealed with its owner, agent, row and field as additional data,
+ * and re-sealed with that same context.
+ */
+async function rotateAgentCredentials(): Promise<Tally> {
+  const rows = await prismaUnguarded.agentCredential.findMany({
+    select: { id: true, userId: true, agentId: true, usernameSealed: true, passwordSealed: true, totpSealed: true },
+  });
+  let changed = 0,
+    failed = 0;
+  for (const row of rows) {
+    try {
+      const reseal = (value: string, field: "username" | "password" | "totp") =>
+        isBoundSealedWithPrimary(value) ? null : reencryptSecretBound(value, agentCredentialContext(row.userId, row.agentId, row.id, field));
+      const data: { usernameSealed?: string; passwordSealed?: string; totpSealed?: string } = {};
+      const username = reseal(row.usernameSealed, "username");
+      const password = reseal(row.passwordSealed, "password");
+      const totp = row.totpSealed ? reseal(row.totpSealed, "totp") : null;
+      if (username) data.usernameSealed = username;
+      if (password) data.passwordSealed = password;
+      if (totp) data.totpSealed = totp;
+      if (Object.keys(data).length === 0) continue;
+      changed++;
+      if (!DRY) {
+        await prismaUnguarded.agentCredential.updateMany({ where: { id: row.id, userId: row.userId, agentId: row.agentId }, data });
+      }
+    } catch (err) {
+      failed++;
+      console.error(`  ✗ agent saved login ${row.id}: ${(err as Error).message}`);
+    }
+  }
+  return { changed, failed };
+}
+
 async function main() {
   console.log(DRY ? "Rotation dry-run (no writes)…" : "Rotating secrets onto the primary key…");
   const connections = await rotateConnections();
   const accounts = await rotateAccounts();
   const userMcpServers = await rotateUserMcpServers();
   const secretCredentials = await rotateSecretCredentials();
+  const agentCredentials = await rotateAgentCredentials();
   const verb = DRY ? "would be re-sealed" : "re-sealed";
   console.log(`Connections ${verb}: ${connections.changed}` + (connections.failed ? ` (${connections.failed} FAILED)` : ""));
   console.log(`Accounts ${verb}:    ${accounts.changed}` + (accounts.failed ? ` (${accounts.failed} FAILED)` : ""));
@@ -150,7 +187,10 @@ async function main() {
   console.log(
     `Saved logins ${verb}: ${secretCredentials.changed}` + (secretCredentials.failed ? ` (${secretCredentials.failed} FAILED)` : "")
   );
-  const failed = connections.failed + accounts.failed + userMcpServers.failed + secretCredentials.failed;
+  console.log(
+    `Agents' saved logins ${verb}: ${agentCredentials.changed}` + (agentCredentials.failed ? ` (${agentCredentials.failed} FAILED)` : "")
+  );
+  const failed = connections.failed + accounts.failed + userMcpServers.failed + secretCredentials.failed + agentCredentials.failed;
   if (failed > 0) {
     console.error(`\n${failed} row(s) could not be rotated — keep every old key in TOKEN_ENCRYPTION_KEYS until this reports 0 failures, then re-run.`);
     process.exitCode = 1;

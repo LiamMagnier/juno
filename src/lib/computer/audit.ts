@@ -42,6 +42,10 @@ export const COMPUTER_AUDIT_KINDS = [
   "file_uploaded",
   "file_published",
   "browser_sandbox",
+  /** A saved login was filled into the computer's browser (vault-fill.ts). The reason only, never a value. */
+  "login_filled",
+  /** A fill was refused: `reason` says why (origin_mismatch, not_approved, ...). */
+  "login_refused",
 ] as const;
 
 export type ComputerAuditKind = (typeof COMPUTER_AUDIT_KINDS)[number];

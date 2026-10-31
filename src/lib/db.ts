@@ -250,6 +250,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // (src/lib/computer/store.ts, audit.ts). Every read is one account's week or log.
   ["AgentComputerUsageInterval", "userId"],
   ["AgentComputerAudit", "userId"],
+  // Saved site logins an agent's computer may fill (docs/design/agents-v2/VAULT.md).
+  // Every read names the person and the agent (src/lib/computer/vault-store.ts);
+  // the sealed columns are bound to both, so a lookup without the owner opens nothing.
+  ["AgentCredential", "userId"],
   // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
   // per-message plan of who answers. A room's membership is a statement about
   // one person's agents, so it is guarded like the agents themselves.

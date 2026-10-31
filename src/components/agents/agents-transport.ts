@@ -33,6 +33,7 @@ import type {
   ClientAgentRoutine,
 } from "@/lib/agents/types";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
+import type { ClientAgentCredential } from "@/lib/computer/vault-policy";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import type { AgentMemoryAccess } from "@/lib/memory-scope";
 
@@ -475,6 +476,31 @@ export function updateNote(id: string, noteId: string, content: string): Promise
 
 export function deleteNote(id: string, noteId: string): Promise<AgentOutcome<true>> {
   return call(`${base(id)}/notes/${encodeURIComponent(noteId)}`, { method: "DELETE" }, () => true as const);
+}
+
+/**
+ * Its saved logins (docs/design/agents-v2/VAULT.md), by label and site; null
+ * when saved logins are off on this server. Never a value, in either direction
+ * after saving.
+ */
+export function fetchAgentCredentials(id: string): Promise<AgentOutcome<ClientAgentCredential[] | null>> {
+  return call(`${base(id)}/credentials`, {}, (d) => (Array.isArray(d.credentials) ? (d.credentials as ClientAgentCredential[]) : null));
+}
+
+export interface SaveAgentCredentialInput {
+  label: string;
+  origin: string;
+  username: string;
+  password: string;
+  totpSecret?: string;
+}
+
+export function saveAgentCredential(id: string, input: SaveAgentCredentialInput): Promise<AgentOutcome<ClientAgentCredential>> {
+  return call(`${base(id)}/credentials`, { method: "POST", body: input }, (d) => d.credential as ClientAgentCredential);
+}
+
+export function deleteAgentCredential(id: string, credentialId: string): Promise<AgentOutcome<true>> {
+  return call(`${base(id)}/credentials/${encodeURIComponent(credentialId)}`, { method: "DELETE" }, () => true as const);
 }
 
 /** Keeps a note the agent saved in a task and that waited for review. Forgetting it is `deleteNote`. */

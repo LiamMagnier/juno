@@ -363,8 +363,29 @@ export const env = {
     },
   },
 
+  // The agents' credential vault (docs/design/agents-v2/VAULT.md). Off unless
+  // AGENT_VAULT_ENABLED is exactly "1", and only ever on beside a computer
+  // provider: a saved login is filled into an agent computer's browser only.
+  agentVault: {
+    get enabled(): boolean {
+      return (process.env.AGENT_VAULT_ENABLED ?? "").trim() === "1";
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
+
+/**
+ * Whether agents may keep saved logins (docs/design/agents-v2/VAULT.md): the
+ * switch is on AND a computer provider is named. The routes and the runner
+ * also require the provider to resolve (src/lib/computer/vault-store.ts).
+ */
+export function isAgentVaultConfigured(): boolean {
+  if (!env.agentVault.enabled) return false;
+  const provider = env.agentComputer.provider.trim().toLowerCase();
+  if (provider === "docker" || provider === "remote") return true;
+  return provider === "fake" && process.env.NODE_ENV !== "production";
+}
 
 export function isStorageConfigured(): boolean {
   const s = env.s3;
