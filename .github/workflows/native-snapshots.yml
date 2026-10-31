@@ -1,0 +1,343 @@
+# Real screenshots of the shipping native apps, light and dark.
+#
+# The design review had no pictures of what a Mac actually draws: the offscreen
+# snapshot suites swap every Liquid Glass control for an opaque stand-in
+# (`junoSnapshotOpaqueGlass`), and nothing in CI ran the app itself. This runs
+# the apps' own DEBUG preview harness (`--juno-ui-preview`, a throwaway fixture
+# world with no account and no network) and keeps what it draws:
+#
+#   macos    The Debug JunoDesktop build, relaunched once per surface with
+#            `--juno-preview-snapshot`, which photographs the app's own window
+#            from the window server's composite (real glass, no Screen
+#            Recording permission). 1440x900, light and dark.
+#   ios      The Debug JunoMobile simulator build on an iPhone 17-class
+#            simulator, relaunched once per surface and captured with
+#            `simctl io screenshot`, light and dark. Plus the hosted snapshot
+#            suites (Owner, Voice, Pairing, Link) with JUNO_SNAPSHOT_DIR set.
+#   publish  Every PNG as one artifact, and as a single orphan commit
+#            force-pushed to `ci/native-snapshots-out` so the set can be
+#            fetched with git and never grows history.
+#
+# The driver is native/Scripts/ci-native-snapshots.py: one failed capture is
+# recorded in the manifest and the rest carry on.
+#
+# Manual or on push to `ci/native-snapshots` only: macOS minutes count 10x.
+
+name: native snapshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      only_macos:
+        description: "Comma-separated macOS surface names (blank = all)"
+        required: false
+        default: ""
+      only_ios:
+        description: "Comma-separated iOS surface names (blank = all)"
+        required: false
+        default: ""
+  push:
+    branches: [ci/native-snapshots]
+
+concurrency:
+  group: native-snapshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REQUIRED_XCODE_MAJOR: "26"
+  MAC_WINDOW_SIZE: "1440x900"
+
+jobs:
+  macos:
+    name: macOS app captures
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Require an Xcode new enough for the deployment floor
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          # Parsed from a variable, never piped into `head` (see native.yml).
+          version=$(xcodebuild -version)
+          printf '%s\n' "$version"
+          major=$(printf '%s\n' "$version" | sed -n -E '1s/Xcode ([0-9]+).*/\1/p')
+          if [ "$major" -lt "$REQUIRED_XCODE_MAJOR" ]; then
+            echo "::error::JunoDesktop targets macOS $REQUIRED_XCODE_MAJOR and needs Xcode $REQUIRED_XCODE_MAJOR or newer; this runner has Xcode $major."
+            exit 1
+          fi
+          sw_vers
+          system_profiler SPDisplaysDataType | sed -n '/Resolution/p;/Retina/p' || true
+
+      - name: Install XcodeGen
+        # `brew update` first: the image's pinned formula is older than the
+        # 2.46.0 both project specs require (see native.yml).
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate projects
+        run: ./native/Scripts/generate-projects.sh
+
+      - name: Build JunoDesktop (Debug)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/logs/macos"
+          log="$RUNNER_TEMP/logs/macos/xcodebuild.log"
+          if ! xcodebuild \
+            -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
+            -scheme JunoDesktop \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            build > "$log" 2>&1; then
+            grep -E "error:" "$log" | head -n 60 || true
+            tail -n 80 "$log"
+            exit 1
+          fi
+          tail -n 5 "$log"
+
+      - name: Capture surfaces
+        env:
+          ONLY: ${{ github.event.inputs.only_macos }}
+        run: |
+          set -euo pipefail
+          app=$(find "$RUNNER_TEMP/desktop-dd/Build/Products/Debug" -maxdepth 1 -name '*.app' | head -n 1)
+          echo "App: $app"
+          ls "$app/Contents/MacOS"
+          codesign -dv "$app" 2>&1 || true
+          extra=()
+          if [ -n "${ONLY:-}" ]; then extra=(--only "$ONLY"); fi
+          python3 native/Scripts/ci-native-snapshots.py macos \
+            --app "$app" \
+            --out "$RUNNER_TEMP/shots/macos" \
+            --logs "$RUNNER_TEMP/logs/macos" \
+            --size "$MAC_WINDOW_SIZE" \
+            "${extra[@]+"${extra[@]}"}"
+
+      # The whole shots/ folder, so the artifact's top level is `macos/`.
+      - name: Upload macOS captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-snapshots-macos
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload macOS capture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-snapshots-macos-logs
+          path: |
+            ${{ runner.temp }}/logs/macos
+            ~/Library/Logs/DiagnosticReports/*Juno*.ips
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios:
+    name: iOS app captures
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Select the newest installed Xcode
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate projects
+        run: ./native/Scripts/generate-projects.sh
+
+      - name: Pick and boot an iPhone simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r udid name runtime < <(python3 native/Scripts/ci-native-snapshots.py pick-iphone)
+          echo "Using $name ($runtime) $udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          # The software keyboard, so a focused composer shows it.
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false || true
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Build JunoMobile and its tests (Debug simulator)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/logs/ios"
+          log="$RUNNER_TEMP/logs/ios/xcodebuild.log"
+          # `SWIFT_COMPILATION_MODE=wholemodule` is the toolchain workaround
+          # native.yml documents (a Swift 6.3.x IRGen crash).
+          if ! xcodebuild \
+            -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
+            -scheme JunoMobile \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
+            SWIFT_COMPILATION_MODE=wholemodule \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing > "$log" 2>&1; then
+            grep -E "error:" "$log" | head -n 60 || true
+            tail -n 80 "$log"
+            exit 1
+          fi
+          tail -n 5 "$log"
+
+      - name: Hosted snapshot suites
+        continue-on-error: true
+        env:
+          TEST_RUNNER_JUNO_SNAPSHOT_DIR: ${{ runner.temp }}/shots/ios-tests
+        run: |
+          set -o pipefail
+          mkdir -p "$TEST_RUNNER_JUNO_SNAPSHOT_DIR"
+          xcodebuild \
+            -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
+            -scheme JunoMobile \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
+            -only-testing:JunoMobileTests/JunoMobileOwnerSnapshotTests \
+            -only-testing:JunoMobileTests/JunoMobileVoiceSnapshotTests \
+            -only-testing:JunoMobileTests/JunoMobilePairingSnapshotTests \
+            -only-testing:JunoMobileTests/JunoMobileLinkSnapshotTests \
+            SWIFT_COMPILATION_MODE=wholemodule \
+            CODE_SIGNING_ALLOWED=NO \
+            test-without-building | tail -n 120
+          ls -1 "$TEST_RUNNER_JUNO_SNAPSHOT_DIR" | sed 's/^/  /'
+
+      - name: Capture surfaces in the simulator
+        env:
+          ONLY: ${{ github.event.inputs.only_ios }}
+        run: |
+          set -euo pipefail
+          udid="${{ steps.sim.outputs.udid }}"
+          app=$(find "$RUNNER_TEMP/mobile-dd/Build/Products/Debug-iphonesimulator" -maxdepth 1 -name '*.app' | head -n 1)
+          echo "App: $app"
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          echo "Bundle: $bundle"
+          xcrun simctl install "$udid" "$app"
+          extra=()
+          if [ -n "${ONLY:-}" ]; then extra=(--only "$ONLY"); fi
+          python3 native/Scripts/ci-native-snapshots.py ios \
+            --udid "$udid" \
+            --bundle-id "$bundle" \
+            --device-name "${{ steps.sim.outputs.name }}" \
+            --runtime "${{ steps.sim.outputs.runtime }}" \
+            --out "$RUNNER_TEMP/shots/ios" \
+            --logs "$RUNNER_TEMP/logs/ios" \
+            "${extra[@]+"${extra[@]}"}"
+
+      # The whole shots/ folder: the artifact's top level is `ios/` and
+      # `ios-tests/`.
+      - name: Upload iOS captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-snapshots-ios
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload iOS capture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-snapshots-ios-logs
+          path: ${{ runner.temp }}/logs/ios
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish to ci/native-snapshots-out
+    needs: [macos, ios]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download captures
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-snapshots-{macos,ios}
+          path: shots
+        continue-on-error: true
+
+      - name: Lay out the set
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # download-artifact puts each artifact in a folder of its own name;
+          # inside are macos/, ios/ and ios-tests/.
+          for artifact in shots/native-snapshots-*/; do
+            if [ -d "$artifact" ]; then cp -R "$artifact". out/; fi
+          done
+          {
+            echo "# Native snapshots"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- macOS job: ${{ needs.macos.result }}, iOS job: ${{ needs.ios.result }}"
+            echo
+            for dir in out/*/; do
+              [ -d "$dir" ] || continue
+              echo "## $(basename "$dir") ($(find "$dir" -name '*.png' | wc -l | tr -d ' ') PNGs)"
+              echo
+              if [ -f "$dir/MANIFEST.md" ]; then sed '1d' "$dir/MANIFEST.md"; else find "$dir" -name '*.png' -exec basename {} \; | sort | sed 's/^/- /'; fi
+              echo
+            done
+          } > out/README.md
+          cat out/README.md
+          echo "PNG count: $(find out -name '*.png' | wc -l)"
+
+      - name: Upload the combined set
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-snapshots
+          path: out
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Force-push an orphan commit to ci/native-snapshots-out
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          count=$(find out -name '*.png' | wc -l | tr -d ' ')
+          if [ "$count" = "0" ]; then
+            echo "::warning::No PNGs to publish; leaving ci/native-snapshots-out as it is."
+            exit 0
+          fi
+          cd out
+          git init -q
+          git checkout -q --orphan ci/native-snapshots-out
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Native snapshots of ${GITHUB_SHA::12} (run ${GITHUB_RUN_ID})"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/ci/native-snapshots-out
+          echo "Published $count PNGs to ci/native-snapshots-out"

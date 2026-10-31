@@ -80,7 +80,18 @@ enum DesktopPreviewSnapshot {
     private static func window(titled title: String?) -> NSWindow? {
         let candidates = NSApp.windows.filter { $0.isVisible && $0.frame.width > 400 && $0.contentView != nil }
         if let title {
-            return candidates.first { $0.title.localizedCaseInsensitiveContains(title) }
+            if let match = candidates.first(where: { $0.title.localizedCaseInsensitiveContains(title) }) {
+                return match
+            }
+            // The ⌘, window is titled after its open section ("General",
+            // "Appearance"), so "Settings" finds it by the scene's own
+            // identifier instead.
+            if title.localizedCaseInsensitiveCompare("settings") == .orderedSame {
+                return candidates.first {
+                    $0.identifier?.rawValue.localizedCaseInsensitiveContains("settings") == true
+                }
+            }
+            return nil
         }
         return candidates.first { $0.identifier?.rawValue.hasPrefix(JunoDesktopWindow.mainID) == true }
             ?? candidates.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
@@ -149,9 +160,12 @@ enum DesktopPreviewSnapshot {
         let pid = ProcessInfo.processInfo.processIdentifier
         let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
         let menus = info.compactMap { entry -> CGWindowID? in
+            let layer = entry[kCGWindowLayer as String] as? Int ?? 0
+            // Floating panels and sheets sit under the status level (25); an
+            // open menu sits at the pop-up menu level (101). The app's own
+            // menu bar extra (25) is never part of the window's picture.
             guard (entry[kCGWindowOwnerPID as String] as? Int32) == pid,
-                  (entry[kCGWindowLayer as String] as? Int ?? 0) > 0,
-                  (entry[kCGWindowLayer as String] as? Int ?? 0) < 25
+                  (layer > 0 && layer < 25) || (layer >= 100 && layer <= 102)
             else { return nil }
             return (entry[kCGWindowNumber as String] as? NSNumber).map { CGWindowID($0.uint32Value) }
         }
@@ -219,5 +233,45 @@ extension NSWindow {
 
 extension NSApplication {
     @objc var previewAlwaysYes: Bool { true }
+}
+#endif
+
+#if DEBUG
+/// The files `--juno-preview-attach` puts on the draft: a small spreadsheet
+/// and a picture, written to the temporary directory on each launch so the
+/// composer's attachment tray has real rows to draw. DEBUG-only.
+@MainActor
+enum DesktopPreviewAttachments {
+    static func write() -> [URL] {
+        let directory = FileManager.default.temporaryDirectory
+        var urls: [URL] = []
+        let sheet = directory.appendingPathComponent("Q3 pipeline.csv")
+        let rows = [
+            "Account,Stage,Value,Owner",
+            "Northwind,Proposal,48000,Ana",
+            "Contoso,Negotiation,125000,Ben",
+            "Fabrikam,Discovery,18000,Chloé",
+        ]
+        if (try? rows.joined(separator: "\n").write(to: sheet, atomically: true, encoding: .utf8)) != nil {
+            urls.append(sheet)
+        }
+        let picture = directory.appendingPathComponent("Moodboard.png")
+        if let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 480, pixelsHigh: 320,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let context = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            NSGradient(starting: .systemIndigo, ending: .systemOrange)?.draw(in: NSRect(x: 0, y: 0, width: 480, height: 320), angle: 35)
+            NSGraphicsContext.restoreGraphicsState()
+            if let png = rep.representation(using: .png, properties: [:]),
+               (try? png.write(to: picture)) != nil
+            {
+                urls.append(picture)
+            }
+        }
+        return urls
+    }
 }
 #endif
