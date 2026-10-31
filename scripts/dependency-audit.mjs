@@ -12,7 +12,18 @@ import path from "node:path";
 // Shape: { package: "name", advisories: ["GHSA-xxxx-xxxx-xxxx"],
 //          reason: "why it is unreachable or unpatchable", expires: "YYYY-MM-DD" }
 /** @type {{ package: string, advisories: string[], reason: string, expires: string }[]} */
-export const ACCEPTED_ADVISORIES = [];
+export const ACCEPTED_ADVISORIES = [
+  {
+    package: "minimatch",
+    advisories: ["GHSA-g3hv-75wg-m249"],
+    reason:
+      "Reached only through exceljs -> archiver (glob@7, readdir-glob), which run minimatch for archiver.glob() and " +
+      "archiver.directory(). exceljs's workbook writer calls only append() and file() with fixed names, and Juno never " +
+      "imports archiver, so no pattern reaches minimatch. The fixed minimatch is 11.x, which glob@7 cannot load, and " +
+      "npm's only fix downgrades exceljs a major version.",
+    expires: "2027-01-28",
+  },
+];
 
 // An exception may not be dated further out than this, so "accepted" always
 // means "looked at this quarter".
