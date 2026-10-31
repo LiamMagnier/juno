@@ -17,6 +17,12 @@ import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
 import { transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
+import {
+  allAppsLabel,
+  directoryPages,
+  directoryView,
+  splitDirectoryCategories,
+} from "@/components/connections/directory-browse";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { useReducedMotion } from "@/lib/motion-preference";
 
@@ -68,6 +74,8 @@ interface CatalogResponse {
   items?: CatalogItem[];
   cursor?: string;
   categories?: Category[];
+  /** How many toolkits match, when the API says. */
+  total?: number;
 }
 
 export interface DirectoryItem {
@@ -422,6 +430,10 @@ export function ConnectorDirectory({
   // repeated the sections it sat above.)
   const filter = "all" as Filter;
   const [category, setCategory] = React.useState<string | null>(null);
+  /** The whole catalogue as one paged list, opened from the overview. */
+  const [browseAll, setBrowseAll] = React.useState(false);
+  /** The catalogue's size, from the unfiltered listing. */
+  const [catalogTotal, setCatalogTotal] = React.useState<number | undefined>(undefined);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [apps, setApps] = React.useState<CatalogItem[]>([]);
   const [cursor, setCursor] = React.useState<string | null>(null);
@@ -510,6 +522,7 @@ export function ConnectorDirectory({
         .then((data) => {
           setApps(data.items ?? []);
           setCursor(data.cursor ?? null);
+          if (!query.trim() && !activeCategory && typeof data.total === "number") setCatalogTotal(data.total);
           // Categories are static per deploy; keep the last good set rather than
           // letting a partial response empty the filter row mid-browse.
           if (data.categories?.length) setCategories(data.categories);
@@ -528,7 +541,7 @@ export function ConnectorDirectory({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [catalogParams, composioConfigured, query]);
+  }, [activeCategory, catalogParams, composioConfigured, query]);
 
   const loadMore = React.useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -570,13 +583,15 @@ export function ConnectorDirectory({
    * flat list of a thousand toolkits. Each section is the first page of that
    * category, fetched in parallel once the category list is known.
    */
-  const overview = !q && !activeCategory && filter === "all" && composioConfigured;
-  const sectionIds = React.useMemo(() => categories.slice(0, 6).map((c) => c.id).join(","), [categories]);
+  const view = directoryView({ query, category: activeCategory, browseAll, composioConfigured });
+  const overview = view === "overview" && filter === "all";
+  const { featured: featuredCategories, more: moreCategories } = splitDirectoryCategories(categories);
+  const sectionIds = featuredCategories.map((c) => c.id).join(",");
   const [sections, setSections] = React.useState<{ category: Category; items: CatalogItem[] }[]>([]);
   React.useEffect(() => {
     if (!overview || !sectionIds) return;
     const controller = new AbortController();
-    const picked = categories.slice(0, 6);
+    const picked = splitDirectoryCategories(categories).featured;
     void Promise.all(
       picked.map((category) =>
         fetch(`/api/connectors/composio/catalog?category=${encodeURIComponent(category.id)}`, { signal: controller.signal })
@@ -690,17 +705,22 @@ export function ConnectorDirectory({
         {headerAction}
       </div>
 
-      {activeCategory ? (
+      {activeCategory || view === "all" ? (
         <div className="mt-6 flex items-center gap-1.5 motion-safe:animate-fade-in">
           <button
             type="button"
-            onClick={() => setCategory(null)}
-            aria-label="All apps"
+            onClick={() => {
+              setCategory(null);
+              setBrowseAll(false);
+            }}
+            aria-label="Back to the overview"
             className="pressable -ml-2 grid size-8 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
           >
             <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
           </button>
-          <h2 className="customize-title text-foreground">{categories.find((c) => c.id === activeCategory)?.label ?? "Apps"}</h2>
+          <h2 className="customize-title text-foreground">
+            {activeCategory ? (categories.find((c) => c.id === activeCategory)?.label ?? "Apps") : allAppsLabel(catalogTotal)}
+          </h2>
         </div>
       ) : null}
 
@@ -762,6 +782,32 @@ export function ConnectorDirectory({
                 <TileGrid items={section.items.map(catalogToItem)} {...gridProps} />
               </div>
             ))}
+            {/* The way past the showcase: every other category, and the whole
+                catalogue as one paged list (directory-browse.ts). */}
+            <div className="mt-10">
+              <h2 className="mb-4 flex min-h-6 items-center">
+                <button
+                  type="button"
+                  onClick={() => setBrowseAll(true)}
+                  className="group inline-flex items-center gap-1 rounded-xs text-ui font-medium text-foreground"
+                >
+                  {allAppsLabel(catalogTotal)}
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+                  />
+                </button>
+              </h2>
+              {moreCategories.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {moreCategories.map((more) => (
+                    <Button key={more.id} variant="outline" size="sm" onClick={() => setCategory(more.id)}>
+                      {more.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
             {addTile && <div className="mt-10">{addTile}</div>}
           </>
         ) : (availableItems.length > 0 || loading || addTile) && (
@@ -801,7 +847,7 @@ export function ConnectorDirectory({
           />
         )}
 
-        {cursor && !loading && !error && !(overview && sections.length > 0) && (
+        {cursor && !loading && !error && (directoryPages(view) || !(overview && sections.length > 0)) && (
           <div className="flex justify-center pt-6">
             <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={loadingMore} loading={loadingMore}>
               Load more apps

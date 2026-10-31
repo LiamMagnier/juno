@@ -250,13 +250,24 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // (src/lib/computer/store.ts, audit.ts). Every read is one account's week or log.
   ["AgentComputerUsageInterval", "userId"],
   ["AgentComputerAudit", "userId"],
+  // A task the person showed an agent on its computer (teach by
+  // demonstration, src/lib/teach/). The encrypted, redacted trace of what they
+  // did; every read and write names the person and the agent.
+  ["AgentDemonstration", "userId"],
+  // Saved site logins an agent's computer may fill (docs/design/agents-v2/VAULT.md).
+  // Every read names the person and the agent (src/lib/computer/vault-store.ts);
+  // the sealed columns are bound to both, so a lookup without the owner opens nothing.
+  ["AgentCredential", "userId"],
   // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
   // per-message plan of who answers. A room's membership is a statement about
   // one person's agents, so it is guarded like the agents themselves.
   ["AgentRoomMember", "userId"],
   ["AgentRoomTurn", "userId"],
-  // A linked phone number for iMessage (src/lib/channels). The webhook finds
-  // the link by its HMAC through prismaUnguarded, on purpose and only there.
+  // A linked phone number for iMessage (src/lib/channels). The webhook and a
+  // link start find a number by its HMAC through prismaUnguarded, and a link
+  // start clears another account's still-pending claim on the same number; on
+  // purpose and only in src/lib/channels/store.ts. A verified row is never
+  // written across accounts.
   ["ChannelLink", "userId"],
   // Payments (src/lib/payments): an agent's spending limit and the one-time
   // cards it was allowed. The Stripe webhook looks a card up by its provider

@@ -3068,6 +3068,21 @@ export async function openComputerViewSession(
   };
 }
 
+/**
+ * Stops a teach-by-demonstration recording of this computer, if this process
+ * runs one (docs/design/agents-v2/TEACH.md). Loaded only when the switch is
+ * on, and never allowed to fail the hand back it comes before.
+ */
+async function stopDemonstrationFirst(userId: string, agentId: string): Promise<void> {
+  if (!env.agentTeach.enabled) return;
+  try {
+    const { stopDemonstrationForHandBack } = await import("@/lib/teach/server");
+    await stopDemonstrationForHandBack(userId, agentId);
+  } catch {
+    // The recorder also stops on its own once the take over is gone.
+  }
+}
+
 export async function heartbeatComputerViewSession(
   userId: string,
   agentId: string,
@@ -3100,6 +3115,7 @@ export async function heartbeatComputerViewSession(
         existing.takeoverUntil != null &&
         (existing.takeoverBy ?? holder) === holder
       ) {
+        await stopDemonstrationFirst(userId, agentId);
         await releaseTakeover(existing, "access_lost", actor, now);
       }
       throw computerAccessError(access, input.agentName);
@@ -3125,8 +3141,10 @@ export async function heartbeatComputerViewSession(
     return getPublicComputerState(userId, agentId);
   }
   if (input.ended && input.mode === "control") {
-    // Hand back is never gated: it returns control. Close, end the person's
-    // session, then thaw (releaseTakeover).
+    // Hand back is never gated: it returns control. A recording of this take
+    // over stops first (it holds the browser connection the agent needs),
+    // then close, end the person's session, then thaw (releaseTakeover).
+    await stopDemonstrationFirst(userId, agentId);
     await releaseTakeover(existing, actor === "app" ? "app" : "web", actor, now);
   } else {
     await activePersistence.updateByAgent(userId, agentId, {

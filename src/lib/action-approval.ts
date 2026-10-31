@@ -169,6 +169,15 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // a higher budget, a routine that acts without asking, a model. Asks under
   // every policy short of `block`, and is never a standing approval.
   "juno_agents:widen_setup": "external_write",
+  // Raising how much an agent may spend in a month (src/lib/payments/service.ts,
+  // `set_spending_limit`). Money: it asks under every policy short of `block`,
+  // and is never a standing approval.
+  "juno_agents:raise_spend_limit": "destructive_or_sensitive",
+  // An agent asking for a one-time payment card (src/lib/chat/payment-tools.ts).
+  // Paying is on the approval floor (RULES §3.6): it asks under every policy
+  // short of `block`, is never a standing approval, and its card offers only
+  // Not now and Pay.
+  "juno_payments:request_payment": "destructive_or_sensitive",
 };
 
 /** The exact-rule keys, for the registry test that pins them to the specs. */
@@ -572,6 +581,17 @@ export function actionPreview(input: {
     const to = `Hand off to ${teammate || "another agent"}`;
     const handoff = title ? `${to}: ${title}.` : `${to}.`;
     return singleLine(estimate ? `${handoff} Estimated cost ${estimate}.` : handoff);
+  }
+  if (input.connectorId === "juno_payments" && input.toolName === "request_payment") {
+    const amount = typeof input.args.amount === "string" ? input.args.amount.trim() : "";
+    const merchant = typeof input.args.merchant === "string" ? input.args.merchant.trim() : "";
+    const agent = typeof input.args.agent === "string" ? input.args.agent.trim() : "";
+    const who = agent || "This agent";
+    return singleLine(
+      amount && merchant
+        ? `${who} wants to pay ${amount} at ${merchant} with a single-use card.`
+        : `${who} wants to pay with a single-use card.`,
+    );
   }
   if (input.connectorId === "juno_agents") {
     const previewObj =

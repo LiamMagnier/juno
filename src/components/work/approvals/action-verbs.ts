@@ -176,6 +176,14 @@ const VERBS: Record<string, ActionVerb> = {
     targetKeys: null,
     bodyAs: "prose",
   },
+  // A saved login (docs/design/agents-v2/VAULT.md): the card names the login
+  // and the site it was saved for, both written by the server. Never a value.
+  "work.computer.fill_login": {
+    verb: "Sign in",
+    bodyKeys: ["login"],
+    targetKeys: ["site"],
+    bodyAs: "prose",
+  },
 
   // ---- The executor's own tool names, as they arrive on an approval. ----
   apply_changes: {

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight } from "@/components/ui/icons";
+import { ChevronRight, CreditCard } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton, tellInstead } from "@/components/chat/decision";
@@ -320,6 +320,53 @@ const AGENT_CONFIG_DECISION_COPY: Record<ActionApprovalDecision, string> = {
   deny: "Denied. Nothing was changed.",
 };
 
+/*
+ * A payment (src/lib/chat/payment-tools.ts): an agent asking for one
+ * single-use card. The question is "Pay or Not now", nothing standing is ever
+ * offered (destructive_or_sensitive is allow-once only), and the payload is
+ * the merchant, the amount and the agent's reason, as the server bound them.
+ * Recognised on the connector id and tool name together, like the task.
+ */
+function isPayment(approval: Pick<ClientActionApproval, "connectorId" | "toolName">): boolean {
+  return approval.connectorId === "juno_payments" && approval.toolName === "request_payment";
+}
+
+const PAYMENT_CARD_COPY = {
+  description:
+    "A card for exactly this amount is typed into the checkout on the agent's computer. It works once and is cancelled after the payment, or when it expires unused.",
+  footnote: "Unanswered, this expires and no card is made.",
+};
+
+const PAYMENT_STATUS_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer.",
+  allowed: "Allowed. Making the card.",
+  denied: "Not paid. No card was made.",
+  executing: "Making the card.",
+  executed: "The card was made for this payment.",
+  failed: "The card could not be made. Nothing was paid.",
+  expired: "This expired before it was answered, so no card was made.",
+  superseded: "This was cancelled before it was answered, so no card was made.",
+  blocked: "Your permissions blocked this, so no card was made.",
+};
+
+const PAYMENT_DECISION_COPY: Record<ActionApprovalDecision, string> = {
+  allow_once: "Making the card.",
+  allow_scope: "Making the card.",
+  deny: "Not paid. No card was made.",
+};
+
+const PAYMENT_RECEIPT_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer",
+  allowed: "Making the card",
+  executing: "Making the card",
+  executed: "Card made",
+  failed: "No card, nothing paid",
+  denied: "Not paid",
+  expired: "Expired, not paid",
+  superseded: "Cancelled, not paid",
+  blocked: "Blocked by your settings",
+};
+
 const HANDOFF_CARD_COPY = {
   description:
     "It becomes their task, in their own thread, with their apps and autonomy. They report back there, not in this chat, and you can stop it at any time.",
@@ -517,6 +564,8 @@ type Outcome =
 /** Named verbs come from the tool identifier, never its untrusted arguments. */
 function approvalVerb(toolName: string): string {
   const words = toolName.split("__").at(-1)?.replace(/_/g, " ").trim() ?? "";
+  // Asking for a payment is answered with Pay (the payment card's one verb).
+  if (words === "request payment") return "Pay";
   const verbs = /(?:^|\s)(send|post|publish|delete|remove|create|update|change|add|move|archive|read|search|write|pay|transfer)\s+(.+)/i.exec(words);
   return verbs ? `${verbs[1][0].toUpperCase()}${verbs[1].slice(1)} ${verbs[2]}` : "Allow this action";
 }
@@ -610,20 +659,28 @@ export function ApprovalCard({
   const handoff = isAgentHandoff(current);
   const task = handoff || isTaskHandoff(current);
   const agentConfig = isAgentConfig(current);
+  const payment = isPayment(current);
+  const paymentAmount = payment ? detailText(current.detail, "amount") : null;
+  const paymentMerchant = payment ? detailText(current.detail, "merchant") : null;
+  const paymentReason = payment ? detailText(current.detail, "reason") : null;
   const agentConfigPreview = agentConfig ? readAgentConfigPreview(current.detail) : null;
   const taskTitle = task ? detailText(current.detail, "title") : null;
   const taskEstimate = task ? detailText(current.detail, "estimate") : null;
   const taskBrief = task ? detailText(current.detail, "goal") : null;
   const teammate = handoff ? detailText(current.detail, "teammate") : null;
   const taskCopy = handoff ? HANDOFF_CARD_COPY : TASK_CARD_COPY;
-  const statusCopy = handoff
+  const statusCopy = payment
+    ? PAYMENT_STATUS_COPY
+    : handoff
     ? HANDOFF_STATUS_COPY
     : task
       ? TASK_STATUS_COPY
       : agentConfig
         ? AGENT_CONFIG_STATUS_COPY
         : STATUS_COPY;
-  const decisionCopy = handoff
+  const decisionCopy = payment
+    ? PAYMENT_DECISION_COPY
+    : handoff
     ? HANDOFF_DECISION_COPY
     : task
       ? TASK_DECISION_COPY
@@ -730,7 +787,9 @@ export function ApprovalCard({
   // The verb the primary button says, and the sentence the title says it in.
   const verbLabel = handoff ? "Hand off" : task ? "Start task" : agentConfig ? "Apply setup change" : approvalVerb(current.toolName);
   const toolVerb = approvalVerb(current.toolName);
-  const verbPhrase = handoff
+  const verbPhrase = payment
+    ? "pay with a single-use card"
+    : handoff
     ? `hand this task to ${teammate ?? "another agent"}`
     : task
       ? "start a background task"
@@ -739,7 +798,9 @@ export function ApprovalCard({
         : toolVerb === "Allow this action"
           ? `use ${current.connectorLabel}`
           : `${toolVerb.charAt(0).toLowerCase()}${toolVerb.slice(1)} in ${current.connectorLabel}`;
-  const settledTitle = handoff
+  const settledTitle = payment
+    ? "Payment with a single-use card"
+    : handoff
     ? "Handoff to another agent"
     : task
       ? "Background task"
@@ -747,7 +808,7 @@ export function ApprovalCard({
         ? "Agent setup change"
         : `${verbPhrase.charAt(0).toUpperCase()}${verbPhrase.slice(1)}`;
   const danger = current.riskClass === "destructive_or_sensitive";
-  const expiryLine = task ? taskCopy.footnote : `Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`;
+  const expiryLine = payment ? PAYMENT_CARD_COPY.footnote : task ? taskCopy.footnote : `Unanswered, this expires and ${PRODUCT_NAME} stops rather than acting on it.`;
 
   /* ── THE RECEIPT ─────────────────────────────────────────────────────────
    * Once nobody can answer it, the card is a receipt. While the answer is
@@ -772,15 +833,21 @@ export function ApprovalCard({
         : expired
           ? "expired"
           : "pending";
-  const receiptCopy = handoff
+  const receiptCopy = payment
+    ? PAYMENT_RECEIPT_COPY
+    : handoff
     ? HANDOFF_RECEIPT_COPY
     : task
       ? TASK_RECEIPT_COPY
       : agentConfig
         ? AGENT_CONFIG_RECEIPT_COPY
         : RECEIPT_COPY;
-  const pastPhrase = !task && !agentConfig && receiptStatus === "executed" ? pastActionPhrase(current.toolName, current.connectorLabel) : null;
-  const receiptHeadline = task
+  const pastPhrase = !task && !agentConfig && !payment && receiptStatus === "executed" ? pastActionPhrase(current.toolName, current.connectorLabel) : null;
+  const receiptHeadline = payment
+    ? paymentAmount && paymentMerchant
+      ? `${paymentAmount} at ${paymentMerchant}`
+      : settledTitle
+    : task
     ? (taskTitle ?? settledTitle)
     : agentConfig
       ? (agentConfigPreview?.headline ?? settledTitle)
@@ -817,8 +884,9 @@ export function ApprovalCard({
   const receiptAt = receiptStatus === "executed" ? (current.completedAt ?? current.decidedAt) : current.decidedAt;
   const receiptTime = useClockText(receipt ? receiptAt : null);
 
-  const mark =
-    handoff || agentConfig ? (
+  const mark = payment ? (
+    <CreditCard className="size-4" />
+  ) : handoff || agentConfig ? (
       <AppIcons.agents className="size-4" />
     ) : task ? (
       <AppIcons.work className="size-4" />
@@ -831,7 +899,23 @@ export function ApprovalCard({
    * change's behind its disclosure. */
   const payload = (
     <div className="pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
-      {task ? (
+      {payment ? (
+        <>
+          <p className="text-nav font-medium text-foreground tabular-nums" translate="no">
+            {paymentAmount ?? current.preview}
+          </p>
+          {paymentMerchant && (
+            <p className="mt-0.5 text-ui text-muted-foreground">
+              To <span className="text-foreground" translate="no">{paymentMerchant}</span>
+            </p>
+          )}
+          {paymentReason && (
+            <p className="mt-1 whitespace-pre-wrap break-words text-ui leading-relaxed text-foreground" translate="no">
+              {paymentReason}
+            </p>
+          )}
+        </>
+      ) : task ? (
         <>
           <p className="text-nav font-medium text-foreground">{taskTitle ?? current.preview}</p>
           {(teammate || taskEstimate) && (
@@ -1045,7 +1129,7 @@ export function ApprovalCard({
               them only repeated the text); a task keeps its title over the
               brief, and a setup change its list of changes. */}
           <div id={detailId} className="space-y-2.5 pb-3.5 pl-[2.875rem] pr-3.5 pt-0.5">
-            {task || agentConfig ? payload : null}
+            {task || agentConfig || payment ? payload : null}
             {!agentConfig && argumentList}
           </div>
         </Collapse>
@@ -1054,7 +1138,9 @@ export function ApprovalCard({
         {payload}
 
         {(!task || answerable) && !agentConfig && (
-          <p className="mt-2.5 text-ui leading-relaxed text-muted-foreground">{task ? taskCopy.description : risk.detail}</p>
+          <p className="mt-2.5 text-ui leading-relaxed text-muted-foreground">
+            {payment ? PAYMENT_CARD_COPY.description : task ? taskCopy.description : risk.detail}
+          </p>
         )}
 
         {current.derivedFromUntrusted && (
@@ -1100,7 +1186,7 @@ export function ApprovalCard({
               onClick={() => decide("allow_once")}
               menuLabel="More ways to approve"
               alternatives={
-                canAllowScope && !agentConfig
+                canAllowScope && !agentConfig && !payment
                   ? [
                       { label: `${verbLabel} once`, line: `${PRODUCT_NAME} asks again next time.`, onSelect: () => decide("allow_once") },
                       {

@@ -618,6 +618,26 @@ export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
   };
 }
 
+/**
+ * The apps a task started from a chat may reach.
+ *
+ * The turn's apps, deduplicated and bounded. In an agent's thread, only those
+ * the agent may use (`Agent.connectorIds`, "Connected apps it may use"): the
+ * composer can switch on any app the account linked, and without this a task
+ * the agent started reached an app the person never gave the agent, with
+ * nobody watching. Intersected, so it only narrows: an agent's app the turn did
+ * not carry is not added either. Outside an agent's thread, the turn's apps.
+ */
+export function taskToolConnectorIds(
+  turnConnectorIds: readonly string[],
+  agentConnectorIds: readonly string[] | null
+): string[] {
+  const allowed = agentConnectorIds === null ? null : new Set(agentConnectorIds);
+  return [...new Set(turnConnectorIds)]
+    .filter((id) => allowed === null || allowed.has(id))
+    .slice(0, MAX_TASK_CONNECTORS);
+}
+
 async function startTask(
   ctx: StartTaskToolContext,
   rawArgs: Record<string, unknown>,
@@ -640,15 +660,19 @@ async function startTask(
   // Read fresh: whether it is still active, and where it runs now (a "Runs on"
   // change made after this turn began is the one that counts).
   let agentPlacement: { executionTarget: string; preferredHostId: string | null } | null = null;
+  // The apps it may use, read fresh with the rest: an app removed from the
+  // agent after this turn began is not handed to its task.
+  let agentConnectorIds: readonly string[] | null = null;
   if (ctx.agent) {
     const agentRow = await prisma.agent.findFirst({
       where: { id: ctx.agent.id, userId: user.id, deletedAt: null },
-      select: { status: true, executionTarget: true, preferredHostId: true },
+      select: { status: true, executionTarget: true, preferredHostId: true, connectorIds: true },
     });
     if (!agentRow || agentRow.status !== "active") {
       return taskRefusal("agent_paused");
     }
     agentPlacement = { executionTarget: agentRow.executionTarget, preferredHostId: agentRow.preferredHostId };
+    agentConnectorIds = agentRow.connectorIds;
   }
   const keys = taskIdempotencyKeys(ctx.userMessageId);
   const ownSessionId = dispatch.sessionIdForKey(user, keys.session);
@@ -720,7 +744,7 @@ async function startTask(
     // stricter mode still wins inside the dispatcher (`resolveSessionFields`).
     permissionPolicy: chatTaskPolicy({ chosen: ctx.approvalMode ?? null, agentMode: ctx.agent?.approvalMode ?? null }),
     attachmentIds: [...new Set(ctx.attachmentIds)],
-    connectorIds: [...new Set(ctx.connectorIds)].slice(0, MAX_TASK_CONNECTORS),
+    connectorIds: taskToolConnectorIds(ctx.connectorIds, agentConnectorIds),
     idempotencyKey: keys.session,
   });
   if (!createBody.success) return taskRefusal("invalid_arguments");

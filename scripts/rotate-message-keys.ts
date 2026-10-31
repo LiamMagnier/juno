@@ -354,6 +354,21 @@ async function main(): Promise<void> {
     write: (id, value) => prismaUnguarded.agentNote.update({ where: { id }, data: { content: value } }),
   });
 
+  // A phone number linked for iMessage (src/lib/channels). Born sealed: every
+  // write (src/lib/channels/store.ts, linkDeps) goes through encryptField.
+  await rotateTextColumn("ChannelLink.phone", tally, {
+    page: async (cursor) => {
+      const rows = await prismaUnguarded.channelLink.findMany({
+        take: BATCH,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: "asc" },
+        select: { id: true, phone: true },
+      });
+      return rows.map((r) => ({ id: r.id, value: r.phone }));
+    },
+    write: (id, value) => prismaUnguarded.channelLink.update({ where: { id }, data: { phone: value } }),
+  });
+
   if (tally.failed === 0) clearCursor();
 
   console.log(

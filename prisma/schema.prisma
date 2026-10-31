@@ -182,6 +182,8 @@ model User {
   agentComputerUsage          AgentComputerUsageInterval[]
   agentComputerAudits         AgentComputerAudit[]
   computerShellOutputs        ComputerShellOutput[]
+  agentDemonstrations         AgentDemonstration[]
+  agentCredentials            AgentCredential[]
   agentSetupChanges           AgentSetupChange[]
   agentRoomMembers            AgentRoomMember[]
   agentRoomTurns              AgentRoomTurn[]
@@ -4721,6 +4723,8 @@ model Agent {
   events       AgentEvent[]
   computer     AgentComputer?
   setupChanges AgentSetupChange[]
+  demonstrations AgentDemonstration[]
+  credentials  AgentCredential[]
 
   @@index([userId, deletedAt, sortOrder])
 }
@@ -4908,6 +4912,34 @@ model AgentComputer {
   @@index([status, lastActiveAt])
 }
 
+/// A task the person showed an agent once on its computer, recorded during a
+/// take over as a semantic trace (docs/design/agents-v2/TEACH.md). Off unless
+/// AGENT_TEACH_ENABLED=1. `trace` is encryptField() of the redacted trace JSON
+/// (navigations, element descriptions, typed text with every secret replaced by
+/// a placeholder before it leaves the page); `shots` is encryptField() of at
+/// most eight low-resolution JPEGs. Nothing here is a skill: the person turns
+/// it into one through the Teach page's review and Save.
+model AgentDemonstration {
+  id        String    @id @default(cuid())
+  userId    String
+  agentId   String
+  /// recording | recorded | discarded
+  status    String    @default("recording")
+  /// Why recording stopped: stopped | handed_back | time_cap | step_cap | interrupted | error
+  endReason String?
+  stepCount Int       @default(0)
+  trace     String?   @db.Text
+  shots     String?   @db.Text
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, agentId, createdAt])
+}
+
 /// One metered awake interval of an agent's computer, counted against the
 /// account's weekly allowance (src/lib/computer/store.ts). Idempotent per
 /// (agentId, startedAt), like the spend key. No foreign key to Agent: usage
@@ -4950,6 +4982,38 @@ model ComputerShellOutput {
 
   @@unique([runId, callId, seq])
   @@index([userId, agentId, createdAt])
+}
+
+/// A site login saved for one agent, filled into its computer's browser by
+/// `computer_fill_login` (docs/design/agents-v2/VAULT.md). Owned by the
+/// person AND the agent: every read names both, and the ciphertexts are bound
+/// to both and to the row (encryptSecretBound, src/lib/computer/vault-store.ts),
+/// so a value copied to another row, agent or account does not open.
+model AgentCredential {
+  id             String    @id @default(cuid())
+  userId         String
+  agentId        String
+  /// The person's name for it, shown on the approval card and to the model.
+  label          String
+  /// scheme://host[:port], normalized (vault-policy.ts). Filled only when the
+  /// browser's top-level origin is exactly this.
+  origin         String
+  /// encryptSecretBound(username)
+  usernameSealed String    @db.Text
+  /// encryptSecretBound(password)
+  passwordSealed String    @db.Text
+  /// encryptSecretBound(base32 TOTP secret), or null without two-step codes
+  totpSealed     String?   @db.Text
+  /// When the person first approved a fill of this login. Null asks again.
+  approvedAt     DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, label])
+  @@index([userId, agentId])
 }
 
 /// Operator audit for computers. Identifiers and verdicts only (writer:

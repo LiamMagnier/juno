@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-368 routes: 230 native, 65 planned, 58 web only, 15 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+377 routes: 230 native, 72 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 4/4 | 4/4 | 18 | 9 | 1 | 0 |
+| [Agents](#agents) | 4/4 | 4/4 | 18 | 16 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
@@ -50,7 +50,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
-| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 10 |
+| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 12 |
 | [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
@@ -467,11 +467,15 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/activity` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/files` | GET, POST | Planned |  | Agent computer file listing and download; web panel disclosure. |
+| `/api/agents/[id]/computer/demonstration` | GET, POST | Planned |  | Teach by demonstration (docs/design/agents-v2/TEACH.md): start and stop recording during a take over, behind AGENT_TEACH_ENABLED; the web computer overlay only for now. |
+| `/api/agents/[id]/computer/demonstration/draft` | POST | Planned |  | Drafts a skill from a recorded demonstration for review on the Teach page; the web computer overlay only for now. |
 | `/api/agents/[id]/computer/heartbeat` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/poster` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/shell` | GET | Planned |  | The agent's shell output for one of its Work runs, read after a cursor; the web computer pane's terminal polls it. |
 | `/api/agents/[id]/computer/view` | POST | Native | JunoWorkKit |  |
 | `/api/computer-view/session` | POST | Web only |  | Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves. |
+| `/api/agents/[id]/credentials` | GET, POST | Planned |  | An agent's saved site logins (labels and sites, never values), off unless AGENT_VAULT_ENABLED=1; the web profile adds and removes them (docs/design/agents-v2/VAULT.md). |
+| `/api/agents/[id]/credentials/[credentialId]` | PATCH, DELETE | Planned |  | Change or remove one saved login of an agent; web profile only for now. |
 | `/api/agents/[id]/duplicate` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals/[goalId]` | PATCH, DELETE | Native | JunoWorkKit |  |
@@ -490,6 +494,9 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/memory-access` | PATCH | Planned |  | What an Orbit member may read of the account's memory, set from its page on the web. The apps keep the default grant until they show the setting. |
 | `/api/agents/rooms` | GET, POST | Planned |  | Orbit rooms: two to six members answering in one conversation. Web first; the apps open a room's conversation as an ordinary chat. |
 | `/api/agents/rooms/[conversationId]` | GET | Planned |  | A room's members, turn plan and handoffs. The apps draw the replies without the room's bylines yet. |
+| `/api/channels/imessage` | GET, DELETE | Planned |  | Whether the server offers texting agents by iMessage, and the account's linked number (last four digits only); DELETE unlinks. Web Settings › Devices first; the apps link nothing yet, and texts reach the agent the same either way. |
+| `/api/channels/imessage/link` | POST | Planned |  | Texts a six-digit code to the number being linked. Web Settings first. |
+| `/api/channels/imessage/verify` | POST | Planned |  | Reads the code back to finish the link. Web Settings first. |
 
 <a id="research"></a>
 
@@ -711,11 +718,13 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications. |
 | `/api/code/tasks/[id]/controls` | GET | Internal |  | Control events for the host or cloud runner, not a client screen. |
 | `/api/code/tasks/[id]/runner-context` | GET | Internal |  | Served once to the GitHub Actions runner (OIDC only). |
+| `/api/channels/sendblue/webhook` | POST | Internal |  | Sendblue's receive webhook for iMessage, authenticated by the sb-signing-secret header (docs/design/agents-v2/ENABLE_IMESSAGE.md). |
 | `/api/csp-report` | POST | Internal |  | Where the browser's CSP sends violation reports. |
 | `/api/devices/mac-app` | GET | Web only |  | Whether the account has a Mac seen in the last 30 days, so the website's Open in Mac app tries the app's URL scheme instead of the download page. The apps never need to ask whether they are installed. |
 | `/api/downloads` | GET | Native | JunoCore |  |
 | `/api/github/webhook` | POST | Internal |  | The GitHub App's webhook. |
 | `/api/health` | GET | Internal |  | Liveness for the uptime monitor. |
+| `/api/payments/stripe-issuing/webhook` | POST | Internal |  | Stripe Issuing's signed real-time authorization requests for agent payment cards. |
 | `/api/stripe/webhook` | POST | Internal |  | Stripe's signed events. |
 | `/api/v1/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications (the v1 alias). |
 | `/api/voice/spend` | POST | Internal |  | The voice relay reports what a live call has cost. |

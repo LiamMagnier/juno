@@ -9,6 +9,7 @@
 import { providerApiKey } from "@/lib/providers";
 import { ttsProviderOrder } from "@/lib/tts-order";
 import type { TtsProvider } from "@/lib/voices";
+import { arePaymentsConfigured, paymentsConfig } from "@/lib/payments/config";
 
 function required(name: string): string {
   const v = process.env[name];
@@ -197,6 +198,28 @@ export const env = {
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,
   },
 
+  // iMessage (optional — off unless all four CHANNEL_SENDBLUE_* are set).
+  // Getters so a test can set and clear them after import. The API key pair
+  // signs every send; the webhook secret is what Sendblue sends verbatim in
+  // `sb-signing-secret` on each inbound message (src/lib/channels/sendblue.ts).
+  channels: {
+    sendblue: {
+      get apiKeyId(): string {
+        return (process.env.CHANNEL_SENDBLUE_API_KEY_ID ?? "").trim();
+      },
+      get apiSecretKey(): string {
+        return (process.env.CHANNEL_SENDBLUE_API_SECRET_KEY ?? "").trim();
+      },
+      /** The Sendblue line texts come from and go to, E.164 ("+14155550100"). */
+      get fromNumber(): string {
+        return (process.env.CHANNEL_SENDBLUE_FROM_NUMBER ?? "").trim();
+      },
+      get webhookSecret(): string {
+        return (process.env.CHANNEL_SENDBLUE_WEBHOOK_SECRET ?? "").trim();
+      },
+    },
+  },
+
   // Agent computers (optional — disabled unless AGENT_COMPUTER_PROVIDER / COMPUTER_PROVIDER is set)
   agentComputer: {
     get provider(): string {
@@ -363,8 +386,78 @@ export const env = {
     },
   },
 
+  /**
+   * Teach by demonstration (docs/design/agents-v2/TEACH.md): the person shows
+   * an agent a task on its computer and it drafts a skill from the recording.
+   * Off unless AGENT_TEACH_ENABLED is exactly `1`, and then only where agent
+   * computers are on too (`isAgentTeachConfigured`).
+   */
+  agentTeach: {
+    get enabled(): boolean {
+      return (process.env.AGENT_TEACH_ENABLED ?? "").trim() === "1";
+    },
+  },
+
+  // The agents' credential vault (docs/design/agents-v2/VAULT.md). Off unless
+  // AGENT_VAULT_ENABLED is exactly "1", and only ever on beside a computer
+  // provider: a saved login is filled into an agent computer's browser only.
+  agentVault: {
+    get enabled(): boolean {
+      return (process.env.AGENT_VAULT_ENABLED ?? "").trim() === "1";
+    },
+  },
+
+  // Agent payments (src/lib/payments, docs/design/agents-v2/ENABLE_PAYMENTS.md):
+  // one-time cards an agent asks for. Off unless all three STRIPE_ISSUING_*
+  // values are set (or, outside production only, the test provider is asked
+  // for by name). Parsed in src/lib/payments/config.ts.
+  agentPayments: {
+    get config() {
+      return paymentsConfig(process.env);
+    },
+    get stripeIssuingSecretKey(): string {
+      return (process.env.STRIPE_ISSUING_SECRET_KEY ?? "").trim();
+    },
+    get stripeIssuingCardholderId(): string {
+      return (process.env.STRIPE_ISSUING_CARDHOLDER_ID ?? "").trim();
+    },
+    get stripeIssuingWebhookSecret(): string {
+      return (process.env.STRIPE_ISSUING_WEBHOOK_SECRET ?? "").trim();
+    },
+    get stripeIssuingApiVersion(): string {
+      return paymentsConfig(process.env).stripe?.apiVersion ?? "";
+    },
+    get cardTtlMinutes(): number {
+      return paymentsConfig(process.env).cardTtlMinutes;
+    },
+    get maxPaymentMinor(): number {
+      return paymentsConfig(process.env).maxPaymentMinor;
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
+
+/**
+ * Whether teach by demonstration may be offered: the switch is on and a
+ * computer provider is set. The provider's own availability (the image on the
+ * host) is still checked where a recording starts.
+ */
+export function isAgentTeachConfigured(): boolean {
+  return env.agentTeach.enabled && env.agentComputer.provider.length > 0 && env.agentComputer.provider.toLowerCase() !== "off";
+}
+
+/**
+ * Whether agents may keep saved logins (docs/design/agents-v2/VAULT.md): the
+ * switch is on AND a computer provider is named. The routes and the runner
+ * also require the provider to resolve (src/lib/computer/vault-store.ts).
+ */
+export function isAgentVaultConfigured(): boolean {
+  if (!env.agentVault.enabled) return false;
+  const provider = env.agentComputer.provider.trim().toLowerCase();
+  if (provider === "docker" || provider === "remote") return true;
+  return provider === "fake" && process.env.NODE_ENV !== "production";
+}
 
 export function isStorageConfigured(): boolean {
   const s = env.s3;
@@ -397,6 +490,17 @@ export function isGoogleConfigured(): boolean {
   return Boolean(env.googleClientId && env.googleClientSecret);
 }
 
+/**
+ * Messaging agents from iMessage (src/lib/channels). All four Sendblue values
+ * or nothing: without the webhook secret an inbound text could not be
+ * authenticated, and without the key pair nothing could be sent back, so a
+ * partial setup is off rather than half on.
+ */
+export function isIMessageConfigured(): boolean {
+  const s = env.channels.sendblue;
+  return Boolean(s.apiKeyId && s.apiSecretKey && s.fromNumber && s.webhookSecret);
+}
+
 export function isComposioConfigured(): boolean {
   return Boolean(env.connectors.composio.apiKey);
 }
@@ -425,4 +529,9 @@ export function isServerTtsConfigured(): boolean {
 /** The provider read-aloud uses when nothing fails — what the voice picker lists. */
 export function activeTtsProvider(): TtsProvider | null {
   return serverTtsOrder()[0] ?? null;
+}
+
+/** Agent payment cards: Stripe Issuing fully configured, or the dev-only test provider asked for. */
+export function isAgentPaymentsConfigured(): boolean {
+  return arePaymentsConfigured(process.env);
 }

@@ -97,6 +97,7 @@ const RECEIPT_RUNNING: Record<string, string> = {
   computer_read_page: "Working with files on its computer",
   computer_write_file: "Writing a file on its computer",
   computer_open_url: "Opening a page on its computer",
+  computer_fill_login: "Signing in with a saved login",
   // Juno Code / Work vocabulary (kept in step with JunoWorkVocabulary).
   list_folder: "Looking through a folder",
   read_file: "Reading a file",
@@ -167,6 +168,7 @@ const RECEIPT_DONE: Record<string, string> = {
   computer_read_page: "Worked with files on its computer",
   computer_write_file: "Wrote a file on its computer",
   computer_open_url: "Opened a page on its computer",
+  computer_fill_login: "Signed in with a saved login",
   list_folder: "Looked through a folder",
   read_file: "Read a file",
   search_files: "Searched your files",
@@ -236,6 +238,7 @@ const RECEIPT_ICON: Record<string, ReceiptIconKind> = {
   computer_read_page: "file",
   computer_write_file: "filePlus",
   computer_open_url: "web",
+  computer_fill_login: "keyboard",
   list_folder: "file",
   read_file: "file",
   search_files: "search",

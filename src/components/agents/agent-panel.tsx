@@ -23,6 +23,7 @@ import { formatLocalWhen, localStateSentence } from "@/components/agents/agent-b
 import { useAgentDetail } from "@/components/agents/use-agents";
 import { useCostConfirmation } from "@/components/agents/confirm-cost-dialog";
 import { AgentGoalRow } from "@/components/agents/agent-goal-row";
+import { AgentLogins } from "@/components/agents/agent-logins";
 import {
   advanceGoal,
   announceAgentsChanged,
@@ -480,6 +481,10 @@ export function AgentProfile({
             </ul>
           </Section>
         ) : null}
+
+        {/* Only beside a computer it can sign in on; the section hides itself
+            when saved logins are off on this server (agent-logins.tsx). */}
+        {computerOpen && hasComputer && !runsOnMac ? <AgentLogins agentId={agent.id} agentName={agent.name} /> : null}
 
         <Section title="How much it asks">
           <p className="text-body text-foreground">{ASKS_COPY[agent.approvalMode]}</p>

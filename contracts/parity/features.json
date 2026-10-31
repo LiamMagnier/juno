@@ -814,6 +814,14 @@
           "status": "planned",
           "note": "Agent computer file listing and download; web panel disclosure."
         },
+        "/api/agents/[id]/computer/demonstration": {
+          "status": "planned",
+          "note": "Teach by demonstration (docs/design/agents-v2/TEACH.md): start and stop recording during a take over, behind AGENT_TEACH_ENABLED; the web computer overlay only for now."
+        },
+        "/api/agents/[id]/computer/demonstration/draft": {
+          "status": "planned",
+          "note": "Drafts a skill from a recorded demonstration for review on the Teach page; the web computer overlay only for now."
+        },
         "/api/agents/[id]/computer/heartbeat": "native",
         "/api/agents/[id]/computer/poster": "native",
         "/api/agents/[id]/computer/shell": {
@@ -824,6 +832,14 @@
         "/api/computer-view/session": {
           "status": "web-only",
           "note": "Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves."
+        },
+        "/api/agents/[id]/credentials": {
+          "status": "planned",
+          "note": "An agent's saved site logins (labels and sites, never values), off unless AGENT_VAULT_ENABLED=1; the web profile adds and removes them (docs/design/agents-v2/VAULT.md)."
+        },
+        "/api/agents/[id]/credentials/[credentialId]": {
+          "status": "planned",
+          "note": "Change or remove one saved login of an agent; web profile only for now."
         },
         "/api/agents/[id]/duplicate": "native",
         "/api/agents/[id]/goals": "native",
@@ -866,6 +882,18 @@
         "/api/agents/rooms/[conversationId]": {
           "status": "planned",
           "note": "A room's members, turn plan and handoffs. The apps draw the replies without the room's bylines yet."
+        },
+        "/api/channels/imessage": {
+          "status": "planned",
+          "note": "Whether the server offers texting agents by iMessage, and the account's linked number (last four digits only); DELETE unlinks. Web Settings › Devices first; the apps link nothing yet, and texts reach the agent the same either way."
+        },
+        "/api/channels/imessage/link": {
+          "status": "planned",
+          "note": "Texts a six-digit code to the number being linked. Web Settings first."
+        },
+        "/api/channels/imessage/verify": {
+          "status": "planned",
+          "note": "Reads the code back to finish the link. Web Settings first."
         }
       }
     },
@@ -1391,6 +1419,10 @@
           "status": "internal",
           "note": "Served once to the GitHub Actions runner (OIDC only)."
         },
+        "/api/channels/sendblue/webhook": {
+          "status": "internal",
+          "note": "Sendblue's receive webhook for iMessage, authenticated by the sb-signing-secret header (docs/design/agents-v2/ENABLE_IMESSAGE.md)."
+        },
         "/api/csp-report": {
           "status": "internal",
           "note": "Where the browser's CSP sends violation reports."
@@ -1407,6 +1439,10 @@
         "/api/health": {
           "status": "internal",
           "note": "Liveness for the uptime monitor."
+        },
+        "/api/payments/stripe-issuing/webhook": {
+          "status": "internal",
+          "note": "Stripe Issuing's signed real-time authorization requests for agent payment cards."
         },
         "/api/stripe/webhook": {
           "status": "internal",

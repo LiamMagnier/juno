@@ -93,49 +93,82 @@ Done:
     not an HMAC (docs.sendblue.com/guides/chat-sdk-adapter/). This needs one more
     env var: `CHANNEL_SENDBLUE_WEBHOOK_SECRET`.
 
-Next:
-- `src/lib/channels/`:
-  - a provider interface;
-  - a Sendblue provider;
-  - the Mac relay stub and its documented protocol;
-  - a fake provider for tests.
-- Env getters in `src/lib/env.ts`, `.env.example` and `docs/JUNO.md` §19.
-- Link and verify routes, with the code sent by iMessage.
-- A webhook route with:
-  - timing-safe secret check;
-  - replay protection (handle dedupe and a `date_sent` window);
-  - a rate limit per number;
-  - unknown numbers ignored.
-- A headless agent reply through `runUtilityPrompt`, with @Name targeting, mirrored
-  into the agent's thread.
-- Approval notices sent as texts with a link, through a small hook in `notifyUser`.
-  A text reply never approves anything.
-- Tests with the fake provider.
+Built 2026-10-30 on `feat/imessage`, off until all four `CHANNEL_SENDBLUE_*` are set
+(owner runbook: `docs/design/agents-v2/ENABLE_IMESSAGE.md`):
+- `src/lib/channels/`: the provider interface (`types.ts`), Sendblue (`sendblue.ts`),
+  the Mac relay stub with its protocol (`mac-relay.ts`, never selected), a fake for
+  tests (`fake.ts`), the gate and the answer (`inbound.ts`), linking (`link.ts`),
+  approval notices (`notice.ts`), the headless reply (`reply.ts`, `reply-prompt.ts`),
+  the webhook as a function (`webhook.ts`) and the Prisma half (`store.ts`).
+- Env getters `env.channels.sendblue` and `isIMessageConfigured()`, `.env.example`,
+  `docs/JUNO.md` §19.
+- Routes: `GET`/`DELETE /api/channels/imessage`, `POST /api/channels/imessage/link`
+  (code texted, only its HMAC stored, bound to account and number), `POST
+  /api/channels/imessage/verify` (five tries, ten minutes), and `POST
+  /api/channels/sendblue/webhook` (constant-time `sb-signing-secret` check before the body
+  is read; line check; 5-minute `date_sent` window; 20 texts per 10 minutes per number;
+  handle ledger; unknown and pending numbers ignored with no reply). Classified in
+  `contracts/parity/features.json`.
+- The answer: @Name targeting (`findAddressedMembers`), else the link's default, else the
+  first active agent; a `runUtilityPrompt` walk on the agent's prompt block and thread with
+  no tools; both turns mirrored into the agent's thread (idempotent `clientId`); a
+  `channel_message` event with no content.
+- Approval notices: `notifyUser` texts `work_approval` / `code_approval` (actionable,
+  needs-you, with a path) lazily and unawaited: who is waiting and a link, never what.
+  Nothing on the inbound path can approve.
+- Settings › Devices › iMessage (`src/components/settings/sections/imessage.tsx`).
+- `ChannelLink.phone` sealed with `encryptField`, re-sealed by
+  `scripts/rotate-message-keys.ts`, listed in `SECURITY.md`.
+- Tests: `tests/imessage-channel.test.ts`, `tests/imessage-channel-store.test.ts`.
+
+Still to do:
+- Run it against a real Sendblue line (ENABLE_IMESSAGE.md §5); no test reaches Sendblue.
+- The Mac relay's server routes and Mac half (protocol in `mac-relay.ts`).
+- A default-agent picker in Settings, and the native apps' link screen.
 
 ## 3. One-time payment cards
 
-Done:
+Done (branch `feat/payment-cards`, 2026-10-31; off until `STRIPE_ISSUING_*` is set):
 - Tables `AgentSpendLimit` and `AgentPayment`. The PAN and CVC are never stored.
+  No new migration was needed.
 - Research: Stripe Issuing virtual cards can use
   `spending_controls.spending_limits[{amount, interval: all_time}]`. A merchant
   lock needs the real-time `issuing_authorization.request` webhook, answered within
   2 s with `{approved}` and the `Stripe-Version` header. Card details come from
   `expand[]=number&expand[]=cvc`, and cards are cancelled with `status=canceled`.
+- `src/lib/payments/`:
+  - the provider interface (`types.ts`);
+  - Stripe Issuing (`stripe-issuing.ts`);
+  - the dev-only test provider (`test-provider.ts`);
+  - the env resolution (`config.ts`, getters in `src/lib/env.ts`);
+  - the rules (`policy.ts`);
+  - the store (memory and Prisma);
+  - the service (`service.ts`);
+  - the webhook decision (`webhook.ts`);
+  - `fillPaymentCard(agentId, cardRef)` with `registerPaymentCardFiller`
+    (`fill.ts`). The real filler is `computer-fill.ts`: the agent's own Chromium
+    over CDP, found from `(userId, agentId)`. With no computer it holds the card
+    and says so.
+- Chat tools in an agent's own thread (`src/lib/chat/payment-tools.ts`):
+  - `request_payment`, behind `juno_payments:request_payment`
+    (`destructive_or_sensitive`, never standing). The card shows Not now and Pay,
+    and a receipt row follows.
+  - `fill_payment_card`, for a held card, once.
+  - `set_spending_limit`: lowering applies at once; raising goes through
+    `juno_agents:raise_spend_limit` on the agent card, and never from a tainted turn.
+- `POST /api/payments/stripe-issuing/webhook`: signature verified, a 1.5 s
+  deadline that declines, and single use by compare-and-set.
+- The expiry sweep runs in the work runner's tick.
+- The owner's setup: `docs/design/agents-v2/ENABLE_PAYMENTS.md`.
+- Tests: `tests/payments.test.ts`.
 
 Next:
-- `src/lib/payments/`:
-  - a provider interface;
-  - a Stripe Issuing provider (off until `STRIPE_ISSUING_*` is set);
-  - a dev-only test provider;
-  - `fillPaymentCard(agentId, cardRef)` with a registration point for the
-    computer builder, which holds the card and tells the person when no computer
-    is available.
-- A `request_payment` tool. It raises a deterministic approval with connector
-  `juno_payments` and an exact rule of `destructive_or_sensitive`. The card shows
-  Not now and Pay, and a receipt follows.
-- A spending limit tool: widening needs the agent approval card.
-- The Stripe authorization webhook.
-- Tests.
+- `request_payment` inside Work runs (agent-core). Today it is a chat tool. A
+  run that reaches a checkout stops and the person asks in the thread.
+- The native approval cards show the generic connector card for a payment (Allow
+  and Deny), not Pay and Not now.
+- A merchant-name check in the webhook. Today the amount, the single use and the
+  expiry bind the card; the merchant is what the person approved on the card.
 
 ## Gates so far
 
