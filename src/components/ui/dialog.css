@@ -10,8 +10,10 @@
  * the panel's own fill: the title and the actions are always on screen and
  * only the middle scrolls between them. Each spans the panel edge to edge
  * (negative margins equal to the body's inset, the inset given back as
- * padding) and covers the 1rem gap on its inner side the same way, so the
- * layout is exactly the unpinned one until something scrolls under it.
+ * padding), and a band of the same fill on its inner side (a pseudo
+ * element, so whatever spacing its parent gives it is left alone) hides
+ * what scrolls up to it. The layout is exactly the unpinned one until
+ * something scrolls under it.
  *
  * Every number reads two custom properties, so the body, the pinned rows and
  * the ✕ can never disagree: `--dialog-pad`, the body's inset (20px on a
@@ -19,8 +21,8 @@
  * ✕'s own size (`Pressable kind="icon" size="lg"`: 36px, 44px on a coarse
  * pointer).
  *
- * A dialog that lays out its own panel (`bare`) has no body. Its header still
- * takes the ✕ gutter, because the ✕ sits in the same corner either way.
+ * A dialog that lays out its own panel (`bare`) has no body and pins nothing:
+ * its call site owns its header, its scroller and its gutter.
  */
 
 .ui-dialog {
@@ -48,27 +50,57 @@
   gap: 1rem;
   flex: 0 1 auto;
   min-height: 0;
+  /* Vertical only: the pinned rows reach the panel's edges. */
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--dialog-pad);
 }
 
+/* Sticky offsets are measured inside the scroller's padding (every engine
+   deflates the sticky rectangle by it), so a row pinned flush with the
+   panel's edge sits at minus the inset. At 0 it was pushed down by the inset
+   at rest, over the first line of the body, and stuck short of the edge. */
 .ui-dialog-body .ui-dialog-header {
   position: sticky;
-  top: 0;
+  top: calc(var(--dialog-pad) * -1);
   z-index: 1;
-  margin: calc(var(--dialog-pad) * -1) calc(var(--dialog-pad) * -1) -1rem;
-  padding: var(--dialog-pad) var(--dialog-pad) 1rem;
+  margin-top: calc(var(--dialog-pad) * -1);
+  margin-inline: calc(var(--dialog-pad) * -1);
+  padding-top: var(--dialog-pad);
+  padding-inline: var(--dialog-pad);
   background-color: hsl(var(--popover));
 }
 
 .ui-dialog-body .ui-dialog-footer {
   position: sticky;
-  bottom: 0;
+  bottom: calc(var(--dialog-pad) * -1);
   z-index: 1;
-  margin: -1rem calc(var(--dialog-pad) * -1) calc(var(--dialog-pad) * -1);
-  padding: 1rem var(--dialog-pad) var(--dialog-pad);
+  margin-bottom: calc(var(--dialog-pad) * -1);
+  margin-inline: calc(var(--dialog-pad) * -1);
+  padding-bottom: var(--dialog-pad);
+  padding-inline: var(--dialog-pad);
   background-color: hsl(var(--popover));
+}
+
+/* The band on each pinned row's inner side, in the panel's fill, so text
+   scrolling under a row disappears before it touches the title or the
+   buttons. Half the body's gap, so it never covers content that sits
+   closer than the grid's 1rem (a header inside a tighter form). */
+.ui-dialog-body .ui-dialog-header::after,
+.ui-dialog-body .ui-dialog-footer::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 0.5rem;
+  background-color: inherit;
+  pointer-events: none;
+}
+.ui-dialog-body .ui-dialog-header::after {
+  top: 100%;
+}
+.ui-dialog-body .ui-dialog-footer::before {
+  bottom: 100%;
 }
 
 /* The ✕ gutter: the button's inset (1rem), its size, and the 0.5rem the eye
