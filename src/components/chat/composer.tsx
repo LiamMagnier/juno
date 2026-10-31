@@ -34,6 +34,7 @@ import {
   TextQuote,
   AtSign,
   Pencil,
+  Cloud,
 } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { useComposerSketch } from "@/components/chat/sketch/use-composer-sketch";
@@ -77,6 +78,8 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider, type SpeedTier } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { CloudFilePicker } from "@/components/chat/cloud-file-picker";
+import type { CloudFileProvider } from "@/lib/cloud-files/shared";
 import { useFileDrop } from "@/components/library/library-drop-zone";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 /**
@@ -865,6 +868,11 @@ function ComposerImpl({
   >([]);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  // The drive stays named while the dialog closes, so it does not retitle on its way out.
+  const [cloudPicker, setCloudPicker] = React.useState<{ provider: CloudFileProvider; open: boolean }>({
+    provider: "google-drive",
+    open: false,
+  });
   const [projects, setProjects] = React.useState<
     { id: string; name: string; conversationCount: number }[]
   >([]);
@@ -2792,6 +2800,15 @@ function ComposerImpl({
   const trayHasProject = showTray;
   const trayHasAppsAndSkills = showTray && !mediaParams.caps;
 
+  /*
+   * A drive's row is drawn only while that drive is connected: offering to
+   * pick from an unlinked Google Drive would be a door into a dialog that can
+   * only say "connect it first". `connectors` is the account's live list,
+   * reconciled each time this menu opens.
+   */
+  const driveConnected = connectors.some((connector) => connector.id === "google-drive");
+  const oneDriveConnected = connectors.some((connector) => connector.id === "microsoft-365");
+
   const plusSections: PlusMenuSection[] = voiceActive
     ? [
         [
@@ -2873,6 +2890,32 @@ function ComposerImpl({
             note: attachNote,
             onSelect: () => setLibraryOpen(true),
           },
+          ...(driveConnected
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "google-drive",
+                  label: "Add from Google Drive",
+                  icon: Cloud,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => setCloudPicker({ provider: "google-drive", open: true }),
+                },
+              ]
+            : []),
+          ...(oneDriveConnected
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "onedrive",
+                  label: "Add from OneDrive",
+                  icon: Cloud,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => setCloudPicker({ provider: "microsoft-365", open: true }),
+                },
+              ]
+            : []),
         ],
         // Name things in the sentence: what "@" and "/" do, taught here so the
         // placeholder never has to be a syntax lesson.
@@ -3629,6 +3672,16 @@ function ComposerImpl({
                 onOpenChange={setLibraryOpen}
                 onAttach={addComposerAttachments}
                 existingCount={uploads.length}
+              />
+            )}
+            {!privateMode && features.storage && (driveConnected || oneDriveConnected) && (
+              <CloudFilePicker
+                provider={cloudPicker.provider}
+                open={cloudPicker.open}
+                onOpenChange={(open) => setCloudPicker((current) => ({ ...current, open }))}
+                onAttach={addComposerAttachments}
+                existingCount={uploads.length}
+                conversationId={conversationId}
               />
             )}
             {sketch.dialog}
