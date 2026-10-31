@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-380 routes: 230 native, 75 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+382 routes: 230 native, 77 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -32,7 +32,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 5 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
-| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
+| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
@@ -217,6 +217,8 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/library/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/library/made` | GET | Native | JunoChatKit |  |
 | `/api/library/attach` | POST | Native | JunoChatKit |  |
+| `/api/connectors/[id]/files` | GET | Planned |  | The web composer's Add from Google Drive / OneDrive picker (recent files and search). The apps' + menu has no cloud picker yet; the rows are in the shell contract as optional. |
+| `/api/connectors/[id]/files/attach` | POST | Planned |  | As /api/connectors/{id}/files: stores the picked files through the upload pipeline and answers with ready-to-send attachments, the shape /api/library/attach returns. |
 | `/api/prompts` | GET, POST | Planned |  | The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog. |
 | `/api/prompts/[id]` | POST, PATCH, DELETE | Planned |  | As /api/prompts. |
 | `/api/upload` | POST | Native | JunoChatKit |  |

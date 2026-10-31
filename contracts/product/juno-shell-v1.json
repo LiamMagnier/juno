@@ -277,6 +277,20 @@
           "icon": "AppIcons.library"
         },
         {
+          "id": "google-drive",
+          "label": "Add from Google Drive",
+          "kind": "action",
+          "icon": "Cloud",
+          "optional": true
+        },
+        {
+          "id": "onedrive",
+          "label": "Add from OneDrive",
+          "kind": "action",
+          "icon": "Cloud",
+          "optional": true
+        },
+        {
           "id": "mention",
           "label": "Mention a file, app or agent",
           "kind": "action",
@@ -338,7 +352,9 @@
             "files",
             "screenshot",
             "sketch",
-            "library"
+            "library",
+            "google-drive",
+            "onedrive"
           ],
           [
             "mention",

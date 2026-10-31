@@ -1093,7 +1093,7 @@ model Attachment {
    */
   version         Int            @default(1)
   /**
-   * upload | library_clone | replacement | restore
+   * upload | library_clone | replacement | restore | cloud_import
    */
   origin          String         @default("upload")
   /**

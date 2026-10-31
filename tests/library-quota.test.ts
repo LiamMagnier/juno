@@ -14,6 +14,8 @@ const ROUTES = new Map([
       readFileSync(new URL("../src/lib/media/generation-pipeline.ts", import.meta.url), "utf8"),
   ],
   ["history import", readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8")],
+  // Google Drive / OneDrive imports persist through the shared attachment store.
+  ["cloud import", readFileSync(new URL("../src/lib/attachment-store.ts", import.meta.url), "utf8")],
 ]);
 
 test("library quota reads and writes are fenced by one account row lock", () => {

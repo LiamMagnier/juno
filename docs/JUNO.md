@@ -756,6 +756,19 @@ the model (see §6.3).
   `read_document` (list / outline / read a page range / search) and `inspect_image`
   (crop and magnify a region, or rasterise a PDF page). Both are read-only and can
   only reach files attached to the conversation they run in.
+
+  **Add from Google Drive / OneDrive** (`src/lib/cloud-files/`, picker
+  `cloud-file-picker.tsx`): the + menu draws each row only while that first-party
+  connector (`google-drive`, `microsoft-365`) is connected. The picker lists recent
+  files or searches (`GET /api/connectors/[id]/files`); picked files are fetched
+  server-side with the person's own token (`POST …/files/attach`). Google Docs,
+  Sheets and Slides export as .docx / .xlsx / .pptx, falling back to PDF or text
+  (CSV for a Sheet) when Drive refuses or the export is over the cap; legacy
+  .doc/.xls/.ppt on OneDrive arrive as Graph-converted PDFs. Each file then passes
+  `planAttachmentUpload` and `persistAttachment` (`src/lib/attachment-store.ts`), so
+  the upload gate, the plan's size (never over 32 MB per import), the hourly upload
+  limit, the library quota and on-demand extraction apply exactly as to an upload
+  (`origin: "cloud_import"`). Lockdown and a blocked app refuse the picker too.
 - **Web search** has three modes: native provider search (Anthropic
   `web_search_20250305`, Google grounding, Grok Live Search), **Research**
   (durable plan → parallel investigation rounds → lead review → synthesis → citation
