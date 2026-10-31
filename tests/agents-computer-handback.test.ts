@@ -308,8 +308,9 @@ test("the PiP stays up while the agent waits and offers Take control there", () 
 
 test("closing while in control asks first, on the web as in the apps", () => {
   const overlay = readFileSync(new URL("../src/components/agents/agent-computer.tsx", import.meta.url), "utf8");
-  assert.match(overlay, /Hand back to \{agent\.name\}\?/);
-  assert.match(overlay, />\s*Keep control\s*</);
+  // The house ConfirmDialog (src/components/ui/confirm-dialog.tsx) asks it.
+  assert.match(overlay, /<ConfirmDialog[\s\S]*?title=\{`Hand back to \$\{agent\.name\}\?`\}/);
+  assert.match(overlay, /cancelLabel="Keep control"/);
   assert.match(overlay, /if \(inControl\) setConfirmClose\(true\);\s*else onClose\(\);/);
   // One viewer for watching and control: no remount per mode.
   assert.doesNotMatch(overlay, /key=\{mode\}/);

@@ -65,6 +65,7 @@ const METERED: Record<string, string> = {
   "src/lib/chat/turn/run-turn.ts": "checkBudget → reserveSpend → GenerationAccumulator → recordTurnSpend(chat) + tool fees + mid-stream guard",
   "src/lib/chat/turn/private-turn.ts": "checkBudget → reserveSpend → GenerationAccumulator → recordTurnSpend(chat), private turns included",
   "src/app/api/design/[artifactId]/edit/route.ts": "admitMeteredCall + recordSpend(chat) on every exit",
+  "src/lib/artifact-ai/server.ts": "window.alevr.complete (complete.ts): admitMeteredCall + reserveSpend(utility) before the call, the stream budget guard during it, recordSpend(utility) per attempt and settleSpend, billed to the viewer",
   "src/lib/memory.ts": "runUtilityPrompt: checkBudget gate, recordSpend(utility) per attempt; null user capped per day",
   "src/lib/preflight-triage.ts": "recordSpend(utility) per attempt; route checks budget",
   "src/lib/research/agents/lead.ts": "research run reservation + recordSpend(research)",

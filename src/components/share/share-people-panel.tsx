@@ -96,7 +96,7 @@ export function PersonRow({
   return (
     <div
       className={cn(
-        "flex min-h-11 items-center gap-3 py-1.5 transition-opacity duration-fast ease-out-soft motion-reduce:transition-none",
+        "flex min-h-11 items-center gap-3 py-1.5 transition-opacity duration-fast ease-out-soft",
         removing && "opacity-50",
         fresh && "motion-safe:animate-rise-in",
       )}

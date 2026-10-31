@@ -166,6 +166,14 @@ export function placeComposerPopover({
  * when it opens from the keyboard's trigger (a portalled menu is otherwise
  * past the end of the tab order) and goes back to the trigger when it closes.
  */
+/**
+ * Draws an open ComposerPopover where it stands instead of portalling it.
+ * Only for a render that has no DOM to portal into (renderToStaticMarkup in
+ * tests/code-v2-web-workspace.test.ts, which reads what an open popover says);
+ * the app never provides it, so every real popover is portalled as above.
+ */
+export const ComposerPopoverInPlace = React.createContext(false);
+
 export function ComposerPopover({
   open,
   onClose,
@@ -209,6 +217,7 @@ export function ComposerPopover({
   const [host, setHost] = React.useState<HTMLElement | null>(null);
   const [place, setPlace] = React.useState<{ down: boolean; style: React.CSSProperties } | null>(null);
   const mounted = presence.mounted;
+  const inPlace = React.useContext(ComposerPopoverInPlace);
 
   const measure = React.useCallback(() => {
     const marker = markerRef.current;
@@ -272,38 +281,36 @@ export function ComposerPopover({
 
   const state = presence.closing ? "closed" : "open";
   const flipped = place ? place.down : !!down;
+  const body = (
+    <>
+      <div ref={scrimRef} data-swipe-scrim="" className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
+      <div
+        ref={panelRef}
+        data-swipe-panel=""
+        role={role}
+        aria-label={label}
+        tabIndex={-1}
+        data-state={state}
+        inert={presence.closing}
+        onAnimationEnd={presence.onAnimationEnd}
+        className={cn("cv2-pop", flipped && "down", className)}
+        style={{
+          width,
+          ...place?.style,
+          // Hidden for the one layout pass before it is measured.
+          ...(place ? null : { visibility: "hidden" as const }),
+          ["--cv2-origin" as string]: align === "right" ? "bottom right" : "bottom left",
+        }}
+      >
+        <div className="cv2-pop-grab" data-sheet-handle="" />
+        {children}
+      </div>
+    </>
+  );
   return (
     <>
       <span ref={markerRef} aria-hidden className="cv2-pop-marker" />
-      {mounted && host
-        ? createPortal(
-            <>
-              <div ref={scrimRef} data-swipe-scrim="" className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
-              <div
-                ref={panelRef}
-                data-swipe-panel=""
-                role={role}
-                aria-label={label}
-                tabIndex={-1}
-                data-state={state}
-                inert={presence.closing}
-                onAnimationEnd={presence.onAnimationEnd}
-                className={cn("cv2-pop", flipped && "down", className)}
-                style={{
-                  width,
-                  ...place?.style,
-                  // Hidden for the one layout pass before it is measured.
-                  ...(place ? null : { visibility: "hidden" as const }),
-                  ["--cv2-origin" as string]: align === "right" ? "bottom right" : "bottom left",
-                }}
-              >
-                <div className="cv2-pop-grab" data-sheet-handle="" />
-                {children}
-              </div>
-            </>,
-            host,
-          )
-        : null}
+      {mounted ? (inPlace ? body : host ? createPortal(body, host) : null) : null}
     </>
   );
 }
