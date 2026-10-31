@@ -59,16 +59,31 @@ enum DesktopPreviewSnapshot {
         // menu, a popover's button — so a menu or popover is in the picture.
         if let press = value("--juno-preview-press") {
             DispatchQueue.main.asyncAfter(deadline: .now() + max(1.5, delay - 2.5)) {
-                var note = "press \(press): "
-                if let window = window(titled: title), let element = find(press, in: window) as? NSObject {
-                    note += "found \(type(of: element)) "
-                    if element.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformPress)) {
-                        note += "pressed=\((element as AnyObject).accessibilityPerformPress?() ?? false)"
-                    }
-                } else {
-                    note += "not found"
+                let notePath = path + ".press.txt"
+                guard let window = window(titled: title) else {
+                    try? "press \(press): no window".write(toFile: notePath, atomically: true, encoding: .utf8)
+                    return
                 }
-                try? note.write(toFile: path + ".press.txt", atomically: true, encoding: .utf8)
+                let search = find(press, in: window)
+                guard let element = search.element else {
+                    let seen = search.identifiers.prefix(60).joined(separator: ", ")
+                    let note = "press \(press): not found in \(search.visited) elements; ids seen: \(seen)"
+                    try? note.write(toFile: notePath, atomically: true, encoding: .utf8)
+                    return
+                }
+                var note = "press \(press): found \(type(of: element))"
+                // Written before the press: a menu's tracking loop may not
+                // hand control back until the menu closes.
+                try? note.write(toFile: notePath, atomically: true, encoding: .utf8)
+                var pressed = false
+                if element.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformPress)) {
+                    pressed = (element as AnyObject).accessibilityPerformPress?() ?? false
+                }
+                note += " pressed=\(pressed)"
+                if !pressed, element.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformShowMenu)) {
+                    note += " showMenu=\((element as AnyObject).accessibilityPerformShowMenu?() ?? false)"
+                }
+                try? note.write(toFile: notePath, atomically: true, encoding: .utf8)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -123,28 +138,46 @@ enum DesktopPreviewSnapshot {
         try? data.write(to: URL(fileURLWithPath: path))
     }
 
-    /// The first accessibility element under `window` with `identifier`.
-    private static func find(_ identifier: String, in window: NSWindow) -> NSAccessibilityElementProtocol? {
-        var queue: [Any] = window.accessibilityChildren() ?? []
+    /// The first element under `window` whose accessibility identifier is
+    /// `identifier`, searching both the accessibility tree and the view tree,
+    /// with how many elements were looked at and the identifiers seen on the
+    /// way (for the note when nothing matches).
+    ///
+    /// Plain `NSObject`s rather than `NSAccessibilityElementProtocol`: the
+    /// nodes SwiftUI hands out adopt `NSAccessibility` and need not adopt the
+    /// element protocol, and filtering on it stopped the walk at the window.
+    private static func find(
+        _ identifier: String, in window: NSWindow
+    ) -> (element: NSObject?, visited: Int, identifiers: [String]) {
+        var queue: [NSObject] = [window]
+        if let frameView = window.contentView?.superview { queue.append(frameView) }
+        var seen = Set<ObjectIdentifier>()
+        var identifiers: [String] = []
         var visited = 0
-        while !queue.isEmpty, visited < 20_000 {
-            let next = queue.removeFirst()
+        var head = 0
+        while head < queue.count, visited < 20_000 {
+            let object = queue[head]
+            head += 1
+            guard seen.insert(ObjectIdentifier(object)).inserted else { continue }
             visited += 1
-            guard let element = next as? NSAccessibilityElementProtocol else { continue }
-            if let object = element as? NSObject,
-               object.responds(to: #selector(NSAccessibilityProtocol.accessibilityIdentifier)),
-               (object as AnyObject).accessibilityIdentifier?() == identifier
-            {
-                return element
+            let getter = #selector(NSAccessibilityProtocol.accessibilityIdentifier)
+            if object.responds(to: getter) {
+                let found = object.perform(getter)?.takeUnretainedValue() as? String
+                if let found, !found.isEmpty {
+                    if found == identifier { return (object, visited, identifiers) }
+                    identifiers.append(found)
+                }
             }
-            if let object = element as? NSObject,
-               object.responds(to: #selector(NSAccessibilityProtocol.accessibilityChildren)),
+            if object.responds(to: #selector(NSAccessibilityProtocol.accessibilityChildren)),
                let children = (object as AnyObject).accessibilityChildren?()
             {
-                queue.append(contentsOf: children)
+                queue.append(contentsOf: children.compactMap { $0 as? NSObject })
+            }
+            if let view = object as? NSView {
+                queue.append(contentsOf: view.subviews)
             }
         }
-        return nil
+        return (nil, visited, identifiers)
     }
 
     private typealias WindowImageFunction = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?

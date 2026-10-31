@@ -22,12 +22,18 @@
 # recorded in the manifest and the rest carry on.
 #
 # Manual or on push to `ci/native-snapshots` only: macOS minutes count 10x.
+# A manual run can take one platform (`platforms: ios`); it then publishes
+# only that platform's pictures to `ci/native-snapshots-out`.
 
 name: native snapshots
 
 on:
   workflow_dispatch:
     inputs:
+      platforms:
+        description: "Which jobs to run: macos, ios or macos,ios"
+        required: false
+        default: "macos,ios"
       only_macos:
         description: "Comma-separated macOS surface names (blank = all)"
         required: false
@@ -53,6 +59,7 @@ env:
 jobs:
   macos:
     name: macOS app captures
+    if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.platforms, 'macos')
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -147,6 +154,7 @@ jobs:
 
   ios:
     name: iOS app captures
+    if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.platforms, 'ios')
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -234,16 +242,31 @@ jobs:
         run: |
           set -euo pipefail
           udid="${{ steps.sim.outputs.udid }}"
-          app=$(find "$RUNNER_TEMP/mobile-dd/Build/Products/Debug-iphonesimulator" -maxdepth 1 -name '*.app' | head -n 1)
-          echo "App: $app"
+          # The app by name: `build-for-testing` also leaves
+          # JunoMobileUITests-Runner.app here, which sorts first and draws
+          # nothing of ours (every capture was the home screen).
+          products="$RUNNER_TEMP/mobile-dd/Build/Products/Debug-iphonesimulator"
+          app="$products/JunoMobile.app"
+          if [ ! -d "$app" ]; then
+            echo "::error::No JunoMobile.app in $products"
+            ls -1 "$products"
+            exit 1
+          fi
           bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
-          echo "Bundle: $bundle"
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")
+          echo "App: $app ($bundle, $executable)"
+          case "$bundle" in
+            *xctrunner*|*.tests|*.uitests)
+              echo "::error::$app is a test bundle ($bundle), not the app"
+              exit 1;;
+          esac
           xcrun simctl install "$udid" "$app"
           extra=()
           if [ -n "${ONLY:-}" ]; then extra=(--only "$ONLY"); fi
           python3 native/Scripts/ci-native-snapshots.py ios \
             --udid "$udid" \
             --bundle-id "$bundle" \
+            --process-name "$executable" \
             --device-name "${{ steps.sim.outputs.name }}" \
             --runtime "${{ steps.sim.outputs.runtime }}" \
             --out "$RUNNER_TEMP/shots/ios" \
@@ -266,6 +289,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: native-snapshots-ios-logs
+          # The driver copies the app's crash reports in (crash-reports/).
           path: ${{ runner.temp }}/logs/ios
           if-no-files-found: ignore
           retention-days: 7

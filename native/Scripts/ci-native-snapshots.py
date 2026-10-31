@@ -12,7 +12,10 @@ account. This drives it, one relaunch per picture, light and dark:
 
   ios    Launches the Debug simulator build once per surface with the same
          harness flags, waits for it to settle, and takes
-         `xcrun simctl io <udid> screenshot`.
+         `xcrun simctl io <udid> screenshot`. Each picture is checked against
+         a photo of the home screen taken before the first launch, and the
+         app's process must still be alive: a capture of the springboard is
+         `not-foreground` and one whose app died is `app-exited`, never `ok`.
 
 A capture that fails is recorded and the run moves on; nothing aborts the rest.
 Each mode writes `manifest.json` and `MANIFEST.md` into its output directory
@@ -23,19 +26,26 @@ was taken, so the workflow still publishes a partial set.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import struct
 import subprocess
 import sys
 import time
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # A PNG this small at these sizes is almost certainly one flat colour.
 SUSPECT_BLANK_BYTES = 15_000
+# Mean per-channel difference (0-255) between thumbnails below which a
+# capture is taken to be the home screen it was compared with. The status bar
+# is pinned, so the springboard repeats to the byte; any app screen is far off.
+SPRINGBOARD_DIFF = 4.0
 
 
 @dataclass
@@ -151,7 +161,7 @@ IOS_SURFACES: list[Surface] = [
     Surface("composer-thinking", ["--juno-preview-chat-draft", "--juno-preview-model", "anthropic:claude-sonnet-4-6", "--juno-preview-thinking"], "Thinking level popover", settle=7),
     Surface("incognito", ["--juno-preview-incognito"], "Incognito chat"),
     Surface("drawer", ["--juno-preview-sidebar"], "Sidebar drawer open", settle=7),
-    Surface("drawer-search", ["--juno-preview-sidebar", "--juno-preview-sidebar-search"], "Drawer with search", settle=7),
+    Surface("drawer-search", ["--juno-preview-sidebar", "--juno-preview-sidebar-search", "plan"], "Drawer searching for \"plan\"", settle=7),
     Surface("settings", ["--juno-preview-settings"], "Settings sheet", settle=7),
     Surface("settings-appearance", ["--juno-preview-settings", "--juno-preview-settings-route", "appearance"], settle=7),
     Surface("settings-models", ["--juno-preview-settings", "--juno-preview-settings-route", "models"], settle=7),
@@ -169,7 +179,8 @@ IOS_SURFACES: list[Surface] = [
     Surface("tasks", ["--juno-preview-tab", "tasks"]),
     Surface("work", ["--juno-preview-tab", "work"]),
     Surface("code", ["--juno-preview-tab", "code"]),
-    Surface("signed-out", ["--juno-preview-signed-out"], "Sign-in screen"),
+    Surface("signed-out", ["--juno-preview-signed-out"], "Signed out: the welcome"),
+    Surface("signed-out-form", ["--juno-preview-signed-out", "--juno-skip-welcome"], "Signed out: the sign-in form"),
 ]
 
 
@@ -197,6 +208,78 @@ def judge(path: Path, result: Result) -> None:
         result.status = "suspect-blank"
     else:
         result.status = "ok"
+
+
+def decode_png_rgb(data: bytes) -> tuple[int, int, bytes] | None:
+    """(width, height, RGB bytes) of a small non-interlaced 8- or 16-bit PNG."""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    position, header, chunks = 8, None, []
+    while position + 8 <= len(data):
+        length, kind = struct.unpack(">I4s", data[position:position + 8])
+        body = data[position + 8:position + 8 + length]
+        if kind == b"IHDR":
+            header = struct.unpack(">IIBBBBB", body)
+        elif kind == b"IDAT":
+            chunks.append(body)
+        elif kind == b"IEND":
+            break
+        position += 12 + length
+    if not header:
+        return None
+    width, height, depth, colour, _, _, interlace = header
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(colour)
+    if channels is None or depth not in (8, 16) or interlace:
+        return None
+    step = depth // 8
+    bpp = channels * step
+    stride = width * bpp
+    raw = zlib.decompress(b"".join(chunks))
+    previous = bytearray(stride)
+    rgb = bytearray()
+    for row in range(height):
+        start = row * (stride + 1)
+        kind, line = raw[start], bytearray(raw[start + 1:start + 1 + stride])
+        for i in range(stride):
+            left = line[i - bpp] if i >= bpp else 0
+            up = previous[i]
+            if kind == 1:
+                line[i] = (line[i] + left) & 0xFF
+            elif kind == 2:
+                line[i] = (line[i] + up) & 0xFF
+            elif kind == 3:
+                line[i] = (line[i] + ((left + up) >> 1)) & 0xFF
+            elif kind == 4:
+                corner = previous[i - bpp] if i >= bpp else 0
+                guess = left + up - corner
+                pa, pb, pc = abs(guess - left), abs(guess - up), abs(guess - corner)
+                line[i] = (line[i] + (left if pa <= pb and pa <= pc else up if pb <= pc else corner)) & 0xFF
+        previous = line
+        for x in range(width):
+            pixel = line[x * bpp:(x + 1) * bpp:step]
+            rgb += pixel[:3] if channels >= 3 else bytes([pixel[0]] * 3)
+    return width, height, bytes(rgb)
+
+
+def thumbnail(path: Path) -> tuple[int, int, bytes] | None:
+    """The picture shrunk by `sips` to 48 px on its long side, as RGB."""
+    small = path.with_name(path.stem + ".thumb.png")
+    try:
+        shrink = run(["sips", "-Z", "48", "-s", "format", "png", str(path), "--out", str(small)], timeout=30)
+        if shrink.returncode != 0 or not small.exists():
+            return None
+        return decode_png_rgb(small.read_bytes())
+    except Exception:  # A thumbnail is a check, never a reason to stop.
+        return None
+    finally:
+        small.unlink(missing_ok=True)
+
+
+def difference(a: tuple[int, int, bytes] | None, b: tuple[int, int, bytes] | None) -> float | None:
+    """Mean per-channel difference of two thumbnails, or None if incomparable."""
+    if not a or not b or a[:2] != b[:2] or not a[2]:
+        return None
+    return sum(abs(x - y) for x, y in zip(a[2], b[2])) / len(a[2])
 
 
 def log(message: str) -> None:
@@ -313,7 +396,9 @@ def capture_mac(args: argparse.Namespace) -> int:
                 side = Path(str(target) + suffix)
                 if side.exists():
                     text = side.read_text(errors="replace").strip()
-                    result.note = f"{result.note} [{suffix[1:-4]}: {text[:300]}]".strip()
+                    # The press note lists the identifiers it saw when it
+                    # missed; the manifest is the only place that reaches git.
+                    result.note = f"{result.note} [{suffix[1:-4]}: {text[:1200]}]".strip()
                     shutil.move(str(side), logs / side.name)
             if result.status != "ok":
                 tail = stdout_path.read_text(errors="replace").strip().splitlines()[-5:]
@@ -360,6 +445,45 @@ def pick_iphone() -> tuple[str, str, str]:
     return udid, name, runtime
 
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
+
+
+def ios_app_alive(udid: str, bundle: str, pid: int | None) -> bool:
+    """Whether the app launched for this picture is still running.
+
+    A simulator app is a process on the host, so its pid answers first; the
+    simulator's own launchd confirms a pid that has gone.
+    """
+    if pid:
+        try:
+            os.kill(pid, 0)
+            return True
+        except PermissionError:
+            return True
+        except ProcessLookupError:
+            pass
+    listing = run(["xcrun", "simctl", "spawn", udid, "launchctl", "list"], timeout=30).stdout
+    for line in listing.splitlines():
+        fields = line.split("\t")
+        if len(fields) == 3 and fields[2].startswith(f"UIKitApplication:{bundle}[") and fields[0].isdigit():
+            return True
+    return False
+
+
+def ios_screenshot(udid: str, target: Path) -> str:
+    target.unlink(missing_ok=True)
+    shot = run(["xcrun", "simctl", "io", udid, "screenshot", "--type=png", str(target)], timeout=60)
+    return "" if shot.returncode == 0 else shot.stderr.strip()[:300]
+
+
+def ios_os_log(udid: str, process: str, path: Path, seconds: int) -> None:
+    """The simulator's unified log for the app (and what launched or killed it)."""
+    shown = run(["xcrun", "simctl", "spawn", udid, "log", "show", "--last", f"{seconds}s", "--style", "compact",
+                 "--predicate", f'process == "{process}" OR eventMessage CONTAINS "{process}"'], timeout=120)
+    path.write_text(shown.stdout[-400_000:] + shown.stderr[-20_000:])
+
+
 def capture_ios(args: argparse.Namespace) -> int:
     udid = args.udid
     out = Path(args.out)
@@ -367,44 +491,131 @@ def capture_ios(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     logs.mkdir(parents=True, exist_ok=True)
     bundle = args.bundle_id
+    process = args.process_name
     surfaces = selected(IOS_SURFACES, args.only)
+    appearances = args.appearances.split(",")
     results: list[Result] = []
-    log(f"Capturing {len(surfaces)} iOS surfaces x {args.appearances} on {udid}")
+    run_started = time.time()
+    log(f"Capturing {len(surfaces)} iOS surfaces x {args.appearances} of {bundle} on {udid}")
     run(["xcrun", "simctl", "status_bar", udid, "override", "--time", "9:41", "--dataNetwork", "wifi",
          "--wifiMode", "active", "--wifiBars", "3", "--cellularMode", "active", "--cellularBars", "4",
          "--batteryState", "charged", "--batteryLevel", "100"])
 
-    for appearance in args.appearances.split(","):
+    def bad(result: Result) -> bool:
+        return result.status != "ok"
+
+    given_up = False
+    for appearance in appearances:
+        if given_up:
+            break
         run(["xcrun", "simctl", "ui", udid, "appearance", appearance])
+        # What the screen shows with no app in front: every picture is checked
+        # against it, so the home screen can never pass for a capture.
+        run(["xcrun", "simctl", "terminate", udid, bundle], timeout=20)
+        time.sleep(3)
+        home_path = logs / f"springboard-{appearance}.png"
+        error = ios_screenshot(udid, home_path)
+        home = thumbnail(home_path)
+        home_sha = sha256(home_path)
+        log(f"  home screen reference ({appearance}): {home_path.name}"
+            f"{' thumbnail ok' if home else ' no thumbnail'}{' ' + error if error else ''}")
+
         for surface in surfaces:
             name = f"{surface.name}-{appearance}.png"
             target = out / name
             target.unlink(missing_ok=True)
             result = Result("ios", surface.name, appearance, name, "pending", surface.note, args=surface.args)
             started = time.monotonic()
+            stem = f"{surface.name}-{appearance}"
             run(["xcrun", "simctl", "terminate", udid, bundle], timeout=20)
-            launch = run(["xcrun", "simctl", "launch", "--terminate-running-process", udid, bundle,
-                          "--juno-ui-preview", "--juno-preview-appearance", appearance, *surface.args], timeout=60)
-            (logs / f"{surface.name}-{appearance}.log").write_text(launch.stdout + launch.stderr)
+            launch = run(["xcrun", "simctl", "launch", "--terminate-running-process",
+                          f"--stdout={logs / (stem + '.stdout.log')}", f"--stderr={logs / (stem + '.stderr.log')}",
+                          udid, bundle, "--juno-ui-preview", "--juno-preview-appearance", appearance,
+                          *surface.args], timeout=60)
+            (logs / f"{stem}.launch.log").write_text(launch.stdout + launch.stderr)
+            match = re.search(r":\s*(\d+)\s*$", launch.stdout.strip())
+            pid = int(match.group(1)) if match else None
             if launch.returncode != 0:
                 result.status = "launch-failed"
                 result.note = f"{result.note} [launch: {(launch.stderr or launch.stdout).strip()[:300]}]".strip()
             else:
                 time.sleep(surface.settle)
-                shot = run(["xcrun", "simctl", "io", udid, "screenshot", "--type=png", str(target)], timeout=60)
-                if shot.returncode != 0:
-                    result.note = f"{result.note} [screenshot: {shot.stderr.strip()[:300]}]".strip()
+                error = ios_screenshot(udid, target)
                 judge(target, result)
+                gap = difference(thumbnail(target), home) if result.status == "ok" else None
+                # Still on the home screen: give a slow first frame a little
+                # longer while the process lives, then call it what it is.
+                waited = 0.0
+                while (result.status == "ok" and (gap is not None and gap < SPRINGBOARD_DIFF
+                                                  or sha256(target) == home_sha)
+                       and waited < args.first_frame_wait and ios_app_alive(udid, bundle, pid)):
+                    time.sleep(2)
+                    waited += 2
+                    error = ios_screenshot(udid, target)
+                    judge(target, result)
+                    gap = difference(thumbnail(target), home) if result.status == "ok" else None
+                if error:
+                    result.note = f"{result.note} [screenshot: {error}]".strip()
+                if result.status == "ok" and (gap is not None and gap < SPRINGBOARD_DIFF
+                                              or sha256(target) == home_sha):
+                    result.status = "not-foreground"
+                    result.note = f"{result.note} [the home screen, not the app; diff {gap}]".strip()
+                if not ios_app_alive(udid, bundle, pid):
+                    result.status = "app-exited" if result.status in ("ok", "not-foreground") else result.status
+                    result.note = f"{result.note} [pid {pid} gone]".strip()
+            if bad(result):
+                ios_os_log(udid, process, logs / f"{stem}.oslog.txt", seconds=int(time.monotonic() - started) + 15)
+                tail = (logs / f"{stem}.stderr.log")
+                if tail.exists():
+                    lines = tail.read_text(errors="replace").strip().splitlines()[-3:]
+                    if lines:
+                        result.note = f"{result.note} [stderr: {' / '.join(lines)[:300]}]".strip()
             result.seconds = round(time.monotonic() - started, 1)
-            log(f"  {result.status:13} {name} ({result.width}x{result.height}, {result.bytes} B, {result.seconds}s)")
+            log(f"  {result.status:14} {name} ({result.width}x{result.height}, {result.bytes} B, {result.seconds}s)")
             results.append(result)
+            # A launch path that is broken is broken for every surface: stop
+            # after the first few rather than spend the job proving it.
+            if len(results) == args.give_up_after and all(bad(r) for r in results):
+                log(f"::error::The first {len(results)} iOS captures all failed; skipping the rest.")
+                given_up = True
+                break
     run(["xcrun", "simctl", "terminate", udid, bundle], timeout=20)
 
+    if given_up:
+        done = {(r.surface, r.appearance) for r in results}
+        for appearance in appearances:
+            for surface in surfaces:
+                if (surface.name, appearance) not in done:
+                    results.append(Result("ios", surface.name, appearance, f"{surface.name}-{appearance}.png",
+                                          "skipped", surface.note, args=surface.args))
+
+    # The app's crash reports, written on the host for simulator processes.
+    reports = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+    if reports.is_dir():
+        for report in reports.iterdir():
+            if process in report.name and report.stat().st_mtime >= run_started:
+                (logs / "crash-reports").mkdir(exist_ok=True)
+                shutil.copy2(report, logs / "crash-reports" / report.name)
+
+    # Two surfaces that drew the same picture: one of them did not take.
+    seen: dict[str, str] = {}
+    for result in results:
+        digest = sha256(out / result.file) if result.status == "ok" else ""
+        if digest and digest in seen:
+            result.note = f"{result.note} [identical to {seen[digest]}]".strip()
+        elif digest:
+            seen[digest] = result.file
+
     write_manifest(out, "iOS", results, {
-        "device": args.device_name or udid, "runtime": args.runtime or "?",
+        "device": args.device_name or udid, "runtime": args.runtime or "?", "app": bundle,
         "commit": os.environ.get("GITHUB_SHA", "local"),
     })
-    return 0 if any(result.status == "ok" for result in results) else 1
+    ok = sum(1 for result in results if result.status == "ok")
+    if ok == 0:
+        log("::error::No iOS capture shows the app (see the capture logs artifact).")
+    elif ok < len(results):
+        log(f"::warning::{len(results) - ok} of {len(results)} iOS captures are not ok (see MANIFEST.md).")
+    return 0 if ok else 1
 
 
 def main() -> int:
@@ -429,6 +640,11 @@ def main() -> int:
     ios.add_argument("--device-name")
     ios.add_argument("--runtime")
     ios.add_argument("--only", help="comma-separated surface names")
+    ios.add_argument("--process-name", default="JunoMobile", help="the app's executable, for its logs")
+    ios.add_argument("--first-frame-wait", type=float, default=10,
+                     help="extra seconds a capture still showing the home screen may wait for the app")
+    ios.add_argument("--give-up-after", type=int, default=4,
+                     help="stop when this many first captures all fail")
 
     pick = sub.add_parser("pick-iphone", help="print 'udid<TAB>name<TAB>runtime' of the simulator to use")
 
