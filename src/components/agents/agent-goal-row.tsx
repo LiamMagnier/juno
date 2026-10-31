@@ -103,7 +103,7 @@ export function AgentGoalRow({
               type="button"
               disabled={busy}
               onClick={onAchieved}
-              className="text-ui text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+              className="relative text-ui text-foreground underline-offset-4 hit-44 hover:underline disabled:opacity-50"
             >
               Mark it met
             </button>
@@ -111,7 +111,7 @@ export function AgentGoalRow({
               type="button"
               disabled={busy}
               onClick={onAdvance}
-              className="text-ui text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+              className="relative text-ui text-muted-foreground underline-offset-4 hit-44 hover:text-foreground hover:underline disabled:opacity-50"
             >
               {action}
             </button>
@@ -121,7 +121,7 @@ export function AgentGoalRow({
             type="button"
             disabled={busy}
             onClick={onAdvance}
-            className="mt-1 text-ui text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+            className="relative mt-1 text-ui text-muted-foreground underline-offset-4 hit-44 hover:text-foreground hover:underline disabled:opacity-50"
           >
             {action}
           </button>
