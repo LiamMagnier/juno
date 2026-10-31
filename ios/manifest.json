@@ -1,0 +1,1081 @@
+{
+  "platform": "iOS",
+  "device": "iPhone 17 Pro",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+  "app": "com.liammagnier.JunoMobile.debug",
+  "commit": "9bddecf95b89664d4bf96e404d3e31f3da7c2cb9",
+  "captures": [
+    {
+      "platform": "ios",
+      "surface": "home",
+      "appearance": "light",
+      "file": "home-light.png",
+      "status": "ok",
+      "note": "New chat home",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 187355,
+      "seconds": 19.7,
+      "args": [
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread",
+      "appearance": "light",
+      "file": "chat-thread-light.png",
+      "status": "ok",
+      "note": "Pinned thread",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 964236,
+      "seconds": 10.8,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread-deliverables",
+      "appearance": "light",
+      "file": "chat-thread-deliverables-light.png",
+      "status": "ok",
+      "note": "Thread with artifacts",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 268815,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-deliverables"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread-project",
+      "appearance": "light",
+      "file": "chat-thread-project-light.png",
+      "status": "ok",
+      "note": "Project-linked thread",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 213493,
+      "seconds": 10.0,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-proj"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-streaming",
+      "appearance": "light",
+      "file": "chat-streaming-light.png",
+      "status": "ok",
+      "note": "Turn sent, answer streaming",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 195159,
+      "seconds": 11.7,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-send",
+        "Which heat pump suits a 1930s semi?"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-typing",
+      "appearance": "light",
+      "file": "composer-typing-light.png",
+      "status": "ok",
+      "note": "Draft typed, unsent",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 201680,
+      "seconds": 9.2,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-prompt",
+        "Draft a launch plan for the new pricing page, with owners, dates and the risks"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-attachments",
+      "appearance": "light",
+      "file": "composer-attachments-light.png",
+      "status": "ok",
+      "note": "Draft with a picture and a CSV attached",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 275673,
+      "seconds": 10.7,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-attach",
+        "--juno-preview-prompt",
+        "Summarise these for Monday's review"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-keyboard",
+      "appearance": "light",
+      "file": "composer-keyboard-light.png",
+      "status": "ok",
+      "note": "Composer focused with the keyboard",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 265066,
+      "seconds": 10.0,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-keyboard",
+        "--juno-preview-prompt",
+        "Plan the offsite"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-plus-menu",
+      "appearance": "light",
+      "file": "composer-plus-menu-light.png",
+      "status": "ok",
+      "note": "Composer + menu open",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 286460,
+      "seconds": 9.7,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-plus"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-model-selector",
+      "appearance": "light",
+      "file": "composer-model-selector-light.png",
+      "status": "ok",
+      "note": "Model selector from the composer",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 298243,
+      "seconds": 10.1,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-model-selector"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-thinking",
+      "appearance": "light",
+      "file": "composer-thinking-light.png",
+      "status": "ok",
+      "note": "Thinking level popover",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 241006,
+      "seconds": 10.2,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-model",
+        "anthropic:claude-sonnet-4-6",
+        "--juno-preview-thinking"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "incognito",
+      "appearance": "light",
+      "file": "incognito-light.png",
+      "status": "ok",
+      "note": "Incognito chat",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 177125,
+      "seconds": 9.5,
+      "args": [
+        "--juno-preview-incognito"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "drawer",
+      "appearance": "light",
+      "file": "drawer-light.png",
+      "status": "ok",
+      "note": "Sidebar drawer open",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 776804,
+      "seconds": 11.0,
+      "args": [
+        "--juno-preview-sidebar"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "drawer-search",
+      "appearance": "light",
+      "file": "drawer-search-light.png",
+      "status": "ok",
+      "note": "Drawer searching for \"plan\"",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 732087,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-sidebar",
+        "--juno-preview-sidebar-search",
+        "plan"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings",
+      "appearance": "light",
+      "file": "settings-light.png",
+      "status": "ok",
+      "note": "Settings sheet",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 216903,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-settings"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-appearance",
+      "appearance": "light",
+      "file": "settings-appearance-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 182193,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "appearance"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-models",
+      "appearance": "light",
+      "file": "settings-models-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 237995,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "models"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-personalization",
+      "appearance": "light",
+      "file": "settings-personalization-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 296664,
+      "seconds": 9.8,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "personalization"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-account",
+      "appearance": "light",
+      "file": "settings-account-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 207852,
+      "seconds": 9.2,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "account"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-usage",
+      "appearance": "light",
+      "file": "settings-usage-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 162546,
+      "seconds": 10.8,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "usage"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "research-report",
+      "appearance": "light",
+      "file": "research-report-light.png",
+      "status": "ok",
+      "note": "Research report reader",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 411406,
+      "seconds": 11.4,
+      "args": [
+        "--juno-preview-report"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "search",
+      "appearance": "light",
+      "file": "search-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 286563,
+      "seconds": 8.9,
+      "args": [
+        "--juno-preview-tab",
+        "search"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "activity",
+      "appearance": "light",
+      "file": "activity-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 127969,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-tab",
+        "activity"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "projects",
+      "appearance": "light",
+      "file": "projects-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 260112,
+      "seconds": 9.2,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "library",
+      "appearance": "light",
+      "file": "library-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 698976,
+      "seconds": 11.6,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "artifacts",
+      "appearance": "light",
+      "file": "artifacts-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 235971,
+      "seconds": 12.7,
+      "args": [
+        "--juno-preview-tab",
+        "artifacts"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "agents",
+      "appearance": "light",
+      "file": "agents-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 131976,
+      "seconds": 10.3,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "connections",
+      "appearance": "light",
+      "file": "connections-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 222075,
+      "seconds": 9.9,
+      "args": [
+        "--juno-preview-tab",
+        "connections"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "tasks",
+      "appearance": "light",
+      "file": "tasks-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 153515,
+      "seconds": 10.6,
+      "args": [
+        "--juno-preview-tab",
+        "tasks"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "work",
+      "appearance": "light",
+      "file": "work-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 367761,
+      "seconds": 9.1,
+      "args": [
+        "--juno-preview-tab",
+        "work"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "code",
+      "appearance": "light",
+      "file": "code-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 495633,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-tab",
+        "code"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "signed-out",
+      "appearance": "light",
+      "file": "signed-out-light.png",
+      "status": "ok",
+      "note": "Signed out: the welcome",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 2232790,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-signed-out"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "signed-out-form",
+      "appearance": "light",
+      "file": "signed-out-form-light.png",
+      "status": "ok",
+      "note": "Signed out: the sign-in form",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1499566,
+      "seconds": 10.3,
+      "args": [
+        "--juno-preview-signed-out",
+        "--juno-skip-welcome"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "home",
+      "appearance": "dark",
+      "file": "home-dark.png",
+      "status": "ok",
+      "note": "New chat home",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 72839,
+      "seconds": 24.7,
+      "args": [
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread",
+      "appearance": "dark",
+      "file": "chat-thread-dark.png",
+      "status": "ok",
+      "note": "Pinned thread",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 919207,
+      "seconds": 11.2,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread-deliverables",
+      "appearance": "dark",
+      "file": "chat-thread-deliverables-dark.png",
+      "status": "ok",
+      "note": "Thread with artifacts",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 253835,
+      "seconds": 10.2,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-deliverables"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread-project",
+      "appearance": "dark",
+      "file": "chat-thread-project-dark.png",
+      "status": "ok",
+      "note": "Project-linked thread",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 199514,
+      "seconds": 10.3,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-proj"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-streaming",
+      "appearance": "dark",
+      "file": "chat-streaming-dark.png",
+      "status": "ok",
+      "note": "Turn sent, answer streaming",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 172896,
+      "seconds": 13.8,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-send",
+        "Which heat pump suits a 1930s semi?"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-typing",
+      "appearance": "dark",
+      "file": "composer-typing-dark.png",
+      "status": "ok",
+      "note": "Draft typed, unsent",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 182219,
+      "seconds": 9.2,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-prompt",
+        "Draft a launch plan for the new pricing page, with owners, dates and the risks"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-attachments",
+      "appearance": "dark",
+      "file": "composer-attachments-dark.png",
+      "status": "ok",
+      "note": "Draft with a picture and a CSV attached",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 257359,
+      "seconds": 10.9,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-attach",
+        "--juno-preview-prompt",
+        "Summarise these for Monday's review"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-keyboard",
+      "appearance": "dark",
+      "file": "composer-keyboard-dark.png",
+      "status": "ok",
+      "note": "Composer focused with the keyboard",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 244046,
+      "seconds": 11.1,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-keyboard",
+        "--juno-preview-prompt",
+        "Plan the offsite"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-plus-menu",
+      "appearance": "dark",
+      "file": "composer-plus-menu-dark.png",
+      "status": "ok",
+      "note": "Composer + menu open",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 270951,
+      "seconds": 10.3,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-plus"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-model-selector",
+      "appearance": "dark",
+      "file": "composer-model-selector-dark.png",
+      "status": "ok",
+      "note": "Model selector from the composer",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 294878,
+      "seconds": 10.4,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-model-selector"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "composer-thinking",
+      "appearance": "dark",
+      "file": "composer-thinking-dark.png",
+      "status": "ok",
+      "note": "Thinking level popover",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 226217,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-chat-draft",
+        "--juno-preview-model",
+        "anthropic:claude-sonnet-4-6",
+        "--juno-preview-thinking"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "incognito",
+      "appearance": "dark",
+      "file": "incognito-dark.png",
+      "status": "ok",
+      "note": "Incognito chat",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 155973,
+      "seconds": 10.8,
+      "args": [
+        "--juno-preview-incognito"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "drawer",
+      "appearance": "dark",
+      "file": "drawer-dark.png",
+      "status": "ok",
+      "note": "Sidebar drawer open",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 623454,
+      "seconds": 10.0,
+      "args": [
+        "--juno-preview-sidebar"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "drawer-search",
+      "appearance": "dark",
+      "file": "drawer-search-dark.png",
+      "status": "ok",
+      "note": "Drawer searching for \"plan\"",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 576333,
+      "seconds": 9.2,
+      "args": [
+        "--juno-preview-sidebar",
+        "--juno-preview-sidebar-search",
+        "plan"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings",
+      "appearance": "dark",
+      "file": "settings-dark.png",
+      "status": "ok",
+      "note": "Settings sheet",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 207542,
+      "seconds": 10.1,
+      "args": [
+        "--juno-preview-settings"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-appearance",
+      "appearance": "dark",
+      "file": "settings-appearance-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 171867,
+      "seconds": 14.1,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "appearance"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-models",
+      "appearance": "dark",
+      "file": "settings-models-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 229988,
+      "seconds": 13.5,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "models"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-personalization",
+      "appearance": "dark",
+      "file": "settings-personalization-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 281307,
+      "seconds": 13.6,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "personalization"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-account",
+      "appearance": "dark",
+      "file": "settings-account-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 199680,
+      "seconds": 10.8,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "account"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings-usage",
+      "appearance": "dark",
+      "file": "settings-usage-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 151703,
+      "seconds": 10.3,
+      "args": [
+        "--juno-preview-settings",
+        "--juno-preview-settings-route",
+        "usage"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "research-report",
+      "appearance": "dark",
+      "file": "research-report-dark.png",
+      "status": "ok",
+      "note": "Research report reader",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 395322,
+      "seconds": 9.8,
+      "args": [
+        "--juno-preview-report"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "search",
+      "appearance": "dark",
+      "file": "search-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 257873,
+      "seconds": 9.2,
+      "args": [
+        "--juno-preview-tab",
+        "search"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "activity",
+      "appearance": "dark",
+      "file": "activity-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 125820,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "activity"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "projects",
+      "appearance": "dark",
+      "file": "projects-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 235904,
+      "seconds": 9.3,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "library",
+      "appearance": "dark",
+      "file": "library-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 660124,
+      "seconds": 10.5,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "artifacts",
+      "appearance": "dark",
+      "file": "artifacts-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 222182,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-tab",
+        "artifacts"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "agents",
+      "appearance": "dark",
+      "file": "agents-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 126240,
+      "seconds": 9.5,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "connections",
+      "appearance": "dark",
+      "file": "connections-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 208656,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-tab",
+        "connections"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "tasks",
+      "appearance": "dark",
+      "file": "tasks-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 134693,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-tab",
+        "tasks"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "work",
+      "appearance": "dark",
+      "file": "work-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 342707,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "work"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "code",
+      "appearance": "dark",
+      "file": "code-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 468074,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-tab",
+        "code"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "signed-out",
+      "appearance": "dark",
+      "file": "signed-out-dark.png",
+      "status": "ok",
+      "note": "Signed out: the welcome",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1890647,
+      "seconds": 9.3,
+      "args": [
+        "--juno-preview-signed-out"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "signed-out-form",
+      "appearance": "dark",
+      "file": "signed-out-form-dark.png",
+      "status": "ok",
+      "note": "Signed out: the sign-in form",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1440096,
+      "seconds": 9.7,
+      "args": [
+        "--juno-preview-signed-out",
+        "--juno-skip-welcome"
+      ]
+    }
+  ]
+}

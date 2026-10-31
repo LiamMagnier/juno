@@ -1,0 +1,1876 @@
+{
+  "platform": "macOS",
+  "app": "JunoDesktop.app",
+  "window size": "1440x900",
+  "macOS": "ProductName:\t\tmacOS; ProductVersion:\t\t26.6.2; BuildVersion:\t\t25G83",
+  "Xcode": "Xcode 26.6 Build version 17F113",
+  "commit": "9bddecf95b89664d4bf96e404d3e31f3da7c2cb9",
+  "captures": [
+    {
+      "platform": "macos",
+      "surface": "chat-home",
+      "appearance": "light",
+      "file": "chat-home-light.png",
+      "status": "ok",
+      "note": "New chat: greeting + empty composer",
+      "width": 1440,
+      "height": 677,
+      "bytes": 94691,
+      "seconds": 8.3,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread",
+      "appearance": "light",
+      "file": "chat-thread-light.png",
+      "status": "ok",
+      "note": "Pinned thread, scrolled to the latest turn",
+      "width": 1440,
+      "height": 677,
+      "bytes": 140272,
+      "seconds": 7.8,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-top",
+      "appearance": "light",
+      "file": "chat-thread-top-light.png",
+      "status": "ok",
+      "note": "Same thread from its first turn",
+      "width": 1440,
+      "height": 677,
+      "bytes": 141212,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-1",
+        "--juno-preview-scroll-top"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-deliverables",
+      "appearance": "light",
+      "file": "chat-thread-deliverables-light.png",
+      "status": "ok",
+      "note": "Thread that made a sheet, a doc and a deck",
+      "width": 1440,
+      "height": 677,
+      "bytes": 140321,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-deliverables"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-project",
+      "appearance": "light",
+      "file": "chat-thread-project-light.png",
+      "status": "ok",
+      "note": "Project-linked thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 135553,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-proj"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-research",
+      "appearance": "light",
+      "file": "chat-thread-research-light.png",
+      "status": "ok",
+      "note": "Showcase research thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 169201,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "showcase",
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-research"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-showcase",
+      "appearance": "light",
+      "file": "chat-showcase-light.png",
+      "status": "ok",
+      "note": "Showcase account, default thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 145599,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-scenario",
+        "showcase",
+        "--juno-preview-tab",
+        "chat"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-streaming-thinking",
+      "appearance": "light",
+      "file": "chat-streaming-thinking-light.png",
+      "status": "ok",
+      "note": "Turn sent, held on the thinking row",
+      "width": 1440,
+      "height": 677,
+      "bytes": 101784,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-send",
+        "Which heat pump suits a 1930s semi?",
+        "--juno-preview-stream-hold",
+        "thinking"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-streaming",
+      "appearance": "light",
+      "file": "chat-streaming-light.png",
+      "status": "ok",
+      "note": "Turn sent, answer streaming",
+      "width": 1440,
+      "height": 677,
+      "bytes": 100920,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-send",
+        "Which heat pump suits a 1930s semi?"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-private",
+      "appearance": "light",
+      "file": "chat-private-light.png",
+      "status": "ok",
+      "note": "Private chat draft",
+      "width": 1440,
+      "height": 677,
+      "bytes": 94710,
+      "seconds": 7.3,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-private"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-empty-account",
+      "appearance": "light",
+      "file": "chat-empty-account-light.png",
+      "status": "ok",
+      "note": "Account with no chats",
+      "width": 1440,
+      "height": 677,
+      "bytes": 70164,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-scenario",
+        "empty",
+        "--juno-preview-tab",
+        "chat"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-offline",
+      "appearance": "light",
+      "file": "chat-offline-light.png",
+      "status": "ok",
+      "note": "Offline posture",
+      "width": 1440,
+      "height": 677,
+      "bytes": 109562,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "offline",
+        "--juno-preview-tab",
+        "chat"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-typing",
+      "appearance": "light",
+      "file": "composer-typing-light.png",
+      "status": "ok",
+      "note": "Draft typed, unsent",
+      "width": 1440,
+      "height": 677,
+      "bytes": 100132,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-seed",
+        "Draft a launch plan for the new pricing page, with owners, dates and the risks"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-attachments",
+      "appearance": "light",
+      "file": "composer-attachments-light.png",
+      "status": "ok",
+      "note": "Draft with a CSV and a picture attached",
+      "width": 1440,
+      "height": 677,
+      "bytes": 110248,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-attach",
+        "--juno-preview-seed",
+        "Summarise these for Monday's review"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-plus-menu",
+      "appearance": "light",
+      "file": "composer-plus-menu-light.png",
+      "status": "ok",
+      "note": "Composer + menu open [press: press juno.desktop.chat.add: not found in 267 elements; ids seen:]",
+      "width": 1440,
+      "height": 677,
+      "bytes": 94735,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-press",
+        "juno.desktop.chat.add"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-model-popover",
+      "appearance": "light",
+      "file": "composer-model-popover-light.png",
+      "status": "ok",
+      "note": "Model popover from the composer chip",
+      "width": 1440,
+      "height": 677,
+      "bytes": 95401,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-overlay",
+        "popover"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "model-selector",
+      "appearance": "light",
+      "file": "model-selector-light.png",
+      "status": "ok",
+      "note": "The model selector on its own",
+      "width": 1440,
+      "height": 677,
+      "bytes": 73959,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-model-selector"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "sidebar-more-menu",
+      "appearance": "light",
+      "file": "sidebar-more-menu-light.png",
+      "status": "ok",
+      "note": "Sidebar More menu open [press: press juno.desktop.sidebar.more: not found in 341 elements; ids seen:]",
+      "width": 1440,
+      "height": 677,
+      "bytes": 140751,
+      "seconds": 9.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-press",
+        "juno.desktop.sidebar.more"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "account-menu",
+      "appearance": "light",
+      "file": "account-menu-light.png",
+      "status": "ok",
+      "note": "Sidebar account menu open [press: press juno.desktop.account-menu: not found in 341 elements; ids seen:]",
+      "width": 1440,
+      "height": 677,
+      "bytes": 135532,
+      "seconds": 9.5,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-press",
+        "juno.desktop.account-menu"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-artifact-canvas",
+      "appearance": "light",
+      "file": "chat-artifact-canvas-light.png",
+      "status": "ok",
+      "note": "Document artifact open beside the thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 200959,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-deliverables",
+        "--juno-preview-artifact",
+        "art-doc"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-report-panel",
+      "appearance": "light",
+      "file": "chat-report-panel-light.png",
+      "status": "ok",
+      "note": "Research report in the trailing panel",
+      "width": 1440,
+      "height": 677,
+      "bytes": 243472,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-report-panel"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-file-panel",
+      "appearance": "light",
+      "file": "chat-file-panel-light.png",
+      "status": "ok",
+      "note": "CSV file preview panel",
+      "width": 1440,
+      "height": 677,
+      "bytes": 159556,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-file"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "activity",
+      "appearance": "light",
+      "file": "activity-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 84354,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "activity"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "projects",
+      "appearance": "light",
+      "file": "projects-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 122826,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "project-detail",
+      "appearance": "light",
+      "file": "project-detail-light.png",
+      "status": "ok",
+      "note": "Astro research project page",
+      "width": 1440,
+      "height": 677,
+      "bytes": 173411,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "projects",
+        "--juno-preview-project",
+        "proj-1"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "library",
+      "appearance": "light",
+      "file": "library-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 114145,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "artifacts",
+      "appearance": "light",
+      "file": "artifacts-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 146674,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "artifacts"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "artifact-open",
+      "appearance": "light",
+      "file": "artifact-open-light.png",
+      "status": "ok",
+      "note": "Spreadsheet artifact open",
+      "width": 1440,
+      "height": 677,
+      "bytes": 133692,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "artifacts",
+        "--juno-preview-artifact",
+        "art-sheet"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "agents",
+      "appearance": "light",
+      "file": "agents-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 54571,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "connections",
+      "appearance": "light",
+      "file": "connections-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 145169,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "connections"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "connections-app-detail",
+      "appearance": "light",
+      "file": "connections-app-detail-light.png",
+      "status": "ok",
+      "note": "GitHub app details sheet",
+      "width": 1440,
+      "height": 677,
+      "bytes": 145169,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "connections",
+        "--juno-preview-app-detail",
+        "github"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "memory",
+      "appearance": "light",
+      "file": "memory-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 158129,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "memory"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "assistants",
+      "appearance": "light",
+      "file": "assistants-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 137970,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "assistants"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "skills",
+      "appearance": "light",
+      "file": "skills-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 159537,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "skills"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "automations",
+      "appearance": "light",
+      "file": "automations-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 114968,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "automations"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "permissions",
+      "appearance": "light",
+      "file": "permissions-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 63738,
+      "seconds": 7.2,
+      "args": [
+        "--juno-preview-tab",
+        "permissions"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "profile",
+      "appearance": "light",
+      "file": "profile-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 107817,
+      "seconds": 7.3,
+      "args": [
+        "--juno-preview-tab",
+        "profile"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "instructions",
+      "appearance": "light",
+      "file": "instructions-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 138301,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "instructions"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code",
+      "appearance": "light",
+      "file": "code-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 123546,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "code"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code-session-running",
+      "appearance": "light",
+      "file": "code-session-running-light.png",
+      "status": "ok",
+      "note": "A run in flight",
+      "width": 1440,
+      "height": 677,
+      "bytes": 177973,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-tab",
+        "code",
+        "--juno-preview-code-session",
+        "cd-search"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code-session-approval",
+      "appearance": "light",
+      "file": "code-session-approval-light.png",
+      "status": "ok",
+      "note": "A run waiting on an approval",
+      "width": 1440,
+      "height": 677,
+      "bytes": 177973,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "code",
+        "--juno-preview-code-session",
+        "cd-migrate"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code-session-done",
+      "appearance": "light",
+      "file": "code-session-done-light.png",
+      "status": "ok",
+      "note": "A finished run with a diff",
+      "width": 1440,
+      "height": 677,
+      "bytes": 177973,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "code",
+        "--juno-preview-code-session",
+        "cd-flake"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-general",
+      "appearance": "light",
+      "file": "settings-general-light.png",
+      "status": "ok",
+      "note": "Settings window, general",
+      "width": 1060,
+      "height": 780,
+      "bytes": 111318,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "general"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-appearance",
+      "appearance": "light",
+      "file": "settings-appearance-light.png",
+      "status": "ok",
+      "note": "Settings window, appearance",
+      "width": 1060,
+      "height": 780,
+      "bytes": 122377,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "appearance"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-personalization",
+      "appearance": "light",
+      "file": "settings-personalization-light.png",
+      "status": "ok",
+      "note": "Settings window, personalization",
+      "width": 1060,
+      "height": 780,
+      "bytes": 116121,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "personalization"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-models",
+      "appearance": "light",
+      "file": "settings-models-light.png",
+      "status": "ok",
+      "note": "Settings window, models",
+      "width": 1060,
+      "height": 780,
+      "bytes": 154020,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "models"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-voice",
+      "appearance": "light",
+      "file": "settings-voice-light.png",
+      "status": "ok",
+      "note": "Settings window, voice",
+      "width": 1060,
+      "height": 780,
+      "bytes": 98231,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "voice"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-notifications",
+      "appearance": "light",
+      "file": "settings-notifications-light.png",
+      "status": "ok",
+      "note": "Settings window, notifications",
+      "width": 1060,
+      "height": 780,
+      "bytes": 98289,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "notifications"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-account",
+      "appearance": "light",
+      "file": "settings-account-light.png",
+      "status": "ok",
+      "note": "Settings window, account",
+      "width": 1060,
+      "height": 780,
+      "bytes": 162046,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "account"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-billing",
+      "appearance": "light",
+      "file": "settings-billing-light.png",
+      "status": "ok",
+      "note": "Settings window, billing",
+      "width": 1060,
+      "height": 780,
+      "bytes": 99056,
+      "seconds": 8.3,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "billing"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-connectors",
+      "appearance": "light",
+      "file": "settings-connectors-light.png",
+      "status": "ok",
+      "note": "Settings window, connectors",
+      "width": 1060,
+      "height": 780,
+      "bytes": 107993,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "connectors"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-data",
+      "appearance": "light",
+      "file": "settings-data-light.png",
+      "status": "ok",
+      "note": "Settings window, data",
+      "width": 1060,
+      "height": 780,
+      "bytes": 123292,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "data"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-code",
+      "appearance": "light",
+      "file": "settings-code-light.png",
+      "status": "ok",
+      "note": "Settings window, code",
+      "width": 1060,
+      "height": 780,
+      "bytes": 129011,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "code"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-home",
+      "appearance": "dark",
+      "file": "chat-home-dark.png",
+      "status": "ok",
+      "note": "New chat: greeting + empty composer",
+      "width": 1440,
+      "height": 677,
+      "bytes": 89116,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread",
+      "appearance": "dark",
+      "file": "chat-thread-dark.png",
+      "status": "ok",
+      "note": "Pinned thread, scrolled to the latest turn",
+      "width": 1440,
+      "height": 677,
+      "bytes": 131600,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-top",
+      "appearance": "dark",
+      "file": "chat-thread-top-dark.png",
+      "status": "ok",
+      "note": "Same thread from its first turn",
+      "width": 1440,
+      "height": 677,
+      "bytes": 132202,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-1",
+        "--juno-preview-scroll-top"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-deliverables",
+      "appearance": "dark",
+      "file": "chat-thread-deliverables-dark.png",
+      "status": "ok",
+      "note": "Thread that made a sheet, a doc and a deck",
+      "width": 1440,
+      "height": 677,
+      "bytes": 132417,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-deliverables"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-project",
+      "appearance": "dark",
+      "file": "chat-thread-project-dark.png",
+      "status": "ok",
+      "note": "Project-linked thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 132342,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-proj"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread-research",
+      "appearance": "dark",
+      "file": "chat-thread-research-dark.png",
+      "status": "ok",
+      "note": "Showcase research thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 159666,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "showcase",
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-research"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-showcase",
+      "appearance": "dark",
+      "file": "chat-showcase-dark.png",
+      "status": "ok",
+      "note": "Showcase account, default thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 143133,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "showcase",
+        "--juno-preview-tab",
+        "chat"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-streaming-thinking",
+      "appearance": "dark",
+      "file": "chat-streaming-thinking-dark.png",
+      "status": "ok",
+      "note": "Turn sent, held on the thinking row",
+      "width": 1440,
+      "height": 677,
+      "bytes": 89116,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-send",
+        "Which heat pump suits a 1930s semi?",
+        "--juno-preview-stream-hold",
+        "thinking"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-streaming",
+      "appearance": "dark",
+      "file": "chat-streaming-dark.png",
+      "status": "ok",
+      "note": "Turn sent, answer streaming",
+      "width": 1440,
+      "height": 677,
+      "bytes": 95409,
+      "seconds": 9.5,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-send",
+        "Which heat pump suits a 1930s semi?"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-private",
+      "appearance": "dark",
+      "file": "chat-private-dark.png",
+      "status": "ok",
+      "note": "Private chat draft",
+      "width": 1440,
+      "height": 677,
+      "bytes": 89724,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-private"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-empty-account",
+      "appearance": "dark",
+      "file": "chat-empty-account-dark.png",
+      "status": "ok",
+      "note": "Account with no chats",
+      "width": 1440,
+      "height": 677,
+      "bytes": 68483,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "empty",
+        "--juno-preview-tab",
+        "chat"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-offline",
+      "appearance": "dark",
+      "file": "chat-offline-dark.png",
+      "status": "ok",
+      "note": "Offline posture",
+      "width": 1440,
+      "height": 677,
+      "bytes": 108318,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "offline",
+        "--juno-preview-tab",
+        "chat"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-typing",
+      "appearance": "dark",
+      "file": "composer-typing-dark.png",
+      "status": "ok",
+      "note": "Draft typed, unsent",
+      "width": 1440,
+      "height": 677,
+      "bytes": 94647,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-seed",
+        "Draft a launch plan for the new pricing page, with owners, dates and the risks"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-attachments",
+      "appearance": "dark",
+      "file": "composer-attachments-dark.png",
+      "status": "ok",
+      "note": "Draft with a CSV and a picture attached",
+      "width": 1440,
+      "height": 677,
+      "bytes": 104322,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-attach",
+        "--juno-preview-seed",
+        "Summarise these for Monday's review"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-plus-menu",
+      "appearance": "dark",
+      "file": "composer-plus-menu-dark.png",
+      "status": "ok",
+      "note": "Composer + menu open [press: press juno.desktop.chat.add: not found in 267 elements; ids seen:]",
+      "width": 1440,
+      "height": 677,
+      "bytes": 89116,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-press",
+        "juno.desktop.chat.add"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "composer-model-popover",
+      "appearance": "dark",
+      "file": "composer-model-popover-dark.png",
+      "status": "ok",
+      "note": "Model popover from the composer chip",
+      "width": 1440,
+      "height": 677,
+      "bytes": 89714,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft",
+        "--juno-preview-overlay",
+        "popover"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "model-selector",
+      "appearance": "dark",
+      "file": "model-selector-dark.png",
+      "status": "ok",
+      "note": "The model selector on its own",
+      "width": 1440,
+      "height": 677,
+      "bytes": 69787,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-model-selector"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "sidebar-more-menu",
+      "appearance": "dark",
+      "file": "sidebar-more-menu-dark.png",
+      "status": "ok",
+      "note": "Sidebar More menu open [press: press juno.desktop.sidebar.more: not found in 341 elements; ids seen:]",
+      "width": 1440,
+      "height": 677,
+      "bytes": 131600,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-press",
+        "juno.desktop.sidebar.more"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "account-menu",
+      "appearance": "dark",
+      "file": "account-menu-dark.png",
+      "status": "ok",
+      "note": "Sidebar account menu open [press: press juno.desktop.account-menu: not found in 341 elements; ids seen:]",
+      "width": 1440,
+      "height": 677,
+      "bytes": 131600,
+      "seconds": 9.5,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-press",
+        "juno.desktop.account-menu"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-artifact-canvas",
+      "appearance": "dark",
+      "file": "chat-artifact-canvas-dark.png",
+      "status": "ok",
+      "note": "Document artifact open beside the thread",
+      "width": 1440,
+      "height": 677,
+      "bytes": 208109,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-deliverables",
+        "--juno-preview-artifact",
+        "art-doc"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-report-panel",
+      "appearance": "dark",
+      "file": "chat-report-panel-dark.png",
+      "status": "ok",
+      "note": "Research report in the trailing panel",
+      "width": 1440,
+      "height": 677,
+      "bytes": 236117,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-report-panel"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-file-panel",
+      "appearance": "dark",
+      "file": "chat-file-panel-dark.png",
+      "status": "ok",
+      "note": "CSV file preview panel",
+      "width": 1440,
+      "height": 677,
+      "bytes": 150970,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-file"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "activity",
+      "appearance": "dark",
+      "file": "activity-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 84976,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "activity"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "projects",
+      "appearance": "dark",
+      "file": "projects-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 117973,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "project-detail",
+      "appearance": "dark",
+      "file": "project-detail-dark.png",
+      "status": "ok",
+      "note": "Astro research project page",
+      "width": 1440,
+      "height": 677,
+      "bytes": 160561,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "projects",
+        "--juno-preview-project",
+        "proj-1"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "library",
+      "appearance": "dark",
+      "file": "library-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 111890,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "artifacts",
+      "appearance": "dark",
+      "file": "artifacts-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 139269,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "artifacts"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "artifact-open",
+      "appearance": "dark",
+      "file": "artifact-open-dark.png",
+      "status": "ok",
+      "note": "Spreadsheet artifact open",
+      "width": 1440,
+      "height": 677,
+      "bytes": 127254,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "artifacts",
+        "--juno-preview-artifact",
+        "art-sheet"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "agents",
+      "appearance": "dark",
+      "file": "agents-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 53043,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "connections",
+      "appearance": "dark",
+      "file": "connections-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 126937,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "connections"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "connections-app-detail",
+      "appearance": "dark",
+      "file": "connections-app-detail-dark.png",
+      "status": "ok",
+      "note": "GitHub app details sheet",
+      "width": 1440,
+      "height": 677,
+      "bytes": 126937,
+      "seconds": 8.3,
+      "args": [
+        "--juno-preview-tab",
+        "connections",
+        "--juno-preview-app-detail",
+        "github"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "memory",
+      "appearance": "dark",
+      "file": "memory-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 149711,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "memory"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "assistants",
+      "appearance": "dark",
+      "file": "assistants-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 134769,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "assistants"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "skills",
+      "appearance": "dark",
+      "file": "skills-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 139130,
+      "seconds": 7.3,
+      "args": [
+        "--juno-preview-tab",
+        "skills"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "automations",
+      "appearance": "dark",
+      "file": "automations-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 103463,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "automations"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "permissions",
+      "appearance": "dark",
+      "file": "permissions-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 63689,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "permissions"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "profile",
+      "appearance": "dark",
+      "file": "profile-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 109795,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "profile"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "instructions",
+      "appearance": "dark",
+      "file": "instructions-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 132769,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "instructions"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code",
+      "appearance": "dark",
+      "file": "code-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 124321,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "code"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code-session-running",
+      "appearance": "dark",
+      "file": "code-session-running-dark.png",
+      "status": "ok",
+      "note": "A run in flight",
+      "width": 1440,
+      "height": 677,
+      "bytes": 175388,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "code",
+        "--juno-preview-code-session",
+        "cd-search"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code-session-approval",
+      "appearance": "dark",
+      "file": "code-session-approval-dark.png",
+      "status": "ok",
+      "note": "A run waiting on an approval",
+      "width": 1440,
+      "height": 677,
+      "bytes": 175388,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "code",
+        "--juno-preview-code-session",
+        "cd-migrate"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "code-session-done",
+      "appearance": "dark",
+      "file": "code-session-done-dark.png",
+      "status": "ok",
+      "note": "A finished run with a diff",
+      "width": 1440,
+      "height": 677,
+      "bytes": 175388,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "code",
+        "--juno-preview-code-session",
+        "cd-flake"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-general",
+      "appearance": "dark",
+      "file": "settings-general-dark.png",
+      "status": "ok",
+      "note": "Settings window, general",
+      "width": 1060,
+      "height": 780,
+      "bytes": 106027,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "general"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-appearance",
+      "appearance": "dark",
+      "file": "settings-appearance-dark.png",
+      "status": "ok",
+      "note": "Settings window, appearance",
+      "width": 1060,
+      "height": 780,
+      "bytes": 114335,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "appearance"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-personalization",
+      "appearance": "dark",
+      "file": "settings-personalization-dark.png",
+      "status": "ok",
+      "note": "Settings window, personalization",
+      "width": 1060,
+      "height": 780,
+      "bytes": 111806,
+      "seconds": 8.6,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "personalization"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-models",
+      "appearance": "dark",
+      "file": "settings-models-dark.png",
+      "status": "ok",
+      "note": "Settings window, models",
+      "width": 1060,
+      "height": 780,
+      "bytes": 143610,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "models"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-voice",
+      "appearance": "dark",
+      "file": "settings-voice-dark.png",
+      "status": "ok",
+      "note": "Settings window, voice",
+      "width": 1060,
+      "height": 780,
+      "bytes": 93193,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "voice"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-notifications",
+      "appearance": "dark",
+      "file": "settings-notifications-dark.png",
+      "status": "ok",
+      "note": "Settings window, notifications",
+      "width": 1060,
+      "height": 780,
+      "bytes": 95674,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "notifications"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-account",
+      "appearance": "dark",
+      "file": "settings-account-dark.png",
+      "status": "ok",
+      "note": "Settings window, account",
+      "width": 1060,
+      "height": 780,
+      "bytes": 147685,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "account"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-billing",
+      "appearance": "dark",
+      "file": "settings-billing-dark.png",
+      "status": "ok",
+      "note": "Settings window, billing",
+      "width": 1060,
+      "height": 780,
+      "bytes": 94290,
+      "seconds": 8.3,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "billing"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-connectors",
+      "appearance": "dark",
+      "file": "settings-connectors-dark.png",
+      "status": "ok",
+      "note": "Settings window, connectors",
+      "width": 1060,
+      "height": 780,
+      "bytes": 102785,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "connectors"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-data",
+      "appearance": "dark",
+      "file": "settings-data-dark.png",
+      "status": "ok",
+      "note": "Settings window, data",
+      "width": 1060,
+      "height": 780,
+      "bytes": 117692,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "data"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-code",
+      "appearance": "dark",
+      "file": "settings-code-dark.png",
+      "status": "ok",
+      "note": "Settings window, code",
+      "width": 1060,
+      "height": 780,
+      "bytes": 129157,
+      "seconds": 8.5,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "code"
+      ]
+    }
+  ]
+}
