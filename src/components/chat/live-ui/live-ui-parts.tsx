@@ -232,7 +232,7 @@ export function LiveStops({ stops }: { stops: Stops }) {
                   target="_blank"
                   rel="noopener noreferrer nofollow"
                   referrerPolicy="no-referrer"
-                  className="mt-0.5 inline-flex w-fit items-center gap-1 text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  className="relative mt-0.5 inline-flex w-fit items-center gap-1 text-caption text-muted-foreground underline-offset-4 hit-44 hover:text-foreground hover:underline"
                 >
                   Open in Maps
                   <ExternalLink className="size-3" aria-hidden />

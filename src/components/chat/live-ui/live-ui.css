@@ -94,7 +94,7 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-stepper-btn:active:not(:disabled) { transform: scale(0.9); }
 .live-stepper-btn:disabled { opacity: 0.35; box-shadow: none; background: transparent; }
 @media (pointer: coarse) {
-  .live-stepper-btn { width: 2.5rem; height: 2.5rem; }
+  .live-stepper-btn { width: 2.75rem; height: 2.75rem; }
 }
 .live-stepper-value {
   min-width: 3rem;
@@ -542,6 +542,32 @@ div:has(> .live-slider:active) > div > .live-value {
 }
 .live-tab:hover, .live-tab[aria-selected="true"] { color: hsl(var(--foreground)); }
 .live-tab[aria-selected="true"] { font-weight: 600; }
+
+/* Touch: every control in a view reaches 44px under a finger (G54). The
+   checkable rows, the primary action and the tab track grow; the pills and
+   the step numbers keep their drawn size and take an invisible pad centred
+   on them, so a recipe's rhythm holds on a phone. A tab's pad stops at the
+   track's padding box, which is exactly 44 once the tab is 36. */
+@media (pointer: coarse) {
+  .live-row { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .live-primary { height: 2.75rem; }
+  .live-tab { height: 2.25rem; }
+  .live-chip,
+  .live-timer,
+  .live-step-num { position: relative; }
+  .live-chip::before,
+  .live-timer::before,
+  .live-step-num::before,
+  .live-tab::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 2.75rem);
+    height: max(100%, 2.75rem);
+    translate: -50% -50%;
+  }
+}
 
 /* Flashcards: a card that turns over. */
 .live-flash {

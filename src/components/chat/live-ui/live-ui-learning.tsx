@@ -63,7 +63,7 @@ function Segments({
             onClick={() => onSelect(i)}
             aria-label={labels(i)}
             aria-current={i === current ? "step" : undefined}
-            className="group flex h-5 min-w-0 flex-1 items-center rounded-full outline-offset-2"
+            className="group relative flex h-5 min-w-0 flex-1 items-center rounded-full outline-offset-2 hit-44"
           >
             {bar}
           </button>

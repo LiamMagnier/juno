@@ -266,7 +266,7 @@ export function UpgradeView({
               block: "start",
             })
           }
-          className="mt-4 flex items-center gap-1.5 rounded-control px-2 py-1 text-ui text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+          className="relative mt-4 flex items-center gap-1.5 rounded-control px-2 py-1 text-ui text-muted-foreground underline-offset-4 hit-44 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
         >
           Compare all plans
           <ChevronDown className="size-4" aria-hidden />
