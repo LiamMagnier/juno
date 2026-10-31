@@ -67,7 +67,9 @@ if (!DB_URL || !canMockModules) {
     mock.module("@/components/share/shared-artifact-viewer", { namedExports: { SharedArtifactViewer: Stub } });
     mock.module("@/components/share/report-share-dialog", { namedExports: { ReportShareButton: Stub } });
     mock.module("@/components/share/share-copy-button", { namedExports: { ShareCopyButton: Stub } });
-    mock.module("@/components/canvas/sandbox-document-frame", { namedExports: { SandboxProfileProvider: Stub } });
+    mock.module("@/components/canvas/sandbox-document-frame", { namedExports: { SandboxProfileProvider: Stub, AlevrBridgeProvider: Stub } });
+    // A people share's wall (src/components/share/share-restricted.tsx), a client module too.
+    mock.module("@/components/share/share-restricted", { namedExports: { ShareRestricted: Stub } });
     mock.module("@/components/landing/plate", { namedExports: { Plate: Stub } });
     mock.module("@/components/ui/app-page", { namedExports: { AppPage: Stub } });
     const React = await import("react");
