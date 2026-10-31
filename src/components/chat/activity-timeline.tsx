@@ -503,7 +503,7 @@ export function ActivityTimeline({
       <ToolRunOutputs events={list} streaming={!!streaming} attachments={attachments} />
 
       {showSearch && (
-        <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">
+        <div className="mb-3 flex flex-col gap-2.5 pl-2">
           <WebSearchBlock
             query={run.query!}
             sites={searchSites}

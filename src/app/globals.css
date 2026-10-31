@@ -2947,6 +2947,22 @@
   @media (pointer: coarse) {
     .aicss-cb-icon { width: 36px; height: 36px; }
     .aicss-cb-more { height: 40px; }
+    /* The header keys keep their drawn size under a finger (the copy pill
+       stays a 24px pill seated in the block's corner) and take the rest of
+       the way to 44 as an invisible pad centred on them: `hit-44` (G54),
+       written out because these classes are shared with code-run's keys. */
+    .aicss-cb-icon,
+    .aicss-cb-copy { position: relative; }
+    .aicss-cb-icon::before,
+    .aicss-cb-copy::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      translate: -50% -50%;
+    }
   }
 
   .aicss-diff { font-family: var(--font-mono), ui-monospace, monospace; }

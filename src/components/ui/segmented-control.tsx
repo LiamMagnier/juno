@@ -66,6 +66,12 @@ export type SegmentedSize = "md" | "sm";
  *   md: 26 + 8 + 2 = 36 (coarse 34 → 44) · rounded-menu 14 → thumb 9
  *   sm: 22 + 8 + 2 = 32 (coarse 30 → 40) · rounded-card 12 → thumb 7
  *
+ * The TRACK reaches 44 on a coarse pointer, but the target is the segment
+ * inside it, which stops at 34 (30 at `sm`). `hit-44` (G54) pads each segment
+ * to 44 with an invisible box centred on it, so the finger's target is the
+ * full height of the track without the track growing past its rung. Icon
+ * segments (36/40 wide) get the same pad sideways, into the 4px gap.
+ *
  * Exported so `TabsList`, the same idiom on Radix, reads the same numbers.
  */
 export const SEGMENTED_METRICS: Record<
@@ -74,14 +80,14 @@ export const SEGMENTED_METRICS: Record<
 > = {
   md: {
     track: "rounded-menu",
-    segment: "h-[1.625rem] px-3 coarse:h-[2.125rem]",
-    iconSegment: "h-[1.625rem] w-8 coarse:h-[2.125rem] coarse:w-10",
+    segment: "h-[1.625rem] px-3 coarse:h-[2.125rem] hit-44",
+    iconSegment: "h-[1.625rem] w-8 coarse:h-[2.125rem] coarse:w-10 hit-44",
     thumbRadius: 9,
   },
   sm: {
     track: "rounded-card",
-    segment: "h-[1.375rem] px-2.5 coarse:h-[1.875rem]",
-    iconSegment: "h-[1.375rem] w-7 coarse:h-[1.875rem] coarse:w-9",
+    segment: "h-[1.375rem] px-2.5 coarse:h-[1.875rem] hit-44",
+    iconSegment: "h-[1.375rem] w-7 coarse:h-[1.875rem] coarse:w-9 hit-44",
     thumbRadius: 7,
   },
 };

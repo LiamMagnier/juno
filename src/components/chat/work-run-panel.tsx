@@ -474,7 +474,7 @@ function TaskQuestion({
               <button
                 type="button"
                 onClick={answerInComposer}
-                className="flex min-h-9 items-center gap-3 rounded-control px-2.5 text-left text-nav text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 motion-reduce:transition-none"
+                className="flex min-h-11 items-center gap-3 rounded-control px-2.5 py-1.5 text-left text-nav text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 motion-reduce:transition-none"
               >
                 <span aria-hidden="true" className="size-4 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_hsl(var(--muted-foreground)/0.7)]" />
                 Something else

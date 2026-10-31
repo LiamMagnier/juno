@@ -63,7 +63,7 @@ function Segments({
             onClick={() => onSelect(i)}
             aria-label={labels(i)}
             aria-current={i === current ? "step" : undefined}
-            className="group flex h-5 min-w-0 flex-1 items-center rounded-full outline-offset-2"
+            className="group relative flex h-5 min-w-0 flex-1 items-center rounded-full outline-offset-2 hit-44"
           >
             {bar}
           </button>
@@ -498,9 +498,10 @@ export function LiveTimeline({ timeline, interp }: { timeline: Timeline; interp:
 
 // ── Exercise ────────────────────────────────────────────────────────────────
 
-/** The exercise card's buttons: 32px, the controls' 8px corners, one line. */
+/** The exercise card's buttons: 32px, the controls' 8px corners, one line;
+ *  44px under a finger through the invisible `hit-44` pad. */
 const exerciseButton =
-  "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-ui font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.97] motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-35";
+  "relative inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-ui font-medium hit-44 transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.97] motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-35";
 
 type Exercise = Extract<LiveComponent, { type: "exercise" }>;
 

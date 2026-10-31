@@ -354,7 +354,16 @@ function LiveTable({
   const lead = (ci: number) => table.rowHeader === true && ci === 0;
   const hi = (ci: number) => table.highlight === ci;
   return (
-    <div className="live-table overflow-x-auto">
+    // A wide table scrolls sideways on a phone, so the scroller is a tab
+    // stop: without one a keyboard cannot reach the columns past the edge
+    // (SC 2.1.1). Named by its columns, as the code block's region is by its
+    // language, so the stop is announced rather than an unlabelled group.
+    <div
+      className="live-table overflow-x-auto"
+      tabIndex={0}
+      role="region"
+      aria-label={table.columns.map((col) => col.label).join(", ")}
+    >
       <table className="w-full min-w-0 border-collapse text-ui">
         <thead>
           <tr>

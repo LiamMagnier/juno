@@ -179,7 +179,7 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
   };
 
   const action =
-    "pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5";
+    "pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5 relative hit-44";
 
   return (
     <figure className="my-5 overflow-hidden rounded-popover border border-border/70 bg-card">

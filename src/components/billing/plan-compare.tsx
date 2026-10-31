@@ -60,11 +60,11 @@ function Cell({ plan, row, plans }: { plan: Plan; row: string; plans: readonly P
     return has ? (
       <span className="text-caption text-foreground">{has.level === 2 ? "Highest" : "Higher"}</span>
     ) : (
-      <span className="plans-dot" data-off aria-label="Standard" />
+      <span role="img" className="plans-dot" data-off aria-label="Standard" />
     );
   }
   if (row === "uploads") return <span className="font-mono text-caption tabular-nums text-foreground">{PLANS[plan].maxUploadMb} MB</span>;
-  return has ? <span className="plans-dot" aria-label="Included" /> : <span className="plans-dot" data-off aria-label="Not included" />;
+  return has ? <span role="img" className="plans-dot" aria-label="Included" /> : <span role="img" className="plans-dot" data-off aria-label="Not included" />;
 }
 
 export function PlanCompare({

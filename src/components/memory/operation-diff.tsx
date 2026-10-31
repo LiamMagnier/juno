@@ -23,7 +23,7 @@ function DiffLine({ sign, text }: { sign: "+" | "-"; text: string }) {
         {sign === "+" ? "+" : "−"}
       </span>
       <span className="sr-only">{sign === "+" ? "Adds:" : "Removes:"}</span>
-      <span className={cn("min-w-0 whitespace-pre-wrap break-words", sign === "-" && "text-muted-foreground line-through decoration-muted-foreground/40")}>
+      <span className={cn("min-w-0 whitespace-pre-wrap break-words", sign === "-" && "text-muted-on-fill line-through decoration-muted-foreground/40")}>
         {text}
       </span>
     </div>
