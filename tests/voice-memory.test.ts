@@ -98,11 +98,12 @@ test("the memory route answers only the relay, only for memory, under every chat
 
 test("a chat asks for memory for its calls — its project's — and never in incognito", () => {
   const chat = src("src/components/chat/chat-view.tsx");
-  // The thread rides beside memory (tests/voice-persona.test.ts), under the
-  // same incognito rule: a private chat asks for neither.
+  // The thread rides beside memory (tests/voice-persona.test.ts), and the
+  // chat's tools beside both (tests/voice-tools.test.ts), under the same
+  // incognito rule: a private chat asks for none of them.
   assert.match(
     chat,
-    /realtimeVoice\.start\(\s*undefined,\s*history,\s*privateMode \? undefined : \{ memory: \{ projectId: activeProjectId \}, conversationId: currentConversationId \?\? null \}\s*\)/
+    /realtimeVoice\.start\(\s*undefined,\s*history,\s*privateMode \? undefined : \{ memory: \{ projectId: activeProjectId \}, conversationId: currentConversationId \?\? null, tools: \{ connectorIds: enabledConnectors \} \}\s*\)/
   );
   const hook = src("src/hooks/use-realtime-voice.ts");
   assert.match(hook, /if \(!isReconnect\) memoryRef\.current = opts\?\.memory \?\? null;/);

@@ -43,6 +43,8 @@ const idle: VoiceController = {
   effort: null,
   memory: false,
   persona: false,
+  toolsOffered: null,
+  toolActivity: [],
   closedReason: null,
   levelRef: SILENT_LEVEL,
   audioStreams: NO_STREAMS,

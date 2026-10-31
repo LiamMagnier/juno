@@ -1,11 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, MonitorUp, MonitorX } from "@/components/ui/icons";
+import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, Loader2, MonitorUp, MonitorX } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
+import { ApprovalCard } from "@/components/chat/approval-card";
+import { useRealtimeVoice, type VoiceToolActivity } from "@/hooks/use-realtime-voice";
+import { voiceToolStatusWord } from "@/lib/voice-tool-activity";
 import { announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
 import {
   VOICE_GEMINI_DELEGATE_MODEL,
@@ -385,6 +388,15 @@ const NOTICE_LINE = "mx-auto mb-2 flex max-w-xl items-start justify-center gap-1
 const NOTICE_GLYPH = "mt-0.5 size-3.5 shrink-0";
 
 export function VoiceCallNotices({ voice }: { voice: VoiceController }) {
+  return (
+    <>
+      <VoiceCallNotice voice={voice} />
+      <VoiceToolActivityRow voice={voice} />
+    </>
+  );
+}
+
+function VoiceCallNotice({ voice }: { voice: VoiceController }) {
   if (voice.error) {
     return (
       <p role="alert" className={cn(NOTICE_LINE, "text-destructive-ink")}>
@@ -402,6 +414,76 @@ export function VoiceCallNotices({ voice }: { voice: VoiceController }) {
     );
   }
   return null;
+}
+
+const TOOL_CHIP_GLYPH = "size-3 shrink-0";
+
+function ToolChipGlyph({ status }: { status: VoiceToolActivity["status"] }) {
+  switch (status) {
+    case "running":
+      return <Loader2 className={cn(TOOL_CHIP_GLYPH, "motion-safe:animate-spin")} aria-hidden="true" />;
+    case "awaiting_approval":
+      return <StatusIcons.info className={cn(TOOL_CHIP_GLYPH, "text-primary")} aria-hidden="true" />;
+    case "succeeded":
+      return <StatusIcons.success className={TOOL_CHIP_GLYPH} aria-hidden="true" />;
+    case "failed":
+      return <StatusIcons.error className={cn(TOOL_CHIP_GLYPH, "text-destructive-ink")} aria-hidden="true" />;
+    default:
+      return <ActionIcons.dismiss className={TOOL_CHIP_GLYPH} aria-hidden="true" />;
+  }
+}
+
+/**
+ * What the call's tools are doing, as compact chips above the composer, and
+ * the chat's own approval card for a change waiting on the person — the same
+ * card a typed turn shows, posting the same digest-bound answer. The voice
+ * asks aloud at the same time; a spoken yes works where the card says so, and
+ * once said (and sent from here, through the same route) the card steps aside
+ * for its chip until the outcome arrives. One quiet line when the connected
+ * voice model cannot use tools at all.
+ */
+function VoiceToolActivityRow({ voice }: { voice: VoiceController }) {
+  const chips = voice.toolActivity;
+  const waiting = chips.flatMap((entry) =>
+    entry.status === "awaiting_approval" && entry.approval && !entry.answeredAloud
+      ? [{ ...entry, approval: entry.approval }]
+      : []
+  );
+  const unsupported = voice.status === "live" && voice.toolsOffered === 0;
+  if (chips.length === 0 && !unsupported) return null;
+  return (
+    <div className="mx-auto mb-2 flex w-full max-w-xl flex-col items-stretch gap-2 px-3 motion-safe:animate-fade-in">
+      {unsupported && (
+        <p role="status" className={cn(NOTICE_LINE, "mb-0 text-muted-foreground")}>
+          <StatusIcons.info className={NOTICE_GLYPH} aria-hidden="true" />
+          <span className="min-w-0 text-balance">
+            This voice model can’t use your apps or {PRODUCT_NAME}’s tools. Gemini can: switch in the call’s settings.
+          </span>
+        </p>
+      )}
+      {chips.length > 0 && (
+        <ul aria-label="Tools in this call" className="flex flex-wrap justify-center gap-1.5">
+          {chips.map((chip) => (
+            <li key={chip.id} className="min-w-0 max-w-full">
+              <Badge variant="muted" className="max-w-full gap-1 font-sans font-normal">
+                <ToolChipGlyph status={chip.answeredAloud ? "running" : chip.status} />
+                <span className="truncate">{chip.label}</span>
+                <span className="sr-only">: {voiceToolStatusWord(chip)}</span>
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+      {waiting.map((entry) => (
+        <div key={entry.id} className="flex flex-col gap-1">
+          <ApprovalCard approval={entry.approval} />
+          <p className="text-center text-micro text-muted-foreground">
+            {entry.spoken ? "You can also say yes or no." : "This one can only be approved here, not aloud."}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**

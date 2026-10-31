@@ -36,6 +36,12 @@ import {
   normalizedSpeechLoudness,
   RealtimeVoiceActivityDetector,
 } from "@/lib/realtime-voice-activity";
+import {
+  applySpokenAnswer,
+  applyVoiceToolActivity,
+  withdrawSpokenAnswer,
+  type VoiceToolActivity,
+} from "@/lib/voice-tool-activity";
 import { attachAuraLevel, auraStateForVoicePhase, setAuraState } from "@/lib/aura";
 import { voicePhaseOf } from "@/lib/voice-phase";
 import {
@@ -94,6 +100,29 @@ function describeStartError(err: unknown): string {
 }
 
 export type { RealtimeTranscriptLine } from "@/lib/voice-transcript";
+export type { VoiceToolActivity } from "@/lib/voice-tool-activity";
+
+/**
+ * What a call asks for when it starts: what Juno remembers (and in which
+ * project), the thread it is in, and the chat's tools with the connectors the
+ * chat has on. Each is asked for, never assumed — a call that passes none is a
+ * plain call — and kept across reconnects.
+ */
+export interface VoiceCallOptions {
+  memory?: { projectId: string | null } | null;
+  conversationId?: string | null;
+  tools?: { connectorIds: string[] } | null;
+}
+
+/** The caller's IANA zone, for the clock tool and the apps that read dates; nothing when the browser will not say. */
+function callerTimeZone(): { timeZone: string } | Record<string, never> {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone ? { timeZone: zone } : {};
+  } catch {
+    return {};
+  }
+}
 
 export interface RealtimeUsage {
   audioInSec: number;
@@ -356,6 +385,19 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const conversationRef = React.useRef<string | null>(null);
   /** The relay confirmed the call is the thread's agent (`session.ready.persona`). */
   const [personaOn, setPersonaOn] = React.useState(false);
+  /**
+   * Whether this call may use the chat's tools, and which of the chat's
+   * connectors are on — set by the caller at start (a chat that is not
+   * incognito), kept across reconnects. Only ids travel: the app resolves
+   * them against the person's own connections, and every tool runs there.
+   */
+  const toolsRef = React.useRef<{ connectorIds: string[] } | null>(null);
+  /** How many tools the connected model was given (`session.ready.tools`); null when the call was lent none. */
+  const [toolsOffered, setToolsOffered] = React.useState<number | null>(null);
+  /** The call's tool chips (`tool.activity`), newest last. */
+  const [toolActivity, setToolActivity] = React.useState<VoiceToolActivity[]>([]);
+  /** The same chips, written with every change, so the socket handler never reads a stale render. */
+  const toolActivityRef = React.useRef<VoiceToolActivity[]>([]);
   const screenTimerRef = React.useRef<number | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -402,7 +444,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     | ((
         initialProvider?: VoiceProviderId,
         history?: VoiceHistoryEntry[],
-        opts?: { memory?: { projectId: string | null } | null; conversationId?: string | null }
+        opts?: VoiceCallOptions
       ) => Promise<void>)
     | null
   >(null);
@@ -915,6 +957,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setCallEffort(msg.effort ?? null);
           setMemoryOn(msg.memory === true);
           setPersonaOn(msg.persona === true);
+          setToolsOffered(typeof msg.tools === "number" ? msg.tools : null);
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -1005,6 +1048,37 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           statusRef.current = "error";
           setStatus("error");
           return;
+        case "tool.activity": {
+          // The ref is the chips' source of truth, so a `tool.spoken` that
+          // follows at once reads the card it names, not the last render's.
+          const list = applyVoiceToolActivity(toolActivityRef.current, msg);
+          toolActivityRef.current = list;
+          setToolActivity(list);
+          return;
+        }
+        case "tool.spoken": {
+          // The person answered a card aloud. The relay recorded nothing; this
+          // signed-in client answers it as a tap would, with the card's digest.
+          const { list, request } = applySpokenAnswer(toolActivityRef.current, msg);
+          toolActivityRef.current = list;
+          setToolActivity(list);
+          if (!request) return;
+          void fetch(request.url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(request.body),
+          })
+            .then((res) => res.ok)
+            .catch(() => false)
+            .then((ok) => {
+              if (ok) return;
+              // Refused (expired, permissions changed) or unreachable: the
+              // card comes back, so the person can see why and answer there.
+              toolActivityRef.current = withdrawSpokenAnswer(toolActivityRef.current, msg.id);
+              setToolActivity(toolActivityRef.current);
+            });
+          return;
+        }
         case "pong":
           return;
       }
@@ -1016,7 +1090,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     async (
       initialProvider?: VoiceProviderId,
       history?: VoiceHistoryEntry[],
-      opts?: { memory?: { projectId: string | null } | null; conversationId?: string | null }
+      opts?: VoiceCallOptions
     ) => {
       // The glow analyses the call's streams on voice-glow's own page-wide
       // AudioContext. Wake it here, still inside the click that started the
@@ -1033,8 +1107,16 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       // is in; a reconnect keeps what the call it continues asked for.
       if (!isReconnect) memoryRef.current = opts?.memory ?? null;
       if (!isReconnect) conversationRef.current = opts?.conversationId ?? null;
+      if (!isReconnect) {
+        // A fresh call says afresh whether it wants tools; the same call
+        // again (`retry`, which names no `tools`) keeps what it asked for.
+        if (!opts || "tools" in opts) toolsRef.current = opts?.tools ?? null;
+        toolActivityRef.current = [];
+        setToolActivity([]);
+      }
       setMemoryOn(false);
       setPersonaOn(false);
+      setToolsOffered(null);
       clearReconnectTimer();
       releaseResources();
       if (history) historyRef.current = boundVoiceHistory(history);
@@ -1052,6 +1134,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       try {
         const memory = memoryRef.current;
         const conversationId = conversationRef.current;
+        const tools = toolsRef.current;
         const query = new URLSearchParams({
           ...(memory
             ? {
@@ -1060,6 +1143,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
               }
             : {}),
           ...(conversationId ? { conversationId } : {}),
+          ...(tools
+            ? {
+                tools: "1",
+                ...(tools.connectorIds.length ? { connectors: tools.connectorIds.join(",") } : {}),
+                ...callerTimeZone(),
+              }
+            : {}),
         }).toString();
         const res = await fetch(query ? `/api/voice/relay-token?${query}` : "/api/voice/relay-token");
         const data = (await res.json().catch(() => ({}))) as {
@@ -1184,6 +1274,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
    * into a retried call with Juno.
    */
   const retry = React.useCallback(
+    // The tools it asked for are kept by `start` itself: an options object
+    // without a `tools` key leaves the call's tool grant as it was.
     () => start(undefined, undefined, { memory: memoryRef.current, conversationId: conversationRef.current }),
     [start]
   );
@@ -1500,6 +1592,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setModel(null);
     setDelegate(null);
     setCallEffort(null);
+    // A card from an ended call cannot be answered: its request went with the call.
+    toolActivityRef.current = [];
+    setToolActivity([]);
+    setToolsOffered(null);
     setMuted(false);
     mutedRef.current = false;
   }, [clearReconnectTimer, cues, releaseResources, sealTranscript]);
@@ -1535,6 +1631,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     memory: memoryOn,
     /** True once the relay confirms this call is the agent whose thread it is in. */
     persona: personaOn,
+    /** How many of the chat's tools the connected model was given; null when the call was lent none. */
+    toolsOffered,
+    /** The call's tool chips, newest last; a waiting one carries the chat's approval card. */
+    toolActivity,
     closedReason,
     levelRef,
     /**
