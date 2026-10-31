@@ -20,6 +20,8 @@ import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
 import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
 import { createCrossConversationTools } from "@/lib/chat/cross-conversation-tools";
+import { createPaymentTools } from "@/lib/chat/payment-tools";
+import { arePaymentsConfigured } from "@/lib/payments/config";
 import type { CrossTurn } from "./cross";
 import { computerAccessFor } from "@/lib/computer/access";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
@@ -359,6 +361,25 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // One-time payment cards (src/lib/chat/payment-tools.ts): only in a crew
+  // member's own thread (never a room's turn), on the configuration tools'
+  // gate, and only when this server has a payment provider. Every payment
+  // still waits on its own approval card.
+  const paymentTools =
+    agentConfigToolsOn && userMessageId && agentContext && !agentContext.paused && !roomSetup && arePaymentsConfigured(process.env)
+      ? createPaymentTools({
+          user,
+          conversation: { id: conversationId, projectId: conversation.projectId },
+          agent: { id: agentContext.agent.id, name: agentContext.agent.name },
+          userMessageId,
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          generationId,
+          onApprovalRequest: requestApproval,
+          onReceipt: (title) => {
+            sendActivity({ kind: "tool", title });
+          },
+        })
+      : [];
   // Rooms (src/lib/agents/rooms.ts). `create_room` rides the same gate as
   // the configuration tools; `ask_room_member` is offered only to a room's
   // answering member, and the store holds the cap and the loop guard.
@@ -478,5 +499,7 @@ export async function buildNativeTools({
   ].filter(
     (tool): tool is NativeChatTool => tool !== null
   );
-  return folderTools.length > 0 ? [...folderTools, ...nativeTools] : nativeTools;
+  // The payment tools follow the rest (each is already gated above).
+  const withPayments = paymentTools.length > 0 ? [...nativeTools, ...paymentTools] : nativeTools;
+  return folderTools.length > 0 ? [...folderTools, ...withPayments] : withPayments;
 }

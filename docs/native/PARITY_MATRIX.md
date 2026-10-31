@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-376 routes: 230 native, 72 planned, 58 web only, 16 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+377 routes: 230 native, 72 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -50,7 +50,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
-| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 11 |
+| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 12 |
 | [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
@@ -724,6 +724,7 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/downloads` | GET | Native | JunoCore |  |
 | `/api/github/webhook` | POST | Internal |  | The GitHub App's webhook. |
 | `/api/health` | GET | Internal |  | Liveness for the uptime monitor. |
+| `/api/payments/stripe-issuing/webhook` | POST | Internal |  | Stripe Issuing's signed real-time authorization requests for agent payment cards. |
 | `/api/stripe/webhook` | POST | Internal |  | Stripe's signed events. |
 | `/api/v1/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications (the v1 alias). |
 | `/api/voice/spend` | POST | Internal |  | The voice relay reports what a live call has cost. |

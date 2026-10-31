@@ -112,6 +112,7 @@ import {
   recordAgentCredentialFill,
   vaultEntriesFor,
 } from "@/lib/computer/vault-store";
+import { arePaymentsConfigured } from "@/lib/payments/config";
 import { SCRIPTED_MODEL_EXPLANATION, scriptedWorkModelFor, scriptedWorkModelSwitchedOn } from "@/lib/dev/scripted-work-model";
 import { loadAgentRunPersona } from "@/lib/agents/run-context";
 import { runAgentNoteDeps } from "@/lib/agents/run-notes";
@@ -3211,6 +3212,18 @@ async function tick(): Promise<boolean> {
     await sweepAgentComputers().catch((error: unknown) => {
       log("computer sweep failed", { error: String(error) });
     });
+    // One-time payment cards (src/lib/payments): an unused card past its
+    // expiry is cancelled at the provider. Nothing loads while payments are off.
+    if (arePaymentsConfigured(process.env)) {
+      await import("@/lib/payments/server")
+        .then(({ sweepAgentPayments }) => sweepAgentPayments())
+        .then((swept) => {
+          if (swept.expired + swept.closed > 0) log("payment sweep", swept);
+        })
+        .catch((error: unknown) => {
+          log("payment sweep failed", { error: error instanceof Error ? error.name : "error" });
+        });
+    }
   }
   // A take over nobody handed back and whose window ran out: the person's VNC
   // session is ended and the agent's processes thawed (src/lib/computer/store.ts).

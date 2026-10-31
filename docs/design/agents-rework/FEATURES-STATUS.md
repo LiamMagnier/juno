@@ -128,28 +128,47 @@ Still to do:
 
 ## 3. One-time payment cards
 
-Done:
+Done (branch `feat/payment-cards`, 2026-10-31; off until `STRIPE_ISSUING_*` is set):
 - Tables `AgentSpendLimit` and `AgentPayment`. The PAN and CVC are never stored.
+  No new migration was needed.
 - Research: Stripe Issuing virtual cards can use
   `spending_controls.spending_limits[{amount, interval: all_time}]`. A merchant
   lock needs the real-time `issuing_authorization.request` webhook, answered within
   2 s with `{approved}` and the `Stripe-Version` header. Card details come from
   `expand[]=number&expand[]=cvc`, and cards are cancelled with `status=canceled`.
+- `src/lib/payments/`:
+  - the provider interface (`types.ts`);
+  - Stripe Issuing (`stripe-issuing.ts`);
+  - the dev-only test provider (`test-provider.ts`);
+  - the env resolution (`config.ts`, getters in `src/lib/env.ts`);
+  - the rules (`policy.ts`);
+  - the store (memory and Prisma);
+  - the service (`service.ts`);
+  - the webhook decision (`webhook.ts`);
+  - `fillPaymentCard(agentId, cardRef)` with `registerPaymentCardFiller`
+    (`fill.ts`). The real filler is `computer-fill.ts`: the agent's own Chromium
+    over CDP, found from `(userId, agentId)`. With no computer it holds the card
+    and says so.
+- Chat tools in an agent's own thread (`src/lib/chat/payment-tools.ts`):
+  - `request_payment`, behind `juno_payments:request_payment`
+    (`destructive_or_sensitive`, never standing). The card shows Not now and Pay,
+    and a receipt row follows.
+  - `fill_payment_card`, for a held card, once.
+  - `set_spending_limit`: lowering applies at once; raising goes through
+    `juno_agents:raise_spend_limit` on the agent card, and never from a tainted turn.
+- `POST /api/payments/stripe-issuing/webhook`: signature verified, a 1.5 s
+  deadline that declines, and single use by compare-and-set.
+- The expiry sweep runs in the work runner's tick.
+- The owner's setup: `docs/design/agents-v2/ENABLE_PAYMENTS.md`.
+- Tests: `tests/payments.test.ts`.
 
 Next:
-- `src/lib/payments/`:
-  - a provider interface;
-  - a Stripe Issuing provider (off until `STRIPE_ISSUING_*` is set);
-  - a dev-only test provider;
-  - `fillPaymentCard(agentId, cardRef)` with a registration point for the
-    computer builder, which holds the card and tells the person when no computer
-    is available.
-- A `request_payment` tool. It raises a deterministic approval with connector
-  `juno_payments` and an exact rule of `destructive_or_sensitive`. The card shows
-  Not now and Pay, and a receipt follows.
-- A spending limit tool: widening needs the agent approval card.
-- The Stripe authorization webhook.
-- Tests.
+- `request_payment` inside Work runs (agent-core). Today it is a chat tool. A
+  run that reaches a checkout stops and the person asks in the thread.
+- The native approval cards show the generic connector card for a payment (Allow
+  and Deny), not Pay and Not now.
+- A merchant-name check in the webhook. Today the amount, the single use and the
+  expiry bind the card; the merchant is what the person approved on the card.
 
 ## Gates so far
 
