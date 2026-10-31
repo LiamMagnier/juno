@@ -292,12 +292,21 @@ async function invite(
       rows.slice(i, i + SEND_CONCURRENCY).map(async (row) => {
         const to = plain.get(row.emailHash);
         if (!to) return;
-        const allowed = await deps.rateLimit(
-          `share-people:to:${row.emailHash}`,
+        // Per sender and address, so one account adding an address five
+        // times cannot use up that address's day for everyone else; a looser
+        // shared ceiling still stops many accounts mailing one person.
+        const fromThisOwner = await deps.rateLimit(
+          `share-people:to:${ownerId}:${row.emailHash}`,
           SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay,
           24 * 60 * 60,
         );
-        if (!allowed) return;
+        if (!fromThisOwner) return;
+        const fromAnyone = await deps.rateLimit(
+          `share-people:to:${row.emailHash}`,
+          SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay * 4,
+          24 * 60 * 60,
+        );
+        if (!fromAnyone) return;
         const ok = await deps.sendInvite({ to, ownerName: owner.name, ownerEmail: owner.email, kind: share.kind, title: share.title, url });
         if (ok) sent.push(row.id);
       }),

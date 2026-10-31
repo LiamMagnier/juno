@@ -6,6 +6,7 @@ import { addPeopleToShare, sharePeopleFor } from "@/lib/share-people";
 import type { ShareTarget } from "@/lib/share-people-core";
 import { artifactWriteLimited } from "@/lib/artifact-rate-limit";
 import { isSharePeopleEnabled } from "@/lib/env";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -71,6 +72,19 @@ export async function POST(req: Request) {
   // link; the invitations themselves have their own, tighter limits.
   const limited = await artifactWriteLimited(user, "publish");
   if (limited) return limited;
+
+  // Invitations go out from Alevr's own sending domain and name the sender's
+  // address and the chat title. An account whose address was never confirmed
+  // could otherwise sign up as someone else's address and mail strangers in
+  // that name (share-people review, 2026-10-31). Read from the account row,
+  // never the session, as `viewer()` does.
+  const sender = await prisma.user.findUnique({ where: { id: user.id }, select: { emailVerified: true } });
+  if (!sender?.emailVerified) {
+    return NextResponse.json(
+      { error: "Confirm your email address before inviting people.", code: "verify_email" },
+      { status: 403 }
+    );
+  }
 
   const parsed = addSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });

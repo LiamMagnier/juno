@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { Share } from "@prisma/client";
 import {
   addSharePeople,
@@ -343,12 +344,31 @@ test("with mail off, people are still added and simply not marked invited", asyn
 test("the per-address limit holds an invitation back silently: the person is still added", async () => {
   const w = world();
   w.owned.add("conv-2");
-  w.limits.set(`share-people:to:mac(${RECIPIENT_EMAIL_DOMAIN}|grace@example.test)`, SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay);
+  w.limits.set(`share-people:to:${OWNER}:mac(${RECIPIENT_EMAIL_DOMAIN}|grace@example.test)`, SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay);
   const added = await addSharePeople(w.deps, OWNER, CHAT, ["grace@example.test"]);
   assert.ok(added.ok);
   assert.deepEqual(added.people.map((p) => p.email), ["grace@example.test"]);
   assert.equal(w.sent.length, 0);
   assert.equal(w.recipients[0]!.invitedAt, null);
+});
+
+// Review 2026-10-31: the per-address counter was shared by every sender, so
+// any account could use up an address's day and silently block real invites.
+test("another account cannot use up an address's invitations for this owner", async () => {
+  const w = world();
+  w.limits.set(`share-people:to:someone-else:mac(${RECIPIENT_EMAIL_DOMAIN}|grace@example.test)`, SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay);
+  w.limits.set(`share-people:to:mac(${RECIPIENT_EMAIL_DOMAIN}|grace@example.test)`, SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay);
+  const added = await addSharePeople(w.deps, OWNER, CHAT, ["grace@example.test"]);
+  assert.ok(added.ok);
+  assert.equal(w.sent.length, 1, "the owner's invitation still goes out");
+});
+
+test("a shared ceiling still stops many accounts mailing one address", async () => {
+  const w = world();
+  w.limits.set(`share-people:to:mac(${RECIPIENT_EMAIL_DOMAIN}|grace@example.test)`, SHARE_PEOPLE_LIMITS.invitesPerAddressPerDay * 4);
+  const added = await addSharePeople(w.deps, OWNER, CHAT, ["grace@example.test"]);
+  assert.ok(added.ok);
+  assert.equal(w.sent.length, 0);
 });
 
 test("an owner over their invitation budget is refused before anything is written", async () => {
@@ -434,4 +454,13 @@ test("the invitation names the sender and their address, escapes what they typed
   assert.doesNotMatch(mail.html, /Manage notifications/, "a recipient may have no settings to manage");
   // A sender with no name is shown by address.
   assert.match(shareInvitation({ ownerName: null, ownerEmail: "ada@owner.test", kind: "CHAT", title: "", recipient: "g@x.test", url: "u" }).subject, /^ada@owner\.test shared a chat with you$/);
+});
+
+// Review 2026-10-31: invitations name the sender's address, so a sender whose
+// own address was never confirmed must not be able to send them.
+test("the invite route refuses a sender with an unverified email, read from the account row", () => {
+  const route = readFileSync(new URL("../src/app/api/share/people/route.ts", import.meta.url), "utf8");
+  const post = route.slice(route.indexOf("export async function POST("), route.indexOf("addPeopleToShare(user.id"));
+  assert.match(post, /prisma\.user\.findUnique\(\{ where: \{ id: user\.id \}, select: \{ emailVerified: true \} \}\)/);
+  assert.match(post, /if \(!sender\?\.emailVerified\)[\s\S]*?code: "verify_email"[\s\S]*?status: 403/);
 });
