@@ -2,15 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useApp } from "@/components/app/app-provider";
 import {
   currentSessionExpired,
@@ -114,27 +106,23 @@ export function SessionExpiredDialog() {
           ? sessionEndedKeepsWordsMessage
           : sessionEndedKeepsMessage;
 
+  // The confirmation shape (ui/confirm-dialog.tsx): an interruption that asks
+  // one question, with "Not now" as its one way out (it had a ✕ beside it
+  // that did the same thing) and focus on it, the choice that changes nothing.
   return (
-    <Dialog
+    <ConfirmDialog
       open={turn !== null}
       onOpenChange={(open) => {
-        if (!open && !leaving) dismissSessionExpired();
+        if (!open) dismissSessionExpired();
       }}
-    >
-      <DialogContent className="max-w-sm" data-session-expired="">
-        <DialogHeader>
-          <DialogTitle>{sessionEndedTitle}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => dismissSessionExpired()} disabled={leaving}>
-            Not now
-          </Button>
-          <Button onClick={signInAgain} loading={leaving}>
-            Sign in again
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      busy={leaving}
+      tone="default"
+      title={sessionEndedTitle}
+      description={description}
+      cancelLabel="Not now"
+      confirmLabel="Sign in again"
+      onConfirm={signInAgain}
+      data-session-expired=""
+    />
   );
 }

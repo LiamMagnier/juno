@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
@@ -131,7 +132,7 @@ export function ResetDialog({
             Export first
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button
@@ -164,32 +165,21 @@ export function ClearProjectDialog({
   onClear: (projectId: string) => Promise<boolean>;
 }) {
   return (
-    <Dialog open={project !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            <span>Clear</span> <span translate="no">{project?.name}</span>
-            <span>?</span>
-          </DialogTitle>
-          <DialogDescription>
-            {`This permanently deletes what ${PRODUCT_NAME} remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.`}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            loading={clearing}
-            onClick={async () => {
-              if (project && (await onClear(project.id))) onOpenChange(false);
-            }}
-          >
-            Clear project memory
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={project !== null}
+      onOpenChange={onOpenChange}
+      busy={clearing}
+      title={
+        <>
+          <span>Clear</span> <span translate="no">{project?.name}</span>
+          <span>?</span>
+        </>
+      }
+      description={`This permanently deletes what ${PRODUCT_NAME} remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.`}
+      confirmLabel="Clear project memory"
+      onConfirm={async () => {
+        if (project && (await onClear(project.id))) onOpenChange(false);
+      }}
+    />
   );
 }

@@ -51,6 +51,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2082,28 +2083,17 @@ export function AppSidebar({
         </motion.div>
 
         {/* ── Dialogs ──────────────────────────────────────────────────── */}
-        <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>{confirm?.title}</DialogTitle>
-              <DialogDescription>{confirm?.description}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setConfirm(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  confirm?.onConfirm();
-                  setConfirm(null);
-                }}
-              >
-                {confirm?.confirmLabel}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ConfirmDialog
+          open={!!confirm}
+          onOpenChange={(o) => !o && setConfirm(null)}
+          title={confirm?.title}
+          description={confirm?.description}
+          confirmLabel={confirm?.confirmLabel}
+          onConfirm={() => {
+            confirm?.onConfirm();
+            setConfirm(null);
+          }}
+        />
 
         <Dialog open={renameTarget !== null} onOpenChange={(o) => !o && setRenameTarget(null)}>
           <DialogContent className="max-w-sm">

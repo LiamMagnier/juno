@@ -41,6 +41,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -310,6 +311,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 
 export function ControlsGallery() {
   const [dark, setDark] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [filter, setFilter] = React.useState<"ALL" | "HTML" | "MARKDOWN">("ALL");
   const [chip, setChip] = React.useState("a");
   const [view, setView] = React.useState<"list" | "grid">("list");
@@ -878,25 +880,15 @@ export function ControlsGallery() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline">Open a confirm</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Delete “Quarterly planning”?</DialogTitle>
-                <DialogDescription>The chat and its files are removed for good.</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </DialogClose>
-                <DialogClose asChild>
-                  <Button variant="destructive">Delete</Button>
-                </DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>Open a confirm</Button>
+          <ConfirmDialog
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            title="Delete “Quarterly planning”?"
+            description="The chat and its files are removed for good."
+            confirmLabel="Delete"
+            onConfirm={() => setConfirmOpen(false)}
+          />
         </Section>
 
         <Section

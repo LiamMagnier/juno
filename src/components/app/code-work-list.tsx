@@ -61,8 +61,7 @@ import {
   type ThreadSummary,
 } from "@/lib/code-v2/thread-sections";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
 import { reducedMotionAt } from "@/lib/motion-preference";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
@@ -303,25 +302,23 @@ export function CodeWorkList({
 
   return (
     <div ref={root}>
-      <Dialog open={removing !== null} onOpenChange={(open) => { if (!open && !removalBusy) setRemoving(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove {removing?.name} from Alevr?</DialogTitle>
-            <DialogDescription>Running sessions will stop and their records will be removed from Alevr. The folder stays on disk.</DialogDescription>
-          </DialogHeader>
-          {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
-          <DialogFooter>
-            <Button variant="ghost" disabled={removalBusy} onClick={() => setRemoving(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={removalBusy} onClick={async () => {
-              if (!removing || !onRemoveProject) return;
-              setRemovalBusy(true); setRemovalError(null);
-              try { await onRemoveProject(removing); setProject(null); setRemoving(null); }
-              catch (error) { setRemovalError(error instanceof Error ? error.message : "Could not remove this project."); }
-              finally { setRemovalBusy(false); }
-            }}>{removalBusy ? "Removing…" : "Remove"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => { if (!open) setRemoving(null); }}
+        busy={removalBusy}
+        title={`Remove ${removing?.name ?? ""} from Alevr?`}
+        description="Running sessions will stop and their records will be removed from Alevr. The folder stays on disk."
+        confirmLabel="Remove"
+        onConfirm={async () => {
+          if (!removing || !onRemoveProject) return;
+          setRemovalBusy(true); setRemovalError(null);
+          try { await onRemoveProject(removing); setProject(null); setRemoving(null); }
+          catch (error) { setRemovalError(error instanceof Error ? error.message : "Could not remove this project."); }
+          finally { setRemovalBusy(false); }
+        }}
+      >
+        {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
+      </ConfirmDialog>
       {/* The filter is the list's first heading: `Section`'s heading recipe
           (12 px annotation on the 16 px edge, ink that answers the pointer),
           with its chevron always drawn because it opens a menu. */}

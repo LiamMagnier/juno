@@ -2,14 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SettingRow, SettingRowSkeleton, SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
 import { formatDate, useFormatLocale } from "@/components/settings/format";
 import { useSettingsResource } from "@/components/settings/use-settings-resource";
@@ -132,25 +125,15 @@ export function ThisBrowserGroups() {
         />
       </SettingsGroup>
 
-      <Dialog open={confirming !== null} onOpenChange={(next) => (busy ? undefined : !next && setConfirming(null))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Unpair {confirmingName}?</DialogTitle>
-            <DialogDescription>
-              This browser stops controlling {confirmingName} at once. To use it again, pair it with a new code from the
-              Mac.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirming(null)} disabled={busy !== null}>
-              Cancel
-            </Button>
-            <Button variant="destructive" loading={busy !== null} onClick={() => confirming && void unpair(confirming)}>
-              Unpair
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(next) => !next && setConfirming(null)}
+        busy={busy !== null}
+        title={`Unpair ${confirmingName}?`}
+        description={`This browser stops controlling ${confirmingName} at once. To use it again, pair it with a new code from the Mac.`}
+        confirmLabel="Unpair"
+        onConfirm={() => confirming && void unpair(confirming)}
+      />
     </>
   );
 }

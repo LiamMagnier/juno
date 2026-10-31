@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -254,54 +255,35 @@ export function AccountSection() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteOpen}
         onOpenChange={(next) => {
-          if (deleting) return;
           setDeleteOpen(next);
           if (!next) setConfirm("");
         }}
+        busy={deleting}
+        title="Delete this account?"
+        description="Your account and everything in it are deleted: conversations, memories, files and your subscription. It happens at once, and nothing can be recovered."
+        confirmLabel="Delete permanently"
+        confirmDisabled={!match}
+        onConfirm={() => void deleteAccount()}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete this account?</DialogTitle>
-            <DialogDescription>
-              Your account and everything in it are deleted: conversations, memories, files and your subscription.
-              It happens at once, and nothing can be recovered.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="delete-confirm-email" className="text-muted-foreground">
-              Type <span className="text-foreground" translate="no">{email}</span> to confirm
-            </Label>
-            <Input
-              id="delete-confirm-email"
-              type="email"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={email}
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              disabled={deleting}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setDeleteOpen(false);
-                setConfirm("");
-              }}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={!match} loading={deleting} onClick={() => void deleteAccount()}>
-              Delete permanently
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="space-y-2">
+          <Label htmlFor="delete-confirm-email" className="text-muted-foreground">
+            Type <span className="text-foreground" translate="no">{email}</span> to confirm
+          </Label>
+          <Input
+            id="delete-confirm-email"
+            type="email"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={email}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            disabled={deleting}
+          />
+        </div>
+      </ConfirmDialog>
     </>
   );
 }
