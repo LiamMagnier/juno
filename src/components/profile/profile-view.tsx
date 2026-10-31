@@ -22,6 +22,7 @@ import {
   type ProfileActivity,
 } from "@/lib/profile-activity";
 import { ActivityChart, type ActivityView } from "@/components/profile/activity-chart";
+import { staggerDelay } from "@/lib/motion";
 import "@/components/profile/profile.css";
 
 export interface ProfileIdentity {
@@ -151,7 +152,7 @@ function StatStrip({ activity }: { activity: ProfileActivity | null }) {
           key={s.label}
           title={s.title}
           className="flex min-w-0 flex-col-reverse items-center gap-2 px-4 py-5 text-center motion-safe:animate-rise-in"
-          style={{ animationDelay: `${80 + i * 40}ms`, animationFillMode: "both" }}
+          style={{ ...staggerDelay(i, "base"), animationFillMode: "both" }}
         >
           <dt className="text-caption text-muted-foreground">{s.label}</dt>
           <dd className={cn("pf-figure truncate text-foreground", s.small && "pf-figure-sm")}>

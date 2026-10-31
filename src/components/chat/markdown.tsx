@@ -277,7 +277,7 @@ function WrittenFileFence({ filename, children }: { filename: string; children: 
       <button
         type="button"
         onClick={() => setShown(true)}
-        className="shrink-0 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+        className="shrink-0 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
       >
         Show file
       </button>

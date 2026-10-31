@@ -98,7 +98,7 @@ export function SpeedGlyph({
       />
       <Zap
         className={cn(
-          "absolute transition-[transform,opacity] duration-base ease-spring motion-reduce:transition-none",
+          "absolute transition-[transform,opacity] duration-base ease-spring motion-reduce:transition-opacity",
           boltClassName,
           two ? "translate-x-[3px] opacity-100" : "translate-x-0 opacity-0",
         )}
@@ -284,7 +284,7 @@ export function ReasoningSlider({
             key={`stop-${option.value}-${option.label}`}
             aria-hidden
             className={cn(
-              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
               i < index ? "bg-background/70" : i === index ? "bg-transparent" : "bg-foreground/25",
             )}
             style={{ left: atStop(i, count) }}
@@ -317,7 +317,7 @@ export function ReasoningSlider({
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100 motion-reduce:transition-none"
+          className="pointer-events-none absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
         />
       </div>
       {/* The rung names, each under its stop and each a target of its own:
@@ -331,7 +331,7 @@ export function ReasoningSlider({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "absolute top-0 whitespace-nowrap text-caption transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              "absolute top-0 whitespace-nowrap text-caption transition-colors duration-fast ease-out-soft",
               i === index ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
               i === 0 ? "left-0" : i === count - 1 ? "right-0" : "-translate-x-1/2",
             )}
@@ -478,7 +478,7 @@ function EffortPanel({
   const defaultLabel = options.find((option) => option.value === defaultValue)?.label;
   const resetLabel = defaultLabel ? `Reset to default (${defaultLabel})` : "Reset to the model's default";
   const iconButton =
-    "pressable grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:size-11";
+    "pressable grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 motion-reduce:active:scale-100 coarse:size-11";
   return (
     <div className={cn("select-none", className)}>
       {/* One line: the speed control and Pro on the left, the rung and its
@@ -596,7 +596,7 @@ function EffortPanel({
               // Light used to be near-black (foreground/85): at Max a solid
               // black slab, the heaviest object in the composer, where dark
               // mode drew the same control in a calm grey.
-              "absolute inset-0 rounded-full bg-foreground/[0.22] transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none dark:bg-white/25",
+              "absolute inset-0 rounded-full bg-foreground/[0.22] transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-opacity dark:bg-white/25",
               index === 0 && "opacity-0",
             )}
             // The fill is a pill that holds the knob with the track's own 4px

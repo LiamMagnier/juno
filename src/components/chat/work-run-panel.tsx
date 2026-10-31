@@ -237,7 +237,7 @@ export function WorkRunPanel({
             aria-expanded={planOpen}
             className={cn(
               "flex h-[38px] w-full items-center gap-1.5 border-t border-border/70 px-4 text-left text-ui text-muted-foreground coarse:h-11",
-              "transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-muted-foreground motion-reduce:transition-none",
+              "transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-muted-foreground",
               planOpen ? "rounded-none" : "rounded-b-field"
             )}
           >
@@ -456,7 +456,7 @@ function TaskQuestion({
                 aria-checked={choice === option}
                 disabled={busy}
                 onClick={() => setChoice(option)}
-                className="group/opt flex min-h-11 items-center gap-3 rounded-control px-2.5 py-1.5 text-left text-nav text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 active:bg-accent motion-reduce:transition-none"
+                className="group/opt flex min-h-11 items-center gap-3 rounded-control px-2.5 py-1.5 text-left text-nav text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 active:bg-accent"
               >
                 <span
                   aria-hidden="true"
@@ -474,7 +474,7 @@ function TaskQuestion({
               <button
                 type="button"
                 onClick={answerInComposer}
-                className="flex min-h-11 items-center gap-3 rounded-control px-2.5 py-1.5 text-left text-nav text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70 motion-reduce:transition-none"
+                className="flex min-h-11 items-center gap-3 rounded-control px-2.5 py-1.5 text-left text-nav text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/70"
               >
                 <span aria-hidden="true" className="size-4 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_hsl(var(--muted-foreground)/0.7)]" />
                 Something else

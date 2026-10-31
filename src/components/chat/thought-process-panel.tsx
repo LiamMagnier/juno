@@ -1249,7 +1249,7 @@ export function ThoughtProcessPanel({
                 // `.pressable` alone times the hover fill and the dip; a
                 // `transition-colors` beside it replaced that list, so the
                 // press snapped instead of dipping.
-                className="pressable group/details -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-2 rounded-control px-2 py-2 text-left hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
+                className="pressable group/details -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-2 rounded-control px-2 py-2 text-left hover:bg-accent motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
               >
                 <span className="tpp-h3 !text-body-lg text-foreground">Details</span>
                 <span className="flex items-center gap-2">
@@ -1346,7 +1346,7 @@ export function ThoughtProcessPanel({
               setFollowing(true);
               scrollToBottom();
             }}
-            className="absolute inset-x-0 bottom-3 z-popper mx-auto inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-popover px-3 py-1 text-caption text-foreground shadow-float transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-pop-in motion-reduce:transition-none"
+            className="absolute inset-x-0 bottom-3 z-popper mx-auto inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-popover px-3 py-1 text-caption text-foreground shadow-float transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-pop-in"
           >
             <ArrowDown className="size-3.5" aria-hidden="true" />
             Jump to latest
@@ -1691,7 +1691,7 @@ function StepRow({
       {action && (
         <div
           className={cn(
-            "pointer-events-none absolute right-0 top-0.5 flex w-7 justify-center opacity-0 transition-opacity duration-fast ease-out-soft group-hover/step:pointer-events-auto group-hover/step:opacity-100 group-focus-within/step:pointer-events-auto group-focus-within/step:opacity-100 motion-reduce:transition-none coarse:pointer-events-auto coarse:opacity-100",
+            "pointer-events-none absolute right-0 top-0.5 flex w-7 justify-center opacity-0 transition-opacity duration-fast ease-out-soft group-hover/step:pointer-events-auto group-hover/step:opacity-100 group-focus-within/step:pointer-events-auto group-focus-within/step:opacity-100 coarse:pointer-events-auto coarse:opacity-100",
             // Its 36px touch target centred on the label's line: the 44px
             // row's middle when the label is alone, the first line (16px
             // down) when a detail line follows.

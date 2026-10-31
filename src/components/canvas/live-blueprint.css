@@ -425,6 +425,15 @@
 
 /* ── Keyframes ─────────────────────────────────────────────────────────── */
 
+/*
+ * Tier (spec §4.7): every travelling keyframe here multiplies its travel by
+ * --motion-shift (0 under reduced motion, OS or in-app), so under the
+ * preference each one is its fade alone. They used to carry raw pixels and
+ * scales with no reduced-motion rule in this file at all, so the blueprint
+ * slid and popped exactly as much for a reader who had asked for less.
+ * tests/component-keyframe-tiers.test.ts holds every component keyframe to
+ * this.
+ */
 @keyframes bp-fade {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -433,16 +442,16 @@
   to { opacity: 0; }
 }
 @keyframes bp-snap {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); }
   to { opacity: 1; transform: none; }
 }
 @keyframes bp-pop {
-  from { opacity: 0; transform: scale(0.94); }
+  from { opacity: 0; transform: scale(calc(1 - 0.06 * var(--motion-shift, 1))); }
   to { opacity: 1; transform: none; }
 }
 @keyframes bp-draw {
   to { stroke-dashoffset: 0; }
 }
 @keyframes bp-dissolve {
-  to { opacity: 0; transform: scale(1.025); }
+  to { opacity: 0; transform: scale(calc(1 + 0.025 * var(--motion-shift, 1))); }
 }

@@ -66,7 +66,7 @@ export function AnswerMemory({
         <ComposerIcons.memory aria-hidden="true" className="size-3.5 text-muted-foreground" />
         {/* Each phrase is its own text node, so the catalog translates it
             whole; the count rides beside it, as it does on "Sources". */}
-        <span className="text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/pill:text-foreground motion-reduce:transition-none">
+        <span className="text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/pill:text-foreground">
           {kind === "used" ? "Memory" : kind === "saved" ? "Memory updated" : "Forgotten"}
         </span>
         {count !== null && (
@@ -137,7 +137,7 @@ export function AnswerMemory({
             )}
             <Link
               href="/memory"
-              className="mt-1 inline-flex min-h-8 items-center rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+              className="mt-1 inline-flex min-h-8 items-center rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
             >
               Manage memory
             </Link>

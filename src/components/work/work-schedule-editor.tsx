@@ -1266,7 +1266,7 @@ function PolicyGroup<T extends string>({
             //
             // Hover is the tonal fill every row takes; a chosen row keeps its
             // own fill under the pointer rather than swapping to the hover one.
-            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent has-[[data-state=checked]]:border-foreground/25 has-[[data-state=checked]]:bg-secondary has-[[data-state=checked]]:hover:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring motion-reduce:transition-none"
+            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent has-[[data-state=checked]]:border-foreground/25 has-[[data-state=checked]]:bg-secondary has-[[data-state=checked]]:hover:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
           >
             <RadioGroupItem value={option.value} className="mt-px" />
             <span className="min-w-0">

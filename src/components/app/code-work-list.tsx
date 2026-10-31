@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
 import { reducedMotionAt } from "@/lib/motion-preference";
+import { DURATION, EASING } from "@/lib/design/tokens.generated";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { InlineTitleInput, useCodeSessionActions } from "@/components/code/v2/session-actions";
 // `.title-fade`: the Chat rows' truncation, which this list shares (it is also
@@ -73,6 +74,9 @@ import "@/components/app/sidebar-column.css";
 interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
 
 
+const FLIP_EASE = `cubic-bezier(${EASING.outStrong.join(", ")})`;
+const FADE_EASE = `cubic-bezier(${EASING.outSoft.join(", ")})`;
+
 function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
   const prev = React.useRef<Map<string, number>>(new Map());
   React.useLayoutEffect(() => {
@@ -81,13 +85,17 @@ function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
     const rows = [...root.querySelectorAll<HTMLElement>("[data-flip]")];
     const next = new Map(rows.map((r) => [r.dataset.flip!, r.offsetTop]));
     const reduce = reducedMotionAt(root);
-    if (prev.current.size && !reduce) {
+    if (prev.current.size) {
       const plan = planFlip(prev.current, next);
       for (const row of rows) {
         const id = row.dataset.flip!;
         const dy = plan.moves.get(id);
-        if (dy) row.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: FLIP_DURATION_MS, easing: "cubic-bezier(0.32,0.72,0,1)" });
-        else if (plan.entering.includes(id) && !plan.skipFades) row.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FLIP_DURATION_MS, easing: "ease-out" });
+        // The slide is travel (Tier B: skipped under reduced motion); the
+        // entering row's fade is opacity (Tier A: kept, over the fast rung).
+        // Both on the token curves, read from the generated table, rather
+        // than a literal cubic and the browser's stock `ease-out`.
+        if (dy && !reduce) row.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: FLIP_DURATION_MS, easing: FLIP_EASE });
+        else if (!dy && plan.entering.includes(id) && !plan.skipFades) row.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduce ? DURATION.fast : FLIP_DURATION_MS, easing: FADE_EASE });
       }
     }
     prev.current = next;
@@ -118,8 +126,8 @@ export interface WorkRowActions {
  * while its menu is open. A right-click on the row opens the same menu.
  */
 const ROW_KEBAB =
-  "absolute right-1 top-1.5 grid size-7 place-items-center rounded-control text-muted-foreground opacity-0 outline-none transition-opacity duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 motion-reduce:transition-none coarse:size-10 coarse:opacity-100";
-const TRAILING_YIELDS = "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0";
+  "absolute right-1 top-1.5 grid size-7 place-items-center rounded-control text-muted-foreground opacity-0 outline-none transition-opacity duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 coarse:size-10 coarse:opacity-100";
+const TRAILING_YIELDS = "transition-opacity duration-fast ease-out-soft group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0";
 
 function WorkRow({
   t,
@@ -327,7 +335,7 @@ export function CodeWorkList({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-7 max-w-full select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground motion-reduce:transition-none coarse:h-11"
+              className="flex h-7 max-w-full select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground coarse:h-11"
             >
               {/* As wide as its text, like the row's project name: `title-fade-hug`. */}
               <span className="shell-annot title-fade title-fade-hug min-w-0">{project ?? "All projects"}</span>

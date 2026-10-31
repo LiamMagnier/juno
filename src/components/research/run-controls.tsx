@@ -320,7 +320,7 @@ export function ClarifyGate({
               disabled={busy}
               autoComplete="off"
               placeholder={question.suggestions?.[0] ? `e.g. ${question.suggestions[0]}` : "Your answer"}
-              className="surface-inset mt-2 h-9 w-full rounded-control px-2.5 text-ui outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus-within:border-ring focus:border-ring disabled:opacity-55 motion-reduce:transition-none"
+              className="surface-inset mt-2 h-9 w-full rounded-control px-2.5 text-ui outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus-within:border-ring focus:border-ring disabled:opacity-55"
             />
             {question.suggestions && question.suggestions.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -337,7 +337,7 @@ export function ClarifyGate({
                       onClick={() => set(question.id, chosen ? "" : suggestion)}
                       aria-pressed={chosen}
                       className={cn(
-                        "inline-flex h-7 items-center rounded-control px-2.5 text-caption transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                        "inline-flex h-7 items-center rounded-control px-2.5 text-caption transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         chosen
                           ? "bg-secondary text-foreground"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -455,7 +455,7 @@ export function PlanReview({
             className={cn(
               "min-w-0 flex-1 resize-none rounded-control border border-transparent bg-transparent px-2.5 py-1.5 outline-none",
               "text-ui leading-relaxed text-foreground",
-              "transition-[background-color,border-color] duration-fast ease-out-soft hover:bg-secondary focus-visible:border-border focus-visible:bg-secondary motion-reduce:transition-none"
+              "transition-[background-color,border-color] duration-fast ease-out-soft hover:bg-secondary focus-visible:border-border focus-visible:bg-secondary"
             )}
           />
         </li>
@@ -526,7 +526,7 @@ export function PlanReview({
             type="button"
             aria-expanded={queriesOpen}
             onClick={() => setQueriesOpen((value) => !value)}
-            className="pressable -ml-1 inline-flex items-center gap-2 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="pressable -ml-1 inline-flex items-center gap-2 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
           >
             {queriesOpen ? PLAN_COPY.hideQueries : PLAN_COPY.showQueries}
             <span className="tabular-nums text-muted-foreground">{currentQueries.length}</span>
@@ -559,7 +559,7 @@ export function PlanReview({
                         next[i] = e.target.value;
                         setQueryDraft(next);
                       }}
-                      className="min-w-0 flex-1 rounded-control bg-transparent px-2 py-1.5 text-ui text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:bg-secondary focus-visible:text-foreground motion-reduce:transition-none"
+                      className="min-w-0 flex-1 rounded-control bg-transparent px-2 py-1.5 text-ui text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:bg-secondary focus-visible:text-foreground"
                     />
                   </li>
                 ))}
@@ -574,7 +574,7 @@ export function PlanReview({
           type="button"
           aria-expanded={focusOpen}
           onClick={() => setFocusOpen((value) => !value)}
-          className="pressable -ml-1 inline-flex items-center gap-2 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="pressable -ml-1 inline-flex items-center gap-2 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
         >
           {focusOpen ? PLAN_COPY.hideFocus : PLAN_COPY.showFocus}
           <ChevronDown
@@ -660,7 +660,7 @@ function FocusList({
                 onClick={() => onRemove(index)}
                 aria-label={`Remove ${value}`}
                 title="Remove"
-                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-control hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-control hover:bg-accent hover:text-foreground motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
               >
                 <ActionIcons.dismiss aria-hidden className="size-3.5" />
               </button>
@@ -689,7 +689,7 @@ function FocusList({
           onClick={onAdd}
           aria-label={emptyLabel}
           title={emptyLabel}
-          className="pressable inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="pressable inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
         >
           <Plus aria-hidden className="size-3.5" />
         </button>

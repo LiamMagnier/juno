@@ -45,7 +45,7 @@ export function ActivityLine() {
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((v) => !v)}
-        className="-mx-1.5 inline-flex min-h-8 items-center gap-1.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+        className="-mx-1.5 inline-flex min-h-8 items-center gap-1.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
       >
         <ChevronRight
           className={cn("size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none", open && "rotate-90")}
@@ -138,7 +138,7 @@ export function TaskCard({ direction }: { direction: DirectionId }) {
             aria-expanded={planOpen}
             aria-controls={planId}
             onClick={() => setPlanOpen((v) => !v)}
-            className="-mr-1.5 inline-flex min-h-8 items-center gap-1 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+            className="-mr-1.5 inline-flex min-h-8 items-center gap-1 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
           >
             Plan
             <ChevronRight
@@ -204,7 +204,7 @@ export function ApprovalPanel() {
           </div>
           <button
             type="button"
-            className="-mx-1.5 mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-control px-1.5 text-ui text-primary transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+            className="-mx-1.5 mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-control px-1.5 text-ui text-primary transition-colors duration-fast ease-out-soft hover:bg-accent"
           >
             <PenTool className="size-3.5" aria-hidden="true" />
             Tell Juno what to do instead

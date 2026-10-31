@@ -343,7 +343,7 @@ export function TeachEditor({
           type="button"
           onClick={() => setMoreOpen((open) => !open)}
           aria-expanded={moreOpen}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-control text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none coarse:min-h-11"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-control text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:min-h-11"
         >
           <ChevronDown
             className={cn("size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none", moreOpen && "rotate-180")}

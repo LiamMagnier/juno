@@ -16,6 +16,7 @@ import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/compone
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { staggerDelay } from "@/lib/motion";
 
 /** How many logos the collapsed pill shows before it just reports the count. */
 const CLUSTER_MAX = 3;
@@ -53,7 +54,7 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
           // local ring this carried was a per-site fork of it, the exact
           // pattern block-shell.tsx documents removing.
           "inline-flex min-h-11 items-center gap-1.5 rounded-control px-1.5 font-mono text-caption text-muted-foreground",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "transition-colors duration-fast ease-out-soft",
           "hover:text-foreground",
           source.duplicateOfIndex != null && "text-warning-foreground"
         )}
@@ -150,11 +151,11 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
         {...(Row === "span"
           ? { title: `${PRODUCT_NAME} did not link this: it is not a web address.` }
           : {})}
-        style={{ animationDelay: `${Math.min(index - 1, 8) * 30}ms` }}
+        style={staggerDelay(index - 1, "tight")}
         className={cn(
           "group/row relative flex items-center gap-2.5 rounded-card border border-border/60 bg-card p-2.5",
           "motion-safe:animate-rise-in [animation-fill-mode:backwards]",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "transition-colors duration-fast ease-out-soft",
           // Hover is TONAL: a list row is text on the panel until the pointer
           // reaches it, and then it takes the --accent fill (PREMIUM_AUDIT §3.3).
           // It used to resolve into a card that rose 2px and cast `shadow-lift`,
@@ -176,7 +177,7 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
         </span>
         <ActionIcons.external
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-visible/row:opacity-100 coarse:opacity-60 motion-reduce:transition-none"
+          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-visible/row:opacity-100 coarse:opacity-60"
         />
       </Row>
       {audit && <SourceAudit audit={audit} index={index} />}
@@ -250,7 +251,7 @@ export function SourcesPill({
           // minimum like the actions row under it (G54); it stopped at 40,
           // the one control on the turn a finger could miss.
           "group/pill relative z-0 inline-flex h-7 items-center gap-1.5 rounded-full bg-foreground/[0.05] pl-1 pr-2.5 text-ui font-medium text-muted-foreground hover:z-10",
-          "transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-foreground/[0.09] hover:text-foreground active:scale-[0.97] motion-reduce:transition-none",
+          "transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-foreground/[0.09] hover:text-foreground active:scale-[0.97] motion-reduce:transition-[background-color,color]",
           "data-[state=on]:bg-foreground/[0.09] data-[state=on]:text-foreground coarse:h-10 coarse:pl-2 hit-44"
         )}
       >

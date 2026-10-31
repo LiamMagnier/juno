@@ -178,7 +178,7 @@ export function ResearchRecap({
               <Link
                 href={artifactPath(run.reportArtifactId)}
                 title={RECAP_COPY.openLibrary}
-                className="rf-annot ms-2 inline-flex items-center gap-1 rounded-xs underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground motion-reduce:transition-none"
+                className="rf-annot ms-2 inline-flex items-center gap-1 rounded-xs underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
               >
                 {RECAP_COPY.library}
                 <ArrowUpRight aria-hidden className="size-3 shrink-0" />

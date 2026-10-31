@@ -115,7 +115,7 @@ export function WorkList({
  */
 export const workRowClass =
   "group flex items-start gap-3 rounded-control border border-transparent px-3.5 py-3 " +
-  "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+  "transition-colors duration-fast ease-out-soft hover:bg-accent";
 
 /**
  * A ghost control that sits inside a hover-filled row: Run now, Pause, Restore,

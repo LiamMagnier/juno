@@ -390,7 +390,7 @@ function LibraryListRow({
       style={stagger ? staggerDelay(index, "tight") : undefined}
       className={cn(
         listGrid,
-        "group/row min-h-16 px-2 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "group/row min-h-16 px-2 transition-colors duration-fast ease-out-soft",
         stagger && "motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         // Hover is the fill; selected is the next rung down (FLAT_UI.md §3.1),
         // so a selected row under the pointer does not lighten.

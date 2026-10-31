@@ -526,7 +526,7 @@ const KEBAB_ROOM =
 const TITLE_FADE = "title-fade text-clip";
 
 const TRAILING_MARK_YIELDS =
-  "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0 group-has-[a:focus-visible]:opacity-0";
+  "transition-opacity duration-fast ease-out-soft group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0 group-has-[a:focus-visible]:opacity-0";
 
 export function AppSidebar({
   collapsed = false,
@@ -1475,10 +1475,10 @@ export function AppSidebar({
                     aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
                     className="jicon-trigger group/head relative grid size-9 place-items-center rounded-control text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover coarse:size-11"
                   >
-                    <span className="col-start-1 row-start-1 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-90 group-hover/head:opacity-0 group-focus-visible/head:opacity-0 motion-reduce:transition-none">
+                    <span className="col-start-1 row-start-1 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-90 group-hover/head:opacity-0 group-focus-visible/head:opacity-0 motion-reduce:transition-opacity">
                       <ContinuumMark size={14} tight tone="current" />
                     </span>
-                    <span className="col-start-1 row-start-1 scale-90 text-muted-foreground opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-100 group-hover/head:text-foreground group-hover/head:opacity-100 group-focus-visible/head:opacity-100 motion-reduce:transition-none [&_svg]:size-4">
+                    <span className="col-start-1 row-start-1 scale-90 text-muted-foreground opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-hover/head:scale-100 group-hover/head:text-foreground group-hover/head:opacity-100 group-focus-visible/head:opacity-100 motion-reduce:transition-opacity [&_svg]:size-4">
                       <SidebarMotionIcon kind="panel-open" />
                     </span>
                   </button>
@@ -1773,7 +1773,7 @@ export function AppSidebar({
                             aria-current={pathname === "/agents" ? "page" : undefined}
                             aria-label={`${BRAND.orbit.label}, ${BRAND.orbit.description.toLowerCase()}${orbitCount > orbitLimit ? `, ${orbitCount} at work or just finished` : ""}`}
                             className={cn(
-                              "group/orbit flex h-7 min-w-0 flex-1 items-center gap-2 rounded-control px-2 text-label transition-colors duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+                              "group/orbit flex h-7 min-w-0 flex-1 items-center gap-2 rounded-control px-2 text-label transition-colors duration-fast ease-out-soft coarse:h-11",
                               pathname === "/agents" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                             )}
                           >
@@ -1789,7 +1789,7 @@ export function AppSidebar({
                             </span>
                             <ChevronRight
                               aria-hidden
-                              className="-ml-1 size-3 shrink-0 opacity-0 transition-opacity duration-fast ease-out-soft group-hover/orbit:opacity-100 group-focus-visible/orbit:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+                              className="-ml-1 size-3 shrink-0 opacity-0 transition-opacity duration-fast ease-out-soft group-hover/orbit:opacity-100 group-focus-visible/orbit:opacity-100 coarse:opacity-100"
                             />
                           </Link>
                           <SectionAction
@@ -1998,7 +1998,7 @@ export function AppSidebar({
                   href="/upgrade"
                   onClick={() => setSidebarOpen(false)}
                   aria-label={nudge === "free" ? "Upgrade" : "Upgrade, close to this month's limit"}
-                  className="jicon-trigger flex size-9 items-center justify-center rounded-control text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover motion-reduce:transition-none coarse:size-11"
+                  className="jicon-trigger flex size-9 items-center justify-center rounded-control text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover coarse:size-11"
                 >
                   <ArrowUpCircle className="size-4" />
                 </Link>
@@ -2017,7 +2017,7 @@ export function AppSidebar({
               <Link
                 href="/upgrade"
                 onClick={() => setSidebarOpen(false)}
-                className="pressable group/up flex h-9 w-full min-w-0 items-center gap-2.5 rounded-control border border-border/70 px-2.5 text-left transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-sidebar-hover motion-reduce:transition-none coarse:h-11"
+                className="pressable group/up flex h-9 w-full min-w-0 items-center gap-2.5 rounded-control border border-border/70 px-2.5 text-left hover:border-foreground/20 hover:bg-sidebar-hover motion-reduce:active:scale-100 coarse:h-11"
               >
                 <ArrowUpCircle className="size-4 shrink-0 text-foreground" aria-hidden />
                 <span className="text-ui font-medium text-foreground">Upgrade</span>
@@ -2037,7 +2037,7 @@ export function AppSidebar({
                   /* An open menu is drawn as the row's selected fill, the same
                      "you are here" the destinations above use. `-on-open`
                      because a className cannot read Radix's `data-state`. */
-                  className="group sidebar-row-selected-on-open flex h-12 w-full min-w-0 items-center gap-2.5 rounded-control px-2 text-left transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover motion-reduce:transition-none"
+                  className="group sidebar-row-selected-on-open flex h-12 w-full min-w-0 items-center gap-2.5 rounded-control px-2 text-left transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover"
                 >
                   {/* The SAME avatar helper the menu this opens draws with, so
                       the person has one face in the footer and in the menu. */}
@@ -2072,7 +2072,7 @@ export function AppSidebar({
                       which read as the row itself turning over. */}
                   <ChevronsUpDown
                     aria-hidden
-                    className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-data-[state=open]:text-foreground motion-reduce:transition-none"
+                    className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-data-[state=open]:text-foreground"
                   />
                 </button>
               }
@@ -2201,7 +2201,7 @@ function NeedsYouFold({
               onClick={onToggle}
               aria-pressed={only}
               className={cn(
-                "flex h-7 min-w-0 flex-1 select-none items-center rounded-control px-2 text-left text-label transition-colors duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+                "flex h-7 min-w-0 flex-1 select-none items-center rounded-control px-2 text-left text-label transition-colors duration-fast ease-out-soft coarse:h-11",
                 only ? "sidebar-row-selected text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -2221,7 +2221,7 @@ function NeedsYouFold({
           <button
             type="button"
             onClick={onToggle}
-            className="flex h-7 shrink-0 select-none items-center rounded-control px-2 text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover motion-reduce:transition-none motion-safe:animate-fade-in coarse:h-11"
+            className="flex h-7 shrink-0 select-none items-center rounded-control px-2 text-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover motion-safe:animate-fade-in coarse:h-11"
           >
             <span className="shell-annot">Show all</span>
           </button>
@@ -2611,7 +2611,7 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // Background and ink only: selection is a fill with no edge, so there is
     // no shadow to animate (the More trigger bolts `.sidebar-row-selected`
     // onto this recipe and relies on this list for its fade).
-    "group relative flex h-8 w-full items-center rounded-control font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+    "group relative flex h-8 w-full items-center rounded-control font-normal transition-[background-color,color] duration-fast ease-out-soft",
     // The rail: a 44px target around the glyph, so every icon is one tap and
     // the row's tooltip names it.
     // The rail: 36px targets on a 52px column (44 under a coarse pointer).
@@ -3201,7 +3201,7 @@ function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: b
           {agent.name}
         </span>
         {word && (
-          <span aria-hidden="true" className="shrink-0 font-sans text-label font-normal text-muted-foreground transition-opacity duration-fast ease-out-soft motion-reduce:transition-none">
+          <span aria-hidden="true" className="shrink-0 font-sans text-label font-normal text-muted-foreground transition-opacity duration-fast ease-out-soft">
             {word}
           </span>
         )}
@@ -3418,7 +3418,7 @@ function ProjectRow({
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover hover:text-foreground motion-reduce:transition-none coarse:h-11"
+                className="flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover hover:text-foreground coarse:h-11"
               >
                 {showAll ? "Show less" : <>View all {chats.length}</>}
               </button>
@@ -3586,7 +3586,7 @@ function ArchivedChatsDialog({
                 <li
                   key={c.id}
                   style={staggerDelay(Math.min(i, 8), "tight")}
-                  className="group flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
+                  className="group flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in [animation-fill-mode:backwards]"
                 >
                   <button
                     type="button"

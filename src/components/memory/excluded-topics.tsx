@@ -156,7 +156,7 @@ export function ExcludedTopicsDialog({
                     onClick={() => void remove(row)}
                     disabled={removing === row.id}
                     aria-label={`Allow ${row.topic} again`}
-                    className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/10 hover:text-foreground disabled:opacity-50 motion-reduce:transition-none"
+                    className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/10 hover:text-foreground disabled:opacity-50"
                   >
                     <X className="size-3" aria-hidden="true" />
                   </button>

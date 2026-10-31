@@ -266,7 +266,7 @@ export function ToolReceiptRow({
   ) : (
     <Glyph
       className={cn(
-        "size-4 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "size-4 transition-colors duration-fast ease-out-soft",
         waiting ? "text-foreground" : "text-muted-foreground group-hover/receipt:text-foreground",
       )}
     />
@@ -280,7 +280,7 @@ export function ToolReceiptRow({
       <span
         aria-hidden="true"
         className={cn(
-          "grid size-6 shrink-0 place-items-center rounded-xs transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          "grid size-6 shrink-0 place-items-center rounded-xs transition-colors duration-base ease-out-soft",
           running ? "bg-transparent" : troubled ? "bg-warning/10" : "bg-secondary",
         )}
       >
@@ -290,7 +290,7 @@ export function ToolReceiptRow({
       {/* One truncating label line. The answer stays the hero; this is a receipt. */}
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-ui leading-5 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "min-w-0 flex-1 truncate text-ui leading-5 transition-colors duration-fast ease-out-soft",
           running || waiting ? "font-medium text-foreground" : troubled ? "text-warning" : "text-foreground",
         )}
       >
@@ -332,7 +332,7 @@ export function ToolReceiptRow({
       {canOpen ? (
         <ChevronRight
           className={cn(
-            "size-3.5 shrink-0 text-ink-tertiary transition-[transform,color] duration-base ease-in-out group-hover/receipt:text-foreground motion-reduce:transition-none",
+            "size-3.5 shrink-0 text-ink-tertiary transition-[transform,color] duration-base ease-in-out group-hover/receipt:text-foreground motion-reduce:transition-[color]",
             open && "rotate-90 text-foreground",
           )}
           aria-hidden="true"
@@ -345,7 +345,7 @@ export function ToolReceiptRow({
 
   const shared = cn(
     "group/receipt flex min-h-10 w-full items-center gap-2.5 px-3 py-1.5 text-left",
-    "transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none",
+    "transition-colors duration-fast ease-out-soft hover:bg-accent/60",
     "focus-visible:-outline-offset-2",
     canOpen && "cursor-pointer",
     open && "bg-accent/40",

@@ -436,7 +436,7 @@ export function AgentComputerOverlay({
                 // The ring is the one sign of who drives: it eases between
                 // watching and control on the motion tokens, and snaps when
                 // motion is reduced.
-                "transition-shadow duration-base ease-out-soft motion-reduce:transition-none",
+                "transition-shadow duration-base ease-out-soft",
                 mode === "control" ? "ring-2 ring-primary" : "ring-1 ring-border/60"
               )}
             >
@@ -805,7 +805,7 @@ export function AgentComputerPip({ agent, onOpen }: { agent: ClientAgent; onOpen
       <div
         className={cn(
           "overflow-hidden rounded-card bg-card",
-          "transition-[box-shadow,transform] duration-base ease-out-soft motion-reduce:transition-none",
+          "transition-[box-shadow,transform] duration-base ease-out-soft motion-reduce:transition-[box-shadow]",
           waiting
             ? "shadow-[0_24px_60px_-18px_hsl(var(--foreground)/0.55)] ring-2 ring-[hsl(var(--signal))] motion-safe:-translate-y-1"
             : "shadow-[0_18px_50px_-18px_hsl(var(--foreground)/0.45)] ring-1 ring-border/60"

@@ -52,7 +52,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
         </div>
 
         {linkable && (
-          <ExternalLink className="size-3 shrink-0 text-ink-tertiary transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none" />
+          <ExternalLink className="size-3 shrink-0 text-ink-tertiary transition-colors duration-fast ease-out-soft group-hover:text-foreground" />
         )}
       </div>
 
@@ -74,7 +74,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
   );
 
   const shell =
-    "group relative flex min-w-0 flex-col justify-between rounded-control px-2 py-4 transition-colors duration-fast ease-out-soft hover:bg-secondary/60 motion-reduce:transition-none";
+    "group relative flex min-w-0 flex-col justify-between rounded-control px-2 py-4 transition-colors duration-fast ease-out-soft hover:bg-secondary/60";
 
   return linkable ? (
     <a
@@ -131,7 +131,7 @@ function Group({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="pressable mt-2 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="pressable mt-2 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
         >
           {expanded ? DECK_COPY.showFewer : `${DECK_COPY.showAll} (${sources.length})`}
         </button>

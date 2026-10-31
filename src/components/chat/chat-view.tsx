@@ -2668,7 +2668,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 <>
                   <Link
                     href={`/projects/${projectMeta.id}`}
-                    className="shell-title min-w-0 max-w-[16rem] shrink truncate text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                    className="shell-title min-w-0 max-w-[16rem] shrink truncate text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
                   >
                     {projectMeta.name}
                   </Link>
@@ -2766,7 +2766,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     // on --dur-press; the stray `active:scale-95` ran the press
                     // at the colour's 120ms, to a deeper scale than any other
                     // control in the header.
-                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
+                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
                     aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
                   >
                     <ActionIcons.dismiss className="size-4" />
@@ -2781,11 +2781,15 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         {/* Main column — settles into a quiet framed card in incognito. */}
         <div
           className={cn(
-            // `motion-reduce:transition-none`: this animates margin and
-            // border-radius, i.e. it reflows the whole transcript column over
-            // `duration-slow`, and it had no escape for a reader who asked the
-            // OS for less motion.
-            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[margin,border-radius,border-color,background-color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none",
+            // The frame fades in; its inset does not travel. This used to
+            // transition `margin` and `border-radius`, which re-laid-out the
+            // whole transcript column on every frame for 360ms: the windowed
+            // transcript re-measured, the composer's width crept, and long
+            // answers re-wrapped line by line (D27: only transform, opacity,
+            // clip-path and grid rows animate). Now the inset lands in one
+            // frame and the card's fill, edge and shadow cross-fade over it.
+            // Those are Tier A, so they fade under reduced motion too.
+            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[border-color,background-color,box-shadow] duration-slow ease-out-soft",
             privateMode
               // `bg-card`, not `bg-card/50` — half a 6.5% fill over black is
               // ~3.3%, so the "quiet framed card" incognito settles into was a
@@ -3081,7 +3085,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
               : // Leaving: absolute, so the chat reflows underneath while the
                 // exit plays — the same recipe the canvas beside it uses.
-                "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+                "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
             thought.resizing && "select-none"
           )}
         >
@@ -3101,7 +3105,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 page colour, over the page, i.e. a handle whose only visible part
                 was its 1px border. It floats above two panels, so it takes the
                 floating rung. */}
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
               <GripVertical className="size-3.5" />
             </span>
           </button>
@@ -3135,7 +3139,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             canvas.resizing && "select-none transition-none",
             openArtifact
               ? !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
-              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
             openArtifact && !fullscreen && "@[50rem]/split:relative"
           )}
         >
@@ -3155,7 +3159,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               // pointer the same way when both are open side by side.
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
             >
-              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
                 <GripVertical className="size-3.5" />
               </span>
             </button>
@@ -3183,7 +3187,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             canvas.resizing && "select-none transition-none",
             openDocument
               ? !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
-              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
             openDocument && !fullscreen && "@[50rem]/split:relative"
           )}
         >
@@ -3195,7 +3199,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               title="Drag to resize. Arrow keys adjust, Home resets."
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
             >
-              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
                 <GripVertical className="size-3.5" />
               </span>
             </button>
@@ -3231,7 +3235,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             title="Drag to resize. Arrow keys adjust, Home resets."
             className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
           >
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
               <GripVertical className="size-3.5" />
             </span>
           </button>

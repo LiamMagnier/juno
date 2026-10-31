@@ -29,7 +29,7 @@ export function RunCommentary({ items, className }: RunCommentaryProps) {
         <Markdown
           key={item.key}
           content={item.text}
-          className="text-muted-foreground transition-colors duration-base ease-out-soft motion-reduce:transition-none"
+          className="text-muted-foreground transition-colors duration-base ease-out-soft"
         />
       ))}
     </div>

@@ -130,7 +130,7 @@ interface Item {
  */
 const rowClass =
   // `ed-row`: a row of an `.ed-list` (editorial.css keys its hover hairline on it).
-  "ed-row group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+  "ed-row group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent";
 
 /**
  * The two view modes, and where the choice is kept.

@@ -197,7 +197,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
                       // pixel lift under the pointer, the selected one on the key
                       // tone with the brightest edge. No serif inside: the page
                       // title is the only display type here.
-                      "relative flex min-h-24 flex-col items-start rounded-card border p-4 text-left transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:-translate-y-px active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+                      "relative flex min-h-24 flex-col items-start rounded-card border p-4 text-left transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:-translate-y-px active:scale-[0.99] motion-reduce:transition-[border-color,background-color] motion-reduce:hover:translate-y-0",
                       on
                         ? "surface-key border-foreground/25"
                         : "border-foreground/[0.08] hover:border-foreground/[0.14] hover:bg-accent/40"

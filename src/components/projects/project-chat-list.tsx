@@ -192,11 +192,11 @@ function ChatRow({
   return (
     <li
       {...dragSourceProps({ kind: "chat", id: chat.id, projectId: currentProjectId })}
-      className="group flex min-h-14 w-full items-center gap-3 rounded-control px-3 py-2 data-[dragging]:opacity-40 text-left transition-colors duration-fast ease-out-soft focus-within:bg-accent/60 hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      className="group flex min-h-14 w-full items-center gap-3 rounded-control px-3 py-2 data-[dragging]:opacity-40 text-left transition-colors duration-fast ease-out-soft focus-within:bg-accent/60 hover:bg-accent [animation-fill-mode:backwards] motion-safe:animate-rise-in"
       style={staggerDelay(index, "tight")}
     >
       <MessageSquare
-        className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none"
+        className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground"
         aria-hidden="true"
       />
       <Link
@@ -225,7 +225,7 @@ function ChatRow({
       {chat.pinned && (
         <Pin
           weight="fill"
-          className="pointer-events-none absolute right-[7px] top-1/2 size-3.5 -translate-y-1/2 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 coarse:hidden motion-reduce:transition-none"
+          className="pointer-events-none absolute right-[7px] top-1/2 size-3.5 -translate-y-1/2 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 coarse:hidden"
           aria-hidden="true"
         />
       )}
@@ -267,7 +267,7 @@ function ChatRow({
         </DropdownMenu>
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:hidden motion-reduce:transition-none">
+      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:hidden">
         <Pressable
           kind="icon"
           size="sm"

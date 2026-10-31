@@ -365,7 +365,7 @@ function ChoiceCards<T extends string>({
           >
             <span
               className={cn(
-                "relative block aspect-[16/10] overflow-hidden rounded-field border transition-[box-shadow,border-color,transform] duration-base ease-out-soft group-active:scale-[0.98] motion-reduce:transition-none",
+                "relative block aspect-[16/10] overflow-hidden rounded-field border transition-[box-shadow,border-color,transform] duration-base ease-out-soft group-active:scale-[0.98] motion-reduce:transition-[box-shadow,border-color]",
                 selected
                   ? "border-foreground shadow-[0_0_0_1px_hsl(var(--foreground))]"
                   : "border-border group-hover:-translate-y-px group-hover:border-foreground/30 motion-reduce:group-hover:translate-y-0",

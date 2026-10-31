@@ -187,7 +187,7 @@ export function SkillDraftCardView({
         <button
           type="button"
           onClick={onShow}
-          className="shrink-0 rounded-control px-1 text-muted-on-fill underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
+          className="shrink-0 rounded-control px-1 text-muted-on-fill underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline coarse:min-h-11"
         >
           Show
         </button>

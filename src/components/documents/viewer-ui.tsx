@@ -242,8 +242,8 @@ export function ViewerLoading({ label, progress }: { label: string; progress?: n
       {progress != null && (
         <div className="h-1 w-40 overflow-hidden rounded-full bg-border/70" aria-hidden>
           <div
-            className="h-full rounded-full bg-foreground/50 transition-[width] duration-fast ease-out-soft"
-            style={{ width: `${Math.round(progress * 100)}%` }}
+            className="h-full w-full rounded-full bg-foreground/50 transition-transform duration-fast ease-out-soft"
+            style={{ transform: `translateX(-${100 - Math.round(progress * 100)}%)` }}
           />
         </div>
       )}

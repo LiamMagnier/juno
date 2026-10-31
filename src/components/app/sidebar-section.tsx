@@ -35,14 +35,19 @@ export function listRowClass(active: boolean) {
 }
 
 /**
- * What a list row animates: its fill and its ink, on the `fast` rung (120ms).
- * This is a property changing on a row the pointer has just left or landed
- * on, and the two rows do it at once: the one you left gives its fill up over
- * exactly the window the one you chose takes it on, so the state crosses
- * rather than blinking.
+ * What a list row animates: its fill and its ink. The fill lands in 0ms and
+ * leaves over the `fast` rung (spec §4.5 rule 6): the row under the pointer
+ * is lit in the frame the pointer arrives, and the row it left fades back over
+ * 120ms. A transition runs on the timing of the state it is going TO, so
+ * `hover:duration-0` is the instant arrival and the rest state's 120 is the
+ * departure. Both directions used to take 120, which on a quick pass down the
+ * list left two or three rows lit at once, trailing the pointer.
+ *
+ * Colour and fill are Tier A (§4.7): they keep their timing under reduced
+ * motion, so there is no `motion-reduce:` override here.
  */
 export const LIST_ROW_TRANSITION =
-  "transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none";
+  "transition-[background-color,color] duration-fast ease-out-soft hover:duration-0";
 
 export function Section({
   label,
@@ -81,7 +86,7 @@ export function Section({
              on the list, and the row press tone (`active:bg-selected`, a page
              fill) and hover fill made it flash like one more row. Only its
              ink answers the pointer. */
-          className="group/heading flex h-7 min-w-0 flex-1 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none coarse:h-11"
+          className="group/heading flex h-7 min-w-0 flex-1 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:h-11"
         >
           {/* ONE SECTION VOICE: sentence-case sans at the `label` rung (12px,
               weight 500), muted, two steps under the 14px rows. Quiet enough
@@ -96,7 +101,7 @@ export function Section({
           <ChevronDown
             aria-hidden
             className={cn(
-              "size-3 shrink-0 transition-[opacity,transform] duration-base ease-in-out motion-reduce:transition-none",
+              "size-3 shrink-0 transition-[opacity,transform] duration-base ease-in-out motion-reduce:transition-opacity",
               isCollapsed
                 ? "-rotate-90"
                 : "opacity-0 group-hover/section:opacity-100 group-focus-visible/heading:opacity-100 coarse:opacity-100"
@@ -123,7 +128,7 @@ export function Disclosure({ open, children }: { open: boolean; children: React.
     >
       <div
         className={cn(
-          "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+          "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft",
           !open && "opacity-0"
         )}
       >

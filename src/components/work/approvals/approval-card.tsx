@@ -166,7 +166,7 @@ export function ApprovalCard({
             type="button"
             onClick={() => setShowParameters((current) => !current)}
             aria-expanded={showParameters}
-            className="-ml-2 mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:min-h-11"
+            className="-ml-2 mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:min-h-11"
           >
             <ChevronRight
               className={cn(

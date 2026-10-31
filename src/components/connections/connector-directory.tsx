@@ -15,7 +15,7 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
-import { transition } from "@/lib/motion";
+import { staggerDelay, transition } from "@/lib/motion";
 import { monogram } from "@/components/connections/custom-connector-api";
 import {
   allAppsLabel,
@@ -279,7 +279,7 @@ function ConnectorTile({
         >
           {body}
           <span className={cn("shrink-0 text-ui", status === "Couldn’t reach it" ? "text-foreground" : "text-muted-foreground")}>{status}</span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-[color,transform] duration-fast ease-out-soft group-hover/row:translate-x-0.5 group-hover/row:text-foreground motion-reduce:transition-none" aria-hidden="true" />
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-[color,transform] duration-fast ease-out-soft group-hover/row:translate-x-0.5 group-hover/row:text-foreground motion-reduce:transition-[color]" aria-hidden="true" />
         </button>
       ) : (
         <div className="group/row -mx-3 flex min-h-[68px] items-center gap-3.5 rounded-card px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
@@ -714,7 +714,7 @@ export function ConnectorDirectory({
               setBrowseAll(false);
             }}
             aria-label="Back to the overview"
-            className="pressable -ml-2 grid size-8 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+            className="pressable -ml-2 grid size-8 place-items-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:active:scale-100"
           >
             <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
           </button>
@@ -764,7 +764,7 @@ export function ConnectorDirectory({
               <div
                 key={section.category.id}
                 className="mt-10 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                style={{ animationDelay: `${Math.min(sectionIndex, 7) * 30}ms` }}
+                style={staggerDelay(sectionIndex, "tight")}
               >
                 <h2 className="mb-4 flex min-h-6 items-center">
                   <button

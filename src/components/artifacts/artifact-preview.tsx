@@ -166,7 +166,7 @@ export function DesignPoster({
       onLoad={() => setLoaded(src)}
       onError={() => setFailed(src)}
       className={cn(
-        "size-full object-contain transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+        "size-full object-contain transition-opacity duration-base ease-out-soft",
         loaded === src ? "opacity-100" : "opacity-0",
         className
       )}

@@ -93,7 +93,7 @@ export function ThoughtInline({
         aria-controls={fullOpen ? fullControls : undefined}
         className={cn(
           "-ml-2 mt-2 inline-flex h-7 items-center gap-1 rounded-control px-2 text-caption text-muted-foreground",
-          "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-11",
+          "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11",
           fullOpen && "bg-accent text-foreground",
         )}
       >
@@ -258,7 +258,7 @@ function SourcesRow({ sources }: { sources: { url: string; domain: string; title
                 href={s.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted-foreground underline-offset-2 transition-colors duration-fast hover:text-foreground hover:underline motion-reduce:transition-none"
+                className="text-muted-foreground underline-offset-2 transition-colors duration-fast hover:text-foreground hover:underline"
               >
                 {s.title}
                 {/* An untitled source's title IS its domain: say it once. */}

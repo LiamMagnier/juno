@@ -17,8 +17,11 @@ const withoutComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "");
 
 test("Code's surfaces leave the way they came", () => {
   const css = withoutComments(read("src/components/code/v2/code-v2.css"));
-  assert.match(css, /--cv2-exit-mid: calc\(var\(--dur-mid\) \* 0\.65\);/);
-  assert.match(css, /--cv2-exit-wide: calc\(var\(--dur-wide\) \* 0\.65\);/);
+  // The rung below each entrance (spec D21), never a computed 104 or 143ms.
+  assert.match(css, /--cv2-exit-mid: var\(--dur-fast\);/);
+  assert.match(css, /--cv2-exit-wide: var\(--dur-exit\);/);
+  // Code's own --dur-mid / --dur-wide are retired (spec §4.2).
+  assert.doesNotMatch(css, /--dur-(?:mid|wide)\b/);
   for (const surface of ["cv2-pop", "cv2-dock", "cv2-palette", "cv2-sheet", "cv2-scrim"]) {
     const rule = new RegExp(`\\.${surface}(?:[.\\w-]*)?\\[data-state="closed"\\][^{]*\\{[^}]*animation: [\\w-]+ var\\(--cv2-exit-(?:mid|wide)\\) var\\(--ease-in\\)`);
     assert.match(css, rule, `${surface} has no exit`);
@@ -75,8 +78,19 @@ test("view transitions: list to thread and docked to fullscreen canvas", () => {
   assert.match(read("src/components/app/app-sidebar.tsx"), /openWithViewTransition\(event, router, `\/chat\/\$\{conversation\.id\}`\)/);
   assert.match(read("src/components/projects/project-chat-list.tsx"), /openWithViewTransition\(event, router, `\/chat\/\$\{chat\.id\}`\)/);
   const canvas = read("src/components/canvas/canvas-panel.tsx");
-  assert.match(canvas, /withViewTransition\("canvas", \(\) => flushSync\(onToggleFullscreen\)\)/);
+  assert.match(canvas, /withViewTransition\("canvas", \(\) => flushSync\(onToggleFullscreen\), \{ dir: fullscreen \? "close" : "open" \}\)/);
   assert.match(canvas, /if \(!reducedMotionAt\(el\)\) el\.style\.viewTransitionName = "canvas-panel";/, "the box travels under reduced motion");
+});
+
+test("view transitions: an 80ms freeze ceiling and a real close direction (spec D23, C18)", () => {
+  const vt = read("src/lib/view-transition.ts");
+  assert.match(vt, /export const ROUTE_WAIT_MS = 80;/, "a route change may hold the window on its snapshot for 80ms at most");
+  // The close timing in globals.css keys off html[data-vt-dir="close"]; the
+  // script is what sets it, and clears it when the transition ends.
+  assert.match(vt, /if \(options\.dir\) root\.dataset\.vtDir = options\.dir;/);
+  assert.match(vt, /delete root\.dataset\.vtDir;/);
+  const css = read("src/app/globals.css");
+  assert.match(css, /html\[data-vt="canvas"\]\[data-vt-dir="close"\]::view-transition-group\(canvas-panel\)/);
 });
 
 test("without the API the update simply runs, and modified clicks keep the link", async () => {

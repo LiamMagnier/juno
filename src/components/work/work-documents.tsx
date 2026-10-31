@@ -271,7 +271,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
             </span>
             <ChevronRight
               className={cn(
-                "size-3 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
+                "size-3 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-[color]",
                 open && "rotate-90"
               )}
               aria-hidden="true"

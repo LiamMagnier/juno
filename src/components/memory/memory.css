@@ -97,14 +97,14 @@
   .mem-pop {
     opacity: 0;
     animation: mem-pop var(--dur-emphasis) var(--mem-ease) forwards;
-    animation-delay: calc(var(--i, 0) * 70ms + var(--dur-emphasis));
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile) + var(--dur-emphasis));
   }
-  .mem-breathe { animation: mem-breathe calc(var(--loop-beat) * 3) ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .mem-breathe { animation: mem-breathe calc(var(--loop-beat) * 3) var(--ease-breathe) infinite; transform-box: fill-box; transform-origin: center; }
   .mem-rise {
     opacity: 0;
     transform: translateY(14px);
     animation: mem-rise var(--dur-emphasis) var(--mem-ease) forwards;
-    animation-delay: calc(var(--i, 0) * 70ms);
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile));
   }
   .mem-reveal { opacity: 0; transform: translateY(18px); transition: opacity var(--dur-emphasis) var(--mem-ease), transform var(--dur-emphasis) var(--mem-ease); }
   .mem-reveal[data-on] { opacity: 1; transform: none; }
@@ -125,11 +125,10 @@
   .mem-reveal[data-on] > ul > li { animation: mem-rise var(--dur-emphasis) var(--mem-ease) forwards; }
   .mem-reveal[data-on] > ul > li:nth-child(2) { animation-delay: var(--stagger-tile); }
   .mem-reveal[data-on] > ul > li:nth-child(3) { animation-delay: calc(var(--stagger-tile) * 2); }
-  .mem-reveal[data-on] > ul > li:nth-child(4) { animation-delay: calc(var(--stagger-tile) * 3); }
-  .mem-reveal[data-on] > ul > li:nth-child(5) { animation-delay: calc(var(--stagger-tile) * 4); }
-  .mem-reveal[data-on] > ul > li:nth-child(n + 6) { animation-delay: calc(var(--stagger-tile) * 5); }
+  /* At most four items stagger (spec D17); the rest paint with the fourth. */
+  .mem-reveal[data-on] > ul > li:nth-child(n + 4) { animation-delay: calc(var(--stagger-tile) * 3); }
 }
 
 /* Rows */
-.mem-row-meta { opacity: 0.85; transition: opacity 160ms; }
+.mem-row-meta { opacity: 0.85; transition: opacity var(--dur-exit); }
 .group\/row:hover .mem-row-meta { opacity: 1; }

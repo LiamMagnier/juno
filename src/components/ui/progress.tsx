@@ -26,7 +26,9 @@ const Progress = React.forwardRef<
   >
     <ProgressPrimitive.Indicator
       className={cn(
-        "h-full w-full flex-1 rounded-full transition-transform duration-slow ease-out-soft motion-reduce:transition-none",
+        // A progress fill is state, not travel: Tier A (spec §4.7) keeps it
+        // under reduced motion, where --dur-slow shortens to the base rung.
+        "h-full w-full flex-1 rounded-full transition-transform duration-slow ease-out-soft",
         tone === "primary" && "bg-primary",
         tone === "success" && "bg-success",
         tone === "warning" && "bg-warning",

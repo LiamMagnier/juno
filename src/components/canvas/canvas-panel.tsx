@@ -301,10 +301,12 @@ export function CanvasPanel({
       return;
     }
     if (!reducedMotionAt(el)) el.style.viewTransitionName = "canvas-panel";
-    void withViewTransition("canvas", () => flushSync(onToggleFullscreen)).finally(() => {
+    // Leaving fullscreen is the close: the base rung on the accelerate
+    // (globals.css, `html[data-vt-dir="close"]`), not a replay of the open.
+    void withViewTransition("canvas", () => flushSync(onToggleFullscreen), { dir: fullscreen ? "close" : "open" }).finally(() => {
       el.style.viewTransitionName = "";
     });
-  }, [onToggleFullscreen]);
+  }, [onToggleFullscreen, fullscreen]);
   // Viewport breakpoints can't see the panel: a 500px canvas on a desktop
   // screen is still "sm:". Contextual-action labels key off the PANEL width —
   // and so does the preview-width control, which has nothing to show when the

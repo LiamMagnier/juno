@@ -56,7 +56,9 @@
     --ease-out-expo: var(--ease-out-soft);
     --ease-spring: var(--ease-out-soft);
     --ease-drawer: var(--ease-out-soft);
+    --ease-out-back: var(--ease-out-soft);
     --dur-slow: var(--dur-base);
+    --dur-emphasis: var(--dur-base);
   }
 }
 

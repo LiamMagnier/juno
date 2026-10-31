@@ -14,16 +14,19 @@
  * settle), CHOREOGRAPHED (a list whose rows arrive in sequence, not together),
  * and CONTINUOUS across a layout change (an element that moves between two
  * positions in the tree instead of disappearing from one and appearing in the
- * other). `framer-motion` was already a dependency and was doing this in
- * exactly four files.
+ * other). `framer-motion` was already a dependency and started here in four
+ * files; it is in about fifty product files now, every one of them meant to
+ * take its timing from this module.
  *
- * EVERY NUMBER HERE IS DERIVED, NOT CHOSEN. Durations and curves come from
- * `tokens.generated.ts`, which is generated from the same `globals.css`
- * custom properties the CSS classes use, so a framer transition and a CSS
- * transition on the same interaction agree by construction. The variants below
- * reproduce the existing keyframes' exact offsets (6px for rise and fade-up,
- * 4px + 0.96 for pop) so the two systems are indistinguishable in motion even
- * when one element uses each.
+ * WHERE THE NUMBERS COME FROM. Durations, curves, springs and the stagger
+ * rungs and cap come from `tokens.generated.ts`, which is generated from the
+ * same `globals.css` custom properties the CSS classes use, so a framer
+ * transition and a CSS transition on the same interaction agree by
+ * construction. A few numbers have no token and are typed here, each once:
+ * the keyframe offsets the variants copy (`SHIFT`, `POP_SCALE`, `SWAP_SCALE`:
+ * 6px for rise and fade-up, 4px + 0.96 for pop, so the two systems are
+ * indistinguishable when one element uses each), `ease.interactive`'s
+ * physical spring, and `RUN_PACING`'s run-line waits.
  *
  * The spring presets deliberately mirror `JunoMotion` in
  * `native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift`
@@ -34,7 +37,7 @@ import type { CSSProperties } from "react";
 
 import type { Transition, Variants } from "framer-motion";
 
-import { DURATION, EASING, SPRING } from "@/lib/design/tokens.generated";
+import { DURATION, EASING, SPRING, TIMING_TOKENS } from "@/lib/design/tokens.generated";
 
 /** framer works in seconds; the tokens are authored in milliseconds. */
 const s = (ms: number) => ms / 1000;
@@ -82,8 +85,11 @@ export const duration = {
  * colour, an opacity, a height.
  */
 export const transition = {
-  /** Transform only, on the element under the finger. */
-  press: { duration: duration.press, ease: ease.outStrong },
+  /** Transform only, on the element under the finger. On out-soft, like
+   *  `.pressable` (globals.css) and `JunoMotion.press`: spec §4.1's press
+   *  rung. It ran on out-strong, so a framer press and a CSS press of the same
+   *  control dipped on two different curves. */
+  press: { duration: duration.press, ease: ease.outSoft },
   /** A property changing on the element the pointer is already touching. */
   fast: { duration: duration.fast, ease: ease.outSoft },
   /** Leaving. Accelerates, because the user has already decided. */
@@ -236,28 +242,32 @@ export const stagger = (step = 0.03, delay = 0): Variants => ({
  * has no single hand behind it.
  *
  * Three rungs, chosen by how much each item weighs, not by how many there are.
+ * They are the `--stagger-*` tokens (spec D17), read from the generated table
+ * rather than typed a second time.
  */
 export const STAGGER = {
-  /** Dense rows — a file list, a sidebar, a table. */
-  tight: 30,
-  /** The default. Cards and tiles in a grid. */
-  base: 45,
-  /** Large, few, and consequential — pricing tiers, onboarding steps. */
-  loose: 60,
+  /** Dense rows — a file list, a sidebar, a table (`--stagger-row`, 30). */
+  tight: TIMING_TOKENS.stagger.row,
+  /** The default. Cards and tiles in a grid (`--stagger-tile`, 45). */
+  base: TIMING_TOKENS.stagger.tile,
+  /** Large, few, and consequential — pricing tiers, onboarding steps (`--stagger-onboarding`, 60). */
+  loose: TIMING_TOKENS.stagger.onboarding,
 } as const;
 
 export type StaggerRung = keyof typeof STAGGER;
 
 /**
- * How many items still stagger before the delay stops growing.
+ * How many items animate before the delay stops growing: `--stagger-max`, 4
+ * (spec D17: "Stagger animates at most 4 items. Later items paint with the
+ * fourth."). So the fifth item onward takes the fourth's delay.
  *
  * A cap is not an optimisation, it is the difference between choreography and a
  * queue: uncapped at 45ms, the 30th row arrives 1.35s after the first, so a long
- * list visibly loads rather than appearing. Ten is where the sequence has
- * already been read as a sequence — the existing sites that capped at all had
- * independently landed on 10 and 12.
+ * list visibly loads rather than appearing. This was 10 here while the token
+ * said 4 and ICONS_AND_MOTION said "about 8", so the same list dealt itself out
+ * over 135ms on one surface and 450ms on another.
  */
-const STAGGER_CAP = 10;
+export const STAGGER_MAX = TIMING_TOKENS.stagger.max;
 
 /**
  * Inline style for the nth item of a staggered CSS entrance.
@@ -275,9 +285,16 @@ export function staggerDelay(
   rung: StaggerRung = "base",
   offsetMs = 0
 ): CSSProperties {
-  const step = STAGGER[rung];
-  const n = Math.max(0, Math.min(index, STAGGER_CAP));
-  return { animationDelay: `${offsetMs + n * step}ms` };
+  return { animationDelay: `${offsetMs + staggerStep(index) * STAGGER[rung]}ms` };
+}
+
+/**
+ * Which step of the stagger the nth item takes: its own index for the first
+ * `STAGGER_MAX`, the last step after that. For a hand-rolled sequence (a CSS
+ * custom property, an inline delay) that cannot use `staggerDelay` itself.
+ */
+export function staggerStep(index: number): number {
+  return Math.max(0, Math.min(index, STAGGER_MAX - 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -296,10 +313,16 @@ export function staggerDelay(
  * a round's first text is held back in case a tool call follows it.
  *
  * Plain numbers, not tokens: they are pacing, not animation, and none of them
- * is projected to the native design tokens.
+ * is projected to the native design tokens. The one that IS a token,
+ * `minVisibleMs` (a phase word's minimum life, `--hold-phase`), is read from
+ * it. The 150/400 glyph and label waits are the run line's own documented
+ * values (docs/chat-rework/SPEC.md §7.3, DECISIONS.md) and still differ from
+ * TurnStatus's `--delay-show` (200, spec C1); reconciling the two is a spec
+ * decision, not a token one.
  */
 export const RUN_PACING = {
-  glyphDelayMs: 150, showDelayMs: 400, minVisibleMs: 600, dwellMs: 700,
+  // minVisibleMs is the phase word's minimum life, `--hold-phase` (spec C1).
+  glyphDelayMs: 150, showDelayMs: 400, minVisibleMs: TIMING_TOKENS.hold.phase, dwellMs: 700,
   sameSubjectSwapMs: 1_500, coalesceWindowMs: 1_000, timerAfterMs: 3_000,
   calmAfterMs: 20_000, stalledAfterMs: 30_000, counterThrottleMs: 500,
   textHoldMs: 600, textHoldChars: 280, escalateAfterMs: 120_000, escalateAgainAfterMs: 600_000,

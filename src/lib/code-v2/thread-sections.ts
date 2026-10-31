@@ -1,10 +1,13 @@
 /**
  * The Code sidebar's sections (DESIGN §4.1) and the FLIP plan for list
  * reorders (INTERACTION I-14, T3 Code's Sidebar.motion timing): displaced
- * rows translate from their old position over 150 ms, travel is clamped to
+ * rows translate from their old position over the base rung (220 ms; the
+ * 150 ms it was is off the closed duration ladder), travel is clamped to
  * 40 px for a row whose neighbours did not move, and fades are skipped when
  * more than 40 rows would fade in one update.
  */
+
+import { DURATION } from "@/lib/design/tokens.generated";
 
 export type ThreadState = "idle" | "running" | "waiting" | "limited" | "error";
 
@@ -76,7 +79,8 @@ export function threadTrailingGlyph(state: ThreadState): "loading" | "needs-you"
   }
 }
 
-export const FLIP_DURATION_MS = 150;
+/** A row sliding to its new place: the base rung (it was 150ms, off the ladder). */
+export const FLIP_DURATION_MS = DURATION.base;
 export const FLIP_MAX_TRAVEL = 40;
 export const FLIP_MAX_FADES = 40;
 

@@ -83,7 +83,11 @@ test("Tailwind's duration and easing utilities read the motion tokens", async ()
   const extend = config.theme?.extend ?? {};
   const durations = extend.transitionDuration as Record<string, string>;
   const easings = extend.transitionTimingFunction as Record<string, string>;
-  for (const [key, value] of Object.entries(durations)) assert.match(value, new RegExp(`^var\\(--dur-${key}, \\d+ms\\)$`), key);
+  // DEFAULT is the bare `transition*` utilities' length: the fast rung, not
+  // Tailwind's stock 150ms, which sits off the ladder.
+  const durationToken = (key: string) => (key === "DEFAULT" ? "fast" : key);
+  assert.equal(durations.DEFAULT, "var(--dur-fast, 120ms)", "a bare `transition-colors` runs 150ms again");
+  for (const [key, value] of Object.entries(durations)) assert.match(value, new RegExp(`^var\\(--dur-${durationToken(key)}, \\d+ms\\)$`), key);
   for (const [key, value] of Object.entries(easings)) {
     const token = key === "DEFAULT" || key === "out" ? "out-soft" : key;
     assert.match(value, new RegExp(`^var\\(--ease-${token}, cubic-bezier\\(`), key);
@@ -92,6 +96,6 @@ test("Tailwind's duration and easing utilities read the motion tokens", async ()
   const globals = readFileSync(path.join(process.cwd(), "src/app/globals.css"), "utf8");
   for (const [key, value] of Object.entries(durations)) {
     const fallback = /, (\d+ms)\)$/.exec(value)![1];
-    assert.ok(globals.includes(`--dur-${key}: ${fallback};`), `--dur-${key} fallback ${fallback}`);
+    assert.ok(globals.includes(`--dur-${durationToken(key)}: ${fallback};`), `--dur-${key} fallback ${fallback}`);
   }
 });

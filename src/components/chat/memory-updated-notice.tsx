@@ -54,11 +54,11 @@ import type { ClientMemoryWrite } from "@/types/chat";
 
 /** How long the notice stays once nobody is looking at it. */
 export const MEMORY_NOTICE_MS = 6000;
-/** The exit's length: `--dur-exit` (the generated token), read as a number for the unmount. */
+/** The exit's length: `--dur-exit` (`animate-title-out`), read from the token table for the unmount. It was a hand-typed 180. */
 const EXIT_MS = DURATION.exit;
 
 const actionClass =
-  "hit-44 relative inline-flex h-8 items-center gap-1 rounded-control px-2.5 font-sans text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none";
+  "hit-44 relative inline-flex h-8 items-center gap-1 rounded-control px-2.5 font-sans text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground";
 
 /**
  * The fact, short enough for two lines of the notice, cut only between words.
@@ -149,7 +149,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
       <span
         aria-hidden="true"
         className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft",
           allUndone ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary-ink",
         )}
       >

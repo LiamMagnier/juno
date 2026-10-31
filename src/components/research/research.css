@@ -263,7 +263,7 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 /* Motion */
 @media (prefers-reduced-motion: no-preference) {
   /* `backwards` fills: a finished entrance leaves nothing running. */
-  .rf-rise { animation: rf-rise-in var(--dur-emphasis) var(--rf-ease) backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+  .rf-rise { animation: rf-rise-in var(--dur-emphasis) var(--rf-ease) backwards; animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile)); }
   .rf-point { animation: rf-arrive var(--dur-emphasis) var(--rf-ease) backwards; transition: left var(--dur-emphasis) var(--rf-ease), top var(--dur-emphasis) var(--rf-ease), width var(--dur-slow), height var(--dur-slow), background-color var(--dur-slow), box-shadow var(--dur-slow); }
   .rf-label { animation: rf-fade var(--dur-emphasis) var(--rf-ease) var(--dur-base) backwards; transition: left var(--dur-emphasis) var(--rf-ease), top var(--dur-emphasis) var(--rf-ease), color var(--dur-slow); }
   .rf-finding { animation: rf-rise-in var(--dur-emphasis) var(--rf-ease) backwards; }

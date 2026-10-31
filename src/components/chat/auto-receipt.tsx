@@ -44,7 +44,7 @@ export function AutoReceipt({
     <Popover>
       <PopoverTrigger
         className={cn(
-          "flex min-w-0 items-center gap-1.5 rounded-xs outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+          "flex min-w-0 items-center gap-1.5 rounded-xs outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
           className
         )}
         aria-label={`Auto chose ${modelName}, ${effortLabel(receipt.effort)} thinking. Show why.`}

@@ -100,7 +100,7 @@ function StepMark({ state }: { state: PlanStepState }) {
     <span
       className={cn(
         "mt-[2px] grid size-3.5 shrink-0 place-items-center rounded-full border",
-        "transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+        "transition-colors duration-base ease-out-soft",
         state === "done" && "border-primary bg-primary text-primary-foreground",
         state === "failed" && "border-destructive bg-destructive text-destructive-foreground",
         state === "skipped" && "border-border text-muted-foreground",

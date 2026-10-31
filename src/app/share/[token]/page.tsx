@@ -149,7 +149,7 @@ export default async function SharePage({
           <Link
             href="/"
             aria-label={PRODUCT_NAME}
-            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
           >
             <AlevrLockup height={24} decorative />
           </Link>

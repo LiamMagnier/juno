@@ -547,7 +547,7 @@ export function AgentProfile({
                     if (!current) void act("memory", () => setAgentMemoryAccess(agent.id, access));
                   }}
                   className={cn(
-                    "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                    "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     current && "bg-secondary/60"
                   )}
                 >
@@ -821,7 +821,7 @@ function RunsOnSection({
                 });
               }}
               className={cn(
-                "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 current && "bg-secondary/60"
               )}
             >
@@ -891,7 +891,7 @@ function RunsOnSection({
                       if (macChoiceSaves({ target, storedPreferredHostId: preferredHostId, choice: id })) chooseMac(id);
                     }}
                     className={cn(
-                      "-mx-2 flex items-baseline gap-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                      "-mx-2 flex items-baseline gap-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       current && "bg-secondary/60"
                     )}
                   >
