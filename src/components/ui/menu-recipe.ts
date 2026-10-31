@@ -102,7 +102,20 @@ export const menuRowClass =
   "rounded-inner px-2.5 py-1.5 text-ui outline-none " +
   // 2026-10: a row also gives under the finger (0.985) and its open submenu
   // keeps the hover fill, so the path to the submenu stays lit.
-  "transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.985] " +
+  //
+  // THE HIGHLIGHT LANDS IN 0ms AND LEAVES OVER 120 (spec §4.5 rule 6). The
+  // three durations pair with the three properties: fill, ink, press. A row
+  // that is highlighted (Radix stamps `data-highlighted` for the pointer and
+  // the arrow keys alike) takes its fill at once; the row it left gives its
+  // fill up over the fast rung. Both directions used to run 120, so a fast
+  // pointer or a held arrow key lit two or three rows at once, a smear
+  // trailing the cursor. The press keeps its own rung (`--dur-press`, 70) in
+  // both states, as every other press does. Plain links and buttons (the
+  // landing nav) get the same instant-in from their hover.
+  "transition-[background-color,color,transform] ease-out-soft active:scale-[0.985] " +
+  "[transition-duration:var(--dur-fast),var(--dur-fast),var(--dur-press)] " +
+  "data-[highlighted]:[transition-duration:0ms,0ms,var(--dur-press)] " +
+  "[&:not([data-radix-collection-item]):hover]:[transition-duration:0ms,0ms,var(--dur-press)] " +
   "data-[state=open]:bg-accent motion-reduce:active:scale-100 " +
   "data-[disabled]:pointer-events-none data-[disabled]:opacity-50 " +
   "[&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 " +
@@ -135,12 +148,15 @@ export const menuRowClass =
  * the variants are stacked after the descendant selector, which Tailwind 3
  * compiles to `.row[data-highlighted] svg:not(…)`.
  *
- * The ink cross-fades on the token rungs (--dur-fast, --ease-out-soft), like
- * the row's own fill. It is one arbitrary `transition` rather than the
- * `duration-*` / `ease-*` utilities, which tailwindcss-animate also reads as
- * ANIMATION timing. And it is written at ZERO specificity
- * (`:where(.row) svg`) on purpose: a glyph that states its own `transition-*`
- * means it, and the sidebar's
+ * The ink moves like the row's own fill: in at once, out over the fast rung
+ * (--dur-fast, --ease-out-soft). The transition is declared only while the
+ * row is NOT highlighted, so the glyph lights in the same frame as the fill
+ * and fades back with it; a CSS transition runs on the destination state's
+ * timing. It is one arbitrary `transition` rather than the `duration-*` /
+ * `ease-*` utilities, which tailwindcss-animate also reads as ANIMATION
+ * timing. And it is written at ZERO specificity
+ * (`:where(.row:not([data-highlighted])) svg`) on purpose: a glyph that states
+ * its own `transition-*` means it, and the sidebar's
  * folder mark cross-fades its two drawings on opacity
  * (`.sidebar-motion-icon__glyph`). Any of those outranks this and keeps its
  * list; only a glyph with no transition of its own picks it up.
@@ -151,7 +167,7 @@ export const menuGlyphInkClass =
   "[&_svg:not([class*='text-']):not([class*='fill-'])]:data-[state=open]:text-foreground " +
   "[&:not([data-radix-collection-item]):hover_svg:not([class*='text-']):not([class*='fill-'])]:text-foreground " +
   "[&:not([data-radix-collection-item]):focus-visible_svg:not([class*='text-']):not([class*='fill-'])]:text-foreground " +
-  "[:where(&)_svg]:[transition:color_var(--dur-fast)_var(--ease-out-soft)]";
+  "[:where(&:not([data-highlighted]))_svg]:[transition:color_var(--dur-fast)_var(--ease-out-soft)]";
 
 /**
  * The section head inside a menu. Shares the row's left edge (px-2.5) so a
