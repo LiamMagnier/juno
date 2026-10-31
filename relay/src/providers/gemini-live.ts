@@ -6,8 +6,8 @@ import type {
   VoiceSessionSeed,
 } from "./types.js";
 import { requiredEnv } from "./types.js";
-import { providerText, withWebSearchLimit } from "../voice-context.js";
-import type { VoiceDelegate, VoiceReasoningEffort } from "../protocol.js";
+import { providerText, withToolsLimit, withWebSearchLimit } from "../voice-context.js";
+import type { VoiceDelegate, VoiceReasoningEffort, VoiceToolDeclaration } from "../protocol.js";
 import {
   askGeminiDelegate,
   geminiVoicePlan,
@@ -98,6 +98,8 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private readonly delegate: VoiceDelegate;
   /** Delegated calls in flight, by function call id, so a cancellation can stop one. */
   private readonly pendingDelegations = new Map<string, AbortController>();
+  /** The chat's tools this session declared, beside the delegate. */
+  private declaredTools: VoiceToolDeclaration[] = [];
 
   /**
    * Thinking is a MODEL here, not a parameter. Gemini 3.8 Live answers at
@@ -120,12 +122,23 @@ export class GeminiLiveSession implements VoiceProviderSession {
   }
 
   established(): SessionEstablished {
-    return { thinking: this.thinking, model: this.model, effort: this.effort, delegate: this.delegate };
+    return {
+      thinking: this.thinking,
+      model: this.model,
+      effort: this.effort,
+      delegate: this.delegate,
+      tools: this.declaredTools.length,
+    };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.seed = seed;
     this.events = events;
+    // The chat's tools beside the delegate (relay/src/tools.ts). The delegate's
+    // name is the relay's own, so a listed tool can never take it over.
+    this.declaredTools = events.onToolCall
+      ? (seed.tools ?? []).filter((tool) => tool.name !== GEMINI_DELEGATE_FUNCTION)
+      : [];
     try {
       await this.openConnection(seed, /* seedHistory */ true);
     } catch (err) {
@@ -303,11 +316,37 @@ export class GeminiLiveSession implements VoiceProviderSession {
         },
         // The shared instructions say the call cannot browse; with a
         // web-searching delegate it can, and must be told so or it refuses.
+        // With the chat's tools it can do more again, and is told that instead.
         systemInstruction: {
-          parts: [{ text: this.delegate.webSearch ? withWebSearchLimit(seed.instructions) : seed.instructions }],
+          parts: [
+            {
+              text: this.declaredTools.length
+                ? withToolsLimit(seed.instructions, seed.toolInstructions, { delegateSearches: this.delegate.webSearch })
+                : this.delegate.webSearch
+                  ? withWebSearchLimit(seed.instructions)
+                  : seed.instructions,
+            },
+          ],
         },
         // One function: hand the question to Gemini 3.8 Flash (gemini-delegate.ts).
-        tools: [{ functionDeclarations: [GEMINI_DELEGATE_DECLARATION] }],
+        // A call lent the chat's tools declares them after it; their schemas
+        // are JSON Schema already cut to the subset Google documents, so they
+        // go in `parametersJsonSchema` as the chat's Gemini adapter sends a
+        // connector's (src/lib/tools/schema.ts).
+        tools: this.declaredTools.length
+          ? [
+              {
+                functionDeclarations: [
+                  GEMINI_DELEGATE_DECLARATION,
+                  ...this.declaredTools.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    parametersJsonSchema: tool.parameters,
+                  })),
+                ],
+              },
+            ]
+          : [{ functionDeclarations: [GEMINI_DELEGATE_DECLARATION] }],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         // Longer sessions: sliding-window compression + resumption handles.
@@ -502,6 +541,10 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private async runDelegation(call: { id?: string; name?: string; args?: Record<string, unknown> }): Promise<void> {
     const id = call.id ?? "";
     const name = call.name ?? "";
+    if (name !== GEMINI_DELEGATE_FUNCTION && this.declaredTools.some((tool) => tool.name === name) && this.events?.onToolCall) {
+      await this.runChatTool(id, name, call.args ?? {});
+      return;
+    }
     if (name !== GEMINI_DELEGATE_FUNCTION) {
       this.send({ toolResponse: { functionResponses: [{ id, name, response: { error: `Unknown function "${name}".` } }] } });
       return;
@@ -516,6 +559,24 @@ export class GeminiLiveSession implements VoiceProviderSession {
     if (!this.pendingDelegations.has(id) || controller.signal.aborted || this.closedByUs) return;
     this.pendingDelegations.delete(id);
     this.send({ toolResponse: { functionResponses: [{ id, name, response: result }] } });
+  }
+
+  /**
+   * One of the chat's tools, run on Juno through the relay's bridge. Its
+   * answer comes back as the function's `output`; a change waiting on the
+   * person answers at once with a note saying so, so the model can ask aloud
+   * rather than hold the turn. A call Gemini cancels meanwhile is left
+   * unanswered, as the delegate's is.
+   */
+  private async runChatTool(id: string, name: string, args: Record<string, unknown>): Promise<void> {
+    const controller = new AbortController();
+    this.pendingDelegations.set(id, controller);
+    const output = await this.events!.onToolCall!({ id: id || `${name}:${Date.now()}`, name, arguments: JSON.stringify(args) }).catch(
+      () => "The tool could not be reached, so nothing was done."
+    );
+    if (!this.pendingDelegations.has(id) || controller.signal.aborted || this.closedByUs) return;
+    this.pendingDelegations.delete(id);
+    this.send({ toolResponse: { functionResponses: [{ id, name, response: { output } }] } });
   }
 
   private finalizeUserTranscript(): void {

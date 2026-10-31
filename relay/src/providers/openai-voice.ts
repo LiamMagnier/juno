@@ -79,6 +79,11 @@ export class OpenAiVoiceSession implements VoiceProviderSession {
       model: answered?.model,
       delegate: this.fellBack ? undefined : answered?.delegate,
       effort: this.fellBack ? undefined : answered?.effort,
+      // GPT-Live declares none of the chat's tools: its session config refuses
+      // fields it does not know, and its delegation has no documented way to
+      // hand a function call back to the client, so it keeps its delegate's
+      // web search only. The Realtime leg declares them.
+      tools: answered?.tools ?? 0,
     };
   }
 

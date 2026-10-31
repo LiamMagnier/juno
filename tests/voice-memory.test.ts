@@ -144,5 +144,9 @@ test("the relay fetches memory server to server, under a memory-scoped token, on
   assert.match(session, /if \(this\.memory !== undefined\) return;/);
   // A memory fetch that fails is a call without memory, never a failed call.
   assert.match(session, /this\.memory = await fetchMemory\(this\.userId, grant\)\.catch\(\(\) => null\);/);
-  assert.match(src("relay/src/server.ts"), /new RelaySession\(ws, userId, \{ memory: grant\.memory, agentId: grant\.agentId \?\? null \}\)/);
+  // The tools grant rides beside them (relay/tests/voice-tools.test.ts).
+  assert.match(
+    src("relay/src/server.ts"),
+    /new RelaySession\(ws, userId, \{\s+memory: grant\.memory,\s+agentId: grant\.agentId \?\? null,\s+tools: grant\.tools \?\? null,\s+\}\)/
+  );
 });
