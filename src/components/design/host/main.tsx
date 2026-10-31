@@ -59,10 +59,11 @@ function HostedEditor({ session }: { session: HostSession }) {
   // It never did, which is why the canvas was empty on both platforms: the
   // exception unmounted the tree and reached the host as "Script error." — see
   // the root callbacks at the bottom of this file for why that message carried
-  // nothing. The 200ms delay is `providers.tsx`'s, so a tooltip in the pane
-  // waits exactly as long as the same tooltip in the browser.
+  // nothing. The provider's own defaults are the `--delay-tooltip` /
+  // `--delay-tooltip-skip` tokens, so a tooltip in the pane waits exactly as
+  // long as the same tooltip in the browser, and moves with them.
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <DesignEditor
         artifactId={session.document.id}
         content={content}

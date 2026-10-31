@@ -19,13 +19,15 @@
  * (thinking-mark.tsx) is a thin shell around this; tests drive it directly.
  */
 
+import { TIMING } from "@/lib/interaction";
+
 export type ThinkingPhase = "thinking" | "working" | "waiting" | "finished" | "error" | "idle";
 
 export const THINKING_TIMING = {
-  /** INTERACTION_SPEC TIMING.showDelay: a pending indicator waits this long before it appears. */
-  showDelay: 200,
-  /** TIMING.minVisible: once shown, a pending indicator stays at least this long. */
-  minVisible: 400,
+  /** INTERACTION_SPEC TIMING.showDelay (`--delay-show`): a pending indicator waits this long before it appears. */
+  showDelay: TIMING.showDelay,
+  /** TIMING.minVisible (`--hold-skeleton`): once shown, a pending indicator stays at least this long. */
+  minVisible: TIMING.minVisible,
   /** V3 `fast`: one blade rising toward presence ink. */
   rise: 120,
   /**

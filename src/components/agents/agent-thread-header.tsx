@@ -36,6 +36,8 @@ import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
+import { staggerDelay } from "@/lib/motion";
+import { TIMING_TOKENS } from "@/lib/design/tokens.generated";
 
 import { threadWorkNotice } from "@/components/agents/thread-agent-state";
 
@@ -309,8 +311,11 @@ export function AgentThreadHeader({
  * The empty thread greets in the agent's own voice. No suggestion chips: the
  * composer below is the invitation, and its placeholder says what to type.
  */
+// After `--delay-greeting`, on the tile stagger (45ms, at most four steps,
+// spec D17) and the expo token. It was 80 + 40·step on a literal curve: a
+// retired 80, a step on no rung, and a curve reduced motion could not flatten.
 function GREETING_RISE(step: number): React.CSSProperties {
-  return { animationDelay: `${80 + step * 40}ms`, animationDuration: "var(--dur-slow)", animationTimingFunction: "cubic-bezier(.16, 1, .3, 1)", animationFillMode: "both" };
+  return { ...staggerDelay(step, "base", TIMING_TOKENS.delay.greeting), animationDuration: "var(--dur-slow)", animationTimingFunction: "var(--ease-out-expo)", animationFillMode: "both" };
 }
 
 /*

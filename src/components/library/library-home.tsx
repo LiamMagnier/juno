@@ -34,6 +34,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { Pressable } from "@/components/ui/pressable";
 import { StatusIcons } from "@/lib/app-icons";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * The Library: one place for what Alevr made and the files you gave it
@@ -497,7 +498,7 @@ export function LibraryHome() {
               </li>
             ))}
             {entries.map((entry, index) => (
-              <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}>
+              <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={staggerDelay(index, "tight")}>
                 <EntryTile entry={entry} actions={actions} />
               </li>
             ))}

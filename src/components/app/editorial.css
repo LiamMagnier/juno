@@ -69,16 +69,15 @@
     opacity: 0;
     transform: translateY(14px);
     animation: ed-rise var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
-    animation-delay: calc(var(--i, 0) * 70ms);
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile));
   }
   .ed-reveal { opacity: 0; transform: translateY(18px); transition: opacity var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)); }
   .ed-reveal[data-on] { opacity: 1; transform: none; }
   .ed-stagger > * { opacity: 0; transform: translateY(8px); animation: ed-rise var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
   .ed-stagger > :nth-child(2) { animation-delay: var(--stagger-tile); }
   .ed-stagger > :nth-child(3) { animation-delay: calc(var(--stagger-tile) * 2); }
-  .ed-stagger > :nth-child(4) { animation-delay: calc(var(--stagger-tile) * 3); }
-  .ed-stagger > :nth-child(5) { animation-delay: calc(var(--stagger-tile) * 4); }
-  .ed-stagger > :nth-child(n + 6) { animation-delay: calc(var(--stagger-tile) * 5); }
+  /* At most four items stagger (spec D17); the rest paint with the fourth. */
+  .ed-stagger > :nth-child(n + 4) { animation-delay: calc(var(--stagger-tile) * 3); }
 }
 @keyframes ed-rise { to { opacity: 1; transform: none; } }
 
@@ -93,9 +92,9 @@
 .rw-trajectory { fill: none; stroke: hsl(var(--presence)); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .rw-label { fill: hsl(var(--foreground)); font-size: 13px; font-weight: 500; }
 @media (prefers-reduced-motion: no-preference) {
-  .rw-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ed-draw var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; animation-delay: calc(var(--i, 0) * 70ms + 120ms); }
-  .rw-pop { opacity: 0; animation: ed-pop var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; animation-delay: calc(var(--i, 0) * 70ms + var(--dur-slow)); transform-box: fill-box; transform-origin: center; }
-  .rw-breathe { animation: ed-breathe calc(var(--loop-beat) * 3) ease-in-out infinite; }
+  .rw-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ed-draw var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile) + 120ms); }
+  .rw-pop { opacity: 0; animation: ed-pop var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile) + var(--dur-slow)); transform-box: fill-box; transform-origin: center; }
+  .rw-breathe { animation: ed-breathe calc(var(--loop-beat) * 3) var(--ease-breathe) infinite; }
 }
 @keyframes ed-draw { to { stroke-dashoffset: 0; } }
 @keyframes ed-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
@@ -156,7 +155,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .ed-arrive > :nth-child(-n + 12) {
     animation: ed-arrive var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
-    animation-delay: calc(var(--ed-n, 0) * var(--stagger-tile) + var(--dur-exit));
+    animation-delay: calc(min(var(--ed-n, 0), var(--stagger-max) - 1) * var(--stagger-tile) + var(--dur-exit));
   }
   .ed-arrive > :nth-child(2) { --ed-n: 1; }
   .ed-arrive > :nth-child(3) { --ed-n: 2; }

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { PACER } from "../src/lib/chat/stream-pacer";
+import { TIMING_TOKENS } from "../src/lib/design/tokens.generated";
 import { fixture, run, STREAM_PACER_FIXTURE_PATH, type Trace } from "../scripts/generate-stream-pacer-fixture";
 
 /*
@@ -66,5 +67,8 @@ test("the ink bands are the ones globals.css paints", () => {
   // The component's own band constants agree.
   const component = readFileSync(resolve(process.cwd(), "src/components/chat/stream-text.tsx"), "utf8");
   assert.match(component, new RegExp(`const BANDS = ${file.ink.bands};`));
-  assert.match(component, new RegExp(`const BAND_MS = ${file.ink.bandMs};`));
+  // The band length is read from --stream-band, not typed again; the token
+  // over the bands is the contract's band length.
+  assert.match(component, /const BAND_MS = TIMING_TOKENS\.stream\.band \/ BANDS;/);
+  assert.equal(TIMING_TOKENS.stream.band / file.ink.bands, file.ink.bandMs);
 });

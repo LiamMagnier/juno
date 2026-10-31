@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/icons";
 import type { LiveComponent, LiveIngredient } from "@/lib/live-ui/spec";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * The intelligent-UI set (docs/design/LIVE_UI.md §2.4): views for what people
@@ -344,7 +345,7 @@ export function LiveChoices({
                   return next;
                 });
               }}
-              style={{ animationDelay: `${i * 40}ms` }}
+              style={staggerDelay(i, "base")}
               className="live-option motion-safe:animate-rise-in [animation-fill-mode:backwards]"
               data-on={on ? "" : undefined}
               data-sent={sent ? "" : undefined}
@@ -398,7 +399,7 @@ export function LiveCompare({
           return (
             <article
               key={i}
-              style={{ animationDelay: `${i * 60}ms` }}
+              style={staggerDelay(i, "loose")}
               className="live-option-card motion-safe:animate-rise-in [animation-fill-mode:backwards]"
               data-best={best ? "" : undefined}
               data-chosen={chosen === i ? "" : undefined}
@@ -482,7 +483,7 @@ export function LiveCards({ cards, onPrompt }: { cards: Of<"cards">; onPrompt?: 
         {cards.items.map((it, i) => {
           const Tag = it.prompt && onPrompt ? "button" : "div";
           return (
-            <li key={i} style={{ animationDelay: `${i * 40}ms` }} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
+            <li key={i} style={staggerDelay(i, "base")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
               <Tag
                 {...(Tag === "button" ? { type: "button" as const, onClick: () => onPrompt?.(it.prompt!) } : {})}
                 className={cn("live-tile group/tile", Tag === "button" && "live-tile-action")}
