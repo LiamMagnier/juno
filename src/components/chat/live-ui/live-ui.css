@@ -313,7 +313,10 @@ div:has(> .live-slider:active) > div > .live-value {
   justify-content: center;
   border-radius: 6px;
   border: 2px solid hsl(var(--foreground) / 0.28);
-  color: #fff;
+  /* Ink on the --live fill is the page ground, not white: dark mode's
+     presence is a light ultramarine that white reaches only 2.35:1 on.
+     --background clears it in both themes. */
+  color: hsl(var(--background));
   transition: background-color var(--dur-base) var(--ease-out-soft), border-color var(--dur-base) var(--ease-out-soft), scale var(--dur-base) var(--ease-out-back);
 }
 .live-check.rounded-full { border-radius: 999px; }
@@ -353,7 +356,7 @@ div:has(> .live-slider:active) > div > .live-value {
   transition: background-color var(--dur-base) var(--ease-out-soft), color var(--dur-base), scale var(--dur-press) var(--ease-out-soft);
 }
 .live-step-num:active { scale: 0.92; }
-.live-step-done .live-step-num { background: hsl(var(--success)); color: #fff; }
+.live-step-done .live-step-num { background: hsl(var(--success)); color: hsl(var(--background)); }
 .live-timer {
   display: inline-flex;
   flex: none;
@@ -423,7 +426,7 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-primary:hover:not(:disabled) { background: hsl(var(--foreground) / 0.86); }
 .live-primary:active:not(:disabled) { scale: 0.97; }
 .live-primary:disabled { opacity: 0.4; }
-[data-best] .live-primary { background: hsl(var(--live)); color: #fff; }
+[data-best] .live-primary { background: hsl(var(--live)); color: hsl(var(--background)); }
 [data-best] .live-primary:hover:not(:disabled) { background: hsl(var(--live) / 0.88); }
 
 /* Compare: one card per option; the recommended one carries the accent. */
@@ -456,7 +459,7 @@ div:has(> .live-slider:active) > div > .live-value {
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: #fff;
+  color: hsl(var(--background));
   background: hsl(var(--live));
   box-shadow: 0 2px 8px -2px hsl(var(--live) / 0.6);
 }
@@ -497,7 +500,8 @@ div:has(> .live-slider:active) > div > .live-value {
   border-radius: 999px;
   font-size: 0.6875rem;
   font-weight: 500;
-  color: hsl(var(--muted-foreground));
+  /* Quiet text on a fill: plain muted ink is 4.45:1 on this wash in dark. */
+  color: hsl(var(--muted-foreground-on-fill));
   background: hsl(var(--foreground) / 0.05);
 }
 

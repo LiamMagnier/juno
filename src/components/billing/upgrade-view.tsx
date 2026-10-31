@@ -292,7 +292,7 @@ export function UpgradeView({
                 className="plans-chip"
               >
                 <span className="font-medium">{PLANS[plan].name}</span>
-                <span className="font-mono text-micro tabular-nums opacity-70">{plan === currentPlan ? "yours" : priceLabel(plan)}</span>
+                <span className="font-mono text-micro tabular-nums text-muted-foreground">{plan === currentPlan ? "yours" : priceLabel(plan)}</span>
               </button>
             ))}
           </div>
