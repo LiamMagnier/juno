@@ -145,6 +145,8 @@ export async function runPrivateTurn({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // The row itself: the builder reads only the tone* columns, leniently.
+    characteristics: settings,
     responseLanguage: settings?.responseLanguage ?? "auto",
     memories: [],
     memoryEnabled: false,

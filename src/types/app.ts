@@ -6,6 +6,7 @@ import type { Provider } from "@/lib/providers";
 import type { BackgroundProviderMode } from "@/lib/background-provider-policy";
 import type { SensitiveTopic } from "@/lib/memory-sensitive";
 import type { BudgetCapSource } from "@/lib/spend-ceiling";
+import type { CharacteristicLevel } from "@/lib/characteristics";
 
 export interface AppUser {
   id: string;
@@ -31,6 +32,16 @@ export interface ClientSettings {
   defaultModel: string;
   /** Response-style preset id (see @/lib/personalities); "default" injects nothing. */
   personality: string;
+  /**
+   * Tone characteristics (see @/lib/characteristics), layered on the
+   * personality. Optional so fixtures written before them still type; absent
+   * reads as "default", which injects nothing.
+   */
+  toneWarmth?: CharacteristicLevel;
+  toneEnthusiasm?: CharacteristicLevel;
+  toneFormatting?: CharacteristicLevel;
+  toneEmoji?: CharacteristicLevel;
+  toneConciseness?: CharacteristicLevel;
   customInstructions: string;
   responseLanguage: string;
   /** Interface language: "auto" (follow the browser) or a BCP-47 tag. */

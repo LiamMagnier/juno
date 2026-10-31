@@ -100,6 +100,8 @@ export function composeTurnSystem({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // The row itself: the builder reads only the tone* columns, leniently.
+    characteristics: settings,
     responseLanguage: settings?.responseLanguage ?? "auto",
     // The ranked notes are per-question and ride the tail (route.ts turnTail);
     // the consolidated summary is stable and stays in the cached system tier.

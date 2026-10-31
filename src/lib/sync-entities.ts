@@ -7,6 +7,7 @@ import { coerceChatOrigin } from "@/lib/chat-origin";
 import { parseWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { getViewUrl } from "@/lib/storage";
 import type { EntityIndexCursor } from "@/lib/sync-entity-index";
+import { normalizeCharacteristics } from "@/lib/characteristics";
 
 /*
  * Entity hydration for the native sync contract (GET /api/v1/entities): given
@@ -79,6 +80,8 @@ const loaders: Record<string, EntityLoader> = {
           responseLanguage: row.responseLanguage,
           uiLocale: row.uiLocale,
           personality: row.personality,
+          // toneWarmth … toneConciseness, an unknown stored value as "default".
+          ...normalizeCharacteristics(row),
           memoryEnabled: row.memoryEnabled,
           voiceId: row.voiceId,
           favoriteModels: row.favoriteModels,

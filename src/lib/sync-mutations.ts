@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { workspaceConfigSchema } from "@/lib/projects/workspace-config";
 import { workDefaultsSchema } from "@/lib/work/projects";
+import { CHARACTERISTIC_PATCH_FIELDS } from "@/lib/characteristics";
 
 /*
  * The native mutation union — request shapes only, no server imports, so the
@@ -77,6 +78,8 @@ export const mutationOperationSchema = z.discriminatedUnion("type", [
     personality: z.string().min(1).max(80).optional(), memoryEnabled: z.boolean().optional(),
     voiceId: z.string().max(200).nullable().optional(), favoriteModels: z.array(z.string().max(200)).max(100).optional(),
     emailBudgetAlerts: z.boolean().optional(), emailWeeklyDigest: z.boolean().optional(),
+    // Tone characteristics, each "less" | "default" | "more" (lib/characteristics).
+    ...CHARACTERISTIC_PATCH_FIELDS,
   }).strict() }).strict(),
 ]);
 

@@ -684,8 +684,11 @@ prefix (so the provider's cached prefix stays byte-identical; the date travels i
 separate second system block). Ordered sections: base identity → clarification /
 reply-intent / inline learning-block grammar (non-voice) → Canvas artifact grammar
 (when canvas on) → **memory** (the `<juno:memory>` save instruction + the consolidated
-summary + recent facts) → project context → personality preset → the user's custom
-instructions (after the preset, so the user always wins) → response language → voice
+summary + recent facts) → project context → personality preset → tone characteristics
+(`src/lib/characteristics.ts`: Warm, Enthusiastic, Headers & lists, Emoji, Concise, each
+Less / Default / More in Settings › Personalization; one line per control moved off
+Default, nothing when all are Default, the visual two dropped in voice) → the user's
+custom instructions (after both, so the user always wins) → response language → voice
 no-markdown rule. A web-search nudge and either the targeted artifact-edit prompt or a
 selection anchor are appended per turn, and — last of all — the block of the skill this
 message was sent under, if there is one (§5.9).
@@ -2669,7 +2672,7 @@ current revision + tombstone), `SyncCompaction` (single `global` row, monotonic 
 `MutationReceipt` (idempotency).
 
 **Conversations & messages.** `Settings` (theme/accent/defaultModel/customInstructions/
-responseLanguage/uiLocale/personality/memoryEnabled/memorySensitiveTopics/memoryBackgroundLearning/voiceId/favoriteModels/email opt-ins).
+responseLanguage/uiLocale/personality/tone characteristics `toneWarmth`…`toneConciseness`/memoryEnabled/memorySensitiveTopics/memoryBackgroundLearning/voiceId/favoriteModels/email opt-ins).
 `Folder`. `Conversation` (title + `titleSource`, `model`, `kind` chat|code, `origin`,
 `clientRequestId`, pin/`archivedAt`, `folderId`/`projectId`/`forkedFromId`,
 `activeConnectors`, code-workspace attribution). `Project` (name + `nameSource`,
