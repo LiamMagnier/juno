@@ -22,7 +22,7 @@ public struct JunoProductCapability: Sendable {
 
 public enum JunoProductCapabilityRegistry {
     public static let version = 1
-    public static let digest = "403a4b61afd4465eb4b7edb197655d2d71d0f1e3d51c2ce2c519e6c6fd6a76fd"
+    public static let digest = "6ab2b9647ed171773b25a47fa9c4af7ede43a6b89d2aff2542952a442480fe9d"
     public static let entries: [JunoProductCapability] = [
         JunoProductCapability(
             id: "chat_streaming",
@@ -45,7 +45,7 @@ public enum JunoProductCapabilityRegistry {
         JunoProductCapability(
             id: "canvas_crdt_sync",
             maturity: ["backend": .implemented, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: ["web", "macos", "ios"],
+            supportedPlatforms: [],
             productionAccepted: false
         ),
         JunoProductCapability(
@@ -56,8 +56,8 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "enterprise_sso_oidc",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: ["web", "macos", "ios", "ipados"],
+            maturity: ["backend": .implemented, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: [],
             productionAccepted: false
         ),
         JunoProductCapability(
@@ -199,9 +199,21 @@ public enum JunoProductCapabilityRegistry {
             productionAccepted: false
         ),
         JunoProductCapability(
+            id: "agent_vault",
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
+            id: "agent_payments",
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
+            productionAccepted: false
+        ),
+        JunoProductCapability(
             id: "teach_alevr",
-            maturity: ["backend": .planned, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: [],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
@@ -212,8 +224,8 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "external_channels",
-            maturity: ["backend": .planned, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: [],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
