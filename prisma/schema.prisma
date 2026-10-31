@@ -110,6 +110,7 @@ model User {
   batchJobs                   BatchJob[]
   moderationFlags             ModerationFlag[]
   shares                      Share[]
+  shareRecipients             ShareRecipient[]
   artifacts                   Artifact[]
   artifactDrafts              ArtifactDraft[]
   artifactCanvasDrafts        ArtifactCanvasDraft[]
@@ -2490,6 +2491,14 @@ enum ShareKind {
   ARTIFACT
 }
 
+/// Who can open a share. LINK: anyone holding its token (the public page).
+/// PEOPLE: only a signed-in account whose verified email is on the share's
+/// `recipients`, and its owner; the token alone opens nothing.
+enum ShareAudience {
+  LINK
+  PEOPLE
+}
+
 model Share {
   id             String    @id @default(cuid())
   token          String    @unique // long random URL slug (not the cuid)
@@ -2519,16 +2528,52 @@ model Share {
   /// person's messages and the final answers, secrets redacted on the server,
   /// encrypted at rest (encryptJsonField). Null for every ordinary chat link.
   transcript     Json?
+  /// LINK for every share made before people sharing, and for every link
+  /// since. A PEOPLE share is never served by its token alone: the public
+  /// lookup skips it, and src/lib/share-people.ts checks the viewer against
+  /// `recipients` (the rules are src/lib/share-people-core.ts).
+  audience       ShareAudience @default(LINK)
   createdAt      DateTime  @default(now())
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  artifact     Artifact?     @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation?    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifact     Artifact?        @relation(fields: [artifactId], references: [id], onDelete: Cascade)
   reports      ShareReport[]
+  recipients   ShareRecipient[]
 
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([artifactId])
+}
+
+/// One person a PEOPLE share was sent to, by email (src/lib/share-people-core.ts).
+///
+/// `userId` is the SHARE'S OWNER, not the recipient: the owner adds, lists and
+/// removes rows, and every read is scoped to them. The recipient is matched by
+/// `emailHash`, an HMAC (`domainMac`) of the normalized address, against the
+/// verified email of whoever is signed in. Nothing here points at a recipient's
+/// account, so adding an address never looks one up and never says whether it
+/// has one. `email` is the address itself, encrypted (`encryptField`), read
+/// only to list it back to the owner and to send the invitation.
+///
+/// Removing a person deletes the row; revoking the share leaves the rows on the
+/// tombstoned share, where they open nothing.
+model ShareRecipient {
+  id        String    @id @default(cuid())
+  shareId   String
+  userId    String
+  emailHash String
+  email     String
+  /// When the invitation email went out; null when mail is off or the
+  /// per-address limit held it back (the person is still added).
+  invitedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  share Share @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shareId, emailHash])
+  @@index([userId, createdAt])
 }
 
 /// Thumbs up or down on an answer in a Code session whose transcript lives on
