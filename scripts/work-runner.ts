@@ -944,6 +944,7 @@ async function projectSource(
       // exactly that many files indistinguishable from one with more, and the
       // model would be told some were withheld when none were.
       files: {
+        where: { deletedAt: null, fileName: { not: "__cover__" } },
         select: { fileName: true },
         orderBy: { createdAt: "asc" },
         take: MAX_PROJECT_FILES_NAMED + 1,

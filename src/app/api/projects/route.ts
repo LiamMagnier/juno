@@ -21,7 +21,7 @@ export async function GET() {
         select: { storageKey: true },
         take: 1,
       },
-      _count: { select: { conversations: true, files: true } },
+      _count: { select: { conversations: true, files: { where: { deletedAt: null, fileName: { not: "__cover__" } } } } },
     },
   });
 

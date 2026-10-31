@@ -79,7 +79,13 @@ export async function loadProjectLineage(userId: string, projectId: string) {
       id: true,
       name: true,
       instructions: true,
-      files: { select: { id: true, fileName: true, extractedText: true } },
+      // Deleting a project file tombstones the attachment and keeps its
+      // `projectId` and `extractedText`, so without this filter a file the
+      // project page no longer shows kept reaching the model on every turn.
+      files: {
+        where: { deletedAt: null, fileName: { not: "__cover__" } },
+        select: { id: true, fileName: true, extractedText: true },
+      },
     },
   });
   const byId = new Map(levels.map((level) => [level.id, level]));
