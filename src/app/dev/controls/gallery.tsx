@@ -851,6 +851,52 @@ export function ControlsGallery() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">Open a long dialog</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Choose what this project shares with its connected apps</DialogTitle>
+                <DialogDescription>Only what you turn on leaves Alevr. You can change this later.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 text-body text-muted-foreground">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <p key={i}>
+                    Paragraph {i + 1}. The body is the only part of the dialog that scrolls; the title, the close
+                    button and the actions stay where they are.
+                  </p>
+                ))}
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="ghost">Cancel</Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button>Save</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">Open a confirm</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Delete “Quarterly planning”?</DialogTitle>
+                <DialogDescription>The chat and its files are removed for good.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button variant="destructive">Delete</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </Section>
 
         <Section
