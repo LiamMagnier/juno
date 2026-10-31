@@ -149,9 +149,17 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
 `@/lib/motion`, never hand-typed numbers.
 
 ### 2.2 The interaction recipe
-1. **Hover is a tonal cross-fade.** `transition-colors duration-fast
+1. **Hover is a tonal change.** `transition-colors duration-fast
    ease-out-soft` to `hover:bg-accent` (rows, ghost buttons) or the control's
    own hover. Never `transition-all`, and nothing lifts or casts a shadow.
+   In a list or a menu the fill lands in 0ms and leaves over 120 (spec §4.5
+   rule 6), so a fast pointer lights one row, not a trail of three: the
+   sidebar rows' `LIST_ROW_TRANSITION` (`hover:duration-0`) and the menu
+   recipe's `data-[highlighted]` timing already do this. `hover:` only
+   matches under `(hover: hover) and (pointer: fine)` (Tailwind's
+   `hoverOnlyWhenSupported`), so a tap never leaves a fill behind on a
+   phone. Colour transitions keep their timing under reduced motion (Tier
+   A); never put `motion-reduce:transition-none` on a colour-only list.
 2. **Press is physical.** A control under the finger dips to `scale(0.97)` in
    `duration-press` (the `.pressable` class, or `Pressable` / `Button`, which
    already do it). Large surfaces (cards, panels, rows) do not scale; they
@@ -162,7 +170,9 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
    paling it, and a control that is ON uses the same tone. A
    component that declares its own `transition` after `.pressable` in the
    same layer replaces the class's list, so it must name `transform` on
-   `--dur-press` itself or the dip snaps.
+   `--dur-press` itself or the dip snaps. A `transition-colors` utility next
+   to `.pressable` is the common way to do this by accident (it outranks the
+   class): drop it, the class already cross-fades colour on `--dur-fast`.
 3. **Focus is visible and quiet.** The global `:focus-visible` rule in
    `globals.css` is authoritative. Do not add ring offsets (they paint a
    page-coloured halo on cards and dialogs), and never remove an outline
@@ -180,7 +190,11 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
    `menu-recipe.ts` already carry this; use them rather than restating it.
 5. **Lists are dealt, not dumped.** Rows entering together use
    `motion-safe:animate-rise-in [animation-fill-mode:backwards]` with
-   `staggerDelay(i)` (or framer `stagger()`), capped at the first ~8 rows.
+   `staggerDelay(i)` (or framer `stagger()`). At most four items stagger
+   (`--stagger-max`, spec D17); the fifth and later paint with the fourth.
+   The steps are the `--stagger-row` / `--stagger-tile` /
+   `--stagger-onboarding` tokens (30 / 45 / 60ms). A CSS-only sequence caps
+   its index the same way (`min(var(--i), var(--stagger-max) - 1)`).
 6. **Disclosure is continuous.** A caret rotates with `transition-transform
    duration-base ease-in-out`. Content expands through `grid-rows-[0fr]` to
    `grid-rows-[1fr]` or framer `layout`, never an instant `hidden`. `Collapse`
@@ -195,17 +209,16 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
    height, top and left never animate (use `grid-rows`, `scale` or framer
    `layout`).
 
-   *The one exception is the composer's field.* `useComposerAutosize`
-   (`src/components/ui/composer-shell.tsx`) springs the textarea's inline
-   `height` as the text crosses a line boundary, because all three
-   alternatives fail on a textarea: its height is not content-sized, so there
-   is no `grid-rows` track to resolve; `scale` squashes the glyphs and the
-   caret mid-growth; and framer `layout` animates by scaling too, and its
-   counter-scale does not reach the text inside a textarea. The cost is
-   bounded (one element, a layout per frame for the ~220ms after a line
-   break, nothing while typing within a line) and reduced motion snaps it.
-   It is an exception, not a precedent: nothing else gets a height tween, and
-   a second one needs the same argument written down here.
+   *The composer's field does not tween either.* `useComposerAutosize`
+   (`src/components/ui/composer-shell.tsx`) used to spring the textarea's
+   inline `height` as the text crossed a line boundary; that spring is gone
+   (INTERACTION_SPEC C2, decision D3). Typing is the most frequent act in the
+   product, so the field's growth SNAPS in the same frame. The four places a
+   width or height may still animate are spec D27's: the sidebar width fold,
+   the dock and inspector resize settle, composer height when an approval or
+   a quota strip changes it (C13), and the Quick Entry panel. Anything else
+   that must change size uses `grid-rows` (the composer's attachment row
+   unfolds this way).
 9. **Loops are for live state only.** Thinking, streaming and recording may
    pulse. Nothing idle loops. *The one exception is an agent's face*
    (docs/design/AGENTS.md §4.2, by the owner's direction): its rest life is
@@ -260,11 +273,12 @@ Use these rather than building them again.
   `animate-tooltip-in` (on `data-[state=delayed-open]`) and leaves with
   `animate-tooltip-out`: a 2px drift toward the trigger and a 0.97 start in
   `duration-fast`, no spring, out on `ease-in`. Do not give a tooltip
-  `animate-pop-in`. `TooltipProvider` defaults to `delayDuration` 300 and
-  `skipDelayDuration` 400: once one tooltip has opened, the next trigger
-  inside that window opens at once with no entrance (`instant-open`), which
-  is what makes a row of icon buttons quick to scan. The app shell passes its
-  own `delayDuration`.
+  `animate-pop-in`. `TooltipProvider` defaults to the `--delay-tooltip` and
+  `--delay-tooltip-skip` tokens, 200 and 400 (read from `TIMING_TOKENS`, as
+  is `TIMING.tooltipDelay` in `src/lib/interaction.ts`): once one tooltip has
+  opened, the next trigger inside that window opens at once with no entrance
+  (`instant-open`), which is what makes a row of icon buttons quick to scan.
+  Pass a `delayDuration` only for a deliberate exception.
 - **Tooltips on icon-only buttons.** Wrap the button:
   `<Tooltip><TooltipTrigger asChild><IconButton label="Copy" title="">`
   and a `TooltipContent` beside the trigger. `IconButton` stays a plain button

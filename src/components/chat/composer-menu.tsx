@@ -14,8 +14,9 @@ import { cn } from "@/lib/utils";
  *   focus   one highlight that glides from row to row (MenuGlide) instead of
  *           a fill that blinks off one row and on at the next
  *   motion  the shell grows from its trigger (scale .96, 6px of travel toward
- *           the trigger's side, expo-out 240ms), its contents settle in 40ms
- *           behind it; it leaves faster than it came (130ms, no travel)
+ *           the trigger's side, expo-out over --dur-base, 220ms), its contents
+ *           settle in --dur-press (70ms) behind it; it leaves faster than it
+ *           came (--dur-fast, 120ms, no travel)
  *
  * Reduced motion keeps the fades and drops every scale, travel and glide.
  */
