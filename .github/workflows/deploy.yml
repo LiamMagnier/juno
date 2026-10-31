@@ -63,7 +63,7 @@ jobs:
     # one hung job holds the single deploy slot for GitHub's 360-minute default.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -214,7 +214,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -255,7 +255,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The two checks below are filesystem greps and run before `npm ci`, so a
       # migration mistake costs seconds rather than the two minutes it takes to
@@ -623,7 +623,7 @@ jobs:
     # Green runs take about 20s.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -696,7 +696,7 @@ jobs:
     # Mostly the image build (compilers, JDK, Go, Rust, the pinned wheels).
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the pinned execution image
         run: docker build -t juno-exec:dev deploy/exec-host/image
@@ -720,7 +720,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the agent-computer image, as setup-vm.sh does
         run: docker build --pull -t juno-computer:1 deploy/agent-computers
@@ -754,7 +754,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A missing artifact (expired on a re-run, or a failed transfer) is not a
       # test failure: the next step builds the image from this commit instead.
@@ -818,7 +818,7 @@ jobs:
       # Every timed assertion in both suites multiplies by this.
       JUNO_COMPUTER_TEST_SLACK: "2.5"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -952,7 +952,7 @@ jobs:
     # GitHub's 360-minute default. Healthy runs finish well inside this.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
