@@ -16,7 +16,7 @@ import {
   stitchOverlapping,
   type ScoredPassage,
 } from "@/lib/knowledge/rank";
-import { lexicalCandidateQuery } from "@/lib/knowledge/lexical-query";
+import { lexicalCandidateQuery, vectorCandidateQuery } from "@/lib/knowledge/lexical-query";
 import { buildProjectContext, buildProjectReferenceFiles, contextActivityDetail } from "@/lib/chat/context-assembly";
 import { UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import { chatTurnSource } from "./chat-turn-source";
@@ -480,6 +480,31 @@ test("the account is bound into the statement twice, on the chunk and on the doc
   // Superseded versions keep their rows so old citations resolve, but must not
   // be answered from.
   assert.match(sql.text, /d\."supersededById" IS NULL/);
+});
+
+// The vector leg bound the owner on the chunk only (PRJ-1, §0.2 item 6):
+// a chunk whose document belonged to someone else was still a candidate.
+test("the vector statement binds the account on the chunk and on the document", () => {
+  const sql = vectorCandidateQuery({ userId: "user-1", embeddingModelId: "openai:text-embedding-3-small", limit: 60 });
+  assert.match(sql.text, /c\."userId" = \$\d+/);
+  assert.match(sql.text, /d\."userId" = \$\d+/);
+  assert.equal(sql.values.filter((value) => value === "user-1").length, 2);
+  assert.match(sql.text, /d\."supersededById" IS NULL/);
+  assert.match(sql.text, /c\."embeddingModel" = \$\d+/);
+});
+
+test("no user input reaches the vector SQL as text", () => {
+  const hostile = "'; DROP TABLE \"KnowledgeChunk\"; --";
+  const sql = vectorCandidateQuery({
+    userId: hostile,
+    embeddingModelId: hostile,
+    filters: { projectId: hostile, documentIds: [hostile] },
+    limit: 5,
+  });
+  assert.ok(!sql.text.includes("DROP TABLE"));
+  assert.ok(sql.values.includes(hostile));
+  assert.match(sql.text, /d\."projectId" = \$\d+/);
+  assert.match(sql.text, /c\."documentId" = ANY\(\$\d+\)/);
 });
 
 test("no user input reaches the SQL as text", () => {

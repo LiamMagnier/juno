@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { PARSER_VERSIONS, extractDocument, selectExtractor } from "./extract";
 import type { ExtractedBlock, ExtractionStatus } from "./extract/types";
+import { packDocumentChunks, type PackedChunk } from "./chunk";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /* -------------------------------------------------------------------------- */
@@ -117,6 +118,9 @@ export interface UpdateDocumentInput {
   pageCount?: number | null;
   indexedAt?: Date | null;
   supersededById?: string | null;
+  chunkCount?: number;
+  tokenCount?: number;
+  embeddingState?: "pending" | "embedding" | "embedded" | "lexical_only";
 }
 
 export interface KnowledgeStore {
@@ -124,7 +128,16 @@ export interface KnowledgeStore {
   latestByChecksum(userId: string, checksum: string): Promise<KnowledgeDocumentRecord | null>;
   createDocument(input: CreateDocumentInput): Promise<string>;
   updateDocument(userId: string, documentId: string, patch: UpdateDocumentInput): Promise<void>;
-  replaceBlocks(userId: string, documentId: string, blocks: KnowledgeBlockInput[]): Promise<void>;
+  /** Writes the blocks and returns their ids, in input order: the chunks cite them. */
+  replaceBlocks(userId: string, documentId: string, blocks: KnowledgeBlockInput[]): Promise<string[]>;
+  /** Writes the document's chunks, with no vectors yet (the embedding sweep fills them). */
+  replaceChunks(userId: string, documentId: string, chunks: PackedChunk[]): Promise<void>;
+  /**
+   * Retires every other live document of this attachment: a replaced or
+   * restored file must stop answering with its old text, while citations
+   * into the old version keep resolving.
+   */
+  supersedeAttachment(userId: string, attachmentId: string, currentDocumentId: string): Promise<void>;
   createJob(userId: string, documentId: string): Promise<string>;
   updateJob(
     userId: string,
@@ -236,19 +249,39 @@ export async function runIngest(store: KnowledgeStore, input: IngestInput): Prom
     }
 
     await store.updateDocument(input.userId, documentId, { state: "indexing" });
-    await store.replaceBlocks(
-      input.userId,
-      documentId,
-      result.blocks.map((block, ordinal) => ({ ...block, ordinal }))
+    const blocks = result.blocks.map((block, ordinal) => ({ ...block, ordinal }));
+    const blockIds = await store.replaceBlocks(input.userId, documentId, blocks);
+    // The index was never populated in production (PRJ-1): blocks were written
+    // and no chunk ever was, so project retrieval had nothing to rank and every
+    // project turn pasted the whole library. Chunks are packed here, from the
+    // blocks just written so each cites real ids, and land before the state
+    // flip below: retrieval reads only ready/degraded documents, so a
+    // half-written one is never answered from.
+    const chunks = packDocumentChunks(
+      blocks.map((block, index) => ({
+        id: blockIds[index],
+        ordinal: block.ordinal,
+        type: block.type,
+        text: block.text,
+        heading: block.heading,
+      }))
     );
+    await store.replaceChunks(input.userId, documentId, chunks);
 
     await store.updateDocument(input.userId, documentId, {
       state: result.status === "degraded" ? "degraded" : "ready",
       error: result.reason ?? null,
       pageCount: result.pageCount ?? null,
       indexedAt: new Date(),
+      chunkCount: chunks.length,
+      tokenCount: chunks.reduce((sum, chunk) => sum + chunk.tokens, 0),
+      embeddingState: "pending",
     });
     await store.updateJob(input.userId, jobId, { state: "done", finishedAt: new Date() });
+
+    if (input.attachmentId) {
+      await store.supersedeAttachment(input.userId, input.attachmentId, documentId);
+    }
 
     if (plan.supersedes) {
       // The old version is kept, not deleted: a citation into it must keep

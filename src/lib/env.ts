@@ -419,6 +419,19 @@ export const env = {
       return (process.env.SHARE_PEOPLE_ENABLED ?? "").trim() === "1";
     },
   },
+  /**
+   * The project knowledge embedding sweep (scripts/knowledge-indexer.ts,
+   * PRJ-1): backfills chunks for documents indexed before ingest wrote them
+   * and fills vectors under each account's background-provider policy,
+   * spending on that account. Off until it has run against a real database;
+   * ingest writes chunks either way, so lexical project retrieval works
+   * without it. KNOWLEDGE_INDEXER_ENABLED.
+   */
+  knowledgeIndexer: {
+    get enabled(): boolean {
+      return (process.env.KNOWLEDGE_INDEXER_ENABLED ?? "").trim() === "1";
+    },
+  },
   /** "Memory off for this chat" (src/lib/chat/memory-off.ts): the switch can be set. CHAT_MEMORY_OFF_ENABLED. */
   chatMemoryOff: {
     get enabled(): boolean {

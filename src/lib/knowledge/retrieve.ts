@@ -1,5 +1,4 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { BackgroundProviderPolicy } from "@/lib/background-provider-policy";
 import { describeLocator, type BlockLocation } from "@/lib/knowledge/chunk";
@@ -7,6 +6,7 @@ import { embedQuery, type EmbeddingUnavailableReason } from "@/lib/knowledge/emb
 import {
   lexicalCandidateQuery,
   RETRIEVABLE_STATES,
+  vectorCandidateQuery,
   type LexicalQueryFilters,
 } from "@/lib/knowledge/lexical-query";
 import {
@@ -185,51 +185,18 @@ async function vectorCandidates(
   filters: KnowledgeFilters | undefined,
   limit: number
 ): Promise<CandidateRow[]> {
-  const conditions: Prisma.Sql[] = [
-    Prisma.sql`c."userId" = ${userId}`,
-    Prisma.sql`c."deletedAt" IS NULL`,
-    Prisma.sql`c."embeddingModel" = ${embeddingModelId}`,
-    Prisma.sql`array_length(c.embedding, 1) > 0`,
-    Prisma.sql`d."deletedAt" IS NULL`,
-    Prisma.sql`d."supersededById" IS NULL`,
-    Prisma.sql`d."state" = ANY(${RETRIEVABLE_STATES})`,
-  ];
-
-  if (filters?.projectId !== undefined) {
-    conditions.push(
-      filters.projectId === null
-        ? Prisma.sql`d."projectId" IS NULL`
-        : Prisma.sql`d."projectId" = ${filters.projectId}`
-    );
-  }
-  if (filters?.documentIds?.length) {
-    conditions.push(Prisma.sql`c."documentId" = ANY(${[...filters.documentIds]})`);
-  }
-
   // Fetch chunks with embeddings, then score in-process.
   // We fetch more than `limit` to have a good pool, then sort by cosine and take top N.
   const fetchLimit = Math.min(limit * 3, 300);
 
-  const rows = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
-    SELECT
-      c.id,
-      c."documentId",
-      c.ordinal,
-      c.text,
-      c."blockIds",
-      c.embedding,
-      c."embeddingModel",
-      d."fileName",
-      d."mimeType",
-      d."projectId",
-      COALESCE(d."indexedAt", d."createdAt") AS "documentAt",
-      0.0 AS "lexicalScore"
-    FROM "KnowledgeChunk" c
-    JOIN "KnowledgeDocument" d ON d.id = c."documentId"
-    WHERE ${Prisma.join(conditions, " AND ")}
-    ORDER BY c."createdAt" DESC
-    LIMIT ${fetchLimit}
-  `);
+  const rows = await prisma.$queryRaw<CandidateRow[]>(
+    vectorCandidateQuery({
+      userId,
+      embeddingModelId,
+      filters: { projectId: filters?.projectId, documentIds: filters?.documentIds },
+      limit: fetchLimit,
+    })
+  );
 
   if (rows.length === 0) return [];
 
@@ -244,6 +211,37 @@ async function vectorCandidates(
     .slice(0, limit);
 
   return scored.map((entry) => entry.row);
+}
+
+/**
+ * The vector space most of the scope's chunks are in: a model id, null when
+ * no chunk in scope has a vector (no query embed is worth buying), or
+ * undefined when it could not be read (embed as before, unpinned).
+ */
+async function scopeVectorSpace(userId: string, filters: KnowledgeFilters | undefined): Promise<string | null | undefined> {
+  try {
+    const spaces = await prisma.knowledgeChunk.groupBy({
+      by: ["embeddingModel"],
+      where: {
+        userId,
+        deletedAt: null,
+        embeddingModel: { not: null },
+        ...(filters?.documentIds?.length ? { documentId: { in: [...filters.documentIds] } } : {}),
+        document: {
+          userId,
+          deletedAt: null,
+          supersededById: null,
+          state: { in: RETRIEVABLE_STATES },
+          ...(filters?.projectId !== undefined ? { projectId: filters.projectId } : {}),
+        },
+      },
+      _count: { _all: true },
+    });
+    const top = spaces.sort((a, b) => b._count._all - a._count._all)[0];
+    return top?.embeddingModel ?? null;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Resolve the citation blocks for the packed passages, in one scoped query. */
@@ -307,15 +305,22 @@ export async function retrieveKnowledge(options: RetrieveOptions): Promise<Knowl
 
   // The query vector is fetched first because whether it exists decides whether
   // the candidate rows need to carry their (large) vectors at all, AND whether
-  // to run the independent vector retrieval path.
+  // to run the independent vector retrieval path. It is fetched only when the
+  // scope has vectors to compare it with, and in their space (PRJ-1): a
+  // lexical-only scope used to pay for a query embedding it could never use.
+  const space = await scopeVectorSpace(options.userId, options.filters);
   const embed = options.embed ?? embedQuery;
-  const embedded = await embed({
-    userId: options.userId,
-    text: options.query,
-    policy: options.policy,
-    conversationProvider: options.conversationProvider,
-    signal: options.signal,
-  });
+  const embedded: Awaited<ReturnType<typeof embedQuery>> | { ok: false; reason: LexicalOnlyReason } =
+    space === null
+      ? { ok: false, reason: "no_indexed_vectors" }
+      : await embed({
+          userId: options.userId,
+          text: options.query,
+          policy: options.policy,
+          conversationProvider: options.conversationProvider,
+          ...(space ? { preferModelId: space } : {}),
+          signal: options.signal,
+        });
 
   // ---- Leg 1: Lexical candidates ----
   const expression = lexicalQueryExpression(options.query);
@@ -467,10 +472,12 @@ export interface ProjectKnowledgeContext {
 /**
  * Whether a project has anything indexed, and what it says about the question.
  *
- * Returns null when the project has no ready documents at all — the caller then
- * behaves exactly as it did before this existed, which is the contract: a
+ * Returns null when the project has no chunked documents at all — the caller
+ * then behaves exactly as it did before this existed, which is the contract: a
  * project nobody has indexed must not change behaviour, and must not pay for an
- * embedding call to discover that.
+ * embedding call to discover that. "Indexed" means chunks to rank (PRJ-1): a
+ * ready document with none is still sent whole, never swapped for passages
+ * that cannot exist.
  */
 export async function retrieveProjectKnowledge(options: {
   userId: string;
@@ -488,6 +495,7 @@ export async function retrieveProjectKnowledge(options: {
       state: { in: RETRIEVABLE_STATES },
       deletedAt: null,
       supersededById: null,
+      chunkCount: { gt: 0 },
     },
     select: { fileName: true },
     take: 200,

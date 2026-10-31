@@ -39,6 +39,13 @@ export interface KnowledgeIndexState {
   error: string | null;
   blockCount: number;
   pageCount: number | null;
+  /**
+   * Chunks retrieval can rank (PRJ-1). Absent from responses older than the
+   * project knowledge index; a ready document with 0 is still being prepared.
+   */
+  chunkCount?: number;
+  /** pending | embedding | embedded | lexical_only */
+  embeddingState?: string;
 }
 
 const IN_PROGRESS = new Set(["queued", "extracting", "ocr", "indexing"]);

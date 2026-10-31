@@ -12,6 +12,7 @@
  */
 
 import "server-only";
+import { randomUUID, createHash } from "node:crypto";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logSync } from "@/lib/logger";
@@ -62,14 +63,18 @@ const prismaStore: KnowledgeStore = {
 
   async replaceBlocks(userId, documentId, blocks) {
     await prisma.knowledgeBlock.deleteMany({ where: { userId, documentId } });
-    if (!blocks.length) return;
+    if (!blocks.length) return [];
+    // Ids are minted here rather than by the database so the chunks packed
+    // from these blocks can cite them without reading them back.
+    const ids = blocks.map(() => randomUUID());
     // Chunked because a single createMany of tens of thousands of rows exceeds
     // Postgres' bind-parameter limit, and the failure mode is the whole document
     // silently having no blocks.
     const CHUNK = 1_000;
     for (let i = 0; i < blocks.length; i += CHUNK) {
       await prisma.knowledgeBlock.createMany({
-        data: blocks.slice(i, i + CHUNK).map((block) => ({
+        data: blocks.slice(i, i + CHUNK).map((block, offset) => ({
+          id: ids[i + offset],
           userId,
           documentId,
           ordinal: block.ordinal,
@@ -88,6 +93,39 @@ const prismaStore: KnowledgeStore = {
         })),
       });
     }
+    return ids;
+  },
+
+  async replaceChunks(userId, documentId, chunks) {
+    await prisma.knowledgeChunk.deleteMany({ where: { userId, documentId } });
+    const BATCH = 500;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      await prisma.knowledgeChunk.createMany({
+        data: chunks.slice(i, i + BATCH).map((chunk) => ({
+          userId,
+          documentId,
+          ordinal: chunk.ordinal,
+          text: chunk.text,
+          tokens: chunk.tokens,
+          blockIds: chunk.blockIds,
+          // What the sweep will embed; an unchanged chunk reuses its vector.
+          textHash: createHash("sha256").update(chunk.text).digest("hex"),
+        })),
+      });
+    }
+  },
+
+  async supersedeAttachment(userId, attachmentId, currentDocumentId) {
+    await prisma.knowledgeDocument.updateMany({
+      where: {
+        userId,
+        attachmentId,
+        id: { not: currentDocumentId },
+        supersededById: null,
+        deletedAt: null,
+      },
+      data: { state: "stale", supersededById: currentDocumentId },
+    });
   },
 
   async createJob(userId, documentId) {

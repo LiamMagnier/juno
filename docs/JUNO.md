@@ -2879,6 +2879,7 @@ gracefully when absent.
 | Attach from cloud drives | `CLOUD_ATTACH_ENABLED` (exactly `1`; default off). Add from Google Drive / OneDrive in the composer's +; off, `/api/connectors/[id]/files*` answer 404 |
 | Voice tools | `VOICE_TOOLS_ENABLED` (exactly `1`; default off). Off, the relay token grants no tools and `/api/voice/tools` answers 404 |
 | Tone characteristics | `TONE_CHARACTERISTICS_ENABLED` (exactly `1`; default off). Off, the five controls are not drawn, a settings PATCH ignores them and the prompt carries no tone section |
+| Project knowledge indexer | `KNOWLEDGE_INDEXER_ENABLED` (exactly `1`; default off). The sweep in juno-sweepers that backfills chunks for documents indexed before ingest wrote them and fills vectors under each account's background-provider policy (PRJ-1, `src/lib/knowledge/embed-sweep.ts`). Off, uploads still write chunks and project retrieval is lexical |
 | AI-powered artifacts | `ARTIFACT_AI_ENABLED` (exactly `1`; default off; unfinished). Off, previews carry no `window.alevr`, the prompt never teaches it and `/api/artifact-runtime/*` answer 404 |
 | Agent payment cards | `STRIPE_ISSUING_SECRET_KEY`, `STRIPE_ISSUING_CARDHOLDER_ID`, `STRIPE_ISSUING_WEBHOOK_SECRET` (all three, or payments stay off), `STRIPE_ISSUING_API_VERSION`, `AGENT_PAYMENT_CARD_TTL_MINUTES` (default 30), `AGENT_PAYMENT_MAX_AMOUNT_MINOR` (default 50000), `AGENT_PAYMENTS_TEST_PROVIDER` (`1`, never in production). docs/design/agents-v2/ENABLE_PAYMENTS.md |
 | Cross-subdomain cookies | `COOKIE_DOMAIN` |

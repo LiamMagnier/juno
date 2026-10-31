@@ -40,6 +40,7 @@ import "./memory-dreamer";
 import "./agent-reflector";
 import "./sweep-import-runs";
 import "./sweep-stuck-code-tasks";
+import "./knowledge-indexer";
 
 installWorkerProcessGuard();
 

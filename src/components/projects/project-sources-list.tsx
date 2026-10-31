@@ -68,8 +68,15 @@ function getFileIcon(mime: string, kind: string) {
   return FileText;
 }
 
-/** queued | extracting | ocr | indexing | ready | degraded | failed | stale */
-function indexLabel(state: string | undefined) {
+/**
+ * queued | extracting | ocr | indexing | ready | degraded | failed | stale.
+ * "Indexed" means retrieval has chunks to rank: a ready document with none
+ * is still being prepared by the indexer, and its text is sent whole meanwhile.
+ */
+function indexLabel(state: string | undefined, chunkCount?: number) {
+  if ((state === "ready" || state === "degraded") && chunkCount === 0) {
+    return { label: "Indexing…", tone: "" };
+  }
   switch (state) {
     case "ready":
       return { label: "Indexed", tone: "" };
@@ -265,7 +272,7 @@ export function ProjectSourcesList({
               <ul className="space-y-px">
                 {filteredFiles.map((file, i) => {
                   const Icon = getFileIcon(file.mimeType, file.kind);
-                  const status = indexLabel(file.knowledge?.state);
+                  const status = indexLabel(file.knowledge?.state, file.knowledge?.chunkCount);
                   return (
                     <li
                       key={file.id}

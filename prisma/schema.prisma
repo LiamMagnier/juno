@@ -4408,6 +4408,18 @@ model KnowledgeDocument {
   createdAt      DateTime  @default(now())
   indexedAt      DateTime?
   updatedAt      DateTime  @updatedAt
+  /// pending | embedding | embedded | lexical_only. Chunks are written at
+  /// ingest with no vectors; the embedding sweep fills them off the upload
+  /// path, under the account's background-provider policy (PRJ-1).
+  embeddingState     String    @default("pending")
+  embeddingModel     String?
+  /// The policy's denial reason when the document stays lexical-only.
+  embeddingReason    String?
+  /// Lease for the sweep that is embedding this document.
+  embeddingClaimedAt DateTime?
+  /// What "Indexed" means on a project file: retrieval has chunks to rank.
+  chunkCount         Int       @default(0)
+  tokenCount         Int       @default(0)
 
   user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -4419,6 +4431,8 @@ model KnowledgeDocument {
   @@index([userId, state, createdAt])
   @@index([userId, projectId])
   @@index([userId, deletedAt])
+  @@index([userId, embeddingState])
+  @@index([userId, attachmentId])
 }
 
 model KnowledgeBlock {
@@ -4474,6 +4488,8 @@ model KnowledgeChunk {
   /// deliberately instead of silently mixing two vector spaces.
   embedding      Float[]   @default([])
   embeddingModel String?
+  /// sha256 of the embedding input, so an unchanged chunk reuses its vector.
+  textHash       String?
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
 
@@ -4483,6 +4499,7 @@ model KnowledgeChunk {
   @@index([documentId, ordinal])
   @@index([userId, embeddingModel])
   @@index([documentId, deletedAt])
+  @@index([documentId, textHash])
 }
 
 model KnowledgeIndexJob {
