@@ -1060,10 +1060,11 @@ export const MessageItem = React.memo(function MessageItem({
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              // The 28px inline action (button.tsx `xs`), not `sm` cut down
+              // to it by hand, which kept sm's padding.
+              size="xs"
               disabled={busy}
               onClick={() => onResend(message.id)}
-              className="h-7 gap-1.5"
             >
               <ActionIcons.refresh className="size-3.5" /> Retry send
             </Button>
@@ -1529,12 +1530,16 @@ export const MessageItem = React.memo(function MessageItem({
             set. Branch, Share, Quote and Copy link live one level down in
             More. The model · tokens · cost receipt sits at the far end of the
             row and shows only while the turn is hovered or focused (TurnMeta);
-            on phones it stays in More. */}
+            on phones it stays in More. The row is a size container and the
+            receipt asks IT for room, not the window: beside an open canvas
+            the transcript is ~350px wide at any window size, and the
+            window's `sm:` let "Qwen3… 248 tokens $0.00" run past the
+            column's edge, its cost cut in half under the canvas. */}
         {/* A kept partial answer (failed partway) still gets the row: Copy
             copies what arrived, and the thumbs, Regenerate and More apply to
             it as to any answer. A failure with no text has its own card. */}
         {!isVoice && !message.streaming && (!message.error || hasPartialWithError) && (
-          <div className="mt-1.5 flex items-center">
+          <div className="@container mt-1.5 flex items-center">
             {pager}
             <div
               className={cn(
@@ -1738,7 +1743,7 @@ export const MessageItem = React.memo(function MessageItem({
               )}
             </div>
             {hasMeta && (
-              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none sm:flex">
+              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none @[30rem]:flex">
                 <TurnMeta
                   modelName={modelName}
                   receipt={view.routing}

@@ -8,6 +8,8 @@ import {
   SMOKE_ARTIFACT_TOKEN,
   SMOKE_SLOW_END,
   SMOKE_SLOW_START,
+  SMOKE_SOURCES,
+  SMOKE_SOURCES_TOKEN,
   streamDeterministicSmokeResponse,
 } from "../src/lib/chat/turn/model-streams";
 import { deterministicSmokeProviderAllowed, isQaRunnerDatabaseUrl } from "../src/lib/chat/turn/smoke-provider-gate";
@@ -111,6 +113,18 @@ test("the artifact directive answers with one closed markdown artifact that chat
   const verified = verifyAndRepairChatArtifacts(parsed);
   assert.deepEqual(verified.report.refused, []);
   assert.equal(verified.artifacts.length, 1);
+});
+
+test("the sources directive answers with its token and reports the fixed sources as provider search", async () => {
+  const { events, text } = await collect(streamDeterministicSmokeResponse("Look it up. JUNO_E2E_SOURCES"));
+  assert.match(text, new RegExp(SMOKE_SOURCES_TOKEN));
+  const sources = events.filter((event) => event.type === "sources");
+  assert.equal(sources.length, 1);
+  const [event] = sources;
+  assert.ok(event.type === "sources");
+  assert.equal(event.origin, "provider_search");
+  assert.deepEqual(event.sources.map((source) => source.url), SMOKE_SOURCES.map((source) => source.url));
+  assert.deepEqual(events.slice(-2).map((e) => e.type), ["usage", "finish"]);
 });
 
 test("the slow directive streams start, words and end when nobody stops it", async () => {
