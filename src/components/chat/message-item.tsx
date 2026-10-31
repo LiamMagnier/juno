@@ -527,10 +527,10 @@ function BubbleEditor({
   const empty = value.trim().length === 0;
 
   return (
-    <div className="w-full duration-fast motion-safe:animate-fade-in">
+    <div className="w-full animate-fade-in">
       {/* It opens focused, so focus is an edge, not a ring: the keyboard's
           2px line only follows the keyboard (`kbd-focus-within:`). */}
-      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/30 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] motion-reduce:transition-none">
+      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/30 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]">
         <textarea
           ref={ref}
           value={value}
@@ -571,6 +571,7 @@ interface MessageItemProps {
   surface?: "chat" | "code";
   /** Live generation phase — only meaningful for the streaming last message. */
   status?: GenerationStatus;
+  /** A newly arrived turn: the user's bubble rises in (`animate-rise-user`); the assistant root never animates. */
   animateIn?: boolean;
   artifactsByIdentifier: Map<string, ClientArtifact>;
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
@@ -982,7 +983,14 @@ export const MessageItem = React.memo(function MessageItem({
 
   if (isUser) {
     return (
-      <div className={cn("group flex flex-col items-end", animateIn && "motion-safe:animate-turn-in")}>
+      // The bubble lands (spec C1): 6px × --motion-shift and opacity over the
+      // fast rung, painted inside 100ms of Enter. No `motion-safe:`: the
+      // keyframe's travel reads --motion-shift, so under reduced motion it is
+      // the fade alone (Tier A kept, Tier B dropped), never a cut. This used
+      // to name the `turn-in` entrance, retired with its 420ms blur, so the
+      // class compiled to nothing and a sent message simply appeared
+      // (tests/motion-class-resolution.test.ts).
+      <div className={cn("group flex flex-col items-end", animateIn && "animate-rise-user")}>
         {/* Turn marker. On screen the alignment and bubble say who is speaking;
             in a screen reader nothing did, and a transcript with no headings is
             a wall of text with no way to move through it. */}
@@ -1074,7 +1082,7 @@ export const MessageItem = React.memo(function MessageItem({
           // hidden Copy and Edit keep their width, and with the pager first
           // that width pushed it ~115px in from the bubble, off its line.
           <div className="mt-1 flex items-center">
-            <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+            <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
               </IconAction>
@@ -1180,7 +1188,10 @@ export const MessageItem = React.memo(function MessageItem({
       // transcript — a different answer's source, confidently scrolled to.
       data-juno-message={message.id}
       // …and the target must not land under the transcript's sticky header band.
-      className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-turn-in")}
+      // The assistant turn's ROOT never animates (spec C1): its parts settle
+      // as they mount (`data-turn-streaming` below), and a root that rose as
+      // well would stack two entrances on one moment.
+      className="group flex scroll-mt-24 flex-col gap-2"
       // While the reply streams, each part of it (the run strip, an approval, a
       // tool card, the prose, an artifact, the sources) fades up as it mounts:
       // globals.css, "Turn parts".
@@ -1738,7 +1749,7 @@ export const MessageItem = React.memo(function MessageItem({
               )}
             </div>
             {hasMeta && (
-              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none sm:flex">
+              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 sm:flex">
                 <TurnMeta
                   modelName={modelName}
                   receipt={view.routing}
