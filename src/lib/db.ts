@@ -255,8 +255,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // one person's agents, so it is guarded like the agents themselves.
   ["AgentRoomMember", "userId"],
   ["AgentRoomTurn", "userId"],
-  // A linked phone number for iMessage (src/lib/channels). The webhook finds
-  // the link by its HMAC through prismaUnguarded, on purpose and only there.
+  // A linked phone number for iMessage (src/lib/channels). The webhook and a
+  // link start find a number by its HMAC through prismaUnguarded, and a link
+  // start clears another account's still-pending claim on the same number; on
+  // purpose and only in src/lib/channels/store.ts. A verified row is never
+  // written across accounts.
   ["ChannelLink", "userId"],
   // Payments (src/lib/payments): an agent's spending limit and the one-time
   // cards it was allowed. The Stripe webhook looks a card up by its provider

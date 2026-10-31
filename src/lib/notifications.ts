@@ -7,6 +7,9 @@ import { safeAppPath } from "@/lib/notify/paths";
 import { pushIsLive, webPushText, type NotifyPush } from "@/lib/notify/push";
 import type { NotificationsCount, NotificationsPage, NotifyChannel } from "@/lib/notify/types";
 import { sendWebPushToUser } from "@/lib/notify/web-push";
+import { isIMessageConfigured } from "@/lib/env";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { isApprovalNotice } from "@/lib/channels/notice";
 
 export type NotificationType =
   | "work_completed"
@@ -253,7 +256,28 @@ export async function notifyUser(input: NotifyUserInput): Promise<NotifyUserResu
       console.error("[notify] push failed", { type: input.type, error: error instanceof Error ? error.message : String(error) });
     }
   }
+  textApprovalIfLinked(input);
   return { notificationId, pushed };
+}
+
+/**
+ * An approval waiting on the person is also texted to their linked iMessage
+ * number, when the feature is on (src/lib/channels/notice.ts): who is waiting
+ * and a link to the card, never what, and never a way to answer. Loaded
+ * lazily and not awaited, so an account with no link, or a server without the
+ * feature, pays nothing, and a slow provider never holds up the work.
+ */
+function textApprovalIfLinked(input: NotifyUserInput): void {
+  if (!isIMessageConfigured()) return;
+  const path = safeAppPath(input.path);
+  if (!path || !isApprovalNotice({ type: input.type, channel: input.channel, actionable: input.actionable, path })) return;
+  // An approval that has already expired cannot be given; a text asking for it would be a lie.
+  if (input.push && !pushIsLive(input.push, new Date())) return;
+  void import("@/lib/channels/store")
+    .then(({ textApprovalNotice }) =>
+      textApprovalNotice({ userId: input.userId, who: input.agent?.name?.trim() || PRODUCT_NAME, path })
+    )
+    .catch(() => undefined);
 }
 
 /**

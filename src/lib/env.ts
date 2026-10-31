@@ -197,6 +197,28 @@ export const env = {
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,
   },
 
+  // iMessage (optional — off unless all four CHANNEL_SENDBLUE_* are set).
+  // Getters so a test can set and clear them after import. The API key pair
+  // signs every send; the webhook secret is what Sendblue sends verbatim in
+  // `sb-signing-secret` on each inbound message (src/lib/channels/sendblue.ts).
+  channels: {
+    sendblue: {
+      get apiKeyId(): string {
+        return (process.env.CHANNEL_SENDBLUE_API_KEY_ID ?? "").trim();
+      },
+      get apiSecretKey(): string {
+        return (process.env.CHANNEL_SENDBLUE_API_SECRET_KEY ?? "").trim();
+      },
+      /** The Sendblue line texts come from and go to, E.164 ("+14155550100"). */
+      get fromNumber(): string {
+        return (process.env.CHANNEL_SENDBLUE_FROM_NUMBER ?? "").trim();
+      },
+      get webhookSecret(): string {
+        return (process.env.CHANNEL_SENDBLUE_WEBHOOK_SECRET ?? "").trim();
+      },
+    },
+  },
+
   // Agent computers (optional — disabled unless AGENT_COMPUTER_PROVIDER / COMPUTER_PROVIDER is set)
   agentComputer: {
     get provider(): string {
@@ -395,6 +417,17 @@ export function isAppStoreConfigured(): boolean {
 
 export function isGoogleConfigured(): boolean {
   return Boolean(env.googleClientId && env.googleClientSecret);
+}
+
+/**
+ * Messaging agents from iMessage (src/lib/channels). All four Sendblue values
+ * or nothing: without the webhook secret an inbound text could not be
+ * authenticated, and without the key pair nothing could be sent back, so a
+ * partial setup is off rather than half on.
+ */
+export function isIMessageConfigured(): boolean {
+  const s = env.channels.sendblue;
+  return Boolean(s.apiKeyId && s.apiSecretKey && s.fromNumber && s.webhookSecret);
 }
 
 export function isComposioConfigured(): boolean {
