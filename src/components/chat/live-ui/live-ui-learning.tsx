@@ -51,7 +51,7 @@ function Segments({
           <span
             aria-hidden
             className={cn(
-              "block h-1 w-full rounded-full transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+              "block h-1 w-full rounded-full transition-colors duration-base ease-out-soft",
               i === current ? "bg-[hsl(var(--live,var(--primary)))]" : s === "done" ? "bg-foreground/55" : s === "missed" ? "bg-destructive/45" : "bg-foreground/[0.1]",
             )}
           />
@@ -87,7 +87,7 @@ function Disclosure({ label, children }: { label: string; children: React.ReactN
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex w-fit items-center gap-1.5 rounded-control py-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none coarse:min-h-11"
+        className="inline-flex w-fit items-center gap-1.5 rounded-control py-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:min-h-11"
       >
         {label}
         <Plus aria-hidden motion="none" className={cn("size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none", open && "rotate-45")} />
@@ -108,7 +108,7 @@ function Disclosure({ label, children }: { label: string; children: React.ReactN
 }
 
 const navButton =
-  "inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-ui font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.97] motion-reduce:transition-none coarse:h-11 disabled:pointer-events-none disabled:opacity-40";
+  "inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-ui font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.97] motion-reduce:transition-[background-color,color] coarse:h-11 disabled:pointer-events-none disabled:opacity-40";
 
 // ── Steps ───────────────────────────────────────────────────────────────────
 
@@ -196,7 +196,7 @@ export function LiveSteps({
                   onClick={() => go(i)}
                   aria-current={on ? "step" : undefined}
                   className={cn(
-                    "group relative grid w-full grid-cols-[1.5rem_minmax(0,1fr)] items-baseline gap-2 py-2 pl-3 text-left transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                    "group relative grid w-full grid-cols-[1.5rem_minmax(0,1fr)] items-baseline gap-2 py-2 pl-3 text-left transition-colors duration-fast ease-out-soft",
                     "before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-full before:transition-colors before:duration-base",
                     on ? "before:bg-[hsl(var(--live,var(--primary)))]" : "before:bg-transparent hover:before:bg-foreground/15",
                   )}
@@ -375,7 +375,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
                 setAnswers((prev) => prev.map((a, k) => (k === current ? i : a)));
               }}
               className={cn(
-                "group/opt grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-3 rounded-card border px-3 py-3 text-left transition-[background-color,border-color,opacity,transform,box-shadow] duration-base ease-out-soft active:scale-[0.99] motion-reduce:transition-none coarse:min-h-11",
+                "group/opt grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-3 rounded-card border px-3 py-3 text-left transition-[background-color,border-color,opacity,transform,box-shadow] duration-base ease-out-soft active:scale-[0.99] motion-reduce:transition-[background-color,border-color,opacity,box-shadow] coarse:min-h-11",
                 state === "idle" && "border-border/70 bg-card hover:border-[hsl(var(--live,var(--primary))/0.45)] hover:shadow-[0_0_0_3px_hsl(var(--live,var(--primary))/0.08)]",
                 state === "right" && "border-success/50 bg-success/[0.07]",
                 state === "wrong" && "border-destructive/45 bg-destructive/[0.06] motion-safe:animate-nudge",
@@ -500,7 +500,7 @@ export function LiveTimeline({ timeline, interp }: { timeline: Timeline; interp:
 
 /** The exercise card's buttons: 32px, the controls' 8px corners, one line. */
 const exerciseButton =
-  "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-ui font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.97] motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-35";
+  "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-ui font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.97] motion-reduce:transition-[background-color,color] disabled:pointer-events-none disabled:opacity-35";
 
 type Exercise = Extract<LiveComponent, { type: "exercise" }>;
 

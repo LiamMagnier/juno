@@ -23,7 +23,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  */
 
 const linkClass =
-  "rounded-xs font-medium text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline disabled:pointer-events-none disabled:text-muted-foreground motion-reduce:transition-none";
+  "rounded-xs font-medium text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline disabled:pointer-events-none disabled:text-muted-foreground";
 
 export function MemoryFooter({
   paused,

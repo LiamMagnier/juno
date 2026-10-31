@@ -96,7 +96,7 @@ function ListRow({ row, index, count, numbered, placeholder, label, disabled, in
         onPointerDown={(event) => {
           if (!disabled) controls.start(event);
         }}
-        className="mt-1.5 flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-control text-ink-tertiary opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-within/row:opacity-100 active:cursor-grabbing coarse:hidden motion-reduce:transition-none"
+        className="mt-1.5 flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-control text-ink-tertiary opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-within/row:opacity-100 active:cursor-grabbing coarse:hidden"
       >
         <GripVertical className="size-3.5" />
       </button>
@@ -124,7 +124,7 @@ function ListRow({ row, index, count, numbered, placeholder, label, disabled, in
         disabled={disabled}
         className="min-h-9 flex-1 resize-none overflow-hidden rounded-control border border-transparent bg-transparent px-2 py-1.5 text-body leading-relaxed text-foreground [field-sizing:content] placeholder:text-muted-foreground focus-visible:outline-none disabled:opacity-60 aria-[invalid=true]:text-destructive"
       />
-      <div className="mt-1 flex shrink-0 items-center opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-within/row:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+      <div className="mt-1 flex shrink-0 items-center opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-within/row:opacity-100 coarse:opacity-100">
         <IconButton
           variant="ghost"
           size="sm"

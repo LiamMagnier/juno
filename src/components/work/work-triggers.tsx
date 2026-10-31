@@ -747,7 +747,7 @@ function SwitchField({
     <label
       className={cn(
         "flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5",
-        "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "transition-colors duration-fast ease-out-soft",
         !disabled && "cursor-pointer hover:bg-accent"
       )}
     >

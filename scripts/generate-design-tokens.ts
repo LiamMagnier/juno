@@ -68,10 +68,12 @@ export type Block = {
  * applies.
  *
  * This distinction is the whole reason this is a real parser and not a regex.
- * globals.css declares `--ease-out-strong`, `--ease-out-expo` and `--dur-slow`
- * a second time inside `@media (prefers-reduced-motion: reduce)`, flattening
- * them onto softer curves. A flat scan merges those over the base values and
- * silently drops all three from the output — which is exactly the kind of
+ * globals.css declares about twenty motion tokens a second time inside
+ * `@media (prefers-reduced-motion: reduce)`: the front-loaded and overshooting
+ * curves flattened onto out-soft, `--dur-slow` and `--dur-emphasis` onto the
+ * base rung, every spring twin and its settle time, and the drawer parallax.
+ * A flat scan merges those over the base values and silently projects the
+ * reduced set as the product's ladder — which is exactly the kind of
  * quiet, plausible-looking wrongness a generator exists to prevent. The
  * condition is kept on each block, so the one conditional set the projection
  * DOES read — high contrast — is read on purpose and nothing else leaks in.

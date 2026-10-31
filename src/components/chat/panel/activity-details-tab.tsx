@@ -53,7 +53,7 @@ function ToolsRow({ tools }: { tools: NonNullable<DetailsModel["tools"]> }) {
         aria-controls={open ? listId : undefined}
         onClick={() => setOpen((value) => !value)}
         disabled={names.length === 0}
-        className="-mx-1.5 inline-flex items-center gap-1.5 rounded-control px-1.5 py-0.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent disabled:pointer-events-none motion-reduce:transition-none"
+        className="-mx-1.5 inline-flex items-center gap-1.5 rounded-control px-1.5 py-0.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent disabled:pointer-events-none"
       >
         <PhraseWithArgs
           spec={{ parts: [{ phrase: PANEL_COPY.details.toolsAvailable }, { kind: "number", value: names.length }] }}

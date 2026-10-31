@@ -149,7 +149,7 @@ function SourceInspector({
                 // `.pressable` times the tonal hover and the dip. No local focus
                 // ring: the global `:focus-visible` outline is authoritative.
                 "pressable inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-                "motion-reduce:transition-none motion-reduce:active:scale-100",
+                "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
                 // `hover:bg-accent`. This button is inside the `bg-card` inspector
                 // above, so `hover:bg-card` repainted the exact colour already
                 // under it — the only copy-passage control in the audit had no
@@ -363,7 +363,7 @@ function ClaimInAnswer({
         className={cn(
           "pressable inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5",
           "font-mono text-caption text-muted-foreground",
-          "motion-reduce:transition-none motion-reduce:active:scale-100",
+          "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
           "hover:bg-accent hover:text-foreground",
           "coarse:h-11"
         )}
@@ -406,7 +406,7 @@ function ClaimRow({
         aria-controls={panelId}
         className={cn(
           "flex w-full items-start gap-2.5 rounded-field px-2 py-2.5 text-left",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "transition-colors duration-fast ease-out-soft",
           // Full-strength `bg-muted`. The claim list is drawn straight on the
           // page, and half a muted fill is a 1-point step over light paper —
           // the row hover on the widest control in the audit was invisible in
@@ -619,7 +619,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           // floated. `.pressable` times the fill and the dip; the global
           // `:focus-visible` outline is the focus state.
           "pressable group/audit relative inline-flex h-9 max-w-full items-center gap-2 rounded-full border bg-card pl-2.5 pr-3",
-          "hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100",
+          "hover:bg-accent motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
           "coarse:h-11",
           trouble > 0 ? "border-warning/45" : "border-border/70"
         )}
@@ -628,7 +628,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           aria-hidden="true"
           className={cn("size-2 shrink-0 rounded-full", trouble > 0 ? "bg-warning" : "bg-success")}
         />
-        <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/audit:text-foreground motion-reduce:transition-none">
+        <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/audit:text-foreground">
           {auditHeadline(audit.summary)}
         </span>
         <ChevronDown

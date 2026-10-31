@@ -99,7 +99,7 @@ function StreamBlock({ label, stream, logUrl }: { label: string; stream: ToolRun
               href={logUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+              className="underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
             >
               Show full output
             </a>

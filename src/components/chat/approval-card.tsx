@@ -1015,7 +1015,7 @@ export function ApprovalCard({
       aria-controls={detailOpen ? detailId : undefined}
       className={cn(
         "inline-flex min-h-8 items-center gap-1 rounded-control px-2 text-left text-ui text-muted-foreground coarse:min-h-11",
-        "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none",
+        "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground",
         className
       )}
     >
@@ -1061,7 +1061,7 @@ export function ApprovalCard({
           aria-controls={detailOpen ? detailId : undefined}
           className={cn(
             "flex min-h-11 w-full items-center gap-3 rounded-field py-1.5 pl-3.5 pr-3 text-left motion-safe:animate-fade-in",
-            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+            "transition-colors duration-fast ease-out-soft hover:bg-accent"
           )}
         >
           <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">

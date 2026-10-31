@@ -54,7 +54,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 const RUN_CARD = "surface-raised mx-1 mb-2 rounded-field";
 const RUN_CARD_INSET = "px-3 py-2.5";
 /** A disclosure row inside a card: the shared tonal hover, on the token rung. */
-const ROW_HOVER = "rounded-xs transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+const ROW_HOVER = "rounded-xs transition-colors duration-fast ease-out-soft hover:bg-accent";
 
 /*
  * The approval card's entrance: `variants.rise`'s own endpoints, re-timed.
@@ -1164,7 +1164,7 @@ function RowAction({
       // cross-fade itself, so no `transition-colors` beside it.
       // The ring is inset because the row around it folds in a `Collapse`,
       // whose clip is the row's own height.
-      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:-outline-offset-2 motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
+      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:-outline-offset-2 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100 coarse:p-2"
     >
       <Icon className="size-3.5" aria-hidden={true} />
     </button>

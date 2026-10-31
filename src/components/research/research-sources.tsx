@@ -40,7 +40,7 @@ export function SourceRows({ rows, numbered = false }: { rows: readonly SourceRo
                 href={row.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`${ROW} transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none`}
+                className={`${ROW} transition-colors duration-fast ease-out-soft hover:bg-accent`}
               >
                 {body}
               </a>

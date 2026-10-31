@@ -231,7 +231,7 @@ export function ComputerTimeline({
                   onClick={() => select(f.index)}
                   className={cn(
                     "group/thumb flex w-[76px] shrink-0 flex-col gap-1 rounded-control p-1 text-left",
-                    "transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none",
+                    "transition-colors duration-fast ease-out-soft hover:bg-accent/60",
                     isSelected && "bg-accent/70",
                   )}
                 >
@@ -364,7 +364,7 @@ function StageImage({
           alt={alt}
           className={cn(
             "absolute inset-0 h-full w-full object-contain",
-            "transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+            "transition-opacity duration-base ease-out-soft",
             ready ? "opacity-100" : "opacity-0",
           )}
           draggable={false}

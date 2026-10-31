@@ -322,7 +322,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     // one link and says it leaves Juno, which the arrow says
                     // only to people who can see it.
                     aria-label={`${pr.title} — ${pr.repo} #${pr.number}${pr.draft ? ", draft" : ""}. Opens on GitHub.`}
-                    className="group flex w-full items-center gap-3 rounded-card border border-border bg-card px-4 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                    className="group flex w-full items-center gap-3 rounded-card border border-border bg-card px-4 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent"
                   >
                     <span
                       className={cn(
@@ -369,7 +369,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                           drawings of one idea, two screens apart. */}
                       {/* The ink cross-fades on the wrapper, which keeps the
                           glyph's own transition list (icons.css) untouched. */}
-                      <span className="inline-flex text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="inline-flex text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
                         <ActionIcons.external className="size-3.5" aria-hidden="true" />
                       </span>
                     </span>

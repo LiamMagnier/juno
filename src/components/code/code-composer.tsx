@@ -663,7 +663,7 @@ export function CodeComposer({
         <button
           type="button"
           onClick={() => switchTarget("device")}
-          className="rounded-xs font-medium text-foreground underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-primary motion-reduce:transition-none"
+          className="rounded-xs font-medium text-foreground underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-primary"
         >
           Run on your Mac instead
         </button>

@@ -342,7 +342,7 @@ export default function AutomationPage() {
                       href={row.href}
                       className={cn(
                         "group flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 text-left",
-                        "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected motion-reduce:transition-none"
+                        "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected"
                       )}
                     >
                       <WorkStatusPill status={row.status} />

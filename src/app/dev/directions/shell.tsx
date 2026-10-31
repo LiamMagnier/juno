@@ -37,7 +37,7 @@ import type { DirectionId } from "./tokens";
 export type SidebarPlace = "home" | "thread" | "crew" | "none";
 
 export const ROW =
-  "group relative flex h-8 w-full min-w-0 items-center gap-2.5 rounded-control px-2 text-left text-nav coarse:h-11 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none";
+  "group relative flex h-8 w-full min-w-0 items-center gap-2.5 rounded-control px-2 text-left text-nav coarse:h-11 transition-[background-color,color] duration-fast ease-out-soft";
 
 export function rowState(active: boolean) {
   return active
@@ -93,7 +93,7 @@ function CrewRow({ member }: { member: CrewMember }) {
     <button
       type="button"
       className={cn(
-        "group flex w-full min-w-0 items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+        "group flex w-full min-w-0 items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-[background-color,color] duration-fast ease-out-soft",
         rowState(false),
       )}
       aria-label={`${member.name}. ${PRESENCE[member.presence].label}. ${member.now}`}
@@ -153,7 +153,7 @@ export function DirectionSidebar({
           <button
             type="button"
             className={cn(
-              "flex w-full items-start gap-2.5 rounded-control px-2 py-1.5 text-left text-nav transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+              "flex w-full items-start gap-2.5 rounded-control px-2 py-1.5 text-left text-nav transition-[background-color,color] duration-fast ease-out-soft",
               rowState(false),
             )}
           >
@@ -178,7 +178,7 @@ export function DirectionSidebar({
               type="button"
               aria-current={place === "crew" ? "page" : undefined}
               className={cn(
-                "-mx-1 inline-flex h-8 items-center rounded-control px-1 transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none",
+                "-mx-1 inline-flex h-8 items-center rounded-control px-1 transition-colors duration-fast ease-out-soft hover:text-foreground",
                 place === "crew" && "text-foreground",
               )}
             >

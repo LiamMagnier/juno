@@ -149,7 +149,7 @@ export function EntryRow({
             // Keyed on the highlight so a second change to the same row replays it.
             key={highlighted ? "flash" : "rest"}
             className={cn(
-              "group/row flex items-start gap-2 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted motion-reduce:transition-none",
+              "group/row flex items-start gap-2 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted",
               highlighted && "animate-cite-flash [animation-duration:var(--dur-emphasis)]"
             )}
           >
@@ -323,7 +323,7 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
         title={why}
         // The exact message it was learned from, when that is known.
         href={memory.sourceMessageId ? `/chat/${chatId}?m=${encodeURIComponent(memory.sourceMessageId)}` : `/chat/${chatId}`}
-        className="max-w-[16rem] truncate rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+        className="max-w-[16rem] truncate rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
       >
         {memory.provenance?.source.label ?? "From a chat"}
       </Link>
@@ -477,7 +477,7 @@ function RowMenu({
               // The verbs arrive with the pointer, keyboard focus or an open
               // menu; a column of dots on every fact was the loudest thing in
               // a list meant for reading. Always there on a touch screen.
-              className="-my-1 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
+              className="-my-1 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
             >
               <ActionIcons.more className="size-4" />
             </IconButton>

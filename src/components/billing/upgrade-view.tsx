@@ -266,7 +266,7 @@ export function UpgradeView({
               block: "start",
             })
           }
-          className="mt-4 flex items-center gap-1.5 rounded-control px-2 py-1 text-ui text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+          className="mt-4 flex items-center gap-1.5 rounded-control px-2 py-1 text-ui text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
         >
           Compare all plans
           <ChevronDown className="size-4" aria-hidden />
@@ -355,10 +355,10 @@ export function UpgradeView({
             <div key={entry.q}>
               {i > 0 && <div className="plans-rule" aria-hidden />}
               <details className={FAQ_DISCLOSURE}>
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-4 text-ui font-medium transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-4 text-ui font-medium transition-colors duration-fast ease-out-soft hover:text-foreground [&::-webkit-details-marker]:hidden">
                   {entry.q}
                   <ChevronDown
-                    className="size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground group-open:rotate-180 group-open:text-foreground motion-reduce:transition-none"
+                    className="size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground group-open:rotate-180 group-open:text-foreground motion-reduce:transition-[color]"
                     aria-hidden="true"
                   />
                 </summary>

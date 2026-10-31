@@ -74,7 +74,7 @@ function Contents({
               jumpToSection(sectionAnchor(anchorPrefix, item.id));
               onPick?.();
             }}
-            className="block w-full rounded-control px-2 py-1.5 text-start text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+            className="block w-full rounded-control px-2 py-1.5 text-start text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
           >
             {item.title}
           </button>
@@ -201,7 +201,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
                           rel="noopener noreferrer"
                           aria-current={active === row.cited ? "true" : undefined}
                           className={cn(
-                            "flex items-start gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+                            "flex items-start gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent",
                             active === row.cited && "bg-selected",
                           )}
                         >

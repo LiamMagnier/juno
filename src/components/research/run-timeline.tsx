@@ -689,7 +689,7 @@ function WorkerLane({ step, live, model }: { step: WorkerStep & { durationMs: nu
         <span
           title={`${TIMELINE_COPY.round} ${step.round} · ${TIMELINE_COPY.researcher} ${index}`}
           className={cn(
-            "flex size-5 items-center justify-center rounded-full font-mono text-micro tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+            "flex size-5 items-center justify-center rounded-full font-mono text-micro tabular-nums transition-colors duration-base ease-out-soft",
             working ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"
           )}
         >
@@ -770,7 +770,7 @@ export function RunTimeline({
         aria-controls={listId}
         className={cn(
           "flex w-full items-center gap-2 rounded-control px-1.5 py-1 text-left",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "transition-colors duration-fast ease-out-soft",
           "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "coarse:min-h-11"
         )}

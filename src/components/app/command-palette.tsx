@@ -474,7 +474,7 @@ function PaletteShell({
                         // `text-body` (15px) for the same reason: a result is
                         // the reader's own chat or file, and it was set two
                         // rungs under the field that found it.
-                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-control px-2 text-left text-body transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in motion-reduce:transition-none [animation-fill-mode:backwards]",
+                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-control px-2 text-left text-body transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in [animation-fill-mode:backwards]",
                         // A fixed 36px when the row is one line — a hair above
                         // the sidebar's 32, because this list is driven by the
                         // arrow keys and its rows are targets as well as text.

@@ -200,7 +200,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                       "[animation-fill-mode:backwards] motion-safe:animate-rise-in",
                       // Hover darkens the hairline; nothing lifts or casts a
                       // shadow (FLAT_UI.md §2). The press dips on --dur-press.
-                      "transition-[transform,border-color] duration-fast ease-out-soft hover:border-foreground/25 active:scale-[0.98] active:duration-press motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "transition-[transform,border-color] duration-fast ease-out-soft hover:border-foreground/25 active:scale-[0.98] active:duration-press motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
                       isSel && "border-primary hover:border-primary"
                     )}
                   >

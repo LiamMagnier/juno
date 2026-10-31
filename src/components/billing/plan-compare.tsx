@@ -93,7 +93,7 @@ export function PlanCompare({
               <button
                 type="button"
                 onClick={() => onSelect(plan)}
-                className="mx-auto grid justify-items-center gap-1 rounded-control px-2 py-1 transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.05] motion-reduce:transition-none"
+                className="mx-auto grid justify-items-center gap-1 rounded-control px-2 py-1 transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.05]"
               >
                 <span className={cn("font-serif text-heading font-normal leading-none", plan === selected ? "text-foreground" : "text-muted-foreground")}>
                   {PLANS[plan].name}

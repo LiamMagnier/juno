@@ -282,7 +282,7 @@ function ApprovalSubject({
           aria-expanded={reviewOpen}
           aria-controls={reviewOpen ? reviewId : undefined}
           onClick={onToggleReview}
-          className="-mx-1.5 inline-flex items-center gap-1 rounded-control px-1.5 py-0.5 text-caption font-medium text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+          className="-mx-1.5 inline-flex items-center gap-1 rounded-control px-1.5 py-0.5 text-caption font-medium text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent"
         >
           <ChevronRight
             aria-hidden="true"

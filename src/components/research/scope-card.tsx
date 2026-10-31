@@ -310,7 +310,7 @@ function ScopeCardBody({
       aria-busy={locked || undefined}
       data-revising={revising || undefined}
       className={cn(
-        "rf-scope @container/scope relative text-card-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+        "rf-scope @container/scope relative text-card-foreground transition-opacity duration-base ease-out-soft",
         !embedded && "rounded-card border border-border/70 bg-card",
         revising && "opacity-60",
       )}
