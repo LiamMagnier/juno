@@ -609,6 +609,8 @@ export interface ClientConversation {
   folderId: string | null;
   projectId: string | null;
   activeConnectors: string[];
+  /** "Memory off for this chat" (src/lib/chat/memory-off.ts): its turns neither read nor add to memory. */
+  memoryOff?: boolean;
   /** When set, the chat is archived: hidden from Recent but still readable and searchable. */
   archivedAt?: string | null;
   lastMessageAt: string;
@@ -831,6 +833,8 @@ export interface ChatRequestBody {
   workHandoff?: boolean;
   /** How often a task the model starts stops to ask (see `taskApprovalMode` in request.ts). */
   taskApprovalMode?: "conservative" | "balanced" | "permissive";
+  /** "Memory off for this chat", saved as the turn is accepted (see `memoryOff` in request.ts). */
+  memoryOff?: boolean;
   /** Mac only: the folder this chat works in, by display name (see `localFolder` in request.ts). */
   localFolder?: { name: string; access: "read" | "read_write" };
   /** Durable creation surface for a newly saved conversation. */

@@ -12,6 +12,7 @@ import { factFields } from "@/lib/memory-lifecycle";
 import { invalidateSummariesForDeletedConversations, summaryInvalidations } from "@/lib/memory-summary-changes";
 import { deleteMemoryEntries, settleRewrittenFact, writeManualFact } from "@/lib/memory";
 import { artifactsFollowConversationProject, keepArtifactAttachments } from "@/lib/artifact-follow";
+import { setConversationMemoryOff } from "@/lib/chat/memory-off-store";
 
 export const runtime = "nodejs";
 
@@ -100,6 +101,7 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         ...(op.kind ? { kind: op.kind } : {}),
         ...(op.model ? { model: op.model } : {}),
         ...(op.projectId ? { projectId: op.projectId } : {}),
+        ...(op.memoryOff ? { memoryOff: true } : {}),
       } });
       return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "conversation", row.id) } };
     }
@@ -115,17 +117,27 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         throw new ApiV1Error("invalid_request", 400, "The model is unknown.");
       }
       await requireOwnedConversationReferences(tx, accountId, op.patch);
-      const before = op.patch.projectId !== undefined
+      // "Memory off for this chat" is not a plain column write: turning it
+      // back on also covers the chat as read (memory-off-store.ts), so it goes
+      // through the writer the web's toggle uses, not the spread below.
+      const { memoryOff, ...fields } = op.patch;
+      const before = fields.projectId !== undefined
         ? await tx.conversation.findFirst({ where: { id: op.entityId, userId: accountId }, select: { projectId: true } })
         : null;
-      const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: {
-        ...op.patch,
-        ...(op.patch.title !== undefined ? { titleSource: "user" } : {}),
-      } });
-      if (!updated.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
+      if (memoryOff === undefined || Object.keys(fields).length > 0) {
+        const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: {
+          ...fields,
+          ...(fields.title !== undefined ? { titleSource: "user" } : {}),
+        } });
+        if (!updated.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
+      }
+      if (memoryOff !== undefined) {
+        const saved = await setConversationMemoryOff(tx, { userId: accountId, conversationId: op.entityId, off: memoryOff });
+        if (!saved) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
+      }
       // The chat's artifacts follow it between projects.
-      if (before && op.patch.projectId !== undefined) {
-        await artifactsFollowConversationProject(tx, accountId, op.entityId, before.projectId, op.patch.projectId);
+      if (before && fields.projectId !== undefined) {
+        await artifactsFollowConversationProject(tx, accountId, op.entityId, before.projectId, fields.projectId);
       }
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId) } };
     }

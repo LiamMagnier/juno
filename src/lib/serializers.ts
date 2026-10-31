@@ -431,6 +431,7 @@ type SerializableConversation = Pick<
   | "folderId"
   | "projectId"
   | "activeConnectors"
+  | "memoryOff"
   | "archivedAt"
   | "lastMessageAt"
   | "createdAt"
@@ -451,6 +452,7 @@ export function serializeConversation(conv: SerializableConversation): ClientCon
     folderId: conv.folderId,
     projectId: conv.projectId,
     activeConnectors: conv.activeConnectors,
+    memoryOff: conv.memoryOff,
     archivedAt: conv.archivedAt?.toISOString() ?? null,
     lastMessageAt: conv.lastMessageAt.toISOString(),
     createdAt: conv.createdAt.toISOString(),

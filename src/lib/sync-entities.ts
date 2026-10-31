@@ -129,6 +129,9 @@ const loaders: Record<string, EntityLoader> = {
           projectId: row.projectId,
           forkedFromId: row.forkedFromId,
           activeConnectors: row.activeConnectors,
+          // "Memory off for this chat" (src/lib/chat/memory-off.ts), so an
+          // app shows the chat the way the web does.
+          memoryOff: row.memoryOff,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
           lastMessageAt: row.lastMessageAt.toISOString(),

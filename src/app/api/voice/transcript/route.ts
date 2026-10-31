@@ -21,6 +21,13 @@ const inputSchema = z.object({
   model: z.string().max(120),
   projectId: z.string().cuid().nullable().optional(),
   connectors: z.array(z.string().max(120)).max(5).optional(),
+  /**
+   * "Memory off for this chat" (src/lib/chat/memory-off.ts), held by a chat
+   * that did not exist yet when the call began: saved on the conversation
+   * this creates, or on the one it continues. Like the chat request's, it
+   * only switches memory off.
+   */
+  memoryOff: z.boolean().optional(),
   turns: z.array(z.object({
     role: z.enum(["USER", "ASSISTANT"]),
     content: z.string().trim().min(1).max(20_000),
@@ -66,18 +73,20 @@ async function serializeSavedSession(userId: string, sessionId: string) {
  * Voice turns were saved into the chat and then waited for the background
  * dreamer (or the "Learn from past chats" button) before anything in them was
  * remembered, so a fact said aloud was news to the very next typed message.
- * The same gates as a typed turn: memory paused means nothing, and a project
- * that turned memory recall off is left alone. Incognito calls never get here
- * — they are not saved at all.
+ * The same gates as a typed turn: memory paused means nothing, a chat with
+ * memory off for itself (src/lib/chat/memory-off.ts) is not read, and a
+ * project that turned memory recall off is left alone. Incognito calls never
+ * get here — they are not saved at all.
  */
 function learnFromVoiceLater(userId: string, conversationId: string) {
   after(async () => {
     try {
       const [settings, convo] = await Promise.all([
         prisma.settings.findUnique({ where: { userId }, select: { memoryEnabled: true } }),
-        prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true } }),
+        prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true, memoryOff: true } }),
       ]);
       if (settings?.memoryEnabled === false || !convo) return;
+      if (convo.memoryOff) return;
       if (convo.projectId) {
         const workspace = await prisma.projectWorkspace.findFirst({
           where: { projectId: convo.projectId, userId },
@@ -136,8 +145,11 @@ export async function POST(req: Request) {
             titleSource: "default",
             projectId,
             activeConnectors: [...new Set(input.connectors ?? [])],
+            ...(input.memoryOff ? { memoryOff: true } : {}),
           },
         });
+      } else if (input.memoryOff && !conversation.memoryOff) {
+        await tx.conversation.updateMany({ where: { id: conversation.id, userId: user.id }, data: { memoryOff: true } });
       }
 
       const requestedAttachmentIds = [...new Set(input.turns.flatMap((turn) => turn.attachmentIds))];

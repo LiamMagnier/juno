@@ -313,6 +313,7 @@ export async function acceptTurn({
               projectId: newConversationProjectId,
               activeConnectors: connectorSelection ?? [],
               ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
+              ...(input.memoryOff ? { memoryOff: true } : {}),
             },
           });
         }
@@ -432,6 +433,7 @@ export async function acceptTurn({
         projectId: newConversationProjectId,
         activeConnectors: connectorSelection ?? [],
         ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
+        ...(input.memoryOff ? { memoryOff: true } : {}),
       },
     });
   } else if (
@@ -455,6 +457,17 @@ export async function acceptTurn({
       data: { taskApprovalMode: input.taskApprovalMode },
     });
     conversation = { ...conversation, taskApprovalMode: input.taskApprovalMode };
+  }
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts), switched off in
+  // the composer before or while this turn was sent: saved before the turn
+  // reads memory (resolveMemory reads this row), so this very turn is already
+  // kept out. A turn can only switch it off, never back on (request.ts).
+  if (input.memoryOff && !conversation.memoryOff) {
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
+      data: { memoryOff: true },
+    });
+    conversation = { ...conversation, memoryOff: true };
   }
 
   if (input.regenerate) {
