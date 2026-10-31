@@ -271,7 +271,7 @@ const ToolRow = React.memo(
           aria-expanded={expanded}
           aria-controls={expanded ? detailId : undefined}
           onClick={() => onToggle(item.key)}
-          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-2.5 rounded-control px-1.5 py-1.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none"
+          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-2.5 rounded-control px-1.5 py-1.5 text-start transition-colors duration-fast ease-out-soft hover:bg-accent/60"
         >
           {state === "working" ? (
             <RunningMarker owner={owner}>{icon}</RunningMarker>

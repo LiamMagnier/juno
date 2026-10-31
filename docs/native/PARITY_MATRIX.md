@@ -22,19 +22,19 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-377 routes: 230 native, 72 planned, 58 web only, 17 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+385 routes: 230 native, 79 planned, 58 web only, 18 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 4 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 5 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
-| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 14 | 1 | 0 | 0 |
+| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 9 | 3 | 0 |
+| [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
 | [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
@@ -50,7 +50,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
-| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 12 |
+| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 13 |
 | [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
@@ -161,6 +161,8 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/share/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/share/copy` | POST | Web only |  | Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws. |
+| `/api/share/people` | GET, POST | Planned |  | Share a chat or artifact with specific people by email (the web Share dialog's default): list who has access and add people. The apps' share sheets make public links only (NativeShareClient); revoking a people share is DELETE /api/share/[id], which they already call. |
+| `/api/share/people/[id]` | DELETE | Planned |  | Remove one person from a share with specific people, from the same web dialog; not in the apps' share sheets yet. |
 | `/api/share/report` | POST | Web only |  | Reporting a shared link happens on the shared page, which only the web draws. |
 
 <a id="search"></a>
@@ -215,6 +217,8 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/library/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/library/made` | GET | Native | JunoChatKit |  |
 | `/api/library/attach` | POST | Native | JunoChatKit |  |
+| `/api/connectors/[id]/files` | GET | Planned |  | The web composer's Add from Google Drive / OneDrive picker (recent files and search). The apps' + menu has no cloud picker yet; the rows are in the shell contract as optional. |
+| `/api/connectors/[id]/files/attach` | POST | Planned |  | As /api/connectors/{id}/files: stores the picked files through the upload pipeline and answers with ready-to-send attachments, the shape /api/library/attach returns. |
 | `/api/prompts` | GET, POST | Planned |  | The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog. |
 | `/api/prompts/[id]` | POST, PATCH, DELETE | Planned |  | As /api/prompts. |
 | `/api/upload` | POST | Native | JunoChatKit |  |
@@ -251,6 +255,8 @@ Design is a type of artifact (register #73).
 | `/api/artifacts/[id]/restore` | POST | Native | JunoChatKit | Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync. |
 | `/api/artifacts/[id]/versions` | GET | Native | JunoChatKit | Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time. |
 | `/api/artifacts/[id]/versions/[version]` | GET | Native | JunoChatKit | One version's body: restoring a version older than the synced window fetches it here first. |
+| `/api/artifact-runtime/complete` | POST | Planned |  | window.alevr.complete in an HTML or React artifact: the web's sandbox bridge (src/lib/artifact-ai/bridge-host.ts) calls it for the canvas, the chat card, /a/{id} and scripted shared pages, billed to the viewer. The Mac and iPhone run artifact previews without the bridge, so an app there gets no window.alevr yet (the system prompt teaches it to web turns only). |
+| `/api/artifact-runtime/storage` | POST | Planned |  | window.alevr.storage (get, set, delete, list) for the same artifacts: JSON values per artifact and per viewer, encrypted at rest. Native previews have no bridge yet, as above. |
 | `/api/design` | POST | Native | JunoDesktop |  |
 | `/api/design/[artifactId]` | GET | Web only |  | The Mac reads a design's document from its artifact and hands it to the hosted editor. |
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |
@@ -281,6 +287,7 @@ Design is a type of artifact (register #73).
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
 | `/api/memory/topics` | GET, POST | Planned |  | Topics Alevr does not remember (“anything about my divorce”), listed and added from Excluded topics on the web's Memory page. A topic is a SUPPRESSION row, so the apps already list it from /api/memory and lift it with DELETE /api/memory/[id]; adding one (which retires every fact on the topic) has no native control yet. |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/memory` | GET, PATCH | Planned |  | “Memory off for this chat” (src/lib/chat/memory-off.ts), the web's composer + Memory switch and the chat's More menu. The apps already read the switch (`memoryOff` on the conversation sync entity and on GET /api/conversations/[id]) and can set it through sync (`memoryOff` on conversation.create and conversation.update, the same writer as this route); they draw no control for it yet. The server holds every turn to it whatever the client shows. |
 | `/api/memory/skill-candidates` | GET | Native | JunoChatKit |  |
 | `/api/memory/skill-candidates/[id]` | POST | Native | JunoChatKit |  |
 
@@ -612,7 +619,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
-| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
+| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. The tone characteristics (Warm, Enthusiastic, Headers & lists, Emoji, Concise) are web-first: /api/settings and the v1 settings record and settings.update patch carry them (toneWarmth … toneConciseness), and the native panes do not draw them yet. |
 | `/profile` | Native | Native | NativeProfileView (DesktopProfileScreen from the account menu's Profile row; JunoMobileProfileView under Settings › Account) |  |
 
 | Route | Methods | Status | Called from | Note |
@@ -728,6 +735,7 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/stripe/webhook` | POST | Internal |  | Stripe's signed events. |
 | `/api/v1/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications (the v1 alias). |
 | `/api/voice/spend` | POST | Internal |  | The voice relay reports what a live call has cost. |
+| `/api/voice/tools` | GET, POST | Internal |  | The voice relay lists a call's tools and runs one on Juno, under its own callback token; no client calls it. A card the call raises is answered by the signed-in client through /api/approvals/[id]. |
 | `/api/work/schedules/[id]/fire` | POST | Internal |  | Fired from outside Juno with the automation's own token. |
 
 <a id="cross-conversation"></a>

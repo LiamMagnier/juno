@@ -36,6 +36,7 @@ import { cloneLibraryAttachments } from "@/lib/library-attach";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { recordRoomPlan, type RoomTurnSetup } from "@/lib/agents/room-store";
 import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { isChatMemoryOffEnabled } from "@/lib/env";
 import { NEWEST_FIRST, olderThan } from "@/lib/chat/history-page";
 import type { TurnAccount } from "./account";
 import { refuse, usageWindowRefusal } from "./admission";
@@ -83,6 +84,10 @@ export async function acceptTurn({
   turnContext: TurnContext;
   roomSetup: RoomTurnSetup | null;
 }) {
+  // "Memory off for this chat" carried by a first send (request.ts): saved only
+  // while the server lets the switch be set (CHAT_MEMORY_OFF_ENABLED). A chat
+  // already saved with it on keeps memory out either way.
+  const saveMemoryOff = input.memoryOff === true && isChatMemoryOffEnabled();
   // Both gates are reads of the same spend ledger and neither informs the
   // other, so they ride in one wave. The refusal order is unchanged: the
   // monthly budget still answers first, and a request refused by it reports
@@ -313,6 +318,7 @@ export async function acceptTurn({
               projectId: newConversationProjectId,
               activeConnectors: connectorSelection ?? [],
               ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
+              ...(saveMemoryOff ? { memoryOff: true } : {}),
             },
           });
         }
@@ -432,6 +438,7 @@ export async function acceptTurn({
         projectId: newConversationProjectId,
         activeConnectors: connectorSelection ?? [],
         ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
+        ...(saveMemoryOff ? { memoryOff: true } : {}),
       },
     });
   } else if (
@@ -455,6 +462,17 @@ export async function acceptTurn({
       data: { taskApprovalMode: input.taskApprovalMode },
     });
     conversation = { ...conversation, taskApprovalMode: input.taskApprovalMode };
+  }
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts), switched off in
+  // the composer before or while this turn was sent: saved before the turn
+  // reads memory (resolveMemory reads this row), so this very turn is already
+  // kept out. A turn can only switch it off, never back on (request.ts).
+  if (saveMemoryOff && !conversation.memoryOff) {
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
+      data: { memoryOff: true },
+    });
+    conversation = { ...conversation, memoryOff: true };
   }
 
   if (input.regenerate) {

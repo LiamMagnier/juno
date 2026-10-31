@@ -30,9 +30,12 @@ function implemented(...evidence: string[]): SurfaceMaturity {
   return { state: "implemented", evidence };
 }
 function verified(command: string, ...evidence: string[]): SurfaceMaturity {
+  return verifiedOn("2026-10-04", command, ...evidence);
+}
+function verifiedOn(checkedAt: string, command: string, ...evidence: string[]): SurfaceMaturity {
   return {
     state: "verified", evidence,
-    verification: { command, checkedAt: "2026-10-04", scope: "Local automated domain and enforcement checks; deployment and UI acceptance excluded." },
+    verification: { command, checkedAt, scope: "Local automated domain and enforcement checks; deployment and UI acceptance excluded." },
   };
 }
 function planned(blocker: string): SurfaceMaturity {
@@ -61,7 +64,17 @@ export interface CapabilityEntry {
   production: { accepted: boolean; evidence: string[]; blockers: string[] };
   platforms: SupportedPlatform[];
   serverDependency?: string;
-  featureFlag?: string;
+  /**
+   * The deployment switch this capability sits behind: the server environment
+   * variables, by the names src/lib/env.ts reads, that must ALL be set before
+   * any account can reach it. Absent means the code path has no switch.
+   *
+   * A gated entry is never `stable` (off is what ships) and never `disabled`
+   * (built code behind a switch is not missing code). Per-account gates (a
+   * rollout list, a plan) are not switches and live in `notes`.
+   * tests/capabilities-registry.test.ts holds each list to the real predicate.
+   */
+  featureFlags?: string[];
   requiredPlan?: "free" | "plus" | "pro" | "team" | "enterprise";
   notes?: string;
 }
@@ -128,9 +141,10 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
     ),
     production: { accepted: false, evidence: [], blockers: ["Authenticated end-to-end, enabled deployment, and native release acceptance remain unrecorded."] },
     name: "Canvas CRDT Collaboration",
-    summary: "Multi-peer real-time collaborative editing with deterministic sequence CRDT convergence.",
-    status: "stable",
-    platforms: ["web", "macos", "ios"],
+    summary: "A sequence CRDT with deterministic multi-peer convergence. A library only: no editor, transport or route uses it, so no one can co-edit yet.",
+    status: "experimental",
+    platforms: [],
+    notes: "src/lib/collaboration/crdt.ts is imported by its tests (tests/crdt-convergence.test.ts, tests/swarm-and-crdt.test.ts) and nothing else.",
   },
   agent_swarm_orchestration: {
     id: "agent_swarm_orchestration",
@@ -163,16 +177,16 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
     id: "enterprise_sso_oidc",
     maturity: surfaces(
       implemented("src/lib/auth/enterprise-sso.ts"),
-      implemented("src/lib/auth/enterprise-sso.ts"),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
+      planned("No sign-in route, callback or settings surface calls src/lib/auth/enterprise-sso.ts."),
+      planned("No sign-in route, callback or settings surface calls src/lib/auth/enterprise-sso.ts."),
+      planned("No sign-in route, callback or settings surface calls src/lib/auth/enterprise-sso.ts."),
+      planned("No sign-in route, callback or settings surface calls src/lib/auth/enterprise-sso.ts."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Authenticated end-to-end, enabled deployment, and native release acceptance remain unrecorded."] },
+    production: { accepted: false, evidence: [], blockers: ["A sign-in route, identity-provider configuration and an enterprise tenant to accept it against do not exist yet."] },
     name: "Enterprise OIDC Single Sign-On",
-    summary: "Cryptographic OpenID Connect assertion verification with JWKS signature validation and replay defense.",
-    status: "stable",
-    platforms: ["web", "macos", "ios", "ipados"],
+    summary: "OpenID Connect assertion verification (JWKS signature validation, replay defence) as a library. Nothing signs anyone in with it yet: it is imported only by tests/enterprise-sso.test.ts.",
+    status: "experimental",
+    platforms: [],
     requiredPlan: "enterprise",
   },
   enterprise_sso_saml: {
@@ -194,47 +208,51 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   enterprise_dlp_policy: {
     id: "enterprise_dlp_policy",
     maturity: surfaces(
-      implemented("src/lib/security/dlp.ts"),
-      implemented("src/lib/security/dlp.ts"),
+      implemented("src/lib/security/dlp.ts", "src/lib/web/search.ts", "src/lib/web/url-guard.ts", "src/lib/agents/note-review.ts"),
+      implemented("src/lib/share-transcript.ts"),
       planned("Native integration and acceptance have not been verified in this audit."),
       planned("Native integration and acceptance have not been verified in this audit."),
       planned("Native integration and acceptance have not been verified in this audit."),
     ),
     production: { accepted: false, evidence: [], blockers: ["Authenticated end-to-end, enabled deployment, and native release acceptance remain unrecorded."] },
     name: "Data Loss Prevention & Secret Scanning",
-    summary: "Deterministic secret detection and policy enforcement (allow/warn/block) with audit event logging.",
+    summary: "Deterministic secret detection and redaction (DLP_RULES, scanAndRedact) on outgoing web searches and fetched URLs, agent notes and shared transcripts. The allow/warn/block policy and its audit events (evaluateDlpPolicy) exist, but no destination calls them yet.",
     status: "stable",
     platforms: ["web", "macos", "ios", "ipados"],
   },
   cloud_connector_google_drive: {
     id: "cloud_connector_google_drive",
     maturity: surfaces(
-      implemented("src/lib/connectors/google-drive.ts"),
-      implemented("src/components/connections/credentials-dialog.tsx"),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
+      implemented("src/lib/first-party-connectors/providers.ts", "src/lib/first-party-connectors/tools.ts", "src/lib/first-party-connectors/sync.ts", "src/app/api/connectors/[id]/sync/route.ts"),
+      implemented("src/app/(app)/connections/page.tsx", "src/app/api/connectors/route.ts"),
+      planned("The apps list connectors and start the link in the browser (/api/connectors is native in the parity ledger); a signed-in native link has not been checked."),
+      planned("The apps list connectors and start the link in the browser (/api/connectors is native in the parity ledger); a signed-in native link has not been checked."),
+      planned("The apps list connectors and start the link in the browser (/api/connectors is native in the parity ledger); a signed-in native link has not been checked."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Authenticated end-to-end, enabled deployment, and native release acceptance remain unrecorded."] },
+    production: { accepted: false, evidence: [], blockers: ["Needs the owner's Google OAuth app for connectors (separate from sign-in); no signed-in link against real Google has been recorded."] },
     name: "Google Drive Cloud Connector",
-    summary: "Full-lifecycle Google Drive and Workspace synchronization with pagination and change tokens.",
-    status: "stable",
+    summary: "Google Drive as a first-party connector: search and read files (two read-only tools) and a change feed with page tokens for connector triggers. Off until the owner registers a Google OAuth app.",
+    status: "beta",
     platforms: ["web", "macos", "ios"],
+    featureFlags: ["CONNECTOR_GOOGLE_CLIENT_ID", "CONNECTOR_GOOGLE_CLIENT_SECRET"],
+    notes: "src/lib/connectors/google-drive.ts is an earlier sync client that nothing but tests/connectors-lifecycle.test.ts imports; the connector the app offers is the first-party one.",
   },
   cloud_connector_microsoft_365: {
     id: "cloud_connector_microsoft_365",
     maturity: surfaces(
-      implemented("src/lib/connectors/microsoft-365.ts"),
-      implemented("src/components/connections/credentials-dialog.tsx"),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
+      implemented("src/lib/first-party-connectors/providers.ts", "src/lib/first-party-connectors/tools.ts", "src/lib/first-party-connectors/sync.ts", "src/app/api/connectors/[id]/sync/route.ts"),
+      implemented("src/app/(app)/connections/page.tsx", "src/app/api/connectors/route.ts"),
+      planned("The apps list connectors and start the link in the browser (/api/connectors is native in the parity ledger); a signed-in native link has not been checked."),
+      planned("The apps list connectors and start the link in the browser (/api/connectors is native in the parity ledger); a signed-in native link has not been checked."),
+      planned("The apps list connectors and start the link in the browser (/api/connectors is native in the parity ledger); a signed-in native link has not been checked."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Authenticated end-to-end, enabled deployment, and native release acceptance remain unrecorded."] },
+    production: { accepted: false, evidence: [], blockers: ["Needs the owner's Microsoft Entra app registration; no signed-in link against a real tenant has been recorded."] },
     name: "Microsoft 365 / OneDrive Connector",
-    summary: "Full-lifecycle OneDrive and SharePoint document synchronization with delta queries.",
-    status: "stable",
+    summary: "OneDrive and SharePoint as a first-party connector: search and read files, with a delta change feed for connector triggers. Off until the owner registers a Microsoft app.",
+    status: "beta",
     platforms: ["web", "macos", "ios"],
+    featureFlags: ["CONNECTOR_MICROSOFT_CLIENT_ID", "CONNECTOR_MICROSOFT_CLIENT_SECRET"],
+    notes: "src/lib/connectors/microsoft-365.ts is an earlier sync client that nothing but tests/connectors-lifecycle.test.ts imports; the connector the app offers is the first-party one.",
   },
   juno_code_local: {
     id: "juno_code_local",
@@ -571,6 +589,10 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       planned("Native integration and acceptance have not been verified in this audit."),
     ),
     production: { accepted: false, evidence: [], blockers: ["Real host takeover race, process freeze, network isolation and cleanup acceptance are pending."] },
+    featureFlags: ["COMPUTER_PROVIDER"],
+    serverDependency: "agent_computer_host",
+    requiredPlan: "pro",
+    notes: "Off unless COMPUTER_PROVIDER (legacy alias AGENT_COMPUTER_PROVIDER) names docker or remote. Even then AGENT_COMPUTER_ROLLOUT decides who: allowlist (the default) admits only AGENT_COMPUTER_ALLOWLIST, plans admits every plan that includes one (src/lib/computer/access.ts). Runbook: docs/design/agents-v2/ENABLE_COMPUTERS.md.",
   },
   action_permissions: {
     id: "action_permissions",
@@ -656,20 +678,95 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
       ],
     },
   },
+  agent_vault: {
+    id: "agent_vault",
+    name: "Saved logins for agents",
+    summary: "A person saves a site login (and an optional two-step key) for one agent; on that site's exact https origin the agent's computer has it typed by the platform after a one-time approval, and the model only ever sees the login's label and site.",
+    status: "experimental",
+    platforms: ["web"],
+    maturity: surfaces(
+      verifiedOn(
+        "2026-10-31",
+        "npx tsx --test tests/agent-vault.test.ts",
+        "src/lib/computer/vault-store.ts", "src/lib/computer/vault-fill.ts", "src/lib/computer/vault-policy.ts", "src/lib/computer/vault-run.ts",
+        "src/app/api/agents/[id]/credentials/route.ts",
+      ),
+      implemented("src/components/agents/agent-logins.tsx"),
+      planned("No native client surface for an agent's saved logins yet."),
+      planned("No native client surface for an agent's saved logins yet."),
+    ),
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: [
+        "Off by default: needs AGENT_VAULT_ENABLED=1 beside a docker or remote computer provider (docs/design/agents-v2/VAULT.md).",
+        "No login has been filled into a real site from a real agent computer.",
+      ],
+    },
+    featureFlags: ["AGENT_VAULT_ENABLED", "COMPUTER_PROVIDER"],
+    serverDependency: "agent_computer_host",
+    requiredPlan: "pro",
+    notes: "Separate from credential_broker (Alevr Secrets for Work runs). Off, the routes answer { credentials: null } and refuse writes, and the runner never builds computer_fill_login.",
+  },
+  agent_payments: {
+    id: "agent_payments",
+    name: "Agent payment cards",
+    summary: "An agent asks for one payment; after the person approves it (asked under every policy, never a standing grant) a single-use card for exactly that amount is issued, typed into the checkout on the agent's computer and cancelled after use or expiry, within a monthly per-agent limit. The model never holds a card number.",
+    status: "experimental",
+    platforms: ["web"],
+    maturity: surfaces(
+      verifiedOn(
+        "2026-10-31",
+        "npx tsx --test tests/payments.test.ts",
+        "src/lib/payments/service.ts", "src/lib/payments/stripe-issuing.ts", "src/lib/payments/config.ts", "src/lib/payments/policy.ts",
+        "src/lib/chat/payment-tools.ts", "src/app/api/payments/stripe-issuing/webhook/route.ts",
+      ),
+      implemented("src/components/chat/approval-card.tsx"),
+      planned("Native approval cards do not offer Pay yet."),
+      planned("Native approval cards do not offer Pay yet."),
+    ),
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: [
+        "Off by default: needs a Stripe Issuing program and all three STRIPE_ISSUING_* values (docs/design/agents-v2/ENABLE_PAYMENTS.md).",
+        "No card has been issued, authorised or cancelled against live Stripe Issuing.",
+      ],
+    },
+    featureFlags: ["STRIPE_ISSUING_SECRET_KEY", "STRIPE_ISSUING_CARDHOLDER_ID", "STRIPE_ISSUING_WEBHOOK_SECRET"],
+    serverDependency: "stripe_issuing",
+    requiredPlan: "pro",
+    notes: "Off, the payment tools are never offered, so the model is not told payments exist. AGENT_PAYMENTS_TEST_PROVIDER=1 turns on a test provider outside production only.",
+  },
   teach_alevr: {
     id: "teach_alevr",
-    name: "Teach Alevr",
-    summary: "Recording, redaction, generated Skill and dry-run acceptance remain required.",
-    status: "disabled",
-    platforms: [],
+    name: "Teach by demonstration",
+    summary: "The person shows an agent a task once on its computer (Show it how); the steps are recorded with values redacted, and the agent drafts a skill from the trace that the person reviews on the Teach page and saves off until they confirm what it may use.",
+    status: "experimental",
+    platforms: ["web"],
     maturity: surfaces(
-      planned("Recording, redaction, generated Skill and dry-run acceptance remain required."),
-      planned("Recording, redaction, generated Skill and dry-run acceptance remain required."),
-      planned("Recording, redaction, generated Skill and dry-run acceptance remain required."),
-      planned("Recording, redaction, generated Skill and dry-run acceptance remain required."),
-      planned("Recording, redaction, generated Skill and dry-run acceptance remain required."),
+      verifiedOn(
+        "2026-10-31",
+        "npx tsx --test tests/teach-demonstration.test.ts",
+        "src/lib/teach/demonstration.ts", "src/lib/teach/recorder.ts", "src/lib/teach/service.ts", "src/lib/teach/server.ts",
+        "src/app/api/agents/[id]/computer/demonstration/route.ts", "src/app/api/agents/[id]/computer/demonstration/draft/route.ts",
+      ),
+      implemented("src/components/agents/computer-teach.tsx", "src/components/skills/teach/teach-page.tsx", "src/app/(app)/skills/teach/page.tsx"),
+      planned("The demonstration routes are planned in the parity ledger; the overlay is web only."),
+      planned("The demonstration routes are planned in the parity ledger; the overlay is web only."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Recording, redaction, generated Skill and dry-run acceptance remain required."] },
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: [
+        "Off by default: needs AGENT_TEACH_ENABLED=1 beside working agent computers (docs/design/agents-v2/TEACH.md, Owner setup).",
+        "No recording has been made on a real agent computer host, and no model-drafted skill from one has been reviewed.",
+      ],
+    },
+    featureFlags: ["AGENT_TEACH_ENABLED", "COMPUTER_PROVIDER"],
+    serverDependency: "agent_computer_host",
+    requiredPlan: "pro",
+    notes: "Off, every demonstration route answers teach_off (404) before reading anything. Only the main frame is captured. A skill taught in chat (draft_skill) is separate and needs no switch.",
   },
   extensions: {
     id: "extensions",
@@ -688,18 +785,33 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   },
   external_channels: {
     id: "external_channels",
-    name: "External Orbit channels",
-    summary: "Identity, replay and approval-boundary acceptance remain required.",
-    status: "disabled",
-    platforms: [],
+    name: "Message agents from iMessage",
+    summary: "A person verifies their number with a texted code and then texts their agents (@Name, or their first active agent) through a hosted Sendblue line; agents answer by text with no tools, both turns land in the agent's thread, and approvals are only ever pointed to by link, never answered by text.",
+    status: "experimental",
+    platforms: ["web"],
     maturity: surfaces(
-      planned("Identity, replay and approval-boundary acceptance remain required."),
-      planned("Identity, replay and approval-boundary acceptance remain required."),
-      planned("Identity, replay and approval-boundary acceptance remain required."),
-      planned("Identity, replay and approval-boundary acceptance remain required."),
-      planned("Identity, replay and approval-boundary acceptance remain required."),
+      verifiedOn(
+        "2026-10-31",
+        "npx tsx --test tests/imessage-channel.test.ts tests/imessage-channel-store.test.ts",
+        "src/lib/channels/inbound.ts", "src/lib/channels/sendblue.ts", "src/lib/channels/store.ts", "src/lib/channels/webhook.ts",
+        "src/app/api/channels/sendblue/webhook/route.ts", "src/app/api/channels/imessage/route.ts",
+      ),
+      implemented("src/components/settings/sections/imessage.tsx"),
+      planned("The Mac relay (src/lib/channels/mac-relay.ts) is a stub: nothing selects it and its send refuses, and the Mac app has no relay half."),
+      planned("No native settings surface for linking a number."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Identity, replay and approval-boundary acceptance remain required."] },
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: [
+        "Off by default: needs a Sendblue account and line, and all four CHANNEL_SENDBLUE_* values (docs/design/agents-v2/ENABLE_IMESSAGE.md).",
+        "No text has gone through a real Sendblue line to a real agent and back.",
+      ],
+    },
+    featureFlags: ["CHANNEL_SENDBLUE_API_KEY_ID", "CHANNEL_SENDBLUE_API_SECRET_KEY", "CHANNEL_SENDBLUE_FROM_NUMBER", "CHANNEL_SENDBLUE_WEBHOOK_SECRET"],
+    serverDependency: "sendblue",
+    requiredPlan: "pro",
+    notes: "All four values or nothing: with any one missing every channel route answers 404 and notifyUser never loads the channel code. iMessage is the only channel; Slack, WhatsApp and the Mac relay are not built.",
   },
   organization_orbit: {
     id: "organization_orbit",

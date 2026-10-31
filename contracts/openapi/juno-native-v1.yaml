@@ -1169,6 +1169,11 @@ paths:
                     properties:
                       memorySensitiveTopics: { type: array, items: { type: string } }
                       memoryBackgroundLearning: { type: boolean }
+                      toneWarmth: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneEnthusiasm: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneFormatting: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneEmoji: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneConciseness: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
                       backgroundProviderMode: { type: string }
                       actionApprovalPolicy: { type: string }
                       lockdownMode: { type: boolean }
@@ -1184,6 +1189,9 @@ paths:
         refuses: name, memoryBackgroundLearning, memorySensitiveTopics,
         backgroundProviderMode, actionApprovalPolicy, lockdownMode,
         blockedConnectors and monthlySpendCapEur (null restores the default).
+        The tone characteristics (toneWarmth, toneEnthusiasm, toneFormatting,
+        toneEmoji, toneConciseness) are accepted here and by the sync
+        settings.update patch alike.
       requestBody:
         required: true
         content:
@@ -1199,6 +1207,11 @@ paths:
                 lockdownMode: { type: boolean }
                 blockedConnectors: { type: array, maxItems: 200, items: { type: string, maxLength: 120 } }
                 monthlySpendCapEur: { type: [integer, 'null'], minimum: 0, maximum: 100000 }
+                toneWarmth: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneEnthusiasm: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneFormatting: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneEmoji: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneConciseness: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
       responses:
         '200': { description: Saved. }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
@@ -3721,6 +3734,14 @@ components:
                       True only for `juno:auto`: the router chooses the thinking
                       depth per message, `supportedReasoningEfforts` is empty,
                       and a client must not send `reasoningEffort` with it.
+    ToneCharacteristicLevel:
+      type: string
+      enum: [less, default, more]
+      description: >-
+        One tone characteristic (src/lib/characteristics.ts), layered on the
+        personality preset and under the custom instructions. "default" puts
+        nothing in the prompt; a server reads an unknown stored value as
+        "default", and the settings record and GET /settings send it as such.
     BootstrapResponse:
       type: object
       required: [profile, subscription, usage, settings, featureFlags, currentChangeCursor, compactionFloorCursor, modelManifestVersion, contractVersion, minimumClientVersions, announcements]
@@ -3774,7 +3795,13 @@ components:
         operation:
           type: object
           description: >-
-            Strict operation union implemented by the server. project.update accepts
+            Strict operation union implemented by the server. conversation.create
+            and conversation.update (in its `patch`) accept an optional boolean
+            memoryOff, "Memory off for this chat": the chat's turns read no
+            memory and save or forget nothing, and the background reader skips
+            it. Setting it back to false (memory on again) also marks what was
+            said meanwhile as read, so it is never learned from; the
+            conversation sync entity reports it as memoryOff. project.update accepts
             entityId plus optional name, instructions, starred and workDefaults
             fields. workDefaults is the Work bundle a task filed in the project
             inherits (target, preferredHostId, model, reasoningEffort, budget,

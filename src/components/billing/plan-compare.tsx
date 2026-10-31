@@ -60,11 +60,11 @@ function Cell({ plan, row, plans }: { plan: Plan; row: string; plans: readonly P
     return has ? (
       <span className="text-caption text-foreground">{has.level === 2 ? "Highest" : "Higher"}</span>
     ) : (
-      <span className="plans-dot" data-off aria-label="Standard" />
+      <span role="img" className="plans-dot" data-off aria-label="Standard" />
     );
   }
   if (row === "uploads") return <span className="font-mono text-caption tabular-nums text-foreground">{PLANS[plan].maxUploadMb} MB</span>;
-  return has ? <span className="plans-dot" aria-label="Included" /> : <span className="plans-dot" data-off aria-label="Not included" />;
+  return has ? <span role="img" className="plans-dot" aria-label="Included" /> : <span role="img" className="plans-dot" data-off aria-label="Not included" />;
 }
 
 export function PlanCompare({
@@ -93,7 +93,7 @@ export function PlanCompare({
               <button
                 type="button"
                 onClick={() => onSelect(plan)}
-                className="mx-auto grid justify-items-center gap-1 rounded-control px-2 py-1 transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.05] motion-reduce:transition-none"
+                className="mx-auto grid justify-items-center gap-1 rounded-control px-2 py-1 transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.05]"
               >
                 <span className={cn("font-serif text-heading font-normal leading-none", plan === selected ? "text-foreground" : "text-muted-foreground")}>
                   {PLANS[plan].name}

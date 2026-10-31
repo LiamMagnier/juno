@@ -254,7 +254,12 @@ function ItemName({ item, className, onPreview }: { item: LibraryItem; className
       translate="no"
       aria-haspopup={onPreview ? "dialog" : undefined}
       onClick={previewOnClick(item, onPreview)}
-      className={cn(shared, "text-foreground underline-offset-4 hover:underline")}
+      // The name is the row's main target, drawn one 20px line tall. Under a
+      // finger its box grows to 44 with padding the negative margin hands
+      // back, so the row keeps its rhythm; `relative` lifts it over the
+      // caption it now overlaps, so that strip opens the file too. A ::before
+      // pad (`hit-44`) would be clipped by `truncate`.
+      className={cn(shared, "text-foreground underline-offset-4 hover:underline coarse:relative coarse:-my-3 coarse:min-h-11 coarse:py-3")}
     >
       {item.fileName}
     </a>
@@ -385,7 +390,7 @@ function LibraryListRow({
       style={stagger ? staggerDelay(index, "tight") : undefined}
       className={cn(
         listGrid,
-        "group/row min-h-16 px-2 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "group/row min-h-16 px-2 transition-colors duration-fast ease-out-soft",
         stagger && "motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         // Hover is the fill; selected is the next rung down (FLAT_UI.md §3.1),
         // so a selected row under the pointer does not lighten.

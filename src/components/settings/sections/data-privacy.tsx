@@ -5,14 +5,7 @@ import { toast } from "sonner";
 import { ChevronDown } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -113,24 +106,15 @@ export function DataPrivacySection() {
         />
       </SettingsGroup>
 
-      <Dialog open={deleteChatsOpen} onOpenChange={(next) => (deletingChats ? undefined : setDeleteChatsOpen(next))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete all conversations?</DialogTitle>
-            <DialogDescription>
-              {`Every conversation and its messages are deleted for good. Everything ${PRODUCT_NAME} made in them stays in your Library, and memories and projects stay. This can’t be undone.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteChatsOpen(false)} disabled={deletingChats}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void deleteAllChats()} loading={deletingChats}>
-              Delete all conversations
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteChatsOpen}
+        onOpenChange={setDeleteChatsOpen}
+        busy={deletingChats}
+        title="Delete all conversations?"
+        description={`Every conversation and its messages are deleted for good. Everything ${PRODUCT_NAME} made in them stays in your Library, and memories and projects stay. This can’t be undone.`}
+        confirmLabel="Delete all conversations"
+        onConfirm={() => void deleteAllChats()}
+      />
     </>
   );
 }

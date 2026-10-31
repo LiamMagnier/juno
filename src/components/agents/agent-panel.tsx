@@ -8,14 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Monitor, X } from "@/components/ui/icons";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
@@ -554,7 +547,7 @@ export function AgentProfile({
                     if (!current) void act("memory", () => setAgentMemoryAccess(agent.id, access));
                   }}
                   className={cn(
-                    "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                    "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     current && "bg-secondary/60"
                   )}
                 >
@@ -607,50 +600,39 @@ export function AgentProfile({
 
       <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} onSaved={() => onChanged()} />
 
-      <Dialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirm === "retire"
-                ? `Retire ${agent.name}?`
-                : confirm === "computer-on"
-                  ? `Give ${agent.name} a computer?`
-                  : `Delete ${agent.name}’s computer?`}
-            </DialogTitle>
-            <DialogDescription>
-              {confirm === "retire"
-                ? "Its routines stop and it leaves your agents. This conversation stays in your history."
-                : confirm === "computer-on"
-                  ? "It gets a private desktop on your server, and its tasks start it on their own. What it signs in to and the files it keeps stay there between tasks, until you reset or delete it."
-                  : "The computer is deleted, with everything it signed in to and every file on it."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirm(null)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant={confirm === "computer-on" ? "default" : "destructive"}
-              onClick={() => {
-                const which = confirm;
-                setConfirm(null);
-                if (which === "retire") {
-                  void act("retire", () => retireAgent(agent.id)).then((ok) => {
-                    if (ok) window.location.assign("/agents");
-                  });
-                } else if (which === "computer-on") {
-                  void act("computer", () => computerAction(agent.id, "enable"));
-                } else {
-                  void act("computer", () => computerAction(agent.id, "disable"));
-                }
-              }}
-            >
-              {confirm === "retire" ? "Retire" : confirm === "computer-on" ? "Give it one" : "Delete computer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        tone={confirm === "computer-on" ? "default" : "destructive"}
+        title={
+          confirm === "retire"
+            ? `Retire ${agent.name}?`
+            : confirm === "computer-on"
+              ? `Give ${agent.name} a computer?`
+              : `Delete ${agent.name}’s computer?`
+        }
+        description={
+          confirm === "retire"
+            ? "Its routines stop and it leaves your agents. This conversation stays in your history."
+            : confirm === "computer-on"
+              ? "It gets a private desktop on your server, and its tasks start it on their own. What it signs in to and the files it keeps stay there between tasks, until you reset or delete it."
+              : "The computer is deleted, with everything it signed in to and every file on it."
+        }
+        confirmLabel={confirm === "retire" ? "Retire" : confirm === "computer-on" ? "Give it one" : "Delete computer"}
+        onConfirm={() => {
+          const which = confirm;
+          setConfirm(null);
+          if (which === "retire") {
+            void act("retire", () => retireAgent(agent.id)).then((ok) => {
+              if (ok) window.location.assign("/agents");
+            });
+          } else if (which === "computer-on") {
+            void act("computer", () => computerAction(agent.id, "enable"));
+          } else {
+            void act("computer", () => computerAction(agent.id, "disable"));
+          }
+        }}
+      />
     </div>
   );
 }
@@ -839,7 +821,7 @@ function RunsOnSection({
                 });
               }}
               className={cn(
-                "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 current && "bg-secondary/60"
               )}
             >
@@ -909,7 +891,7 @@ function RunsOnSection({
                       if (macChoiceSaves({ target, storedPreferredHostId: preferredHostId, choice: id })) chooseMac(id);
                     }}
                     className={cn(
-                      "-mx-2 flex items-baseline gap-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                      "-mx-2 flex items-baseline gap-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       current && "bg-secondary/60"
                     )}
                   >

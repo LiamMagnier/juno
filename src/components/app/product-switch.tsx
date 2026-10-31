@@ -275,7 +275,7 @@ function Segment({
             "pressable jicon-trigger group relative flex h-7 items-center justify-center gap-1.5 rounded-control px-2 text-ui font-medium",
             // `coarse:h-11`: 44px under a thumb, the drawer's own floor. The
             // track's `p-0.5` sits outside it, so nothing else grows.
-            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-11",
+            "motion-reduce:active:scale-100 coarse:h-11",
             /*
              * One ink for every segment you are not in, locked or not: the
              * column's own row ink, about 7:1 on the track. The locked one
@@ -337,7 +337,7 @@ function RailItem({
           className={cn(
             // The expanded switch's recipe at rail size: a raised thumb that
             // travels inside a recessed track (see the nav above).
-            "pressable group relative flex size-8 items-center justify-center rounded-control transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
+            "pressable group relative flex size-8 items-center justify-center rounded-control motion-reduce:active:scale-100 coarse:size-11",
             active && !locked ? "text-foreground" : "text-sidebar-foreground hover:text-foreground",
           )}
         >

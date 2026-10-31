@@ -126,7 +126,7 @@
   mask: linear-gradient(120deg, transparent 0%, rgb(0 0 0 / 0.35) 40%, #000 70%, transparent 100%) 0 0 / 200% 200% no-repeat;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .tpp-cell[data-live]::after { animation: tpp-cross var(--loop-beat) ease-in-out infinite; }
+  .tpp-cell[data-live]::after { animation: tpp-cross var(--loop-beat) var(--ease-breathe) infinite; }
 }
 @keyframes tpp-cross {
   from { -webkit-mask-position: 120% 120%; mask-position: 120% 120%; }
@@ -139,11 +139,11 @@
   .tpp-enter { animation: tpp-enter var(--dur-emphasis) var(--tpp-ease) both; }
   .tpp-rise {
     animation: tpp-rise var(--dur-emphasis) var(--tpp-ease) both;
-    animation-delay: calc(var(--i, 0) * 70ms + var(--dur-press));
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile) + var(--dur-press));
   }
   .tpp-step {
     animation: tpp-rise 560ms var(--tpp-ease) both;
-    animation-delay: calc(var(--i, 0) * var(--stagger-tile));
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile));
   }
   .tpp-swap { animation: tpp-fade var(--dur-slow) var(--tpp-ease) both; }
 }

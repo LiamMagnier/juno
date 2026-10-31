@@ -55,13 +55,18 @@ import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
  */
 const TITLE_FINISH = "[&_h1]:tracking-[-0.03em] [&_h1]:[font-optical-sizing:auto]";
 
-/** Quiet entrance: rise 6px on the homepage's expo ease, staggered 30ms, capped at eight steps. */
+/**
+ * Quiet entrance: rise 6px on the expo ease, on the shared row stagger
+ * (`staggerDelay`, 30ms, at most four steps: spec D17). The curve is the
+ * token, so reduced motion flattens it with the rest; it was a literal
+ * cubic-bezier, the one entrance here the preference could not reach.
+ */
 const RISE = "motion-safe:animate-rise-in";
 function stagger(step: number): React.CSSProperties {
   return {
-    animationDelay: `${Math.min(step, 8) * 30}ms`,
+    ...staggerDelay(step, "tight"),
     animationDuration: "var(--dur-slow)",
-    animationTimingFunction: "cubic-bezier(.16, 1, .3, 1)",
+    animationTimingFunction: "var(--ease-out-expo)",
     animationFillMode: "both",
   };
 }
@@ -469,7 +474,7 @@ function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading
                   setValue(example);
                   field.current?.focus();
                 }}
-                className="pressable rounded-full border border-border bg-card px-3.5 py-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+                className="pressable rounded-full border border-border bg-card px-3.5 py-1.5 text-ui text-muted-foreground hover:border-foreground/20 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100"
               >
                 {example}
               </button>

@@ -544,7 +544,10 @@ describe("(d) ComputerTimeline motion and fallbacks", () => {
     const component = source("src/components/code/computer-timeline.tsx");
     assert.doesNotMatch(component, /<style/);
     assert.doesNotMatch(component, /180ms|120ms/);
-    assert.match(component, /transition-opacity duration-base ease-out-soft motion-reduce:transition-none/);
+    // The frame crossfade is opacity, Tier A (spec §4.7): it keeps its timing
+    // under reduced motion. Only the zoom (a transform) is motion-safe.
+    assert.match(component, /"transition-opacity duration-base ease-out-soft"/);
+    assert.doesNotMatch(component, /transition-opacity duration-base ease-out-soft motion-reduce:transition-none/);
     assert.match(component, /motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-150/);
     assert.match(component, /prefersReducedMotion\(\) \? "auto" : "smooth"/);
     assert.match(component, /unavailableLabel = "Screenshot unavailable"/);

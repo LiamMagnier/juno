@@ -12,6 +12,7 @@ import { cycleEffort, cycleRuntimeMode, currentTier, ratesFor, shortLabel } from
 import { listWords } from "@/components/code/v2/pickers";
 import { filesFrom, latestAgents, visibleTabs } from "@/components/code/v2/dock";
 import { pendingRequests } from "@/components/code/v2/composer";
+import { ComposerPopoverInPlace } from "@/components/code/v2/primitives";
 import { offlineReply, parseLinkRequest } from "@/lib/code-v2/device-link";
 import { buildInstances, reconcileSelection } from "@/lib/code-v2/workspace-instances";
 import { codeProviderModels } from "@/lib/code-v2/code-models";
@@ -23,8 +24,16 @@ import { DEVICE, INSTANCES, STATES, makeActions } from "../src/app/dev/code-v2/f
 
 // The app renders every screen inside Providers, TooltipProvider among them
 // (the effort panel's reset button carries the product tooltip).
+// Composer popovers portal into the workspace root once mounted, which a
+// static render never reaches; drawn in place here so an open one can be read.
 const renderWorkspace = (props: React.ComponentProps<typeof CodeWorkspace>) =>
-  renderToStaticMarkup(React.createElement(TooltipProvider, null, React.createElement(CodeWorkspace, props)));
+  renderToStaticMarkup(
+    React.createElement(
+      ComposerPopoverInPlace.Provider,
+      { value: true },
+      React.createElement(TooltipProvider, null, React.createElement(CodeWorkspace, props)),
+    ),
+  );
 
 const actions = makeActions(() => undefined);
 const fixture = (id: string) => {
@@ -165,7 +174,10 @@ test("the needs-you state takes the composer over with the asker and the three d
   assert.match(html, /Allow once/);
   assert.match(html, /Allow for this session/);
   assert.match(html, /Deny/);
-  assert.match(html, /role="alertdialog"/);
+  // A labelled group above the composer, never an alertdialog: it is inline
+  // and traps nothing (spec D20).
+  assert.match(html, /class="cv2-approve" role="group" aria-label="[^"]+"/);
+  assert.doesNotMatch(html, /role="alertdialog"/);
   assert.match(html, /cv2-composer needs/);
   assert.doesNotMatch(html, /Queue a follow-up/);
 });

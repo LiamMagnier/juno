@@ -1176,6 +1176,21 @@ struct JunoMobileComposer: View {
       if let typed = JunoComposerPreviewFlags.value("--juno-preview-prompt") {
         prompt = typed
       }
+      // `--juno-preview-attach`: a picture and a spreadsheet on the draft, so
+      // the composer's attachment tray can be captured without the pickers.
+      if JunoComposerPreviewFlags.isSet("--juno-preview-attach"), let attachmentModel,
+        attachmentModel.attachments.isEmpty
+      {
+        if let photo = PreviewImageFixtures.png(for: PreviewImageFixtures.userPhotoID) {
+          attachmentModel.add(
+            data: photo, fileName: "Moodboard.png", mimeType: "image/png",
+            conversationID: conversation?.id, isImage: true)
+        }
+        attachmentModel.add(
+          data: Data("Account,Stage,Value\nNorthwind,Proposal,48000\nContoso,Negotiation,125000\n".utf8),
+          fileName: "Q3 pipeline.csv", mimeType: "text/csv",
+          conversationID: conversation?.id, isImage: false)
+      }
       if JunoComposerPreviewFlags.value("--juno-preview-dictation") != nil {
         beginDictation()
       }

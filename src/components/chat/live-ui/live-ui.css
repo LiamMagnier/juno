@@ -46,7 +46,7 @@
   background: hsl(var(--live) / 0.08);
 }
 .live-eyebrow[data-live] svg {
-  animation: live-breathe var(--loop-beat) var(--ease-in-out, ease-in-out) infinite;
+  animation: live-breathe var(--loop-beat) var(--ease-breathe) infinite;
 }
 @keyframes live-breathe {
   0%, 100% { opacity: 0.45; transform: scale(0.85); }
@@ -94,7 +94,7 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-stepper-btn:active:not(:disabled) { transform: scale(0.9); }
 .live-stepper-btn:disabled { opacity: 0.35; box-shadow: none; background: transparent; }
 @media (pointer: coarse) {
-  .live-stepper-btn { width: 2.5rem; height: 2.5rem; }
+  .live-stepper-btn { width: 2.75rem; height: 2.75rem; }
 }
 .live-stepper-value {
   min-width: 3rem;
@@ -313,7 +313,10 @@ div:has(> .live-slider:active) > div > .live-value {
   justify-content: center;
   border-radius: 6px;
   border: 2px solid hsl(var(--foreground) / 0.28);
-  color: #fff;
+  /* Ink on the --live fill is the page ground, not white: dark mode's
+     presence is a light ultramarine that white reaches only 2.35:1 on.
+     --background clears it in both themes. */
+  color: hsl(var(--background));
   transition: background-color var(--dur-base) var(--ease-out-soft), border-color var(--dur-base) var(--ease-out-soft), scale var(--dur-base) var(--ease-out-back);
 }
 .live-check.rounded-full { border-radius: 999px; }
@@ -353,7 +356,7 @@ div:has(> .live-slider:active) > div > .live-value {
   transition: background-color var(--dur-base) var(--ease-out-soft), color var(--dur-base), scale var(--dur-press) var(--ease-out-soft);
 }
 .live-step-num:active { scale: 0.92; }
-.live-step-done .live-step-num { background: hsl(var(--success)); color: #fff; }
+.live-step-done .live-step-num { background: hsl(var(--success)); color: hsl(var(--background)); }
 .live-timer {
   display: inline-flex;
   flex: none;
@@ -375,7 +378,7 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-timer[data-finished] { color: hsl(var(--success-ink)); background: hsl(var(--success) / 0.1); }
 .live-timer[data-finished] svg { color: hsl(var(--success)); }
 @media (prefers-reduced-motion: no-preference) {
-  .live-timer[data-running] svg { animation: live-breathe var(--loop-breathe) var(--ease-in-out, ease-in-out) infinite; }
+  .live-timer[data-running] svg { animation: live-breathe var(--loop-breathe) var(--ease-breathe) infinite; }
   .live-timer[data-finished] { animation: live-ring var(--dur-emphasis) var(--ease-out-back) 2; }
 }
 @keyframes live-ring {
@@ -423,7 +426,7 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-primary:hover:not(:disabled) { background: hsl(var(--foreground) / 0.86); }
 .live-primary:active:not(:disabled) { scale: 0.97; }
 .live-primary:disabled { opacity: 0.4; }
-[data-best] .live-primary { background: hsl(var(--live)); color: #fff; }
+[data-best] .live-primary { background: hsl(var(--live)); color: hsl(var(--background)); }
 [data-best] .live-primary:hover:not(:disabled) { background: hsl(var(--live) / 0.88); }
 
 /* Compare: one card per option; the recommended one carries the accent. */
@@ -456,7 +459,7 @@ div:has(> .live-slider:active) > div > .live-value {
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: #fff;
+  color: hsl(var(--background));
   background: hsl(var(--live));
   box-shadow: 0 2px 8px -2px hsl(var(--live) / 0.6);
 }
@@ -497,7 +500,8 @@ div:has(> .live-slider:active) > div > .live-value {
   border-radius: 999px;
   font-size: 0.6875rem;
   font-weight: 500;
-  color: hsl(var(--muted-foreground));
+  /* Quiet text on a fill: plain muted ink is 4.45:1 on this wash in dark. */
+  color: hsl(var(--muted-foreground-on-fill));
   background: hsl(var(--foreground) / 0.05);
 }
 
@@ -538,6 +542,32 @@ div:has(> .live-slider:active) > div > .live-value {
 }
 .live-tab:hover, .live-tab[aria-selected="true"] { color: hsl(var(--foreground)); }
 .live-tab[aria-selected="true"] { font-weight: 600; }
+
+/* Touch: every control in a view reaches 44px under a finger (G54). The
+   checkable rows, the primary action and the tab track grow; the pills and
+   the step numbers keep their drawn size and take an invisible pad centred
+   on them, so a recipe's rhythm holds on a phone. A tab's pad stops at the
+   track's padding box, which is exactly 44 once the tab is 36. */
+@media (pointer: coarse) {
+  .live-row { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .live-primary { height: 2.75rem; }
+  .live-tab { height: 2.25rem; }
+  .live-chip,
+  .live-timer,
+  .live-step-num { position: relative; }
+  .live-chip::before,
+  .live-timer::before,
+  .live-step-num::before,
+  .live-tab::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 2.75rem);
+    height: max(100%, 2.75rem);
+    translate: -50% -50%;
+  }
+}
 
 /* Flashcards: a card that turns over. */
 .live-flash {

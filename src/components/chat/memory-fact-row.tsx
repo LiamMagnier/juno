@@ -139,11 +139,11 @@ export async function markMemoryNotRelevant(id: string, notRelevant: boolean): P
 }
 
 const linkClass =
-  "rounded-xs underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none disabled:cursor-wait disabled:opacity-60";
+  "rounded-xs underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline disabled:cursor-wait disabled:opacity-60";
 
 /** A fact's action: a compact ghost button, glyph then word, inked on hover. */
 const actionClass =
-  "inline-flex h-7 items-center gap-1 rounded-control px-1.5 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none disabled:cursor-wait disabled:opacity-60 coarse:h-9 [&>svg]:size-3.5 [&>svg]:shrink-0";
+  "inline-flex h-7 items-center gap-1 rounded-control px-1.5 text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60 coarse:h-9 [&>svg]:size-3.5 [&>svg]:shrink-0";
 
 export function MemoryFactRow({
   fact,
@@ -287,7 +287,7 @@ export function MemoryFactRow({
       ) : (
         <p
           className={cn(
-            "break-words text-ui leading-5 text-foreground transition-[color,opacity] duration-base ease-out-soft motion-reduce:transition-none",
+            "break-words text-ui leading-5 text-foreground transition-[color,opacity] duration-base ease-out-soft",
             forgotten && "text-muted-foreground line-through decoration-muted-foreground/40 opacity-70",
             notRelevant && "text-muted-foreground",
           )}

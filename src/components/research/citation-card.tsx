@@ -117,6 +117,16 @@ export function CitationCard({ n, source, passages, language }: CitationCardProp
 const CHIP_TOOLTIP_OFF_MS = 2_147_483_647;
 const CLOSE_DELAY_MS = 180;
 
+const TABBABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** The tabbable elements under `root`, in document order, skipping anything inside `skip`. */
+export function tabbablesIn(root: ParentNode, skip?: Element | null): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(TABBABLE)).filter(
+    (el) => !(skip && skip.contains(el)) && !el.closest("[inert], [hidden]") && el.tabIndex >= 0,
+  );
+}
+
 interface Measurable {
   getBoundingClientRect(): DOMRect;
 }
@@ -126,6 +136,15 @@ interface Measurable {
  * opens the card for it, anchored to the chip. `render` builds the card for a
  * citation number (null when there is nothing to show); `onActive` reports
  * which citation is open, for the full-screen sources rail.
+ *
+ * BY KEYBOARD. Focusing a chip opens its card, and the card is the chip's next
+ * stop in the tab order, the way an interest-invoked popover is: Tab from the
+ * chip moves into the card (its link, its passage pager), Shift+Tab from the
+ * card's first control goes back to the chip, and Tab past its last control
+ * carries on from the chip to whatever followed it on the page. Escape closes
+ * the card and leaves focus on the chip. The card used to be portalled with
+ * its focus suppressed, so Tab from the chip left it behind and the link and
+ * pager inside were reachable only by pointer.
  */
 export function CitationHoverLayer({
   children,
@@ -140,6 +159,7 @@ export function CitationHoverLayer({
   const anchor = React.useRef<Measurable>({ getBoundingClientRect: () => new DOMRect() });
   const closeTimer = React.useRef<number | null>(null);
   const pointerType = React.useRef<string>("mouse");
+  const cardRef = React.useRef<HTMLDivElement>(null);
 
   const cancelClose = () => {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
@@ -186,6 +206,17 @@ export function CitationHoverLayer({
         onBlurCapture={(e) => {
           if (chipOf(e.target)) scheduleClose();
         }}
+        onKeyDownCapture={(e) => {
+          // Tab from an open chip moves into its card.
+          if (e.key !== "Tab" || e.shiftKey) return;
+          const chip = chipOf(e.target);
+          if (!chip || active?.el !== chip || !cardRef.current) return;
+          const first = tabbablesIn(cardRef.current)[0];
+          if (!first) return;
+          e.preventDefault();
+          cancelClose();
+          first.focus();
+        }}
         onClickCapture={(e) => {
           // On touch a tap shows the card first; a second tap on the same chip follows the link.
           const chip = chipOf(e.target);
@@ -199,12 +230,40 @@ export function CitationHoverLayer({
       <Popover open={!!active && content !== null} onOpenChange={(next) => !next && close()}>
         <PopoverAnchor virtualRef={anchor as React.RefObject<Measurable>} />
         <PopoverContent
+          ref={cardRef}
           side="top"
           className="w-80"
           onOpenAutoFocus={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
+          onEscapeKeyDown={() => {
+            const chip = active?.el;
+            if (chip instanceof HTMLElement && cardRef.current?.contains(document.activeElement)) chip.focus();
+          }}
           onPointerEnter={cancelClose}
           onPointerLeave={scheduleClose}
+          onFocusCapture={cancelClose}
+          onBlurCapture={(e) => {
+            const next = e.relatedTarget;
+            if (next instanceof Node && cardRef.current?.contains(next)) return;
+            if (chipOf(next) === active?.el) return;
+            scheduleClose();
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Tab" || !cardRef.current) return;
+            const inCard = tabbablesIn(cardRef.current);
+            const chip = active?.el;
+            if (!(chip instanceof HTMLElement) || inCard.length === 0) return;
+            if (e.shiftKey && document.activeElement === inCard[0]) {
+              e.preventDefault();
+              chip.focus();
+            } else if (!e.shiftKey && document.activeElement === inCard[inCard.length - 1]) {
+              const page = tabbablesIn(document, cardRef.current);
+              const after = page[page.indexOf(chip) + 1];
+              if (!after) return;
+              e.preventDefault();
+              after.focus();
+            }
+          }}
         >
           {content}
         </PopoverContent>

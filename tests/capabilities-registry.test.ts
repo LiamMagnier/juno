@@ -26,7 +26,10 @@ test("Canonical Capability Registry: Queries platform feature availability accur
   assert.ok(macCapabilities.some((c) => c.id === "juno_code_local"));
 
   const webCapabilities = getCapabilitiesForPlatform("web");
-  assert.ok(webCapabilities.some((c) => c.id === "enterprise_sso_oidc"));
+  assert.ok(webCapabilities.some((c) => c.id === "chat_streaming"));
+  // A library nothing signs in with is not a web capability (no route calls it).
+  assert.ok(!webCapabilities.some((c) => c.id === "enterprise_sso_oidc"));
+  assert.equal(isFeatureAvailable("enterprise_sso_oidc", "web"), false);
 });
 
 test("every capability records each surface and resolvable implementation evidence", () => {

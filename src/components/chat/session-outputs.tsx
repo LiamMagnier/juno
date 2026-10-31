@@ -455,7 +455,7 @@ function OutputCard({ tile, onOpen, wide }: { tile: OutputTile; onOpen?: () => v
       onClick={onOpen}
       // Focus is the global `:focus-visible` outline — the local ring that
       // replaced it drew a different focus from every other tile in the app.
-      className="group/tile block w-full min-w-0 rounded-field text-left transition-opacity duration-fast ease-out-soft hover:opacity-80 motion-reduce:transition-none"
+      className="group/tile block w-full min-w-0 rounded-field text-left transition-opacity duration-fast ease-out-soft hover:opacity-80"
     >
       {body}
     </button>

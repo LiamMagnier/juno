@@ -15,6 +15,8 @@
  * halfway springs back.
  */
 
+import { TIMING_TOKENS } from "@/lib/design/tokens.generated";
+
 /** Below this many pixels of travel, a touch has not said what it is yet. */
 export const INTENT_SLOP_PX = 8;
 
@@ -119,9 +121,14 @@ export function shouldOpen({ progress, velocity }: { progress: number; velocity:
 /**
  * How long the panel takes to finish the move the finger started: the
  * remaining distance at the release speed, held between a quick settle and
- * the base rung so a slow release never crawls.
+ * the base rung so a slow release never crawls. The default clamp is
+ * `--settle-min` / `--settle-max` (spec D18), read from the token table.
  */
-export function settleMs(remaining: number, velocity: number, { min = 140, max = 300 } = {}): number {
+export function settleMs(
+  remaining: number,
+  velocity: number,
+  { min = TIMING_TOKENS.settle.min, max = TIMING_TOKENS.settle.max }: { min?: number; max?: number } = {},
+): number {
   const speed = Math.abs(velocity);
   if (speed < 0.05) return max;
   return Math.round(Math.min(max, Math.max(min, Math.abs(remaining) / speed)));

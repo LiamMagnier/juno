@@ -1,5 +1,6 @@
 import "server-only";
 import { isExecConfigured } from "@/lib/exec/config";
+import { isArtifactAiEnabled, isToneCharacteristicsEnabled } from "@/lib/env";
 import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { buildSemanticEditPrompt } from "@/lib/artifact-ops";
 import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
@@ -100,6 +101,9 @@ export function composeTurnSystem({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // The row itself: the builder reads only the tone* columns, leniently.
+    // Only while the server has them on (TONE_CHARACTERISTICS_ENABLED).
+    characteristics: isToneCharacteristicsEnabled() ? settings : null,
     responseLanguage: settings?.responseLanguage ?? "auto",
     // The ranked notes are per-question and ride the tail (route.ts turnTail);
     // the consolidated summary is stable and stays in the cached system tier.
@@ -129,6 +133,10 @@ export function composeTurnSystem({
     liveUiDo: legacyChatClientForOrigin(input) === "web",
     codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     codeSandbox: isExecConfigured(),
+    // `window.alevr` in artifacts (ARTIFACT_AI_RULE): only while the server
+    // has it on (ARTIFACT_AI_ENABLED) and only for the web, whose sandbox
+    // carries the bridge.
+    artifactAi: isArtifactAiEnabled() && legacyChatClientForOrigin(input) === "web",
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`

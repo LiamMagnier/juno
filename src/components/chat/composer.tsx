@@ -14,6 +14,7 @@ import {
 } from "@/lib/chat/context-draft";
 import { useThreadDraftSync } from "@/lib/sync/thread-draft-client";
 import { submittedDraftIsCurrent, type ComposerSubmission } from "@/lib/chat/composer-submission";
+import { composerPrimaryFace } from "@/lib/chat/composer-primary-face";
 import { createComposerDraftSession, type ComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type LayerSide } from "@/lib/chat/composer-layer-placement";
 import { TIMING } from "@/lib/interaction";
@@ -34,6 +35,7 @@ import {
   TextQuote,
   AtSign,
   Pencil,
+  Cloud,
 } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { useComposerSketch } from "@/components/chat/sketch/use-composer-sketch";
@@ -77,6 +79,8 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider, type SpeedTier } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { CloudFilePicker } from "@/components/chat/cloud-file-picker";
+import type { CloudFileProvider } from "@/lib/cloud-files/shared";
 import { useFileDrop } from "@/components/library/library-drop-zone";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 /**
@@ -115,6 +119,7 @@ import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
+import { chatUsesMemory, MEMORY_OFF_COPY } from "@/lib/chat/memory-off";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import {
   COMPOSER_INLINE_SOFT_CHARS,
@@ -192,6 +197,13 @@ interface ComposerProps {
    * tasks at all; absent, the row is as it was.
    */
   taskModeControl?: React.ReactNode;
+  /**
+   * "Memory off for this chat" (src/lib/chat/memory-off.ts). Given, the +
+   * menu's Memory switch is this chat's: off keeps this chat out of memory and
+   * leaves every other chat alone. Absent (Code, the dev galleries), the
+   * switch is the account's pause, as it always was.
+   */
+  chatMemory?: { off: boolean; onChange: (off: boolean) => void };
   /**
    * A durable run is going on this conversation, and this composer steers it.
    *
@@ -531,6 +543,7 @@ function ComposerImpl({
   steering,
   modeControl,
   taskModeControl,
+  chatMemory,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -865,6 +878,11 @@ function ComposerImpl({
   >([]);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  // The drive stays named while the dialog closes, so it does not retitle on its way out.
+  const [cloudPicker, setCloudPicker] = React.useState<{ provider: CloudFileProvider; open: boolean }>({
+    provider: "google-drive",
+    open: false,
+  });
   const [projects, setProjects] = React.useState<
     { id: string; name: string; conversationCount: number }[]
   >([]);
@@ -1457,16 +1475,19 @@ function ComposerImpl({
 
   // The primary button's faces: checking, stop (when busy), voice (when there
   // is nothing to send and a call is available), or send.
-  const primaryFace: "checking" | "stop" | "send" | "voice" =
-    status === "checking"
-      ? "checking"
-      : steerMode && text.trim().length > 0
-        ? "send"
-        : isBusy || standaloneRun
-          ? "stop"
-          : canSend || !voiceAvailable
-            ? "send"
-            : "voice";
+  // A draft that cannot go yet (a file still uploading, a spent quota) keeps
+  // the send face, disabled, rather than handing the slot to voice
+  // (lib/chat/composer-primary-face.ts).
+  const primaryFace = composerPrimaryFace({
+    checking: status === "checking",
+    steerMode,
+    busy: isBusy,
+    standaloneRun,
+    hasText: text.trim().length > 0,
+    hasOtherDraft: uploading || sendAttachments.length > 0 || clarificationAnswers.length > 0,
+    canSend,
+    voiceAvailable,
+  });
   // The effort control the model popover draws under its panes. Absent when
   // Auto picks the depth or the model has a single tier, so the footer only
   // appears when there is a choice to make — which also retires the empty
@@ -2477,6 +2498,12 @@ function ComposerImpl({
       )
     : connectors;
 
+  // Whether this chat's turns use memory, as the + switch shows it: the
+  // account's memory, narrowed by this chat's own switch when it has one.
+  const memoryOnHere = chatMemory
+    ? chatUsesMemory({ accountMemory: settings.memoryEnabled, chatMemoryOff: chatMemory.off })
+    : settings.memoryEnabled;
+
   // Counts rows that are ON, not rows that exist: while collapsed this is the only
   // thing in the menu saying that e.g. deep research is armed for this message.
   // Each term repeats its row's own gate so a row that isn't rendered can't count.
@@ -2490,7 +2517,7 @@ function ComposerImpl({
     skillArmed ? `the ${armedSkill?.name ?? skillSlug} skill` : null,
     researchArmed ? "research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
-    settings.memoryEnabled ? "memory" : null,
+    memoryOnHere ? "memory" : null,
   ].filter((label): label is string => label !== null);
   // Connectors sit in the ADD group, not TOOLS, so they must not inflate the
   // disclosure's count — but they are still armed state the + trigger owes the user.
@@ -2792,6 +2819,17 @@ function ComposerImpl({
   const trayHasProject = showTray;
   const trayHasAppsAndSkills = showTray && !mediaParams.caps;
 
+  /*
+   * A drive's row is drawn only while that drive is connected: offering to
+   * pick from an unlinked Google Drive would be a door into a dialog that can
+   * only say "connect it first". `connectors` is the account's live list,
+   * reconciled each time this menu opens.
+   */
+  // And only while the server has the picker on (CLOUD_ATTACH_ENABLED).
+  const cloudAttachOn = features.cloudAttach === true;
+  const driveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "google-drive");
+  const oneDriveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "microsoft-365");
+
   const plusSections: PlusMenuSection[] = voiceActive
     ? [
         [
@@ -2873,6 +2911,32 @@ function ComposerImpl({
             note: attachNote,
             onSelect: () => setLibraryOpen(true),
           },
+          ...(driveConnected
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "google-drive",
+                  label: "Add from Google Drive",
+                  icon: Cloud,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => setCloudPicker({ provider: "google-drive", open: true }),
+                },
+              ]
+            : []),
+          ...(oneDriveConnected
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "onedrive",
+                  label: "Add from OneDrive",
+                  icon: Cloud,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => setCloudPicker({ provider: "microsoft-365", open: true }),
+                },
+              ]
+            : []),
         ],
         // Name things in the sentence: what "@" and "/" do, taught here so the
         // placeholder never has to be a syntax lesson.
@@ -2897,8 +2961,25 @@ function ComposerImpl({
             id: "memory",
             label: FEATURE_NAMES.memory.label,
             icon: ComposerIcons.memory,
-            checked: settings.memoryEnabled,
-            onToggle: () => toggleMemory(!settings.memoryEnabled),
+            checked: memoryOnHere,
+            // In a chat the switch is the chat's own (Claude's per-chat memory
+            // switch, in the same tray). Paused for the account, it is still
+            // the way back on, as it always was: the account resumes and this
+            // chat with it, and the word says which switch it is.
+            ...(chatMemory && settings.memoryEnabled
+              ? { ariaLabel: MEMORY_OFF_COPY.composerLabel }
+              : chatMemory
+                ? { description: MEMORY_OFF_COPY.accountPausedDescription }
+                : {}),
+            onToggle: () => {
+              if (!chatMemory) return toggleMemory(!settings.memoryEnabled);
+              if (!settings.memoryEnabled) {
+                toggleMemory(true);
+                if (chatMemory.off) chatMemory.onChange(false);
+                return;
+              }
+              chatMemory.onChange(!chatMemory.off);
+            },
           },
         ],
         // Where this chat sits and what it can reach.
@@ -3629,6 +3710,16 @@ function ComposerImpl({
                 onOpenChange={setLibraryOpen}
                 onAttach={addComposerAttachments}
                 existingCount={uploads.length}
+              />
+            )}
+            {!privateMode && features.storage && (driveConnected || oneDriveConnected) && (
+              <CloudFilePicker
+                provider={cloudPicker.provider}
+                open={cloudPicker.open}
+                onOpenChange={(open) => setCloudPicker((current) => ({ ...current, open }))}
+                onAttach={addComposerAttachments}
+                existingCount={uploads.length}
+                conversationId={conversationId}
               />
             )}
             {sketch.dialog}

@@ -170,7 +170,8 @@ export function ProjectSheet({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         {...contentProps}
-        className={cn("pj nest-panel nest-p-1.5 flex max-w-md flex-col gap-0 overflow-hidden p-1.5 sm:p-1.5", className)}
+        bare
+        className={cn("pj nest-panel nest-p-1.5 flex max-w-md flex-col gap-0 overflow-hidden p-1.5", className)}
       >
         <div className={cn("pj-sheet flex min-h-0 flex-1 flex-col rounded-inner", pageClassName)}>
           <div className="shrink-0 px-5 pb-4 pr-14 pt-5">
@@ -507,7 +508,7 @@ function PickerRow({
       disabled={disabled}
       onClick={onSelect}
       className={cn(
-        "flex min-h-10 w-full items-center gap-2.5 rounded-control px-3 text-left text-ui transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "flex min-h-10 w-full items-center gap-2.5 rounded-control px-3 text-left text-ui transition-colors duration-fast ease-out-soft",
         selected ? "bg-[var(--pj-presence-soft)] text-foreground" : "hover:bg-accent",
         disabled && "cursor-not-allowed opacity-45 hover:bg-transparent"
       )}
@@ -583,7 +584,7 @@ function Crumb({
     <Link
       href={href}
       {...drop}
-      className="pj-drop hit-44 relative inline-flex min-h-6 items-center break-words rounded-xs px-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+      className="pj-drop hit-44 relative inline-flex min-h-6 items-center break-words rounded-xs px-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
     >
       {label}
     </Link>
@@ -783,7 +784,7 @@ export function ProjectTile({
           />
         )}
         {actions && (
-          <div className="relative z-[2] flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 has-[[data-state=open]]:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+          <div className="relative z-[2] flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/tile:opacity-100 has-[[data-state=open]]:opacity-100 coarse:opacity-100">
             {actions}
           </div>
         )}

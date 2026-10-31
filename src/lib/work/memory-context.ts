@@ -78,8 +78,15 @@ export function workMemoryContext(input: WorkMemoryInput): string | null {
  *
  * `null` — an account with no Settings row yet — reads as enabled, because
  * that is the column's default and what the chat bootstrap already assumes.
- * Only an explicit `false`, the user's own pause, keeps memory out of a run.
+ * Only an explicit `false`, the user's own pause, keeps memory out of a run —
+ * that, or a run started from a chat set to "Memory off for this chat"
+ * (src/lib/chat/memory-off.ts): the task is that chat's work, and a chat kept
+ * out of memory does not get it back by handing its work on. `conversation`
+ * is null for a run no chat started.
  */
-export function workMemoryEnabled(settings: { memoryEnabled: boolean } | null): boolean {
-  return settings?.memoryEnabled !== false;
+export function workMemoryEnabled(
+  settings: { memoryEnabled: boolean } | null,
+  conversation: { memoryOff: boolean } | null = null,
+): boolean {
+  return settings?.memoryEnabled !== false && conversation?.memoryOff !== true;
 }

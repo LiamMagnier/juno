@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,7 +130,7 @@ interface Item {
  */
 const rowClass =
   // `ed-row`: a row of an `.ed-list` (editorial.css keys its hover hairline on it).
-  "ed-row group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+  "ed-row group relative flex w-full items-center gap-4 rounded-control px-3 py-3.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent";
 
 /**
  * The two view modes, and where the choice is kept.
@@ -976,25 +977,15 @@ function ArtifactsHome() {
       </Dialog>
 
       {/* Delete */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete “{deleteTarget?.title || "artifact"}”?</DialogTitle>
-            <DialogDescription>
-              It moves to Recently deleted for 30 days with every version, and any public link to it stops working
-              until it is restored. The conversation it came from is untouched.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={submitDelete} loading={deleting}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        busy={deleting}
+        title={`Delete “${deleteTarget?.title || "artifact"}”?`}
+        description="It moves to Recently deleted for 30 days with every version, and any public link to it stops working until it is restored. The conversation it came from is untouched."
+        confirmLabel="Delete"
+        onConfirm={submitDelete}
+      />
 
       {/* Share */}
       {shareTarget && (

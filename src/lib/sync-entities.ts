@@ -7,6 +7,7 @@ import { coerceChatOrigin } from "@/lib/chat-origin";
 import { parseWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { getViewUrl } from "@/lib/storage";
 import type { EntityIndexCursor } from "@/lib/sync-entity-index";
+import { normalizeCharacteristics } from "@/lib/characteristics";
 
 /*
  * Entity hydration for the native sync contract (GET /api/v1/entities): given
@@ -79,6 +80,8 @@ const loaders: Record<string, EntityLoader> = {
           responseLanguage: row.responseLanguage,
           uiLocale: row.uiLocale,
           personality: row.personality,
+          // toneWarmth … toneConciseness, an unknown stored value as "default".
+          ...normalizeCharacteristics(row),
           memoryEnabled: row.memoryEnabled,
           voiceId: row.voiceId,
           favoriteModels: row.favoriteModels,
@@ -129,6 +132,9 @@ const loaders: Record<string, EntityLoader> = {
           projectId: row.projectId,
           forkedFromId: row.forkedFromId,
           activeConnectors: row.activeConnectors,
+          // "Memory off for this chat" (src/lib/chat/memory-off.ts), so an
+          // app shows the chat the way the web does.
+          memoryOff: row.memoryOff,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
           lastMessageAt: row.lastMessageAt.toISOString(),
@@ -754,6 +760,9 @@ export async function listEntityIndex(
   };
 }
 
+/** The loaders by entity type, own entries only (see loadEntities). */
+const LOADERS = new Map<string, EntityLoader>(Object.entries(loaders));
+
 /**
  * Hydrate a batch of entities of one type. Ids resolve in request order;
  * revisions come from EntityRevision (0 for rows that predate change capture).
@@ -761,8 +770,11 @@ export async function listEntityIndex(
  * never existed under this account (or belong to someone else) are omitted.
  */
 export async function loadEntities(accountId: string, type: string, ids: string[]): Promise<EntityEnvelope[]> {
-  const loader = loaders[type];
-  if (!loader) throw new Error(`unknown entity type: ${type}`);
+  // Looked up in a Map of the table's own entries: a type named after an
+  // Object.prototype member ("constructor", "toString") is unknown, not a
+  // function to call.
+  const loader = LOADERS.get(type);
+  if (typeof loader !== "function") throw new Error(`unknown entity type: ${type}`);
   const [data, revisions] = await Promise.all([
     loader(accountId, ids),
     prisma.entityRevision.findMany({

@@ -123,7 +123,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
                     <div
                       aria-hidden="true"
                       className={cn(
-                        "pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+                        "pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft",
                         expanded && "opacity-0"
                       )}
                     />
@@ -139,7 +139,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
                     type="button"
                     onClick={() => setExpanded((open) => !open)}
                     aria-expanded={expanded}
-                    className="-mx-3 mt-2 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground motion-reduce:transition-none"
+                    className="relative -mx-3 mt-2 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium hit-44 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
                   >
                     {expanded ? <span>Show less</span> : <span>Read the whole summary</span>}
                     <ChevronDown

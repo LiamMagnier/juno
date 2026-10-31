@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MemoryFactRow, forgetMemoryFact, useAllForgotten } from "@/components/chat/memory-fact-row";
 import { memoryEntryHref } from "@/lib/chat/memory-receipts";
 import { cn } from "@/lib/utils";
+import { DURATION } from "@/lib/design/tokens.generated";
 import { useReducedMotion } from "@/lib/motion-preference";
 import type { ClientMemoryWrite } from "@/types/chat";
 
@@ -37,15 +38,27 @@ import type { ClientMemoryWrite } from "@/types/chat";
  * change is undone, and a hairline along the bottom drains over the stay
  * time, so the reader can see it will leave and that pointing at it holds it. The in-app Reduced setting and the system
  * setting both reach them (globals.css and `motion-safe`).
+ *
+ * ONE NOTIFICATION SURFACE. It is drawn as a toast is (sonner.tsx and the
+ * toaster rules in globals.css): `.surface-float` at the card corner (12),
+ * the float shadow, and 32px actions at the 13px `ui` rung with a 44px touch
+ * pad. It was a 16px panel on the lighter legacy "glass" shadow with 28px,
+ * 12px text buttons, so the two notices the product raises read as two
+ * families. Its place (top centre on a wide window, above the composer on a
+ * phone) and its stay are its own.
+ *
+ * The live region is the words, not the whole notice: a `role="status"`
+ * wrapped around View, Edit, Undo and Dismiss read their names out as part
+ * of the news.
  */
 
 /** How long the notice stays once nobody is looking at it. */
 export const MEMORY_NOTICE_MS = 6000;
-/** The exit's length: `--dur-exit`, read as a number for the unmount. */
-const EXIT_MS = 180;
+/** The exit's length: `--dur-exit` (`animate-title-out`), read from the token table for the unmount. It was a hand-typed 180. */
+const EXIT_MS = DURATION.exit;
 
 const actionClass =
-  "inline-flex h-7 items-center gap-1 rounded-control px-2 font-sans text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-9";
+  "hit-44 relative inline-flex h-8 items-center gap-1 rounded-control px-2.5 font-sans text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground";
 
 /**
  * The fact, short enough for two lines of the notice, cut only between words.
@@ -116,8 +129,6 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
 
   return (
     <div
-      role="status"
-      aria-live="polite"
       data-memory-notice=""
       data-state={allUndone ? "undone" : forgetOnly ? "forgotten" : "saved"}
       onPointerEnter={() => setHeld(true)}
@@ -127,7 +138,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false);
       }}
       className={cn(
-        "pointer-events-auto relative isolate flex w-max max-w-[min(40rem,calc(100vw-2rem))] items-center gap-3 overflow-hidden rounded-panel border border-border/70 bg-popover py-2 pl-2 pr-1.5 shadow-glass",
+        "surface-float pointer-events-auto relative isolate flex w-max max-w-[min(40rem,calc(100vw-2rem))] items-center gap-3 overflow-hidden rounded-card py-2 pl-2 pr-1.5",
         leaving
           ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]"
           : "motion-safe:animate-rise-in",
@@ -138,7 +149,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
       <span
         aria-hidden="true"
         className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft",
           allUndone ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary-ink",
         )}
       >
@@ -151,7 +162,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
         )}
       </span>
 
-      <span className="grid min-w-0 flex-1 gap-0.5">
+      <span role="status" aria-live="polite" className="grid min-w-0 flex-1 gap-0.5">
         <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
           {/* "Forgotten" only when the turn named what it forgot; a write it
               could not name (no receipt on the row) is still an update. */}
@@ -204,7 +215,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
           <UndoButton id={first.id} onUndone={() => requestAnimationFrame(() => closeRef.current?.focus())} />
         )}
         <span aria-hidden="true" className="mx-1 h-4 w-px bg-border/80" />
-        <button ref={closeRef} type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "px-1.5")}>
+        <button ref={closeRef} type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "w-8 justify-center px-0")}>
           <X aria-hidden="true" className="size-3.5" />
         </button>
       </span>

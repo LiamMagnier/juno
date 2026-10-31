@@ -503,7 +503,7 @@ export function MessageList(props: MessageListProps) {
               // replaced the centring translate, so the button arrived 18px
               // right of centre and jumped back when the entrance ended.
               "absolute inset-x-0 bottom-4 z-10 mx-auto flex size-9 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color,background-color] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press coarse:size-11",
-              "motion-reduce:transition-none motion-reduce:active:scale-100",
+              "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
               atBottom
                 ? "pointer-events-none translate-y-2 opacity-0"
                 : "opacity-100 motion-safe:animate-rise-in"

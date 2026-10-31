@@ -149,6 +149,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // moderation queue, and the cross-user scheduler sweep. Everything else had
   // the userId in hand already and now puts it in the where.
   ["Share", "userId"],
+  // The people a PEOPLE share was sent to. `userId` is the share's OWNER: the
+  // owner lists and removes rows, and the share page's recipient check carries
+  // the owner id of the share it resolved by token (src/lib/share-people.ts),
+  // so no read of this table is ever unscoped.
+  ["ShareRecipient", "userId"],
   // Artifacts own themselves (PRODUCT_REFOUNDATION §10): the chat is a
   // nullable pointer, so the old `conversation: { userId }` join no longer
   // reaches a detached artifact and every read scopes on the artifact's own
@@ -160,6 +165,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // The canvas's unsaved source edits (G12): one person's work in progress,
   // read and written only by that person (src/lib/artifact-canvas-draft.ts).
   ["ArtifactCanvasDraft", "userId"],
+  // What an artifact's own code saved (window.alevr.storage): scoped to the
+  // VIEWER, who on a shared link is not the artifact's owner. An unscoped read
+  // would hand one visitor another's saved data (src/lib/artifact-ai/storage-store.ts).
+  ["ArtifactStorageEntry", "userId"],
   ["ArtifactPublication", "userId"],
   ["ScheduledTask", "userId"],
   ["ModerationFlag", "userId"],

@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronDown, ChevronLeft, ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons";
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, type IconComponent } from "@/components/ui/icons";
 import { AppIcons, ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapse } from "@/components/ui/collapse";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -496,36 +496,32 @@ export function ModerationAdmin() {
           </div>
         </Card>
 
-      <Dialog open={!!banTarget} onOpenChange={(open) => !open && !banning && (setBanTarget(null), setBanReason(""))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Ban {banTarget?.user.email}?</DialogTitle>
-            <DialogDescription>
-              This blocks sign-in and kills active sessions. The reason is recorded to the moderation log.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mod-ban-reason">Reason</Label>
-            <Textarea
-              id="mod-ban-reason"
-              value={banReason}
-              onChange={(e) => setBanReason(e.target.value)}
-              placeholder="Why is this user being banned?"
-              className="min-h-24"
-              maxLength={500}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => (setBanTarget(null), setBanReason(""))} disabled={banning}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmBan} disabled={banning} aria-busy={banning}>
-              {banning ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <Ban className="size-4" />}
-              {banning ? "Banning…" : "Ban user"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!banTarget}
+        onOpenChange={(open) => !open && (setBanTarget(null), setBanReason(""))}
+        busy={banning}
+        title={`Ban ${banTarget?.user.email ?? ""}?`}
+        description="This blocks sign-in and kills active sessions. The reason is recorded to the moderation log."
+        confirmLabel={
+          <>
+            <Ban className="size-4" />
+            Ban user
+          </>
+        }
+        onConfirm={confirmBan}
+      >
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="mod-ban-reason">Reason</Label>
+          <Textarea
+            id="mod-ban-reason"
+            value={banReason}
+            onChange={(e) => setBanReason(e.target.value)}
+            placeholder="Why is this user being banned?"
+            className="min-h-24"
+            maxLength={500}
+          />
+        </div>
+      </ConfirmDialog>
     </AppPage>
   );
 }

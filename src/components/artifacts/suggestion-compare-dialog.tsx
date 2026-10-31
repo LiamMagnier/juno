@@ -301,7 +301,7 @@ export function SuggestionCompareDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(88dvh,48rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent bare className="flex max-h-[min(88dvh,48rem)] max-w-3xl flex-col gap-0 overflow-hidden">
         <DialogHeader className="shrink-0 border-b border-border/50 p-6 pb-4 pr-14">
           <DialogTitle>{`${PRODUCT_NAME}’s suggestion`}</DialogTitle>
           <DialogDescription>

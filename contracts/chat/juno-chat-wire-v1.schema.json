@@ -17,7 +17,7 @@
   "x-native-summary": {
     "native": 222,
     "planned": 276,
-    "web-only": 106,
+    "web-only": 107,
     "unclassified": 0
   },
   "x-native-only": {
@@ -494,6 +494,11 @@
           ],
           "x-native": "planned",
           "x-native-note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
+        },
+        "memoryOff": {
+          "type": "boolean",
+          "x-native": "web-only",
+          "x-native-note": "“Memory off for this chat” (src/lib/chat/memory-off.ts) chosen before the web's first submission creates the chat. The Swift apps create a conversation through sync before the first turn, so they set it there (`memoryOff` on conversation.create / conversation.update) and never need it on this body; the turn reads it from the conversation either way."
         },
         "localFolder": {
           "x-native": "native"

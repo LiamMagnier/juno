@@ -201,6 +201,14 @@
           "status": "web-only",
           "note": "Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws."
         },
+        "/api/share/people": {
+          "status": "planned",
+          "note": "Share a chat or artifact with specific people by email (the web Share dialog's default): list who has access and add people. The apps' share sheets make public links only (NativeShareClient); revoking a people share is DELETE /api/share/[id], which they already call."
+        },
+        "/api/share/people/[id]": {
+          "status": "planned",
+          "note": "Remove one person from a share with specific people, from the same web dialog; not in the apps' share sheets yet."
+        },
         "/api/share/report": {
           "status": "web-only",
           "note": "Reporting a shared link happens on the shared page, which only the web draws."
@@ -288,6 +296,14 @@
         "/api/library/[id]": "native",
         "/api/library/made": "native",
         "/api/library/attach": "native",
+        "/api/connectors/[id]/files": {
+          "status": "planned",
+          "note": "The web composer's Add from Google Drive / OneDrive picker (recent files and search). The apps' + menu has no cloud picker yet; the rows are in the shell contract as optional."
+        },
+        "/api/connectors/[id]/files/attach": {
+          "status": "planned",
+          "note": "As /api/connectors/{id}/files: stores the picked files through the upload pipeline and answers with ready-to-send attachments, the shape /api/library/attach returns."
+        },
         "/api/prompts": {
           "status": "planned",
           "note": "The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog."
@@ -391,6 +407,14 @@
           "swift": "NativeArtifactAPIClient.versionContent in JunoChatKit/NativeArtifactLifecycle.swift",
           "note": "One version's body: restoring a version older than the synced window fetches it here first."
         },
+        "/api/artifact-runtime/complete": {
+          "status": "planned",
+          "note": "window.alevr.complete in an HTML or React artifact: the web's sandbox bridge (src/lib/artifact-ai/bridge-host.ts) calls it for the canvas, the chat card, /a/{id} and scripted shared pages, billed to the viewer. The Mac and iPhone run artifact previews without the bridge, so an app there gets no window.alevr yet (the system prompt teaches it to web turns only)."
+        },
+        "/api/artifact-runtime/storage": {
+          "status": "planned",
+          "note": "window.alevr.storage (get, set, delete, list) for the same artifacts: JSON values per artifact and per viewer, encrypted at rest. Native previews have no bridge yet, as above."
+        },
         "/api/design": "native",
         "/api/design/[artifactId]": {
           "status": "web-only",
@@ -438,6 +462,10 @@
           "note": "Topics Alevr does not remember (“anything about my divorce”), listed and added from Excluded topics on the web's Memory page. A topic is a SUPPRESSION row, so the apps already list it from /api/memory and lift it with DELETE /api/memory/[id]; adding one (which retires every fact on the topic) has no native control yet."
         },
         "/api/projects/[id]/memory": "native",
+        "/api/conversations/[id]/memory": {
+          "status": "planned",
+          "note": "“Memory off for this chat” (src/lib/chat/memory-off.ts), the web's composer + Memory switch and the chat's More menu. The apps already read the switch (`memoryOff` on the conversation sync entity and on GET /api/conversations/[id]) and can set it through sync (`memoryOff` on conversation.create and conversation.update, the same writer as this route); they draw no control for it yet. The server holds every turn to it whatever the client shows."
+        },
         "/api/memory/skill-candidates": {
           "status": "native",
           "swift": "NativeMemoryClient.skillCandidates(for:) in JunoChatKit/NativeMemorySkillCandidates.swift; Suggested skills on DesktopMemoryScreen and JunoMobileMemoryView"
@@ -1168,7 +1196,7 @@
           "mac": "native",
           "ios": "native",
           "screen": "Settings › Personalization (DesktopSettingsPersonalizationPane)",
-          "note": "The web's Customize › Instructions tab renders the same personalization section as Settings."
+          "note": "The web's Customize › Instructions tab renders the same personalization section as Settings. The tone characteristics (Warm, Enthusiastic, Headers & lists, Emoji, Concise) are web-first: /api/settings and the v1 settings record and settings.update patch carry them (toneWarmth … toneConciseness), and the native panes do not draw them yet."
         },
         "/profile": {
           "mac": "native",
@@ -1455,6 +1483,10 @@
         "/api/voice/spend": {
           "status": "internal",
           "note": "The voice relay reports what a live call has cost."
+        },
+        "/api/voice/tools": {
+          "status": "internal",
+          "note": "The voice relay lists a call's tools and runs one on Juno, under its own callback token; no client calls it. A card the call raises is answered by the signed-in client through /api/approvals/[id]."
         },
         "/api/work/schedules/[id]/fire": {
           "status": "internal",

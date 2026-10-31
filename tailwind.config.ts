@@ -37,6 +37,14 @@ import containerQueries from "@tailwindcss/container-queries";
 const config: Config = {
   darkMode: ["class"],
   content: ["./src/**/*.{ts,tsx}"],
+  // Hover is a pointer's state, not a finger's (spec §4.5 rule 6: "only
+  // under (hover: hover)"). Without this every `hover:` utility also matched
+  // the emulated hover a phone leaves on whatever was tapped last, so a row or
+  // a button kept its hover fill after the finger lifted until something else
+  // was touched. With it, `hover:` (and `group-hover:` / `peer-hover:`)
+  // compile inside `@media (hover: hover) and (pointer: fine)`. Touch reveals
+  // use `coarse:` or focus, never sticky hover.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     container: {
       center: true,
@@ -366,6 +374,12 @@ const config: Config = {
       // motion exactly as `var(--dur-slow)` does.
       // tests/tailwind-motion-tokens.test.ts holds every key to its token.
       transitionDuration: {
+        // The bare `transition` / `transition-colors` / `transition-opacity`
+        // utilities (and every `motion-reduce:transition-*` re-declaration)
+        // set a duration of their own. Stock Tailwind makes that 150ms, off
+        // the ladder, which is what about 75 class strings without a
+        // `duration-*` beside them were running. The fast rung instead.
+        DEFAULT: "var(--dur-fast, 120ms)",
         press: "var(--dur-press, 70ms)",
         fast: "var(--dur-fast, 120ms)",
         exit: "var(--dur-exit, 160ms)",
@@ -886,13 +900,11 @@ const config: Config = {
         },
       },
       animation: {
-        // A-to-B moves with both endpoints visible run in-out, not ease-out; and
-        // the collapse is faster than the expand, like every other exit here.
-        // These two previously used the raw `ease-out` keyword — off-token entirely.
+        // (The accordion pair that used to open this map is gone with its last
+        // call site; its keyframes stay above, tiered in globals.css.)
         // `fade-in` is the keyframe `page-in` and `overlay-in` both build on, so
         // it is the most-run animation in the product — and it was the last pair
-        // still on the raw `ease-out` keyword and off-ladder 200/250ms, the exact
-        // fault the accordion pair above was fixed for.
+        // still on the raw `ease-out` keyword and off-ladder 200/250ms.
         "fade-in": "fade-in var(--dur-base) var(--ease-out-soft)",
         "fade-in-up": "fade-in-up var(--dur-base) var(--ease-out-soft)",
         "pulse-ring": "pulse-ring var(--loop-breathe) var(--ease-breathe) infinite",
@@ -933,9 +945,11 @@ const config: Config = {
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
-        // Enter on the SPRING at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
-        // with a ~2% overrun, so a menu settles into place rather than stopping
-        // on it. The exit reverses faster on the accelerate, as leaving should.
+        // Enter on --ease-spring at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
+        // on a long, overshoot-free decelerate (.22, 1, .36, 1 has no overrun:
+        // its y never passes 1), so a menu settles into place rather than
+        // stopping on it. The exit reverses faster on the accelerate, as
+        // leaving should.
         "pop-in": "pop-in var(--dur-base) var(--ease-spring) both",
         "pop-out": "pop-out var(--dur-fast) var(--ease-in) both",
         // Dialogs: the same spring pop, one exit rung slower because a dialog
@@ -960,11 +974,8 @@ const config: Config = {
         "cite-flash": "cite-flash var(--dur-slow) var(--ease-out-soft) both",
         "overlay-in": "fade-in var(--dur-fast) var(--ease-out-soft) both",
         "overlay-out": "fade-out var(--dur-base) var(--ease-in) both",
-        // Reasoning slider's top tier (reasoning-slider.tsx).
-        // 24s, not 6s: the gradient should read as a slow luminous drift, not a
-        // sweep. `linear` is deliberate — an eased loop visibly pulses at the
-        // seam, which is the thing that looked like flashing.
-        // Per-particle durations (7-13s) are set inline; this is only the fallback.
+        // (The reasoning slider's `ultra-*` animations no longer live in this
+        // map; their keyframes above have no utility and are tiered C.)
       },
     },
   },

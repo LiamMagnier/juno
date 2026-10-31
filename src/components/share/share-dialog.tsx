@@ -2,9 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Link2, Link2Off } from "@/components/ui/icons";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { IconSwap } from "@/components/ui/icon-swap";
+import { Link2, Link2Off, Users } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,8 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Failure, LinkField, Loading, formatShareDate as formatDate } from "@/components/share/share-dialog-parts";
+import { SharePeoplePanel } from "@/components/share/share-people-panel";
+import { useOptionalApp } from "@/components/app/app-provider";
 import {
   publicationSummary,
   publishTargetValue,
@@ -28,12 +29,25 @@ import type { SharedTranscriptEntry } from "@/lib/share-transcript";
  *
  * OPENING IT CREATES NOTHING. It used to mint a public link the moment it
  * opened (audit §3.1), so looking at the dialog published the thing. Now it
- * reads what exists and creating is an explicit action:
+ * reads what exists and creating is an explicit action.
  *
- *   - a CHAT gets a snapshot link: "Create link", then Copy and Revoke;
- *   - an ARTIFACT is PUBLISHED (src/lib/artifact-publication.ts): a stable URL
- *     serving the version the owner picks (or the latest), with Update, Roll
- *     back (pick an older version), Unpublish and Reset link.
+ * Who can open it is the first choice, "Specific people" or "Anyone with the
+ * link", and Specific people is where it starts — the private choice first:
+ *
+ *   - SPECIFIC PEOPLE (share-people-panel.tsx, src/lib/share-people-core.ts):
+ *     add addresses; each gets an email and can open it only signed in with
+ *     that verified address. Remove a person, or Stop sharing for everyone;
+ *   - ANYONE WITH THE LINK, for a CHAT: a snapshot link, "Create link", then
+ *     Copy and Revoke;
+ *   - ANYONE WITH THE LINK, for an ARTIFACT: it is PUBLISHED
+ *     (src/lib/artifact-publication.ts): a stable URL serving the version the
+ *     owner picks (or the latest), with Update, Roll back (pick an older
+ *     version), Unpublish and Reset link.
+ *
+ * The two are independent: a target can have a people share and a public
+ * link at once, and switching the choice only changes which one the dialog is
+ * showing — it never turns one into the other. A conversation whose transcript
+ * is not on the server (a Code session on a Mac) shares by link only.
  *
  * Minimal on purpose: the visual redesign of sharing and publishing comes with
  * the new design system. Everything here is existing components.
@@ -44,68 +58,6 @@ export interface ShareInfo {
   url: string;
   snapshotAt: string;
   views: number;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-/** A read-only link field with a Copy button that confirms itself. */
-function LinkField({ url, label }: { url: string; label: string }) {
-  const [copied, setCopied] = React.useState(false);
-  const copy = async () => {
-    await navigator.clipboard.writeText(url).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <div className="flex items-center gap-2">
-      <Input
-        readOnly
-        value={url}
-        onFocus={(e) => e.currentTarget.select()}
-        aria-label={label}
-        className="font-mono text-caption"
-      />
-      <Button size="sm" onClick={copy} className="shrink-0">
-        <IconSwap
-          curve="spring"
-          swapped={copied}
-          from={<ActionIcons.copy className="size-4" aria-hidden />}
-          to={<StatusIcons.success className="size-4" aria-hidden />}
-        />
-        <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
-      </Button>
-    </div>
-  );
-}
-
-function Loading({ label }: { label: string }) {
-  return (
-    <div className="space-y-3" role="status" aria-label={label}>
-      <div className="flex items-center gap-2" aria-hidden>
-        <div className="skeleton h-9 flex-1 rounded-field coarse:h-11" />
-        <div className="skeleton h-8 w-20 shrink-0 rounded-control coarse:h-10" />
-      </div>
-      <div className="skeleton h-3 w-48 rounded-micro" aria-hidden />
-    </div>
-  );
-}
-
-function Failure({ message, onRetry }: { message: string; onRetry?: () => void }) {
-  return (
-    <div className="space-y-3 motion-safe:animate-fade-in" role="alert">
-      <p className="flex items-start gap-2 text-body text-destructive">
-        <StatusIcons.error className="mt-1 size-4 shrink-0" aria-hidden />
-        <span className="min-w-0">{message}</span>
-      </p>
-      {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
-        </Button>
-      )}
-    </div>
-  );
 }
 
 type ChatStatus = "loading" | "none" | "creating" | "ready" | "revoked" | "error" | "blocked";
@@ -388,6 +340,29 @@ function PublishPanel({ artifactId, open }: { artifactId: string; open: boolean 
   );
 }
 
+export type ShareAudienceChoice = "people" | "link";
+
+/** The two answers to "who can open it", in the order the switch shows them. */
+export function shareAudienceOptions(): SegmentedOption<ShareAudienceChoice>[] {
+  return [
+    // Icons from sm up: on a phone the two labels need the whole width.
+    { value: "people", label: "Specific people", icon: <Users className="size-4 max-sm:hidden" aria-hidden /> },
+    { value: "link", label: "Anyone with the link", icon: <Link2 className="size-4 max-sm:hidden" aria-hidden /> },
+  ];
+}
+
+/** What the dialog says under its title, for each target and choice. */
+export function shareDialogDescription(kind: "CHAT" | "ARTIFACT", audience: ShareAudienceChoice): string {
+  if (audience === "people") {
+    return kind === "CHAT"
+      ? "The people you add can read the conversation up to the moment you first share it, signed in with the address you invite. New messages stay private."
+      : "The people you add can see it as it is when you first share it, signed in with the address you invite. Later edits stay private.";
+  }
+  return kind === "CHAT"
+    ? "A link shows the conversation up to the moment you create it. New messages stay private."
+    : "Publishing puts the version you choose on a public page anyone with the link can open. Later edits stay private until you update it, unless you choose to follow the latest version.";
+}
+
 export function ShareDialog({
   kind,
   conversationId,
@@ -397,34 +372,64 @@ export function ShareDialog({
   title,
   description,
   transcript,
+  initialAudience,
 }: {
   kind: "CHAT" | "ARTIFACT";
   conversationId?: string;
   artifactId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Overrides for a chat-kind link that is not a chat (a Code session). */
+  /** Overrides for a chat-kind link that is not a chat (a Code session); `description` is the link's. */
   title?: string;
   description?: string;
   /** For a conversation whose transcript is not on the server: what the link should show. */
   transcript?: () => SharedTranscriptEntry[] | null;
+  /**
+   * Which choice the dialog opens on. Specific people unless the caller asked
+   * for something public by name (an artifact's "Publish…").
+   */
+  initialAudience?: ShareAudienceChoice;
 }) {
+  // Only a conversation the server holds can be shared with people: its page is
+  // built from the server's own messages. And only while this server has
+  // sharing with people switched on (SHARE_PEOPLE_ENABLED, src/lib/env.ts):
+  // off, this is the link and publish dialog it was before.
+  const peopleOn = useOptionalApp()?.features.sharePeople === true;
+  const peopleAllowed = peopleOn && !transcript;
+  const start: ShareAudienceChoice = peopleAllowed ? (initialAudience ?? "people") : "link";
+  const [audience, setAudience] = React.useState<ShareAudienceChoice>(start);
+  // Each opening starts from its first choice again, not from where the last one was left.
+  React.useEffect(() => {
+    if (!open) setAudience(start);
+  }, [open, start]);
+  const target = kind === "CHAT" && conversationId ? { conversationId } : kind === "ARTIFACT" && artifactId ? { artifactId } : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{title ?? (kind === "CHAT" ? "Share this chat" : "Publish this artifact")}</DialogTitle>
-          <DialogDescription>
-            {description ??
-              (kind === "CHAT"
-                ? "A link shows the conversation up to the moment you create it. New messages stay private."
-                : "Publishing puts the version you choose on a public page anyone with the link can open. Later edits stay private until you update it, unless you choose to follow the latest version.")}
-          </DialogDescription>
+          <DialogTitle>{title ?? (kind === "CHAT" ? "Share this chat" : peopleAllowed ? "Share this artifact" : "Publish this artifact")}</DialogTitle>
+          {/* A caller's description is about its link (a Code session's), so it
+              stands in for the link's sentence only. */}
+          <DialogDescription>{(audience === "link" && description) || shareDialogDescription(kind, audience)}</DialogDescription>
         </DialogHeader>
-        {kind === "CHAT" && conversationId ? (
-          <ChatLinkPanel conversationId={conversationId} open={open} transcript={transcript} />
+        {peopleAllowed && target && (
+          <SegmentedControl
+            value={audience}
+            onChange={setAudience}
+            options={shareAudienceOptions()}
+            ariaLabel="Who can open it"
+            optionClassName="max-sm:px-2 max-sm:text-caption"
+          />
+        )}
+        {/* Keyed by the choice, so each panel reads its own state on arrival
+            and a half-typed address does not follow the reader across. */}
+        {peopleAllowed && target && audience === "people" ? (
+          <SharePeoplePanel key="people" target={target} open={open} />
+        ) : kind === "CHAT" && conversationId ? (
+          <ChatLinkPanel key="link" conversationId={conversationId} open={open} transcript={transcript} />
         ) : kind === "ARTIFACT" && artifactId ? (
-          <PublishPanel artifactId={artifactId} open={open} />
+          <PublishPanel key="link" artifactId={artifactId} open={open} />
         ) : null}
       </DialogContent>
     </Dialog>

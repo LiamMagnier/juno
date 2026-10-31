@@ -508,8 +508,9 @@
        NOT durations. The six rungs above are the only transition and
        animation lengths; these are how long something WAITS, HOLDS, LOOPS,
        SETTLES or PACES, and the off-ladder lint (eslint-rules) accepts them by
-       name. src/lib/interaction.ts TIMING mirrors the delays and holds, and
-       the generator projects every one to TS and Swift. */
+       name. The generator projects every one to TS (TIMING_TOKENS) and Swift,
+       and src/lib/interaction.ts TIMING reads its delays and holds from that
+       projection rather than typing them again. */
     --delay-show: 200ms;          /* TurnStatus, skeletons: only if still waiting */
     --delay-tooltip: 200ms;       /* the shipped app's hover-intent pause */
     --delay-tooltip-skip: 400ms;  /* a peer within this shows at once */
@@ -945,8 +946,8 @@
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
 
     /* The modal dim. Pure black, heavier than light's: dimming a 9% ground
-       needs opacity to do most of the work, and the 2px backdrop blur on the
-       overlay does the rest. */
+       needs opacity to do all of the work, because the overlay filters
+       nothing (no backdrop blur in product chrome, spec D15). */
     --scrim: 0 0% 0% / 0.55;
 
     /* Design-canvas selection chrome — lifted like every other state colour,
@@ -1182,7 +1183,14 @@
          left for a spring to overshoot, and a spring on opacity alone clips. */
       --ease-spring: var(--ease-out-soft);
       --ease-drawer: var(--ease-out-soft);
+      /* The one cubic that overshoots (1.32). Its overshoot is travel too. */
+      --ease-out-back: var(--ease-out-soft);
       --dur-slow: var(--dur-base);
+      /* Tier A keeps a fade or a colour change at 220 at most (spec §4.7);
+         the 560 rung was the one length the preference left alone, so a
+         first-visit greeting or a finished-away wash still took over half a
+         second under it. */
+      --dur-emphasis: var(--dur-base);
     }
     /* Tier B for the springs, in a block of its own: the one above is the
        motion vocabulary the Design editor shares byte for byte
@@ -1576,13 +1584,12 @@
   }
 
   /* The primary action. Real colour, because a primary must never depend on a
-     shadow to be found: a flat coral fill and the same raised recipe every
-     other control sits on. No tinted glow — a halo under the send button is
-     the one thing that made the composer look like an AI demo. Hover
-     brightens; pressing dips into the pressed recipe. */
-  /* The primary key carries the one lift in a control row: a top highlight
-     and a contact shadow tinted from its own colour, so it reads as a solid
-     key rather than a flat swatch. */
+     shadow to be found: a solid accent fill. It carries the one lift in a
+     control row: a top highlight and a contact shadow tinted from its own
+     colour, so it reads as a solid key rather than a flat swatch. A caller
+     that repaints the fill (the ink verb of an approval) must drop that
+     shadow too, or the accent's tint shows under a fill of another colour.
+     Hover brightens; pressing dips into the pressed recipe. */
   .control-primary {
     color: hsl(var(--primary-foreground));
     border: 1px solid hsl(var(--primary));
@@ -2947,6 +2954,22 @@
   @media (pointer: coarse) {
     .aicss-cb-icon { width: 36px; height: 36px; }
     .aicss-cb-more { height: 40px; }
+    /* The header keys keep their drawn size under a finger (the copy pill
+       stays a 24px pill seated in the block's corner) and take the rest of
+       the way to 44 as an invisible pad centred on them: `hit-44` (G54),
+       written out because these classes are shared with code-run's keys. */
+    .aicss-cb-icon,
+    .aicss-cb-copy { position: relative; }
+    .aicss-cb-icon::before,
+    .aicss-cb-copy::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      translate: -50% -50%;
+    }
   }
 
   .aicss-diff { font-family: var(--font-mono), ui-monospace, monospace; }
@@ -3571,12 +3594,31 @@
    * still while claiming to shimmer. A plain CSS rule needs its keyframe in
    * plain CSS.
    */
+  /*
+   * THE SHOW GATE (spec C21): a skeleton appears only if the wait outlasts
+   * `--delay-show` (200ms), and then fades in over the fast rung. Without it a
+   * quick navigation flashed a skeleton for two or three frames before the
+   * content cut in, the flicker the token exists to prevent. The gate is a
+   * TRANSITION from `@starting-style`, not a second animation: the breathe's
+   * phase is set per bar with an inline `animation-delay` (`staggerDelay`),
+   * which would have retimed a gating animation too. For the same reason the
+   * breathe runs on `filter: opacity()`, a different property from the gate's
+   * `opacity`, so the two never fight. Where `@starting-style` is missing the
+   * skeleton simply shows at once, as it always did. The fade is Tier A, so
+   * it stays under reduced motion; the breathe (Tier C) does not.
+   * The minimum hold once shown (`--hold-skeleton`) is TIMING.minVisible in
+   * src/lib/interaction.ts, for the pending states that hold.
+   */
   .skeleton {
     animation: skeleton-breathe var(--loop-breathe) var(--ease-breathe, ease-in-out) infinite;
+    transition: opacity var(--dur-fast) var(--ease-out-soft) var(--delay-show);
+  }
+  @starting-style {
+    .skeleton { opacity: 0; }
   }
   @keyframes skeleton-breathe {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.62; }
+    0%, 100% { filter: opacity(1); }
+    50% { filter: opacity(0.62); }
   }
   .text-balance { text-wrap: balance; }
   /* Anchor pop-in/pop-out scaling to the trigger side on Radix popper content
@@ -3929,6 +3971,17 @@
   color: inherit;
 }
 
+/* ---- The toaster on the stacking ladder --------------------------------------
+ *
+ * Sonner stacks its region at z-index 999999999, above everything the product
+ * will ever draw, so `--z-toast` (70, "the top of the product; nothing goes
+ * above it") was declared and never applied. One class plus one attribute is
+ * (0,2,0), which beats sonner's runtime-injected `[data-sonner-toaster]`
+ * (0,1,0) whatever the source order. */
+.toaster[data-sonner-toaster] {
+  z-index: var(--z-toast);
+}
+
 /* ---- Sonner's close chip, in Juno's material -------------------------------
  *
  * Sonner draws [data-close-button] from its OWN grey ramp: `background:
@@ -3991,11 +4044,6 @@
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
-@media (prefers-reduced-motion: reduce) {
-  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
-    transition: none;
-  }
-}
 
 /* ---- Sonner's toast motion, on the ladder ----------------------------------
  *
@@ -4014,9 +4062,7 @@
  * Only duration and timing are set, never `transition-property`: sonner turns
  * transitions off while a toast is being swiped (`transition: none`), and
  * leaving the property list to it keeps a dragged toast glued to the finger.
- * Same specificity trick as the close chip above, and for the same reason.
- * Under reduced motion sonner removes its own transitions outright, so there
- * is nothing to tier here. */
+ * Same specificity trick as the close chip above, and for the same reason. */
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
   transition-duration: var(--dur-slow);
   transition-timing-function: var(--ease-out-expo);
@@ -4024,6 +4070,37 @@
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-removed="true"] {
   transition-duration: var(--dur-exit);
   transition-timing-function: var(--ease-in);
+}
+/* Reduced motion: a toast FADES in and out where it stands (Tier A kept,
+ * Tier B dropped), the way every other layer does.
+ *
+ * Sonner answers the OS preference itself with
+ * `transition: none !important; animation: none !important` on every toast
+ * and its children, so under it a toast cut in and cut out with no fade at
+ * all, and because that is library CSS the PostCSS twin never saw it: the
+ * in-app Reduced setting did nothing to toasts. This block outranks sonner's
+ * (0,4,0 against 0,1,0, both `!important`) and limits the toast to opacity,
+ * so the slide and the stack's re-deal land in place and only the fade runs.
+ * Being an ordinary reduced-motion block, it is compiled into the in-app
+ * Reduced twin like every other. A swiped toast is left to sonner so it stays
+ * glued to the finger. */
+@media (prefers-reduced-motion: reduce) {
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"]:not([data-swiping="true"]),
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"]:not([data-swiping="true"]) > * {
+    transition-property: opacity !important;
+    transition-duration: var(--dur-fast) !important;
+    transition-timing-function: var(--ease-out-soft) !important;
+  }
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-removed="true"]:not([data-swiping="true"]) {
+    transition-timing-function: var(--ease-in) !important;
+  }
+  /* The close chip's hover is colour, and colour is kept. Same weight as the
+     child rule above and after it, so it wins for the chip alone. */
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
+    transition-property: background-color, color !important;
+    transition-duration: var(--dur-fast) !important;
+    transition-timing-function: var(--ease-out-soft) !important;
+  }
 }
 /* The status glyph sits on the title's optical centre. Sonner pulls its own
    16px box 3px left to hang its stock icons; the set's glyphs are drawn on the
@@ -4055,8 +4132,9 @@
  * already says what happened, and its button is an offer ("Undo"), not the
  * page's primary action, so the one saturated colour stays with the page.
  * Juno's control geometry: 32px (the `sm` button, and the contract's pointer
- * floor for a hit target), the 13px `ui` rung at 500, the 10px control corner,
- * a hairline, the tonal hover cross-fade and the 0.97 press. The cancel button
+ * floor for a hit target), the 13px `ui` rung at 500, the `control` corner
+ * (8px, the `<Button>`'s own; it was a literal 10px, the field rung), a
+ * hairline, the tonal hover cross-fade and the 0.97 press. The cancel button
  * is the ghost of it. `[data-button][data-cancel]` carries an extra attribute
  * because sonner's dark-theme cancel rule is (0,5,0).
  *
@@ -4068,7 +4146,7 @@
   height: 2rem;
   padding-inline: 0.75rem;
   border: 1px solid hsl(var(--border));
-  border-radius: 10px;
+  border-radius: theme("borderRadius.control");
   background: hsl(var(--secondary));
   color: hsl(var(--foreground));
   font-size: 0.8125rem;
@@ -4470,6 +4548,12 @@
   /* A stopped skeleton holds at 0.8 rather than at full ink (C21), so it
      still reads as a placeholder and not as content. */
   .skeleton { opacity: 0.8; }
+  /* Its show gate is a fade (Tier A) and stays. Restated here, unlayered,
+     because the 0.8 above is unlayered and would otherwise win the starting
+     style as well and show the skeleton at once. */
+  @starting-style {
+    .skeleton { opacity: 0; }
+  }
 }
 
 /*
@@ -4658,7 +4742,7 @@
  *
  *   thread  a list row opening its chat. The page (PageTransition's
  *           `.app-page`) leaves at about 0.65x the entrance on the accelerate
- *           curve and the new one fades in with a 6px rise; the rest of the
+ *           curve and the new one fades in with a 4px rise; the rest of the
  *           shell (the sidebar's selection moving) only crossfades.
  *   canvas  an artifact going docked ⇄ fullscreen. The panel's box morphs
  *           between the two (it is named `canvas-panel` by script, and not at
@@ -4840,7 +4924,9 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
   --muted-foreground: inherit;
   --icon-muted: inherit;
   --border: inherit;
-  border-radius: 14px;
+  /* The card rung, like the research citation card: the same object (a
+     source preview) was 14 here and 12 there. */
+  border-radius: theme("borderRadius.card");
   font-weight: 400;
   background-color: hsl(var(--popover));
   color: hsl(var(--popover-foreground));

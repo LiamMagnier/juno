@@ -293,6 +293,16 @@ export const chatBodySchema = z
      */
     taskApprovalMode: z.enum(["conservative", "balanced", "permissive"]).optional(),
     /**
+     * "Memory off for this chat" (src/lib/chat/memory-off.ts), chosen in the
+     * composer before the chat existed: `true` saves it on the conversation
+     * this turn creates (or on the one it continues), so the very first turn
+     * already reads and saves no memory. It only switches memory OFF — `false`
+     * is the same as absent, and turning memory back on is the chat's own
+     * toggle (PATCH /api/conversations/[id]/memory), which also covers what
+     * was said meanwhile as read. A stale tab can therefore never undo it.
+     */
+    memoryOff: z.boolean().optional(),
+    /**
      * The folder on the person's Mac this chat works in (the Mac's "Work in a
      * folder"): its display name and the access they chose, never a path.
      * Read only together with the `local_folder` client feature

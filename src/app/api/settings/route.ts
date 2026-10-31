@@ -6,13 +6,14 @@ import { getCurrentUser } from "@/lib/session";
 import { ensureUserDefaults } from "@/lib/auth";
 import { isModelId } from "@/lib/models";
 import { PERSONALITY_IDS } from "@/lib/personalities";
+import { CHARACTERISTIC_PATCH_FIELDS, characteristicsPatch, normalizeCharacteristics } from "@/lib/characteristics";
 import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
 import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
 import { SENSITIVE_TOPICS, revokedSensitiveTopics } from "@/lib/memory-sensitive";
 import { AUTO_PREFERENCES } from "@/lib/router/decide";
 import { AUTO_DATA_BOUNDARIES } from "@/lib/router/data-policy";
-import { activeTtsProvider } from "@/lib/env";
+import { activeTtsProvider, isToneCharacteristicsEnabled } from "@/lib/env";
 
 const schema = z.object({
   // The display name — what the sidebar and the greeting call you. Lives on
@@ -22,6 +23,9 @@ const schema = z.object({
   accent: z.string().max(30).regex(/^([a-z]+|#[0-9a-fA-F]{6})$/).optional(),
   defaultModel: z.string().optional(),
   personality: z.enum(PERSONALITY_IDS).optional(),
+  // Tone characteristics (toneWarmth, toneEnthusiasm, toneFormatting,
+  // toneEmoji, toneConciseness): each "less" | "default" | "more".
+  ...CHARACTERISTIC_PATCH_FIELDS,
   // No app-side character cap — model context is the real limit (curriculum /
   // mentor system prompts regularly exceed the old 4k hard ceiling).
   customInstructions: z.string().optional(),
@@ -92,6 +96,14 @@ export async function GET() {
     select: {
       customInstructions: true,
       responseLanguage: true,
+      // The tone characteristics, so macOS and iOS can draw the same five
+      // controls the web does. Normalised below: an unknown stored value is
+      // shown as the "default" the prompt builder reads it as.
+      toneWarmth: true,
+      toneEnthusiasm: true,
+      toneFormatting: true,
+      toneEmoji: true,
+      toneConciseness: true,
       memoryEnabled: true,
       // Exposed so macOS and iOS draw the same sensitive-topic switches the
       // web does — a client that assumed "all on" would show memory keeping
@@ -129,7 +141,10 @@ export async function GET() {
   // The live speech provider, beside the settings rather than in them: macOS
   // and iOS list that provider's voices (src/lib/voices.ts voicesFor), as the
   // web does from `features.ttsProvider`. null when no server TTS is set up.
-  return NextResponse.json({ settings, ttsProvider: activeTtsProvider() });
+  return NextResponse.json({
+    settings: { ...settings, ...normalizeCharacteristics(settings) },
+    ttsProvider: activeTtsProvider(),
+  });
 }
 
 export async function PATCH(req: Request) {
@@ -182,6 +197,8 @@ export async function PATCH(req: Request) {
       ...(d.accent ? { accent: d.accent } : {}),
       ...(d.defaultModel ? { defaultModel: d.defaultModel } : {}),
       ...(d.personality ? { personality: d.personality } : {}),
+      // Saved only while the server has them on (TONE_CHARACTERISTICS_ENABLED).
+      ...(isToneCharacteristicsEnabled() ? characteristicsPatch(d) : {}),
       ...(d.customInstructions !== undefined ? { customInstructions: d.customInstructions } : {}),
       ...(d.responseLanguage !== undefined ? { responseLanguage: d.responseLanguage } : {}),
       ...(uiLocale !== undefined ? { uiLocale } : {}),

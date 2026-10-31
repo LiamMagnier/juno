@@ -132,7 +132,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
           </thead>
           <tbody className="divide-y divide-border/45 font-mono text-caption text-foreground">
             {paginatedData.map((row, index) => (
-              <tr key={index} className="transition-colors duration-fast ease-out-soft hover:bg-accent/35 motion-reduce:transition-none">
+              <tr key={index} className="transition-colors duration-fast ease-out-soft hover:bg-accent/35">
                 {table.columns.map((column) => (
                   <td
                     key={column}

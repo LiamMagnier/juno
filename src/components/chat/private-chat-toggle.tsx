@@ -39,8 +39,11 @@ export function PrivateChatToggle({
    * `icon lg`, a size-5 glyph), so the header cluster is one family. On: the
    * homepage's solid primary, near-white with dark ink in the dark theme, as a
    * pill that names the mode, so being incognito is never something you have
-   * to infer from a tinted icon. The pill grows out of the circle on the
-   * homepage's ease, and presses at .97 like the homepage's buttons.
+   * to infer from a tinted icon. The pill takes the circle's place in one
+   * frame and its fill, ink and word cross-fade in; it used to grow out of the
+   * circle by transitioning `width` and `padding`, which re-laid-out the whole
+   * header row on every frame (D27). It presses at .97 like the homepage's
+   * buttons.
    *
    * The glasses look at the pointer once it comes within reach of the button
    * (`useIncognitoLook`): a small invitation before the press, quiet at rest,
@@ -63,7 +66,7 @@ export function PrivateChatToggle({
           onClick={onToggle}
           className={cn(
             "inline-flex h-9 items-center justify-center gap-2 rounded-full text-ui font-medium outline-none coarse:h-11",
-            "transition-[background-color,color,padding,width,transform] duration-base ease-out-expo active:scale-[0.97] active:duration-press",
+            "transition-[background-color,color,transform] duration-base ease-out-soft active:scale-[0.97] active:duration-press",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-colors motion-reduce:active:scale-100",
             active
@@ -72,7 +75,7 @@ export function PrivateChatToggle({
           )}
         >
           <IncognitoGlyph className="size-5" strokeWidth={1.5} look={look} />
-          {active ? <span className="tracking-[-0.005em] motion-safe:animate-fade-in">Incognito</span> : null}
+          {active ? <span className="tracking-[-0.005em] animate-fade-in">Incognito</span> : null}
         </button>
       </TooltipTrigger>
       <TooltipContent>{active ? "Incognito is on. Nothing is saved." : "Incognito chat"}</TooltipContent>

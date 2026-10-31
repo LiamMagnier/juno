@@ -34,7 +34,7 @@ function SourceLink({ row, instant }: { row: SourceRow; instant: boolean }) {
         href={row.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="-mx-1.5 flex min-w-0 items-center gap-2.5 rounded-control px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+        className="-mx-1.5 flex min-w-0 items-center gap-2.5 rounded-control px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent"
       >
         <SourceFavicon url={row.url} variant="cluster" className="size-4" />
         <span className="flex min-w-0 flex-1 flex-col">

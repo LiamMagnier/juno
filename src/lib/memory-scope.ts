@@ -111,7 +111,16 @@ export function readerMayUseSummary(reader: MemoryReader): boolean {
  * kept from reading, but kept from writing, because "nothing from your
  * memory" that could still add to it or wipe it would not be what it says.
  * `agentAccess` is null for a turn no agent speaks in.
+ *
+ * `chatMemoryOff` is the conversation's own "Memory off for this chat"
+ * (src/lib/chat/memory-off.ts), held to the same both-ways rule: a chat kept
+ * out of memory neither reads it nor adds to it. Like the agent's grant it
+ * can only take memory away; absent is a chat that never set it.
  */
-export function turnMayUseMemory(input: { enabled: boolean; agentAccess: AgentMemoryAccess | null }): boolean {
-  return input.enabled && input.agentAccess !== "none";
+export function turnMayUseMemory(input: {
+  enabled: boolean;
+  agentAccess: AgentMemoryAccess | null;
+  chatMemoryOff?: boolean;
+}): boolean {
+  return input.enabled && input.agentAccess !== "none" && input.chatMemoryOff !== true;
 }

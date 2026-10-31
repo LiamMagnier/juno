@@ -87,7 +87,8 @@ test.describe("dialogs give focus back to what opened them", () => {
     await page.keyboard.press("End");
     await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
     await page.keyboard.press("Enter");
-    const dialog = page.getByRole("dialog");
+    // The house ConfirmDialog asks as an alertdialog (src/components/ui/confirm-dialog.tsx).
+    const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
     await expectFocused(dialog.getByRole("button", { name: "Cancel" }));
     await page.keyboard.press("Escape");

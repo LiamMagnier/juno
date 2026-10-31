@@ -5,6 +5,8 @@ import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
 import { checkProjectAccess } from "@/lib/project-collaboration";
 import { parseVoiceMemoryRequest } from "@/lib/voice-memory";
 import { parseVoiceConversationRequest } from "@/lib/voice-persona";
+import { parseVoiceToolsRequest } from "@/lib/voice-tools";
+import { isVoiceToolsEnabled } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -58,6 +60,18 @@ function resolveVoiceRelayURL(): string | null {
  * relay asks for that agent's persona with it (src/app/api/voice/persona). A
  * lookup that fails signs no claim rather than failing the call: the call is
  * then Juno, as it was before the claim existed.
+ *
+ * The call's conversation also keeps memory out when it is a chat with
+ * "Memory off for this chat" (src/lib/chat/memory-off.ts): asked for or not,
+ * such a call's token carries no memory claim, so the relay never asks.
+ *
+ * TOOLS ARE ASKED FOR TOO. `?tools=1` (from a chat that is not incognito, with
+ * the chat's switched-on `connectors` and the caller's `timeZone`) signs
+ * {"tl": 1} with the conversation, once it is shown to be this person's, and
+ * the requested connector ids. Nothing in the claim is a credential: the relay
+ * carries it back to `/api/voice/tools`, which reads the account's own rows and
+ * the chat's entitlement table before it lists or runs anything. Only while
+ * VOICE_TOOLS_ENABLED=1 (src/lib/env.ts); off, no call is lent tools.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -81,13 +95,30 @@ export async function GET(req: Request) {
     // — a project chat reading account memory is the leak isolation prevents.
     memory = null;
   }
+  if (memory && (await chatKeepsMemoryOut(user.id, parseVoiceConversationRequest(params)))) memory = null;
   const agentId = await threadAgent(user.id, parseVoiceConversationRequest(params));
+  // Lent only while the server has voice tools on (VOICE_TOOLS_ENABLED): off,
+  // a chat's `?tools=1` signs nothing and the call has no tools, as before.
+  const tools = isVoiceToolsEnabled() ? parseVoiceToolsRequest(params) : null;
+  const conversation = tools ? await ownConversation(user.id, parseVoiceConversationRequest(params)) : null;
   const token = signState(
     JSON.stringify({
       uid: user.id,
       exp: Math.floor(Date.now() / 1000) + 60,
       ...(memory ? { mem: 1, ...(memory.projectId ? { pid: memory.projectId } : {}) } : {}),
       ...(agentId ? { aid: agentId } : {}),
+      // The chat's tools, when the chat asked (src/lib/voice-tools.ts). The
+      // conversation goes in only once it is shown to be this person's; the
+      // connector ids are a request, resolved against their own rows when a
+      // tool is listed (src/app/api/voice/tools).
+      ...(tools
+        ? {
+            tl: 1,
+            ...(conversation ? { cid: conversation.id } : {}),
+            ...(tools.connectorIds.length ? { cx: tools.connectorIds } : {}),
+            ...(tools.timeZone ? { tz: tools.timeZone } : {}),
+          }
+        : {}),
     })
   );
 
@@ -124,6 +155,42 @@ async function threadAgent(userId: string, conversationId: string | null): Promi
       select: { id: true },
     });
     return agent?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the call's chat, if it is this person's, is set to "Memory off for
+ * this chat". Asked only when the call asked for memory. A lookup that throws
+ * signs no memory claim: unlike a persona, memory a call should not have had
+ * is not something to fall back to.
+ */
+async function chatKeepsMemoryOut(userId: string, conversationId: string | null): Promise<boolean> {
+  if (!conversationId) return false;
+  try {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+      select: { memoryOff: true },
+    });
+    return conversation?.memoryOff === true;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The conversation a tools grant may name: only one of this person's own. A
+ * lookup that fails names none — the call keeps the tools that need no
+ * conversation — rather than failing the token.
+ */
+async function ownConversation(userId: string, conversationId: string | null): Promise<{ id: string } | null> {
+  if (!conversationId) return null;
+  try {
+    return await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+      select: { id: true },
+    });
   } catch {
     return null;
   }

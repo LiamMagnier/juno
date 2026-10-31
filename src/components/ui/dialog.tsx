@@ -14,25 +14,45 @@ const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 
 /**
- * The dismiss affordance, in one place: `<Pressable kind="icon">` like every
- * other bare glyph affordance, and `position` is the only thing a call site
- * can vary (image-edit-overlay's close sits over a dark image at a different
- * inset — a position, not a style). No focus or radius override: the global
+ * The dismiss affordance, in one place: `<Pressable kind="icon" size="lg">`
+ * like every other bare glyph affordance (36px, 44px on a coarse pointer, a
+ * circular tonal fill on hover, the 16px dismiss glyph). `CloseButton` is the
+ * drawing for a surface that is not a Radix dialog (the document viewer's
+ * split pane); `DialogCloseButton` is the same button wired to `Dialog.Close`
+ * (dialogs and sheets alike). `position` is the only thing a call site
+ * varies: `static` in a header row (a side sheet, the computer view, the MCP
+ * dialog), or the panel's corner. No focus or radius override: the global
  * ring is authoritative and `kind="icon"` is circular by house idiom.
+ *
+ * `size="md"` (32px, 40 + a 44px hit pad on touch) is only for a close that
+ * sits in a row of 32px toolbar buttons (the document viewer, the computer
+ * view), so it keeps the row's height; the plate, glyph and hover are the same.
  *
  * `print:hidden`, with the scrim below: a dialog that prints its content (the
  * research report reader) must not print a close glyph in the corner of page
  * one, and there is nothing to dismiss on paper.
  */
+export const CloseButton = React.forwardRef<
+  HTMLButtonElement,
+  Omit<React.ComponentPropsWithoutRef<typeof Pressable>, "kind" | "size" | "children"> & {
+    /** The accessible name. "Close" unless the surface needs to say what closes. */
+    label?: string;
+    size?: "md" | "lg";
+  }
+>(({ className, label = "Close", size = "lg", ...props }, ref) => (
+  <Pressable ref={ref} kind="icon" size={size} className={cn("print:hidden", className)} {...props}>
+    <ActionIcons.dismiss className="size-4" aria-hidden="true" />
+    <span className="sr-only">{label}</span>
+  </Pressable>
+));
+CloseButton.displayName = "CloseButton";
+
 export const DialogCloseButton = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Close>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close> & { label?: string; size?: "md" | "lg" }
+>(({ className, label, size, ...props }, ref) => (
   <DialogPrimitive.Close ref={ref} asChild {...props}>
-    <Pressable kind="icon" size="lg" className={cn("absolute right-4 top-4 print:hidden", className)}>
-      <ActionIcons.dismiss className="size-4" />
-      <span className="sr-only">Close</span>
-    </Pressable>
+    <CloseButton label={label} size={size} className={cn("absolute right-4 top-4", className)} />
   </DialogPrimitive.Close>
 ));
 DialogCloseButton.displayName = "DialogCloseButton";
@@ -64,6 +84,21 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
  * The panel is `.overlay-glass` at `rounded-panel` (16): opaque, because a
  * dialog holds content that has to be read, and glass is for chrome.
  *
+ * PINNED CHROME (dialog.css). The panel is a frame that never scrolls; its
+ * content sits in one body that does. So the ✕ and the phone grabber, which
+ * belong to the frame, stay put however long the content is, and a
+ * `DialogHeader` / `DialogFooter` inside the body is pinned to its top and
+ * bottom edge (sticky, on the panel's own fill): the title and the actions
+ * stay on screen while the middle scrolls between them. The header keeps a
+ * gutter for the ✕, so a long title wraps before it reaches the button, and
+ * the ✕ is centred on the title's first line.
+ *
+ * `bare` is for a dialog that lays out its whole panel itself (its own
+ * padding, header bar and scroller: Quick Look, onboarding, the report
+ * reader). The frame then draws no padding and no body, which is also why a
+ * bare dialog can no longer pick up half of the default padding by accident:
+ * a call site's `p-0` used to drop `p-5` but keep `sm:p-6`.
+ *
  * Centring lives on the INDEPENDENT `translate` property, not on a
  * translate-x/y utility, so the pop keyframe can own `transform` outright — a
  * scale keyframe writing `transform` would otherwise fling the dialog to the
@@ -88,8 +123,10 @@ const DialogContent = React.forwardRef<
     hideClose?: boolean;
     /** Below 640px, rise from the bottom as a sheet (default). */
     sheet?: boolean;
+    /** The call site lays out the whole panel: no padding and no scrolling body. */
+    bare?: boolean;
   }
->(({ className, children, hideClose, sheet = true, onCloseAutoFocus, ...props }, ref) => {
+>(({ className, children, hideClose, sheet = true, bare = false, onCloseAutoFocus, ...props }, ref) => {
   // Focus goes back to whatever opened the dialog, not only to a
   // <DialogTrigger> — see focus-return.tsx.
   const focusReturn = useDialogFocusReturn(onCloseAutoFocus);
@@ -103,8 +140,11 @@ const DialogContent = React.forwardRef<
         ref={panelRef}
         data-swipe-panel=""
         data-phone-sheet={sheet ? "" : undefined}
+        data-dialog-layout={bare ? "bare" : "pinned"}
+        data-dialog-close={hideClose ? undefined : ""}
         className={cn(
-          "ui-dialog overlay-glass fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel p-5 outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
+          "ui-dialog overlay-glass fixed left-[50%] top-[50%] z-modal w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] rounded-panel outline-none data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out",
+          bare ? "grid gap-4 overflow-y-auto" : "flex flex-col overflow-hidden",
           className
         )}
         onCloseAutoFocus={focusReturn.onCloseAutoFocus}
@@ -112,29 +152,32 @@ const DialogContent = React.forwardRef<
       >
         {focusReturn.capture}
         {sheet ? <div className="ui-sheet-grabber" data-sheet-handle="" aria-hidden /> : null}
-        {children}
-        {!hideClose && <DialogCloseButton />}
+        {bare ? children : <div className="ui-dialog-body">{children}</div>}
+        {!hideClose && <DialogCloseButton className="ui-dialog-close" />}
       </DialogPrimitive.Content>
     </DialogPortal>
   );
 });
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
+/** Pinned to the top of the body, with a gutter for the ✕ (dialog.css). */
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)} {...props} />;
+  return <div className={cn("ui-dialog-header flex flex-col space-y-1.5 text-center sm:text-left", className)} {...props} />;
 }
 
+/** Pinned to the bottom of the body (dialog.css), so the actions never scroll away. */
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   // gap-2 at every width: the stacked mobile layout needs it as much as the row.
-  return <div className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)} {...props} />;
+  return <div className={cn("ui-dialog-footer flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)} {...props} />;
 }
 
 const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  // `text-heading` carries 1.125rem / 600 / -0.006em itself.
-  <DialogPrimitive.Title ref={ref} className={cn("font-sans text-heading font-semibold tracking-[-0.01em]", className)} {...props} />
+  // `text-heading` carries 1.125rem / 600 / -0.006em itself. A tracking
+  // utility here used to override the token's own letter-spacing.
+  <DialogPrimitive.Title ref={ref} className={cn("font-sans text-heading font-semibold", className)} {...props} />
 ));
 DialogTitle.displayName = DialogPrimitive.Title.displayName;
 

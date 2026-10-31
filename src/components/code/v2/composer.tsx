@@ -138,7 +138,9 @@ function ApprovalTakeover({
   );
 
   return (
-    <div className="cv2-approve" role="alertdialog" aria-label={header} key={req.id}>
+    // A labelled group, never an alertdialog: the card is inline above the
+    // composer and traps nothing (spec D20; code-run-cards.tsx says the same).
+    <div className="cv2-approve" role="group" aria-label={header} key={req.id}>
       <div className="ah">
         <span className="title cv2-grow">{header}</span>
         {counter}
@@ -241,7 +243,7 @@ function PlanApproval({ plan, onApprove, onRevise }: { plan: PlanItem; onApprove
   const primary = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => primary.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions), [plan.id]);
   return (
-    <div className="cv2-approve" role="alertdialog" aria-label="Plan ready">
+    <div className="cv2-approve" role="group" aria-label="Plan ready">
       <div className="ah">
         <span className="title cv2-grow">Plan ready{n ? `, ${n} ${n === 1 ? "step" : "steps"}` : ""}</span>
       </div>

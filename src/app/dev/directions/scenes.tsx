@@ -205,7 +205,7 @@ function RosterRow({ member }: { member: CrewMember }) {
     <li>
       <button
         type="button"
-        className="group -mx-3 grid w-[calc(100%+1.5rem)] grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 rounded-control px-3 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none sm:grid-cols-[2.5rem_minmax(0,14rem)_minmax(0,1fr)_auto]"
+        className="group -mx-3 grid w-[calc(100%+1.5rem)] grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 rounded-control px-3 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent sm:grid-cols-[2.5rem_minmax(0,14rem)_minmax(0,1fr)_auto]"
         aria-label={`${member.name}, ${member.role}. ${presence.label}. ${member.now}`}
       >
         <span className={cn("row-span-2 flex size-10 items-center justify-center sm:row-span-1", member.presence === "offline" && "dir-face-offline")}>

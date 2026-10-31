@@ -234,7 +234,7 @@ export const PlusMenuRow = React.forwardRef<
         <span
           aria-hidden="true"
           className={cn(
-            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo motion-reduce:transition-none",
+            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo",
             ticked ? "bg-foreground" : "bg-foreground/[0.14]",
           )}
         >
@@ -243,7 +243,7 @@ export const PlusMenuRow = React.forwardRef<
               // On, the thumb takes the page's ground: the track is the
               // homepage's solid primary (near-white in the dark theme), and a
               // white thumb on it vanished. Off, a white thumb on a faint track.
-              "absolute left-0.5 top-0.5 size-3 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform,background-color] duration-base ease-out-expo motion-reduce:transition-none",
+              "absolute left-0.5 top-0.5 size-3 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform,background-color] duration-base ease-out-expo motion-reduce:transition-[background-color]",
               ticked ? "translate-x-3 bg-background" : "bg-white",
             )}
           />

@@ -82,5 +82,10 @@ test("the transcript draws the rail from the window's own geometry and jumps thr
   assert.match(hook, /if \(messageId\) focusMessage\(messageId\)/);
   const rail = readFileSync("src/components/chat/transcript-rail.tsx", "utf8");
   assert.doesNotMatch(rail, /querySelector|framer-motion|motion\/react/);
-  assert.match(rail, /motion-reduce:transition-none/);
+  // Reduced motion drops the travel and keeps the ink and the fade (Tier A).
+  assert.match(rail, /transition-\[transform,color\] duration-base ease-spring motion-reduce:transition-\[color\]/);
+  assert.match(rail, /transition-\[translate,opacity\] duration-base ease-spring motion-reduce:transition-opacity/);
+  // The preview card travels on `translate`, never on `top` (a layout property, D27).
+  assert.doesNotMatch(rail, /transition-\[top/);
+  assert.match(rail, /style=\{\{ translate: `0 \$\{/);
 });

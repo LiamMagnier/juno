@@ -84,7 +84,7 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                   stroke={lit ? "hsl(var(--live) / 0.7)" : "hsl(var(--foreground) / 0.14)"}
                   strokeWidth={lit ? 2 : 1}
                   vectorEffect="non-scaling-stroke"
-                  className="transition-[stroke] duration-base motion-reduce:transition-none"
+                  className="transition-[stroke] duration-base"
                 />
               );
             })}
@@ -114,7 +114,7 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                 <span
                   aria-hidden
                   className={cn(
-                    "block size-3.5 rounded-full border-2 transition-[background-color,border-color,transform,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+                    "block size-3.5 rounded-full border-2 transition-[background-color,border-color,transform,box-shadow] duration-base ease-spring motion-reduce:transition-[background-color,border-color,box-shadow]",
                     on
                       ? "scale-125 border-[hsl(var(--live))] bg-[hsl(var(--live))] shadow-[0_0_0_5px_hsl(var(--live)/0.15)]"
                       : "border-foreground/35 bg-card group-hover:scale-110 group-hover:border-[hsl(var(--live))]",
@@ -122,7 +122,7 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                 />
                 <span
                   className={cn(
-                    "whitespace-nowrap rounded-full px-2 py-0.5 text-caption leading-tight transition-colors duration-fast motion-reduce:transition-none",
+                    "whitespace-nowrap rounded-full px-2 py-0.5 text-caption leading-tight transition-colors duration-fast",
                     on ? "bg-[hsl(var(--live)/0.1)] font-semibold text-[hsl(var(--live))]" : "bg-card/90 text-muted-foreground group-hover:text-foreground",
                   )}
                 >
@@ -151,7 +151,7 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                   tabIndex={on ? 0 : -1}
                   onClick={() => setSelected(p.id)}
                   className={cn(
-                    "relative flex min-w-0 flex-col items-start rounded-card px-3 py-2 text-left transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                    "relative flex min-w-0 flex-col items-start rounded-card px-3 py-2 text-left transition-colors duration-fast ease-out-soft",
                     on ? "bg-[hsl(var(--live)/0.08)] shadow-[inset_2px_0_0_hsl(var(--live))]" : "hover:bg-accent",
                   )}
                 >
@@ -232,7 +232,7 @@ export function LiveStops({ stops }: { stops: Stops }) {
                   target="_blank"
                   rel="noopener noreferrer nofollow"
                   referrerPolicy="no-referrer"
-                  className="mt-0.5 inline-flex w-fit items-center gap-1 text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  className="relative mt-0.5 inline-flex w-fit items-center gap-1 text-caption text-muted-foreground underline-offset-4 hit-44 hover:text-foreground hover:underline"
                 >
                   Open in Maps
                   <ExternalLink className="size-3" aria-hidden />
@@ -249,7 +249,7 @@ export function LiveStops({ stops }: { stops: Stops }) {
           target="_blank"
           rel="noopener noreferrer nofollow"
           referrerPolicy="no-referrer"
-          className="inline-flex w-fit items-center gap-1.5 text-ui text-foreground underline-offset-4 hover:underline"
+          className="relative inline-flex w-fit items-center gap-1.5 text-ui text-foreground underline-offset-4 hit-44 hover:underline"
         >
           Open the whole route
           <ExternalLink className="size-3.5" aria-hidden />
@@ -289,12 +289,12 @@ export function LiveChecklist({
                 role="checkbox"
                 aria-checked={on}
                 onClick={() => onToggle(i)}
-                className="flex w-full min-w-0 items-start gap-3 rounded-card px-2 py-2 text-left transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
+                className="flex w-full min-w-0 items-start gap-3 rounded-card px-2 py-2 text-left coarse:py-3 transition-colors duration-fast hover:bg-accent"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "mt-0.5 flex size-[1.125rem] shrink-0 items-center justify-center rounded-full border-2 transition-[background-color,border-color,transform] duration-base ease-spring motion-reduce:transition-none",
+                    "mt-0.5 flex size-[1.125rem] shrink-0 items-center justify-center rounded-full border-2 transition-[background-color,border-color,transform] duration-base ease-spring motion-reduce:transition-[background-color,border-color]",
                     on ? "scale-105 border-[hsl(var(--live))] bg-[hsl(var(--live))] text-white" : "border-foreground/30",
                   )}
                 >

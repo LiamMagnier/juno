@@ -39,7 +39,7 @@ function CloseButton({ className }: { className?: string }) {
  * the section on the right in a scroller of its own. It enters at 0.97 scale
  * and full transparency, reaching rest on the base rung with the plain
  * decelerate: no overshoot and no rise, because a panel this size springing
- * reads as a toy. It leaves on the fast rung, faster than it came, because
+ * reads as a toy. It leaves on the exit rung (160, every dialog's), faster than it came, because
  * the reader has already decided.
  *
  * NARROW (below md): a full-height sheet. A centred card with a 1rem margin
@@ -82,6 +82,7 @@ export function SettingsModal({
         // Settings owns the whole phone screen already (max-md below), so it
         // is not a bottom sheet there.
         sheet={false}
+        bare
         aria-describedby={undefined}
         onOpenAutoFocus={(event) => {
           // The open section's tab in the column; on a narrow window the rail
@@ -94,7 +95,7 @@ export function SettingsModal({
           target.focus();
         }}
         className={cn(
-          "flex flex-col gap-0 overflow-hidden p-0 sm:p-0",
+          "flex flex-col gap-0 overflow-hidden",
           "md:h-[min(86dvh,46rem)] md:w-[calc(100%-3rem)] md:max-w-[58rem] md:flex-row",
           "max-md:left-0 max-md:top-0 max-md:h-dvh max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:[translate:none]",
           // The entrance and exit, on the dialog's own pop keyframes with the
@@ -102,7 +103,7 @@ export function SettingsModal({
           // behind motion-safe only, so under reduced motion the element keeps
           // inheriting the root's value (1) instead of outranking it.
           "[--pop-shift:0px] motion-safe:[--motion-scale-from:0.97] max-md:motion-safe:[--motion-scale-from:1] max-md:[--pop-shift:24px]",
-          "data-[state=open]:animate-[pop-in_var(--dur-base)_var(--ease-out-soft)_both] data-[state=closed]:animate-[pop-out_var(--dur-fast)_var(--ease-in)_both]",
+          "data-[state=open]:animate-[pop-in_var(--dur-base)_var(--ease-out-soft)_both] data-[state=closed]:animate-[pop-out_var(--dur-exit)_var(--ease-in)_both]",
           via === "keyboard" && "data-[state=open]:animate-none"
         )}
       >
@@ -133,7 +134,7 @@ export function SettingsModal({
         {/* The close button sits beside the scroller, not in it, so it stays
             in the corner while a long section scrolls under it. */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <CloseButton className="right-3 top-3 z-10 hidden md:flex" />
+          <CloseButton className="z-10 hidden md:flex" />
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="@container/pane mx-auto w-full max-w-2xl px-5 pb-14 pt-6 sm:px-8 md:pt-9">
               <SettingsPane section={section} tabpanel />

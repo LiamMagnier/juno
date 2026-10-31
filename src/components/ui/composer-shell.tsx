@@ -82,7 +82,7 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
   ref
 ) {
   const dim = cn(
-    "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none",
+    "transition-opacity duration-fast ease-out-soft",
     dimmed && "opacity-60"
   );
   /*
@@ -273,7 +273,7 @@ export const composerFieldClass = cn(
  * surface that does not clip, so the outline has room on every side.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-label text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-label text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-10";
 
 /* ————————————————————————————————————————————————————————————————————————
  * The field tier: armed marks and connector mentions, inside the draft
@@ -402,13 +402,13 @@ export function ComposerArmedMark({
       >
         <span
           aria-hidden
-          className="col-start-1 row-start-1 flex size-4 items-center justify-center transition-opacity duration-fast ease-out-soft group-hover/armed:opacity-0 group-focus-within/armed:opacity-0 motion-reduce:transition-none [&_svg]:size-4"
+          className="col-start-1 row-start-1 flex size-4 items-center justify-center transition-opacity duration-fast ease-out-soft group-hover/armed:opacity-0 group-focus-within/armed:opacity-0 [&_svg]:size-4"
         >
           {icon}
         </span>
         <ActionIcons.dismiss
           aria-hidden
-          className="col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover/armed:opacity-100 group-focus-within/armed:opacity-100 motion-reduce:transition-none"
+          className="col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover/armed:opacity-100 group-focus-within/armed:opacity-100"
         />
       </button>
       {tooltip ? (
@@ -626,6 +626,16 @@ const FACE_MOTION = {
 };
 
 /**
+ * One face's layer. `pointer-events-none`, so a press always lands on the
+ * button itself: a face that is leaving stays in the DOM until its exit ends,
+ * and a press that began on its glyph and was released after the glyph was
+ * removed had no common target with the release, so the browser dispatched no
+ * click. Typing a message and pressing Send while the voice face was still
+ * fading out did nothing at all, about one time in three.
+ */
+const FACE_LAYER = "pointer-events-none col-start-1 row-start-1 grid place-items-center";
+
+/**
  * The 32px circle. Flat — no raised shadow, no halo — and its face cross-morphs
  * (scale .9→1 + fade over `duration-fast`) between voice, send, stop and a
  * spinner.
@@ -685,7 +695,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               "bg-foreground text-background hover:bg-foreground/90 dark:hover:bg-white active:bg-foreground/80",
           "disabled:pointer-events-none disabled:bg-secondary disabled:text-ink-tertiary",
           // 44px under a coarse pointer, the touch minimum; 36px on a mouse.
-          "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
+          "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100 coarse:size-11",
           className
         )}
         {...props}
@@ -693,15 +703,15 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
         <>
           <AnimatePresence initial={false} mode="sync">
             {face === "busy" ? (
-              <motion.span key="busy" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="busy" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 <Loader2 className="size-4 animate-spin" />
               </motion.span>
             ) : face === "stop" ? (
-              <motion.span key="stop" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="stop" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 <Square className="size-4 fill-current" />
               </motion.span>
             ) : face === "voice" ? (
-              <motion.span key="voice" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="voice" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 {/* The waveform, not a microphone. A mic is the glyph for
                     dictation — which this composer already has, one button to
                     the left — and the two doing different things behind the
@@ -709,7 +719,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
                 <AudioLines className="size-[18px]" />
               </motion.span>
             ) : (
-              <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+              <motion.span key="send" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 {/* The bold cut: the one glyph on the row set on a solid
                     accent disc, where the regular line thins against the fill
                     — the same weight Claude and ChatGPT give their send arrow. */}
@@ -909,7 +919,7 @@ export function ComposerAttachmentTile({
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${upload.fileName}`}
-          className="absolute right-0.5 top-0.5 grid size-6 coarse:size-8 place-items-center rounded-xs bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+          className="absolute right-0.5 top-0.5 grid size-6 coarse:size-8 place-items-center rounded-xs bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
         >
           <ActionIcons.dismiss className="size-3" aria-hidden="true" />
         </button>
@@ -921,6 +931,15 @@ export function ComposerAttachmentTile({
 /**
  * The attachment row. Tiles pop in on the spring and pop out on removal;
  * the row itself takes no space while it is empty.
+ *
+ * The row UNFOLDS rather than appearing (grid rows 0fr ⇄ 1fr on the base
+ * rung, the composer-height case D27 allows). It was `empty:hidden`, so the
+ * first tile pushed the composer ~80px taller in a single frame while the tile
+ * was still popping in, and removing the last one dropped it back in a single
+ * frame once the tile's exit ended. The clip is vertical only
+ * (`overflow-y-clip`), so a host that pulls the row sideways (Code's
+ * `.cv2-attach-row`, −4px) keeps its first tile whole. Under reduced motion
+ * the fold snaps (it is travel) and the tiles keep their fade.
  */
 export function ComposerAttachmentRow({
   uploads,
@@ -944,21 +963,29 @@ export function ComposerAttachmentRow({
     // composer's 22px corner on BOTH axes, so its 8px corner (22 − 14) is
     // concentric. It was 16px across and 14px down — two different insets
     // into one corner, which no single radius can be concentric with.
-    <div className={cn("flex flex-wrap gap-2 px-3.5 pt-3.5 empty:hidden", className)}>
-      <>
-        <AnimatePresence initial={false}>
-          {uploads.map((upload) => (
-            <motion.div key={upload.localId} layout {...TILE_MOTION} className="min-w-0">
-              <ComposerAttachmentTile
-                upload={upload}
-                onRemove={() => onRemove(upload.localId)}
-                label={labelFor?.(upload)}
-                onOpen={openerFor?.(upload)}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </>
+    <div
+      data-attachment-row={uploads.length ? "open" : "closed"}
+      className={cn(
+        "grid transition-[grid-template-rows] duration-base ease-in-out motion-reduce:transition-none",
+        uploads.length ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+      )}
+    >
+      <div className="min-h-0 overflow-y-clip">
+        <div className={cn("flex flex-wrap gap-2 px-3.5 pt-3.5", className)}>
+          <AnimatePresence initial={false}>
+            {uploads.map((upload) => (
+              <motion.div key={upload.localId} layout {...TILE_MOTION} className="min-w-0">
+                <ComposerAttachmentTile
+                  upload={upload}
+                  onRemove={() => onRemove(upload.localId)}
+                  label={labelFor?.(upload)}
+                  onOpen={openerFor?.(upload)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

@@ -11,16 +11,21 @@ import { ShareCopyButton } from "@/components/share/share-copy-button";
 import { sharedTypeCopyable } from "@/lib/share-copy";
 import { getCurrentUser } from "@/lib/session";
 import { ShareGone } from "@/components/share/share-gone";
-import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
+import { ShareRestricted, type ShareRestrictedState } from "@/components/share/share-restricted";
+import { AlevrBridgeProvider, SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { publicShareProfile } from "@/lib/sandbox-policy";
+import { isArtifactAiEnabled } from "@/lib/env";
 import { sharedDesignPosterUrl } from "@/lib/design/poster-url";
 import {
+  countShareView,
   getPublicShare,
   getSharedArtifactSnapshot,
   getSharedChatSnapshot,
+  peekPeopleShare,
   peekPublicShare,
   sharedArtifactIsTrashed,
 } from "@/lib/share";
+import { resolvePeopleShare } from "@/lib/share-people";
 import { countPublicationView, findPublicPublication } from "@/lib/artifact-publication";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
@@ -32,6 +37,12 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  *   - a legacy SHARE: the frozen snapshot of a chat or an artifact;
  *   - an artifact PUBLICATION (src/lib/artifact-publication.ts): the version
  *     the owner pinned, or the latest sealed version when it follows latest.
+ *
+ *   - a share with SPECIFIC PEOPLE (src/lib/share-people-core.ts): the same
+ *     frozen snapshot, shown only to its owner and to a signed-in account
+ *     whose verified email it was shared with. Anyone else gets
+ *     `<ShareRestricted />` — sign in, confirm your address, or "you don't
+ *     have access" — and nothing from the share, not even its title.
  *
  * Revoked, taken-down, banned-owner or unknown tokens 404. A real token that
  * no longer serves — its artifact is in Recently deleted, the owner
@@ -56,9 +67,18 @@ const SHARE_DESCRIPTION = `Shared from ${PRODUCT_NAME}. Conversation. Agents. Co
 const FROM_DEVICE_NOTE = "This session ran on its owner’s Mac. Their app sent this transcript when the link was made.";
 
 const GONE_METADATA: Metadata = { title: "Not shared any more", robots: { index: false, follow: false } };
+// A people share names itself only to someone who may read it: a link pasted
+// into a chat app unfurls as this, whoever's preview bot fetches it.
+const RESTRICTED_METADATA: Metadata = { title: "Shared with specific people", robots: { index: false, follow: false } };
 
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
   const { token } = await params;
+  if (await peekPeopleShare(token)) {
+    const people = await resolvePeopleShare(token);
+    if (people?.access.state !== "granted") return RESTRICTED_METADATA;
+    if (await sharedArtifactIsTrashed(people.share)) return GONE_METADATA;
+    return { title: people.share.title.trim() || `Shared from ${PRODUCT_NAME}`, robots: { index: false, follow: false } };
+  }
   const share = await peekPublicShare(token);
   // A dark link keeps its title to itself, in the tab and in any unfurl: the
   // owner took the thing down, and its name is part of it.
@@ -80,16 +100,24 @@ function formatSharedDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** What the page draws, from either kind of token. */
+/** What the page draws, from any kind of token. */
 interface PageSubject {
   title: string;
   /** "Shared Sep 30, 2026" or "Published Sep 30, 2026". */
   dateLine: string;
   chat: Awaited<ReturnType<typeof getSharedChatSnapshot>>;
   artifact: { type: ArtifactType; language: string | null; content: string; version: number } | null;
+  /** Shared with specific people: view-only for them, so no "Make a copy". */
+  restricted?: boolean;
 }
 
-async function resolveSubject(token: string): Promise<PageSubject | "gone" | null> {
+/** A people share this viewer may not read: which wall to show, and their own address. */
+interface Restricted {
+  wall: ShareRestrictedState;
+  email: string | null;
+}
+
+async function resolveSubject(token: string): Promise<PageSubject | Restricted | "gone" | null> {
   // The gone check runs on the peek, before the lookup that counts a view: a
   // visitor to a dark link has viewed nothing. The lookup is request-cached,
   // so the peek and the counting call share one query.
@@ -106,6 +134,30 @@ async function resolveSubject(token: string): Promise<PageSubject | "gone" | nul
       dateLine: `Shared ${formatSharedDate(share.snapshotAt)}`,
       chat,
       artifact,
+    };
+  }
+  // A share with specific people: who is asking decides what they see, and
+  // that is settled before anything of the share is read. The access check
+  // runs before the trash check, so a stranger cannot tell a share that went
+  // dark from one that is live.
+  if (await peekPeopleShare(token)) {
+    const people = await resolvePeopleShare(token);
+    if (!people) return null;
+    const { share, access } = people;
+    if (access.state !== "granted") {
+      return { wall: access.state, email: access.state === "sign-in" ? null : access.email };
+    }
+    if (await sharedArtifactIsTrashed(share)) return "gone";
+    const chat = share.kind === "CHAT" ? await getSharedChatSnapshot(share) : null;
+    const artifact = share.kind === "ARTIFACT" ? await getSharedArtifactSnapshot(share) : null;
+    if (!chat && !artifact) return null;
+    countShareView(share.id);
+    return {
+      title: share.title.trim() || `Shared from ${PRODUCT_NAME}`,
+      dateLine: `Shared ${formatSharedDate(share.snapshotAt)}`,
+      chat,
+      artifact,
+      restricted: true,
     };
   }
   const publication = await findPublicPublication(token);
@@ -131,11 +183,19 @@ export default async function SharePage({
   const subject = await resolveSubject(token);
   if (subject === "gone") return <ShareGone />;
   if (!subject) notFound();
+  if ("wall" in subject) return <ShareRestricted state={subject.wall} token={token} email={subject.email} />;
   const { chat, artifact, title } = subject;
   // A visitor can make their own copy of a shared artifact (not a design,
-  // whose document the page never shows): src/lib/share-copy.ts.
-  const copyable = !!artifact && sharedTypeCopyable(artifact.type);
-  const signedIn = copyable ? !!(await getCurrentUser().catch(() => null)) : false;
+  // whose document the page never shows): src/lib/share-copy.ts. Not from a
+  // share with specific people, which is view-only for them.
+  const copyable = !!artifact && !subject.restricted && sharedTypeCopyable(artifact.type);
+  // Also read when the page runs the artifact's scripts: an app's AI and saved
+  // data run on the visitor's own account, so who is looking decides whether
+  // the viewer asks or points to sign-in (SharedArtifactViewer).
+  // Only while the server has AI-powered artifacts on (ARTIFACT_AI_ENABLED).
+  const alevrOn = isArtifactAiEnabled();
+  const scripted = alevrOn && !!artifact && publicShareProfile() === "public";
+  const signedIn = copyable || scripted ? !!(await getCurrentUser().catch(() => null)) : false;
   const askCopy = copyable && (await searchParams)?.copy === "1";
 
   return (
@@ -149,7 +209,7 @@ export default async function SharePage({
           <Link
             href="/"
             aria-label={PRODUCT_NAME}
-            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
           >
             <AlevrLockup height={24} decorative />
           </Link>
@@ -167,6 +227,7 @@ export default async function SharePage({
 
       <main className={cn("alevr-share-main min-h-0 flex-1", artifact && "flex flex-col")}>
         <SandboxProfileProvider profile={publicShareProfile()}>
+        <AlevrBridgeProvider enabled={alevrOn}>
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
           <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="alevr-shared-prose">
@@ -200,9 +261,11 @@ export default async function SharePage({
               content={artifact.type === "DESIGN" ? "" : artifact.content}
               version={artifact.version}
               posterUrl={artifact.type === "DESIGN" ? sharedDesignPosterUrl(token) : undefined}
+              signedIn={signedIn}
             />
           </AppPage>
         ) : null}
+        </AlevrBridgeProvider>
         </SandboxProfileProvider>
       </main>
 

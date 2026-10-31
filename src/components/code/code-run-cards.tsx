@@ -7,6 +7,7 @@ import { ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
+import { QuietButton, VERB_INK_CLASS } from "@/components/chat/decision";
 import { Collapse } from "@/components/ui/collapse";
 import { Pressable } from "@/components/ui/pressable";
 import { SubagentTree, type SubagentItem } from "@/components/ui/subagent-tree";
@@ -54,7 +55,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 const RUN_CARD = "surface-raised mx-1 mb-2 rounded-field";
 const RUN_CARD_INSET = "px-3 py-2.5";
 /** A disclosure row inside a card: the shared tonal hover, on the token rung. */
-const ROW_HOVER = "rounded-xs transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+const ROW_HOVER = "rounded-xs transition-colors duration-fast ease-out-soft hover:bg-accent";
 
 /*
  * The approval card's entrance: `variants.rise`'s own endpoints, re-timed.
@@ -1164,7 +1165,7 @@ function RowAction({
       // cross-fade itself, so no `transition-colors` beside it.
       // The ring is inset because the row around it folds in a `Collapse`,
       // whose clip is the row's own height.
-      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:-outline-offset-2 motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
+      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:-outline-offset-2 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100 coarse:p-2"
     >
       <Icon className="size-3.5" aria-hidden={true} />
     </button>
@@ -1281,21 +1282,15 @@ function ApprovalCard({
           a reader who is here precisely to stop and think, and colouring that
           Allow `destructive` on the highest-risk prompt on the surface made red
           mean "go ahead" here and "refuse" one screen over. The risk badge
-          above already carries the danger; the buttons carry the choice. Both
-          at h-11, matching chat/approval-card — `size="sm"` gave a 40px target
-          to the one control in Juno Code that must not be mis-tapped. */}
+          above already carries the danger; the buttons carry the choice. The
+          decision family's own buttons (chat/decision.tsx), as on every other
+          approval: the quiet outline to refuse and the ink verb to allow, at
+          36px and 44 on touch. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="destructive-outline"
-          disabled={responding}
-          onClick={() => onRespond(false)}
-          className="h-11 px-4"
-        >
+        <QuietButton disabled={responding} onClick={() => onRespond(false)}>
           Deny
-        </Button>
-        <Button type="button" disabled={responding} onClick={() => onRespond(true)} className="h-11 gap-1.5 px-4">
-          {responding && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+        </QuietButton>
+        <Button type="button" loading={responding} onClick={() => onRespond(true)} className={cn("h-9 px-4 coarse:h-11", VERB_INK_CLASS)}>
           Allow
         </Button>
         <span className="text-caption text-muted-foreground">

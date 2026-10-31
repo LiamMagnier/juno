@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -327,53 +328,40 @@ export function ArtifactLifecycleActions({
         </span>
       ) : null}
 
-      <ShareDialog kind="ARTIFACT" artifactId={id} open={publishing} onOpenChange={setPublishing} />
+      {/* Opened from "Publish…", so it opens on the public side of the choice. */}
+      <ShareDialog kind="ARTIFACT" artifactId={id} open={publishing} onOpenChange={setPublishing} initialAudience="link" />
 
-      <Dialog
+      <ConfirmDialog
         open={deleting || restoring}
         onOpenChange={(open) => {
-          if (!open && !busy) {
+          if (!open) {
             setDeleting(false);
             setRestoring(false);
           }
         }}
+        busy={busy}
+        tone={deleting ? "destructive" : "default"}
+        title={deleting ? <Phrase text={LIFECYCLE_COPY.trashTitle} /> : <Phrase text={LIFECYCLE_COPY.restoreTitle} />}
+        description={
+          <>
+            {deleting ? (
+              <bdi className="block truncate font-medium text-foreground">{shownTitle}</bdi>
+            ) : (
+              <PhraseWithArgs spec={versionSpec(version)} className="block font-medium text-foreground" />
+            )}
+            <Phrase text={deleting ? LIFECYCLE_COPY.trashBody : LIFECYCLE_COPY.restoreBody} />
+          </>
+        }
+        cancelLabel={<Phrase text={LIFECYCLE_COPY.cancel} />}
+        confirmLabel={deleting ? <Phrase text={LIFECYCLE_COPY.trashConfirm} /> : <Phrase text={LIFECYCLE_COPY.restoreConfirm} />}
+        onConfirm={() => void (deleting ? remove() : restore())}
       >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              {deleting ? <Phrase text={LIFECYCLE_COPY.trashTitle} /> : <Phrase text={LIFECYCLE_COPY.restoreTitle} />}
-            </DialogTitle>
-            <DialogDescription>
-              {deleting ? (
-                <bdi className="block truncate font-medium text-foreground">{shownTitle}</bdi>
-              ) : (
-                <PhraseWithArgs spec={versionSpec(version)} className="block font-medium text-foreground" />
-              )}
-              <Phrase text={deleting ? LIFECYCLE_COPY.trashBody : LIFECYCLE_COPY.restoreBody} />
-            </DialogDescription>
-          </DialogHeader>
-          {error ? (
-            <p role="alert" className="text-ui text-destructive">
-              {error}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => {
-                setDeleting(false);
-                setRestoring(false);
-              }}
-            >
-              <Phrase text={LIFECYCLE_COPY.cancel} />
-            </Button>
-            <Button variant={deleting ? "destructive" : "default"} disabled={busy} onClick={() => void (deleting ? remove() : restore())}>
-              {busy ? <Phrase text={LIFECYCLE_COPY.saving} /> : deleting ? <Phrase text={LIFECYCLE_COPY.trashConfirm} /> : <Phrase text={LIFECYCLE_COPY.restoreConfirm} />}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {error ? (
+          <p role="alert" className="text-ui text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </ConfirmDialog>
 
       <Dialog open={renaming} onOpenChange={(open) => !busy && setRenaming(open)}>
         <DialogContent className="max-w-sm">

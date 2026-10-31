@@ -184,7 +184,8 @@ export function Onboarding() {
     <Dialog open={show} onOpenChange={(o) => { if (!o) close(); }}>
       <DialogContent
         hideClose
-        className="w-full max-w-[420px] gap-0 overflow-hidden p-0"
+        bare
+        className="w-full max-w-[420px] gap-0 overflow-hidden"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           primaryRef.current?.focus();

@@ -277,7 +277,8 @@ test("export lives in the conversation's menu and in an answer's More menu, and 
   assert.ok(isChatExportKind("print") && !isChatExportKind("pdf"));
 
   const view = read("../src/components/chat/chat-view.tsx");
-  assert.match(view, /<ConversationMoreMenu onExport=\{\(kind\) => void exportChat\(kind\)\} \/>/);
+  // The same menu carries the chat's "Memory off for this chat" (src/lib/chat/memory-off.ts).
+  assert.match(view, /<ConversationMoreMenu onExport=\{\(kind\) => void exportChat\(kind\)\} memory=\{chatMemory\} \/>/);
   assert.match(view, /window\.addEventListener\(CHAT_EXPORT_EVENT, onExport\);/);
   // The whole conversation, not only the loaded page of it.
   assert.match(view, /const transcript = chatHistory\.hasOlder \? await loadOlderMessages\(\{ all: true \}\) : chat\.messages;\s+if \(!transcript\) \{\s+toast\.error\("Couldn’t export/);

@@ -171,7 +171,7 @@ export function SourceFavicon({
           404 or a slow icon costs nothing but a fade. */}
       <span
         className={cn(
-          "absolute inset-0 grid place-items-center font-mono font-semibold leading-none text-muted-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+          "absolute inset-0 grid place-items-center font-mono font-semibold leading-none text-muted-foreground transition-opacity duration-base ease-out-soft",
           v.glyph,
           loaded && "opacity-0"
         )}
@@ -195,7 +195,7 @@ export function SourceFavicon({
           onLoad={() => setLoaded(true)}
           onError={() => setLoaded(false)}
           className={cn(
-            "absolute inset-0 size-full object-contain transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+            "absolute inset-0 size-full object-contain transition-opacity duration-base ease-out-soft",
             loaded ? "opacity-100" : "opacity-0"
           )}
         />
@@ -301,7 +301,7 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
             // to be important. Coral is reserved for selected state — a chip is
             // neither selected nor a body link.
             "!no-underline",
-            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            "transition-colors duration-fast ease-out-soft",
             "hover:bg-foreground hover:text-background"
           )}
         >

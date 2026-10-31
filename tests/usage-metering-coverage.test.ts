@@ -30,23 +30,31 @@ const PROVIDER_SIGNALS: RegExp[] = [
   /\bnew OpenAI\(/,
   /\bnew Anthropic\(/,
   /\bgetAnthropic\(/,
-  /api\.openai\.com/,
-  /api\.anthropic\.com/,
-  /generativelanguage\.googleapis\.com/,
-  /api\.elevenlabs\.io/,
-  /api\.deepgram\.com/,
-  /api\.tavily\.com/,
-  /api\.search\.brave\.com/,
-  /api\.exa\.ai/,
-  /google\.serper\.dev/,
-  /api\.x\.ai/,
-  /dashscope/,
-  /api\.minimax/,
   // The shared doors. A new caller of any of these is a new paid path.
   /\bstreamChat\(/,
   /\bsearchWithEngineReport\(/,
   /\bexecuteMultiEngineSearch\(/,
   /\bwebSearch\(/,
+];
+
+/**
+ * A paid provider's API host named in the source. Plain substrings, not
+ * patterns: these are looked for anywhere in a file's code, the way a URL or
+ * a base-URL constant would carry them.
+ */
+const PROVIDER_HOSTS: string[] = [
+  "api.openai.com",
+  "api.anthropic.com",
+  "generativelanguage.googleapis.com",
+  "api.elevenlabs.io",
+  "api.deepgram.com",
+  "api.tavily.com",
+  "api.search.brave.com",
+  "api.exa.ai",
+  "google.serper.dev",
+  "api.x.ai",
+  "dashscope",
+  "api.minimax",
 ];
 
 /** file → how its spend reaches the ledger (or why it is the operator's). */
@@ -65,6 +73,7 @@ const METERED: Record<string, string> = {
   "src/lib/chat/turn/run-turn.ts": "checkBudget → reserveSpend → GenerationAccumulator → recordTurnSpend(chat) + tool fees + mid-stream guard",
   "src/lib/chat/turn/private-turn.ts": "checkBudget → reserveSpend → GenerationAccumulator → recordTurnSpend(chat), private turns included",
   "src/app/api/design/[artifactId]/edit/route.ts": "admitMeteredCall + recordSpend(chat) on every exit",
+  "src/lib/artifact-ai/server.ts": "window.alevr.complete (complete.ts): admitMeteredCall + reserveSpend(utility) before the call, the stream budget guard during it, recordSpend(utility) per attempt and settleSpend, billed to the viewer",
   "src/lib/memory.ts": "runUtilityPrompt: checkBudget gate, recordSpend(utility) per attempt; null user capped per day",
   "src/lib/preflight-triage.ts": "recordSpend(utility) per attempt; route checks budget",
   "src/lib/research/agents/lead.ts": "research run reservation + recordSpend(research)",
@@ -130,7 +139,7 @@ function providerTouching(): string[] {
   return files
     .filter((file) => {
       const code = stripComments(readFileSync(file, "utf8"));
-      return PROVIDER_SIGNALS.some((re) => re.test(code));
+      return PROVIDER_SIGNALS.some((re) => re.test(code)) || PROVIDER_HOSTS.some((host) => code.includes(host));
     })
     .map((file) => relative(ROOT, file))
     .sort();

@@ -142,7 +142,7 @@ export function ProjectOverviewRail({
       {coverUrl && (
         <div className="group/cover relative mb-1 aspect-[16/5] w-full overflow-hidden rounded-inner bg-muted">
           <img src={coverUrl} className="size-full object-cover" alt="" />
-          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 coarse:opacity-100">
             <Button variant="secondary" size="sm" onClick={onPickCover} disabled={uploadingCover}>
               Change
             </Button>
@@ -173,7 +173,7 @@ export function ProjectOverviewRail({
             <button
               type="button"
               onClick={onEditInstructions}
-              className="-mx-3 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+              className="-mx-3 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent"
             >
               {/* `pre-line`, not `pre-wrap`: it keeps the prompt's line breaks
                   but not a trailing space at the clamp, which drew the
@@ -239,10 +239,10 @@ export function ProjectOverviewRail({
                 {files.slice(0, FILE_PREVIEW).map((file) => (
                   <li
                     key={file.id}
-                    className="group/file flex items-center gap-2 rounded-inner px-3 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                    className="group/file flex items-center gap-2 rounded-inner px-3 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent"
                   >
                     <FileText
-                      className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/file:text-foreground motion-reduce:transition-none"
+                      className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/file:text-foreground"
                       aria-hidden="true"
                     />
                     <a
@@ -264,7 +264,7 @@ export function ProjectOverviewRail({
                       onClick={() => onDeleteFile(file.id)}
                       aria-label={`Remove ${file.fileName}`}
                       title="Remove"
-                      className="danger-hover size-6 shrink-0 opacity-0 transition-opacity duration-fast ease-out-soft group-hover/file:opacity-100 group-focus-within/file:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
+                      className="danger-hover size-6 shrink-0 opacity-0 transition-opacity duration-fast ease-out-soft group-hover/file:opacity-100 group-focus-within/file:opacity-100 coarse:opacity-100"
                     >
                       <ActionIcons.delete className="size-3.5" aria-hidden="true" />
                     </Pressable>
@@ -330,7 +330,7 @@ export function ProjectOverviewRail({
                 <button
                   type="button"
                   onClick={onManageMemory}
-                  className="-mx-3 mb-2 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                  className="-mx-3 mb-2 block w-[calc(100%+1.5rem)] rounded-inner px-3 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent"
                 >
                   <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground">
                     {memorySummary}
@@ -456,7 +456,7 @@ function RailMore({ onClick, children }: { onClick: () => void; children: React.
     <button
       type="button"
       onClick={onClick}
-      className="group/more -mx-3 mt-1.5 flex w-[calc(100%+1.5rem)] items-center gap-1.5 rounded-inner px-3 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+      className="group/more -mx-3 mt-1.5 flex w-[calc(100%+1.5rem)] items-center gap-1.5 rounded-inner px-3 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
     >
       {children}
       <ArrowRight className="size-3 shrink-0 transition-transform duration-base ease-out-expo group-hover/more:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />

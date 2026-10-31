@@ -114,6 +114,36 @@ export const VOICE_HISTORY_MAX_TURNS = 20;
 export const VOICE_HISTORY_MAX_TURN_CHARS = 2_000;
 export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
 
+/**
+ * One tool a call may use, as Juno describes it (`GET /api/voice/tools`): the
+ * chat's own registry tools and the person's connector tools, already cut to
+ * what the chat's policy grants. A name, a description and a JSON Schema —
+ * never a credential. The tool runs on Juno, not here (relay/src/tools.ts).
+ */
+export interface VoiceToolDeclaration {
+  name: string;
+  description: string;
+  /** JSON Schema with an object root, in the subset every provider accepts. */
+  parameters: Record<string, unknown>;
+}
+
+/** Where one tool call stands, for the call's chips. */
+export type VoiceToolStatus = "running" | "awaiting_approval" | "succeeded" | "failed" | "denied" | "cancelled";
+
+/**
+ * A pending approval as the chat's card reads it (ClientActionApproval in
+ * src/lib/action-approval.ts): redacted arguments, the receipt digest the
+ * answer must carry back, and when it expires. The relay forwards Juno's
+ * projection untouched and reads only these fields of it.
+ */
+export interface VoiceToolApproval {
+  id: string;
+  receiptDigest: string;
+  riskClass: string;
+  preview: string;
+  [key: string]: unknown;
+}
+
 // ---- client -> relay ----
 export type ClientMessage =
   /** `thinking` asks for the reasoning variant of a provider that has one. It
@@ -168,7 +198,27 @@ export type ServerMessage =
       /** A non-fatal note about how the session came up — a fallback protocol,
        *  say. Unlike `error` this does not end the call. */
       notice?: string;
+      /** Present only for a call Juno lent tools to: how many the connected
+       *  model was given. 0 means this voice model cannot use them. */
+      tools?: number;
     }
+  /** One tool call's progress, for the call's chips. `approval` rides only
+   *  while the call waits on the person; `spoken` says whether saying yes
+   *  aloud can answer it (false: only the on-screen card can). Web only, like
+   *  `thinking`: the apps' decoder carries an unknown type without failing. */
+  | {
+      type: "tool.activity";
+      id: string;
+      name: string;
+      label: string;
+      status: VoiceToolStatus;
+      approval?: VoiceToolApproval;
+      spoken?: boolean;
+    }
+  /** The person answered a waiting card aloud (relay/src/tools.ts `spokenDecision`).
+   *  The relay records nothing: the signed-in client answers the card through
+   *  `/api/approvals/[id]` with its digest, as a tap would. Web only. */
+  | { type: "tool.spoken"; id: string; approvalId: string; decision: "allow_once" | "deny" }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   /** Model output was cancelled (user barge-in). Client must flush its

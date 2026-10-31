@@ -335,7 +335,7 @@ export function MemoryList({
                     onClick={() => jumpTo(section.id)}
                     aria-current={on ? "true" : undefined}
                     className={cn(
-                      "relative flex h-8 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 text-ui transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                      "relative flex h-8 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 text-ui hit-44 transition-colors duration-fast ease-out-soft",
                       on ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -465,7 +465,7 @@ export function MemoryList({
                         type="button"
                         onClick={() => toggleSection(section.id)}
                         aria-expanded={open}
-                        className="group/more -mx-3 mt-1 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground motion-reduce:transition-none"
+                        className="group/more relative -mx-3 mt-1 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
                       >
                         {open ? (
                           <span>Show fewer</span>
@@ -495,7 +495,7 @@ export function MemoryList({
                     onClick={() => setShowRetired((open) => !open)}
                     aria-expanded={showRetired}
                     aria-controls="memory-retired-list"
-                    className="-mx-3 flex h-9 items-center gap-2 rounded-control px-3 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground motion-reduce:transition-none"
+                    className="-mx-3 flex h-9 items-center gap-2 rounded-control px-3 text-left coarse:h-11 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
                   >
                     <ChevronDown
                       aria-hidden="true"
@@ -557,7 +557,7 @@ function SortSwitch({ value, onChange }: { value: MemorySort; onChange: (sort: M
             aria-checked={on}
             onClick={() => onChange(id)}
             className={cn(
-              "relative h-full flex-1 rounded-sm px-2 text-caption font-medium transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              "relative h-full flex-1 rounded-sm px-2 text-caption font-medium hit-44 transition-colors duration-fast ease-out-soft",
               on ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >

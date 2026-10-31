@@ -94,7 +94,7 @@ export function TaskConnectionNotice({ work, className }: { work: ConversationWo
       <button
         type="button"
         onClick={reconnect}
-        className="rounded-control text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none coarse:min-h-11"
+        className="rounded-control text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline coarse:min-h-11"
       >
         Reconnect
       </button>
@@ -128,7 +128,7 @@ export function FinishedTaskActions({
   });
 
   const proposal = React.useMemo(() => {
-    let zone = "UTC";
+    let zone: string;
     try {
       zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     } catch {

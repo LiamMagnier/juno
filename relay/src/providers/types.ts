@@ -1,4 +1,10 @@
-import type { ProviderCapabilities, VoiceDelegate, VoiceProviderId, VoiceReasoningEffort } from "../protocol.js";
+import type {
+  ProviderCapabilities,
+  VoiceDelegate,
+  VoiceProviderId,
+  VoiceReasoningEffort,
+  VoiceToolDeclaration,
+} from "../protocol.js";
 
 export interface TranscriptEntry {
   role: "user" | "assistant";
@@ -14,6 +20,23 @@ export interface VoiceSessionSeed {
   /** Prior finalized turns, oldest first, used when switching providers. */
   transcript: TranscriptEntry[];
   voice?: string;
+  /**
+   * The chat's tools this call may use, as Juno listed them. Absent or empty:
+   * the call has none. A provider that cannot declare functions ignores them
+   * and reports `tools: 0` in `established()`, so the client can say so.
+   */
+  tools?: VoiceToolDeclaration[];
+  /** Juno's note about those tools, appended to the instructions by a provider that declares them. */
+  toolInstructions?: string | null;
+}
+
+/** One function call the voice model made to a tool Juno listed. */
+export interface VoiceToolCall {
+  /** The provider's id for the call; the broker's idempotency key is built from it. */
+  id: string;
+  name: string;
+  /** The arguments as the provider sent them: JSON text, validated by Juno. */
+  arguments: string;
 }
 
 /**
@@ -58,6 +81,14 @@ export interface ProviderEvents {
   onUsage(u: { audioInSec?: number; audioOutSec?: number; tokens?: TokenUsage; extraCostUsd?: number }): void;
   onError(message: string): void;
   onClosed(reason: "session-limit" | "provider" | "error"): void;
+  /**
+   * The model called one of `seed.tools`. Resolves with the text the model is
+   * answered with — the result, or, for a change waiting on the person, a note
+   * saying so (the outcome follows later as a turn of its own). Never rejects:
+   * every failure is a sentence the model can say. Absent when the call has
+   * no tools.
+   */
+  onToolCall?(call: VoiceToolCall): Promise<string>;
 }
 
 /** USD per 1,000,000 tokens, per modality. */
@@ -94,6 +125,12 @@ export interface SessionEstablished {
   delegate?: VoiceDelegate;
   /** The rung of the provider's thinking dial this session runs at. */
   effort?: VoiceReasoningEffort;
+  /**
+   * How many of `seed.tools` the connected session declared to its model. 0
+   * (or absent) for a protocol that cannot carry them — GPT-Live, whose
+   * session config refuses fields it does not know, Qwen and MiniMax.
+   */
+  tools?: number;
 }
 
 export interface VoiceProviderSession {

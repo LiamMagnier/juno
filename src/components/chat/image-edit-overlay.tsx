@@ -599,7 +599,7 @@ export function ImageEditOverlay({
     e.preventDefault();
     e.stopPropagation();
     const step = e.altKey ? 0.005 : 0.02;
-    let next = region;
+    let next: NonNullable<typeof region>;
     if (e.shiftKey) {
       if (e.key === "ArrowLeft") next = { ...region, w: Math.max(MIN_REGION, region.w - step) };
       else if (e.key === "ArrowRight") next = { ...region, w: Math.min(1 - region.x, region.w + step) };
@@ -736,14 +736,43 @@ export function ImageEditOverlay({
             {announcement}
           </p>
 
-          {/* Chrome: close, the one tool rail, shortcuts. Equal 16px insets. */}
+          {/* Chrome: shortcuts, the one tool rail, close. Equal 16px insets. The
+              close sits top-right, where every other overlay keeps its ✕. */}
           <header className="ie-chrome grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 p-4">
             <div className="flex justify-start">
-              <DialogPrimitive.Close asChild>
-                <button type="button" className="ie-round pressable" aria-label="Close image editor">
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              </DialogPrimitive.Close>
+              <Popover open={helpOpen} onOpenChange={setHelpOpen}>
+                <PopoverTrigger asChild>
+                  <button type="button" className="ie-round pressable max-sm:invisible" aria-label="Keyboard shortcuts" aria-keyshortcuts="?">
+                    <Keyboard className="size-4" aria-hidden="true" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" sideOffset={8} className="w-64 p-3" aria-labelledby={helpId}>
+                  <p id={helpId} className="sr-only">Keyboard shortcuts</p>
+                  <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 text-label">
+                    {[
+                      ["Area tool", ["M"]],
+                      ["Brush", ["B"]],
+                      ["Brush size", ["[", "]"]],
+                      ["Erase while brushing", ["Alt"]],
+                      ["Select the centre", ["Enter"]],
+                      ["Move selection", ["Arrows"]],
+                      ["Resize selection", ["⇧", "Arrows"]],
+                      ["Clear selection", ["⌫"]],
+                      ["Undo", [mod, "Z"]],
+                      ["Close", ["Esc"]],
+                    ].map(([label, keys]) => (
+                      <React.Fragment key={label as string}>
+                        <dt className="text-muted-foreground">{label as string}</dt>
+                        <dd className="flex justify-end gap-1">
+                          {(keys as string[]).map((k) => (
+                            <Kbd key={k}>{k}</Kbd>
+                          ))}
+                        </dd>
+                      </React.Fragment>
+                    ))}
+                  </dl>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="ie-rail flex items-center gap-0.5 rounded-full p-1" role="toolbar" aria-label="Selection tools">
@@ -794,39 +823,11 @@ export function ImageEditOverlay({
             </div>
 
             <div className="flex justify-end">
-              <Popover open={helpOpen} onOpenChange={setHelpOpen}>
-                <PopoverTrigger asChild>
-                  <button type="button" className="ie-round pressable max-sm:invisible" aria-label="Keyboard shortcuts" aria-keyshortcuts="?">
-                    <Keyboard className="size-4" aria-hidden="true" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" sideOffset={8} className="w-64 p-3" aria-labelledby={helpId}>
-                  <p id={helpId} className="sr-only">Keyboard shortcuts</p>
-                  <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 text-label">
-                    {[
-                      ["Area tool", ["M"]],
-                      ["Brush", ["B"]],
-                      ["Brush size", ["[", "]"]],
-                      ["Erase while brushing", ["Alt"]],
-                      ["Select the centre", ["Enter"]],
-                      ["Move selection", ["Arrows"]],
-                      ["Resize selection", ["⇧", "Arrows"]],
-                      ["Clear selection", ["⌫"]],
-                      ["Undo", [mod, "Z"]],
-                      ["Close", ["Esc"]],
-                    ].map(([label, keys]) => (
-                      <React.Fragment key={label as string}>
-                        <dt className="text-muted-foreground">{label as string}</dt>
-                        <dd className="flex justify-end gap-1">
-                          {(keys as string[]).map((k) => (
-                            <Kbd key={k}>{k}</Kbd>
-                          ))}
-                        </dd>
-                      </React.Fragment>
-                    ))}
-                  </dl>
-                </PopoverContent>
-              </Popover>
+              <DialogPrimitive.Close asChild>
+                <button type="button" className="ie-round pressable" aria-label="Close image editor">
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              </DialogPrimitive.Close>
             </div>
           </header>
 

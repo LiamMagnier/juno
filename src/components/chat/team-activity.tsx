@@ -53,7 +53,7 @@ export function ActivityLines({ lines, label, className }: { lines: readonly Act
         aria-expanded={open}
         aria-controls={detailsId}
         onClick={() => setOpen((value) => !value)}
-        className="text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        className="relative text-caption text-muted-foreground underline-offset-4 hit-44 hover:text-foreground hover:underline"
       >
         {open ? "Hide what happened underneath" : "What happened underneath"}
       </button>

@@ -195,3 +195,50 @@ export function taskResult(taskName: string, excerpt: string, threadUrl: string)
     ),
   };
 }
+
+/** One line of somebody else's words for a subject or a heading: no breaks, bounded. */
+function oneLine(value: string, max: number): string {
+  const flat = value.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+export interface ShareInvitationInput {
+  /** The owner's display name; their address stands in when they have none. */
+  ownerName: string | null;
+  ownerEmail: string | null;
+  kind: "CHAT" | "ARTIFACT";
+  title: string;
+  /** The address it was sent to, which is the one they must sign in with. */
+  recipient: string;
+  url: string;
+}
+
+/**
+ * "Ada shared a chat with you" — a share with specific people
+ * (src/lib/share-people-core.ts).
+ *
+ * The same sentence goes to every address, whether or not it has an account:
+ * "sign in, or create an account, with this address". Telling the two apart
+ * would be the server saying who has an account. The owner's address rides
+ * the context line under their name, because the name is theirs to type and
+ * the address is what a recipient can check it against. No "Manage
+ * notifications" footer: the recipient may have no settings to manage.
+ */
+export function shareInvitation(input: ShareInvitationInput): EmailTemplate {
+  const owner = oneLine(input.ownerName?.trim() || input.ownerEmail?.trim() || `Someone on ${PRODUCT_NAME}`, 60);
+  const thing = input.kind === "CHAT" ? "a chat" : "an artifact";
+  const title = oneLine(input.title, 120) || (input.kind === "CHAT" ? "Untitled chat" : "Untitled artifact");
+  const subject = `${owner} shared ${thing} with you`;
+  const cta = { label: input.kind === "CHAT" ? "Open the chat" : "Open the artifact", href: input.url };
+  const signIn = `To open it, sign in to ${PRODUCT_NAME} as ${input.recipient}, or create an account with that address. Only the people it was shared with can open it, and they can read it but not change it.`;
+  const context = `${input.ownerEmail ? `Sent by ${owner} (${input.ownerEmail})` : `Sent by ${owner}`}. If you weren't expecting it, you can ignore this email.`;
+  const bodyHtml =
+    para(`<strong>${escapeHtml(owner)}</strong> shared ${thing} with you on ${PRODUCT_NAME}.`) +
+    `<blockquote class="alevr-email-well" style="margin:0 0 16px;padding:12px 16px;background-color:${PAPER};border-radius:8px;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};">${escapeHtml(title)}</blockquote>` +
+    para(escapeHtml(signIn));
+  return {
+    subject,
+    html: renderEmailLayout({ heading: subject, bodyHtml, cta, context }),
+    text: [subject, "", `${owner} shared ${thing} with you on ${PRODUCT_NAME}:`, title, "", signIn, "", `${cta.label}: ${cta.href}`, "", context, "", `${PRODUCT_NAME} · Go further.`].join("\n"),
+  };
+}

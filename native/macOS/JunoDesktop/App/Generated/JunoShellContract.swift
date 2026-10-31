@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "a8c3d24b2d489560717d16801ad7bbb2ee245bc9641b0363f22b28e025d30536"
+    static let digest = "e2726b1aad5b0aafcab4e514a970d2a867a02ff6ad9d903fd9b97658317b5176"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -333,6 +333,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     case screenshot
     case sketch
     case library
+    case googleDrive = "google-drive"
+    case onedrive
     case mention
     case project
     case connectors
@@ -357,6 +359,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: "Take a screenshot"
         case .sketch: "Sketch"
         case .library: "Add from Library"
+        case .googleDrive: "Add from Google Drive"
+        case .onedrive: "Add from OneDrive"
         case .mention: "Mention a file, app or agent"
         case .project: "Add to project"
         case .connectors: "Apps"
@@ -376,6 +380,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: "Take a Screenshot"
         case .sketch: "Sketch"
         case .library: "Add from Library"
+        case .googleDrive: "Add from Google Drive"
+        case .onedrive: "Add from OneDrive"
         case .mention: "Mention a File, App or Agent"
         case .project: "Add to Project"
         case .connectors: "Apps"
@@ -394,6 +400,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: .action
         case .sketch: .action
         case .library: .action
+        case .googleDrive: .action
+        case .onedrive: .action
         case .mention: .action
         case .project: .submenu
         case .connectors: .submenu
@@ -412,6 +420,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: .scan
         case .sketch: .pencil
         case .library: .library
+        case .googleDrive: .cloud
+        case .onedrive: .cloud
         case .mention: .textCursor
         case .project: .projects
         case .connectors: .connections
@@ -431,6 +441,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: true
         case .sketch: false
         case .library: false
+        case .googleDrive: true
+        case .onedrive: true
         case .mention: true
         case .project: true
         case .connectors: true
@@ -450,6 +462,8 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .screenshot: nil
         case .sketch: nil
         case .library: nil
+        case .googleDrive: nil
+        case .onedrive: nil
         case .mention: nil
         case .project: nil
         case .connectors: nil
@@ -469,7 +483,7 @@ enum JunoShellPlusMenu {
 
     /// The chat composer's groups, in order.
     static let chat: [[JunoShellPlusRow]] = [
-        [.files, .screenshot, .sketch, .library],
+        [.files, .screenshot, .sketch, .library, .googleDrive, .onedrive],
         [.mention, .skill],
         [.image, .research, .search, .memory],
         [.project, .connectors],

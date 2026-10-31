@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { ipFromHeaders, rateLimit } from "@/lib/rate-limit";
-import { getSharedArtifactSnapshot, peekPublicShare, sharedArtifactIsTrashed } from "@/lib/share";
+import { getSharedArtifactSnapshot, peekPeopleShare, peekPublicShare, sharedArtifactIsTrashed } from "@/lib/share";
 import { findPublicPublication } from "@/lib/artifact-publication";
-import { designPosterSvg, posterResponse, POSTER_CACHE_PUBLIC } from "@/lib/design/poster";
+import { designPosterSvg, posterResponse, POSTER_CACHE_PUBLIC, POSTER_CACHE_REVALIDATE } from "@/lib/design/poster";
 
 // The renderer is plain TypeScript, but the ETag uses Node's crypto.
 export const runtime = "nodejs";
@@ -44,6 +44,12 @@ function gone() {
  * minutes. Every asset that is not inline data has already been swapped for a
  * placeholder by the poster itself, so nothing the owner keeps behind their
  * session — a Library image, its storage key — can reach this response.
+ *
+ * A share with specific people draws only for a reader the page would show it
+ * to (src/lib/share-people-core.ts), read from the session the image request
+ * carries, and is cached privately and revalidated: removing a person must
+ * stop the picture as surely as it stops the page. Anyone else gets the same
+ * 404 as an unknown token.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   // Keyed by address, since there is no account to key by. Generous enough for
@@ -56,7 +62,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const { token } = await params;
   const share = await peekPublicShare(token);
   let snapshot: { type: string; content: string } | null;
-  if (share) {
+  let cacheControl = POSTER_CACHE_PUBLIC;
+  const restricted = share ? null : await peekPeopleShare(token);
+  if (restricted) {
+    // Loaded here, not at the top: only a people share needs the session.
+    const { resolvePeopleShare } = await import("@/lib/share-people");
+    const people = await resolvePeopleShare(token);
+    if (!people || people.access.state !== "granted" || people.share.kind !== "ARTIFACT") return notFound();
+    if (await sharedArtifactIsTrashed(people.share)) return gone();
+    snapshot = await getSharedArtifactSnapshot(people.share);
+    cacheControl = POSTER_CACHE_REVALIDATE;
+  } else if (share) {
     if (share.kind !== "ARTIFACT") return notFound();
     if (await sharedArtifactIsTrashed(share)) return gone();
     snapshot = await getSharedArtifactSnapshot(share);
@@ -73,5 +89,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const svg = designPosterSvg(snapshot.content);
   if (!svg) return notFound();
 
-  return posterResponse(svg, req, POSTER_CACHE_PUBLIC);
+  return posterResponse(svg, req, cacheControl);
 }

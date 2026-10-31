@@ -7,7 +7,7 @@ import { CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, Uploa
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -326,7 +326,7 @@ function MediaDropzone({
           // has to stay findable over a dark video a pure-black chip held by a
           // /60 hairline. The same fix DialogCloseButton already carries.
           // `.pressable` carries the colour cross-fade and the press dip.
-          className="pressable absolute right-1 top-1 grid size-7 place-items-center rounded-control border border-border/60 bg-popover text-muted-foreground hover:border-border hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-9"
+          className="pressable absolute right-1 top-1 grid size-7 place-items-center rounded-control border border-border/60 bg-popover text-muted-foreground hover:border-border hover:text-foreground motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100 coarse:size-9"
         >
           <ActionIcons.dismiss className="size-4" />
         </button>
@@ -840,22 +840,14 @@ export function AnnouncementsAdmin() {
           </div>
         </div>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete announcement?</DialogTitle>
-            <DialogDescription>This removes the popup and every user dismissal record for it.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={remove}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete announcement?"
+        description="This removes the popup and every user dismissal record for it."
+        confirmLabel="Delete"
+        onConfirm={remove}
+      />
     </AppPage>
   );
 }

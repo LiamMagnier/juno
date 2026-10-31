@@ -9,11 +9,18 @@
  * the shown text falls far behind it catches up quickly (the backlog drains
  * in well under a second), and a huge backlog (a replay, a tab that slept) is
  * cut to the last screenful at once. Releases snap forward to the end of the
- * current word, so a word never appears half-written. The caller flushes to
- * the full text the instant the stream ends.
+ * current word, so a word never appears half-written.
+ *
+ * When the stream ends, whatever is still held back DRAINS (spec C2: "at up
+ * to 4× the rate, capped at 250, never in one block"): `tailVelocity` fixes a
+ * speed at the moment the stream ends and `pacerDrain` spends it frame by
+ * frame. The caller used to flush to the full text the instant the stream
+ * ended, so the last 100 to 300 characters of every reply landed as one slab.
  *
  * Pure: the component (stream-text.tsx) owns the clock and the frame loop.
  */
+
+import { TIMING_TOKENS } from "@/lib/design/tokens.generated";
 
 export type PacerState = {
   /** Characters shown, fractional (the velocity integrates here). */
@@ -71,6 +78,33 @@ export function pacerStep(s: PacerState, length: number, dtMs: number): PacerSta
   const buffer = s.rate * PACER.bufferSeconds;
   // Follow the arrival rate, plus a proportional pull on whatever sits above the buffer.
   const velocity = Math.max(s.rate * 0.35, s.rate + (backlog - buffer) / PACER.drainSeconds);
+  return { ...s, shown: Math.min(length, s.shown + velocity * dt) };
+}
+
+/**
+ * The tail drain (spec C2), apart from `PACER` because `PACER` is the
+ * cross-platform contract (contracts/chat/stream-pacer.v1.json) the native
+ * pacer replays. `maxMs` is `--stream-tail-max`.
+ */
+export const TAIL = {
+  /** The drain runs at least this many times the arrival rate. */
+  rateFactor: 4,
+  /** …and finishes within this, however much is left. */
+  maxMs: TIMING_TOKENS.stream.tailMax,
+} as const;
+
+/** The speed (characters per second) a finished stream's held tail drains at. */
+export function tailVelocity(s: PacerState, length: number): number {
+  const backlog = Math.max(0, length - s.shown);
+  return Math.max(s.rate * TAIL.rateFactor, backlog / (TAIL.maxMs / 1000));
+}
+
+/** Advance a finished stream's tail by one frame of `dtMs` at `velocity` (from `tailVelocity`). */
+export function pacerDrain(s: PacerState, length: number, dtMs: number, velocity: number): PacerState {
+  if (s.shown >= length) return s.shown === length ? s : { ...s, shown: length };
+  // A tail too long to read anyway (a replay that ended) still jumps first.
+  if (length - s.shown > PACER.jumpAbove) return { ...s, shown: length - PACER.jumpKeep };
+  const dt = Math.min(0.1, Math.max(0, dtMs) / 1000);
   return { ...s, shown: Math.min(length, s.shown + velocity * dt) };
 }
 

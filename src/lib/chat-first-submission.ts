@@ -73,6 +73,8 @@ export interface FirstSubmissionHashInput {
   client?: LegacyChatClient;
   /** Context tokens (src/lib/chat/context-tokens.ts): identity and placement only. */
   context?: ReadonlyArray<{ kind: string; id: string; range?: { start: number; end: number } }>;
+  /** "Memory off for this chat" (src/lib/chat/memory-off.ts). */
+  memoryOff?: boolean;
 }
 
 function sortedUnique(values: string[] | undefined): string[] {
@@ -122,6 +124,11 @@ export function hashFirstSubmission(input: FirstSubmissionHashInput): string {
             .sort(),
         }
       : {}),
+    // Present only when on, for the same reason: every other submission keeps
+    // its hash. In it at all because a retry that kept memory on would
+    // otherwise be answered with the chat the first one created with it off,
+    // or the reverse — a different promise, so a different request.
+    ...(input.memoryOff ? { memoryOff: true } : {}),
   };
   return createHash("sha256").update(JSON.stringify(canonicalize(envelope))).digest("hex");
 }

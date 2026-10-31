@@ -6,6 +6,7 @@ import type { Provider } from "@/lib/providers";
 import type { BackgroundProviderMode } from "@/lib/background-provider-policy";
 import type { SensitiveTopic } from "@/lib/memory-sensitive";
 import type { BudgetCapSource } from "@/lib/spend-ceiling";
+import type { CharacteristicLevel } from "@/lib/characteristics";
 
 export interface AppUser {
   id: string;
@@ -31,6 +32,16 @@ export interface ClientSettings {
   defaultModel: string;
   /** Response-style preset id (see @/lib/personalities); "default" injects nothing. */
   personality: string;
+  /**
+   * Tone characteristics (see @/lib/characteristics), layered on the
+   * personality. Optional so fixtures written before them still type; absent
+   * reads as "default", which injects nothing.
+   */
+  toneWarmth?: CharacteristicLevel;
+  toneEnthusiasm?: CharacteristicLevel;
+  toneFormatting?: CharacteristicLevel;
+  toneEmoji?: CharacteristicLevel;
+  toneConciseness?: CharacteristicLevel;
   customInstructions: string;
   responseLanguage: string;
   /** Interface language: "auto" (follow the browser) or a BCP-47 tag. */
@@ -183,5 +194,20 @@ export interface AppBootstrap {
      *  their own inference (an API key, or a paired Mac running their own
      *  subscriptions). Optional: an older server never sends it. */
     codeOpen?: boolean;
+    /*
+     * Features merged before their review, each off until its server flag is
+     * "1" (src/lib/env.ts). Optional: an older server never sends them, and
+     * absent is off.
+     */
+    /** "Specific people" in the Share dialog (SHARE_PEOPLE_ENABLED). */
+    sharePeople?: boolean;
+    /** "Memory off for this chat" in the composer's + and the chat's menu (CHAT_MEMORY_OFF_ENABLED). */
+    chatMemoryOff?: boolean;
+    /** Add from Google Drive / OneDrive in the composer's + (CLOUD_ATTACH_ENABLED). */
+    cloudAttach?: boolean;
+    /** The five tone characteristics under Personalization (TONE_CHARACTERISTICS_ENABLED). */
+    toneCharacteristics?: boolean;
+    /** Artifacts' `window.alevr` bridge (ARTIFACT_AI_ENABLED). */
+    artifactAi?: boolean;
   };
 }

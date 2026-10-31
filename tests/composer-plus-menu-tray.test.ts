@@ -53,3 +53,20 @@ test("the tray offers the same three panels the + menu would have", () => {
   assert.doesNotMatch(media, /panel="apps"|panel="skills"/);
   assert.match(media, /panel="project"/);
 });
+
+test("Add from Google Drive / OneDrive are drawn only while that drive is connected and CLOUD_ATTACH_ENABLED is on", () => {
+  const sections = plusSections();
+  // Off (the default), neither row is drawn whatever is connected.
+  assert.match(COMPOSER, /const cloudAttachOn = features\.cloudAttach === true;/);
+  assert.match(COMPOSER, /const driveConnected = cloudAttachOn && connectors\.some\(\(connector\) => connector\.id === "google-drive"\);/);
+  assert.match(COMPOSER, /const oneDriveConnected = cloudAttachOn && connectors\.some\(\(connector\) => connector\.id === "microsoft-365"\);/);
+  assert.match(sections, /\.\.\.\(driveConnected\s*\?\s*\[\s*\{\s*kind: "action" as const,\s*id: "google-drive"/);
+  assert.match(sections, /\.\.\.\(oneDriveConnected\s*\?\s*\[\s*\{\s*kind: "action" as const,\s*id: "onedrive"/);
+  // One picker, told which drive; it files the import in this chat, like an upload.
+  const start = COMPOSER.indexOf("<CloudFilePicker");
+  const picker = COMPOSER.slice(start, COMPOSER.indexOf("/>", start));
+  assert.match(picker, /provider=\{cloudPicker\.provider\}/);
+  assert.match(picker, /onAttach=\{addComposerAttachments\}/);
+  assert.match(picker, /existingCount=\{uploads\.length\}/);
+  assert.match(picker, /conversationId=\{conversationId\}/);
+});

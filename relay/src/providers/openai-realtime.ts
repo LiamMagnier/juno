@@ -8,7 +8,7 @@ import type {
   VoiceProviderSession,
   VoiceSessionSeed,
 } from "./types.js";
-import { providerText } from "../voice-context.js";
+import { providerText, withToolsLimit } from "../voice-context.js";
 
 /**
  * Adapter for the OpenAI Realtime event vocabulary, used by TWO providers:
@@ -35,6 +35,13 @@ export interface RealtimeDialect {
   /** Report mic audio as `audioInSec` as it is sent, for a provider billed per
    * minute of call rather than per token (xAI's Grok Voice). */
   meterInputAudio?: boolean;
+  /**
+   * Declares the chat's tools as Realtime function tools (`session.tools`) and
+   * answers `response.function_call_arguments.done` with a
+   * `function_call_output`. The GA dialect and xAI's; Qwen's beta dialect is
+   * not vetted for function calling and stays without.
+   */
+  supportsTools?: boolean;
 }
 
 /**
@@ -134,6 +141,10 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
   private closedByUs = false;
   private assistantSpeaking = false;
   private qwenInputOrder = new QwenInputOrderGate();
+  /** How many of the chat's tools this session declared. */
+  private declaredTools = 0;
+  /** Function calls already answered: the GA API reports one call by two events. */
+  private readonly handledCalls = new Set<string>();
 
   constructor(private dialect: RealtimeDialect) {
     this.provider = dialect.provider;
@@ -143,12 +154,14 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
     // The dialect builds a URL rather than holding an id, so read it back out
     // of the URL it would dial — one source, no second copy to drift.
     const model = new URL(this.dialect.url()).searchParams.get("model");
-    return { thinking: false, ...(model ? { model } : {}) };
+    return { thinking: false, ...(model ? { model } : {}), tools: this.declaredTools };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.events = events;
     this.qwenInputOrder = new QwenInputOrderGate();
+    const tools = this.dialect.supportsTools && events.onToolCall ? (seed.tools ?? []) : [];
+    this.declaredTools = tools.length;
     const ws = new WebSocket(this.dialect.url(), { headers: this.dialect.headers() });
     this.ws = ws;
 
@@ -170,7 +183,21 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
     });
     ws.on("error", (err) => this.events?.onError(`${this.provider}: ${err.message}`));
 
-    this.send({ type: "session.update", session: this.dialect.sessionUpdate(seed) });
+    this.send({
+      type: "session.update",
+      session: tools.length
+        ? {
+            ...this.dialect.sessionUpdate({ ...seed, instructions: withToolsLimit(seed.instructions, seed.toolInstructions) }),
+            tools: tools.map((tool) => ({
+              type: "function",
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            })),
+            tool_choice: "auto",
+          }
+        : this.dialect.sessionUpdate(seed),
+    });
 
     // Seed prior turns so a provider switch keeps the conversation context.
     for (const turn of seed.transcript) {
@@ -316,6 +343,14 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
         ev.onUsage({ tokens, audioInSec: audioIn === undefined ? undefined : audioIn / 10 });
         return;
       }
+      case "response.function_call_arguments.done":
+        this.answerFunctionCall(msg.call_id, msg.name, msg.arguments);
+        return;
+      case "response.output_item.done": {
+        const item = msg.item as { type?: unknown; call_id?: unknown; name?: unknown; arguments?: unknown } | undefined;
+        if (item?.type === "function_call") this.answerFunctionCall(item.call_id, item.name, item.arguments);
+        return;
+      }
       case "error": {
         const detail = (msg.error as { message?: string } | undefined)?.message ?? JSON.stringify(msg).slice(0, 200);
         ev.onError(`${this.provider}: ${detail}`);
@@ -324,5 +359,25 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
       default:
         return; // session.created / rate_limits / deltas we don't surface
     }
+  }
+
+  /**
+   * Run one of the chat's tools for the model and hand it the answer as a
+   * `function_call_output`, then ask for the response that speaks it. A call
+   * id seen before is ignored: the same call arrives as `arguments.done` and
+   * again inside `output_item.done`, and must run once.
+   */
+  private answerFunctionCall(callId: unknown, name: unknown, args: unknown): void {
+    const onToolCall = this.events?.onToolCall;
+    if (!this.declaredTools || !onToolCall || typeof callId !== "string" || !callId || typeof name !== "string") return;
+    if (this.handledCalls.has(callId)) return;
+    this.handledCalls.add(callId);
+    void onToolCall({ id: callId, name, arguments: typeof args === "string" ? args : "{}" })
+      .catch(() => "The tool could not be reached, so nothing was done.")
+      .then((output) => {
+        if (this.closedByUs) return;
+        this.send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output } });
+        this.send({ type: "response.create" });
+      });
   }
 }

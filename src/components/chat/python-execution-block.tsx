@@ -50,7 +50,7 @@ export function PythonExecutionBlock({
       <button
         type="button"
         onClick={() => setIsCodeOpen((open) => !open)}
-        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/45 focus-visible:-outline-offset-2 motion-reduce:transition-none"
+        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/45 focus-visible:-outline-offset-2"
         aria-expanded={isCodeOpen}
         aria-controls={codeId}
       >

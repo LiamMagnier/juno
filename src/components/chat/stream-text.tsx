@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
-import { initPacer, pacerArrive, pacerStep, revealCut, type PacerState } from "@/lib/chat/stream-pacer";
+import { initPacer, pacerArrive, pacerDrain, pacerStep, revealCut, tailVelocity, type PacerState } from "@/lib/chat/stream-pacer";
+import { TIMING_TOKENS } from "@/lib/design/tokens.generated";
 import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 
 /*
@@ -14,7 +15,12 @@ import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-prefe
  *   1. Pacing (stream-pacer.ts). The text that reaches the screen is released
  *      on every animation frame at a cadence that follows the arrival rate,
  *      a beat behind the network, so a chunk of 300 characters never lands as
- *      one slab. A word appears whole. The stream's end flushes at once.
+ *      one slab. A word appears whole. When the stream ends, the held tail
+ *      drains at up to 4× the rate and within `--stream-tail-max` (250ms),
+ *      never in one block (spec C2). While the tab is hidden and
+ *      requestAnimationFrame is paused, a `--stream-drain-tick` (50ms) timer
+ *      keeps the pacing going, so a reader who comes back does not find the
+ *      reply stalled behind a backlog.
  *
  *   2. The fresh-text fade. The newest characters ink in over ~280 ms: faint
  *      and slightly soft, then full. It is drawn with the CSS Custom Highlight
@@ -34,7 +40,8 @@ import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-prefe
  */
 
 const BANDS = 5;
-const BAND_MS = 56; // 5 × 56 ≈ 280 ms of fade
+/** `--stream-band` (280ms) over the five bands: 56ms each. */
+const BAND_MS = TIMING_TOKENS.stream.band / BANDS;
 
 type Born = { len: number; t: number };
 
@@ -100,6 +107,16 @@ export function StreamingMarkdown(props: React.ComponentProps<typeof Markdown> &
   }, [content]);
   const pacer = React.useRef<PacerState | null>(null);
   const [cut, setCut] = React.useState(content.length);
+  const [draining, setDraining] = React.useState(false);
+  // The render the stream ends in must keep the cut, or the whole tail would
+  // paint for one frame before the drain below took it back. So the switch is
+  // noticed during render; the frame loop then drains the tail or, when
+  // nothing is held back, releases it.
+  const [lastStreaming, setLastStreaming] = React.useState(streaming);
+  if (lastStreaming !== streaming) {
+    setLastStreaming(streaming);
+    setDraining(!streaming);
+  }
   const born = React.useRef<Born[]>([]);
   const mine = React.useRef<{ band: number; range: Range }[]>([]);
   const raf = React.useRef(0);
@@ -157,43 +174,76 @@ export function StreamingMarkdown(props: React.ComponentProps<typeof Markdown> &
 
   // The frame loop: pace the text, then re-band the fade.
   React.useEffect(() => {
+    // Chars per second while a finished stream's tail drains; 0 while it streams.
+    let tail = 0;
     if (!streaming) {
-      // The end flushes at once; whatever is still fading finishes its fade.
-      pacer.current = null;
-      setCut(target.current.length);
+      // The end DRAINS (spec C2), it does not flush: the speed is fixed once,
+      // here, at up to 4× the arrival rate and fast enough to finish within
+      // --stream-tail-max. Whatever is still fading finishes its fade.
+      const p = pacer.current;
+      const length = target.current.length;
+      if (p && p.shown < length) {
+        tail = tailVelocity(p, length);
+        setDraining(true);
+      } else {
+        pacer.current = null;
+        setDraining(false);
+        setCut(length);
+      }
     } else if (!pacer.current) {
       pacer.current = initPacer(target.current.length, performance.now());
       setCut(target.current.length);
     }
     let last = performance.now();
+    let timer = 0;
+    // rAF stops in a hidden tab; the drain tick keeps the pacer moving there
+    // (spec C2), so the reply is not a frozen backlog when the reader returns.
+    const schedule = () => {
+      if (document.hidden) timer = window.setTimeout(() => frame(performance.now()), TIMING_TOKENS.stream.drainTick);
+      else raf.current = requestAnimationFrame(frame);
+    };
     const frame = (now: number) => {
+      raf.current = 0;
+      timer = 0;
       const dt = now - last;
       last = now;
       let pacing = false;
       if (pacer.current) {
         const text = target.current;
-        pacer.current = pacerArrive(pacer.current, text.length, now);
-        pacer.current = pacerStep(pacer.current, text.length, dt);
+        if (tail) {
+          pacer.current = pacerDrain(pacer.current, text.length, dt, tail);
+        } else {
+          pacer.current = pacerArrive(pacer.current, text.length, now);
+          pacer.current = pacerStep(pacer.current, text.length, dt);
+        }
         const next = revealCut(text, pacer.current.shown);
         setCut((c) => (c === next ? c : next));
         pacing = next < text.length;
+        if (tail && !pacing) {
+          pacer.current = null;
+          setDraining(false);
+        }
       }
       const fading = paintFade(now);
-      raf.current = pacing || fading || streaming ? requestAnimationFrame(frame) : 0;
+      if (pacing || fading || streaming) schedule();
     };
-    raf.current = requestAnimationFrame(frame);
+    schedule();
     return () => {
       cancelAnimationFrame(raf.current);
+      window.clearTimeout(timer);
       raf.current = 0;
     };
   }, [streaming, paintFade]);
 
   React.useEffect(() => () => clearHighlights(), [clearHighlights]);
 
-  const shown = streaming ? content.slice(0, Math.min(cut, content.length)) : content;
+  // While the tail drains the reply is still being revealed: the cut holds,
+  // and Markdown keeps its streaming rules (half-formed constructs held back).
+  const revealing = streaming || draining;
+  const shown = revealing ? content.slice(0, Math.min(cut, content.length)) : content;
   return (
     <div ref={box} className="stream-text">
-      <Markdown {...props} content={shown} streaming={streaming} />
+      <Markdown {...props} content={shown} streaming={revealing} />
     </div>
   );
 }

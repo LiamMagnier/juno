@@ -153,7 +153,7 @@ export function HoldButton({
          * because a solid destructive background would swallow the progress
          * bar this control exists to show.
          */
-        "pressable relative isolate flex h-9 w-full items-center justify-center gap-2 overflow-hidden rounded-control border border-transparent px-3 text-ui font-medium text-destructive transition-[background-color,border-color] duration-fast ease-out-soft hover:border-destructive/35 hover:bg-destructive/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none",
+        "pressable relative isolate flex h-9 w-full items-center justify-center gap-2 overflow-hidden rounded-control border border-transparent px-3 text-ui font-medium text-destructive hover:border-destructive/35 hover:bg-destructive/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 disabled:pointer-events-none disabled:opacity-50 motion-reduce:active:scale-100",
         className
       )}
     >

@@ -110,9 +110,11 @@ model User {
   batchJobs                   BatchJob[]
   moderationFlags             ModerationFlag[]
   shares                      Share[]
+  shareRecipients             ShareRecipient[]
   artifacts                   Artifact[]
   artifactDrafts              ArtifactDraft[]
   artifactCanvasDrafts        ArtifactCanvasDraft[]
+  artifactStorageEntries      ArtifactStorageEntry[]
   artifactPublications        ArtifactPublication[]
   scheduledTasks              ScheduledTask[]
   voiceTranscriptSessions     VoiceTranscriptSession[]
@@ -543,6 +545,16 @@ model Settings {
   // "concise", "socratic"…). Layered UNDER customInstructions so a user's own
   // instructions always win.
   personality                String   @default("default")
+  // Tone characteristics (src/lib/characteristics.ts): "less" | "default" |
+  // "more" each, layered on the personality and under customInstructions.
+  // One column apiece so a client's patch writes one without reading the
+  // rest; TEXT so a new level is a rollback-safe change, and an unknown value
+  // reads as "default", which puts nothing in the prompt.
+  toneWarmth                 String   @default("default")
+  toneEnthusiasm             String   @default("default")
+  toneFormatting             String   @default("default")
+  toneEmoji                  String   @default("default")
+  toneConciseness            String   @default("default")
   memoryEnabled              Boolean  @default(true)
   // Sensitive topics this account has opted INTO remembering — health,
   // ethnicity, religion, politics, sexuality, finances (see
@@ -711,6 +723,11 @@ model Conversation {
   // the chat composer; a project's or an agent's stricter mode still wins at
   // dispatch (src/lib/chat/task-approval-mode.ts).
   taskApprovalMode  String?
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts): its turns read no
+  // memory and save or forget nothing, and the background reader skips it.
+  // Narrows the account's memoryEnabled; it can never turn memory on. Set from
+  // the chat's menu or the composer's +, and on the first send of a new chat.
+  memoryOff         Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
@@ -1087,7 +1104,7 @@ model Attachment {
    */
   version         Int            @default(1)
   /**
-   * upload | library_clone | replacement | restore
+   * upload | library_clone | replacement | restore | cloud_import
    */
   origin          String         @default("upload")
   /**
@@ -1492,6 +1509,7 @@ model Artifact {
   shares       Share[]
   draft        ArtifactDraft?
   canvasDrafts ArtifactCanvasDraft[]
+  storage      ArtifactStorageEntry[]
   proposals    ArtifactProposal[]
   publications ArtifactPublication[]
 
@@ -1575,6 +1593,29 @@ model ArtifactCanvasDraft {
 
   @@id([artifactId, userId])
   @@index([userId, updatedAt])
+}
+
+/// What an artifact's own code keeps, for one viewer (`window.alevr.storage`,
+/// src/lib/artifact-ai/storage.ts). Scoped per artifact AND per viewer: on a
+/// shared or published link each signed-in visitor has a store of their own
+/// that the owner never reads. `value` is encryptField() ciphertext of the
+/// value's JSON text; `bytes` is the plaintext UTF-8 size of key + value, the
+/// figure the caps are counted in (20 MB per artifact, 100 MB per viewer).
+/// Never synced, shared, exported with the artifact or shown to the model.
+model ArtifactStorageEntry {
+  artifactId String
+  userId     String
+  key        String
+  value      String   @db.Text
+  bytes      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([artifactId, userId, key])
+  @@index([userId])
 }
 
 /// Juno's work that is not (yet) a version: a model re-emit held back because
@@ -2490,6 +2531,14 @@ enum ShareKind {
   ARTIFACT
 }
 
+/// Who can open a share. LINK: anyone holding its token (the public page).
+/// PEOPLE: only a signed-in account whose verified email is on the share's
+/// `recipients`, and its owner; the token alone opens nothing.
+enum ShareAudience {
+  LINK
+  PEOPLE
+}
+
 model Share {
   id             String    @id @default(cuid())
   token          String    @unique // long random URL slug (not the cuid)
@@ -2519,16 +2568,52 @@ model Share {
   /// person's messages and the final answers, secrets redacted on the server,
   /// encrypted at rest (encryptJsonField). Null for every ordinary chat link.
   transcript     Json?
+  /// LINK for every share made before people sharing, and for every link
+  /// since. A PEOPLE share is never served by its token alone: the public
+  /// lookup skips it, and src/lib/share-people.ts checks the viewer against
+  /// `recipients` (the rules are src/lib/share-people-core.ts).
+  audience       ShareAudience @default(LINK)
   createdAt      DateTime  @default(now())
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  artifact     Artifact?     @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation?    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifact     Artifact?        @relation(fields: [artifactId], references: [id], onDelete: Cascade)
   reports      ShareReport[]
+  recipients   ShareRecipient[]
 
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([artifactId])
+}
+
+/// One person a PEOPLE share was sent to, by email (src/lib/share-people-core.ts).
+///
+/// `userId` is the SHARE'S OWNER, not the recipient: the owner adds, lists and
+/// removes rows, and every read is scoped to them. The recipient is matched by
+/// `emailHash`, an HMAC (`domainMac`) of the normalized address, against the
+/// verified email of whoever is signed in. Nothing here points at a recipient's
+/// account, so adding an address never looks one up and never says whether it
+/// has one. `email` is the address itself, encrypted (`encryptField`), read
+/// only to list it back to the owner and to send the invitation.
+///
+/// Removing a person deletes the row; revoking the share leaves the rows on the
+/// tombstoned share, where they open nothing.
+model ShareRecipient {
+  id        String    @id @default(cuid())
+  shareId   String
+  userId    String
+  emailHash String
+  email     String
+  /// When the invitation email went out; null when mail is off or the
+  /// per-address limit held it back (the person is still added).
+  invitedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  share Share @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shareId, emailHash])
+  @@index([userId, createdAt])
 }
 
 /// Thumbs up or down on an answer in a Code session whose transcript lives on

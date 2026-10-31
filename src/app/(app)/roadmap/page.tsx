@@ -199,7 +199,7 @@ export default function RoadmapPage() {
                 <Link
                   key={r.id}
                   href={`/roadmap/${r.id}`}
-                  className="text-ui text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline motion-reduce:transition-none"
+                  className="text-ui text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline"
                 >
                   {r.title} <span className="text-caption text-muted-foreground">· {timeAgo(r.createdAt)}</span>
                 </Link>
@@ -422,7 +422,7 @@ function StatusTab({
       className={cn(
         // `.pressable`: the house press, and the colour cross-fade on the
         // fast rung with its curve (this had the duration and no easing).
-        "pressable shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-ui motion-reduce:transition-none motion-reduce:active:scale-100",
+        "pressable shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-ui motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
         active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
       )}
     >
