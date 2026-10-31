@@ -78,7 +78,11 @@ const pressableVariants = cva(
         // fill, on the same fast cross-fade.
         row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
-        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
+        // `hit-44`: a chip is drawn 24-32px tall at every rung and never grows
+        // with the pointer (a filter row that doubled in height on a phone
+        // would push the content it filters off the first screen), so a
+        // finger reaches it through the invisible 44px pad (G54) instead.
+        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground hit-44",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
         icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
       },
