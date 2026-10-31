@@ -327,7 +327,8 @@ export function ArtifactLifecycleActions({
         </span>
       ) : null}
 
-      <ShareDialog kind="ARTIFACT" artifactId={id} open={publishing} onOpenChange={setPublishing} />
+      {/* Opened from "Publish…", so it opens on the public side of the choice. */}
+      <ShareDialog kind="ARTIFACT" artifactId={id} open={publishing} onOpenChange={setPublishing} initialAudience="link" />
 
       <Dialog
         open={deleting || restoring}
