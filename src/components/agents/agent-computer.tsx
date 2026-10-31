@@ -22,6 +22,7 @@ import {
 import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, Upload, X } from "@/components/ui/icons";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ComputerTerminal } from "@/components/agents/computer-terminal";
+import { TEACH_UI_COPY, TeachRecordingLine, TeachReviewCard, useComputerTeach } from "@/components/agents/computer-teach";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence } from "@/components/agents/agent-presence";
@@ -111,6 +112,10 @@ export function AgentComputerOverlay({
 }) {
   const { detail, refresh } = useAgentDetail(agent.id, null);
   const work = useConversationWork(open ? agent.conversationId : null);
+  // Teach by demonstration: shown only when the server says it is on.
+  const teach = useComputerTeach(agent.id, open);
+  // "Show it how" asked for control; recording starts once control is live.
+  const recordOnControl = React.useRef(false);
   const workRef = React.useRef(work);
   workRef.current = work;
   const [mode, setMode] = React.useState<"watch" | "control">(initialMode);
@@ -228,7 +233,8 @@ export function AgentComputerOverlay({
     refresh();
   };
 
-  const takeControl = () => {
+  const takeControl = (opts?: { record?: boolean }) => {
+    recordOnControl.current = opts?.record === true;
     takeover.current = pinTakeover(work.questions);
     setNotice(null);
     setFreeze(null);
@@ -260,6 +266,9 @@ export function AgentComputerOverlay({
       return false;
     }
     broadcastHandBack(agent.id);
+    recordOnControl.current = false;
+    // The server stopped any recording before handing back; show what it kept.
+    void teach.refresh();
     // Watching from here on, before the answer goes out: the viewer swaps to
     // a watch stream instead of retrying control.
     setControlConnected(false);
@@ -447,6 +456,10 @@ export function AgentComputerOverlay({
                     if (connected === "control") {
                       setControlConnected(true);
                       announce("You have control");
+                      if (recordOnControl.current) {
+                        recordOnControl.current = false;
+                        void teach.start();
+                      }
                     } else {
                       setControlConnected(false);
                     }
@@ -500,6 +513,7 @@ export function AgentComputerOverlay({
                 {freeze === "failed" ? (
                   <p className="mt-1 text-ui text-destructive-ink">{freezeFailedLine(agent.name)}</p>
                 ) : null}
+                <TeachRecordingLine teach={teach} />
               </div>
             ) : controlInWindow ? (
               <p className="flex items-center gap-2 text-ui font-medium text-primary">
@@ -515,19 +529,45 @@ export function AgentComputerOverlay({
             <div className="flex items-center gap-2">
               {status === "awake" ? (
                 inControl ? (
-                  <Button type="button" className="rounded-full px-5 coarse:min-h-11" loading={busy === "handback"} onClick={() => void handBack()}>
-                    Hand back
-                  </Button>
+                  <>
+                    {teach.state.enabled && mode === "control" && controlConnected && !teach.state.recording ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="rounded-full px-4 coarse:min-h-11"
+                        loading={teach.busy === "start"}
+                        onClick={() => void teach.start()}
+                      >
+                        {TEACH_UI_COPY.record}
+                      </Button>
+                    ) : null}
+                    <Button type="button" className="rounded-full px-5 coarse:min-h-11" loading={busy === "handback"} onClick={() => void handBack()}>
+                      Hand back
+                    </Button>
+                  </>
                 ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-full px-5 coarse:min-h-11"
-                    disabled={takeoverState?.active === true && takeoverState.holderKind === "app"}
-                    onClick={takeControl}
-                  >
-                    Take control
-                  </Button>
+                  <>
+                    {teach.state.enabled ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="rounded-full px-4 coarse:min-h-11"
+                        disabled={takeoverState?.active === true}
+                        onClick={() => takeControl({ record: true })}
+                      >
+                        {TEACH_UI_COPY.showItHow}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full px-5 coarse:min-h-11"
+                      disabled={takeoverState?.active === true && takeoverState.holderKind === "app"}
+                      onClick={() => takeControl()}
+                    >
+                      Take control
+                    </Button>
+                  </>
                 )
               ) : status === "error" || status === "asleep" ? (
                 <Button type="button" variant="outline" className="rounded-full px-5 coarse:min-h-11" loading={busy === "wake"} onClick={() => void run("wake")}>
@@ -536,6 +576,7 @@ export function AgentComputerOverlay({
               ) : null}
             </div>
           </div>
+          {!inControl ? <TeachReviewCard teach={teach} className="mt-3 max-w-xl" /> : null}
         </div>
       </div>
 

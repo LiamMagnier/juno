@@ -51,7 +51,10 @@
  *
  * WHAT IT NEVER DOES: record the screen, read anything the person did not type
  * or do in a conversation with Juno, or widen what a run may use. A taught
- * skill's tools and apps are requests that NARROW a turn, as above.
+ * skill's tools and apps are requests that NARROW a turn, as above. Teach by
+ * demonstration (src/lib/teach/, behind AGENT_TEACH_ENABLED) is the one place
+ * that records what a person does, on an agent's computer during a take over;
+ * its drafts come through `admitSkillDraft` here like any other.
  *
  * Pure and client-safe. No `server-only`, no Prisma.
  */

@@ -814,6 +814,14 @@
           "status": "planned",
           "note": "Agent computer file listing and download; web panel disclosure."
         },
+        "/api/agents/[id]/computer/demonstration": {
+          "status": "planned",
+          "note": "Teach by demonstration (docs/design/agents-v2/TEACH.md): start and stop recording during a take over, behind AGENT_TEACH_ENABLED; the web computer overlay only for now."
+        },
+        "/api/agents/[id]/computer/demonstration/draft": {
+          "status": "planned",
+          "note": "Drafts a skill from a recorded demonstration for review on the Teach page; the web computer overlay only for now."
+        },
         "/api/agents/[id]/computer/heartbeat": "native",
         "/api/agents/[id]/computer/poster": "native",
         "/api/agents/[id]/computer/shell": {

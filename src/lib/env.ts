@@ -363,8 +363,29 @@ export const env = {
     },
   },
 
+  /**
+   * Teach by demonstration (docs/design/agents-v2/TEACH.md): the person shows
+   * an agent a task on its computer and it drafts a skill from the recording.
+   * Off unless AGENT_TEACH_ENABLED is exactly `1`, and then only where agent
+   * computers are on too (`isAgentTeachConfigured`).
+   */
+  agentTeach: {
+    get enabled(): boolean {
+      return (process.env.AGENT_TEACH_ENABLED ?? "").trim() === "1";
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
+
+/**
+ * Whether teach by demonstration may be offered: the switch is on and a
+ * computer provider is set. The provider's own availability (the image on the
+ * host) is still checked where a recording starts.
+ */
+export function isAgentTeachConfigured(): boolean {
+  return env.agentTeach.enabled && env.agentComputer.provider.length > 0 && env.agentComputer.provider.toLowerCase() !== "off";
+}
 
 export function isStorageConfigured(): boolean {
   const s = env.s3;

@@ -51,6 +51,11 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/code-v2/env-link-select.ts#globalThis": "singleton",
   "src/lib/code-v2/env-link-hub.ts#globalThis": "known-gap",
   "src/lib/chat/local-folder-bridge.ts#globalThis": "known-gap",
+  // Teach by demonstration: a recording's live browser connection is held by
+  // the one web process that started it (juno-backend runs a single
+  // instance); the durable record is the AgentDemonstration row, checkpointed
+  // every 20 s and settled as "interrupted" after a restart.
+  "src/lib/teach/server.ts#globalThis": "per-process",
 
   // Module-level collections created empty
   "src/lib/aura.ts#states": "browser",

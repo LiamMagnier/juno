@@ -2804,6 +2804,7 @@ gracefully when absent.
 | Cloud Code | `CLOUD_CODE_SECRET`, `GITHUB_DISPATCH_TOKEN`, `CLOUD_CODE_REPO`, `GITHUB_APP_ID`/`GITHUB_APP_PRIVATE_KEY` (§9.3, the runner's narrowed git credential), `GITHUB_APP_WEBHOOK_SECRET` (§9.4 — without it Auto-fix is not offered) |
 | Work browser | `WORK_BROWSER_EXECUTABLE` (a Chromium the worker already has; without a browser on the worker the `browser` tool reports itself unavailable on its first call and the run carries on with `web_fetch`) |
 | Agent computers | `AGENT_COMPUTER_PROVIDER` (`"docker"` \| `"fake"` \| `""`; default `""` = disabled), `AGENT_COMPUTER_IMAGE`, `AGENT_COMPUTER_STORAGE_ROOT`, `AGENT_COMPUTER_NETWORK`, `AGENT_COMPUTER_MEMORY_MB`, `AGENT_COMPUTER_CPUS`, `AGENT_COMPUTER_SHM_MB`, `AGENT_COMPUTER_DISK_QUOTA_MB`, `AGENT_COMPUTER_MAX_AWAKE_HOST`, `AGENT_COMPUTER_MAX_AWAKE_USER`, `AGENT_COMPUTER_MIN_FREE_MEM_MB`, `AGENT_COMPUTER_MIN_FREE_DISK_MB`, `AGENT_COMPUTER_REST_MINUTES`, `AGENT_COMPUTER_SLEEP_HOURS`, `AGENT_COMPUTER_COST_USD_PER_MIN` (§9c.9) |
+| Teach by demonstration | `AGENT_TEACH_ENABLED` (exactly `1` turns it on, default off; needs agent computers too). The person shows an agent a task on its computer during a take over and reviews the skill it drafts (docs/design/agents-v2/TEACH.md) |
 | Cross-subdomain cookies | `COOKIE_DOMAIN` |
 | API rewrite target (UI-on-Vercel setup) | `RENDER_BACKEND_URL` |
 | Benchmarks | `AA_API_KEY` |
