@@ -610,7 +610,7 @@ export function UploadTile({ upload, onRetry, onDismiss }: { upload: LibraryUplo
         )}
         {!failed ? (
           <span className="absolute inset-x-3 bottom-3 h-0.5 overflow-hidden rounded-full bg-foreground/10">
-            <span className="block h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft" style={{ width: `${upload.progress}%` }} />
+            <span className="block h-full w-full rounded-full bg-foreground/70 transition-transform duration-base ease-out-soft" style={{ transform: `translateX(-${100 - upload.progress}%)` }} />
           </span>
         ) : null}
       </div>
@@ -677,7 +677,7 @@ export function UploadRow({ upload, onRetry, onDismiss }: { upload: LibraryUploa
           ) : (
             <span className="flex items-center gap-2.5 tabular-nums">
               <span className="h-0.5 w-full max-w-40 overflow-hidden rounded-full bg-foreground/10" aria-hidden="true">
-                <span className="block h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft" style={{ width: `${upload.progress}%` }} />
+                <span className="block h-full w-full rounded-full bg-foreground/70 transition-transform duration-base ease-out-soft" style={{ transform: `translateX(-${100 - upload.progress}%)` }} />
               </span>
               <span className="shrink-0">{uploadSettling(upload) ? "Saving…" : `${Math.round(upload.progress)}%`}</span>
             </span>

@@ -408,7 +408,12 @@ const noBlurEntrance = {
         const blurred = values.some((v) => v?.type === "Literal" && typeof v.value === "string" && blurValue(v.value));
         if (!blurred) return;
         const object = node.parent;
-        const owner = object?.parent?.type === "Property" ? keyName(object.parent) : null;
+        // Walk out through a conditional or a logical default, so
+        // `initial: reduce ? { opacity: 0 } : { filter: "blur(2px)" }` is
+        // still an entrance (it hid the settings "Saved" blur from this rule).
+        let holder = object?.parent;
+        while (holder && (holder.type === "ConditionalExpression" || holder.type === "LogicalExpression")) holder = holder.parent;
+        const owner = holder?.type === "Property" ? keyName(holder) : null;
         const inKeyframes = node.value.type === "ArrayExpression";
         if (inKeyframes || (owner && ENTRANCE_KEYS.has(owner))) context.report({ node, messageId: "blur" });
       },

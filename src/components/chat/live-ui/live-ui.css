@@ -46,7 +46,7 @@
   background: hsl(var(--live) / 0.08);
 }
 .live-eyebrow[data-live] svg {
-  animation: live-breathe var(--loop-beat) var(--ease-in-out, ease-in-out) infinite;
+  animation: live-breathe var(--loop-beat) var(--ease-breathe) infinite;
 }
 @keyframes live-breathe {
   0%, 100% { opacity: 0.45; transform: scale(0.85); }
@@ -375,7 +375,7 @@ div:has(> .live-slider:active) > div > .live-value {
 .live-timer[data-finished] { color: hsl(var(--success-ink)); background: hsl(var(--success) / 0.1); }
 .live-timer[data-finished] svg { color: hsl(var(--success)); }
 @media (prefers-reduced-motion: no-preference) {
-  .live-timer[data-running] svg { animation: live-breathe var(--loop-breathe) var(--ease-in-out, ease-in-out) infinite; }
+  .live-timer[data-running] svg { animation: live-breathe var(--loop-breathe) var(--ease-breathe) infinite; }
   .live-timer[data-finished] { animation: live-ring var(--dur-emphasis) var(--ease-out-back) 2; }
 }
 @keyframes live-ring {

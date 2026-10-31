@@ -97,6 +97,9 @@ test("no-blur-entrance", async () => {
     invalid: [
       { code: `const v = { initial: { opacity: 0, filter: "blur(4px)" } };`, filename: "src/a.tsx", errors: [{ messageId: "blur" }] },
       { code: `const k = { filter: ["blur(6px)", "blur(0px)"] };`, filename: "src/a.tsx", errors: [{ messageId: "blur" }] },
+      // Behind a conditional (the settings "Saved" word did this) or a default.
+      { code: `const w = { initial: reduce ? { opacity: 0 } : { opacity: 0, x: -4, filter: "blur(2px)" } };`, filename: "src/a.tsx", errors: [{ messageId: "blur" }] },
+      { code: `const w = { initial: custom || { opacity: 0, filter: "blur(3px)" } };`, filename: "src/a.tsx", errors: [{ messageId: "blur" }] },
       { code: css("@keyframes turn-in {\n  from { opacity: 0; filter: blur(4px); }\n  to { opacity: 1; }\n}"), filename: "src/a.css/0.js", errors: [{ messageId: "blur", line: 2 }] },
     ],
   });

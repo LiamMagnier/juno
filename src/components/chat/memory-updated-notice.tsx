@@ -10,6 +10,7 @@ import { MemoryFactRow, forgetMemoryFact, useAllForgotten } from "@/components/c
 import { memoryEntryHref } from "@/lib/chat/memory-receipts";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/lib/motion-preference";
+import { DURATION } from "@/lib/design/tokens.generated";
 import type { ClientMemoryWrite } from "@/types/chat";
 
 /*
@@ -41,11 +42,11 @@ import type { ClientMemoryWrite } from "@/types/chat";
 
 /** How long the notice stays once nobody is looking at it. */
 export const MEMORY_NOTICE_MS = 6000;
-/** The exit's length: `--dur-exit`, read as a number for the unmount. */
-const EXIT_MS = 180;
+/** The exit's length: `--dur-exit` (`animate-title-out`), read from the token table for the unmount. It was a hand-typed 180. */
+const EXIT_MS = DURATION.exit;
 
 const actionClass =
-  "inline-flex h-7 items-center gap-1 rounded-control px-2 font-sans text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-9";
+  "inline-flex h-7 items-center gap-1 rounded-control px-2 font-sans text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-9";
 
 /**
  * The fact, short enough for two lines of the notice, cut only between words.
@@ -138,7 +139,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
       <span
         aria-hidden="true"
         className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft",
           allUndone ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary-ink",
         )}
       >

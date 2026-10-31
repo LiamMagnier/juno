@@ -89,7 +89,7 @@ export function TranscriptRail({
       data-slot="transcript-rail"
       aria-hidden={!visible || undefined}
       className={cn(
-        "pointer-events-none absolute inset-y-3 right-1 w-7 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+        "pointer-events-none absolute inset-y-3 right-1 w-7 transition-opacity duration-base ease-out-soft",
         visible ? "opacity-100" : "opacity-0",
         className,
       )}
@@ -126,7 +126,7 @@ export function TranscriptRail({
               <span
                 aria-hidden
                 className={cn(
-                  "block h-px w-4 origin-right bg-current transition-[transform,color] duration-base ease-spring motion-reduce:transition-none",
+                  "block h-px w-4 origin-right bg-current transition-[transform,color] duration-base ease-spring motion-reduce:transition-[color]",
                   lit ? "text-foreground" : "group-hover/tick:text-muted-foreground",
                 )}
                 style={{ transform: `scaleX(${scale})` }}
@@ -136,14 +136,20 @@ export function TranscriptRail({
         })}
       </nav>
 
-      {/* The card is a preview, not a control: the ticks carry the names. */}
+      {/* The card is a preview, not a control: the ticks carry the names.
+          It follows the pointer down the rail on `translate`, a compositor
+          property, from a fixed `top: 0`. It used to transition `top`, a
+          layout property, re-laying-out the card on every frame of every move
+          (D27). `translate` composes before the class's `-translate-y-1/2`,
+          so the card still centres on its tick. Under reduced motion it jumps
+          and only its fade plays (Tier B). */}
       <div
         aria-hidden
         className={cn(
-          "absolute right-8 w-64 max-w-[calc(100vw-5rem)] -translate-y-1/2 transition-[top,opacity] duration-base ease-spring motion-reduce:transition-none",
+          "absolute right-8 top-0 w-64 max-w-[calc(100vw-5rem)] -translate-y-1/2 transition-[translate,opacity] duration-base ease-spring motion-reduce:transition-opacity",
           card && visible ? "opacity-100" : "opacity-0",
         )}
-        style={{ top: Math.max(0, railTop) + Math.max(0, cardIndex) * itemSize + itemSize / 2 }}
+        style={{ translate: `0 ${Math.max(0, railTop) + Math.max(0, cardIndex) * itemSize + itemSize / 2}px` }}
       >
         {drawn && cardIndex >= 0 && (
           <div className="rounded-card border bg-popover p-3 shadow-float">
