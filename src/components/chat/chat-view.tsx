@@ -122,9 +122,11 @@ import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 import { TaskModeChip } from "@/components/chat/task-mode-chip";
+import { MemoryOffMark } from "@/components/chat/memory-off-mark";
 import { MemoryUpdatedAnnouncement, MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
 import { PHONE_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { useConversationTaskMode } from "@/hooks/use-conversation-task-mode";
+import { useConversationMemory } from "@/hooks/use-conversation-memory";
 import type { ChatTaskMode } from "@/lib/chat/task-approval-mode";
 import { OPEN_ARTIFACT_EVENT, type OpenArtifactDetail } from "@/lib/artifact-events";
 
@@ -525,6 +527,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // that holds it follows the conversation id this chat learns from useChat.
   const taskModeRef = React.useRef<ChatTaskMode | null>(null);
   const readTaskMode = React.useCallback(() => taskModeRef.current, []);
+  // "Memory off for this chat" reaches the request, the new chat's sidebar row
+  // and a voice call the same way, for the same reason.
+  const chatMemoryOffRef = React.useRef(false);
+  const readMemoryOff = React.useCallback(() => chatMemoryOffRef.current, []);
 
   const chat = useChat({
     conversationId,
@@ -540,6 +546,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     proMode,
     connectors: enabledConnectors,
     taskApprovalMode: readTaskMode,
+    memoryOff: readMemoryOff,
     privateMode,
     onQuota: setQuota,
     onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
@@ -565,6 +572,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           folderId: null,
           projectId: activeProjectId ?? null,
           activeConnectors: enabledConnectors,
+          memoryOff: chatMemoryOffRef.current,
           lastMessageAt: new Date().toISOString(),
           createdAt: new Date().toISOString(),
         };
@@ -662,6 +670,41 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         />
       ) : undefined,
     [tasksPossible, taskMode.chosen, taskMode.effective, taskMode.narrowedBy, taskMode.change],
+  );
+
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts): the composer's +
+  // and the header's More menu flip it, the header and the dock's footnote
+  // say so. Never in incognito, which keeps out of memory already and writes
+  // no row to keep a switch on.
+  const knownMemoryOff = currentConversationId
+    ? conversations.find((c) => c.id === currentConversationId)?.memoryOff
+    : undefined;
+  const chatMemorySwitch = useConversationMemory(
+    privateMode ? null : currentConversationId,
+    !privateMode,
+    knownMemoryOff,
+    // The id arrived while this view's route names no chat: it made it.
+    conversationId === null,
+  );
+  const chatMemoryOff = chatMemorySwitch.off;
+  const changeChatMemorySwitch = chatMemorySwitch.change;
+  React.useEffect(() => {
+    chatMemoryOffRef.current = chatMemoryOff;
+  }, [chatMemoryOff]);
+  const chatMemory = React.useMemo(
+    () =>
+      privateMode
+        ? undefined
+        : {
+            off: chatMemoryOff,
+            onChange: (off: boolean) => {
+              changeChatMemorySwitch(off);
+              // The sidebar's row too, so coming back to this chat shows the
+              // switch it was left at before the read answers.
+              if (currentConversationId) updateConversation(currentConversationId, { memoryOff: off });
+            },
+          },
+    [privateMode, chatMemoryOff, changeChatMemorySwitch, currentConversationId, updateConversation],
   );
 
   // A room: who answers each message, and the bounded follow-up turns the
@@ -795,6 +838,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           model,
           projectId: activeProjectId,
           connectors: enabledConnectors,
+          ...(chatMemoryOffRef.current ? { memoryOff: true } : {}),
           turns,
         })
       : null;
@@ -2154,12 +2198,19 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // Closed, or a new chat started, while it loaded: nothing to start.
       if (voiceSessionIdRef.current !== sessionId || !voiceOpenRef.current) return;
       // What Juno remembers comes along — the same memory a typed turn in this
-      // chat reads (this project's alone, in a project), and none in incognito.
-      // So does the thread: in an agent's, the server makes the call that agent.
+      // chat reads (this project's alone, in a project), and none in incognito
+      // or in a chat with memory off for itself (the relay token refuses it
+      // for a saved one as well). So does the thread: in an agent's, the
+      // server makes the call that agent.
       void realtimeVoice.start(
         undefined,
         history,
-        privateMode ? undefined : { memory: { projectId: activeProjectId }, conversationId: currentConversationId ?? null }
+        privateMode
+          ? undefined
+          : {
+              memory: chatMemoryOffRef.current ? null : { projectId: activeProjectId },
+              conversationId: currentConversationId ?? null,
+            }
       );
     });
   }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, currentConversationId, loadVoice, privateMode, realtimeVoice, voiceSaveError]);
@@ -2189,6 +2240,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       model,
       projectId: activeProjectId,
       connectors: enabledConnectors,
+      ...(chatMemoryOffRef.current ? { memoryOff: true } : {}),
       turns: finalized.map((line) => ({
         role: line.role === "assistant" ? "ASSISTANT" : "USER",
         content: line.text,
@@ -2370,10 +2422,13 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         <p className="py-1">This branch isn’t saved. It continues from the fork point with full context.</p>
       ) : privateMode ? (
         <p className="py-1">Incognito chats are not saved or added to memory.</p>
+      ) : chatMemoryOff ? (
+        // Shown at every width: below md there is no header band for the mark.
+        <p className="py-1">Memory is off for this chat. Nothing in it is used from memory or saved to it.</p>
       ) : (
         <p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>
       ),
-    [forkedFrom, privateMode],
+    [forkedFrom, privateMode, chatMemoryOff],
   );
 
   const composer = (
@@ -2390,6 +2445,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       onModelChange={setModel}
       onSend={onComposerSend}
       taskModeControl={taskModeControl}
+      chatMemory={chatMemory}
       modeControl={researchSteering?.accepting ? (
         <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
       ) : undefined}
@@ -2527,6 +2583,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         (sidePanelOpen || thoughtOpenId) && "hidden"
       )}
     >
+      {/* "Memory off for this chat", said quietly in the cluster that holds
+          its switch (the More menu). First, as a fact about the chat rather
+          than something in it. */}
+      {!privateMode && chatMemoryOff && <MemoryOffMark />}
       {/* What this chat made, and what it used — see session-outputs.tsx. It
           leads the cluster because it is about the conversation itself, while
           Share and incognito are about who else can see it. Hidden in private
@@ -2573,7 +2633,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           Print). Before the incognito toggle, so the toggle keeps its place
           at the edge whether or not the chat has anything in it yet. */}
       {!privateMode && currentConversationId && hasMessages && (
-        <ConversationMoreMenu onExport={(kind) => void exportChat(kind)} />
+        <ConversationMoreMenu onExport={(kind) => void exportChat(kind)} memory={chatMemory} />
       )}
       <PrivateChatToggle
         active={privateMode}

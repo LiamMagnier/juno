@@ -258,6 +258,11 @@ interface UseChatOptions {
    * the chat view learns a new chat's id only after this hook has run.
    */
   taskApprovalMode?: () => "conservative" | "balanced" | "permissive" | null;
+  /**
+   * "Memory off for this chat" (src/lib/chat/memory-off.ts), read at send
+   * time for the reason `taskApprovalMode` is a getter.
+   */
+  memoryOff?: () => boolean;
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
@@ -281,6 +286,7 @@ interface UseChatOptions {
 export function useChat(opts: UseChatOptions) {
   // Read at send time; held apart so calling it is not a call on `opts`.
   const readTaskApprovalMode = opts.taskApprovalMode;
+  const readMemoryOff = opts.memoryOff;
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
   const historyRef = React.useRef(history);
@@ -1705,6 +1711,10 @@ export function useChat(opts: UseChatOptions) {
           // send so a new chat keeps the mode picked before it existed; the
           // server saves it on the conversation.
           taskApprovalMode: opts.privateMode ? undefined : readTaskApprovalMode?.() ?? undefined,
+          // Rides a send only while on, so a brand-new chat is created with
+          // it and its first turn already reads and saves no memory. Turning
+          // it back on is the toggle's own request, never a send's.
+          memoryOff: !opts.privateMode && readMemoryOff?.() ? true : undefined,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
@@ -1750,6 +1760,7 @@ export function useChat(opts: UseChatOptions) {
       opts.projectId,
       opts.privateMode,
       readTaskApprovalMode,
+      readMemoryOff,
       messages,
     ]
   );

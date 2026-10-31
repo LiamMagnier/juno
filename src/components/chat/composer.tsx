@@ -115,6 +115,7 @@ import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
+import { chatUsesMemory, MEMORY_OFF_COPY } from "@/lib/chat/memory-off";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import {
   COMPOSER_INLINE_SOFT_CHARS,
@@ -192,6 +193,13 @@ interface ComposerProps {
    * tasks at all; absent, the row is as it was.
    */
   taskModeControl?: React.ReactNode;
+  /**
+   * "Memory off for this chat" (src/lib/chat/memory-off.ts). Given, the +
+   * menu's Memory switch is this chat's: off keeps this chat out of memory and
+   * leaves every other chat alone. Absent (Code, the dev galleries), the
+   * switch is the account's pause, as it always was.
+   */
+  chatMemory?: { off: boolean; onChange: (off: boolean) => void };
   /**
    * A durable run is going on this conversation, and this composer steers it.
    *
@@ -531,6 +539,7 @@ function ComposerImpl({
   steering,
   modeControl,
   taskModeControl,
+  chatMemory,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -2477,6 +2486,12 @@ function ComposerImpl({
       )
     : connectors;
 
+  // Whether this chat's turns use memory, as the + switch shows it: the
+  // account's memory, narrowed by this chat's own switch when it has one.
+  const memoryOnHere = chatMemory
+    ? chatUsesMemory({ accountMemory: settings.memoryEnabled, chatMemoryOff: chatMemory.off })
+    : settings.memoryEnabled;
+
   // Counts rows that are ON, not rows that exist: while collapsed this is the only
   // thing in the menu saying that e.g. deep research is armed for this message.
   // Each term repeats its row's own gate so a row that isn't rendered can't count.
@@ -2490,7 +2505,7 @@ function ComposerImpl({
     skillArmed ? `the ${armedSkill?.name ?? skillSlug} skill` : null,
     researchArmed ? "research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
-    settings.memoryEnabled ? "memory" : null,
+    memoryOnHere ? "memory" : null,
   ].filter((label): label is string => label !== null);
   // Connectors sit in the ADD group, not TOOLS, so they must not inflate the
   // disclosure's count — but they are still armed state the + trigger owes the user.
@@ -2897,8 +2912,25 @@ function ComposerImpl({
             id: "memory",
             label: FEATURE_NAMES.memory.label,
             icon: ComposerIcons.memory,
-            checked: settings.memoryEnabled,
-            onToggle: () => toggleMemory(!settings.memoryEnabled),
+            checked: memoryOnHere,
+            // In a chat the switch is the chat's own (Claude's per-chat memory
+            // switch, in the same tray). Paused for the account, it is still
+            // the way back on, as it always was: the account resumes and this
+            // chat with it, and the word says which switch it is.
+            ...(chatMemory && settings.memoryEnabled
+              ? { ariaLabel: MEMORY_OFF_COPY.composerLabel }
+              : chatMemory
+                ? { description: MEMORY_OFF_COPY.accountPausedDescription }
+                : {}),
+            onToggle: () => {
+              if (!chatMemory) return toggleMemory(!settings.memoryEnabled);
+              if (!settings.memoryEnabled) {
+                toggleMemory(true);
+                if (chatMemory.off) chatMemory.onChange(false);
+                return;
+              }
+              chatMemory.onChange(!chatMemory.off);
+            },
           },
         ],
         // Where this chat sits and what it can reach.
