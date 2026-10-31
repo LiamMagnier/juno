@@ -116,7 +116,7 @@ test("with ARTIFACT_AI_ENABLED off no preview carries window.alevr: the bridge r
   assert.match(sandbox, /useAlevrBridge\(\{\s*enabled: alevrOn,/);
   assert.match(read("src/components/canvas/use-alevr-bridge.ts"), /if \(!enabled\) return;/);
   // The two places that turn it on read the server's switch.
-  assert.match(read("src/app/(app)/layout.tsx"), /<AlevrBridgeProvider enabled=\{bootstrap\.features\.artifactAi === true\}>/);
+  assert.match(read("src/components/app/app-provider.tsx"), /<AlevrBridgeProvider enabled=\{bootstrap\.features\.artifactAi === true\}>\{children\}<\/AlevrBridgeProvider>/);
   const share = read("src/app/share/[token]/page.tsx");
   assert.match(share, /const alevrOn = isArtifactAiEnabled\(\);/);
   assert.match(share, /<AlevrBridgeProvider enabled=\{alevrOn\}>/);
