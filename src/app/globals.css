@@ -945,8 +945,8 @@
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
 
     /* The modal dim. Pure black, heavier than light's: dimming a 9% ground
-       needs opacity to do most of the work, and the 2px backdrop blur on the
-       overlay does the rest. */
+       needs opacity to do all of the work, because the overlay filters
+       nothing (no backdrop blur in product chrome, spec D15). */
     --scrim: 0 0% 0% / 0.55;
 
     /* Design-canvas selection chrome — lifted like every other state colour,
@@ -1576,13 +1576,12 @@
   }
 
   /* The primary action. Real colour, because a primary must never depend on a
-     shadow to be found: a flat coral fill and the same raised recipe every
-     other control sits on. No tinted glow — a halo under the send button is
-     the one thing that made the composer look like an AI demo. Hover
-     brightens; pressing dips into the pressed recipe. */
-  /* The primary key carries the one lift in a control row: a top highlight
-     and a contact shadow tinted from its own colour, so it reads as a solid
-     key rather than a flat swatch. */
+     shadow to be found: a solid accent fill. It carries the one lift in a
+     control row: a top highlight and a contact shadow tinted from its own
+     colour, so it reads as a solid key rather than a flat swatch. A caller
+     that repaints the fill (the ink verb of an approval) must drop that
+     shadow too, or the accent's tint shows under a fill of another colour.
+     Hover brightens; pressing dips into the pressed recipe. */
   .control-primary {
     color: hsl(var(--primary-foreground));
     border: 1px solid hsl(var(--primary));
@@ -3929,6 +3928,17 @@
   color: inherit;
 }
 
+/* ---- The toaster on the stacking ladder --------------------------------------
+ *
+ * Sonner stacks its region at z-index 999999999, above everything the product
+ * will ever draw, so `--z-toast` (70, "the top of the product; nothing goes
+ * above it") was declared and never applied. One class plus one attribute is
+ * (0,2,0), which beats sonner's runtime-injected `[data-sonner-toaster]`
+ * (0,1,0) whatever the source order. */
+.toaster[data-sonner-toaster] {
+  z-index: var(--z-toast);
+}
+
 /* ---- Sonner's close chip, in Juno's material -------------------------------
  *
  * Sonner draws [data-close-button] from its OWN grey ramp: `background:
@@ -4055,8 +4065,9 @@
  * already says what happened, and its button is an offer ("Undo"), not the
  * page's primary action, so the one saturated colour stays with the page.
  * Juno's control geometry: 32px (the `sm` button, and the contract's pointer
- * floor for a hit target), the 13px `ui` rung at 500, the 10px control corner,
- * a hairline, the tonal hover cross-fade and the 0.97 press. The cancel button
+ * floor for a hit target), the 13px `ui` rung at 500, the `control` corner
+ * (8px, the `<Button>`'s own; it was a literal 10px, the field rung), a
+ * hairline, the tonal hover cross-fade and the 0.97 press. The cancel button
  * is the ghost of it. `[data-button][data-cancel]` carries an extra attribute
  * because sonner's dark-theme cancel rule is (0,5,0).
  *
@@ -4068,7 +4079,7 @@
   height: 2rem;
   padding-inline: 0.75rem;
   border: 1px solid hsl(var(--border));
-  border-radius: 10px;
+  border-radius: theme("borderRadius.control");
   background: hsl(var(--secondary));
   color: hsl(var(--foreground));
   font-size: 0.8125rem;
@@ -4840,7 +4851,9 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
   --muted-foreground: inherit;
   --icon-muted: inherit;
   --border: inherit;
-  border-radius: 14px;
+  /* The card rung, like the research citation card: the same object (a
+     source preview) was 14 here and 12 there. */
+  border-radius: theme("borderRadius.card");
   font-weight: 400;
   background-color: hsl(var(--popover));
   color: hsl(var(--popover-foreground));

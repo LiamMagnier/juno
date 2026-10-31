@@ -8,7 +8,8 @@ import { controlMotionClass } from "@/components/ui/control-recipe";
 /**
  * The action button, on the flat material (docs/design/FLAT_UI.md).
  *
- *   default      `.control-primary` — solid accent fill, no shadow
+ *   default      `.control-primary` — solid accent fill, a top highlight and a
+ *                contact shadow tinted from the fill
  *   secondary    `.control-neu` — hairline at rest, tonal fill on hover
  *   ghost        flat at rest, tonal fill on hover, the on tone while held
  *   outline      hairline at rest, tonal fill on hover
