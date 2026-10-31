@@ -59,7 +59,7 @@ export function CheckoutSheet({
 
   return (
     <Dialog open={plan !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[92dvh] w-[min(36rem,calc(100vw-2rem))] max-w-none overflow-y-auto p-0 sm:rounded-panel">
+      <DialogContent bare className="max-h-[92dvh] w-[min(36rem,calc(100vw-2rem))] max-w-none">
         {plan && (
           <>
             <div className="px-6 pb-2 pt-6">

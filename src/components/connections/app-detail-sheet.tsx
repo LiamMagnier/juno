@@ -3,8 +3,8 @@
 import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Link from "next/link";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Plug, X } from "@/components/ui/icons";
+import { Plug } from "@/components/ui/icons";
+import { DialogCloseButton } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
@@ -177,11 +177,7 @@ export function AppDetailSheet({
                   {connectedSince ? `Connected since ${connectedSince}` : isServer ? "Your MCP server" : "Connected"}
                 </p>
               </div>
-              <DialogPrimitive.Close asChild>
-                <Button variant="ghost" size="icon-sm" aria-label="Close" className="text-muted-foreground">
-                  <X className="size-4" aria-hidden="true" />
-                </Button>
-              </DialogPrimitive.Close>
+              <DialogCloseButton className="static -mr-2" />
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">

@@ -268,7 +268,7 @@ export function LibraryQuickLook({ item, onOpenChange }: { item: LibraryItem | n
   return (
     <Dialog open={item !== null} onOpenChange={onOpenChange}>
       {shown ? (
-        <DialogContent className="max-w-3xl gap-0 p-0 sm:p-0">
+        <DialogContent bare className="max-w-3xl gap-0">
           <QuickLookBody key={shown.id} item={shown} />
         </DialogContent>
       ) : null}

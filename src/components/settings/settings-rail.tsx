@@ -448,10 +448,11 @@ function SectionMenu({
           }}
           // A fixed height, so the sheet does not shrink and jump down under
           // the thumb as a search narrows the list.
-          className="flex h-[min(85dvh,44rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-sm sm:p-0"
+          bare
+          className="flex h-[min(85dvh,44rem)] flex-col gap-0 overflow-hidden sm:max-w-sm"
         >
           <div className="shrink-0 px-4 pb-3 pt-4">
-            <DialogTitle className="mb-3 px-1 text-heading font-medium">Settings</DialogTitle>
+            <DialogTitle className="mb-3 px-1">Settings</DialogTitle>
             <SearchField
               inputRef={searchRef}
               query={query}

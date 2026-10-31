@@ -122,7 +122,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl overflow-hidden p-6">
+      <DialogContent className="max-w-2xl">
         <DialogHeader className="gap-2">
           <div className="flex items-center gap-3">
             {/* A quiet tile, not a coral one: the accent is state and the

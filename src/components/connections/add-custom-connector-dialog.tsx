@@ -51,7 +51,7 @@ export function AddCustomConnectorDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="surface-float max-w-lg gap-0 p-0 sm:p-0" aria-describedby={undefined}>
+      <DialogContent bare className="max-w-lg gap-0" aria-describedby={undefined}>
         {open ? <AddCustomConnectorFlow onSaved={() => { onSaved?.(); onOpenChange(false); }} /> : null}
       </DialogContent>
     </Dialog>

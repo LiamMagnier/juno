@@ -414,7 +414,7 @@ function ShortcutsDialog({
   const columns = splitShortcutColumns(scope === "code" ? codeGroups : chatGroups);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-w-2xl flex-col gap-0 p-0 sm:p-0">
+      <DialogContent bare className="flex max-w-2xl flex-col gap-0">
         <div className="flex flex-col items-start gap-2 px-5 pb-4 pt-4 sm:px-6">
           {/* The title's line is the close button's own box (36px, 44 on
               touch) at the close's own 16px inset, so the two share one

@@ -2,11 +2,10 @@
 
 import * as React from "react";
 import { Undo2 } from "@/components/ui/icons";
-import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
+import { DialogCloseButton } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Sheet, SheetClose, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EditStatusToken, OperationDiff } from "@/components/memory/operation-diff";
 import type { Memory, MemoryEditRecord } from "@/components/memory/memory-model";
@@ -81,11 +80,7 @@ export function ActivitySheet({
           </h2>
           <Tooltip>
             <TooltipTrigger asChild>
-              <SheetClose asChild>
-                <IconButton variant="ghost" size="sm" label="Close activity" title="" className="-mr-1.5">
-                  <ActionIcons.dismiss className="size-4" />
-                </IconButton>
-              </SheetClose>
+              <DialogCloseButton label="Close activity" className="static -mr-2" />
             </TooltipTrigger>
             <TooltipContent>Close</TooltipContent>
           </Tooltip>

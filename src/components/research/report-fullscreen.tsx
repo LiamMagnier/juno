@@ -108,13 +108,14 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
         hideClose
         // Full screen at every width: a reader, not a sheet.
         sheet={false}
+        bare
         // Open on the document, not on its first toolbar button: focus lands on
         // the title (read first by a screen reader), with no ring drawn on Markdown.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>("[data-report-title]")?.focus({ preventScroll: true });
         }}
-        className="inset-0 left-0 top-0 flex h-dvh max-h-none w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 [translate:none] sm:p-0 print:static print:block print:h-auto print:overflow-visible print:shadow-none"
+        className="inset-0 left-0 top-0 flex h-dvh max-h-none w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none [translate:none] print:static print:block print:h-auto print:overflow-visible print:shadow-none"
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <div className="flex min-h-0 flex-1 flex-col print:block">
