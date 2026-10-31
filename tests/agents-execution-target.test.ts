@@ -82,7 +82,8 @@ test("no agent dispatch path hardcodes the cloud any more", () => {
   assert.doesNotMatch(task, /ctx\.agent \? "cloud" : "automatic"/);
   assert.match(task, /\.resolveAgentDispatchTarget\(user\.id, agentPlacement\)/);
   // Read fresh from the agent row, not from the turn's context.
-  assert.match(task, /select: \{ status: true, executionTarget: true, preferredHostId: true \}/);
+  // (with the apps it may use, read in the same row: tests/agent-connected-apps.test.ts)
+  assert.match(task, /select: \{ status: true, executionTarget: true, preferredHostId: true, connectorIds: true \}/);
   // A team is cloud-coordinated, so a Mac agent is refused one rather than moved.
   assert.match(task, /if \(args\.team && requestedTarget === "local"\) return taskRefusal\("team_needs_cloud"\);/);
 
