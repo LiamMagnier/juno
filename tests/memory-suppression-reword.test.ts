@@ -65,7 +65,7 @@ try {
 }
 
 test("a summary written before a block-list entry was reworded is not injected", async () => {
-  const profile = await memory.getMemoryProfile("u1", { query: "where should I eat tonight?" });
+  const profile = await memory.getMemoryProfile("u1", { conversationProvider: null, query: "where should I eat tonight?" });
   assert.equal(profile.summary, null);
 });
 

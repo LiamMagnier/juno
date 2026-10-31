@@ -304,7 +304,7 @@ async function main() {
     // "caffeine" shares no token with "drinks espresso every morning" — only
     // the vectors connect them. The tight budget forces a single pick, so the
     // assertion is about RANKING, not about everything fitting anyway.
-    const hybrid = await getMemoryProfile(user.id, {
+    const hybrid = await getMemoryProfile(user.id, { conversationProvider: null,
       query: "Anything about my caffeine ritual?",
       budgetTokens: 14,
       embed: fakeEmbedQuery,
@@ -315,7 +315,7 @@ async function main() {
       hybrid.used.map((m) => m.content).join(" | ")
     );
 
-    const fallback = await getMemoryProfile(user.id, {
+    const fallback = await getMemoryProfile(user.id, { conversationProvider: null,
       query: "Anything about my caffeine ritual?",
       budgetTokens: 14,
       embed: failingEmbedQuery,
@@ -387,7 +387,7 @@ async function main() {
     await prisma.memorySummary.create({
       data: { userId: fu, content: encryptField("## Work context\nThe user works at Acme."), entryCount: 3 },
     });
-    const beforeForget = await getMemoryProfile(fu, { query: "where do I work" });
+    const beforeForget = await getMemoryProfile(fu, { conversationProvider: null, query: "where do I work" });
     check("before the forget, the summary is injected", !!beforeForget.summary?.includes("Acme"));
     await new Promise((r) => setTimeout(r, 20));
     const forgot = await forgetStatements(fu, ["The user works at Acme."]);
@@ -395,7 +395,7 @@ async function main() {
     const fuRows = await prisma.memoryEntry.findMany({ where: { userId: fu } });
     check("retired, not deleted", fuRows.filter((r) => r.kind === "FACT" && r.status === "suppressed").length === 2);
     check("one suppression written", fuRows.filter((r) => r.kind === "SUPPRESSION").length === 1);
-    const afterForget = await getMemoryProfile(fu, { query: "where do I work" });
+    const afterForget = await getMemoryProfile(fu, { conversationProvider: null, query: "where do I work" });
     check("the summary written before the forget is benched", afterForget.summary === null);
     check("nothing retired reaches context", !afterForget.recent.some((f) => f.includes("Acme")));
     check("active facts still do", afterForget.recent.includes("The user prefers metric units."));
@@ -528,7 +528,7 @@ async function main() {
     );
     check("…nor a project's facts", !accountPrompt.includes("APA") && !accountPrompt.includes("Postgres"));
 
-    const inThesis = await getMemoryProfile(pu, { projectId: thesis.id, query: "citations" });
+    const inThesis = await getMemoryProfile(pu, { conversationProvider: null, projectId: thesis.id, query: "citations" });
     check(
       "a project chat opens with its project's summary",
       inThesis.summaryScope === "project" && !!inThesis.summary?.includes("urban heat islands")
@@ -542,9 +542,9 @@ async function main() {
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     await projectFact(thesis.id, "The thesis advisor is Dr. Rahman.");
-    const later = await getMemoryProfile(pu, { projectId: thesis.id, query: "advisor" });
+    const later = await getMemoryProfile(pu, { conversationProvider: null, projectId: thesis.id, query: "advisor" });
     check("a fact newer than the summary rides as a note", later.recent.some((fact) => fact.includes("Dr. Rahman")));
-    const outside = await getMemoryProfile(pu, { query: "citations advisor Postgres" });
+    const outside = await getMemoryProfile(pu, { conversationProvider: null, query: "citations advisor Postgres" });
     check(
       "an ordinary chat reads the account's summary and no project's facts",
       outside.summaryScope === "account" &&
@@ -554,7 +554,7 @@ async function main() {
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     await forgetStatements(pu, ["The thesis uses APA citations."]);
-    const projectAfterForget = await getMemoryProfile(pu, { projectId: thesis.id, query: "citations" });
+    const projectAfterForget = await getMemoryProfile(pu, { conversationProvider: null, projectId: thesis.id, query: "citations" });
     check("a forget benches the project's summary written before it", projectAfterForget.summary === null);
     const rebuilt = await consolidateProjectMemory({ userId: pu, projectId: thesis.id, llm: projectConsolidator });
     const rebuiltFacts = projectPrompt.split("FACTS (oldest to newest):")[1] ?? "";

@@ -129,7 +129,7 @@ if (!DB_URL) {
     assert.equal(lisbonAfter.status, "superseded");
     assert.equal(lisbonAfter.supersededById, body.memory.id);
     assert.match(lisbonAfter.reason ?? "", /You said this yourself/);
-    const recalled = await memory.getMemoryProfile(user.id, { query: "where do I live, Porto or Lisbon?" });
+    const recalled = await memory.getMemoryProfile(user.id, { conversationProvider: null, query: "where do I live, Porto or Lisbon?" });
     assert.ok(recalled.recent.some((c) => c.includes("Porto")));
     assert.ok(!recalled.recent.some((c) => c.includes("Lisbon")), "only one answer to where the person lives");
 
@@ -257,7 +257,7 @@ if (!DB_URL) {
     assert.equal(await prisma.memoryEntry.count({ where: { userId: user.id, kind: "SUPPRESSION" } }), 1);
 
     // The summary that said it is benched at once, and rebuilt without it.
-    const profile = await memory.getMemoryProfile(user.id, { query: "what do you know about my divorce and Ana?" });
+    const profile = await memory.getMemoryProfile(user.id, { conversationProvider: null, query: "what do you know about my divorce and Ana?" });
     assert.equal(profile.summary, null, "the old prose is not injected");
     assert.ok(!profile.recent.some((c) => /divorce/i.test(c)));
     await memory.consolidateMemories({ userId: user.id, llm: async () => "## Personal context\nThe user lives in Porto. They are going through a divorce." });
@@ -306,7 +306,7 @@ if (!DB_URL) {
     const asked = "running with asthma in the Porto heat";
     // getMemoryProfile reads the setting through a per-request cache; a fresh
     // import is not needed because the test changes it through the route.
-    assert.ok((await memory.getMemoryProfile(user.id, { query: asked })).recent.some((c) => c.includes("asthma")));
+    assert.ok((await memory.getMemoryProfile(user.id, { conversationProvider: null, query: asked })).recent.some((c) => c.includes("asthma")));
     await prisma.memorySummary.create({ data: { userId: user.id, content: encryptField("The user has asthma."), entryCount: 2 } });
 
     const res = await settingsRoute.PATCH(
@@ -314,7 +314,7 @@ if (!DB_URL) {
     );
     assert.equal(res.status, 200);
     assert.equal(await prisma.memorySummary.count({ where: { userId: user.id } }), 0, "the summary written while it was on is gone");
-    const after = await memory.getMemoryProfile(user.id, { query: asked });
+    const after = await memory.getMemoryProfile(user.id, { conversationProvider: null, query: asked });
     assert.ok(!after.recent.some((c) => c.includes("asthma")), "an inferred health fact is no longer used");
     assert.ok(after.recent.some((c) => c.includes("Porto")));
     await memory.consolidateMemories({ userId: user.id, llm: echoConsolidator as never });

@@ -221,13 +221,13 @@ if (!DB_URL) {
     assert.equal(after.lastVerifiedAt?.getTime() ?? null, before.lastVerifiedAt?.getTime() ?? null, "marking is not restating");
 
     // The ranking reads it: an off-topic message no longer carries this fact.
-    const profile = await memory.getMemoryProfile(user.id, { query: "What is 17 times 23?" });
+    const profile = await memory.getMemoryProfile(user.id, { conversationProvider: null, query: "What is 17 times 23?" });
     assert.equal(profile.used.some((m) => m.id === fact.id), false);
 
     // Taken back, and the fact rides along again.
     assert.equal((await patch(fact.id, { notRelevant: false })).status, 200);
     assert.equal((await row()).notRelevantAt, null);
-    const again = await memory.getMemoryProfile(user.id, { query: "What is 17 times 23?" });
+    const again = await memory.getMemoryProfile(user.id, { conversationProvider: null, query: "What is 17 times 23?" });
     assert.equal(again.used.some((m) => m.id === fact.id), true);
 
     // A forgotten fact is not in use, so there is nothing to mark.

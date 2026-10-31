@@ -1129,6 +1129,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         const created = await saveAutoMemories(user.id, parseMemories(acc.text), conversationId, {
           projectId: conversation.projectId,
           sourceMessageId: userMessageId,
+          // The new facts are embedded on the provider this turn answered
+          // on, not the account default's (MEM-01).
+          conversationProvider: modelInfo.provider,
           // The "Memory updated" row names each saved fact by id, so the
           // answer's receipt and the pill above the chat can offer Undo and
           // Edit on it; it is saved with the turn, so it survives a reload.

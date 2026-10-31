@@ -42,6 +42,7 @@ async function turnFor(memoryAccess: string | null) {
     workspaceConfig: {},
     projectId: null,
     latestUserMessage: "hello",
+    conversationProvider: "anthropic",
     agentId: memoryAccess ? "agent-1" : null,
     // The chat's own switch left on (tests/chat-memory-off.test.ts turns it off).
     chatMemoryOff: false,

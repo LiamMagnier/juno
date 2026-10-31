@@ -74,6 +74,7 @@ async function turn(chatMemoryOff: boolean, agent: string | null = null) {
     workspaceConfig: {},
     projectId: null,
     latestUserMessage: "what should I cook tonight?",
+    conversationProvider: "anthropic",
     agentId: agent ? "agent-1" : null,
     chatMemoryOff,
   });

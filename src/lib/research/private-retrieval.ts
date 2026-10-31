@@ -19,6 +19,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { retrieveAttachmentKnowledge, retrieveKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import { getMemoryProfile, loadBackgroundProviderPolicy } from "@/lib/memory";
+import { getModel } from "@/lib/models";
 import { getActiveConnectors, openMcpToolset } from "@/lib/mcp";
 import { getConnector, isConnectorConfigured } from "@/lib/connectors";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
@@ -137,7 +138,7 @@ export function productionPrivatePorts(): PrivateRetrievalPorts {
       // in a project chat reads that project's memory, never the account's
       // personal facts, and none at all where the project turned recall off.
       const conversation = conversationId
-        ? await prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true, memoryOff: true } })
+        ? await prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true, memoryOff: true, model: true } })
         : null;
       // A run started from a chat with memory off for itself reads none, even
       // if a client still asked for it (src/lib/chat/memory-off.ts).
@@ -147,7 +148,10 @@ export function productionPrivatePorts(): PrivateRetrievalPorts {
         const workspace = await prisma.projectWorkspace.findFirst({ where: { projectId, userId }, select: { config: true } });
         if (!workspacePermits(parseWorkspaceConfig(workspace?.config), "memoryRecall")) return [];
       }
-      const profile = await getMemoryProfile(userId, { projectId, query, budgetTokens: 1_200 });
+      // Embedded on the research conversation's provider, or not at all
+      // (MEM-01): a run with no conversation ranks lexically.
+      const conversationProvider = conversation?.model ? getModel(conversation.model)?.provider ?? null : null;
+      const profile = await getMemoryProfile(userId, { projectId, query, budgetTokens: 1_200, conversationProvider });
       return profile.recent;
     },
     async openConnector({ userId, runId, conversationId, connectorId, timeZone }) {

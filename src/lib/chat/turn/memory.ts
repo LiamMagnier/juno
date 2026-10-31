@@ -22,6 +22,7 @@ export async function resolveMemory({
   latestUserMessage,
   agentId,
   chatMemoryOff,
+  conversationProvider,
 }: {
   userId: string;
   settings: TurnSettings;
@@ -32,6 +33,11 @@ export async function resolveMemory({
   agentId: string | null;
   /** The conversation's own "Memory off for this chat" (src/lib/chat/memory-off.ts). */
   chatMemoryOff: boolean;
+  /**
+   * The provider of the model this turn answers on. The query embed runs
+   * there under `same_provider`, never on the account default's (MEM-01).
+   */
+  conversationProvider: string | null;
 }) {
   // A chat kept out of memory asks nothing further: not the agent's grant,
   // not a single memory row.
@@ -61,6 +67,7 @@ export async function resolveMemory({
     ? await getMemoryProfile(userId, {
         projectId,
         query: latestUserMessage,
+        conversationProvider,
         agent: memoryAgent && agentAccess ? { id: memoryAgent.id, access: agentAccess } : null,
       })
     : { summary: null, summaryScope: "account" as const, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };

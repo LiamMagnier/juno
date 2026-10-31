@@ -1982,7 +1982,14 @@ async function semanticEvidenceFor(opts: {
   userId: string;
   query: string;
   candidates: readonly { id: string; embeddingModel: string | null }[];
-  conversationProvider?: string | null;
+  /**
+   * The provider of the model this turn answers on. Required, with no
+   * account-default fallback (MEM-01): under `same_provider` the account's
+   * default model used to stand in, so a chat on Claude sent the message to
+   * the default's embeddings endpoint. Null asks the policy with no
+   * provider, which under `same_provider` means no embed and a lexical pick.
+   */
+  conversationProvider: string | null;
   embed?: typeof embedQuery;
 }): Promise<SemanticEvidence | null> {
   if (!opts.embed && configuredEmbeddingModels().length === 0) return null;
@@ -1998,12 +2005,8 @@ async function semanticEvidenceFor(opts: {
   if (!preferModelId) return null;
 
   try {
-    const [policy, conversationProvider] = await Promise.all([
-      loadBackgroundProviderPolicy(opts.userId),
-      opts.conversationProvider !== undefined
-        ? Promise.resolve(opts.conversationProvider)
-        : accountBackgroundProvider(opts.userId),
-    ]);
+    const policy = await loadBackgroundProviderPolicy(opts.userId);
+    const conversationProvider = opts.conversationProvider;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), QUERY_EMBED_TIMEOUT_MS);
     let embedded: Awaited<ReturnType<typeof embedQuery>>;
@@ -2059,26 +2062,36 @@ async function semanticEvidenceFor(opts: {
  * so memory competes for context on relevance rather than by being recent
  * enough to make a `take: 15`.
  */
+export type MemoryProfileOptions = {
+  projectId?: string | null;
+  budgetTokens?: number;
+  /** When true, strictly restricts retrieval to this project's memories, excluding personal global memory. */
+  isolateProjectMemory?: boolean;
+  /** Test seam: the query-embedding call. */
+  embed?: typeof embedQuery;
+  /**
+   * The Orbit agent this turn or task speaks as, when it does. An agent is
+   * not the person: it reads only what its `memoryAccess` grants
+   * (src/lib/memory-scope.ts) — by default the durable profile, never the
+   * whole account. Omitted for an ordinary chat.
+   */
+  agent?: { id: string; access: AgentMemoryAccess } | null;
+} & (
+  | { query?: undefined; conversationProvider?: undefined }
+  | {
+      query: string | undefined;
+      /**
+       * Provider of this turn's model, for `same_provider` policies. Required
+       * whenever a query is ranked, so no caller can embed the person's
+       * message with the account default's provider by omission (MEM-01).
+       */
+      conversationProvider: string | null;
+    }
+);
+
 export async function getMemoryProfile(
   userId: string,
-  opts: {
-    projectId?: string | null;
-    query?: string;
-    budgetTokens?: number;
-    /** Provider of this turn's model, for `same_provider` policies. */
-    conversationProvider?: string | null;
-    /** When true, strictly restricts retrieval to this project's memories, excluding personal global memory. */
-    isolateProjectMemory?: boolean;
-    /** Test seam: the query-embedding call. */
-    embed?: typeof embedQuery;
-    /**
-     * The Orbit agent this turn or task speaks as, when it does. An agent is
-     * not the person: it reads only what its `memoryAccess` grants
-     * (src/lib/memory-scope.ts) — by default the durable profile, never the
-     * whole account. Omitted for an ordinary chat.
-     */
-    agent?: { id: string; access: AgentMemoryAccess } | null;
-  } = {}
+  opts: MemoryProfileOptions = {}
 ): Promise<MemoryProfile> {
   const projectId = opts.projectId ?? null;
   const isolate = opts.isolateProjectMemory ?? (projectId !== null);
@@ -2159,7 +2172,7 @@ export async function getMemoryProfile(
           userId,
           query,
           candidates,
-          conversationProvider: opts.conversationProvider,
+          conversationProvider: opts.conversationProvider ?? null,
           embed: opts.embed,
         })
       : null;

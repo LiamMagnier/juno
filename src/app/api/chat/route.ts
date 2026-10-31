@@ -152,6 +152,7 @@ async function handleChat(req: Request) {
         latestUserMessage: [...turnHistory.baseHistory].reverse().find((m) => m.role === "USER")?.content,
         agentId: roomSetup ? roomSetup.speaker.agentId : conversation.agentId,
         chatMemoryOff: conversation.memoryOff,
+        conversationProvider: modelInfo.provider,
       }),
       resolveProjectContext({
         user,
