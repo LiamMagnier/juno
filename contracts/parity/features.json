@@ -1408,6 +1408,10 @@
           "status": "internal",
           "note": "Liveness for the uptime monitor."
         },
+        "/api/payments/stripe-issuing/webhook": {
+          "status": "internal",
+          "note": "Stripe Issuing's signed real-time authorization requests for agent payment cards."
+        },
         "/api/stripe/webhook": {
           "status": "internal",
           "note": "Stripe's signed events."

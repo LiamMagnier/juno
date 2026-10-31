@@ -135,6 +135,7 @@ columns, and nothing else — read the code, not this list, if they disagree
 | `Connection` token columns (`accessToken`, `refreshToken`, `clientSecret`, credential blobs) | Connector / MCP OAuth credentials and stored client secrets | `crypto.ts` (`encryptSecret`) |
 | Composio session references, MCP OAuth flow cookies | Connector session state | `crypto.ts` (`encryptSecret`) |
 | `AgentNote.content` | What an agent remembers (`What it knows` notes) | `field-crypto.ts` (`encryptField`, keyring-versioned `enc:v1:`/`enc:v2:`) |
+| `AgentPayment.reason` | Why an agent asked for a payment card (the card's number and CVC are never stored anywhere) | `field-crypto.ts` (`encryptField`) |
 | `AgentComputer.containerRef`, `AgentComputer.secrets` | Agent computer per-container VNC password, container handle, and CDP authentication token | `crypto.ts` (`encryptSecret`) |
 
 Conversation search is title-only as a direct consequence.

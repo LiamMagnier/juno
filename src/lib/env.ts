@@ -9,6 +9,7 @@
 import { providerApiKey } from "@/lib/providers";
 import { ttsProviderOrder } from "@/lib/tts-order";
 import type { TtsProvider } from "@/lib/voices";
+import { arePaymentsConfigured, paymentsConfig } from "@/lib/payments/config";
 
 function required(name: string): string {
   const v = process.env[name];
@@ -363,6 +364,34 @@ export const env = {
     },
   },
 
+  // Agent payments (src/lib/payments, docs/design/agents-v2/ENABLE_PAYMENTS.md):
+  // one-time cards an agent asks for. Off unless all three STRIPE_ISSUING_*
+  // values are set (or, outside production only, the test provider is asked
+  // for by name). Parsed in src/lib/payments/config.ts.
+  agentPayments: {
+    get config() {
+      return paymentsConfig(process.env);
+    },
+    get stripeIssuingSecretKey(): string {
+      return (process.env.STRIPE_ISSUING_SECRET_KEY ?? "").trim();
+    },
+    get stripeIssuingCardholderId(): string {
+      return (process.env.STRIPE_ISSUING_CARDHOLDER_ID ?? "").trim();
+    },
+    get stripeIssuingWebhookSecret(): string {
+      return (process.env.STRIPE_ISSUING_WEBHOOK_SECRET ?? "").trim();
+    },
+    get stripeIssuingApiVersion(): string {
+      return paymentsConfig(process.env).stripe?.apiVersion ?? "";
+    },
+    get cardTtlMinutes(): number {
+      return paymentsConfig(process.env).cardTtlMinutes;
+    },
+    get maxPaymentMinor(): number {
+      return paymentsConfig(process.env).maxPaymentMinor;
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
 
@@ -425,4 +454,9 @@ export function isServerTtsConfigured(): boolean {
 /** The provider read-aloud uses when nothing fails — what the voice picker lists. */
 export function activeTtsProvider(): TtsProvider | null {
   return serverTtsOrder()[0] ?? null;
+}
+
+/** Agent payment cards: Stripe Issuing fully configured, or the dev-only test provider asked for. */
+export function isAgentPaymentsConfigured(): boolean {
+  return arePaymentsConfigured(process.env);
 }
