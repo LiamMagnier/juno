@@ -774,7 +774,7 @@ export async function loadEntities(accountId: string, type: string, ids: string[
   // Object.prototype member ("constructor", "toString") is unknown, not a
   // function to call.
   const loader = LOADERS.get(type);
-  if (!loader) throw new Error(`unknown entity type: ${type}`);
+  if (typeof loader !== "function") throw new Error(`unknown entity type: ${type}`);
   const [data, revisions] = await Promise.all([
     loader(accountId, ids),
     prisma.entityRevision.findMany({

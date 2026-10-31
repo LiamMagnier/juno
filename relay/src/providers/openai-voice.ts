@@ -52,7 +52,7 @@ export class OpenAiVoiceSession implements VoiceProviderSession {
       // Leave nothing half-open behind: the failed attempt owns a socket.
       await live.close().catch(() => {});
       // One line in the log whatever the provider put in its message.
-      const reason = (err instanceof Error ? err.message : String(err)).replace(/[\r\n]+/g, " ");
+      const reason = (err instanceof Error ? err.message : String(err)).replace(/\r/g, "").replace(/\n/g, "");
       console.error("[openai-voice] GPT-Live unavailable, falling back to Realtime:", reason);
 
       const realtime = new OpenAiShapedRealtimeSession(this.dialect);
