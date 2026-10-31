@@ -481,6 +481,12 @@ struct DesktopChatWorkspace: View {
             let id = arguments[index + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { openConversation(id) }
         }
+        // `--juno-preview-project <id>`: one project's page, as a sidebar
+        // project row opens it.
+        if let index = arguments.firstIndex(of: "--juno-preview-project"), index + 1 < arguments.count {
+            let id = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { openProject(id) }
+        }
         // The trailing panel's states: a report (and full screen), an
         // artifact by id, a file.
         if arguments.contains("--juno-preview-report-panel") {

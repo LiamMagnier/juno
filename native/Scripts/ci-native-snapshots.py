@@ -144,6 +144,7 @@ IOS_SURFACES: list[Surface] = [
     Surface("chat-thread-project", ["--juno-preview-conversation", "conv-proj"], "Project-linked thread", settle=7),
     Surface("chat-streaming", ["--juno-preview-chat-draft", "--juno-preview-send", "Which heat pump suits a 1930s semi?"], "Turn sent, answer streaming", settle=8),
     Surface("composer-typing", ["--juno-preview-chat-draft", "--juno-preview-prompt", LAUNCH_PLAN_PROMPT], "Draft typed, unsent"),
+    Surface("composer-attachments", ["--juno-preview-chat-draft", "--juno-preview-attach", "--juno-preview-prompt", "Summarise these for Monday's review"], "Draft with a picture and a CSV attached", settle=7),
     Surface("composer-keyboard", ["--juno-preview-chat-draft", "--juno-preview-keyboard", "--juno-preview-prompt", "Plan the offsite"], "Composer focused with the keyboard", settle=7),
     Surface("composer-plus-menu", ["--juno-preview-chat-draft", "--juno-preview-plus"], "Composer + menu open", settle=7),
     Surface("composer-model-selector", ["--juno-preview-chat-draft", "--juno-preview-model-selector"], "Model selector from the composer", settle=7),
