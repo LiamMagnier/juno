@@ -39,19 +39,8 @@
 
 /* ── 1. The tint ─────────────────────────────────────────────────────────── */
 
-:root[data-accent="coral"] {
-  --primary: var(--presence);
-  --primary-ink: var(--presence-ink);
-  --primary-foreground: var(--tint-foreground);
-}
-/* On carbon a FILL needs a deeper blue than presence's 75% ink: at 58% the
-   track and the button clear 3:1 against the page and 5:1 under a white
-   label, so a switch keeps its white thumb and a button its white word. */
-.dark[data-accent="coral"] {
-  --primary: 229 68% 58%;
-  --primary-ink: var(--presence-ink);
-  --primary-foreground: 0 0% 100%;
-}
+/* The coral (default) accent values live in globals.css, so the token
+   generator projects them to Swift; this sheet only says where they paint. */
 
 ::selection {
   background-color: hsl(var(--primary) / 0.22);

@@ -972,10 +972,15 @@
    *   Dark mode:  ≥ 4.5:1 against --background (30 7% 9%) for body text,
    *               ≥ 3.0:1 for large text/icons.
    */
-  /* "coral" is the id every account stores by default; it now names Graphite,
-     the brand's primary control, and inherits the base values above. */
-  :root[data-accent="coral"] { --primary: 216 9% 11%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 216 9% 11%; }
-  .dark[data-accent="coral"] { --primary: 220 7% 91%; --ring: 220 7% 91%; --primary-foreground: 216 9% 11%; --primary-ink: 220 7% 91%; }
+  /* "coral" is the id every account stores by default. Since the signature
+     decision (owner, 5 Nov 2026: "Add a signature look") it names ALEVR BLUE,
+     the brand board's one colour, as the tint of what you set or act on
+     (src/components/ui/signature.css says where it paints). Light is the
+     presence value; dark fills step down to 58% so a white label and a white
+     switch thumb keep 5:1, while dark INK keeps presence's lighter 75%.
+     Keyboard focus stays graphite (--ring), as for every accent. */
+  :root[data-accent="coral"] { --primary: 229 63% 48%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229 63% 48%; }
+  .dark[data-accent="coral"] { --primary: 229 68% 58%; --ring: 220 7% 91%; --primary-foreground: 0 0% 100%; --primary-ink: 229 61% 75%; }
   /* "ultramarine" is the stored id of COBALT (spec D26, owner sign-off S7).
      It used to be byte-identical to --presence, so a user who picked it
      painted every control in the one colour that means "Alevr is live here".

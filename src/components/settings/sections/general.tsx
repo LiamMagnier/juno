@@ -216,7 +216,7 @@ function VisualStyleGroup() {
         </SettingBlock>
         <SettingRow
           label="Accent color"
-          description="Buttons, switches and selection. Graphite is the Alevr default."
+          description="Buttons, switches and selection. Alevr Blue is the default."
           wide
           status={saves.status("accent")}
           control={
