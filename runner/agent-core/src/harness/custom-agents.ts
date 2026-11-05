@@ -166,9 +166,24 @@ function readAgentDir(dir: string, displayBase: string, scope: CustomAgent['scop
       const real = fs.realpathSync(file);
       // A project agent never pulls a file in from outside the repository through a symlink.
       if (root && path.relative(root, real).startsWith('..')) continue;
-      const stat = fs.statSync(real);
-      if (!stat.isFile() || stat.size > AGENT_FILE_MAX_BYTES) continue;
-      const agent = parseAgentFile(fs.readFileSync(real, 'utf8'), file, `${displayBase}/${entry}`, scope);
+      // One descriptor for the check and the read, so the file checked is the file read.
+      const fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      let text: string;
+      try {
+        const stat = fs.fstatSync(fd);
+        if (!stat.isFile() || stat.size > AGENT_FILE_MAX_BYTES) continue;
+        const buffer = Buffer.alloc(stat.size);
+        let read = 0;
+        while (read < buffer.length) {
+          const n = fs.readSync(fd, buffer, read, buffer.length - read, read);
+          if (n === 0) break;
+          read += n;
+        }
+        text = buffer.subarray(0, read).toString('utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
+      const agent = parseAgentFile(text, file, `${displayBase}/${entry}`, scope);
       if (agent && !into.has(agent.name)) into.set(agent.name, agent);
     } catch {
       // Unreadable: not an agent.
