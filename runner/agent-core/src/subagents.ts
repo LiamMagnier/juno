@@ -2482,6 +2482,8 @@ export class SubagentManager {
     const filter = task.spec.toolFilter;
     return this.host.tools.filter((tool) => {
       if (isOrchestrationTool(tool.spec.name)) return false;
+      // The plan row is the coordinator's; a child reports in its closing message.
+      if (tool.spec.name === 'todo_write') return false;
       if (filter?.allow && !filter.allow.includes(tool.spec.name)) return false;
       if (filter?.deny?.includes(tool.spec.name)) return false;
       if (tool.kind === 'read') return true;
