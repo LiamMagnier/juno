@@ -1,0 +1,175 @@
+/*
+ * ALEVR SIGNATURE (owner decision, 5 Nov 2026: "Add a signature look").
+ *
+ * Graphite stays the ground: neutral surfaces, one type system, the radius
+ * ladder. On top of it this sheet adds the three things the owner picked:
+ *
+ *   1. ONE TINT. Alevr Blue, the brand board's own colour (BRAND_IDENTITY.md, the
+ *      Presence row, read from --presence), becomes the tint of everything you can
+ *      set or act on: the primary button, a switch that is on, the chosen
+ *      row's check, a selection, the composer's focus. Like a system tint
+ *      colour: one hue, used for "this is yours / this is on", never for
+ *      decoration. Surfaces and text keep their neutral ramps.
+ *   2. RESTRAINED GLASS, ONLY ON THINGS THAT FLOAT. Menus, popovers and
+ *      tooltips are a translucent material over the page (blur + saturate),
+ *      never glass on glass and never on content or dialogs. Under
+ *      `prefers-reduced-transparency` and `prefers-contrast: more` they go
+ *      back to solid.
+ *   3. SPRING MOTION. Floating layers open on the generated springs
+ *      (`--spring-*`, the same definitions framer and SwiftUI read), close
+ *      faster than they open, and a switch's thumb lands with the reward
+ *      spring's 1% settle. Reduced motion keeps the fades (the globals.css
+ *      tiers swap every spring for --ease-out-soft and collapse travel).
+ *
+ * It is one file imported after globals.css so the whole identity can be
+ * read, tuned or reverted in one place.
+ */
+
+:root {
+  /* The tint follows the stored accent; "coral" (every default account) is
+     Alevr Blue: 7.5:1 under a white label in light. */
+  --tint: var(--presence);
+  --tint-foreground: 0 0% 100%;
+  --glass-alpha: 0.78;
+  --glass-blur: 22px;
+}
+.dark {
+  --glass-alpha: 0.72;
+}
+
+/* ── 1. The tint ─────────────────────────────────────────────────────────── */
+
+:root[data-accent="coral"] {
+  --primary: var(--presence);
+  --primary-ink: var(--presence-ink);
+  --primary-foreground: var(--tint-foreground);
+}
+/* On carbon a FILL needs a deeper blue than presence's 75% ink: at 58% the
+   track and the button clear 3:1 against the page and 5:1 under a white
+   label, so a switch keeps its white thumb and a button its white word. */
+.dark[data-accent="coral"] {
+  --primary: 229 68% 58%;
+  --primary-ink: var(--presence-ink);
+  --primary-foreground: 0 0% 100%;
+}
+
+::selection {
+  background-color: hsl(var(--primary) / 0.22);
+}
+.dark ::selection {
+  background-color: hsl(var(--primary) / 0.34);
+}
+
+/* The composer's focus is the brand board's other use of the colour
+   ("Presence: live work, voice, composer focus"): a tinted edge and a soft
+   4px halo, and the caret in the tint. */
+.composer-surface {
+  caret-color: hsl(var(--primary));
+}
+.composer-surface:focus-within,
+.dark .composer-surface:focus-within {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.6),
+    0 0 0 4px hsl(var(--primary) / 0.12),
+    0 1px 2px hsl(var(--shadow-ink) / 0.05),
+    0 8px 18px -8px hsl(var(--shadow-ink) / 0.08),
+    0 32px 64px -24px hsl(var(--shadow-ink) / 0.2);
+}
+.dark .composer-surface:focus-within {
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.08),
+    0 0 0 4px hsl(var(--primary) / 0.16),
+    0 1px 2px hsl(0 0% 0% / 0.3),
+    0 24px 56px -18px hsl(0 0% 0% / 0.85);
+}
+
+/* Send is the tint while there is something to send: the one coloured spot
+   on the composer, and only when it means "go". Empty, the disc stays the
+   quiet voice entry (contracts/product/juno-shell-v1.json, "quiet"). */
+.composer-primary-action[data-face="send"]:not(:disabled) {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.22),
+    0 1px 2px hsl(var(--primary) / 0.3),
+    0 4px 12px -4px hsl(var(--primary) / 0.45);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-primary-action[data-face="send"]:not(:disabled):hover {
+    background-color: hsl(var(--primary));
+    filter: brightness(1.08);
+  }
+}
+
+/* The primary button: the tint with a lit top edge and a short coloured
+   throw, so it reads as a physical key rather than a flat swatch. */
+.control-primary {
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.2),
+    inset 0 -1px 0 hsl(0 0% 0% / 0.08),
+    0 1px 2px hsl(var(--primary) / 0.28),
+    0 4px 12px -4px hsl(var(--primary) / 0.4);
+}
+
+/* ── 2. Glass on floating layers ─────────────────────────────────────────── */
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .z-popper.surface-float,
+  .z-popper.overlay-glass,
+  .cmenu.cmenu.cmenu {
+    background-color: hsl(var(--popover) / var(--glass-alpha));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  }
+  /* A lit top edge is what makes a translucent sheet read as a material. */
+  .z-popper.surface-float,
+  .z-popper.overlay-glass,
+  .cmenu.cmenu.cmenu {
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.5), var(--shadow-float);
+  }
+  .dark .z-popper.surface-float,
+  .dark .z-popper.overlay-glass,
+  .dark .cmenu.cmenu.cmenu {
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.07), var(--shadow-float);
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .z-popper.surface-float,
+  .z-popper.overlay-glass,
+  .cmenu.cmenu.cmenu {
+    background-color: hsl(var(--popover));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ── 3. Spring motion ────────────────────────────────────────────────────── */
+
+/* Menus and popovers settle on the snap spring (critically damped: no
+   overshoot on a menu that merely opened) and leave on the fast rung. */
+.data-\[state\=open\]\:animate-pop-in[data-state="open"] {
+  animation: pop-in var(--spring-snap-dur, 256ms) var(--spring-snap, var(--ease-out-expo)) both;
+}
+.cmenu.cmenu.cmenu[data-state="open"] {
+  animation: cmenu-in var(--spring-snap-dur, 256ms) var(--spring-snap, var(--ease-out-expo)) both;
+}
+/* Dialogs arrive on the standard spring, a touch slower than a menu because
+   they are bigger, and exit on the exit rung. */
+.data-\[state\=open\]\:animate-modal-in[data-state="open"] {
+  animation: pop-in var(--spring-standard-dur, 272ms) var(--spring-standard, var(--ease-out-expo)) both;
+}
+
+/* The switch: the track takes the tint when on, and the thumb lands with the
+   reward spring's 1% settle, the one place a control earns a hint of bounce
+   (a toggle is a commit). */
+button[role="switch"][data-state="checked"] {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+button[role="switch"] > span {
+  transition: transform var(--spring-reward-dur, 320ms) var(--spring-reward, var(--ease-out-soft));
+}
+.dark button[role="switch"][data-state="checked"] > span > span {
+  background-color: hsl(0 0% 100%);
+}

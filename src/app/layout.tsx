@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+// The signature layer (tint, glass on floating layers, spring motion) reads
+// after the base sheet so it can retune it in one place.
+import "@/components/ui/signature.css";
 import "@/components/public/public.css";
 import "@/components/ui/juno-icons/icons.css";
 // The homepage construction and the editorial kit, global because product
