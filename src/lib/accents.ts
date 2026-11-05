@@ -14,7 +14,7 @@
 export const ACCENTS = [
   // "coral" is the stored default id; since the signature decision (5 Nov
   // 2026) it is Alevr Blue, the brand's tint (globals.css, signature.css).
-  { id: "coral", label: "Alevr Blue", color: "hsl(229 63% 48%)" },
+  { id: "coral", label: "Indigo", color: "hsl(229 63% 48%)" },
   // "ultramarine" is the stored id of Cobalt (wave 2 D26, owner sign-off S7):
   // it was byte-identical to presence, and accents never paint presence.
   { id: "ultramarine", label: "Cobalt", color: "hsl(205 78% 36%)" },

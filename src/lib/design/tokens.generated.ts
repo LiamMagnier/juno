@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 52dc0de756baa244
+// tokens-digest: 73942bcc5f80e1a6
 //
 
 /** The accent ids, in the order the web lists them (src/lib/accents.ts). */

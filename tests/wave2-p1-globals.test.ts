@@ -139,7 +139,7 @@ test("Cobalt: the accent stored as ultramarine is hsl(205 78% 36%), labelled, an
   assert.equal(cobalt?.label, "Cobalt");
   assert.equal(cobalt?.color, "hsl(205 78% 36%)");
   for (const a of ACCENTS) assert.ok(a.label && /^[A-Z][a-z]+$/.test(a.label), `${a.id} has no human label`);
-  assert.equal(ACCENTS.find((a) => a.id === "coral")?.label, "Alevr Blue");
+  assert.equal(ACCENTS.find((a) => a.id === "coral")?.label, "Indigo");
 });
 
 test("shell, gesture and timing tokens are declared with the spec's values (§3.12, §4.2)", () => {

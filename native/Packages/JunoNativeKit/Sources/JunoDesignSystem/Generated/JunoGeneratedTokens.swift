@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 52dc0de756baa244
+// tokens-digest: 73942bcc5f80e1a6
 //
 
 import CoreGraphics
@@ -861,7 +861,7 @@ public extension JunoAccent {
     /// The web's label for this accent (`ACCENTS` in src/lib/accents.ts).
     var generatedLabel: String {
         switch self {
-        case .coral: "Alevr Blue"
+        case .coral: "Indigo"
         case .ultramarine: "Cobalt"
         case .juniper: "Juniper"
         case .teal: "Teal"
