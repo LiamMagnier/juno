@@ -276,9 +276,11 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<WorkflowRunR
   // which would crash the host process.
   child.stdin.on('error', () => {});
   const send = (message: unknown) => {
-    if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`);
+    if (runAbort.signal.aborted || child.killed || child.stdin.destroyed || !child.stdin.writable) return;
+    child.stdin.write(`${JSON.stringify(message)}\n`);
   };
   runAbort.signal.addEventListener('abort', () => child.kill('SIGKILL'), { once: true });
+  if (runAbort.signal.aborted) child.kill('SIGKILL');
 
   const acquire = async () => {
     if (active < limits.maxConcurrentAgents) {

@@ -106,6 +106,22 @@ test('the hard budget stops every child and the script, even inside parallel', {
   assert.ok(result.agentsStarted <= 4);
 });
 
+test('an already cancelled workflow terminates its guest without starting a child', { skip: guest, timeout: 5_000 }, async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const children = port(() => ({ text: 'must not start' }));
+  const result = await runWorkflow({
+    meta,
+    script: `await new Promise(() => {});`,
+    budget: new BudgetLedger(),
+    children,
+    signal: controller.signal,
+  });
+  assert.equal(result.stopReason, 'aborted');
+  assert.equal(result.agentsStarted, 0);
+  assert.deepEqual(children.prompts, []);
+});
+
 test('the script cannot reach the filesystem, require, process or the host Function', { skip: guest }, async () => {
   const children = port(() => ({ text: 'x' }));
   const probes = [

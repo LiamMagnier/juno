@@ -1,4 +1,6 @@
 export * from './types.js';
+export { brokeredMcpTools, mcpBridgeRequest, type McpBridgeRequest } from './mcp-bridge.js';
+export { ProjectHooks, parseProjectHooks, readProjectHooks, type HookEvent, type ProjectHookConfig } from './hooks.js';
 export { buildRepositoryIndex, repositoryWorkingMap, renderRepositoryWorkingMap, selectRepositoryTests,
   type RepositoryIndex, type RepositoryWorkingMap, type RepositoryFile, type RepositorySymbol, type RepositoryCall } from './repository.js';
 export * from './providers/types.js';

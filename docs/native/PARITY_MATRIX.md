@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-385 routes: 230 native, 79 planned, 58 web only, 18 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+386 routes: 230 native, 79 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -35,7 +35,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 9 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
-| [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
+| [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 4 |
 | [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Activity](#activity) | 1/1 | 1/1 | 1 | 0 | 1 | 0 |
@@ -327,6 +327,7 @@ Design is a type of artifact (register #73).
 | `/api/mcp/servers/test` | POST | Native | JunoChatKit | Mac only: Test in the add sheet before saving. |
 | `/api/connectors/[id]/sync` | POST | Web only |  | Authenticated first-party incremental sync entrypoint; native clients do not expose a sync action yet. |
 | `/api/mcp/first-party/[id]` | POST | Internal |  | First-party provider adapter called only by the server MCP dispatcher with a short-lived connector token. |
+| `/api/mcp/session` | POST | Internal |  | Authenticated env-server and cloud-engine bridge to owner-scoped user MCP tools through the approval and audit broker; no native UI calls this route directly. |
 
 <a id="skills"></a>
 

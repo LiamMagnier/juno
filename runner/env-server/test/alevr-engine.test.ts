@@ -20,6 +20,7 @@ after(async () => {
 });
 
 interface Recorded {
+  toolNames?: string[][];
   providers: { instance: string; model: string; authorization?: string }[];
   modes: string[];
   routings: (RoleRouting | undefined)[];
@@ -39,6 +40,7 @@ function fakeEngine(rec: Recorded): AlevrEngine {
     createSession: (o) => makeSession(o),
   };
   function makeSession(o: EngineSessionOptions): EngineSession {
+    (rec.toolNames ??= []).push((o.extraTools ?? []).map((t) => (t as { spec: { name: string } }).spec.name));
     const id = `eng_${++n}`;
     let aborted = false;
     const queued: string[] = [];
@@ -61,6 +63,10 @@ function fakeEngine(rec: Recorded): AlevrEngine {
         if (/limit/.test(text)) {
           emit({ type: "error", message: "You have used this month's Alevr allowance.", code: "plan_limit" });
           return;
+        }
+        if (/hook trust/.test(text)) {
+          const decision = await o.callbacks.requestApproval({ callId: "hook-1", toolName: "hook:PreToolUse", input: { command: "echo verified", configHash: "test-hash" }, risk: "sensitive", requiresHuman: true, summary: "Review project hook: echo verified" });
+          rec.decisions.push(`hook:${decision}`);
         }
         if (/sensitive/.test(text)) {
           // The engine's ladder sends its sensitive class up in every mode, Full access included.
@@ -114,9 +120,9 @@ function fakeEngine(rec: Recorded): AlevrEngine {
   }
 }
 
-async function boot() {
+async function boot(engineOverrides: Partial<AlevrEngine> = {}) {
   const rec: Recorded = { providers: [], modes: [], routings: [], resolved: [], decisions: [] };
-  const server = await startEnvServer({ dataDir: tempDir("data"), searchDirs: [], logger: silentLogger, probeOnStart: false, coalesceMs: 5, alevrEngine: fakeEngine(rec) });
+  const server = await startEnvServer({ dataDir: tempDir("data"), searchDirs: [], logger: silentLogger, probeOnStart: false, coalesceMs: 5, alevrEngine: { ...fakeEngine(rec), ...engineOverrides } });
   servers.push(server);
   const client = await TestClient.connect(server.url, server.token);
   clients.push(client);
@@ -260,6 +266,43 @@ test("alevr engine: Full access answers the engine's in-project asks, keeps the 
   assert.equal(rec.modes.at(-1), "full", "the engine's own ladder follows at once");
   assert.equal(client.snapshot(sid).runtimeMode, "full");
   await assert.rejects(client.command("session.setMode", { sessionId: sid, runtimeMode: "fullAccess" }), /Unknown access mode/);
+});
+
+test("alevr engine: Full access still waits for a person's hook trust decision", async () => {
+  const { client, rec } = await boot();
+  await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer test-session", models: [] } });
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "anthropic:claude-opus-5-5" };
+  const { sessionId } = await client.command<{ sessionId: string }>("session.open", { cwd: tempDir("cwd"), selection, runtimeMode: "full" });
+  await client.waitFor(() => client.snapshots.get(sessionId), 4000, "snapshot");
+  const started = await client.command<{ turnId: string }>("turn.start", { sessionId, input: { text: "hook trust" }, selection, runtimeMode: "full", interactionMode: "default" });
+  const pending = await client.waitFor(() => items(client, sessionId).find((i): i is ApprovalRequestItem => i.kind === "approval_request" && i.status === "pending"), 5000, "hook trust review");
+  assert.match(pending.summary, /Review project hook/);
+  // Toggling Full access cannot auto-answer this trust request either.
+  const set = await client.command<{ approved: number }>("session.setMode", { sessionId, runtimeMode: "full" });
+  assert.equal(set.approved, 0);
+  assert.equal(rec.decisions.length, 0);
+  await client.command("approval.respond", { sessionId, requestId: pending.requestId, decision: "decline" });
+  await client.turnCompleted(sessionId, started.turnId);
+  assert.equal(rec.decisions.at(-1), "hook:deny");
+});
+
+test("alevr engine: enabled account connection tools reach the session alongside its existing tools", async () => {
+  let calls = 0;
+  const { client, rec } = await boot({ connectionTools: async (sessionId, secrets) => {
+    calls++;
+    assert.ok(sessionId);
+    assert.equal(secrets.backend?.authorization, "Bearer test-session");
+    return [{ spec: { name: "user_mcp_account__search" }, kind: "command" }];
+  } });
+  await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer test-session", models: [] } });
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "anthropic:claude-opus-5-5" };
+  const { sessionId } = await client.command<{ sessionId: string }>("session.open", { cwd: tempDir("cwd"), selection });
+  const turn = await client.command<{ turnId: string }>("turn.start", { sessionId, input: { text: "hello" }, selection, ...ask });
+  await client.turnCompleted(sessionId, turn.turnId);
+  assert.equal(calls, 1);
+  assert.ok(rec.toolNames?.at(-1)?.includes("user_mcp_account__search"));
 });
 
 test("alevr engine: a Plan → Build → Verify routing reaches the engine, roles resolve to their own adapters, and the thread shows the phases", async () => {
