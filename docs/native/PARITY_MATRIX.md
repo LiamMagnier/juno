@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-386 routes: 230 native, 79 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+387 routes: 230 native, 80 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 16 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 17 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -574,6 +574,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/runs/approval` | POST | Native | JunoCodeKit | REA 8: answer a live run's pending approval from the iPhone; Code answers queue for the Mac, Work answers go through the Work decision route. |
 | `/api/code/environments` | GET, POST | Planned |  | Cloud environments (/code/customize). |
 | `/api/code/environments/[id]` | GET, PATCH, DELETE | Planned |  | As /api/code/environments. |
+| `/api/code/hooks` | GET, POST, DELETE | Planned |  | Review a repository's .alevr/hooks.json and approve its exact bytes for cloud runs (/code/customize). |
 | `/api/code/github/branches` | GET | Planned |  | The base-branch list for a cloud run. |
 | `/api/code/github/pulls` | GET | Native | JunoCodeKit |  |
 | `/api/code/github/skills` | GET | Planned |  | A repository's own skills for a cloud run's Skills selector. |

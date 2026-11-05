@@ -25,6 +25,10 @@ export const dynamic = "force-dynamic";
  * set of controls that persist nothing, which is a more expensive lie than a
  * page that states facts and says where each one is actually changed. When
  * those models exist this page is where their editors go.
+ *
+ * The one thing it does set is project hook trust (`CodeHookTrust`): which
+ * exact versions of a repository's `.alevr/hooks.json` a cloud run may run.
+ * That has a model and a reader (runner-context), so it gets a control.
  */
 export default async function CodeCustomizePage() {
   await requireUser();

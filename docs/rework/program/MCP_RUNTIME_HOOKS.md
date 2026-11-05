@@ -25,7 +25,13 @@ Matchers are exact tool names or `*`; omitted matchers apply to every tool. Comm
 
 An exact SHA-256 of the configuration is reviewed outside the clone. A new or changed configuration always requires a person, including Full access and model auto-review mode. A file changed during review runs nothing. “Accept for session” remembers that configuration hash for the current session, but shell deny/ask rules, Plan mode and sensitive-action approvals still apply. The hash pins configuration bytes, including command text; scripts invoked by those commands remain workspace files. The host can supply account/repository-scoped reviewed hashes through `AgentOptions.hooks.trustedHashes`; repository files cannot grant themselves trust. `hooks: false` disables project hooks.
 
-The env-server approval adapter explicitly keeps hook trust requests pending when Full access is selected. The unattended cloud callback refuses unreviewed hooks. A product UI for editing the file and storing owner-reviewed hashes for later cloud runs still needs the reserved `/code/customize` integration after Claude's Code wave 1 merge. This runtime phase does not claim that editor or persistent cloud trust storage is complete.
+The env-server approval adapter explicitly keeps hook trust requests pending when Full access is selected. The unattended cloud callback refuses unreviewed hooks, and its refusal names where to review them.
+
+### Reviewing hooks for cloud runs
+
+Code > Customize > Project hooks (`/code/customize`) is where an owner reviews a repository's hooks for cloud runs. Review reads `.alevr/hooks.json` from GitHub with the owner's connection (default branch, or a named branch), validates it with the same strict rules as agent-core (a parity test runs both parsers over the same fixtures), and lists each command with its event, matcher and timeout. Approving stores the SHA-256 of the exact bytes in `CodeHookTrust`, scoped to the owner and the lower-cased repository. The server reads the file again at approval and refuses if those bytes no longer hash to what was shown, so a browser cannot approve a hash it was never shown. Each repository keeps its ten most recent approved versions; removing one takes effect on the next run.
+
+`runner-context` returns `hookTrustedHashes` for the task's repository, and the cloud driver passes them as `AgentOptions.hooks.trustedHashes`. A clone whose file matches runs its hooks under the run's normal shell rules and sandbox; any other version is refused as before. The page never writes to a repository: the file is edited and committed like any other file.
 
 ## Verification boundary
 

@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { ownerDevice, type DeviceRow } from "@/components/code/device-presence";
+import { CodeProjectHooks } from "@/components/code/code-project-hooks";
 import type { CloudRepo, Workspace } from "@/components/code/code-target-picker";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
- * THE BODY OF `/code/customize`: four sections, in the order a run needs them.
+ * THE BODY OF `/code/customize`: five sections, in the order a run needs them.
  *
  * Where it runs (repositories, Macs), what it may do there (permissions), and
  * what the machine is (environment). Three of the four are read-only, and the
@@ -341,6 +342,9 @@ export function CodeCustomize() {
           control={<span className="text-ui text-muted-foreground">{CODE_PERMISSIONS.cloud.mode}</span>}
         />
       </SettingsGroup>
+
+      {/* ──────────────────────────── Project hooks ───────────────────────── */}
+      <CodeProjectHooks repos={repos} />
 
       {/* ───────────────────────────── Environments ───────────────────────── */}
       <SettingsGroup

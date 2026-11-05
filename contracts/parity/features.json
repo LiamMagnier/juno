@@ -1069,6 +1069,10 @@
           "status": "planned",
           "note": "As /api/code/environments."
         },
+        "/api/code/hooks": {
+          "status": "planned",
+          "note": "Review a repository's .alevr/hooks.json and approve its exact bytes for cloud runs (/code/customize)."
+        },
         "/api/code/github/branches": {
           "status": "planned",
           "note": "The base-branch list for a cloud run."
