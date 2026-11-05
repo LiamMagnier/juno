@@ -116,15 +116,18 @@ test("the September 2026 models carry the ids their providers actually serve", (
     "a pruned id still resolves to the live Flash row"
   );
 
-  // Both image variants ship under one version with two names.
-  for (const [id, family] of [
-    ["openai:gpt-image-2.5-sunburst", "gpt-image"],
-    ["openai:gpt-image-2.5-flare", "gpt-image-fast"],
+  // Both image variants ship under one version with two names. 2.6 took
+  // over from 2.5 on 2026-11-05; 2.5 stays selectable as legacy.
+  for (const [id, family, status] of [
+    ["openai:gpt-image-2.6-sunburst", "gpt-image", "current"],
+    ["openai:gpt-image-2.6-flare", "gpt-image-fast", "current"],
+    ["openai:gpt-image-2.5-sunburst", "gpt-image", "legacy"],
+    ["openai:gpt-image-2.5-flare", "gpt-image-fast", "legacy"],
   ] as const) {
     const model = byId.get(id);
     assert.ok(model, `${id} is in the catalog`);
     assert.equal(model.modality, "image");
-    assert.equal(model.status, "current");
+    assert.equal(model.status, status);
     assert.equal(model.family, family, "Flare and Sunburst are separate families — both stay current");
   }
   assert.equal(byId.get("openai:gpt-image-2")?.status, "legacy");
@@ -151,7 +154,7 @@ test("the September 2026 models carry the ids their providers actually serve", (
   const omniGa = byId.get("google:gemini-omni-1.1-flash");
   assert.ok(omniGa, "Gemini Omni Flash (GA) is in the catalog");
   assert.equal(omniGa.modality, "video");
-  assert.equal(omniGa.status, "current");
+  assert.equal(omniGa.status, "legacy", "superseded by Omni 1.2 Flash on 2026-11-05");
   assert.equal(omniGa.released, "2026-08");
 
   // And the one retirement: Google deprecated the preview on 30 Sep 2026.
@@ -160,7 +163,7 @@ test("the September 2026 models carry the ids their providers actually serve", (
   const omni = byId.get("google:gemini-omni-flash-preview");
   if (hasRetired({ retiresOn: "2026-09-30" })) {
     assert.equal(omni, undefined, "a retired model is no longer offered");
-    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:gemini-omni-1.1-flash");
+    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:gemini-omni-1.2-flash");
   } else {
     assert.ok(omni);
     assert.equal(omni.status, "deprecated");

@@ -150,6 +150,8 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
     // of 720p at $17.50/M is ~$0.10/s, and the prompt (not a field) sets the
     // 3-10s length, so a clip is metered at its longest: $1.00. Checked
     // before the "fast" tier below, which its id would otherwise match.
+    // Omni 1.2 (2026-11-05): $12/M, ~$0.07/s, up to 15s, so $1.04 a clip.
+    if (id.includes("gemini-omni-1.2")) return 1_043_000;
     if (id.includes("gemini-omni")) return 1_000_000;
     // Grok Imagine Video bills by the second (docs.x.ai model pages): at the
     // 8s / 480p default, classic $0.05/s = $0.40, 1.5 $0.08/s = $0.64, 1.5

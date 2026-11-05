@@ -66,6 +66,7 @@ const TABLE = [
   "anthropic:claude-sonnet-4-5 tools cc parallel:default final:none search ws:20250305 max:128",
   "openai:gpt-6-astra tools no-cc responses parallel:default final:none search max:128",
   "openai:gpt-6.1-sol tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-6.1-terra tools no-cc responses parallel:default final:none search max:128",
   "openai:gpt-6-sol tools no-cc responses parallel:default final:none search max:128",
   "openai:gpt-6-luna tools no-cc responses parallel:default final:none search max:128",
   "openai:gpt-5.6-sol tools no-cc responses parallel:default final:none search max:128",
@@ -107,6 +108,7 @@ const TABLE = [
   "zhipu:glm-5.3 tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
   "zhipu:glm-5.3-flash tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
   "zhipu:glm-5.3-flashx tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
+  "zhipu:glm-5.3-flashx-legal tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
   "zhipu:glm-5.2 tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
   "zhipu:glm-4.7-flash tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
   "zhipu:glm-4.7-flashx tools cc parallel:unknown final:omit replay:should/reasoning_content search max:128",
@@ -209,7 +211,7 @@ test("ModelInfo.webSearch is the provider's own search, read from the record", (
     assert.equal(model.webSearch, modelSearchesNatively(model), model.id);
   }
   // RC-2: every current OpenAI model searches on Responses now.
-  for (const id of ["openai:gpt-6-astra", "openai:gpt-6.1-sol", "openai:gpt-6-sol", "openai:gpt-6-luna", "openai:gpt-5.6-terra"]) {
+  for (const id of ["openai:gpt-6-astra", "openai:gpt-6.1-sol", "openai:gpt-6-sol", "openai:gpt-6-luna", "openai:gpt-6.1-terra"]) {
     assert.equal(resolveModel(id)?.webSearch, true, id);
   }
   // Pre-Gemini-3 grounds on a request that carries no functions. The flag the

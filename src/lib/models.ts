@@ -405,10 +405,18 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-6-sol", name: "GPT-6 Sol", family: "gpt", status: "legacy", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Previous Sol tier, superseded by GPT-6.1 Sol." }),
   def({ provider: "openai", id: "gpt-6-luna", name: "GPT-6 Luna", family: "gpt-luna", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_050_000, description: "Fastest, most affordable GPT-6: summarization, extraction and quick answers with 1M context." }),
   // GPT-5.6 family (GA 2026-07-09): Sol / Terra / Luna, 1.05M context, effort
-  // none|low|medium(default)|high|xhigh|max. Terra has no GPT-6 tier and stays
-  // current. The bare "gpt-5.6" alias lands on the current Sol (RETIRED_MODELS).
+  // none|low|medium(default)|high|xhigh|max. All three are now superseded (Terra
+  // by GPT-6.1 Terra, 2026-11-05). The bare "gpt-5.6" alias lands on the current Sol (RETIRED_MODELS).
   def({ provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol", family: "gpt", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "Previous Sol tier, superseded by GPT-6.1 Sol." }),
-  def({ provider: "openai", id: "gpt-5.6-terra", name: "GPT-5.6 Terra", family: "gpt-value", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Balanced GPT-5.6 tier: everyday work where cost matters." }),
+  // GPT-6.1 Terra (api/docs/models/gpt-6.1-terra, read 2026-11-05; listed on
+  // the models index next to Astra, 6.1 Sol and Luna): id `gpt-6.1-terra`,
+  // 1.05M context, 128K output, text + image in, text out. Chat Completions
+  // and Responses, but "Tool calling requires the Responses API". Effort
+  // none|low|medium(default)|high|xhigh|max, so Instant is real. $1/$5,
+  // cached $0.05; over 272K input, 2x input and 1.5x output. Supersedes
+  // GPT-5.6 Terra (nightly models:sync report, 2026-11-05).
+  def({ provider: "openai", id: "gpt-6.1-terra", name: "GPT-6.1 Terra", family: "gpt-value", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Fast, efficient GPT-6.1 tier for visual reasoning, computer use and everyday work where cost matters." }),
+  def({ provider: "openai", id: "gpt-5.6-terra", name: "GPT-5.6 Terra", family: "gpt-value", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Previous Terra tier, superseded by GPT-6.1 Terra." }),
   def({ provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna", family: "gpt-luna", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Previous Luna tier, superseded by GPT-6 Luna." }),
   def({ provider: "openai", id: "gpt-5.5", name: "GPT-5.5", family: "gpt", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "Previous flagship generation." }),
   // Responses + Batch only. Effort medium|high(default)|xhigh.
@@ -430,7 +438,7 @@ const CURATED: ModelInfo[] = [
   // Deprecated 2026-10-01; shutdown 2027-04-01, the page names gpt-6-sol.
   def({ provider: "openai", id: "gpt-5.1", name: "GPT-5.1", family: "gpt", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous coding and agentic GPT model with configurable reasoning.", deprecationNote: "Retires Apr 1, 2027. Use GPT-6.1 Sol", retiresOn: "2027-04-01", replacedBy: "openai:gpt-6.1-sol" }),
   def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-sol" }),
-  def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026. Use GPT-5.6 Terra", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.6-terra" }),
+  def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Terra", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-terra" }),
   def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-sol" }),
   // OpenAI's deprecations page (notice dated 2026-10-14, read 2026-10-18):
   // gpt-4o-2024-08-06 (the snapshot behind the `gpt-4o` alias), 2024-11-20 and
@@ -527,6 +535,14 @@ const CURATED: ModelInfo[] = [
   // model served at ~200 tok/s. $0.15/$0.50 and $0.37/$1.25 per MTok.
   def({ provider: "zhipu", id: "glm-5.3-flash", name: "GLM-5.3 Flash", family: "glm-5-flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Natively multimodal GLM-5.3 at a fraction of the price: images, video and files in, 1M context, always reasoning." }),
   def({ provider: "zhipu", id: "glm-5.3-flashx", name: "GLM-5.3 FlashX", family: "glm-5-flashx", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "GLM-5.3 Flash served at about 200 tokens a second." }),
+  // GLM-5.3-FlashX-Legal: on Z.ai's pricing page (Text Models, read
+  // 2026-11-05) at FlashX's $0.37 / $1.25, cache $0.075; Z.ai's own GLM-Legal
+  // announcement dates it 2026-10-12. A FlashX build tuned for contract
+  // review, evidence analysis and compliance research, so it shares FlashX's
+  // reasoning wiring (every `glm-5.3` gate matches). 1M context from Vercel's
+  // gateway card; the docs give no input modalities, so it is text-only here
+  // until Z.ai documents image input.
+  def({ provider: "zhipu", id: "glm-5.3-flashx-legal", name: "GLM-5.3 FlashX Legal", family: "glm-legal", status: "current", released: "2026-10", minPlan: "FREE", vision: false, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Z.ai's legal specialist: contract review, evidence analysis and compliance research." }),
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "legacy", released: "2026-06", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Previous GLM flagship, superseded by 5.3: same 1M context and base." }),
   def({ provider: "zhipu", id: "glm-4.7-flash", name: "GLM-4.7 Flash", family: "glm-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Current free-tier GLM: capable and completely free." }),
   def({ provider: "zhipu", id: "glm-4.7-flashx", name: "GLM-4.7 FlashX", family: "glm-flashx", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Low-latency GLM FlashX variant for high-throughput chat." }),
@@ -745,13 +761,23 @@ const CURATED: ModelInfo[] = [
  *  through /api/generate (not the chat stream). Hidden unless the lab's key is set. */
 const GENERATIVE: ModelInfo[] = [
   // —— Image ——
-  def({ provider: "openai", id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst", family: "gpt-image", status: "current", released: "2026-09", modality: "image", minPlan: "PRO", cost: 3, description: "Precision-first: the highest quality and the most control over an edit." }),
-  def({ provider: "openai", id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", family: "gpt-image-fast", status: "current", released: "2026-09", modality: "image", minPlan: "PRO", cost: 2, description: "The everyday default: GPT Image 2 quality at half the latency." }),
+  // GPT Image 2.6 Sunburst / Flare (api/docs/models/gpt-image-2.6-*, read
+  // 2026-11-05; on the models index above 2.5): text + image in, image out,
+  // /v1/images/generations and /edits. $5 text in ($1.25 cached), $8 image in
+  // ($2 cached), $30 image out per MTok, the same as 2.5. The image reference
+  // lists both ids but scopes `xhigh`/`max` quality and transparent
+  // backgrounds to the 2.5 models only, so media-params.ts offers 2.6 the
+  // gpt-image-2 option set until OpenAI documents more. Release day not on the
+  // pages; the nightly sync first saw them 2026-11-05.
+  def({ provider: "openai", id: "gpt-image-2.6-sunburst", name: "GPT Image 2.6 Sunburst", family: "gpt-image", status: "current", released: "2026-11", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's newest image model for detailed compositions and precise edits." }),
+  def({ provider: "openai", id: "gpt-image-2.6-flare", name: "GPT Image 2.6 Flare", family: "gpt-image-fast", status: "current", released: "2026-11", modality: "image", minPlan: "PRO", cost: 2, description: "OpenAI's newest fast image model, built for quick iteration." }),
+  def({ provider: "openai", id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst", family: "gpt-image", status: "legacy", released: "2026-09", modality: "image", minPlan: "PRO", cost: 3, description: "Precision-first: the highest quality and the most control over an edit." }),
+  def({ provider: "openai", id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", family: "gpt-image-fast", status: "legacy", released: "2026-09", modality: "image", minPlan: "PRO", cost: 2, description: "The everyday default: GPT Image 2 quality at half the latency." }),
   def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "legacy", released: "2026-05", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's state-of-the-art image generation and editing." }),
   // gpt-image-1-mini and gpt-image-1.5: deprecated 2026-06-02, shutdown
-  // 2026-12-01, replacement gpt-image-2.5-sunburst or -flare.
-  def({ provider: "openai", id: "gpt-image-1-mini", name: "GPT Image 1 Mini", family: "gpt-image-mini", status: "deprecated", modality: "image", minPlan: "PRO", cost: 1, description: "Lower-cost OpenAI image generation and editing.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.5 Flare", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.5-flare" }),
-  def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "deprecated", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.5 Sunburst", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.5-sunburst" }),
+  // 2026-12-01, replacement gpt-image-2.5-sunburst or -flare (now pointed at 2.6).
+  def({ provider: "openai", id: "gpt-image-1-mini", name: "GPT Image 1 Mini", family: "gpt-image-mini", status: "deprecated", modality: "image", minPlan: "PRO", cost: 1, description: "Lower-cost OpenAI image generation and editing.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.6 Flare", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.6-flare" }),
+  def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "deprecated", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.6 Sunburst", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.6-sunburst" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", released: "2025-11", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation: complex composition, text rendering, 4K." }),
   // Nano Banana 2.1 (owner-approved 2026-10-10), read 2026-10-10 from
   // ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1 and the
@@ -773,7 +799,6 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "xai", id: "grok-imagine-image-2.0", name: "Grok Imagine 2.0", family: "imagine-image-2", status: "current", released: "2026-08", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's latest image generation and editing model." }),
   // xAI's May 15 retirement guide: "On November 2, 2026, grok-imagine-image-
   // quality is itself retired in favor of grok-imagine-image-2.0".
-  def({ provider: "xai", id: "grok-imagine-image-quality", name: "Grok Imagine (Quality)", family: "imagine-image", status: "deprecated", released: "2025-10", modality: "image", minPlan: "PRO", cost: 2, description: "Earlier Grok Imagine quality tier: generation and editing.", deprecationNote: "Retires Nov 2, 2026. Use Grok Imagine 2.0", retiresOn: "2026-11-02", replacedBy: "xai:grok-imagine-image-2.0" }),
   def({ provider: "xai", id: "grok-imagine-image", name: "Grok Imagine (Fast)", family: "imagine-image-fast", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 1, description: "Fast, low-cost image tier." }),
   def({ provider: "zhipu", id: "glm-image", name: "GLM Image", family: "glm-image", status: "current", released: "2026-01", modality: "image", minPlan: "PRO", cost: 2, description: "Z.AI's flagship image model: posters and in-image text." }),
   // The id is `muse-image-1.0`, WITH the minor version. Meta's own rate-limit
@@ -805,7 +830,16 @@ const GENERATIVE: ModelInfo[] = [
   // resolution are request fields; length is steered by the prompt only.
   // Billed by output tokens: 5,792 a second of 720p at $17.50/M, about
   // $0.10/s (spend.ts).
-  def({ provider: "google", id: "gemini-omni-1.1-flash", name: "Gemini Omni Flash", family: "gemini-omni", status: "current", released: "2026-08", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video: generate a clip, then edit or extend it by asking, from 360p drafts to 4K, with native audio." }),
+  // Gemini Omni 1.2 Flash, `gemini-omni-1.2-flash` (Google's launch post,
+  // blog.google, 2026-11-05: GA "across the Gemini API" and Google Cloud; the
+  // id is the one its AI Studio link opens). Clips up to 15s (1.1: 10s),
+  // drafts at 360p/720p, upscales to 1080p/4K, sharper lip-sync and
+  // multi-speaker audio, and 30% cheaper: $0.07/s at 720p. The post says the
+  // length is set "in one-second increments from 3 to 15 seconds" but the
+  // Omni guide (still 1.1) names no request field for it, so the prompt keeps
+  // steering length, as on 1.1. Same Interactions API wire.
+  def({ provider: "google", id: "gemini-omni-1.2-flash", name: "Gemini Omni 1.2 Flash", family: "gemini-omni", status: "current", released: "2026-11", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video up to 15s: generate, then edit or extend by asking, 360p drafts to 4K, with native audio." }),
+  def({ provider: "google", id: "gemini-omni-1.1-flash", name: "Gemini Omni Flash", family: "gemini-omni", status: "legacy", released: "2026-08", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video: generate a clip, then edit or extend it by asking, from 360p drafts to 4K, with native audio." }),
   def({ provider: "xai", id: "grok-imagine-video", name: "Grok Imagine Video", family: "imagine-video", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Text-, image-, and video-to-video generation." }),
   // grok-imagine-video-1.5-lite (docs.x.ai/developers/models/grok-imagine-
   // video-1.5-lite, 2026-10-04): text and image in, video out, $0.02/s at
@@ -939,10 +973,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // gpt-5.6-sol / gpt-5.6-terra; stored ids land on their current tiers.
   "openai:gpt-5.2-codex": "openai:gpt-6.1-sol",
   "openai:gpt-5.1-codex": "openai:gpt-6.1-sol",
-  "openai:gpt-5.1-codex-mini": "openai:gpt-5.6-terra",
+  "openai:gpt-5.1-codex-mini": "openai:gpt-6.1-terra",
   "openai:o1-mini": "openai:gpt-5.4-mini", // shut down 2025-10-27
-  "openai:dall-e-3": "openai:gpt-image-2.5-sunburst", // shut down 2026-05-12
-  "openai:dall-e-2": "openai:gpt-image-2.5-flare", // shut down 2026-05-12
+  "openai:dall-e-3": "openai:gpt-image-2.6-sunburst", // shut down 2026-05-12
+  "openai:dall-e-2": "openai:gpt-image-2.6-flare", // shut down 2026-05-12
   // Google — marketing names listed as chat models + retired Imagen/Veo ids.
   "google:nano-banana-pro": "google:gemini-3.8-flash", // was mis-listed as a chat model
   "google:nano-banana-2": "google:gemini-3.8-flash", // was mis-listed as a chat model
@@ -951,8 +985,8 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // Listed by ListModels but 404s on every call: "no longer available to new users".
   "google:gemini-2.5-flash": "google:gemini-3.8-flash",
   // Veo 3.1 itself retires 2026-10-22; Google's named replacement is Omni Flash.
-  "google:veo-3.0-generate-001": "google:gemini-omni-1.1-flash", // shut down 2026-06-30
-  "google:veo-2.0": "google:gemini-omni-1.1-flash", // wrong id + shut down 2026-06-30
+  "google:veo-3.0-generate-001": "google:gemini-omni-1.2-flash", // shut down 2026-06-30
+  "google:veo-2.0": "google:gemini-omni-1.2-flash", // wrong id + shut down 2026-06-30
   // Meta — the Llama ids are still retired (the Meta Model API does not serve
   // them), but they no longer leave the provider. Migrating a Meta selection to
   // Anthropic was a stopgap for the window when Meta had no API at all; now that
@@ -1044,17 +1078,18 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // Nano Banana's own line continues in 2.1 (Google's page lists 3.1 Flash-Lite Image as the cheap alternative).
   "google:gemini-2.5-flash-image": "google:gemini-nano-banana-2.1", // retired 2026-10-02 (models:sync)
   "google:imagen-4.0-generate-001": "google:gemini-nano-banana-2.1", // retired 2026-08-17; Google's named replacement
-  "google:gemini-omni-flash-preview": "google:gemini-omni-1.1-flash", // retired 2026-09-30 (models:sync)
+  "google:gemini-omni-flash-preview": "google:gemini-omni-1.2-flash", // retired 2026-09-30 (models:sync)
   "mimo:mimo-v2.5": "mimo:mimo-v2.6-flash", // retired 2026-10-13 (models:sync)
   "mimo:mimo-v2.5-pro": "mimo:mimo-v2.6-pro", // retired 2026-10-13 (models:sync)
   "openai:o3-mini": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
   "openai:o1": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
   "openai:gpt-4-turbo": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
-  "openai:gpt-3.5-turbo": "openai:gpt-5.6-terra", // retired 2026-10-23 (models:sync)
-  "openai:gpt-image-1": "openai:gpt-image-2.5-sunburst", // retired 2026-10-23 (models:sync)
-  "google:veo-3.1-generate-preview": "google:gemini-omni-1.1-flash", // retired 2026-10-22 (models:sync)
-  "google:veo-3.1-fast-generate-preview": "google:gemini-omni-1.1-flash", // retired 2026-10-22 (models:sync)
-  "google:veo-3.1-lite-generate-preview": "google:gemini-omni-1.1-flash", // retired 2026-10-22 (models:sync)
+  "openai:gpt-3.5-turbo": "openai:gpt-6.1-terra", // retired 2026-10-23 (models:sync)
+  "openai:gpt-image-1": "openai:gpt-image-2.6-sunburst", // retired 2026-10-23 (models:sync)
+  "google:veo-3.1-generate-preview": "google:gemini-omni-1.2-flash", // retired 2026-10-22 (models:sync)
+  "google:veo-3.1-fast-generate-preview": "google:gemini-omni-1.2-flash", // retired 2026-10-22 (models:sync)
+  "google:veo-3.1-lite-generate-preview": "google:gemini-omni-1.2-flash", // retired 2026-10-22 (models:sync)
+  "xai:grok-imagine-image-quality": "xai:grok-imagine-image-2.0", // retired 2026-11-02 (models:sync)
 };
 
 /** Ids whose retirement date has passed, mapped to what replaces them. */
