@@ -146,7 +146,11 @@ modules._load = function (name, parent, isMain) {
   if (name === "@/lib/crypto") return { decryptSecret: () => "gh-token" };
   return original.call(this, name, parent, isMain);
 };
-const route = require("../src/app/api/code/hooks/route") as typeof import("@/app/api/code/hooks/route");
+const route = require("../src/app/api/code/hooks/route") as {
+  GET(req: Request): Promise<Response>;
+  POST(req: Request): Promise<Response>;
+  DELETE(req: Request): Promise<Response>;
+};
 modules._load = original;
 
 const realFetch = globalThis.fetch;
@@ -166,7 +170,7 @@ test.after(() => {
 });
 
 const url = (q = "") => `https://alevr.example/api/code/hooks${q}`;
-const post = async (body: unknown): Promise<Response> => (await route.POST(new Request(url(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })))!;
+const post = (body: unknown): Promise<Response> => route.POST(new Request(url(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
 
 test("review shows the file's commands and hash; approval binds those exact bytes", async () => {
   rows = [];
