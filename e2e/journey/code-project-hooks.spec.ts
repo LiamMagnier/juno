@@ -59,7 +59,7 @@ for (const width of [1440, 390]) {
       await expect(section).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText("No hooks are approved yet", { exact: false })).toBeVisible();
 
-      await page.getByRole("textbox", { name: "Repository" }).fill("acme/widgets");
+      await page.getByRole("combobox", { name: "Repository" }).fill("acme/widgets");
       await page.getByRole("button", { name: "Review hooks" }).click();
       await expect(page.getByText("npm run check-policy")).toBeVisible();
       await expect(page.getByText("npm run verify")).toBeVisible();
