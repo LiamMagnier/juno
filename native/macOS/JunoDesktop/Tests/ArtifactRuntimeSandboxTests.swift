@@ -157,6 +157,9 @@ struct ArtifactRuntimeSandboxTests {
 
         try await waitUntil { sandbox.runtime.status == .done || sandbox.runtime.status == .error }
         #expect(sandbox.runtime.status == .done)
+        // `.done` can arrive before the component's first render reaches the
+        // DOM (this read failed once on CI), so wait for it like the checks below.
+        try await waitUntil { await text(sandbox, "#title") == "Typed" }
         #expect(await text(sandbox, "#title") == "Typed")
         #expect(try await read(sandbox, "document.querySelectorAll('#list li').length") == "2")
         try await waitUntil { await text(sandbox, "#picked") == "Two" }
