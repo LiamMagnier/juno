@@ -125,7 +125,10 @@ PM2. One-time setup: `git clone` the repo to `MODEL_SYNC_DIR` with a key that
 can push branches, and put the provider keys in the cron user's environment.
 
 `.github/workflows/sync-models.yml` also runs the dry run nightly when Actions
-minutes are available and appends the report to its model-watch issue. A
+minutes are available and appends the report to its model-watch issue. It
+keeps one refresh PR (branch `model-sync/daily`, force-pushed from `main` each
+run) and one open model-watch issue (body replaced each run), closing any
+older ones as superseded. A
 `validate:models` failure no longer stops the benchmark refresh or the issue:
 the validator's output is added to the issue and the job fails in its last
 step. If the repository does not let Actions open pull requests (Settings >
