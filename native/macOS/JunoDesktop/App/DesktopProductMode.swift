@@ -74,11 +74,14 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
 struct DesktopProductSwitch: View {
     @Binding var product: DesktopProductMode
 
-    private var selection: Binding<DesktopProductMode?> {
+    /// Picking Code below Pro asks for the plan (the gate shows the upgrade
+    /// sheet) and leaves the selection where it was, as the web's switch does.
+    private var selection: Binding<DesktopProductMode> {
         Binding(
-            get: { DesktopProductMode.switchable.contains(product) ? product : nil },
+            get: { product },
             set: { next in
-                guard let next else { return }
+                guard next != product else { return }
+                if next == .code, !DesktopPlanGate.shared.require(.code) { return }
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) { product = next }
@@ -87,22 +90,34 @@ struct DesktopProductSwitch: View {
     }
 
     var body: some View {
-        // The web's product switch (round 2, brand motifs): Chat and Code in
-        // the serif at the two ends of a dot orbit, the presence trail running
-        // to the one you are in. Code below Pro is shown locked and asks for
-        // the plan, as the web's does.
-        JunoProductOrbit(
-            active: product == .code ? .code : .chat,
-            locked: DesktopPlanGate.shared.allows(.code) ? [] : [.code]
-        ) { chosen in
-            let next: DesktopProductMode = chosen == .code ? .code : .chat
-            if next == .code, !DesktopPlanGate.shared.require(.code) { return }
-            selection.wrappedValue = next
+        // Graphite §8: the system's segmented control replaces the custom dot
+        // orbit. The toolbar draws its glass capsule and the picker its own
+        // selection; the mark's solid cut says which product is on.
+        Picker("Product", selection: selection) {
+            ForEach(DesktopProductMode.switchable) { mode in
+                segment(mode)
+                    .tag(mode)
+            }
         }
+        .labelsHidden()
+        .junoProductPickerStyle()
         .fixedSize()
-        // The identifier the launch UI suite already finds the switch by. It
-        // is an automation handle, never shown or spoken.
-        .accessibilityIdentifier("Juno product")
+        .help(product.help)
+        // The identifier the launch UI suite finds the switch by. It is an
+        // automation handle, never shown or spoken.
+        .accessibilityIdentifier("Alevr product")
+    }
+
+    private func segment(_ mode: DesktopProductMode) -> some View {
+        let isLocked = mode == .code && !DesktopPlanGate.shared.allows(.code)
+        return Label {
+            Text(mode.label)
+        } icon: {
+            JunoIconView(isLocked ? .lock : mode.icon, size: 14, isOn: mode == product && !isLocked)
+        }
+        .labelStyle(.titleAndIcon)
+        .accessibilityLabel(isLocked ? "\(mode.label), upgrade required" : mode.label)
+        .accessibilityIdentifier("juno.product-brand.\(mode.rawValue)")
     }
 }
 

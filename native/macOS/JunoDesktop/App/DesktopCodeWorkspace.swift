@@ -1929,14 +1929,14 @@ private struct DesktopCodeRemoteCanvas: View {
                     JunoIconView(.send, size: 14)
                         .frame(width: 22, height: 22)
                 }
-                .junoProminentGlassButton()
+                .junoCircleAction(active: canSend && !trimmed.isEmpty)
                 .disabled(!canSend || trimmed.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("Send to this computer")
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer))
+            .junoCard(cornerRadius: CGFloat(JunoRadius.composer))
         }
     }
 
