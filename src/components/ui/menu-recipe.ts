@@ -191,7 +191,7 @@ export const menuLabelClass =
  * still lighter than the shell's own edge, which is the ordering that matters:
  * the hairline inside a panel must never out-draw the hairline around it.
  */
-export const menuSeparatorClass = "-mx-1.5 my-1 h-px bg-foreground/10";
+export const menuSeparatorClass = "mx-2 my-1 h-px bg-foreground/10";
 
 /**
  * THE WIDTH LADDER — two rungs, and the reason there are only two.

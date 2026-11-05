@@ -219,7 +219,7 @@ export const PlusMenuRow = React.forwardRef<
       {detail && (
         <span
           className={cn(
-            "max-w-[7rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground tabular-nums",
+            "max-w-[7rem] shrink-0 truncate font-sans text-label font-normal text-muted-foreground tabular-nums",
             keyHint && "coarse:hidden",
           )}
         >
@@ -473,7 +473,7 @@ export function PlusMenu({
                         <PlusMenuGlyph icon={item.icon} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.detail && (
-                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground">
+                          <span className="max-w-[6rem] shrink-0 truncate font-sans text-label font-normal tabular-nums text-muted-foreground">
                             {item.detail}
                           </span>
                         )}

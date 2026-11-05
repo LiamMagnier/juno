@@ -162,3 +162,85 @@ button[role="switch"] > span {
 .dark button[role="switch"][data-state="checked"] > span > span {
   background-color: hsl(0 0% 100%);
 }
+
+/* ── 4. Menus: the tinted selection ─────────────────────────────────────────
+   Owner, 5 Nov 2026: "the icons, menus and things still look ugly, rework it
+   from the ground". A grey wash under the pointer is every web app's menu.
+   The highlighted row is now the tint itself, white label and white glyph,
+   the way a Mac menu selects: the menu reads as an instrument of the
+   product, and the one row Enter will pick cannot be mistaken. It lands in
+   0ms (the recipe's timing) so a fast pointer never smears blue down a list.
+   A destructive row selects in the destructive colour, so the one row that
+   cannot be undone never looks like Rename under the pointer.
+   Hairlines inset to the rows' text edge (8px) instead of running to the
+   shell, so a group break reads as a pause, not as a second panel. */
+
+.menu-item.menu-item[data-highlighted],
+.menu-item.menu-item[data-state="open"] {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.menu-item.menu-item[data-highlighted] svg,
+.menu-item.menu-item[data-state="open"] svg,
+.menu-item.menu-item[data-highlighted] .text-muted-foreground,
+.menu-item.menu-item[data-state="open"] .text-muted-foreground {
+  color: hsl(var(--primary-foreground) / 0.86);
+}
+.menu-item.menu-item.danger-hover[data-highlighted] {
+  background-color: hsl(var(--destructive));
+  color: hsl(0 0% 100%);
+}
+.menu-item.menu-item.danger-hover[data-highlighted] svg {
+  color: hsl(0 0% 100%);
+}
+
+/* The composer's menus draw their highlight as one gliding pill under the
+   rows (composer-menu.tsx), so the pill takes the tint and the row above it
+   takes the white ink. */
+.cmenu-glide.cmenu-glide,
+.dark .cmenu-glide.cmenu-glide {
+  background-color: hsl(var(--primary));
+}
+.cmenu-glide.cmenu-glide[data-destructive="true"] {
+  background-color: hsl(var(--destructive));
+}
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted],
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] svg,
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] .text-muted-foreground,
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] .text-destructive {
+  color: hsl(var(--primary-foreground));
+  transition-duration: 0ms;
+}
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] .text-muted-foreground {
+  color: hsl(var(--primary-foreground) / 0.8);
+}
+/* An open flyout's parent row keeps a quiet tint while the pointer is in the
+   flyout, so the path back is still lit without two blue rows at once. */
+.cmenu.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
+  background-color: hsl(var(--primary) / 0.12);
+}
+/* A switch inside the selected row: blue on blue would vanish, so the track
+   goes to a white wash and the thumb stays white. */
+.menu-item[data-highlighted] button[role="switch"][data-state="checked"],
+.cmenu [role^="menuitem"][data-highlighted] [data-switch-track][data-on="true"],
+.cmenu [role^="menuitem"][data-highlighted] .bg-primary {
+  background-color: hsl(0 0% 100% / 0.38);
+  border-color: transparent;
+}
+
+.cmenu.cmenu.cmenu [role="separator"] {
+  margin: 5px 8px;
+}
+
+/* ── 5. One interface voice ─────────────────────────────────────────────────
+   The sidebar's section heads ("Recent", "Orbit") were set in tracked mono
+   11px, the homepage's annotation voice. Inside the app that read as debug
+   output beside the rows it heads. They are now the interface face at the
+   label rung, medium, so a heading and its rows are one family. */
+.shell-annot.shell-annot {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}

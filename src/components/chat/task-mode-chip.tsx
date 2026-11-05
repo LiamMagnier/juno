@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, Hand } from "@/components/ui/icons";
+import { ChevronDown, ShieldCheck } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
@@ -79,9 +79,9 @@ export function TaskModeChip({
                   label, each a text node the catalog can translate. */}
               <span className="sr-only">Tasks from this chat</span>
               <span className="sr-only">{label}</span>
-              <Hand
+              <ShieldCheck
                 aria-hidden="true"
-                className={cn("size-3.5 shrink-0", offDefault ? "text-primary" : "text-muted-foreground")}
+                className={cn("size-4 shrink-0", offDefault ? "text-primary" : "text-muted-foreground")}
               />
               {offDefault && (
                 <span
@@ -146,7 +146,7 @@ export function TaskModeChip({
                     <span className="flex items-center gap-2">
                       <span className="group-data-[state=checked]/mode:font-medium">{WORK_APPROVAL_MODE_LABEL[mode]}</span>
                       {mode === DEFAULT_WORK_PERMISSION_POLICY && (
-                        <span className="font-mono text-micro text-muted-foreground">Default</span>
+                        <span className="text-label text-muted-foreground">Default</span>
                       )}
                     </span>
                     <span className="block whitespace-normal text-caption text-muted-foreground [text-wrap:pretty]">

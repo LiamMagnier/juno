@@ -70,7 +70,7 @@ function MenuRow({
       <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {shortcut && (
-        <span className="shrink-0 font-mono text-caption tracking-[0.02em] text-muted-foreground">{shortcut}</span>
+        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{shortcut}</span>
       )}
     </>
   );
@@ -271,7 +271,7 @@ export function UserMenu({
             <span
               className={cn(
                 "truncate text-caption tabular-nums text-foreground",
-                usedPct != null && "font-mono tracking-[0.02em]"
+                usedPct != null && "font-medium"
               )}
             >
               {usedPct == null ? "No cap" : `${usedPct}% used`}

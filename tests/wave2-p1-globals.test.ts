@@ -224,7 +224,8 @@ test("scroll-edge bands fade from their own surface, not the page, where the gro
 });
 
 test("type rungs a fontSize cannot finish, and the corner-shape enhancement", () => {
-  assert.match(stripped, /:where\(\.text-label, \.text-kbd\) \{\s*font-family: var\(--font-mono\)[^;]*;\s*font-variant-numeric: tabular-nums;/);
+  assert.match(stripped, /:where\(\.text-label\) \{\s*font-variant-numeric: tabular-nums;\s*\}/);
+  assert.match(stripped, /:where\(\.text-kbd\) \{\s*font-family: var\(--font-mono\)[^;]*;\s*font-variant-numeric: tabular-nums;/);
   assert.match(stripped, /@media \(max-width: 639\.98px\) \{\s*\.text-page-title\.text-page-title \{ font-size: 1\.75rem; \}/);
   assert.match(stripped, /@supports \(corner-shape: superellipse\(1\.5\)\) \{\s*:where\(\.rounded-composer, \.rounded-card, \.rounded-panel/);
 });

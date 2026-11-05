@@ -4879,11 +4879,15 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
   html[data-code-wrap="true"] .prose-juno pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
 
   /* ---- Type rungs a fontSize entry cannot finish (spec §3.5) ----------------
-     `label` is JetBrains Mono 500 with tabular figures; `kbd` is the 11px
-     mono keycap rung. Zero specificity (`:where`), so an explicit `font-sans`
-     or `font-serif` beside the class still wins and only the inherited body
-     face is replaced. */
-  :where(.text-label, .text-kbd) {
+     `label` is the interface face at 500 with tabular figures (owner, 5 Nov
+     2026: the mono metadata voice read as debug output across every menu,
+     badge and readout; the native ladder already set it in the sans). `kbd`
+     stays the 11px mono keycap rung. Zero specificity (`:where`), so an
+     explicit `font-mono` or `font-serif` beside the class still wins. */
+  :where(.text-label) {
+    font-variant-numeric: tabular-nums;
+  }
+  :where(.text-kbd) {
     font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
     font-variant-numeric: tabular-nums;
   }
